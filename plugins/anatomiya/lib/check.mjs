@@ -13,6 +13,7 @@ import {
   corpusDrop,
   gitRoot,
   isCorpusPath,
+  isSource,
   safeResolve,
   lsFiles,
 } from "./corpus.mjs";
@@ -690,6 +691,16 @@ async function placedAmong(root, examined) {
   return placedTests(listed);
 }
 
+/**
+ * Whether the path a file had at the base is one that held source there.
+ *
+ * `notes.txt` renamed to `notes.py` held nothing a row was ever asked of, so
+ * the file arrives as an added one does and every site in it is new. Read as a
+ * base, it was parsed by the fallback language: text that is no JavaScript was
+ * skipped as unparsed, and text that is was taken for sites the base held.
+ */
+const heldSource = (file) => Boolean(file.from) && isSource(file.from);
+
 async function collect(root, run) {
   const { examined, placed, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending } = run;
   const areaFor = areaIndex(areas);
@@ -726,7 +737,7 @@ async function collect(root, run) {
     // the new path does not exist, and a path hash cannot tell a rename from a
     // delete plus an add. Only the head side is ever read from the tree, so no
     // edit of an agent's can move the base it is judged against.
-    if (mode === "compare" && file.from) baseWanted.set(file.from, { rel: file.from, lang: language(file.from) });
+    if (mode === "compare" && heldSource(file)) baseWanted.set(file.from, { rel: file.from, lang: language(file.from) });
   }
 
   // The head tree is on disk while the base read runs and both are on disk
@@ -774,7 +785,7 @@ async function collect(root, run) {
       }
       const job = { file, lang, source, abs: atHeadBlob?.abs ?? null, base: null, baseAbs: null };
 
-      if (mode === "compare" && file.from) {
+      if (mode === "compare" && heldSource(file)) {
         const atMergeBase = baseBlobs.get(file.from);
         // Without the base version every site in the file reads as new, which is
         // the forgery this design exists to prevent. Say so and check nothing.

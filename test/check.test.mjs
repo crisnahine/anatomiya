@@ -5672,6 +5672,40 @@ test("a handler written above an old one of its text, in a method of the same na
   assert.deepEqual(forKey(report, "caught_error_used").map((f) => [f.line, f.where]), [[3, "B.run"]]);
 });
 
+test("a file renamed from a name that is no source into a language is new, and every site in it with it", async (t) => {
+  const python = "def legacy(request):\n    return 1\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(1));
+    write("src/notes.txt", swallow(1));
+    write("src/py/a.py", 'def a():\n    """A."""\n');
+    write("src/py/notes.txt", python);
+    // The control: a source file renamed with nothing changed brings no site the base did not hold.
+    write("src/old.ts", swallow(2));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "src/notes.txt", "src/notes.ts");
+    git("mv", "src/py/notes.txt", "src/py/notes.py");
+    git("mv", "src/old.ts", "src/moved.ts");
+    commit("renamed, nothing edited");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim()] },
+      { id: "bbbbbbbb", path: "src/py", globs: [{ negated: false, dir: "src/py", tail: "**/*.py" }], fileCount: 8, dimensions: [dim({ key: "public_doc_comment", precision: "partial" })] },
+    ],
+  });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.caveats, []);
+  assert.deepEqual(report.examined.map((e) => e.path).sort(), ["src/moved.ts", "src/notes.ts", "src/py/notes.py"]);
+  assert.deepEqual(report.findings.map((f) => [f.path, f.line, f.dimension]), [
+    ["src/notes.ts", 1, "swallowed_error"],
+    ["src/py/notes.py", 1, "public_doc_comment"],
+  ]);
+});
+
 test("a Rust file cargo builds as a test by where it sits is a test file to the check, a case in it or none", async (t) => {
   const helper = "pub fn setup() {}\n";
   const dir = repo(t, ({ git, write, commit }) => {
