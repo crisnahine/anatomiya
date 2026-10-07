@@ -64,6 +64,25 @@ test("unittest's mock alone does not make a file a unittest file", async () => {
   assert.deepEqual(await facetsOf("python", mocked), { testRunner: null, testCalls: false });
 });
 
+test("a runner is read off each imported name, wherever it sits in a list of them", async () => {
+  const unit = { testRunner: "unittest", testCalls: true };
+  const body = "\n\n\nclass TotalTest(TestCase):\n    def test_total(self):\n        self.assertEqual(1, 1)\n";
+  assert.deepEqual(await facetsOf("python", `from unittest import mock, TestCase${body}`), unit);
+  assert.deepEqual(await facetsOf("python", `from unittest import TestCase, mock${body}`), unit);
+  assert.deepEqual(await facetsOf("python", `from unittest import (\n    mock as m,\n    TestCase,\n)${body}`), unit);
+  assert.deepEqual(await facetsOf("python", `import os, unittest.mock, unittest\nTestCase = unittest.TestCase${body}`), unit);
+  // Two names out of the mock module are still only the mock module.
+  assert.deepEqual(await facetsOf("python", "from unittest.mock import patch, Mock\n\n\ndef test_total():\n    assert patch\n"), { testRunner: null, testCalls: false });
+  assert.deepEqual(await facetsOf("python", "from pytest import fixture, mark\n\n\ndef test_total():\n    assert mark\n"), { testRunner: "pytest", testCalls: true });
+
+  const php = (use) => `<?php\n\n${use}\n\nclass TotalTest extends TestCase\n{\n    public function testTotal(): void\n    {\n    }\n}\n`;
+  const phpunit = { testRunner: "phpunit", testCalls: true };
+  assert.deepEqual(await facetsOf("php", php("use App\\Money, PHPUnit\\Framework\\TestCase;")), phpunit);
+  assert.deepEqual(await facetsOf("php", php("use PHPUnit\\Framework\\{Attributes\\Test, TestCase};")), phpunit);
+  // A project namespace that only ends in the runner's name is not the runner.
+  assert.deepEqual(await facetsOf("php", php("use App\\{PHPUnit\\Helper, TestCase};")), { testRunner: null, testCalls: false });
+});
+
 test("an annotated case whose runner nothing here imports is still a case", async () => {
   const java = "package a;\n\nimport spock.lang.Specification;\n\nclass TotalTest {\n    @Test\n    void total() {}\n}\n";
   assert.deepEqual(await facetsOf("java", java), { testRunner: null, testCalls: true });
