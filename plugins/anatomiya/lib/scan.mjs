@@ -1,5 +1,5 @@
 import { collect, gitRoot, countUntrackedSource, frameworksIn, langsIn } from "./corpus.mjs";
-import { langHas } from "./langs.mjs";
+import { embeddedIn, langHas } from "./langs.mjs";
 import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
@@ -292,6 +292,9 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     });
   }
 
+  // Off the corpus and not off what parsed, so the count holds on a busy machine.
+  const scriptOnly = tally(files.filter((f) => embeddedIn(f.lang)).map((f) => extOf(f.rel)));
+
   return {
     root,
     // Whether the checker ran, and how it went. Absent is not the same as
@@ -324,6 +327,8 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // roster prints a root's top two and folds the rest away, so the row
       // naming an unread language cannot be counted back off it.
       otherExts: tally(others.map((o) => extOf(o.rel))),
+      // Absent where there is none, so a repository with no component keeps its record.
+      ...(scriptOnly.length > 0 ? { scriptOnly } : {}),
     },
     authors: { files: authors.size, error: authorsError, repo: repoAuthors, shallow },
     parse: {

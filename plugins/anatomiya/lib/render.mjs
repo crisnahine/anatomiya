@@ -297,6 +297,8 @@ export function unexaminedLines(parse, { stable = false } = {}) {
 const OTHER_LANGUAGE_EXTS = new Set([
   ".java", ".kt", ".kts", ".rs", ".go", ".py", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh",
   ".cs", ".swift", ".php", ".scala", ".m", ".mm", ".ex", ".exs", ".pl", ".pm",
+  ".erb", ".haml", ".slim", ".css", ".scss", ".sass", ".less", ".html", ".htm", ".sh", ".bash", ".sql",
+  ".lua", ".dart", ".r", ".jl", ".zig", ".hs", ".clj", ".erl", ".fs", ".vb", ".groovy", ".astro",
 ]);
 
 /**
@@ -848,6 +850,13 @@ function overviewTail(result, files) {
     const total = unread.reduce((n, [, count]) => n + count, 0);
     const named = unread.map(([ext, count]) => `${count} ${ext}`).join(", ");
     lines.push(`- ${plural(total, "file")} ${total === 1 ? "holds" : "hold"} a language this map does not read (${named})`);
+  }
+  // A count over a component's script reads as a count over the component.
+  const scripts = result.corpus?.scriptOnly ?? [];
+  if (scripts.length) {
+    const total = scripts.reduce((n, [, count]) => n + count, 0);
+    const read = total === 1 ? "file is read for its script block" : "files are read for their script block";
+    lines.push(`- ${total} ${series(scripts.map(([ext]) => ext))} ${read}; the template is not read`);
   }
   // Dropped in `collect`, before anything counts, so without this row nothing
   // anywhere says they exist: a reader who knows the directory is there sees a

@@ -21,6 +21,7 @@ import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
+import { LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const dim = (o = {}) => ({
@@ -1927,6 +1928,40 @@ test("an unread language sums across every directory that holds it", () => {
 test("a repository read in full carries no unread-language row", () => {
   const out = renderOverview(result({ layout: clientLayout() }), { uncovered: 30 });
   assert.doesNotMatch(out, /a language this map does not read/);
+});
+
+test("component files are named as read for their script alone, by the extensions present", () => {
+  const overview = (scriptOnly) =>
+    renderOverview(result({ corpus: { files: 90, truncated: false, dropped: {}, ...(scriptOnly ? { scriptOnly } : {}) } }), { uncovered: 0 });
+
+  assert.match(
+    overview([[".vue", 9], [".svelte", 8]]),
+    /^- 17 \.vue and \.svelte files are read for their script block; the template is not read$/m
+  );
+  assert.match(overview([[".svelte", 12]]), /^- 12 \.svelte files are read for their script block; the template is not read$/m);
+  assert.match(overview([[".vue", 1]]), /^- 1 \.vue file is read for its script block; the template is not read$/m);
+  assert.doesNotMatch(overview(null), /script block|template/, "a repository with no component says nothing of one");
+  assert.equal(overview([[".vue", 9]]), overview([[".vue", 9]]), "and the line is the same between two scans");
+});
+
+test("a template, a stylesheet and a shell script are named among what this map does not read", () => {
+  // A Rails fixture of six .erb and six .css files printed no word about twelve unread files.
+  const corpus = { files: 90, truncated: false, dropped: {}, otherExts: [[".md", 40], [".json", 9], [".css", 6], [".erb", 6], [".sh", 2]] };
+  const out = renderOverview(result({ corpus }), { uncovered: 0 });
+
+  assert.match(out, /^- 14 files hold a language this map does not read \(6 \.css, 6 \.erb, 2 \.sh\)$/m);
+  assert.deepEqual(
+    unreadLanguageFiles({ corpus: { otherExts: [".rs", ".java", ".go", ".py", ".c", ".php", ".swift", ".kt"].map((e) => [e, 1]) } }).length,
+    8,
+    "and none of the languages it already named is lost"
+  );
+});
+
+test("no extension this map reads is listed among those it does not", () => {
+  const declared = LANGUAGES.flatMap((l) => l.exts.map((e) => [`.${e}`, 1]));
+
+  assert.ok(declared.length > 10, "the registry declares its extensions bare");
+  assert.deepEqual(unreadLanguageFiles({ corpus: { otherExts: declared } }), []);
 });
 
 test("files dropped as generated are named, since nothing else in the map says they exist", () => {
