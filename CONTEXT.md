@@ -77,9 +77,10 @@ _Avoid_: top-level directory, folder, package, area
 
 **Component**:
 A `.vue` or `.svelte` file: markup holding at most two script blocks. Its script is counted, by the
-dimensions that list its framework, and its template and style are not read. The word also names
-what a `.tsx` or `.jsx` file renders, as in `a prop spread lands on a component`. Such a file is a JSX
-file to every count here, and nothing else in this entry applies to it.
+dimensions that list its framework, and its template and style are not read. It is never a test
+file, wherever it sits. The word also names what a `.tsx` or `.jsx` file renders, as in `a prop
+spread lands on a component`. Such a file is a JSX file to every count here, and nothing else in
+this entry applies to it.
 _Avoid_: single-file component, SFC, view
 
 **Script block**:

@@ -26,6 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A component's template and style block are not read, and the overview's "Not covered" section
   says so for a repository that holds one: `of 17 .vue and .svelte files only the script block is
   read; the template is not`.
+- A component is never counted as a test file, since no runner collects one: a `.vue` file under
+  `__tests__` is a fixture of the tests there, and is not asked for a namesake test either.
 - Component files learn their own filename class, apart from the modules beside them:
   `component files here are named PascalCase`.
 - `$lib/` in a SvelteKit project resolves to the importer's own `src/lib` for "most imported from

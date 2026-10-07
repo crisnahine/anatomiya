@@ -131,7 +131,21 @@ function cargoTests(files) {
 }
 
 // A component with no script still holds its markup, which is the file.
-export const holdsNothing = (facets) => facets?.empty === true && !facets.embedded;
+const holdsNothing = (facets) => facets?.empty === true && !facets.embedded;
+
+const isComponent = (lang) => Boolean(lang) && embeddedIn(lang) !== null;
+
+// A component in a `__tests__` directory is what the tests there mount, so no test is owed it.
+const isFixture = (f) => isComponent(f.lang) && dirOf(f.rel).split("/").some((seg) => TEST_DIRS.has(seg));
+
+/**
+ * A file a namesake test could be written for: one this tool reads that holds
+ * something and is not itself a test, a story or a fixture.
+ *
+ * Exported for the reason `underTestTree` is.
+ */
+export const isProducer = (f, mirrored = null) =>
+  Boolean(f.lang) && !holdsNothing(f.facets) && !isTestFile(f, mirrored) && !isStoryFile(f.rel) && !isFixture(f);
 
 /**
  * A test file is one the parse saw import a runner or call `describe`, one
@@ -152,9 +166,12 @@ export const holdsNothing = (facets) => facets?.empty === true && !facets.embedd
  * A file in no language this tool parses is never one of them. Twenty
  * screenshots under `cypress/` are not twenty specs, and counting them made the
  * tests line the roster exists to be a denominator read 24 over 4.
+ *
+ * Neither is a component, which no runner collects: vitepress keeps its e2e
+ * site's 5 theme components under `__tests__`.
  */
 export function isTestFile({ rel, lang, facets }, mirrored = null) {
-  if (!lang) return false;
+  if (!lang || isComponent(lang)) return false;
   if (facets?.testRunner || facets?.testCalls) return true;
   // A file the parse read and found no statement in declares nothing at all, so
   // there is nothing in it for a runner to collect and the three claims below
@@ -479,8 +496,7 @@ export function layoutIndexes(files, mirrored = mirroredTests(files)) {
   // a producer, so no root would ever count it, and letting it win ownership
   // retires the spec outright: the real file elsewhere in the tree then reads
   // untested and the roster loses the place along with the count.
-  const sources = files.filter(
-    (f) => f.lang && !holdsNothing(f.facets) && !isTestFile(f, mirrored) && !isStoryFile(f.rel));
+  const sources = files.filter((f) => isProducer(f, mirrored));
   return { testFiles, mirrored, byStem: namesakeIndex(testFiles, sources) };
 }
 
@@ -512,14 +528,7 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   // test could be written for either, so it belongs in neither side of the
   // pair. Left in, a commented-out spec was counted twice against the
   // repository: once as the source that lost its test, once as a new producer.
-  const producersOf = (counted) =>
-    own.filter(
-      (f) =>
-        f.lang &&
-        extOf(f.rel) === counted &&
-        !holdsNothing(f.facets) &&
-        !isTestFile(f, mirrored) &&
-        !isStoryFile(f.rel));
+  const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
   const producers = producersOf(producerExt);
   // Counted apart: summed into the first, the denominator is a number the line never printed.
   const componentExt = exts.find(

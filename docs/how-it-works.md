@@ -1633,6 +1633,11 @@ path the file's own tail mirrors: eslint's `tests/lib/rules/no-var.js` covers `l
 and says so nowhere but in its path. A file counted by one of the last three prints its runner as
 `test files` rather than having one guessed at.
 
+A component is never a test file, by any of these: no runner collects a `.vue` or `.svelte` file,
+and vitepress keeps the five theme components of its e2e site under `__tests__`. A component under
+a `__tests__` directory is what the tests there mount, so it is not asked for a namesake test
+either and is in neither number of that count.
+
 Two things do not make a test file. A directory named `test`, `tests`, `spec`, `cypress` or `e2e`
 does not, on its own: those trees hold the factories, fixtures, page objects and support code
 beside the specs, and charging all of it to the runner read `136 test files under spec/factories`
