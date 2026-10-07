@@ -120,12 +120,14 @@ function recountRoot(path, corpus, testFiles, byStem) {
   // The first shown extension any source file wears, not simply the first: a
   // root whose bulk is screenshots or markdown has real producers under the
   // second one, and reading only exts[0] counts every one of them as zero.
-  const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
+  const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
+  const producerExt = exts.find(([ext]) => read(ext))?.[0];
   const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
   const producers = producersOf(producerExt);
-  const componentExt = exts.find(
-    ([ext]) => ext !== producerExt && own.some((f) => f.lang && extOf(f.rel) === ext && embeddedIn(f.lang) !== null))?.[0];
-  const components = producersOf(componentExt);
+  const component = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext && embeddedIn(f.lang) !== null);
+  const otherExt = exts.find(
+    ([ext]) => ext !== producerExt && read(ext) && (component(ext) || component(producerExt)))?.[0];
+  const others = producersOf(otherExt);
   const stories = own.filter((f) => isStoryFile(f.rel));
 
   const jsxByExt = new Map(tally(jsxFiles.map((f) => extOf(f.rel))));
@@ -144,9 +146,9 @@ function recountRoot(path, corpus, testFiles, byStem) {
       producers.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(producers[0].lang))
         ? { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt }
         : null,
-    componentCompanions:
-      components.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(components[0].lang))
-        ? { ...namesakeCompanions(components, testFiles, dir, byStem), ext: componentExt }
+    otherCompanions:
+      others.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(others[0].lang))
+        ? { ...namesakeCompanions(others, testFiles, dir, byStem), ext: otherExt }
         : null,
     helpers: null,
   };
@@ -356,7 +358,7 @@ function checkSection(section, corpus, root, recordRoots) {
       if (clause !== expected) fail(`${parsed.label} tests clause: printed "${clause}", recount "${expected}"`);
     }
 
-    const also = counted.componentCompanions;
+    const also = counted.otherCompanions;
     if (counted.companions) {
       const expected = namesakeClause(counted.companions, also ? `${counted.companions.ext} file` : null);
       const clause = take(clauses, expected);
@@ -365,7 +367,7 @@ function checkSection(section, corpus, root, recordRoots) {
     if (also) {
       const expected = namesakeClause(also, `${also.ext} file`);
       const clause = take(clauses, expected);
-      if (clause !== expected) fail(`${parsed.label} component clause: printed "${clause}", recount "${expected}"`);
+      if (clause !== expected) fail(`${parsed.label} second namesake clause: printed "${clause}", recount "${expected}"`);
     }
 
     if (counted.helpers) {
@@ -440,11 +442,11 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
     const expected = namesakeClause({ ...top.companions, root: null }, `${top.companions.ext} file`, top.dir && top.path);
     const clause = take(clauses, expected);
     if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
-    const also = top.componentCompanions;
+    const also = top.otherCompanions;
     if (also) {
       const want = namesakeClause({ ...also, root: null }, `${also.ext} file`, top.dir && top.path);
       const second = take(clauses, want);
-      if (second !== want) fail(`tests line component clause: printed "${second}", recount "${want}"`);
+      if (second !== want) fail(`tests line second namesake clause: printed "${second}", recount "${want}"`);
     }
   }
   if (clauses.length) fail(`tests line carries a clause the recount has no ground for: ${clauses[0]}`);

@@ -1148,8 +1148,25 @@ test("a root's components are counted on their own, beside the modules and never
 
     assert.deepEqual(record.exts, [[".ts", 8], [`.${ext}`, 3]]);
     assert.deepEqual(record.companions, { with: 1, of: 5, root: null, ext: ".ts" }, "the first count is the one it was");
-    assert.deepEqual(record.componentCompanions, { with: 2, of: 3, root: "pkg/__tests__", ext: `.${ext}` });
+    assert.deepEqual(record.otherCompanions, { with: 2, of: 3, root: "pkg/__tests__", ext: `.${ext}` });
   }
+});
+
+test("a root of components then modules counts each, whichever extension is first", () => {
+  // vitepress's src/client/theme-default is 66 .vue and 20 .ts, and its line
+  // read 1 of 66 with the 20 modules and the place of their 6 tests in no count.
+  const corpus = [
+    ...files(8, (i) => file(`pkg/C${i}.vue`, "vue", { embedded: "vue" })),
+    ...files(3, (i) => file(`pkg/m${i}.ts`, "js", {})),
+    file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }),
+    file("pkg/__tests__/m0.test.ts", "js", { testRunner: "vitest" }),
+    file("pkg/__tests__/m1.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".vue", 8], [".ts", 6]]);
+  assert.deepEqual(record.companions, { with: 1, of: 8, root: null, ext: ".vue" }, "the first count is the one it was");
+  assert.deepEqual(record.otherCompanions, { with: 2, of: 3, root: "pkg/__tests__", ext: ".ts" });
 });
 
 test("a component count is over an extension the line printed, or it is not taken", () => {
@@ -1158,7 +1175,7 @@ test("a component count is over an extension the line printed, or it is not take
   const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
 
   assert.deepEqual(record.exts, [[".ts", 8], [".json", 4]]);
-  assert.equal("componentCompanions" in record, false);
+  assert.equal("otherCompanions" in record, false);
 });
 
 test("a root with one counted extension carries one count, component or not", () => {
@@ -1166,14 +1183,14 @@ test("a root with one counted extension carries one count, component or not", ()
     ...files(4, (i) => file(`src/components/C${i}.vue`, "vue", { embedded: "vue" })),
     file("src/components/C0.spec.ts", "js", { testRunner: "vitest" }),
   ];
-  assert.equal("componentCompanions" in rootFacts({ path: "src/components", dir: "src/components", files: vue }, layoutIndexes(vue)), false);
+  assert.equal("otherCompanions" in rootFacts({ path: "src/components", dir: "src/components", files: vue }, layoutIndexes(vue)), false);
 
   const plain = [
     ...files(5, (i) => file(`pkg/m${i}.ts`, "js", {})),
     ...files(3, (i) => file(`pkg/C${i}.tsx`, "jsx", { jsx: true })),
     file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }),
   ];
-  assert.equal("componentCompanions" in rootFacts({ path: "pkg", dir: "pkg", files: plain }, layoutIndexes(plain)), false);
+  assert.equal("otherCompanions" in rootFacts({ path: "pkg", dir: "pkg", files: plain }, layoutIndexes(plain)), false);
 });
 
 test("components inside a test tree are what the tests run on, and are not asked either", () => {
@@ -1181,7 +1198,7 @@ test("components inside a test tree are what the tests run on, and are not asked
   const record = rootFacts({ path: "test/apps/pkg", dir: "test/apps/pkg", files: corpus }, layoutIndexes(corpus));
 
   assert.equal("companions" in record, false);
-  assert.equal("componentCompanions" in record, false);
+  assert.equal("otherCompanions" in record, false);
 });
 
 test("Go and Python: the name alone makes a test file, in its own family only", () => {

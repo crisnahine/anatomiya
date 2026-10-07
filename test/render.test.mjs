@@ -3363,7 +3363,7 @@ test("a root that counts its components prints two namesake counts, each naming 
     exts: [[".ts", 777], [".vue", 164]],
     other: 122,
     companions: { with: 85, of: 745, root: null, ext: ".ts" },
-    componentCompanions: { with: 81, of: 164, root: "packages/components", under: 60, ext: ".vue" },
+    otherCompanions: { with: 81, of: 164, root: "packages/components", under: 60, ext: ".vue" },
   });
   const lines = renderLayout({ ...clientLayout(), roots: [mixed], more: { roots: 0, files: 0 } });
 
@@ -3386,10 +3386,38 @@ test("a root that counts its components prints two namesake counts, each naming 
   );
 });
 
+test("a root of components then modules prints both counts in the order of its extensions", () => {
+  const mixed = root("src/client/theme-default", {
+    files: 114,
+    exts: [[".vue", 66], [".ts", 20]],
+    other: 28,
+    companions: { with: 1, of: 66, root: null, ext: ".vue" },
+    otherCompanions: { with: 6, of: 20, root: "__tests__/unit/client/theme-default", ext: ".ts" },
+  });
+  const lines = renderLayout({ ...clientLayout(), roots: [mixed], more: { roots: 0, files: 0 } });
+
+  assert.equal(
+    lines[2],
+    "- src/client/theme-default: 66 .vue, 20 .ts and 28 other; 1 of 66 .vue files has a namesake test; " +
+      "6 of 20 .ts files have a namesake test under __tests__/unit/client/theme-default"
+  );
+  assert.ok(
+    lines[3].endsWith(
+      "; 1 of 66 .vue files under src/client/theme-default has a namesake test" +
+        "; 6 of 20 .ts files under src/client/theme-default have a namesake test"
+    ),
+    lines[3]
+  );
+  assert.equal(
+    kindsLine(mixed),
+    "kinds: 66 .vue, 20 .ts and 28 other; 0 test files; 1 of 66 .vue files has a namesake test; 6 of 20 .ts files have a namesake test"
+  );
+});
+
 test("a component count with no other beside it still says which files it is over", () => {
   const only = root("src/ui", {
     exts: [[".ts", 9], [".svelte", 4]],
-    componentCompanions: { with: 1, of: 4, root: null, ext: ".svelte" },
+    otherCompanions: { with: 1, of: 4, root: null, ext: ".svelte" },
   });
 
   assert.equal(kindsLine(only), "kinds: 9 .ts, 4 .svelte; 0 test files; 1 of 4 .svelte files has a namesake test");

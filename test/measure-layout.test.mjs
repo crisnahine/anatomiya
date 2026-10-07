@@ -339,6 +339,22 @@ test("the recount reads a root line whose files hold their own tests", (t) => {
   assert.match(run.section, /^- tests: 1 cargo test spec under tests; 0 of 2 \.rs files under src have a namesake test; 2 hold their own tests$/m);
 });
 
+test("the recount reads a root of components then modules, which prints a namesake clause for each", (t) => {
+  const vitest = (name) => `import { test } from "vitest";\ntest("${name}", () => {});\n`;
+  const run = recountOf(t, {
+    ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map((i) => [`src/ui/C${i}.vue`, `<script setup lang="ts">\nconst a = ${i}\n</script>\n<template><p>{{ a }}</p></template>\n`])),
+    ...Object.fromEntries([0, 1, 2].map((i) => [`src/ui/m${i}.ts`, `export const m${i} = ${i};\n`])),
+    ...Object.fromEntries(["C0", "C1", "m0", "m1"].map((n) => [`src/ui/__tests__/${n}.test.ts`, vitest(n)])),
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(
+    run.section,
+    /^- src\/ui: 8 \.vue, 7 \.ts; 4 vitest specs under __tests__; 2 of 8 \.vue files have a namesake test under src\/ui\/__tests__; 2 of 3 \.ts files have a namesake test under src\/ui\/__tests__$/m
+  );
+  assert.match(run.section, /^- tests: 4 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test; 2 of 3 \.ts files under src\/ui have a namesake test$/m);
+});
+
 test("the recount counts a root named tests, which prints the tests line's own prefix", (t) => {
   // ripgrep's 22 files under `tests` were read as the tests line and left out of the sum.
   const run = recountOf(t, {
