@@ -35,7 +35,7 @@ const fenceOf = (text) => {
 
 test("the three targets, their directories and their extensions", () => {
   const wrote =
-    "Written by anatomiya, a scanner that is run outside this editor; where this and the code disagree, the code is right and this map is stale.";
+    "Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code is right and this map is stale.";
   assert.deepEqual(TARGETS, {
     claude: {
       id: "claude", dir: ".claude/rules", ext: ".md", always: true, reader: "Claude Code", wrote: null, widens: null,
@@ -176,6 +176,19 @@ test("cursor trims each pattern and unwraps a quoted line, so neither edge may h
   }
 });
 
+test("a cursor pattern that opens on a bang is not written, since cursor would read it as every other file", () => {
+  const bang = [{ negated: false, dir: "!bang", tail: "*.rb" }, { negated: false, dir: "lib", tail: "*.rb" }];
+  assert.deepEqual(spelledGlobs(cursor, bang, plain), { ...NONE, patterns: ["lib/*.rb"], unspellable: ["!bang/*.rb"] });
+  assert.deepEqual(spelledGlobs(copilot, bang, plain).unspellable, []);
+  assert.deepEqual(spelledGlobs(cursor, [{ negated: false, dir: "a!b", tail: "*.rb" }], plain).patterns, ["a!b/*.rb"]);
+});
+
+test("a cursor pattern that opens on a comment mark is not written, since cursor's matcher would match nothing", () => {
+  const hash = [{ negated: false, dir: "#lead", tail: "*.rb" }, { negated: false, dir: "lib", tail: "*.rb" }];
+  assert.deepEqual(spelledGlobs(cursor, hash, plain), { ...NONE, patterns: ["lib/*.rb"], unspellable: ["#lead/*.rb"] });
+  assert.deepEqual(spelledGlobs(copilot, hash, plain).unspellable, []);
+});
+
 test("a lone cursor pattern that reads as a boolean is not written", () => {
   // Cursor's reader turns a `globs` value of exactly `true` or `false` into a boolean.
   for (const word of ["true", "false"]) {
@@ -211,8 +224,13 @@ test("a negation is dropped only where a pattern that was written reaches it", (
     assert.deepEqual(mixed.dropped, ["ok/deep/x/*.js"], target.id);
     const root = spelledGlobs(target, [odd, { negated: false, dir: "", tail: "**/*.rb" }, not("a,b")], plain);
     assert.deepEqual(root.dropped, ["a,b/x/*.js"], target.id);
+    // A pattern that does not recurse matches nothing above or below its own directory.
     const above = spelledGlobs(target, [{ negated: false, dir: "ok/deep", tail: "*.js" }, { negated: true, dir: "ok", tail: "**/gen/*.js" }], plain);
-    assert.deepEqual(above.dropped, ["ok/**/gen/*.js"], target.id);
+    assert.deepEqual(above.dropped, [], target.id);
+    const flat = [{ negated: false, dir: "lib", tail: "*.rb" }, { negated: true, dir: "lib/x", tail: "*.rb" }, { negated: true, dir: "lib", tail: "gen.rb" }];
+    assert.deepEqual(spelledGlobs(target, flat, plain).dropped, ["lib/gen.rb"], target.id);
+    const deep = [{ negated: false, dir: "lib", tail: "**/*.rb" }, { negated: true, dir: "lib/x", tail: "*.rb" }];
+    assert.deepEqual(spelledGlobs(target, deep, plain).dropped, ["lib/x/*.rb"], target.id);
   }
 });
 
