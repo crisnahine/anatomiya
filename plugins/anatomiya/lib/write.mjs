@@ -108,8 +108,8 @@ export function planMap(result, { targets = null } = {}) {
   // be written refuses the scan, and 151 area bodies rendered to be discarded
   // is work a repository should not be able to ask for.
   const scan = { root: result.root, previous, blind, held, areas: withDirectives };
-  const claude = auditTarget(TARGETS.claude, true, scan);
-  const rest = others.map((o) => (o.state === "unknown" ? o : { ...o, ...auditTarget(o.target, o.on, scan) }));
+  const claude = auditTarget(TARGETS.claude, { on: true }, scan);
+  const rest = others.map((o) => (o.state === "unknown" ? o : { ...o, ...auditTarget(o.target, o, scan) }));
 
   const files = { uncovered, orphaned };
   const bodies = renderTarget(TARGETS.claude, claude, described, files);
@@ -160,11 +160,12 @@ function otherTargets(root, asked) {
     .filter((target) => !target.always)
     .map((target) => {
       const { state, reason = null, remedy } = targetStatus(root, target);
-      if (state !== "unknown") return { target, state, reason, on: asked === null ? state === "on" : asked.includes(target.id) };
+      const explicit = asked !== null;
+      if (state !== "unknown") return { target, state, reason, explicit, on: explicit ? asked.includes(target.id) : state === "on" };
       if (asked?.includes(target.id)) {
         throw new Error(`${reason}, so ${target.dir} could not be written and nothing was written anywhere: ${remedy} and scan again`);
       }
-      return { target, state, reason, on: false };
+      return { target, state, reason, explicit, on: false };
     });
 }
 
@@ -174,23 +175,41 @@ function otherTargets(root, asked) {
  *
  * A target that is not on plans no name, so every file of ours in its directory
  * is stale: that is turning it off.
+ *
+ * `explicit` is a caller that listed the targets, so this one was named or left
+ * out on purpose, not found on or off.
  */
-function auditTarget(target, on, { root, previous, blind, held, areas }) {
+function auditTarget(target, { on, explicit = false }, { root, previous, blind, held, areas }) {
   const nameOf = (a) => areaName(target, a.id);
-  const filed = on && !blind ? areas.filter((a) => hasFile(a, target)) : [];
+  const wanted = on && !blind ? areas.filter((a) => hasFile(a, target)) : [];
   // The names first, then the audit, then the bodies: what this run is about to
   // write decides which of the files already there are stale, and the overview
   // has to name the ones that are neither ours nor stale.
-  const names = on && !blind ? [overviewName(target), ...filed.map(nameOf)] : [];
-  for (const name of names) {
+  const all = on && !blind ? [overviewName(target), ...wanted.map(nameOf)] : [];
+  for (const name of all) {
     // A writer bug may not reach a hand-written file. Asserted here rather than
     // trusted because an area id happens to be a hex digest today.
     if (!isGeneratedName(name, target)) throw new Error(`refusing to write outside ${target.dir}: ${name}`);
   }
+
+  const audit = auditRules(root, knownNames(previous, target), target);
+  // Cursor's and Copilot's directories are where people write rules by hand, so
+  // a file there that does not say this tool wrote it is never written over,
+  // whatever its name. Named, the target cannot be written as asked and the
+  // scan says so. Merely on, the file stays and its area has no file there. An
+  // overview that stopped being ours after the target read as on refuses too.
+  const taken = target.always ? [] : all.filter((n) => audit.foreign.includes(n) || audit.unreadable.includes(n));
+  if (taken.length && (explicit || taken.includes(overviewName(target)))) {
+    const what = audit.unreadable.includes(taken[0]) ? "could not be read" : "was not written by this tool";
+    throw new Error(
+      `${target.dir}/${taken[0]} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`
+    );
+  }
+  const names = all.filter((n) => !taken.includes(n));
+  const filed = wanted.filter((a) => !taken.includes(nameOf(a)));
   const planned = new Set(names);
   const heldNames = new Set(held.map(nameOf));
 
-  const audit = auditRules(root, knownNames(previous, target), target);
   // A name we are about to write that is a directory, or a fifo, or anything
   // else `readdir` reports and `rename` refuses. `anatomiya-overview.md` is a
   // fixed name, so a repository can ship a directory called that and every scan
@@ -211,6 +230,8 @@ function auditTarget(target, on, { root, previous, blind, held, areas }) {
 
   return {
     filed,
+    // The areas whose name somebody else's file holds, for the overview to leave out.
+    left: wanted.filter((a) => taken.includes(nameOf(a))).map((a) => a.id),
     names,
     stale,
     // Ours and held, so still ours after this run: the next record has to go on naming it.
@@ -219,10 +240,11 @@ function auditTarget(target, on, { root, previous, blind, held, areas }) {
     // it, or the store was deleted. It still loads, so it is reported; it is not
     // removed, because two of the three facts is not ownership.
     unknown: audit.unknown.filter((f) => !planned.has(f)),
-    // Somebody else's, unless this run is writing over it. A generated name is
-    // ours by construction, so a hand-written file that took one is replaced
-    // rather than left, and calling it a file this tool did not write would be
-    // false about a file this run just replaced. It also moved the overview
+    // Somebody else's, unless this run is writing over it, which it does in
+    // Claude Code's directory alone. A generated name there is ours by
+    // construction, so a hand-written file that took one is replaced rather
+    // than left, and calling it a file this tool did not write would be false
+    // about a file this run just replaced. It also moved the overview
     // between two scans of unchanged source, which is the one thing it may never
     // do: named on the first scan, ours and silent on the second.
     foreign: audit.foreign.filter((f) => !planned.has(f)),
@@ -247,7 +269,7 @@ function renderTarget(target, laid, described, files) {
     unknown: [...laid.unknown].sort(),
     unreadable: [...laid.unreadableRules].sort(),
   };
-  bodies.set(overviewName(target), renderOverview(described, { ...files, others }, target));
+  bodies.set(overviewName(target), renderOverview(described, { ...files, others, left: laid.left }, target));
   for (const a of laid.filed) {
     const body = renderArea(a, target);
     // The name was planned off the same question, so this is two answers to it.
@@ -257,7 +279,7 @@ function renderTarget(target, laid, described, files) {
   return bodies;
 }
 
-function targetPlan({ target, state, reason, on, ...laid }, described, files) {
+function targetPlan({ target, state, reason, on, explicit, ...laid }, described, files) {
   const bodies = renderTarget(target, laid, described, files);
   return {
     dir: target.dir,

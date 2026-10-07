@@ -17,8 +17,16 @@ import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 const RULES = ".claude/rules";
 const STORE = ".claude/anatomiya";
 
-function workspace() {
-  return mkdtempSync(join(tmpdir(), "anatomiya-write-"));
+function workspace(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-write-"));
+  t?.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+function elsewhere(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
 }
 
 const dim = (o = {}) => ({
@@ -874,7 +882,10 @@ function scanSequences(seed, runs) {
     { dir: t.dir, name: `${PREFIX}notes${t.ext}`, body: "# our name, nobody's key\n" },
     { dir: t.dir, name: `${PREFIX}area-deadbeef${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nan older build\n" },
     { dir: t.dir, name: `${PREFIX}overview${t.ext}.bak${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
+    // A person's own file at a name a scan plans, where another tool reads it.
+    ...(t.always ? [] : [overviewName(t), areaName(t, areaId(pool[0])), areaName(t, areaId(pool[3]))].map((name) => ({ dir: t.dir, name, body: "# mine, at a name of yours\n" }))),
   ]);
+  const record = (dir) => (existsSync(join(dir, STORE, "facts.json")) ? readFileSync(join(dir, STORE, "facts.json"), "utf8") : null);
   const sets = [null, ["claude"], ["claude", "cursor"], ["claude", "copilot"], ["claude", "cursor", "copilot"]];
   const digest = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7);
   const snapshot = (dir) =>
@@ -913,10 +924,23 @@ function scanSequences(seed, runs) {
       const scan = result(dir, areas);
       if (blind) scan.parse = { ...scan.parse, unreadable: ["ruby"] };
 
-      const before = snapshot(dir);
-      const plan = writeMap(scan, { dryRun, targets });
-      const after = snapshot(dir);
       const where = `run ${run} step ${step} targets ${JSON.stringify(targets)}`;
+      const before = snapshot(dir);
+      const recordBefore = record(dir);
+      let plan;
+      try {
+        plan = writeMap(scan, { dryRun, targets });
+      } catch (err) {
+        // The one refusal a sequence can reach: a named target with a person's file at a name it writes.
+        const named = every.find((t) => !t.always && targets?.includes(t.id) && err.message.startsWith(`${t.dir}/`));
+        if (!named || !/ was not written by this tool, so .* nothing was written anywhere/.test(err.message)) throw err;
+        const now = snapshot(dir);
+        if (before.size !== now.size || [...before].some(([name, hash]) => now.get(name) !== hash) || record(dir) !== recordBefore) {
+          problems.push(`${where}: refused, and the disk changed`);
+        }
+        continue;
+      }
+      const after = snapshot(dir);
 
       for (const [name, hash] of theirs) {
         if (!after.has(name)) problems.push(`${where}: removed ${name}`);
@@ -1868,33 +1892,141 @@ test("a deleted record makes nothing removable in a target being turned off", ()
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a foreign overview does not turn a target on, and is not replaced unless the target is named", () => {
-  const dir = workspace();
+const HAND = "---\nalwaysApply: true\n---\n# Written by hand\n";
+const refusal = (target, name, what = "was not written by this tool") =>
+  `${target.dir}/${name} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`;
+
+test("a foreign overview does not turn a target on", (t) => {
+  const dir = workspace(t);
   const a = area("src/services");
-  const hand = "---\nalwaysApply: true\n---\n# Written by hand\n";
-  for (const t of OTHERS) {
-    mkdirSync(join(dir, t.dir), { recursive: true });
-    writeFileSync(join(dir, t.dir, overviewName(t)), hand);
+  for (const target of OTHERS) {
+    mkdirSync(join(dir, target.dir), { recursive: true });
+    writeFileSync(join(dir, target.dir, overviewName(target)), HAND);
   }
 
   const left = writeMap(result(dir, [a]));
 
-  for (const t of OTHERS) {
-    assert.deepEqual({ state: left.targets[t.id].state, on: left.targets[t.id].on }, { state: "off", on: false });
-    assert.deepEqual(left.targets[t.id].foreign, [overviewName(t)], "said to be somebody else's");
-    assert.deepEqual(left.targets[t.id].replaced, []);
-    assert.deepEqual(namesIn(dir, t), [overviewName(t)]);
-    assert.equal(readFileSync(join(dir, t.dir, overviewName(t)), "utf8"), hand);
+  for (const target of OTHERS) {
+    assert.deepEqual({ state: left.targets[target.id].state, on: left.targets[target.id].on }, { state: "off", on: false });
+    assert.deepEqual(left.targets[target.id].foreign, [overviewName(target)], "said to be somebody else's");
+    assert.deepEqual(left.targets[target.id].replaced, []);
+    assert.deepEqual(namesIn(dir, target), [overviewName(target)]);
+    assert.equal(readFileSync(join(dir, target.dir, overviewName(target)), "utf8"), HAND);
   }
+});
 
-  const named = writeMap(result(dir, [a]), { targets: ALL });
+test("a person's file at a name a named target writes refuses the scan before anything is written anywhere", (t) => {
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    for (const name of [overviewName(target), areaName(target, a.id)]) {
+      const dir = workspace(t);
+      mkdirSync(join(dir, target.dir), { recursive: true });
+      writeFileSync(join(dir, target.dir, name), HAND);
+      const before = tree(dir);
 
-  for (const t of OTHERS) {
-    assert.deepEqual(named.targets[t.id].replaced, [overviewName(t)]);
-    assert.deepEqual(named.targets[t.id].foreign, []);
-    assert.ok(isOwned(readFileSync(join(dir, t.dir, overviewName(t)), "utf8")));
+      for (const dryRun of [true, false]) {
+        assert.throws(
+          () => writeMap(result(dir, [a]), { dryRun, targets: ["claude", target.id] }),
+          (err) => err.message === refusal(target, name),
+          `${name}, ${dryRun ? "dry run" : "real write"}`
+        );
+      }
+
+      assert.deepEqual(tree(dir), before, `${name}: its bytes, and no directory of Claude Code's either`);
+    }
   }
-  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a person's file at a name a target that is merely on writes is left as it is, and that area has no file there", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  // Taking the key out is how a person says the file is theirs now.
+  for (const target of OTHERS) writeFileSync(join(dir, target.dir, areaName(target, b.id)), HAND);
+  const overviews = () => OTHERS.map((target) => readFileSync(join(dir, target.dir, overviewName(target)), "utf8"));
+
+  const plan = writeMap(result(dir, [a, b]));
+
+  for (const target of OTHERS) {
+    const mine = plan.targets[target.id];
+    assert.deepEqual({ state: mine.state, on: mine.on, remove: mine.remove, replaced: mine.replaced }, { state: "on", on: true, remove: [], replaced: [] });
+    assert.deepEqual(mine.foreign, [areaName(target, b.id)]);
+    assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a), "the name is not planned");
+    assert.equal(readFileSync(join(dir, target.dir, areaName(target, b.id)), "utf8"), HAND);
+    assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a), "and the record does not call it ours");
+    const overview = readFileSync(join(dir, target.dir, overviewName(target)), "utf8");
+    assert.match(overview, /^## Areas \(1\)$/m, "the overview promises no notes for it");
+    assert.match(overview, /^Generated files: 2 under /m);
+    assert.ok(overview.includes(`- "${areaName(target, b.id)}"`), "and names it as a file this tool did not write");
+  }
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, b));
+  const first = overviews();
+  writeMap(result(dir, [a, b]));
+  assert.deepEqual(overviews(), first, "byte-stable across two scans of unchanged source");
+
+  // Named, the same file refuses; turned off, it stays.
+  const before = tree(dir);
+  assert.throws(() => writeMap(result(dir, [a, b]), { targets: ALL }), (err) => err.message === refusal(cursor, areaName(cursor, b.id)));
+  assert.deepEqual(tree(dir), before);
+  writeMap(result(dir, [a, b]), { targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(namesIn(dir, target), [areaName(target, b.id)]);
+    assert.equal(readFileSync(join(dir, target.dir, areaName(target, b.id)), "utf8"), HAND);
+  }
+});
+
+test("a link at a generated name is somebody else's in a directory another tool reads", needsSymlinks, (t) => {
+  // It leads to a file carrying our key, and the record names it: all three facts, of a file this tool never wrote.
+  const dir = workspace(t);
+  const outside = elsewhere(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  writeFileSync(join(outside, "victim.md"), OURS);
+  for (const target of OTHERS) {
+    rmSync(join(dir, target.dir, areaName(target, b.id)));
+    symlinkSync(join(outside, "victim.md"), join(dir, target.dir, areaName(target, b.id)));
+  }
+  const linked = (target) => lstatSync(join(dir, target.dir, areaName(target, b.id))).isSymbolicLink();
+
+  const on = writeMap(result(dir, [a, b]));
+  for (const target of OTHERS) {
+    assert.deepEqual(on.targets[target.id].foreign, [areaName(target, b.id)]);
+    assert.deepEqual(on.targets[target.id].write.map((w) => w.name).sort(), mapOf(target, a));
+    assert.equal(linked(target), true, "left while the target is on");
+  }
+  assert.throws(() => writeMap(result(dir, [a, b]), { targets: ALL }), (err) => err.message === refusal(cursor, areaName(cursor, b.id)));
+
+  const gone = writeMap(result(dir, [a]));
+  const off = writeMap(result(dir, [a]), { targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(gone.targets[target.id].remove, [], "not removed with the area");
+    assert.deepEqual(off.targets[target.id].remove, mapOf(target, a));
+    assert.equal(linked(target), true, "nor with the target");
+  }
+  assert.equal(readFileSync(join(outside, "victim.md"), "utf8"), OURS);
+});
+
+test("a file at a planned name that could not be read is not written over in a directory another tool reads", needsPosixPermissions, (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ["claude", "cursor"] });
+  const shut = join(dir, cursor.dir, areaName(cursor, b.id));
+  writeFileSync(shut, HAND);
+  chmodSync(shut, 0o000);
+
+  const plan = writeMap(result(dir, [a, b]));
+
+  assert.deepEqual(plan.targets.cursor.unreadableRules, [areaName(cursor, b.id)]);
+  assert.deepEqual(plan.targets.cursor.write.map((w) => w.name).sort(), mapOf(cursor, a));
+  assert.throws(
+    () => writeMap(result(dir, [a, b]), { targets: ["claude", "cursor"] }),
+    (err) => err.message === refusal(cursor, areaName(cursor, b.id), "could not be read")
+  );
+  chmodSync(shut, 0o644);
+  assert.equal(readFileSync(shut, "utf8"), HAND);
 });
 
 test("a link at .github refuses the scan before any directory is touched", needsSymlinks, () => {
