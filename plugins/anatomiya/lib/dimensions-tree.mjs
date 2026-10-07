@@ -1,4 +1,5 @@
 // Rows over a tree-sitter tree. No row spells a node type: each asks `SHAPES` what its language calls the thing.
+import { assertKeyed } from "./langs.mjs";
 import { isTestFile } from "./layout.mjs";
 import { treeFacets } from "./tree-facets.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
@@ -303,3 +304,12 @@ export const TREE_DIMENSIONS = [
     },
   },
 ];
+
+// Held to the rows that read them, here because a row's `langs` is the list: a
+// language a row lists and a table lacks is a TypeError on its first file.
+const asked = (key) => TREE_DIMENSIONS.find((row) => row.key === key).langs;
+assertKeyed("PUBLIC", PUBLIC, asked("public_doc_comment"));
+assertKeyed("DOC", DOC, asked("public_doc_comment").filter((lang) => !SHAPES[lang].docstring));
+assertKeyed("NOT_OFFERED", NOT_OFFERED, [], asked("public_doc_comment"));
+assertKeyed("OUTSIDE", OUTSIDE, [], asked("public_doc_comment"));
+assertKeyed("UNTYPED", UNTYPED, asked("declared_return_type"));

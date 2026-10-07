@@ -1,5 +1,7 @@
 import { createRequire } from "node:module";
 
+import { exportLetIsProp } from "./langs.mjs";
+
 /**
  * One walk over an oxc program that yields, for every node, the chain of
  * declarations enclosing it.
@@ -478,7 +480,7 @@ export const value = (n) => {
  */
 export function componentProps(program, rel) {
   const props = new Set();
-  if (!/\.svelte$/.test(rel ?? "")) return props;
+  if (!exportLetIsProp(rel ?? "")) return props;
   for (const n of program.body || []) {
     const exported = n.type === "ExportNamedDeclaration" ? n.declaration : null;
     if (exported?.type !== "VariableDeclaration" || !["let", "var"].includes(exported.kind)) continue;

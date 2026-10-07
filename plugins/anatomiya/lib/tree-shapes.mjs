@@ -1,7 +1,12 @@
 /**
  * What each tree-sitter grammar calls the things a row or a facet asks about.
- * A list holds node types and a string holds a field name, which is how the
- * test checks every one of them against the vendored grammar.
+ * A list holds node types, a string holds a field name and `{ token }` an
+ * anonymous token of a node listed under `tokensOf`, which is how the test
+ * checks every one of them against the vendored grammar.
+ *
+ * A renamed import's new name is no part of where it came from, and three
+ * grammars mark it three ways: `renamed` is the field it fills, `usingAlias`
+ * the field of the directive itself, and `renames` the token it follows.
  */
 export const SHAPES = {
   python: {
@@ -20,6 +25,7 @@ export const SHAPES = {
     name: "name",
     returnType: "return_type",
     bases: "superclasses",
+    renamed: "alias",
   },
   php: {
     fn: ["function_definition", "method_declaration"],
@@ -45,6 +51,7 @@ export const SHAPES = {
     returnType: "return_type",
     callee: "function",
     caught: "name",
+    renamed: "alias",
   },
   go: {
     fn: ["function_declaration", "method_declaration"],
@@ -94,6 +101,7 @@ export const SHAPES = {
     directive: ["preproc_pragma", "preproc_nullable", "preproc_region", "preproc_endregion", "preproc_line", "preproc_error", "preproc_warning"],
     tokensOf: [],
     name: "name",
+    usingAlias: "name",
   },
   rust: {
     fn: ["function_item"],
@@ -108,6 +116,7 @@ export const SHAPES = {
     args: ["token_tree"],
     tokensOf: [],
     name: "name",
+    renamed: "alias",
   },
   kotlin: {
     fn: ["function_declaration"],
@@ -119,6 +128,7 @@ export const SHAPES = {
     header: ["package_header"],
     // The `as` of `import a.B as C` is a token of `import`, and the name after it has no field.
     tokensOf: ["import"],
+    renames: { token: "as" },
     name: "name",
   },
 };

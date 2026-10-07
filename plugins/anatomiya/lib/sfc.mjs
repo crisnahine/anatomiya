@@ -6,8 +6,9 @@
  * first end tag, inside a string too. One pass forward over the file, so a
  * megabyte of markup costs a megabyte.
  *
- * A leaf, because the parser child reads it.
+ * Read by the parser child, so it imports the registry and nothing else.
  */
+import { EXTRACTORS } from "./langs.mjs";
 
 const LANGS = new Set(["js", "jsx", "ts", "tsx"]);
 
@@ -265,6 +266,13 @@ function svelte(source) {
   return { blocks, unterminated };
 }
 
+const SCANNERS = { vue, svelte };
+
+// Held to the registry where the module loads, so a declaration never names a scanner that is not here.
+for (const kind of new Set([...EXTRACTORS, ...Object.keys(SCANNERS)])) {
+  if (!EXTRACTORS.includes(kind) || !Object.hasOwn(SCANNERS, kind)) throw new Error(`SCANNERS and the registry's extractors disagree on ${kind}`);
+}
+
 /**
  * The script blocks a compiler would read, at most two, in file order.
  *
@@ -272,7 +280,10 @@ function svelte(source) {
  * `unterminated` says a script the rules accept was opened and never ended,
  * which is a broken file and not a file with no script.
  */
-export const scriptBlocks = (source, kind) => (kind === "svelte" ? svelte(source) : vue(source));
+export function scriptBlocks(source, kind) {
+  if (!Object.hasOwn(SCANNERS, kind)) throw new Error(`no script extractor named ${kind}`);
+  return SCANNERS[kind](source);
+}
 
 const blank = (text) => text.replace(/[^\n\r]/g, " ");
 

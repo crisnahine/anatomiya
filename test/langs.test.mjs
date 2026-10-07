@@ -19,7 +19,14 @@ import {
   familyOf,
   embeddedIn,
   placeTestsOf,
+  exportLetIsProp,
+  templateMountsByName,
+  EXTRACTORS,
+  assertKeyed,
+  hostedBy,
 } from "../plugins/anatomiya/lib/langs.mjs";
+
+import { scriptBlocks } from "../plugins/anatomiya/lib/sfc.mjs";
 
 const TREE_SITTER = ["python", "php", "go", "java", "csharp", "rust", "kotlin"];
 
@@ -72,13 +79,15 @@ test("a declaration retrying directives for an extension it does not own, or on 
 });
 
 test("only Rust has a tool that collects a file as a test by the directory it sits in, and the layout asks the declaration", () => {
-  for (const decl of LANGUAGES) assert.deepEqual(decl.placeTests, decl.id === "rust" ? { dir: "tests", runner: "cargo test" } : null, decl.id);
+  const cargo = { dir: "tests", runner: "cargo test", manifest: "Cargo.toml", sources: "src" };
+  for (const decl of LANGUAGES) assert.deepEqual(decl.placeTests, decl.id === "rust" ? cargo : null, decl.id);
   assert.equal(Object.isFrozen(declOf("rust").placeTests), true);
-  assert.deepEqual(placeTestsOf("rust"), { dir: "tests", runner: "cargo test" });
+  assert.deepEqual(placeTestsOf("rust"), cargo);
   assert.equal(placeTestsOf("go"), null);
-  // B21: the fact, both its parts, is read off the declaration, so the layout spells no language id.
+  // B21: the fact, all four parts, is read off the declaration, so the layout spells no language id and no file of cargo's.
   const layout = readFileSync(new URL("../plugins/anatomiya/lib/layout.mjs", import.meta.url), "utf8");
   assert.deepEqual(layout.match(/["'`](?:python|php|go|java|csharp|rust|kotlin|vue|svelte|ruby|js|jsx)["'`]/g), null);
+  assert.equal(layout.includes("Cargo.toml"), false);
 });
 
 test("a declaration whose place tests name no directory or no runner refuses to load", () => {
@@ -86,6 +95,34 @@ test("a declaration whose place tests name no directory or no runner refuses to 
   assert.throws(() => assertRegistry(with_({ dir: "tests" })), /rust collects tests by place and names no runner/);
   assert.throws(() => assertRegistry(with_({ dir: "", runner: "cargo test" })), /rust collects tests by place and names no directory/);
   assert.throws(() => assertRegistry(with_(undefined)), /rust does not say whether a tool collects its tests by place/);
+  assert.throws(() => assertRegistry(with_({ dir: "tests", runner: "cargo test", sources: "src" })), /rust collects tests by place and names no manifest/);
+  assert.throws(() => assertRegistry(with_({ dir: "tests", runner: "cargo test", manifest: "Cargo.toml" })), /rust collects tests by place and names no source directory/);
+});
+
+test("what a component's unread markup changes about its script is the declaration's to say, and is asked of the path", () => {
+  for (const decl of LANGUAGES) {
+    const said = { vue: { propsByExportLet: false, mountsByName: true }, svelte: { propsByExportLet: true, mountsByName: false } }[decl.id] ?? null;
+    assert.deepEqual(decl.markup, said, decl.id);
+  }
+  assert.equal(Object.isFrozen(declOf("vue").markup), true);
+  assert.equal(exportLetIsProp("src/Card.svelte"), true);
+  assert.equal(templateMountsByName("src/Card.vue"), true);
+  for (const rel of ["src/Card.vue", "src/state.svelte.ts", "src/a.ts", "Card.svelte/a.js", ""]) assert.equal(exportLetIsProp(rel), false, rel);
+  for (const rel of ["src/Card.svelte", "src/a.tsx", "Card.vue/a.js", ""]) assert.equal(templateMountsByName(rel), false, rel);
+  // B21: the two rows that ask spell neither extension.
+  for (const module of ["walk.mjs", "dimensions-naming.mjs"]) {
+    const src = readFileSync(new URL(`../plugins/anatomiya/lib/${module}`, import.meta.url), "utf8");
+    assert.deepEqual(src.match(/\\\.(?:vue|svelte)\$/g), null, module);
+  }
+});
+
+test("a declaration that does not say what its markup changes, or says it of a file with no markup, refuses to load", () => {
+  const with_ = (id, markup) => LANGUAGES.map((l) => (l.id === id ? { ...l, markup } : l));
+  assert.throws(() => assertRegistry(with_("svelte", null)), /svelte embeds its script and does not say what its markup changes/);
+  assert.throws(() => assertRegistry(with_("svelte", { propsByExportLet: true })), /svelte does not say whether its markup mountsByName/);
+  assert.throws(() => assertRegistry(with_("vue", { propsByExportLet: "no", mountsByName: true })), /vue does not say whether its markup propsByExportLet/);
+  assert.throws(() => assertRegistry(with_("go", { propsByExportLet: false, mountsByName: false })), /go has no markup to change its script/);
+  assert.throws(() => assertRegistry(with_("js", undefined)), /js has no markup to change its script/);
 });
 
 test("the Flow retry covers every JavaScript extension the corpus accepts", () => {
@@ -205,6 +242,14 @@ test("a declaration naming an extractor nothing implements refuses to load", () 
   assert.throws(() => assertRegistry(bad), /vue names no script extractor: astro/);
   const absent = LANGUAGES.map((l) => (l.id === "js" ? { ...l, embedded: undefined } : l));
   assert.throws(() => assertRegistry(absent), /js names no script extractor: undefined/);
+});
+
+test("the extractors a declaration may name are the ones the scanner implements, and an unknown one is refused by name", () => {
+  assert.deepEqual(EXTRACTORS, ["vue", "svelte"]);
+  assert.equal(Object.isFrozen(EXTRACTORS), true);
+  for (const kind of EXTRACTORS) assert.deepEqual(scriptBlocks("", kind), { blocks: [], unterminated: false }, kind);
+  assert.throws(() => scriptBlocks("<script>a</script>", "astro"), /no script extractor named astro/);
+  assert.throws(() => scriptBlocks("<script>a</script>", undefined), /no script extractor named undefined/);
 });
 
 test("an embedded language on an engine that cannot read its blocks refuses to load", () => {
@@ -341,4 +386,16 @@ test("a .js file whose tree holds JSX speaks JSX too, and only then", async () =
   assert.deepEqual(spokenIn("js", null), ["js"], "no facets is the path's answer");
   assert.deepEqual(spokenIn("jsx", { jsx: false }), ["jsx"], "a .tsx file stays what its extension says");
   assert.deepEqual(spokenIn("ruby", { jsx: true }), ["ruby"]);
+});
+
+test("a table keyed by language is refused where it leaves out a language it is asked about, or holds one it never is", () => {
+  assert.deepEqual(hostedBy("tree-sitter"), TREE_SITTER);
+  assert.deepEqual(hostedBy("prism"), ["ruby"]);
+  assert.doesNotThrow(() => assertKeyed("T", { go: 1, rust: 2 }, ["go", "rust"]));
+  assert.throws(() => assertKeyed("T", { go: 1 }, ["go", "rust"]), /^Error: T has no entry for rust$/);
+  assert.throws(() => assertKeyed("T", { go: 1, rust: 2, zig: 3 }, ["go", "rust"]), /^Error: T holds zig, which nothing asks it about$/);
+  assert.doesNotThrow(() => assertKeyed("T", { rust: 2 }, [], ["go", "rust"]), "a table a language may leave out");
+  assert.throws(() => assertKeyed("T", { php: 2 }, [], ["go", "rust"]), /T holds php/);
+  // An inherited name is no entry: `RUNNERS.constructor` is not a language.
+  assert.throws(() => assertKeyed("T", {}, ["constructor"]), /T has no entry for constructor/);
 });

@@ -125,8 +125,12 @@ export const fieldOf = (node, name) => node.children.find((child) => child.field
 /** Every child filling this field, for a field that repeats. */
 export const fieldsOf = (node, name) => node.children.filter((child) => child.field === name);
 
-/** The text of the `name` field, which is where all seven grammars put a definition's name. */
-export const nameOf = (node) => fieldOf(node, "name")?.text ?? null;
+// One field in all seven grammars, read off the table so the test that holds the table to each grammar holds this.
+const [NAME, ...OTHER_NAMES] = new Set(Object.values(SHAPES).map((shapes) => shapes.name));
+if (OTHER_NAMES.length) throw new Error(`SHAPES names a definition's name field ${[NAME, ...OTHER_NAMES].join(" and ")}: nameOf reads one`);
+
+/** The text of the field all seven grammars put a definition's name in. */
+export const nameOf = (node) => fieldOf(node, NAME)?.text ?? null;
 
 /** The `node` every consumer destructures off a hit, in the shape the other two engines emit. */
 export function site(node) {

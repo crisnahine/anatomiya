@@ -9,8 +9,10 @@
  * mirror-tree, and sitting side by side is what makes each difference a stated
  * fact rather than a scattered surprise; `test/test-shape.test.mjs` pins them.
  *
- * A leaf, because `facets.mjs` reads it and the parser child reads the facets.
+ * It imports the registry, itself a leaf, and nothing else, because
+ * `facets.mjs` reads it and the parser child reads the facets.
  */
+import { assertKeyed, hostedBy } from "./langs.mjs";
 
 // `_spec.rb` and `_test.rb` are how Ruby spells the same thing the dotted forms
 // spell, and the hyphen is how Ember spells it: discourse writes 4,000 tests as
@@ -149,6 +151,9 @@ export const FAMILY_TEST_NAMES = {
   kotlin: JVM_NAMES,
 };
 
+// Every language tree-sitter reads, each a family of one: a family left out is read by the JavaScript rule.
+assertKeyed("FAMILY_TEST_NAMES", FAMILY_TEST_NAMES, hostedBy("tree-sitter"));
+
 // A suffix holding a lower-case letter starts a word with its own capital.
 const endsAWord = (before, suffix) => before !== "" && (/\p{Ll}/u.test(suffix) || /[\p{Ll}\d]$/u.test(before));
 
@@ -248,12 +253,12 @@ const below = (dir, above) => {
  * 10 are so named, 7 of them wrong. Only where a source directory of the
  * paired tree carries the name: `tests/Unit` mirrors none.
  */
-const jvmPairing = (segments) => {
+const jvmPairing = (family) => (segments) => {
   const at = segments.findIndex((segment, i) => JVM_TREES.test.test(segment) || (segment === "test" && segments[i - 1] === "src"));
   if (at === -1) return null;
   return (dir) => {
     const own = below(dir, segments.slice(0, at));
-    return own !== null && own.length > 0 && !isTestTree(own[0], "java");
+    return own !== null && own.length > 0 && !isTestTree(own[0], family);
   };
 };
 
@@ -264,8 +269,8 @@ const PAIRINGS = {
     const covered = project.replace(FAMILY_TREES.csharp.test, "");
     return (dir) => dir.split("/").includes(covered);
   },
-  java: jvmPairing,
-  kotlin: jvmPairing,
+  java: jvmPairing("java"),
+  kotlin: jvmPairing("kotlin"),
   php: (segments, covered, sourceDirs) => {
     const at = segments.indexOf("tests");
     if (at === -1) return null;

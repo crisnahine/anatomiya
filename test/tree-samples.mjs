@@ -7,6 +7,7 @@ export const python = `# Order totals.
 from __future__ import annotations
 
 import os
+import json as serializer
 from decimal import Decimal
 from typing import *
 
@@ -53,6 +54,7 @@ export const php = `<?php
 namespace App\\Billing;
 
 use App\\Models\\Order;
+use App\\Models\\Invoice as Bill;
 
 /**
  * Adds up what an order costs.
@@ -199,6 +201,7 @@ record Line(String name, int price) {}
 export const csharp = `// Billing totals.
 using System;
 using System.Linq;
+using Text = System.Text;
 
 namespace Billing
 {
@@ -263,6 +266,7 @@ export const rust = `#![allow(dead_code)]
 
 use std::collections::*;
 use std::fmt;
+use std::io as stdio;
 
 /* Shown when no file is given. */
 const USAGE: &str = "
@@ -309,6 +313,7 @@ package com.example.billing
 
 import java.io.IOException
 import kotlin.collections.*
+import kotlin.math.max as larger
 
 // Shown when no file is given.
 val USAGE = """

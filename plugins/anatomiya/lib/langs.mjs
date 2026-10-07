@@ -56,6 +56,7 @@ const js = {
   // which hosts a family only until it hosts two.
   family: "js",
   embedded: null,
+  markup: null,
   exts: ["ts", "mts", "cts", "js", "mjs", "cjs"],
   filenames: [],
   scratchExt: "ts",
@@ -88,6 +89,7 @@ const jsx = {
   engine: "oxc",
   family: "js",
   embedded: null,
+  markup: null,
   exts: ["tsx", "jsx"],
   filenames: [],
   scratchExt: "tsx",
@@ -106,13 +108,17 @@ const jsx = {
 // A component file: markup holding at most two script blocks, which are all
 // that is read. `embedded` names whose rules find them. The grammar is the
 // block's own `lang` and the type syntax is the tag's to say, so no extension
-// routes either, and the checker is handed paths it could not open.
-const component = (id) => ({
+// routes either, and the checker is handed paths it could not open. `markup`
+// is what the part nobody reads changes about the script: whether `export let`
+// declares a prop a parent passes in, and whether the template mounts a
+// function under its own name.
+const component = (id, markup) => ({
   id,
   fallback: false,
   engine: "oxc",
   family: "js",
   embedded: id,
+  markup,
   exts: [id],
   filenames: [],
   scratchExt: id,
@@ -126,8 +132,8 @@ const component = (id) => ({
   positions: { offsets: "utf16", lines: false },
 });
 
-const vue = component("vue");
-const svelte = component("svelte");
+const vue = component("vue", { propsByExportLet: false, mountsByName: true });
+const svelte = component("svelte", { propsByExportLet: true, mountsByName: false });
 
 const ruby = {
   id: "ruby",
@@ -135,6 +141,7 @@ const ruby = {
   engine: "prism",
   family: "ruby",
   embedded: null,
+  markup: null,
   exts: ["rb", "rake", "gemspec", "jbuilder"],
   // Ruby whose filename does not carry the language, matched whole so a
   // Gemfile.lock is not a Gemfile. `.rbi` is deliberately absent: a Sorbet
@@ -159,6 +166,7 @@ const grammar = (id, exts) => ({
   engine: "tree-sitter",
   family: id,
   embedded: null,
+  markup: null,
   exts,
   filenames: [],
   scratchExt: exts[0],
@@ -182,7 +190,8 @@ const java = grammar("java", ["java"]);
 // it rejects is read again with one branch of each conditional (`csharp-directives.mjs`).
 const csharp = { ...grammar("csharp", ["cs"]), directives: { exts: ["cs"] } };
 // cargo builds every file directly under a crate's `tests` as a test, whatever it holds, so the place alone names the runner.
-const rust = { ...grammar("rust", ["rs"]), placeTests: { dir: "tests", runner: "cargo test" } };
+// A crate is the directory holding the manifest or the source directory.
+const rust = { ...grammar("rust", ["rs"]), placeTests: { dir: "tests", runner: "cargo test", manifest: "Cargo.toml", sources: "src" } };
 const kotlin = grammar("kotlin", ["kt", "kts"]);
 
 const freeze = (decl) => {
@@ -207,13 +216,14 @@ const freeze = (decl) => {
     Object.freeze(decl.directives);
   }
   if (decl.placeTests) Object.freeze(decl.placeTests);
+  if (decl.markup) Object.freeze(decl.markup);
   Object.freeze(decl.capabilities);
   Object.freeze(decl.positions);
   return Object.freeze(decl);
 };
 
-// The extractors `sfc.mjs` implements, which is what `embedded` may name.
-const EXTRACTORS = ["vue", "svelte"];
+/** The script extractors there are, which is what `embedded` may name. `sfc.mjs` holds its scanners to this list at import. */
+export const EXTRACTORS = Object.freeze(["vue", "svelte"]);
 
 export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby, python, php, go, java, csharp, rust, kotlin].map(freeze));
 
@@ -240,8 +250,27 @@ export const familyOf = (id) => declOf(id).family;
 /** Whose rules find a language's script blocks, or null where the file is the script. */
 export const embeddedIn = (id) => declOf(id).embedded;
 
-/** The directory a language's tool collects every file of as a test, and what that tool is called, or null where none does. */
+/**
+ * The directory a language's tool collects every file of as a test, what that tool is called, and the manifest and source
+ * directory that mark the directory holding it, or null where no tool collects by place.
+ */
 export const placeTestsOf = (id) => declOf(id).placeTests;
+
+/** The ids of the languages one engine hosts, in the registry's order. */
+export const hostedBy = (engineId) => LANGUAGES.filter((l) => l.engine === engineId).map((l) => l.id);
+
+/**
+ * Refuse a table keyed by language that has no entry for an id in `required`,
+ * or holds a key outside `allowed`.
+ *
+ * Called where each such table loads. A missing entry otherwise throws a
+ * TypeError on the first file of that language, in the middle of a scan, or
+ * answers with another language's rule and says nothing.
+ */
+export function assertKeyed(name, table, required, allowed = required) {
+  for (const id of required) if (!Object.hasOwn(table, id)) throw new Error(`${name} has no entry for ${id}`);
+  for (const id of Object.keys(table)) if (!allowed.includes(id)) throw new Error(`${name} holds ${id}, which nothing asks it about`);
+}
 
 export const EXT_BY_LANG = Object.freeze(Object.fromEntries(LANGUAGES.map((l) => [l.id, l.exts])));
 
@@ -317,6 +346,12 @@ const MAY_HOLD_DIRECTIVES = new RegExp(`\\.(${DIRECTIVE_EXT.join("|")})$`);
  */
 export const mayHoldDirectives = (path) => MAY_HOLD_DIRECTIVES.test(path);
 
+/** Whether `export let` at the top of this file declares a prop a parent passes in, where a module's is an export. */
+export const exportLetIsProp = (path) => declOf(language(path)).markup?.propsByExportLet === true;
+
+/** Whether a capitalised function in this file is a component its template mounts under that name. */
+export const templateMountsByName = (path) => declOf(language(path)).markup?.mountsByName === true;
+
 const TYPED_EXT = LANGUAGES.filter((l) => l.typed).flatMap((l) => l.typed.exts);
 const CARRIES_TYPES = new RegExp(`\\.(${TYPED_EXT.join("|")})$`);
 
@@ -382,6 +417,11 @@ export function assertRegistry(langs) {
     if (decl.embedded && decl.engine !== ENGINES.oxc.id) {
       throw new Error(`${decl.id} embeds its script, which only oxc reads, and routes to ${decl.engine}`);
     }
+    if (decl.embedded && !decl.markup) throw new Error(`${decl.id} embeds its script and does not say what its markup changes`);
+    if (!decl.embedded && decl.markup !== null) throw new Error(`${decl.id} has no markup to change its script`);
+    for (const key of decl.markup ? ["propsByExportLet", "mountsByName"] : []) {
+      if (typeof decl.markup[key] !== "boolean") throw new Error(`${decl.id} does not say whether its markup ${key}`);
+    }
     const caps = Object.keys(decl.capabilities).sort().join(",");
     if (caps !== "importGraph,semantic") {
       throw new Error(`${decl.id} declares capabilities off the closed pair: ${caps}`);
@@ -424,7 +464,7 @@ export function assertRegistry(langs) {
     }
     if (decl.placeTests === undefined) throw new Error(`${decl.id} does not say whether a tool collects its tests by place`);
     if (decl.placeTests !== null) {
-      for (const [key, what] of [["dir", "directory"], ["runner", "runner"]]) {
+      for (const [key, what] of [["dir", "directory"], ["runner", "runner"], ["manifest", "manifest"], ["sources", "source directory"]]) {
         if (typeof decl.placeTests[key] !== "string" || !decl.placeTests[key]) throw new Error(`${decl.id} collects tests by place and names no ${what}`);
       }
     }
