@@ -1685,6 +1685,20 @@ test("a Rust file that tests itself is its own clause on every line that counts 
   assert.equal(lines[3], "- tests: 13 cargo test specs; 0 of 58 .rs files under crates have a namesake test; 34 hold their own tests");
 });
 
+test("a root named exactly tests prints with a slash, so no two bullets share the tests line's label", () => {
+  const layout = (roots) => ({ size: 60, minFiles: 3, roots, more: { roots: 0, files: 0 }, tests: [{ runner: "pytest", root: "tests", files: 22 }], principles: [], truncated: false });
+  // flask: a source root and a test root, both named `tests` by different rules of the line.
+  const mixed = root("tests", { files: 60, exts: [[".py", 41], [".html", 9]], other: 10, tests: [{ runner: "pytest", files: 22, sub: null }] });
+  const specs = root("tests", { files: 30, exts: [[".py", 30]], tests: [{ runner: "pytest", files: 22, sub: null }], testRoot: true });
+  assert.equal(renderLayout(layout([mixed]))[2], "- tests/: 41 .py, 9 .html and 10 other; 22 pytest specs");
+  assert.equal(renderLayout(layout([specs]))[2], "- tests/: 22 pytest specs and 8 other");
+  assert.equal(renderLayout(layout([mixed]))[3], "- tests: 22 pytest specs under tests");
+  // Only the whole label: a root under or beside that name is told apart by the rest of it.
+  for (const path of ["tests/unit", "src/tests", "tests (files at this level)", "test", "Tests"]) {
+    assert.ok(renderLayout(layout([root(path, { files: 4, exts: [[".py", 4]] })]))[2].startsWith(`- ${path}: `), path);
+  }
+});
+
 test("the tests line nouns its namesake count with the extension it was counted over", () => {
   // A root holding more screenshots than components counts its components, and
   // the line named the screenshots.
