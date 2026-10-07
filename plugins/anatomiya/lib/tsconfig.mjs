@@ -153,10 +153,9 @@ export function readConfig(ts, root) {
       status: "ok",
       reason: "no-tsconfig",
       configPath: null,
-      configName: null,
     };
   }
-  return { ...readNamed(ts, root, join(root, configName)), configName };
+  return readNamed(ts, root, join(root, configName));
 }
 
 function readNamed(ts, root, configPath) {
