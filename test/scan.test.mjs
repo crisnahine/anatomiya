@@ -7,7 +7,10 @@ import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
-import { renderOverview } from "../plugins/anatomiya/lib/render.mjs";
+import { renderArea, renderOverview } from "../plugins/anatomiya/lib/render.mjs";
+import { planMap } from "../plugins/anatomiya/lib/write.mjs";
+import { factsJson } from "../plugins/anatomiya/lib/facts.mjs";
+import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
 import { globsReach } from "../plugins/anatomiya/lib/areas.mjs";
 import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
@@ -348,6 +351,7 @@ test("the corpus tallies every file it has no language for, by extension", async
   const result = await scan(dir);
 
   assert.deepEqual(result.corpus.otherExts, [[".swift", 4], [".md", 1]]);
+  assert.equal("scriptOnly" in result.corpus, false, "a repository with no component carries no count of them");
   assert.equal(result.corpus.files, 4, "and the source count is the four it can read");
 });
 
@@ -1407,4 +1411,98 @@ test("the parse starts before the baseline answers, and the map is the same as w
   assert.equal(order, "parse first");
   assert.equal(plain.areas[0].baseline.status, "ok", "the fixture reaches the baseline");
   assert.deepEqual(stable(delayed), stable(plain));
+});
+
+test("a directory of components becomes an area that counts its scripts and its names", async (t) => {
+  const names = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
+  const script = `import { api } from "../api";\n\nasync function loadItem(id) {\n  try {\n    return await api.get(id);\n  } catch (err) {\n    console.error(err);\n  }\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of names) {
+      write(`src/components/${name}.vue`, `<template>\n  <div @click="loadItem(1)" />\n</template>\n\n<script setup>\n${script}</script>\n`);
+      write(`src/lib/${name}.svelte`, `<script>\n${script}</script>\n\n<button onclick={() => loadItem(1)}>load</button>\n`);
+    }
+    // Markup alone: no script to read, and still a component with a name.
+    write("src/components/PlainBanner.vue", "<template>\n  <p>hello</p>\n</template>\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  for (const [path, ext, files] of [["src/components", ".vue", 9], ["src/lib", ".svelte", 8]]) {
+    const area = result.areas.find((a) => a.path === path);
+    assert.ok(area, `${path} is an area`);
+    assert.match(renderArea(area), new RegExp(`^paths:\\n  - "${path}/\\*\\*/\\*\\${ext}"$`, "m"));
+    const named = dimension(result, path, "file_naming_case");
+    assert.equal(named.learned, "PascalCase");
+    assert.equal(named.learnedKind, "component");
+    assert.equal(named.candidates, files, "a component with no script still votes with its name");
+    assert.deepEqual(
+      [dimension(result, path, "swallowed_error").candidates, dimension(result, path, "function_naming_case").candidates],
+      [8, 8],
+      "the script rows count inside the block"
+    );
+  }
+
+  const lines = [...scanLines(scanSummary(result, planMap(result))), renderOverview(result, { uncovered: 0 })].join("\n");
+  assert.doesNotMatch(lines, /nothing was counted in/);
+  assert.deepEqual(result.corpus.scriptOnly, [[".vue", 9], [".svelte", 8]]);
+  assert.match(lines, /^- 17 \.vue and \.svelte files are read for their script block; the template is not read$/m);
+});
+
+test("a claim counted over a Gemfile names it, not the label the kinds line gives a file with no extension", async (t) => {
+  const rescued = "begin\n  run\nrescue StandardError => e\n  warn e\nend\n";
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["load", "save", "list", "drop"]) write(`tools/${name}.rb`, rescued);
+    write("tools/Gemfile", `source "https://rubygems.org"\n${rescued}`);
+    write("tools/old.js", "const old = 1;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+
+  assert.match(text, /^kinds: .*\(none\)/m);
+  assert.match(text, /^rescue blocks use the error they caught, in \.rb files and Gemfile: /m);
+  assert.match(text, /^module-level bindings are const, in \.js files: /m);
+});
+
+test("a claim learned from the modules of a directory says so beside the components it was not asked of", async (t) => {
+  const caught = "try {\n  run();\n} catch (err) {\n  console.error(err);\n}\n";
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["load", "save", "list", "drop"]) {
+      write(`src/routes/${name}.ts`, `export const ${name} = 1;\n${caught}`);
+      write(`src/routes/${name}.svelte`, `<script>\n  let { data } = $props();\n${caught}</script>\n\n<p>{data}</p>\n`);
+    }
+    write("src/routes/old.js", "const old = 1;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+
+  assert.match(text, /^module-level bindings are const, in \.js and \.ts files: /m);
+  assert.match(text, /^catch blocks use the error they caught: /m, "a row asked of every file here names none");
+  assert.doesNotMatch(factsJson(result), /extsByLang|askedExts/, "the record holds neither");
+});
+
+test("a claim names only the extensions its row was asked of, and a row asked of no file prints nothing", async (t) => {
+  const handler = (name) => `export const ${name} = () => {\n  const onPick = () => {};\n  return <List onPick={onPick} />;\n};\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["Load", "Save", "List", "Drop"]) write(`src/panel/${name}.tsx`, handler(name));
+    for (const name of ["load", "save", "list", "drop"]) write(`src/panel/use-${name}.ts`, `export const ${name} = 1;\n`);
+    write("src/panel/Panel.vue", "<template><p /></template>\n");
+    for (const name of ["load", "save", "list", "drop"]) write(`src/hooks/use-${name}.ts`, `export const ${name} = 1;\n`);
+    write("src/hooks/Hook.vue", "<template><p /></template>\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const bodies = planMap(await scan(dir)).bodies;
+  const text = (dirName) => [...bodies.values()].find((body) => body.includes(`# ${dirName}`));
+
+  assert.match(text("src/panel"), /^an event handler prop is given [^,]+, [^,]+, in \.tsx files: /m);
+  assert.doesNotMatch(text("src/hooks"), /event handler prop|^\s*, in /m);
 });

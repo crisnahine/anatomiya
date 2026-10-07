@@ -5251,3 +5251,128 @@ test("with no merge base, the added lines and the oldest commit are read at HEAD
   assert.ok(calls.some((c) => c.includes("--unified=0")), "the added ranges were read");
   assert.deepEqual(namingHead(calls), ["rev-parse --verify --quiet HEAD^{commit}"], calls.join("\n"));
 });
+
+/* --- a changed component is read the way a changed module is --- */
+
+const COMPONENT_NAMES = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
+
+const componentArea = (dimensions, ext = "vue") => [{
+  id: "aaaaaaaa",
+  path: "src/components",
+  globs: [{ negated: false, dir: "src/components", tail: `**/*.${ext}` }],
+  fileCount: 8,
+  dimensions,
+}];
+
+const vueComponent = (script) => `<template>\n  <div />\n</template>\n\n<script setup>\n${script}</script>\n`;
+
+test("a component named against the others is a finding at the file", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (const name of COMPONENT_NAMES) write(`src/components/${name}.vue`, vueComponent("const a = 1;\n"));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/user_card.vue", vueComponent("const a = 1;\n"));
+    write("src/components/PlainBanner.vue", "<template>\n  <p>hello</p>\n</template>\n");
+    write("src/components/plain_footer.vue", "<template>\n  <p>bye</p>\n</template>\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: componentArea([dim({ key: "file_naming_case", learned: "PascalCase", learnedKind: "component" })]),
+  });
+
+  const report = await check(dir);
+
+  assertExamined(report, "src/components/user_card.vue");
+  const found = forKey(report, "file_naming_case");
+  assert.deepEqual(found.map((f) => [f.path, f.line]), [
+    ["src/components/plain_footer.vue", 1],
+    ["src/components/user_card.vue", 1],
+  ], "a component of markup alone is named like any other");
+  assert.equal(found[0].claim, "files here are named PascalCase");
+  assert.equal(found[1].severity, "MUST-FIX");
+});
+
+test("a component is not judged by the filename class the modules beside it learned", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/format-date.ts", "export const a = 1;\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/UserCard.vue", vueComponent("const a = 1;\n"));
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: componentArea([dim({ key: "file_naming_case", learned: "kebab-case", learnedKind: "module" })]),
+  });
+
+  const report = await check(dir);
+
+  assertExamined(report, "src/components/UserCard.vue");
+  assert.deepEqual(forKey(report, "file_naming_case"), []);
+});
+
+for (const [ext, open] of [["vue", "<script setup>"], ["svelte", "<script>"]]) {
+  test(`a swallowed error added to a .${ext} script is reported at the file's own line`, async (t) => {
+    // CRLF throughout and markup above the block: the line is the file's, not the script's.
+    const component = (body) =>
+      ["<!-- card -->", "<div>", "  <span>one</span>", "</div>", "", open, 'import { load } from "./load";', "", "function first() {", "  return load(1);", "}", "", ...body, "</script>", ""].join("\r\n");
+    const dir = repo(t, ({ git, write, commit }) => {
+      write(`src/components/Card.${ext}`, component(["function second() {", "  return load(2);", "}"]));
+      commit("init");
+      git("checkout", "-q", "-b", "work");
+      write(`src/components/Card.${ext}`, component(["function second() {", "  try { load(2) } catch (e) { }", "}"]));
+      commit("swallow");
+    });
+    facts(dir, { sha: sha(dir, "main"), areas: componentArea([dim()], ext) });
+
+    const report = await check(dir);
+
+    assertExamined(report, `src/components/Card.${ext}`);
+    const found = forKey(report, "swallowed_error");
+    assert.deepEqual(found.map((f) => [f.path, f.line, f.severity]), [[`src/components/Card.${ext}`, 14, "MUST-FIX"]]);
+    assert.equal(found[0].where, "second");
+  });
+}
+
+test("a component whose script the parser rejects is named unchecked, in a module's own words", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/UserCard.vue", vueComponent("const a = 1;\n"));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/broken.ts", "export const = ;\n");
+    write("src/components/Broken.vue", vueComponent("const = ;\n"));
+    write("src/components/Open.svelte", "<script>\n  let a = 1;\n\n<p>never closed</p>\n");
+    commit("broken");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: componentArea([dim()]) });
+
+  const report = await check(dir);
+
+  assert.deepEqual(notes(report).sort(), [
+    "src/components/Broken.vue holds syntax the parser rejected, so it was not checked",
+    "src/components/Open.svelte holds syntax the parser rejected, so it was not checked",
+    "src/components/broken.ts holds syntax the parser rejected, so it was not checked",
+  ]);
+  assert.deepEqual([...new Set(report.caveats.map((c) => c.code))], [CAVEATS.HEAD_REJECTED]);
+  assert.deepEqual(report.findings, []);
+});
+
+test("an edit to a component's markup alone is read and reports nothing", async (t) => {
+  const script = "function go() {\n  try { run() } catch (e) { }\n}\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/UserCard.vue", `<template>\n  <div />\n</template>\n\n<script setup>\n${script}</script>\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/UserCard.vue", `<template>\n  <div>\n    <p>more</p>\n  </div>\n</template>\n\n<script setup>\n${script}</script>\n`);
+    commit("markup");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: componentArea([dim()]) });
+
+  const report = await check(dir);
+
+  // The swallowed error predates the branch and moved two lines down with the markup.
+  assertExamined(report, "src/components/UserCard.vue");
+  assert.deepEqual(report.findings, []);
+  assert.deepEqual(report.caveats, []);
+});

@@ -99,6 +99,17 @@ export const namesakeClause = ({ with: withTest, of, root, under }, noun = null,
   ` ${namesakeVerb(withTest)} a namesake test` +
   (root ? `${under !== undefined && under !== withTest ? `, ${under}` : ""} under ${pathText(root)}` : "");
 
+const extNoun = (c) => `${encode(c.ext)} file`;
+
+// Two counts on one line each name their extension; one alone stays bare.
+const namesakeParts = (r, place = {}) => {
+  const also = r.componentCompanions;
+  return [
+    ...(r.companions ? [namesakeClause({ ...r.companions, ...place }, also ? extNoun(r.companions) : null)] : []),
+    ...(also ? [namesakeClause({ ...also, ...place }, extNoun(also))] : []),
+  ];
+};
+
 // The leftover past the two printed extensions rides along with them, so a
 // root line and an area's kinds line spell "and N other" off one expression.
 const extText = (r) =>
@@ -136,7 +147,7 @@ export function kindsLine(kinds) {
   // its own files are tests; above zero it names the runner the way a root
   // line does, rather than summing every group into one bare "test file".
   parts.push(...(kinds.tests.length === 0 ? [plural(0, "test file")] : testsParts(kinds.tests)));
-  if (kinds.companions) parts.push(namesakeClause({ ...kinds.companions, root: null }));
+  parts.push(...namesakeParts(kinds, { root: null }));
   return `kinds: ${parts.join("; ")}`;
 }
 
@@ -173,7 +184,7 @@ function rootLine(r) {
   }
 
   const parts = [extText(r), ...storiesPart(r), ...testsParts(r.tests)];
-  if (r.companions) parts.push(namesakeClause(r.companions));
+  parts.push(...namesakeParts(r));
   if (r.helpers) {
     const { siblingModules, stems, inlineFiles } = r.helpers;
     const named = stems.length > 0 ? ` named ${stems.map((s) => encode(s)).join("/")}` : "";
@@ -224,6 +235,8 @@ function testsLineText(layout) {
     // repository root as a root has an empty `dir` and no clause, as before.
     const ext = top.companions.ext ?? top.exts[0][0];
     parts.push(namesakeClause({ ...top.companions, root: null }, `${encode(ext)} file`, top.dir && top.path));
+    const also = top.componentCompanions;
+    if (also) parts.push(namesakeClause({ ...also, root: null }, extNoun(also), top.dir && top.path));
   }
   return `- tests: ${parts.join("; ")}`;
 }

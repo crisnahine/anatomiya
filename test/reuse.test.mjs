@@ -324,6 +324,72 @@ test("an edit names only the added lines that define something callable", async 
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 7, to: 9, created: false }]]]);
 });
 
+const VUE = ["<template>", "  <p>{{ n }}</p>", "</template>", "", "<script setup>", 'import { ref } from "vue";', "const n = ref(0);", "</script>", "", "<style>", "p { color: red }", "</style>", ""];
+const SVELTE = ["<script>", "  let count = 0;", "</script>", "", "<button on:click={() => count++}>{count}</button>", ""];
+const BUTTON = '  <button @click="n++">+</button>';
+const BUMP = ["function bump() {", "  n.value++;", "}"];
+const withLines = (lines, at, ...added) => [...lines.slice(0, at), ...added, ...lines.slice(at)];
+
+/** A repository whose last commit holds one Vue component, one Svelte one and a module beside them. */
+function components(t) {
+  const r = repo(t);
+  r.write("src/Counter.vue", VUE.join("\n"));
+  r.write("src/Both.vue", VUE.join("\n"));
+  r.write("src/lib/Counter.svelte", SVELTE.join("\n"));
+  r.git("add", "-A");
+  r.git("commit", "-qm", "components");
+  return r;
+}
+
+test("a turn that only edited a component's markup or style has nothing to check", async (t) => {
+  // Markup and CSS define no function, exactly as a `.css` file beside the
+  // component does not, and read as script every such line asked.
+  const { dir, write } = components(t);
+  write("src/Counter.vue", withLines(VUE, 2, BUTTON).join("\n").replace("red", "blue"));
+  write("src/lib/Counter.svelte", withLines(SVELTE, 5, '<p class="total">{count}</p>').join("\n"));
+  write("src/Static.vue", "<template>\n  <button>ok</button>\n</template>\n");
+
+  assert.equal(await pendingChange(dir), null);
+});
+
+test("a component is asked about the lines its script added, and no others", async (t) => {
+  const { dir, write } = components(t);
+  write("src/Counter.vue", withLines(VUE, 7, ...BUMP).join("\n"));
+  write("src/Both.vue", withLines(withLines(VUE, 7, ...BUMP), 2, BUTTON).join("\n"));
+  write("src/lib/Counter.svelte", withLines(withLines(SVELTE, 5, "<p>{count}</p>"), 2, "  function reset() {", "    count = 0;", "  }").join("\n"));
+  write("src/New.vue", "<template>\n  <p @click=\"f()\" />\n</template>\n<script setup>\nfunction f() {}\n</script>\n");
+  write("src/Two.vue", "<script>\nexport function a() {}\n</script>\n<template><p/></template>\n<script setup>\nfunction b() {}\n</script>\n");
+  write("src/a.ts", "export const one = 1;\nexport function x() {}\nexport const two = 2;\n");
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [
+    ["src/Both.vue", [{ from: 9, to: 11, created: false }]],
+    ["src/Counter.vue", [{ from: 8, to: 10, created: false }]],
+    ["src/New.vue", [{ from: 5, to: 5, created: true }]],
+    ["src/Two.vue", [{ from: 2, to: 2, created: true }, { from: 6, to: 6, created: true }]],
+    ["src/a.ts", [{ from: 2, to: 2, created: false }]],
+    ["src/lib/Counter.svelte", [{ from: 3, to: 5, created: false }]],
+  ]);
+});
+
+test("a component whose script never ends has nothing to check", async (t) => {
+  // Where the script stops is unknown, so which lines are markup is too.
+  const { dir, write } = components(t);
+  // The block that did end is not read either: half a component is not the file.
+  write("src/Counter.vue", `${withLines(VUE, 7, ...BUMP).join("\n")}<script>\nexport function late() {}\n`);
+  write("src/Open.svelte", "<script>\n  function f() {}\n");
+
+  assert.equal(await pendingChange(dir), null);
+});
+
+test("markup that opens a comment or a string does not hide a function the script added", async (t) => {
+  // The line rules carry an open `/*` to the lines below it, and markup is not
+  // script: read whole, the function sat inside a comment and asked nothing.
+  const { dir, write } = components(t);
+  write("src/Counter.vue", withLines(VUE, 7, ...BUMP).join("\n").replace("{{ n }}", "{{ n }} /* `"));
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/Counter.vue", [{ from: 8, to: 10, created: false }]]]);
+});
+
 test("code that only lives near migrations is still checked", async (t) => {
   // Measured on the corpus: angular's schematics/migrations, prisma's
   // core/migrations and openproject's db/migrate/tables are library code.

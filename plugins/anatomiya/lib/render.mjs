@@ -1,11 +1,12 @@
 import { encode, encodePath } from "./encode.mjs";
-import { MISSING_STRIPPER } from "./langs.mjs";
+import { embeddedIn, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { globText } from "./areas.mjs";
 import { GENERATOR, listSome, LISTED, PREFIX, RULES_DIR } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
+import { byCode } from "./paths.mjs";
 
 /**
  * The line bound every generated file is held to.
@@ -95,6 +96,45 @@ const why = (d, s) =>
  */
 const claimLine = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 
+const ROW_LANGS = new Map(REGISTRY.map((d) => [d.key, d.langs]));
+
+const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]);
+
+/**
+ * The extensions a claim was counted over, where the area holds others.
+ *
+ * An area delivers on one glob for every language in it, so a claim learned
+ * from the `.ts` files of a directory reaches an agent editing the `.svelte`
+ * file beside them, where the row was never asked and the opposite may be the
+ * rule. A clause on the sentence rather than a line under it, because the
+ * sentence is what survives the budget and a line is one of forty.
+ *
+ * Extensions first, then the files that have none by their own names: the kinds
+ * line's `(none)` is a label for a count and reads as nothing in a sentence.
+ *
+ * Whether to say it is a question about languages, and what to say is the
+ * files the fold asked. A `.ts` file beside a JSX row could have been asked,
+ * as a `.js` file holding JSX is, so it alone earns no clause; and it is not
+ * named in one, because no `.ts` file here was. Neither list is in a record,
+ * so a record prints the sentence bare and takes the same number of lines.
+ */
+function scopeClause(area, d) {
+  const langs = ROW_LANGS.get(d.key);
+  const counted = d.askedExts ?? [];
+  if (!langs || counted.length === 0) return "";
+  const never = Object.keys(area.extsByLang ?? {}).some((lang) => !spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
+  if (!never) return "";
+  // A declaration file is a TypeScript file to a reader, and `.d.ts and .ts` says one thing twice.
+  const exts = counted.filter((e) => e.startsWith(".")).map((e) => e.replace(/^\.d\./, "."));
+  const names = counted.filter((e) => !e.startsWith("."));
+  const listed = (xs) => series([...new Set(xs)].sort(byCode).map((e) => encode(e)));
+  const groups = [exts.length > 0 ? `${listed(exts)} files` : null, names.length > 0 ? listed(names) : null];
+  return `, in ${groups.filter(Boolean).join(" and ")}`;
+}
+
+// Inside the full stop that ends a sentence. `?.` ends one too and is an operator.
+const scoped = (claim, clause) => (clause && /\w\.$/.test(claim) ? `${claim.slice(0, -1)}${clause}.` : claim + clause);
+
 // Keyed off the registry rather than off the record, because both readers of
 // the layout have a key and only one of them has the prose. Storing the clause
 // would put the same sentence in every area of `facts.json` and let the file the
@@ -105,6 +145,22 @@ const NOT_COUNTED = new Map(
     claimLine(d.applicabilityPredicate.notCounted),
   ])
 );
+
+const COMPONENT_NOT_COUNTED = new Map(
+  REGISTRY.filter((d) => d.applicabilityPredicate?.componentNotCounted).map((d) => [
+    d.key,
+    claimLine(d.applicabilityPredicate.componentNotCounted),
+  ])
+);
+
+// The declined form an area's own components make likely, ahead of the rest:
+// beside `.vue` files the import an agent is about to write is a `.vue` one.
+function componentClause(key, area) {
+  const template = COMPONENT_NOT_COUNTED.get(key);
+  const exts = Object.entries(area.extsByLang ?? {}).flatMap(([lang, exts]) => (embeddedIn(lang) ? exts : []));
+  if (!template || exts.length === 0) return "";
+  return `${template.replace("<ext>", exts.sort(byCode).map((e) => encode(e)).join(" or "))}; `;
+}
 
 /**
  * The form this dimension's predicate declines, where a reader would otherwise
@@ -123,9 +179,9 @@ const NOT_COUNTED = new Map(
  * line costs one of forty in every area that states the row, so it is spent
  * where it answers something.
  */
-function notCountedLine(d, side, said) {
+function notCountedLine(d, side, said, area) {
   if (side.conforming !== d.candidates || side.exceptions.length > 0 || side.more) return null;
-  const clause = NOT_COUNTED.get(d.key);
+  const clause = componentClause(d.key, area) + (NOT_COUNTED.get(d.key) ?? "");
   // Once per file. Nine companion rows share one sentence and two of them reach
   // the same area whenever a repository writes both `_spec.rb` and `_test.rb`,
   // so an `app` area printed it three times and spent three of its forty lines
@@ -250,6 +306,8 @@ export function unexaminedLines(parse, { stable = false } = {}) {
 const OTHER_LANGUAGE_EXTS = new Set([
   ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh",
   ".swift", ".scala", ".m", ".mm", ".ex", ".exs", ".pl", ".pm",
+  ".erb", ".haml", ".slim", ".css", ".scss", ".sass", ".less", ".html", ".htm", ".sh", ".bash", ".sql",
+  ".lua", ".dart", ".r", ".jl", ".zig", ".hs", ".clj", ".erl", ".fs", ".vb", ".groovy", ".astro",
 ]);
 
 /**
@@ -395,9 +453,10 @@ function areaBlocks(area) {
   // The clauses this file has already printed, so a sentence shared by several
   // rows costs one line rather than one per row.
   const said = new Set();
+  const sentence = (d, s) => scoped(claimLine(s.claim), scopeClause(area, d));
   for (const [d, s] of directives) {
     const block = [
-      claimLine(s.claim),
+      sentence(d, s),
       // The files this dimension could have spoken about, which is what the
       // gate divided by. The area's own count is a different number wherever
       // the area holds more than one language or a file nothing was read from,
@@ -409,7 +468,7 @@ function areaBlocks(area) {
         companionAudit(d) +
         partialNote(d),
     ];
-    const notCounted = notCountedLine(d, s, said);
+    const notCounted = notCountedLine(d, s, said, area);
     if (notCounted) block.push(notCounted);
     for (const e of s.exceptions) {
       block.push(`  except ${encodePath(e.path)}${e.count > 1 ? ` (${e.count} sites)` : ""}`);
@@ -418,7 +477,7 @@ function areaBlocks(area) {
     block.push("");
     blocks.push(block);
     keys.push(d.key);
-    claims.push(claimLine(s.claim));
+    claims.push(sentence(d, s));
   }
   const stated = blocks.length;
 
@@ -461,13 +520,13 @@ function areaBlocks(area) {
   for (const [d, s] of counts) {
     blocks.push([
       (d.matchesDefault === true && s.states !== null
-        ? `${claimLine(s.claim)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
-        : `${claimLine(s.claim)}: no convention. ` +
+        ? `${sentence(d, s)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
+        : `${sentence(d, s)}: no convention. ` +
           `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s)})`) +
         partialNote(d),
     ]);
     keys.push(s.states === null ? null : d.key);
-    claims.push(s.states === null ? null : claimLine(s.claim));
+    claims.push(s.states === null ? null : sentence(d, s));
   }
 
   // Taken out of the floor as well as out of the bound, so `head + kinds + body`
@@ -816,6 +875,13 @@ function overviewTail(result, files) {
     const total = unread.reduce((n, [, count]) => n + count, 0);
     const named = unread.map(([ext, count]) => `${count} ${ext}`).join(", ");
     lines.push(`- ${plural(total, "file")} ${total === 1 ? "holds" : "hold"} a language this map does not read (${named})`);
+  }
+  // A count over a component's script reads as a count over the component.
+  const scripts = result.corpus?.scriptOnly ?? [];
+  if (scripts.length) {
+    const total = scripts.reduce((n, [, count]) => n + count, 0);
+    const read = total === 1 ? "file is read for its script block" : "files are read for their script block";
+    lines.push(`- ${total} ${series(scripts.map(([ext]) => ext))} ${read}; the template is not read`);
   }
   // Dropped in `collect`, before anything counts, so without this row nothing
   // anywhere says they exist: a reader who knows the directory is there sees a

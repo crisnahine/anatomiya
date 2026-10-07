@@ -144,7 +144,7 @@ export const CAPABILITY_DIMENSIONS = [
         "a file whose every word, up to its first dot, is from log, logger, logging: it implements the routing",
       blind: "a logging call behind a helper with another name or a re-export is not seen, and a wrapper spelled as a directory module (logging/index.ts) is read by its stem and is still a site",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add, { rel } = {}) {
       // The module that implements the routing is not one of its own sites.
       if (implementsCapability(rel, "logging")) return NOTHING;
@@ -176,7 +176,7 @@ export const CAPABILITY_DIMENSIONS = [
         "a file whose every word, up to its first dot, is from client, http, api, request, fetcher: it implements the routing",
       blind: "a shadowed fetch still counts, and a client behind another name is not seen",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add, { rel } = {}) {
       // The module that implements the routing is not one of its own sites.
       if (implementsCapability(rel, "network")) return NOTHING;
@@ -211,7 +211,7 @@ export const CAPABILITY_DIMENSIONS = [
         "a file whose every word, up to its first dot, is from config, env, settings: it implements the routing",
       blind: "an env read behind a helper, or destructured from process.env once and read as locals, is one site rather than each use",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add, { rel } = {}) {
       // The module that implements the routing is not one of its own sites.
       if (implementsCapability(rel, "env")) return NOTHING;
