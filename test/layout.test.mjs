@@ -1053,3 +1053,26 @@ test("a commented-out source does not hold a spec no root will count", () => {
 
   assert.deepEqual(record.companions, { with: 2, of: 2, root: "spec", under: 1, ext: ".rb" });
 });
+
+test("the namesake count takes a Vue component with a spec beside it", () => {
+  const corpus = [
+    ...files(4, (i) => file(`src/components/C${i}.vue`, "vue", { jsx: false, inlineHelpers: 0 })),
+    file("src/components/C0.spec.ts", "js", { testRunner: "vitest" }),
+    file("src/components/C1.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src/components", dir: "src/components", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".vue", 4], [".ts", 2]]);
+  assert.deepEqual(record.companions, { with: 2, of: 4, root: "src/components", ext: ".vue" });
+});
+
+test("a component is not a module the JSX roster could have inlined", () => {
+  const corpus = [
+    ...files(3, (i) => file(`src/ui/C${i}.tsx`, "jsx", { jsx: true, inlineHelpers: 0 })),
+    ...files(2, (i) => file(`src/ui/m${i}.ts`, "js", { jsx: false, inlineHelpers: 0 })),
+    ...files(3, (i) => file(`src/ui/V${i}.vue`, "vue", { jsx: false, inlineHelpers: 0 })),
+    file("src/ui/S0.svelte", "svelte", { jsx: false, inlineHelpers: 0 }),
+  ];
+
+  assert.equal(layoutFacts(corpus, { minFiles: 3 }).roots[0].helpers.siblingModules, 2);
+});

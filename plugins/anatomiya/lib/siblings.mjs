@@ -17,6 +17,7 @@
 import { posix } from "node:path";
 
 import { SOURCE_OF } from "./companions.mjs";
+import { embeddedIn, language } from "./langs.mjs";
 import { extOf, withoutExtension, byCode } from "./paths.mjs";
 
 /**
@@ -123,8 +124,10 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
-  const index = tailIndex(corpusRels);
+  const { stems: index, spelled } = tailIndex(corpusRels);
   if (dirOnly) return index.get(`/${tail}/index`) ?? null;
+  const named = spelled.get(`/${tail}`);
+  if (named !== undefined) return named;
   const whole = index.get(`/${tail}`);
   if (whole !== undefined) return whole;
   // The index is keyed without extensions, so a tail that writes one is looked
@@ -153,15 +156,23 @@ function tailIndex(corpusRels) {
   if (cached) return cached;
 
   const index = new Map();
+  // A component answers only a tail that spells its extension, as a bundler
+  // resolves it; by its stem it made the module of its name beside it ambiguous.
+  const spelled = new Map();
   for (const rel of corpusRels) {
+    if (embeddedIn(language(rel)) !== null) {
+      register(spelled, rel, rel);
+      continue;
+    }
     const path = withoutExtension(rel);
     register(index, path, rel);
     // A directory resolves through its index file, so the directory's own tails
     // name it too.
     if (path.endsWith("/index")) register(index, path.slice(0, -"/index".length), rel);
   }
-  TAIL_INDEX.set(corpusRels, index);
-  return index;
+  const built = { stems: index, spelled };
+  TAIL_INDEX.set(corpusRels, built);
+  return built;
 }
 
 /**
