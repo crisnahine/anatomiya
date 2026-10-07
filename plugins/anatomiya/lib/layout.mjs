@@ -106,10 +106,14 @@ export function mirroredTests(files) {
 }
 
 /**
- * The Rust files cargo builds as integration tests: every one directly in a
- * crate's `tests`, whatever it holds. A crate is a directory with a
- * `Cargo.toml` or a `src` in it. A file one level deeper is a module those
+ * The Rust files cargo builds as integration tests by default: every one
+ * directly in a crate's `tests`, whatever it holds. A crate is a directory with
+ * a `Cargo.toml` or a `src` in it. A file one level deeper is a module those
  * targets include, and is a test only by its own facets.
+ *
+ * No manifest is read, so a crate that sets `autotests = false` is counted by
+ * the default too: ripgrep builds one target, and the 10 files counted under
+ * its `tests` are that target and its 9 modules.
  */
 function cargoTests(files) {
   const crates = new Set();
