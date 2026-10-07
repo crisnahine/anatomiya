@@ -303,6 +303,7 @@ test("the corpus tallies every file it has no language for, by extension", async
   const result = await scan(dir);
 
   assert.deepEqual(result.corpus.otherExts, [[".rs", 4], [".md", 1]]);
+  assert.equal("scriptOnly" in result.corpus, false, "a repository with no component carries no count of them");
   assert.equal(result.corpus.files, 4, "and the source count is the four it can read");
 });
 
@@ -1397,6 +1398,8 @@ test("a directory of components becomes an area that counts its scripts and its 
 
   const lines = [...scanLines(scanSummary(result, planMap(result))), renderOverview(result, { uncovered: 0 })].join("\n");
   assert.doesNotMatch(lines, /nothing was counted in/);
+  assert.deepEqual(result.corpus.scriptOnly, [[".vue", 9], [".svelte", 8]]);
+  assert.match(lines, /^- 17 \.vue and \.svelte files are read for their script block; the template is not read$/m);
 });
 
 test("a claim counted over a Gemfile names it, not the label the kinds line gives a file with no extension", async (t) => {
