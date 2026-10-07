@@ -51,6 +51,9 @@ const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"
 // tail match, or `@/utils/user` looks for a directory literally called `@`.
 const ALIASES = ["~/", "@/", "#/", "src/"];
 
+// SvelteKit's alias for `src/lib`. Its tail keeps `lib`, so only a file under one answers.
+const LIB_ALIAS = "$lib/";
+
 /**
  * The modules most files in an area import, top three.
  *
@@ -119,8 +122,9 @@ export function specifierToFile(spec, importerRel, corpusRels) {
     return null;
   }
 
-  const alias = ALIASES.find((a) => spec.startsWith(a));
-  const tail = (alias ? spec.slice(alias.length) : spec).replace(/\/+$/, "");
+  const rooted = spec.startsWith(LIB_ALIAS) ? `src/lib/${spec.slice(LIB_ALIAS.length)}` : spec;
+  const alias = ALIASES.find((a) => rooted.startsWith(a));
+  const tail = (alias ? rooted.slice(alias.length) : rooted).replace(/\/+$/, "");
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
