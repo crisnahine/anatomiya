@@ -30,9 +30,11 @@ export const PRINCIPLES = [
     // here. The floor is spelled rather than imported because this module reads
     // nothing from lib; a test holds the two to the same boundary, on both the
     // producers a directory needs and the namesakes that make it a tested one.
+    // A file holding its own tests is precedent in the directory it sits in.
     when: (layout) =>
       layout.roots.some((r) => r?.companions && r.companions.with >= 3) &&
-      layout.roots.some((r) => r?.companions && r.companions.with < 3 && r.companions.of >= 3),
+      layout.roots.some(
+        (r) => r?.companions && r.companions.with + (r.companions.inline ?? 0) < 3 && r.companions.of >= 3),
   },
 ];
 
