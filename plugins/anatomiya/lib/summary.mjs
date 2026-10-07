@@ -6,6 +6,7 @@ import { engineOf } from "./langs.mjs";
 import { whyUnread } from "./readiness.mjs";
 import { listSome, LISTED, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
+import { TARGETS, TARGET_IDS } from "./targets.mjs";
 
 /**
  * What a command answered, and the lines that say it.
@@ -36,7 +37,9 @@ const hookRemoved = (dryRun) =>
 // The shape of the two records below, so a reader older than one refuses it
 // rather than reading fields that moved. Same rule the facts record carries.
 // 2 replaced `hookInstalled` with `hookRemoved`: the scan installed a hook into
-// the repository and now only removes the one it used to install.
+// the repository and now only removes the one it used to install. `targets`
+// came with no new number: it is a key an older reader never looks for, and it
+// is absent wherever that reader's answer would be whole without it.
 export const SUMMARY_SCHEMA = 2;
 
 /** Every fact a scan prints, derived once, so nothing derives it twice. */
@@ -47,6 +50,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
   const authorGated = slots.filter((d) => statedSide(d).gate === "authors").length;
   const stated = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true);
   const matching = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault === true);
+  const targets = targetSummaries(result, plan);
 
   return {
     files: result.corpus.files,
@@ -117,7 +121,66 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     uncounted: plan.blind ? [] : plan.unreadable,
     held: plan.held.length,
     dryRun,
+    ...(Object.keys(targets).length ? { targets } : {}),
   };
+}
+
+/**
+ * What the scan did in each other directory the map goes to, by target id.
+ *
+ * A target that is off, was not asked for and holds nothing under this tool's
+ * names has no entry, so a repository that never named one reads as it did.
+ * `state` is the one the scan leaves behind, or would on a dry run.
+ */
+function targetSummaries(result, plan) {
+  // An area that states nothing has no file in any directory, so no target lacks one for it.
+  const stated = new Set((plan.result ?? result).areas.filter((a) => a.dimensions.length > 0).map((a) => a.path));
+  const out = {};
+  for (const [id, t] of Object.entries(plan.targets ?? {})) {
+    const unread = t.state === "unknown";
+    const foreign = t.foreign.length + t.unknown.length;
+    // One nobody could read is said only where the record names files there.
+    const quiet = unread ? t.names.length === 0 : !t.on && t.state === "off" && t.remove.length === 0 && foreign === 0;
+    if (quiet) continue;
+    out[id] = {
+      state: unread || plan.blind ? t.state : t.on ? "on" : "off",
+      dir: t.dir,
+      wrote: t.write.length,
+      removed: t.remove.length,
+      unfiled: t.unfiled.filter((path) => stated.has(path)).length,
+      foreign,
+      ...(unread ? { reason: t.reason } : {}),
+    };
+  }
+  return out;
+}
+
+/** The lines for the other directories, in the targets' own order. */
+function targetLines(s) {
+  const lines = [];
+  for (const id of TARGET_IDS) {
+    const t = s.targets?.[id];
+    if (!t) continue;
+    const { reader } = TARGETS[id];
+    const one = (n) => n === 1;
+    if (t.wrote) lines.push(`${s.dryRun ? "would write" : "wrote"} ${plural(t.wrote, "file")} under ${t.dir} for ${reader}`);
+    if (t.removed) lines.push(`${s.dryRun ? "would remove" : "removed"} ${plural(t.removed, "file")} under ${t.dir}`);
+    if (t.removed && t.state === "off") lines.push(s.dryRun ? `${t.dir} would be off` : `${t.dir} is off now`);
+    if (t.unfiled) {
+      lines.push(
+        `${plural(t.unfiled, "area")} ${one(t.unfiled) ? "has" : "have"} no pattern ${reader} can be given, ` +
+          `so no file under ${t.dir} covers ${one(t.unfiled) ? "it" : "them"}`
+      );
+    }
+    if (t.foreign) {
+      lines.push(
+        `${t.dir} holds ${plural(t.foreign, "file")} with this tool's names that it did not write; ` +
+          `${one(t.foreign) ? "it was" : "they were"} left`
+      );
+    }
+    if (t.state === "unknown") lines.push(`${t.dir} could not be read (${t.reason}), so nothing there was written or removed`);
+  }
+  return lines;
 }
 
 /** The scan summary as the lines the CLI prints, in the order it prints them. */
@@ -229,6 +292,7 @@ export function scanLines(s) {
     lines.push(...blindLines(s.uncounted, s.engines));
   }
   lines.push(s.dryRun ? `would write ${plural(s.wrote, "file")}` : `wrote ${plural(s.wrote, "file")}`);
+  lines.push(...targetLines(s));
   if (s.hookRemoved) lines.push(hookRemoved(s.dryRun));
   if (s.hookRefused) lines.push(`the map is written, and ${s.hookRefused}`);
   if (!s.dryRun) lines.push(RUNNING_SESSION);

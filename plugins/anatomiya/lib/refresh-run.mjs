@@ -14,7 +14,8 @@ import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, oper
 import { pluginRoot } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { checkerStamp } from "./semantic.mjs";
-import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, trackedRulesDir } from "./rules.mjs";
+import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
 const LOCK_FILE = "refresh.lock";
@@ -407,11 +408,16 @@ async function clonedOnto(root, sha) {
  * Whether the repository commits what this tool writes. A committed map travels
  * with every branch already, a committed pin can never name the commit that
  * holds it, and the lock and the word are removed after use, so following any
- * of them would leave a change in `git status` nobody made.
+ * of them would leave a change in `git status` nobody made. The same for the
+ * overview of any other target that is on: a scan rewrites every one of them.
  */
 async function mapTracked(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
-  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`]);
+  const others = Object.values(TARGETS)
+    .filter((t) => !t.always && targetState(root, t) === "on")
+    .map((t) => `${t.dir}/${overviewName(t)}`);
+  const paths = [`${trackedRulesDir(root)}/${OVERVIEW_FILE}`, STORE_DIR, ...others].map((p) => `${magic}${p}`);
+  const r = await gitBuffered(root, ["ls-files", "-z", "--", ...paths]);
   return r.ok && r.stdout.length > 0;
 }
 
