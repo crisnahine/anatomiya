@@ -1,7 +1,8 @@
 # anatomiya
 
 Counts what your code already does, directory by directory, and writes those counts into
-`.claude/rules/` where a coding agent picks them up when it reads a file there.
+`.claude/rules/` where a coding agent picks them up when it reads a file there. Asked with
+`scan --targets cursor,copilot`, it writes the same counts for Cursor and GitHub Copilot too.
 
 This directory is the plugin. It is what a marketplace install copies: the manifest, the binary, the
 library it runs, the command files and the hook declaration, plus the `package.json` and

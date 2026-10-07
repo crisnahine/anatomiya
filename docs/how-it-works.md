@@ -786,7 +786,8 @@ Output goes to `.claude/rules/`, which is a context directory the agent loads fr
 
 There is a second delivery beside that one, declared by the plugin rather than installed by a scan: a
 hook that echoes the overview back after a turn or a tool call, stamped with the moment it was read,
-whenever the context window does not already hold that same map (A92). A scan writes nothing outside
+whenever the context window does not already hold that same map (A92). Unless it is asked for a copy
+another tool reads ("The same map for Cursor and Copilot", below), a scan writes nothing outside
 `.claude/rules/` and `.claude/anatomiya/`; what it does to a repository's own settings is take out the
 entry an older version put there. The table above is what the platform loads; the hook is what keeps it
 recent. A run three hundred tool calls deep was working from a copy handed to it at the start, and
@@ -982,12 +983,13 @@ the hook's own job: it walks up from the working directory for a map, and a sess
 since their payloads name no file (below and above). That answer costs one node process and almost nothing else: three runs on one laptop put the median
 at 73ms, 104ms and 237ms, and which `node` is on `PATH` moves it more than anything the tool does. It is
 paid per turn and per tool call, so a hook loads only what its verb uses. The binary imports the
-payload reader and the readiness check and nothing else, each verb imports its own module when it
+payload reader, the readiness check and the names `--targets` takes (`targets.mjs`, which imports
+nothing) and nothing else, each verb imports its own module when it
 runs (`hook-verbs.mjs` for the echo, the notice and the end-of-turn check, `refresh.mjs` for the
 refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check.
 Every hook process used to load 65 modules; the echo now loads 13, the notice 13 until it reads its
-rules and 25 after, the end-of-turn check 21 and the refresh 28. The echo went from 65ms to 39ms
-against 26ms for bare node (A100). A module that will not
+rules and 25 after, the end-of-turn check 22 and the refresh 28. The echo went from 65ms to 39ms
+against 26ms for bare node, timed when it loaded 12 (A100). A module that will not
 load throws inside the same boundary as everything else, so the hook still answers `{}`.
 
 The map it echoes has to be one this tool wrote, which is A3's rule arriving on the read side. The file is
@@ -1018,8 +1020,8 @@ checkout reaches the worst case, once per context window and per map: measured o
 parallel reads gave four copies from the parent and one from inside the checkout.
 `scripts/measure-echo.mjs` replays the rule over a transcript store: on 3,502 local transcripts it kept
 7,857 of 65,977 deliveries. The measurements behind the rule are in
-`docs/research/what-a-repeated-hook-context-costs.md`. There is still no flag; this tool ships no
-options.
+`docs/research/what-a-repeated-hook-context-costs.md`. There is still no flag for it: the one option
+a scan takes says where the map is written, and nothing tunes a hook.
 
 That last row is the ceiling on the whole design. A `paths` rule attaches when the agent uses the
 Read tool on a matching file or when an `@file` mention names it, and from Claude Code 2.1.288 when
@@ -1110,7 +1112,7 @@ Three constraints shape the rendering:
 Ownership needs all three of: the `anatomiya-` filename prefix, a `generator: anatomiya` frontmatter
 key, and the map on disk naming the file. All three, or the file is left alone and reported. The
 prefix earns its place for one job, which is that a single `$(git rev-parse --git-common-dir)/info/exclude`
-line hides every generated file. It is not the ownership test, because a hand-written file can take
+line per directory hides every generated file there. It is not the ownership test, because a hand-written file can take
 that name. Nor is the frontmatter key: an older build wrote files this one knows nothing about, and
 a wiped store leaves a directory full of them. The third fact comes from `facts.json`, read before
 the new record replaces it, and no readable map means nothing is removable rather than everything.
@@ -1123,8 +1125,9 @@ clone can ship a rule file with no `paths` key that loads unconditionally, in th
 style, from the moment of clone. The overview names them too, since it is the file loading beside
 them, and says nothing at all when there are none.
 
-Every write lands under `.claude/rules/` as a bare `anatomiya-*.md` name, checked when the plan is
-built rather than assumed because an area id is a hex digest today. A name that would resolve
+Every file of the map lands in its own directory as a bare `anatomiya-*` name with that directory's
+extension, `.claude/rules/anatomiya-*.md` unless a scan was asked for another, checked when the plan
+is built rather than assumed because an area id is a hex digest today. A name that would resolve
 anywhere else refuses the whole write.
 
 That directory and the store are also resolved component by component before anything is written,
@@ -1171,6 +1174,130 @@ named `x.md`, or a socket, is a shape rather than a file, on the platforms that 
 ones that refuse, under whatever errno they refuse with; where one holds a name the scan is about to write, which `anatomiya-overview.md`
 invites since that name is fixed, it is reported as that condition rather than as an errno out of
 the rename.
+
+### The same map for Cursor and Copilot
+
+`scan --targets cursor,copilot` writes the map twice more, for two readers that do not load
+`.claude/rules/` the way Claude Code does. The bodies are the ones described above. The directory,
+the extension and the frontmatter are each reader's own (A102, A103):
+
+| Target | Files | Overview frontmatter | Area frontmatter |
+|---|---|---|---|
+| `claude` | `.claude/rules/anatomiya-*.md` | none | `paths:`, a list |
+| `cursor` | `.cursor/rules/anatomiya-*.mdc` | `alwaysApply: true` | `globs:`, one unquoted comma-separated line, then `alwaysApply: false` |
+| `copilot` | `.github/instructions/anatomiya-*.instructions.md` | `applyTo: "**"` | `applyTo:`, one quoted comma-separated string |
+
+Every file opens with `generator: anatomiya`. Cursor 3.20.21's reader and VS Code's parser were each
+run on it: both keep the key and neither reads it.
+
+Nothing stores the choice. A target is on while its own overview file is in its directory and
+carries the key, so a scan with no `--targets` writes whatever is on, and the refresh, which passes
+no option, writes the same set. `--targets` names the whole set: `claude` is in every one, a target
+it leaves out is turned off, and `--targets claude` turns both off. A target has three states. It
+is `on` when the overview is a regular file this tool wrote and the directory's listing holds that
+exact name. It is `off` only where that was seen: nothing at the name, or a file somebody else
+wrote. Anything that could not be read is `unknown`, because off is what removes a map: a link or
+a non-directory on the path, a path that will not open, an overview that is a link or not a file. A
+scan neither writes nor clears an unknown target, and says so only where the record names files
+there.
+
+The patterns change on the way. Both readers split on commas, so a brace set
+`test/**/*.{js,ts}` is written as one pattern per extension. Neither can be told a negation: in
+Cursor 3.20.21 a leading `!` is a pattern of its own that matches nearly every file, and in VS Code
+it matches none. So a negation is left out, and the area file says so in a closing line. A pattern
+the reader would change before matching is left out as well: for Cursor one holding `---`, a comma,
+a brace, a backslash or a line break, one with a space at either edge, one that starts with a quote,
+`!` or `#`, and a lone `true` or `false`; for Copilot one holding a comma, a brace, a double quote,
+a backslash or a line break. An area with no pattern left has no file in that directory, the
+overview there lists and counts only the areas that have one, and both it and the scan's summary
+say how many have none. An area file can end in up to three lines about its own delivery:
+
+```
+This file also attaches for test/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}, which the area leaves out.
+VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.
+This file does not attach for a,b/**/*.js, which Cursor cannot be given.
+```
+
+The first names the negations a written pattern reaches. The second is in a Copilot file with a
+pattern that does not start with `**/`, since VS Code puts `**/` in front of one. The third names
+the patterns that could not be written. Each list stops at six patterns and counts the rest.
+
+The overview differs in two places. Under the heading the Cursor and Copilot files carry
+`Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code
+is right and this map is stale.`, which the echo says to a Claude Code session and no hook says to
+these readers. And the read-before-editing sentence is the reader's own: `Read a file before editing
+it: an area's notes attach when you read one of its files.` for Cursor, and for Copilot `Before
+editing a file, read the anatomiya file under .github/instructions whose applyTo matches it: an
+area's notes apply to the files its patterns name.` The count at the foot names that directory's own
+files, `Generated files: 4 under .cursor/rules/anatomiya-*.mdc`. Every target's overview keeps to 40
+lines: where the extra head lines would take a Cursor or Copilot overview past it, the sentences
+about other files in the directory share one line.
+
+The plan is made per target, and all of it before anything is created. The two `.claude`
+directories are resolved first, then each other target's state is read, then each directory that is
+on is audited against the names this scan would put there, and only then is a body rendered. The two
+new directories are held more tightly than `.claude/rules` (A104): every component of `.cursor/rules`
+and `.github/instructions` is a directory of the repository's own or is not there yet, a link at any
+of them is refused wherever it leads, and so is a directory that is, holds or sits inside the place
+`.claude/rules` resolves to. People write rules in both by hand, so an entry this tool did not write
+is never written over there (A105): a file with no key, a link, a file that will not open, a
+directory or a fifo, and an entry spelled as a planned name in another letter case where the listing
+does not also hold the name itself. What happens next depends on who asked. Named by `--targets`,
+the target cannot be written as asked, so the scan refuses and writes nothing anywhere, the
+`.claude/rules` map included:
+
+```
+anatomiya: .cursor/rules/anatomiya-overview.mdc was not written by this tool, so .cursor/rules could not be written and nothing was written anywhere: move or delete it and scan again
+anatomiya: .github is a link, so .github/instructions could not be written and nothing was written anywhere: make .github a directory of this repository and scan again
+```
+
+Merely on, the entry stays, no file is planned at its name, the overview there leaves that area out
+of its listing, and the summary counts it, because a refresh has nobody to read a refusal.
+
+The commit stages every file as a temporary file beside its destination, then renames in one order:
+the record, its layout file, the `.claude/rules` files, the Cursor files, the Copilot files. Removals
+come last. A target's directory is made one component at a time, only when that target has a file to
+write, and each component is looked at again after its `mkdir`. Each target directory is resolved
+again before anything is made, after everything is staged, before each rename and before each
+removal, and a directory that stopped being the repository's own stops the scan in a sentence that
+names it and says whether anything had been replaced yet (`<dir> was replaced by something else
+while the map was being written`).
+
+A failure at any rename or removal puts back every file already replaced, in every directory, takes
+out the temporary files, and removes a Cursor or Copilot directory this run made if it is empty. Nothing is put back
+through a directory that moved.
+
+Turning a target off removes its files, and which ones depends on how. A scan that leaves a target
+out of `--targets` removes every file there that has one of the two names a scan gives, the
+overview's or `anatomiya-area-` and eight hex digits, is a regular file and carries the key, whether
+or not the record lists it: a clone can hold the committed files and no record. Any other scan
+keeps the three facts, so it removes only what the record names. A keyed copy somebody kept under
+another name stays either way, and the directory itself is left in place. The summary says what was
+done, one group of lines per directory, after the `wrote N files` line that counts `.claude/rules`:
+
+```
+wrote 4 files under .cursor/rules for Cursor
+wrote 4 files under .github/instructions for GitHub Copilot
+```
+
+```
+removed 4 files under .cursor/rules
+.cursor/rules is off now
+```
+
+A target that was off and stays off prints nothing, whatever its directory holds, so a repository
+that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
+that is on (`.cursor/rules: on, 4 files`), and `pin` leaves the generated names of all three
+directories out of its clean-tree test. The record names the files written for each target under an
+optional `targets` key, present only where one was written, with no change of schema (C10).
+
+Whether either copy reaches a model is not measured (A106). For Cursor the delivery was read from
+the 3.20.21 client's code, where a rule with `globs` goes to the agent with its first read of a
+matching file, and was not observed in a running Cursor. For Copilot the parser and matcher of
+VS Code 1.140.0 were run on generated files and no other surface was read. VS Code also reads
+`.claude/rules/*.md` with `paths:`, so with the Copilot target on its agent is offered each area
+twice. The four hooks are Claude Code's, so these readers get the files and nothing else: no echo,
+no notice before a write, no reuse check, and no refresh of their own.
 
 ### The encoder
 
@@ -1220,7 +1347,7 @@ merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to 
 to the rescan, which decides it the way any scan does. Where the repository tracks the overview of
 a Cursor or Copilot copy of the map, the rescan holds that directory as it is and writes the rest:
 nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
-by hand rewrites it. A scan that throws writes nothing, so the
+by hand rewrites it. A copy git could not be asked about is held too. A scan that throws writes nothing, so the
 previous map stays; the same stamp is tried again only after half an hour, and the echo says the
 refresh failed until a refresh or a scan run by hand succeeds. A scan run by hand records its stamp
 too, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
@@ -1780,6 +1907,10 @@ are 28. Most appear at most once in a run; the ones that repeat are named under 
 | `rules-escaped` | `.claude/rules/` resolves outside the repository, so nothing there was examined |
 | `rules-unlisted` | `.claude/rules/` could not be listed |
 | `rules-unreadable` | files in `.claude/rules/` could not be read, so whose they are is unknown |
+
+The three `rules-` codes answer for `.cursor/rules` and `.github/instructions` too while that target
+is on, with the directory named in the message, and `rules-unlisted` is also the code for a target
+the record names files in and nobody could read. A target that is off adds nothing to a report.
 
 The four head-side unread causes are four codes rather than one because the reader's next move
 differs for each: a crash is this tool's, rejected syntax is the branch's own code, the cap is a

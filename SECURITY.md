@@ -4,8 +4,10 @@ anatomiya reads a git repository it did not write, and produces files that a cod
 its context automatically. Both halves of that sentence are the threat model.
 
 If you ever run this on a clone, the input is attacker controlled. The output lands in
-`.claude/rules/`, where the agent reads it without being asked. So the tool sits between an untrusted
-corpus and a channel that has the agent's attention by default.
+`.claude/rules/`, where the agent reads it without being asked, and in `.cursor/rules/` and
+`.github/instructions/` where a scan was asked to write there, which Cursor and GitHub Copilot read
+the same way. So the tool sits between an untrusted corpus and a channel that has the agent's
+attention by default.
 
 The findings in this file were reproduced as working exploits while the tool was designed. They are
 not a checklist copied from somewhere. The decisions they forced are section F of `DECISIONS.md`, and
@@ -15,8 +17,8 @@ does. Known gaps are listed near the bottom, with names.
 ## What the attacker controls
 
 Everything under the repository root: file contents, file names, directory names, symlink targets,
-git history, commit subjects, author emails, `.claude/rules/`, and every configuration file an
-analysis tool might read on the way past.
+git history, commit subjects, author emails, `.claude/rules/`, `.cursor/rules/`,
+`.github/instructions/`, and every configuration file an analysis tool might read on the way past.
 
 What is worth taking: the machine running the scan, secrets in the working tree and the environment,
 and the agent's context.
@@ -142,7 +144,7 @@ the prefix that the tool did not write is reported, never removed.
 If you clone an unfamiliar repository, read `.claude/rules/` before you start a session. That is true
 whether or not you use this tool.
 
-The two directories this tool writes, `.claude/rules` and `.claude/anatomiya`, are resolved
+The two directories every scan writes, `.claude/rules` and `.claude/anatomiya`, are resolved
 component by component. `.claude` must be a real directory rather than a link, and the store must
 land inside it: inside the repository is not enough, since a committed
 `.claude/anatomiya -> ../.git/hooks` resolves inside it and a scan wrote `facts.json` into
@@ -156,6 +158,68 @@ repository spells, and says when it is a link, so it never points at the file a 
 `facts.json`, `layout.json` and `baseline.json` are read through the same resolution, their own name
 included, so a link at any of those leaves is not followed out of `.claude`; a write replaces such a link as an entry
 rather than writing through it.
+
+### Two more directories are written only when asked
+
+Every scan writes `.claude/rules/` and `.claude/anatomiya/` and nothing else. `scan --targets` adds
+up to two more: `.cursor/rules/` for Cursor and `.github/instructions/` for GitHub Copilot. A target
+then stays on while its own overview file is in its directory and carries the `generator: anatomiya`
+key. That file is the whole switch, so a repository can ship one: a clone holding a committed
+`.cursor/rules/anatomiya-overview.mdc` with the key has the Cursor target on, and the first scan run
+there writes that directory without being asked. What that buys the repository is the map's own
+files in its own tree, under the rules below, and nothing else.
+
+What is written there is only the map: `anatomiya-overview` and `anatomiya-area-<id>` with that
+directory's extension, each asserted to be a bare prefixed name when the plan is built. Temporary
+files are created exclusively under unpredictable names, beside their destination.
+
+Containment is stricter than for `.claude/rules`. Every component of `.cursor/rules` and
+`.github/instructions` has to be a real directory of the repository, or not exist yet. A link at any
+of them is refused wherever it leads, inside the tree included, because `.github` holds workflows.
+A directory that is, holds or sits inside the place `.claude/rules` resolves to is refused too, so a
+`.claude/rules` link cannot fold two readers' files into one directory. The directory is resolved
+again each time it is about to be used: when the plan is made, before anything is created, after
+every temporary file is staged, before each rename, before each removal and before each put back. A
+component the scan creates is looked at again after its `mkdir`.
+
+A file this tool did not write is never written over in those two directories. An entry at a name
+the map needs is somebody's when it has no key, is a link (whatever it leads to), will not open, is
+a directory or a fifo, or is spelled as that name in another letter case with nothing at the name
+itself, which on a volume that folds case is the same file. A scan that named the target refuses.
+A scan that did not leaves the entry, writes no file at that name, and counts it in its summary;
+where the entry sits at the overview's own name, it refuses as well.
+
+Removal there has two rules and no third. A scan that does not name the targets removes a file only
+on the three signals above: the prefix, the key, and the record on disk naming it. A scan that
+leaves a target out of `--targets` removes every regular file there that has one of the two exact
+names a scan gives (`anatomiya-overview`, or `anatomiya-area-` and eight hex digits), with that
+directory's extension, and carries the key, whether or not the record lists it. A link is never
+removed, and neither is a file under any other name, keyed or not. So the most a repository can have
+removed is a file it shipped under this tool's own name carrying this tool's own key.
+
+A scan that refuses leaves nothing behind. Every refusal above is decided while the plan is made,
+before a directory is created or a byte is written, and a dry run refuses the same way; the
+`.claude/rules` map is not written either. A failure after the writes began puts back every file
+already replaced, in every directory, removes the temporary files, and removes a Cursor or Copilot
+directory this run made if it is empty. On a repository with no map yet, a failure at that stage can
+leave `.claude/rules` and `.claude/anatomiya` behind, empty.
+
+One window is left, and it is stated here plainly. The last look at a directory and the `rename`
+or `unlink` that follows it are two system calls. Someone who can already write inside the working
+tree while a scan runs can swap `.cursor/rules` or `.github/instructions` for a link between them.
+What they gain is one operation through that link: a file named exactly as one of the map's files,
+in a directory of their choosing that the scanning user can write, is removed, or is replaced by a
+generated map file. They do not choose the name and they do not choose the bytes beyond what the map
+already carries from the repository through the encoder. Temporary files staged through such a link
+are removed on the refusal, and stay if the process is killed first.
+
+Reading is as narrow as writing. In those two directories only entries named `anatomiya-*` with that
+directory's extension are opened, and whose a file is gets decided from its first 1 MiB, on a handle
+typed before the read. A team's own rule files there are never opened. One read is whole: a file the
+scan is about to replace or remove, already decided to carry the key, is read once through
+`O_NOFOLLOW` so it can be put back if the write fails. A repository that commits a very large file
+under one of the map's names with the key makes that read large, in these directories and in
+`.claude/rules` alike.
 
 ### Parser crashes are contained by a process boundary
 

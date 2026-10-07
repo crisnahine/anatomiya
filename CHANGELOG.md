@@ -33,6 +33,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `svelte.config.js` is read, so a project that repoints the alias resolves nothing through it.
 - The end-of-turn reuse check asks about a component: the lines its script added and no others. An
   edit to a template or a style block asks nothing.
+- `scan --targets cursor,copilot` writes the same map for Cursor and GitHub Copilot as well:
+  `.cursor/rules/anatomiya-*.mdc` and `.github/instructions/anatomiya-*.instructions.md`, an
+  overview and one file per area in each, with the frontmatter that tool reads. It is off unless
+  asked for. A target stays on for every later scan, and for the background refresh, while its
+  `anatomiya-overview` file is in its directory, and nothing else stores the choice. `--targets`
+  names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns both off and
+  removes the files this tool wrote there. The scan prints one group of lines per directory
+  (`wrote 4 files under .cursor/rules for Cursor`), `doctor` prints a line for a target that is on,
+  `check` audits its directory, and `pin` leaves its generated files out of the clean-tree test.
+- In those two directories a scan never writes over a file it did not write, and writes through no
+  link: `.cursor`, `.cursor/rules`, `.github` and `.github/instructions` each have to be a real
+  directory of the repository, or not exist yet. A scan that names a target it cannot write as asked
+  refuses, says which file or link is in the way, and writes nothing anywhere. A target that is
+  merely on leaves such an entry where it is and says how many it left. A name that differs from one
+  of the map's only in letter case counts as taken, unless the directory lists both spellings.
+- Cursor and Copilot read looser patterns than Claude Code, and the files say so. A brace set is
+  written as one pattern per extension and a negation is left out, since neither tool can be told
+  one, so an area file can attach for files the area excluded and names them in a closing line. A
+  Copilot file adds that VS Code matches its patterns under any parent directory. An area none of
+  whose patterns can be written for a tool has no file there, and the scan says how many.
+- What those two copies are not. Delivery is not measured in either tool: for Cursor it was read
+  from the code of the 3.20.21 app and not seen in a running one, and for Copilot the files were run
+  through VS Code 1.140.0's parser and nothing else. The hooks are Claude Code's, so neither tool
+  gets the echo, the notice before a write, the reuse check or a refresh of its own. VS Code already
+  reads `.claude/rules/`, so with the Copilot target on it is offered each area twice. Codex is not
+  written for.
+- The record names the files written for each target under an optional `targets` key, present only
+  where a target is on. The schema stays 19, so a build that does not know the key reads the record
+  as before.
+- Two more exclude lines in the README, `.cursor/rules/anatomiya-*.mdc` and
+  `.github/instructions/anatomiya-*.instructions.md`, which match nothing until a target is on.
 
 ### Changed
 
@@ -60,6 +91,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   defaults as before: one of five measured resolves that way, so nothing is skipped for the
   missing file. Plain JavaScript beside a `tsconfig.base.json` is now checked, as it is beside a
   `tsconfig.json`.
+- A repository that commits its map sees "What lives where" change once, on its first scan with
+  this version: the map's own files are no longer counted in it (see Fixed). Apart from that,
+  `scan --targets` changes nothing for a repository that turns no target on. Measured on six
+  repositories, three variants of each, 13 commands per run, against the build it was added to:
+  exit code, output, `git status` and every file in the tree were identical in 18 of 18 runs.
+
+### Fixed
+
+- The layout counted the map as part of the repository it describes. Where `.claude/rules/anatomiya-*.md`
+  or a file of `.claude/anatomiya/` is committed, "What lives where" counted those files, so the
+  overview written before the commit and the one written after it differed with no source change.
+  On a copy of Homebrew/brew with the 58 files of its map committed, the second scan added
+  `- .claude/rules: 58 .md` and dropped an area from the Areas list to make room. The map's own
+  files are left out by name: the overview and area files in `.claude/rules`, `.cursor/rules` and
+  `.github/instructions`, and every file under `.claude/anatomiya/` that is not source. A map
+  committed through a linked `.claude/rules` is left out where git tracks it. A hand-written file
+  under one of those exact names is left out with it.
 
 ## [0.13.4] - 2026-10-07
 
