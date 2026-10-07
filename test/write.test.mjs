@@ -2669,6 +2669,48 @@ test("a target directory swapped for a link once the renames began refuses in a 
   }
 });
 
+test("a target directory moved aside and linked back once the renames began has nothing renamed into it", needsSymlinks, async (t) => {
+  // The staged files are still reachable through the link, so only the look before each rename stops them.
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  let race = null;
+  fs.renameSync = (from, to) => {
+    const done = real(from, to);
+    if (race !== null) {
+      real(race.at, race.to);
+      symlinkSync(race.to, race.at);
+      race = null;
+    }
+    return done;
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+  const a = area("src/services");
+
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const aside = join(elsewhere(t), "aside");
+    writeMap(result(dir, [a]), { targets: ALL });
+    const theirs = tree(join(dir, target.dir));
+    const claude = unstamped(snapshot(dir));
+    race = { at: join(dir, target.dir), to: aside };
+
+    assert.throws(
+      () => writeMap(result(dir, [a, area("src/api")])),
+      (err) => err.message === moved(target, PUT_BACK),
+      target.id
+    );
+
+    assert.equal(race, null, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(aside), theirs, `${target.id}: every file where the link leads is the one that was there`);
+    assert.deepEqual(unstamped(snapshot(dir)), claude, `${target.id}: the record and Claude Code's files are the ones that were there`);
+  }
+});
+
 test("the rename order is record, layout, claude, cursor, copilot", async (t) => {
   const dir = workspace(t);
   const a = area("src/services");
