@@ -74,6 +74,33 @@ test("collect lists non-source tracked files as others", async (t) => {
   assert.deepEqual(others.map((f) => f.rel).sort(), ["README.md", "docs/x.md"]);
 });
 
+test("collect leaves the map's own files out of others, by the names a scan gives them", async (t) => {
+  const own = [
+    ".claude/rules/anatomiya-overview.md", ".claude/rules/anatomiya-area-0123abcd.md",
+    ".cursor/rules/anatomiya-overview.mdc", ".cursor/rules/anatomiya-area-0123abcd.mdc",
+    ".github/instructions/anatomiya-overview.instructions.md", ".github/instructions/anatomiya-area-0123abcd.instructions.md",
+    ".claude/anatomiya/facts.json", ".claude/anatomiya/layout.json",
+  ];
+  const theirs = [
+    ".claude/rules/team.md", ".cursor/rules/team.mdc", ".github/instructions/review.instructions.md", ".github/workflows/ci.yml",
+    // The prefix alone, an id that is not eight hex digits, and the other target's extension.
+    ".cursor/rules/anatomiya-notes.mdc", ".github/instructions/anatomiya-notes.instructions.md", ".claude/rules/anatomiya-notes.md",
+    ".cursor/rules/anatomiya-area-0123.mdc", ".cursor/rules/anatomiya-overview.md",
+    // The same names anywhere but a target's own directory.
+    "docs/anatomiya-overview.mdc", "docs/anatomiya-area-0123abcd.instructions.md", "anatomiya-overview.md",
+    ".cursor/rules/deep/anatomiya-overview.mdc", "packages/a/.github/instructions/anatomiya-overview.instructions.md",
+  ];
+  const dir = repo(t, (d, { write, git }) => {
+    write("src/a.ts");
+    for (const rel of [...own, ...theirs]) write(rel, "x\n");
+    git("add", "-A"); git("commit", "-qm", "init");
+  });
+
+  const { others } = await collect(dir);
+
+  assert.deepEqual(others.map((f) => f.rel).sort(), [...theirs].sort());
+});
+
 test("a tracked .env contributes nothing even though git lists it", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write("src/a.ts");

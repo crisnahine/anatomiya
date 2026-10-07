@@ -42,6 +42,7 @@ import { FACTS_PATH, FACTS_SCHEMA, readRecord, statedSide } from "../plugins/ana
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
 import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { TARGETS, overviewName, parseTargets } from "../plugins/anatomiya/lib/targets.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { formatReport } from "../plugins/anatomiya/lib/check-report.mjs";
@@ -151,6 +152,12 @@ export function overviewProblems(text) {
   return problems;
 }
 
+// What tells each reader the file is an area's: anything else is the overview's frontmatter, or none.
+const SCOPED = {
+  cursor: (head) => head.includes("alwaysApply: false"),
+  copilot: (head) => head.some((l) => /^applyTo: ".+"$/.test(l) && l !== 'applyTo: "**"'),
+};
+
 /**
  * An area file is delivered by its `paths` list, so a missing one is not a
  * formatting slip: the file loads on every turn, which is the overview's job.
@@ -158,10 +165,17 @@ export function overviewProblems(text) {
  * The list itself is exempt from the bound, because a glob dropped to save a
  * line mis-delivers the whole file. Nothing under it is.
  */
-export function areaProblems(name, text) {
+export function areaProblems(name, text, target = TARGETS.claude) {
   const problems = [];
   const lines = text.trimEnd().split("\n");
   const end = frontmatterEnd(lines);
+  if (target !== TARGETS.claude) {
+    if (!SCOPED[target.id](lines.slice(0, end))) {
+      problems.push(`${JSON.stringify(name)} does not carry the scope ${target.reader} attaches an area file by`);
+    }
+    if (lines.length - end > MAX_LINES) problems.push(`${JSON.stringify(name)} has ${lines.length - end} body lines, past ${MAX_LINES}`);
+    return problems;
+  }
   const globs = lines.filter((l) => /^ {2}- /.test(l)).length;
   const at = lines.slice(0, end).indexOf("paths:");
   if (at === -1 || globs === 0) problems.push(`${JSON.stringify(name)} has no paths pattern, so it loads on every turn`);
@@ -209,10 +223,10 @@ export const rootsColumn = (roots, roster = null) =>
   `${roots}/${roster ? roster.imports : "-"}/${roster ? roster.reused : "-"}`;
 
 /** The write line's own count, against the generated names in the directory it wrote to. */
-export function wroteProblems(wrote, names) {
+export function wroteProblems(wrote, names, dir = RULES_DIR) {
   if (wrote === names.length) return [];
   return [
-    `the scan says it wrote ${wrote} files and ${RULES_DIR}/ holds ${names.length} generated files: ${names.join(", ")}`,
+    `the scan says it wrote ${wrote} files and ${dir}/ holds ${names.length} generated files: ${names.join(", ")}`,
   ];
 }
 
@@ -310,16 +324,23 @@ const USAGE = `usage: node scripts/e2e-corpus.mjs <corpusDir> <scratchDir> [opti
   <corpusDir>        a directory whose children are the repositories to run
   <scratchDir>       where each clone goes; every clone is removed again
   --only <a,b>       run these repositories rather than every child
+  --targets <list>   hand this to each repository's first scan, as cursor,copilot
 `;
 
 export function parseArgs(argv) {
-  const read = readArgv(argv, { only: { type: "string" } }, { positionals: true });
+  const read = readArgv(argv, { only: { type: "string" }, targets: { type: "string" } }, { positionals: true });
   if (read.error) return read;
   const [corpus, scratch, ...rest] = read.positionals;
   if (corpus === undefined) return { error: "the corpus directory is required" };
   if (scratch === undefined) return { error: "the scratch directory is required" };
   if (rest.length > 0) return { error: "two directories, the corpus and the scratch, not more" };
-  return { corpus, scratch, only: read.values.only ?? null };
+  const targets = read.values.targets ?? null;
+  try {
+    if (targets !== null) parseTargets(targets);
+  } catch (err) {
+    return { error: err.message };
+  }
+  return { corpus, scratch, only: read.values.only ?? null, targets };
 }
 
 // The order both measurement documents record the corpus in.
@@ -490,11 +511,17 @@ function removeTree(path) {
   }
 }
 
+/** Every generated file in every target's directory, by its path in the repository. */
 function ruleFiles(clone) {
-  const dir = join(clone, RULES_DIR);
-  if (!existsSync(dir)) return new Map();
-  const names = readdirSync(dir).filter((n) => isGeneratedName(n)).sort();
-  return new Map(names.map((n) => [n, readFileSync(join(dir, n), "utf8")]));
+  const out = new Map();
+  for (const target of Object.values(TARGETS)) {
+    const dir = join(clone, target.dir);
+    if (!existsSync(dir)) continue;
+    for (const n of readdirSync(dir).filter((n) => isGeneratedName(n, target)).sort()) {
+      out.set(`${target.dir}/${n}`, readFileSync(join(dir, n), "utf8"));
+    }
+  }
+  return out;
 }
 
 function sameFiles(a, b) {
@@ -508,14 +535,21 @@ function sameFiles(a, b) {
  * rule above, with the rule files and the record it read so a caller can keep
  * comparing them.
  */
-export function writtenProblems(repo, wrote) {
+export function writtenProblems(repo, wrote, targets = {}) {
   const problems = [];
-  const overview = join(repo, RULES_DIR, OVERVIEW_FILE);
-  if (!existsSync(overview)) problems.push(`no ${OVERVIEW_FILE} was written`);
-  else problems.push(...overviewProblems(readFileSync(overview, "utf8")));
   const written = ruleFiles(repo);
-  for (const [n, body] of written) if (n !== OVERVIEW_FILE) problems.push(...areaProblems(n, body));
-  problems.push(...wroteProblems(wrote, [...written.keys()]));
+  for (const target of Object.values(TARGETS)) {
+    // Another target's directory is somebody else's until the scan's own record says it is on.
+    const said = target.always ? wrote : targets[target.id]?.state === "on" ? targets[target.id].wrote : null;
+    if (said === null) continue;
+    const at = `${target.dir}/`;
+    const names = [...written.keys()].filter((k) => k.startsWith(at)).map((k) => k.slice(at.length));
+    const overview = overviewName(target);
+    if (!names.includes(overview)) problems.push(`no ${overview} was written`);
+    else problems.push(...overviewProblems(written.get(at + overview)));
+    for (const n of names) if (n !== overview) problems.push(...areaProblems(n, written.get(at + n), target));
+    problems.push(...wroteProblems(said, names, target.dir));
+  }
 
   const facts = readRecord(join(repo, FACTS_PATH)).record;
   if (facts === null) problems.push(`no readable ${FACTS_PATH} was written`);
@@ -535,7 +569,7 @@ export function baseOf(clone) {
 }
 
 /** The whole flow for one repository, on a clone that is removed either way. */
-async function runRepo(name, source, scratchDir) {
+async function runRepo(name, source, scratchDir, targets) {
   const clone = join(scratchDir, name);
   const started = Date.now();
   const problems = [];
@@ -560,7 +594,8 @@ async function runRepo(name, source, scratchDir) {
     if (deps.error) fail(deps.error);
 
     /* 1 and 2: the first scan, and what it wrote. */
-    const first = anatomiya(["scan", clone, "--format", "json"], scratchDir);
+    // The first scan alone: a target stays on for the scans after it.
+    const first = anatomiya(["scan", clone, ...(targets ? ["--targets", targets] : []), "--format", "json"], scratchDir);
     if (first.status !== 0) {
       fail(`scan exited ${first.status}: ${first.err.split("\n")[0]}`);
       return { row, problems };
@@ -582,7 +617,7 @@ async function runRepo(name, source, scratchDir) {
 
     const overview = join(clone, RULES_DIR, OVERVIEW_FILE);
     const factsFile = join(clone, FACTS_PATH);
-    const { problems: wrongs, written, facts } = writtenProblems(clone, s1.wrote);
+    const { problems: wrongs, written, facts } = writtenProblems(clone, s1.wrote, s1.targets);
     for (const p of wrongs) fail(p);
     if (facts !== null) {
       row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
@@ -710,7 +745,7 @@ async function main() {
   const heads = new Map();
   const summaries = new Map();
   for (const { name, source } of selected.repos) {
-    const out = await runRepo(name, source, scratchDir);
+    const out = await runRepo(name, source, scratchDir, opts.targets);
     rows.push(out.row);
     problems.push(...out.problems);
     if (out.head) heads.set(name, out.head);
