@@ -395,14 +395,14 @@ export function commitMap(root, plan) {
 
   const { rulesDir, storeDir } = resolveDirs(root);
   // Asked again here for the same reason, and only of a directory this touches.
-  const own = (id, t) => {
+  const own = (id, t, did) => {
     const dir = resolveTargetDir(root, TARGETS[id]);
-    if (dir === null) throw new Error(`${t.dir} is no longer a directory of this repository's own, so nothing was written`);
+    if (dir === null) throw movedAway(t.dir, did);
     return dir;
   };
   const others = Object.entries(plan.targets)
     .filter(([, t]) => t.write.length > 0 || t.remove.length > 0)
-    .map(([id, t]) => ({ ...t, id, at: own(id, t) }));
+    .map(([id, t]) => ({ ...t, id, at: own(id, t, UNTOUCHED) }));
 
   // Facts too, and with the rest: `check` reads facts.json, so new facts beside
   // the old files call a map fresh that the session holds an older scan of.
@@ -430,14 +430,14 @@ export function commitMap(root, plan) {
     ];
     // And once more with everything staged: writing the bodies is the long part,
     // and a link put at a directory meanwhile is where the renames would land.
-    for (const t of others) own(t.id, t);
+    for (const t of others) own(t.id, t, UNTOUCHED);
     // A removal has no temporary file beside it to hold it to the directory it
     // was planned in, so each one asks where that directory is now. A rename
     // asks too, and so refuses in a sentence where it would fail on an errno.
     const byDir = new Map(others.map((t) => [t.at, t]));
     const stillOwn = (path) => {
       const t = byDir.get(dirname(path));
-      if (t) own(t.id, t);
+      if (t) own(t.id, t, PUT_BACK);
     };
     replaceAll(staged, removals, { record: factsPath, was: readLayout(root) }, stillOwn);
   } catch (err) {
@@ -448,6 +448,15 @@ export function commitMap(root, plan) {
   }
 
   return plan;
+}
+
+const UNTOUCHED = "stopped before writing anything there";
+const PUT_BACK = "stopped and put back what it had replaced";
+
+// `moved` names the directory, for the rollback to say what it could not reach.
+function movedAway(dir, did) {
+  const sentence = `${dir} was replaced by something else while the map was being written, so the scan ${did}: look at what is at ${dir} now, then scan again`;
+  return Object.assign(new Error(sentence), { moved: dir });
 }
 
 /**
@@ -491,7 +500,13 @@ function replaceAll(staged, removals, pair, stillOwn) {
   try {
     for (const [tmp, path] of staged) {
       stillOwn(path);
-      renameSync(tmp, path);
+      try {
+        renameSync(tmp, path);
+      } catch (err) {
+        // A directory swapped since the look above fails here on an errno, so it is asked once more.
+        stillOwn(path);
+        throw err;
+      }
       undo.push([path, before.get(path)]);
     }
     for (const path of removals) {
@@ -506,6 +521,7 @@ function replaceAll(staged, removals, pair, stillOwn) {
       undo.push([path, previous]);
     }
   } catch (err) {
+    let lost = 0;
     for (const [path, previous] of undo.reverse()) {
       try {
         // The layout file is stamped from the record alone, so only the
@@ -513,8 +529,12 @@ function replaceAll(staged, removals, pair, stillOwn) {
         // directory that stopped being the repository's own.
         stillOwn(path);
         putBack(path, previous, path === pair.record ? pair.was : null);
-      } catch {}
+      } catch {
+        lost++;
+      }
     }
+    // What this run had already put in a directory went with it when it moved.
+    if (err.moved && lost > 0) err.message = movedAway(err.moved, `${PUT_BACK} everywhere else`).message;
     throw err;
   }
 }

@@ -14,7 +14,7 @@ import { caseMagic, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
-import { auditRules, EXCLUDE_LINES, knownNames, listSome, LISTED, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
+import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
 import { TARGETS } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
@@ -243,9 +243,10 @@ async function targetLines(cwd) {
     const known = knownNames(facts, target);
     if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);
     if (state !== "on") continue;
-    // The name and the key, with or without a record: a clone holds the files and not the store.
-    const { ours, unknown } = auditRules(root, known, target);
-    lines.push(`${target.dir}: on, ${plural(ours.length + unknown.length, "file")}`);
+    // A name a scan gives a file, and the key, with or without a record: a clone holds the files and not the store.
+    const { ours, unknown, listed } = auditRules(root, known, target);
+    const mine = [...ours, ...unknown].filter((name) => isMapName(name, target));
+    lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);
   }
   return lines;
 }

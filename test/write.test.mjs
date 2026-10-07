@@ -1979,6 +1979,11 @@ test("with no record and no target named, nothing in a target is removable", (t)
 });
 
 const HAND = "---\nalwaysApply: true\n---\n# Written by hand\n";
+const moved = (target, did) =>
+  `${target.dir} was replaced by something else while the map was being written, so the scan ${did}: look at what is at ${target.dir} now, then scan again`;
+const UNTOUCHED = "stopped before writing anything there";
+const PUT_BACK = "stopped and put back what it had replaced";
+const PUT_BACK_ELSEWHERE = "stopped and put back what it had replaced everywhere else";
 const refusal = (target, name, what = "was not written by this tool") =>
   `${target.dir}/${name} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`;
 
@@ -2502,7 +2507,7 @@ test("a target directory that became a link after the plan was made refuses the 
   const plan = planMap(result(dir, [area("src/services")]), { targets: ["claude", "cursor"] });
   symlinkSync(outside, join(dir, ".cursor"));
 
-  assert.throws(() => commitMap(dir, plan), (err) => err.message === ".cursor/rules is no longer a directory of this repository's own, so nothing was written");
+  assert.throws(() => commitMap(dir, plan), (err) => err.message === moved(cursor, UNTOUCHED));
 
   assert.deepEqual(readdirSync(join(outside, "rules")), []);
   assert.equal(existsSync(join(dir, ".claude")), false, "and nothing of Claude Code's either");
@@ -2615,7 +2620,7 @@ test("a target directory swapped for a link once the renames began refuses in a 
 
     assert.throws(
       () => writeMap(result(dir, [a, area("src/api")])),
-      (err) => err.message === `${target.dir} is no longer a directory of this repository's own, so nothing was written`,
+      (err) => err.message === moved(target, PUT_BACK),
       target.id
     );
 
@@ -2811,7 +2816,7 @@ test("a target directory swapped for a link while its files were staged refuses 
 
     assert.throws(
       () => writeMap(result(dir, [area("src/services")]), { targets: ALL }),
-      (err) => err.message === `${target.dir} is no longer a directory of this repository's own, so nothing was written`,
+      (err) => err.message === moved(target, UNTOUCHED),
       target.id
     );
 
@@ -2864,7 +2869,7 @@ test("a target directory swapped for a link once the renames began has nothing r
 
     assert.throws(
       () => writeMap(result(dir, [a]), { targets: ["claude"] }),
-      (err) => err.message === `${target.dir} is no longer a directory of this repository's own, so nothing was written`,
+      (err) => err.message === moved(target, PUT_BACK),
       target.id
     );
 
@@ -2893,7 +2898,8 @@ test("a target directory swapped for a link after its files were renamed has no 
 
     assert.throws(
       () => writeMap(result(dir, [a])),
-      (err) => err.message === `${target.dir} is no longer a directory of this repository's own, so nothing was written`,
+      // Its own new files went with the directory, wherever that is now.
+      (err) => err.message === moved(target, PUT_BACK_ELSEWHERE),
       target.id
     );
 
@@ -2902,6 +2908,44 @@ test("a target directory swapped for a link after its files were renamed has no 
     assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), before.record);
     assert.deepEqual(unstamped(snapshot(dir)), before.claude, `${target.id}: Claude Code's stale file is back`);
     assert.deepEqual(tree(join(dir, other.dir)), before.other, `${target.id}: and so is the other directory's`);
+  }
+});
+
+test("a target directory swapped for a link between the last look and the rename refuses in the same sentence, not an errno", needsSymlinks, async (t) => {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  let race = null;
+  // Inside the rename itself, so the look before it has already passed.
+  fs.renameSync = (from, to) => {
+    if (race !== null && String(to).startsWith(race.at + sep)) {
+      rmSync(race.at, { recursive: true });
+      symlinkSync(race.to, race.at);
+      race = null;
+    }
+    return real(from, to);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+  const a = area("src/services");
+
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    for (const name of mapOf(target, a)) writeFileSync(join(outside, name), OURS);
+    const theirs = tree(outside);
+    const claude = unstamped(snapshot(dir));
+    race = { at: join(realpathSync(dir), ...target.dir.split("/")), to: outside };
+
+    assert.throws(() => writeMap(result(dir, [a, area("src/api")])), (err) => err.message === moved(target, PUT_BACK), target.id);
+
+    assert.equal(race, null, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(outside), theirs, `${target.id}: nothing where the link leads was written`);
+    assert.deepEqual(unstamped(snapshot(dir)), claude, `${target.id}: the record and Claude Code's files are the ones that were there`);
   }
 });
 
