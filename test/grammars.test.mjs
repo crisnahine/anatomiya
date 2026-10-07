@@ -210,10 +210,10 @@ test("no workflow installs with install scripts on", () => {
   const dir = join(ROOT, ".github", "workflows");
   const offenders = [];
   for (const name of readdirSync(dir)) {
-    readFileSync(join(dir, name), "utf8").split(/\r?\n/).forEach((line, at) => {
-      if (/^\s*#/.test(line) || !/\bnpm (ci|install|i)\b/.test(line)) return;
+    for (const [at, line] of readFileSync(join(dir, name), "utf8").split(/\r?\n/).entries()) {
+      if (/^\s*#/.test(line) || !/\bnpm (ci|install|i)\b/.test(line)) continue;
       if (!line.includes("--ignore-scripts")) offenders.push(`${name}:${at + 1}: ${line.trim()}`);
-    });
+    }
   }
   assert.deepEqual(offenders, []);
 });

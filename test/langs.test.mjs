@@ -199,7 +199,7 @@ test("a component file is its own language, and a module named after the framewo
 });
 
 test("every language names the family a test of it may be written in", () => {
-  // The engine was the proxy, and it is one family only while each engine
+  // The engine is no proxy for it, being one family only while each engine
   // hosts one: a component is tested by a plain `.ts` file, a script is not
   // tested by a Ruby spec.
   for (const id of ["js", "jsx", "vue", "svelte"]) assert.equal(familyOf(id), "js", id);

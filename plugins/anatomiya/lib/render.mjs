@@ -76,7 +76,7 @@ function attachLines(target, { dropped, widened, unspellable }) {
   return lines.map((line) => encode(line, { max: Infinity }));
 }
 
-// A target that can be given none of an area's patterns gets no file for it.
+/** Whether a target gets a file for an area: one that can be given none of the area's patterns gets none. */
 export const hasFile = (area, target) =>
   !area.globs?.length || spelledGlobs(target, area.globs, spellGlob).patterns.length > 0;
 

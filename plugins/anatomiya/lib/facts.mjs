@@ -110,10 +110,11 @@ export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 // 19 stores `counterAuthors`. A slot shown on its counter side printed the
 // claim side's author count, because the record carried no other, and a held
 // area re-renders from the record. An older record prints what it printed.
-// `targets` came with no new number: the filenames a scan left in the Cursor and
-// Copilot directories, under a key no older reader looks at. No field moved, and
-// a bump would have every build already installed refuse the record and enforce
-// nothing from it. An older record owns nothing there, as does one with no key.
+// `targets` shares 19: the filenames a scan left in the Cursor and Copilot
+// directories sit under a key no older reader looks at, and no field moved. A
+// number of its own would have every build already installed refuse the record
+// and enforce nothing from it. An older record owns nothing there, as does one
+// with no key.
 export const FACTS_SCHEMA = 19;
 
 /**

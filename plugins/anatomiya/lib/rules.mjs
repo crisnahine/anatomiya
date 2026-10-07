@@ -150,11 +150,11 @@ export const folded = (name) => name.toUpperCase().toLowerCase();
 
 /**
  * The entry a write to `name` may land on: one spelled otherwise that a volume
- * folding case would answer with, or undefined. A listing that holds `name`
+ * folding case would answer with, or null. A listing that holds `name`
  * itself has none, since no volume that folds can list both spellings.
  */
 export const spelledOtherwise = (entries, name) =>
-  entries.includes(name) ? undefined : entries.find((e) => folded(e) === folded(name));
+  entries.includes(name) ? null : (entries.find((e) => folded(e) === folded(name)) ?? null);
 
 /**
  * The filenames the map on disk says this build wrote, or `null` when there is

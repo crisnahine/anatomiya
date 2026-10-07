@@ -37,8 +37,8 @@ const hookRemoved = (dryRun) =>
 // rather than reading fields that moved. Same rule the facts record carries.
 // 2 replaced `hookInstalled` with `hookRemoved`: the scan installed a hook into
 // the repository and now only removes the one it used to install. `targets`
-// came with no new number: it is a key an older reader never looks for, and it
-// is absent wherever that reader's answer would be whole without it.
+// shares 2: it is a key an older reader never looks for, and it is absent
+// wherever that reader's answer would be whole without it.
 export const SUMMARY_SCHEMA = 2;
 
 /** Every fact a scan prints, derived once, so nothing derives it twice. */

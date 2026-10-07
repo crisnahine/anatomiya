@@ -39,7 +39,7 @@ export const extOf = (rel) => {
   return ext === null ? "(none)" : `.${ext}`;
 };
 
-// What a sentence calls a file's kind: a file with no extension goes by its whole name.
+/** What a sentence calls a file's kind: its extension, or its whole name where it has none. */
 export const extOrName = (rel) => (extOf(rel).startsWith(".") ? extOf(rel) : baseOf(rel));
 
 // The other half of that split: the name a namesake test is matched on.

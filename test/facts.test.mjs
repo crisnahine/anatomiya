@@ -96,7 +96,7 @@ test("a record with no target named reads with none", (t) => {
 });
 
 test("a build that has never heard of the targets reads a record naming them", () => {
-  // Such a build's check and refresh refuse a schema above their own, so the key came with no new number.
+  // Such a build's check and refresh refuse a schema above their own, so the key shares the number the record had.
   const named = JSON.parse(factsJson(result([dim()]), { cursor: ["anatomiya-overview.mdc"] }));
 
   assert.equal(named.schema, 19);

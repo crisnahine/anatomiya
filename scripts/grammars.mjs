@@ -40,10 +40,10 @@ function sha256Of(path) {
   }
 }
 
-/** The version the root lockfile pins a package to, or undefined. */
+/** The version the root lockfile pins a package to, or null. */
 function lockedIn(root) {
   const packages = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")).packages ?? {};
-  return (name) => packages[`node_modules/${name}`]?.version;
+  return (name) => packages[`node_modules/${name}`]?.version ?? null;
 }
 
 /** The version an installed package says it is, or null where its manifest cannot be read. */
