@@ -4156,9 +4156,23 @@ test("a sentence the page drops holds no line, so a root prints in it", () => {
   assert.equal(printed(eleven), "abcd");
   assert.match(eleven.join("\n"), SENTENCE);
 
-  // backstage and jellyfin: the root the line would buy is the one that arms the sentence, so the line stays empty.
+  // backstage, fastlane and jellyfin: the root the line would buy is the one that arms the sentence, so the section leaves it.
   const next = renderLayout({ ...layout, roots: [layout.roots[0], layout.roots[3], layout.roots[1], layout.roots[2]] }, 9);
   assert.equal(next.length, 8);
   assert.equal(printed(next), "a");
   assert.doesNotMatch(next.join("\n"), SENTENCE);
+
+  // One line short of both sentences, the unarmed one is that line: the other prints and no root does.
+  const six = renderLayout(layout, 6);
+  assert.deepEqual(six, [
+    "## What lives where",
+    "",
+    "- tests: 90 vitest specs; 40 of 100 .ts files under a have a namesake test",
+    "",
+    "Match sibling test shape; skip tests where siblings have none.",
+    "",
+  ]);
+  assert.deepEqual(six, renderLayout({ ...layout, principles: ["test_shape"] }, 6), "as if the key were not stored");
+  // Two armed sentences at that budget give their lines to a root.
+  assert.equal(printed(renderLayout({ ...layout, principles: ["test_shape", "granularity"] }, 6)), "a");
 });

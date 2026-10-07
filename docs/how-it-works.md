@@ -1825,8 +1825,11 @@ build, six print it on a folded root alone under that reading and none of the si
 
 A sentence the printed roots do not arm holds no line. The roots are fitted to the budget without
 it, up to the first root that would arm it: vscode's overview prints `extensions` in that line.
-Where the next root in line is the arming one, as on fastlane, the root and the sentence cannot
-both have the line and it stays empty.
+Where the next root in line is the arming one, the root and the sentence cannot both have the
+line and the section leaves it. On backstage and fastlane the Areas listing below takes it and
+names one area, and both overviews are 40 lines. jellyfin has no area, and its overview is 39.
+One line short of every stored sentence, the unarmed one is the line that does not fit, so the
+others print and no root does.
 
 ### In an area file
 
