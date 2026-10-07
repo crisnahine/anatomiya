@@ -208,3 +208,45 @@ export const isTestTree = (segment, family = null) =>
  * package there and read 0 of 24 with 9 of its files answered by name.
  */
 export const PACKAGE_SHELL = { python: "src" };
+
+/**
+ * The families whose test tree files a test by feature below its top level, so
+ * a test there answers a package at the top of the tree only from the tree's
+ * own top level, or from the path that mirrors the source's.
+ *
+ * Python only. fastapi keeps `tests/test_telemetry/test_exceptions.py`, a test
+ * of OpenTelemetry spans, and at any depth it answered `fastapi/exceptions.py`:
+ * 3 of the 6 files credited under `fastapi` were credited to another feature.
+ */
+export const FEATURE_TREES = new Set(["python"]);
+
+const below = (dir, above) => {
+  const segments = dir === "" ? [] : dir.split("/");
+  return above.every((segment, i) => segments[i] === segment) ? segments.slice(above.length) : null;
+};
+
+/**
+ * Per family, the source directories a test directory is paired with by the
+ * family's own project layout, as a predicate over a source directory, or null
+ * where the test directory is in no pairing.
+ *
+ * Python: a `tests` directory beside a package mirrors that package, so
+ * `tutorial/tests/api` is paired with `tutorial/flaskr/api` and with
+ * `tutorial/src/flaskr/api`. flask's `examples` read 0 of 12 with three such
+ * pairs in it.
+ */
+const PAIRINGS = {
+  python: (segments) => {
+    const at = segments.findIndex((segment) => TEST_ROOTS.has(segment));
+    if (at === -1) return null;
+    const rest = segments.slice(at + 1).join("/");
+    return (dir) => {
+      const own = below(dir, segments.slice(0, at));
+      if (own === null) return false;
+      const packaged = own[0] === PACKAGE_SHELL.python ? own.slice(1) : own;
+      return packaged.length > 0 && packaged.slice(1).join("/") === rest;
+    };
+  },
+};
+
+export const pairedWith = (testDir, family) => PAIRINGS[family]?.(testDir.split("/")) ?? null;

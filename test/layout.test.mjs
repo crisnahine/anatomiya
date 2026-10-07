@@ -460,6 +460,7 @@ test("the namesake index carries the fields a pair would recompute", () => {
       bare: "modules/budgets/models",
       covers: new Set(),
       owner: null,
+      paired: null,
     },
   ]);
 });
