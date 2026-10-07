@@ -17,6 +17,7 @@ import {
   resolveInside,
   resolveRulesDir,
   resolveTargetDir,
+  spelledOtherwise,
   targetStatus,
 } from "./rules.mjs";
 import { TARGETS, TARGET_IDS, areaName, overviewName } from "./targets.mjs";
@@ -206,17 +207,24 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // A directory or a fifo at the name is the same answer: a refresh nobody is
   // watching may not stop over an entry in a directory another tool owns.
   const theirs = [audit.foreign, audit.unreadable, audit.occupied];
-  const taken = target.always ? [] : all.filter((n) => theirs.some((list) => list.includes(n)));
+  // An entry spelled as a planned name in another case is that name on a volume
+  // that folds case, so writing ours writes over it. Somebody's, whatever it says.
+  const alias = (n) => spelledOtherwise(audit.entries, n);
+  const taken = target.always ? [] : all.filter((n) => alias(n) !== undefined || theirs.some((list) => list.includes(n)));
   if (taken.length && (explicit || taken.includes(overviewName(target)))) {
-    const what = audit.unreadable.includes(taken[0])
-      ? "could not be read"
-      : audit.occupied.includes(taken[0])
-        ? "is not a file"
-        : "was not written by this tool";
+    const at = alias(taken[0]) ?? taken[0];
+    const what = at !== taken[0]
+      ? "was not written by this tool"
+      : audit.unreadable.includes(at)
+        ? "could not be read"
+        : audit.occupied.includes(at)
+          ? "is not a file"
+          : "was not written by this tool";
     throw new Error(
-      `${target.dir}/${taken[0]} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`
+      `${target.dir}/${at} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`
     );
   }
+  const aliases = taken.map(alias).filter((e) => e !== undefined);
   const names = all.filter((n) => !taken.includes(n));
   const filed = wanted.filter((a) => !taken.includes(nameOf(a)));
   const planned = new Set(names);
@@ -258,7 +266,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     // Our prefix and our key, but no map on disk names it: an older build wrote
     // it, or the store was deleted. It still loads, so it is reported; it is not
     // removed, because two of the three facts is not ownership.
-    unknown: audit.unknown.filter((f) => !planned.has(f) && !stale.includes(f) && !kept.includes(f)),
+    unknown: audit.unknown.filter((f) => !planned.has(f) && !stale.includes(f) && !kept.includes(f) && !aliases.includes(f)),
     // Somebody else's, unless this run is writing over it, which it does in
     // Claude Code's directory alone. A generated name there is ours by
     // construction, so a hand-written file that took one is replaced rather
@@ -266,11 +274,11 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     // about a file this run just replaced. It also moved the overview
     // between two scans of unchanged source, which is the one thing it may never
     // do: named on the first scan, ours and silent on the second.
-    foreign: [...audit.foreign.filter((f) => !planned.has(f)), ...taken.filter((n) => audit.occupied.includes(n))].sort(),
+    foreign: [...new Set([...audit.foreign.filter((f) => !planned.has(f)), ...taken.filter((n) => audit.occupied.includes(n)), ...aliases])].sort(),
     replaced: audit.foreign.filter((f) => planned.has(f)),
     // Whose these are was never established. They load, they are never removed,
     // and calling them somebody else's would assert authorship nobody checked.
-    unreadableRules: audit.unreadable.filter((f) => !planned.has(f)),
+    unreadableRules: audit.unreadable.filter((f) => !planned.has(f) && !aliases.includes(f)),
     listed: audit.listed,
   };
 }

@@ -2062,6 +2062,101 @@ test("a person's file at a name a target that is merely on writes is left as it 
   }
 });
 
+// Whether this volume answers for a name spelled in another case, as macOS and Windows do by default.
+const FOLDS = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-fold-"));
+  try {
+    writeFileSync(join(dir, "probe"), "");
+    return existsSync(join(dir, "PROBE"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
+test("an overview spelled in another case is somebody's file: the target reads off, and naming it refuses", (t) => {
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    // Keyed too: a name this tool never spells is not its file, whatever the file says.
+    for (const body of [HAND, OURS]) {
+      const dir = workspace(t);
+      const theirs = overviewName(target).replace("anatomiya-overview", "Anatomiya-Overview");
+      mkdirSync(join(dir, target.dir), { recursive: true });
+      writeFileSync(join(dir, target.dir, theirs), body);
+      assert.equal(existsSync(join(dir, target.dir, overviewName(target))), FOLDS, "the control: this volume folds the two names, or keeps them apart");
+      const before = tree(dir);
+
+      assert.equal(targetState(dir, target), "off", target.id);
+      for (const dryRun of [true, false]) {
+        assert.throws(
+          () => writeMap(result(dir, [a]), { dryRun, targets: ["claude", target.id] }),
+          (err) => err.message === refusal(target, theirs),
+          `${target.id}, ${dryRun ? "dry run" : "real write"}`
+        );
+      }
+      assert.deepEqual(tree(dir), before, "named: its bytes, and nothing of Claude Code's either");
+
+      const plan = writeMap(result(dir, [a]));
+      const mine = plan.targets[target.id];
+      assert.deepEqual({ state: mine.state, on: mine.on, write: mine.write, remove: mine.remove }, { state: "off", on: false, write: [], remove: [] });
+      assert.deepEqual(namesIn(dir, target), [theirs]);
+      assert.equal(readFileSync(join(dir, target.dir, theirs), "utf8"), body, "not named: its bytes");
+    }
+  }
+});
+
+test("an entry spelled as an area's name in another case holds that name", (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  const spellings = (target) => {
+    const name = areaName(target, b.id);
+    return [
+      name.replace(b.id, b.id.toUpperCase()),
+      name.replace(PREFIX, "Anatomiya-"),
+      name.slice(0, -target.ext.length) + target.ext.toUpperCase(),
+      // The long s, which APFS folds onto `s` and a plain lower-casing does not.
+      name.replace("area", "area".replace("a", "A")).replace(target.ext, target.ext.replace("s", "ſ")),
+    ];
+  };
+  for (const target of OTHERS) {
+    for (const theirs of spellings(target)) {
+      for (const body of [HAND, OURS]) {
+        const dir = workspace(t);
+        const said = `${target.id}, ${theirs}`;
+        assert.notEqual(theirs, areaName(target, b.id));
+        writeMap(result(dir, [a, b]), { targets: ["claude", target.id] });
+        rmSync(join(dir, target.dir, areaName(target, b.id)));
+        writeFileSync(join(dir, target.dir, theirs), body);
+        assert.equal(existsSync(join(dir, target.dir, areaName(target, b.id))), FOLDS, `${said}: the control`);
+        const held = [theirs, ...mapOf(target, a)].sort();
+
+        for (const dryRun of [true, false]) {
+          const mine = writeMap(result(dir, [a, b]), { dryRun }).targets[target.id];
+          assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a), `${said}: the name is not planned`);
+          assert.deepEqual({ foreign: mine.foreign, unknown: mine.unknown, remove: mine.remove }, { foreign: [theirs], unknown: [], remove: [] }, said);
+        }
+        assert.deepEqual(namesIn(dir, target), held, said);
+        assert.equal(readFileSync(join(dir, target.dir, theirs), "utf8"), body, `${said}: its bytes after a plain scan`);
+        assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a), `${said}: the record does not call it ours`);
+        // A name outside ASCII goes through the overview's encoder, which is not this test's subject.
+        if (/^[\x20-\x7e]+$/.test(theirs)) {
+          assert.ok(readFileSync(join(dir, target.dir, overviewName(target)), "utf8").includes(`- "${theirs}"`), `${said}: the overview names it as spelled`);
+        }
+
+        const before = tree(dir);
+        for (const dryRun of [true, false]) {
+          assert.throws(() => writeMap(result(dir, [a, b]), { dryRun, targets: ["claude", target.id] }), (err) => err.message === refusal(target, theirs), said);
+        }
+        assert.deepEqual(tree(dir), before, `${said}: its bytes after a named scan`);
+
+        const off = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+        assert.deepEqual(off.targets[target.id].remove, mapOf(target, a), `${said}: removal is by the exact name`);
+        assert.deepEqual(namesIn(dir, target), [theirs]);
+        assert.equal(readFileSync(join(dir, target.dir, theirs), "utf8"), body);
+      }
+    }
+  }
+});
+
 /** What a scan does with an entry at an area's name that no rename can replace, in each other directory. */
 function oddEntryAtAnAreaName(t, make) {
   const dir = workspace(t);
