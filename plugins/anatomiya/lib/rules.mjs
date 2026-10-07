@@ -145,6 +145,16 @@ export function isMapName(name, target = TARGETS.claude) {
 
 const AREA_STEM = /^anatomiya-area-[0-9a-f]{8}$/;
 
+// What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`.
+const folded = (name) => name.toUpperCase().toLowerCase();
+
+/**
+ * The entry that holds `name` on a volume that folds case without being spelled
+ * as it, or undefined. Asked on every volume, since the tree may be checked out
+ * on one that folds.
+ */
+export const spelledOtherwise = (entries, name) => entries.find((e) => e !== name && folded(e) === folded(name));
+
 /**
  * The filenames the map on disk says this build wrote, or `null` when there is
  * no map to ask.
@@ -188,6 +198,8 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
     foreign: [],
     unreadable: [],
     occupied: [],
+    // Every name the listing holds, as the directory spells it.
+    entries: [],
     dir: null,
     escaped: false,
     // Whether the directory could be listed at all. `false` beside four empty
@@ -212,6 +224,7 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
     return out;
   }
   out.listed = true;
+  out.entries = names;
 
   const read = (n) => n.endsWith(target.ext) && (target.id === TARGETS.claude.id || n.startsWith(PREFIX));
   for (const name of names.filter(read).sort()) {
@@ -358,7 +371,17 @@ export function targetStatus(root, target) {
   if (!entry.isFile()) return entry.isSymbolicLink() ? unknown("is a link", "remove the link") : unknown("is not a file", "remove it");
   const read = readHead(path);
   if (read.kind !== "file") return unknown("could not be read", UNREAD);
-  return { state: isOwned(read.head) ? "on" : "off" };
+  // A volume that folds case answers for an entry spelled another way, and that one is somebody's.
+  return { state: isOwned(read.head) && listsExactly(dir, overviewName(target)) ? "on" : "off" };
+}
+
+// True where the directory cannot be listed: the `lstat` is then all there is to go on.
+function listsExactly(dir, name) {
+  try {
+    return readdirSync(dir).includes(name);
+  } catch {
+    return true;
+  }
 }
 
 /**
