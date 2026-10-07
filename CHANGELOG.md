@@ -12,14 +12,45 @@ which makes three parser engines. The script blocks of Vue and Svelte files are 
 `scan --targets cursor,copilot` writes the same map for Cursor and GitHub Copilot, and the type
 checker reads a root `tsconfig.base.json` where a repository has no root `tsconfig.json`.
 
-No map written by 0.13.4 comes out the same from this version. Scanned with both on the 35 corpus
-repositories, which are JavaScript, TypeScript and Ruby, every overview differs in the "Not covered"
-line for files in a language the map does not read: 22 gain the line and 13 print another count. 80 of
-6,947 area files gain a clause such as `, in .rb files` on a claim line. The number of claims
-stated is the same on 26 of the 35. The other nine also hold components or files of the seven
-languages and gain slots or areas for them: react gains nine areas over its Rust crates, and
-vscode, at 500 areas in both versions, drops six areas and gains six, four of them over the Rust
-of its `cli`, and goes from 1,798 claims stated to 1,784.
+No map written by 0.13.4 comes out the same from this version. The counts in this section are from
+one run: a copy of each of the 35 corpus repositories, which are JavaScript, TypeScript and Ruby,
+scanned by 0.13.4 and by this version.
+
+- The overview. All 35 differ. 22 gain the "Not covered" line for files in a language the map does
+  not read, and 13 print another count on it. Every one sat at 40 lines in 0.13.4 and sits at 40
+  here, so each new line takes one.
+- Root lines. 19 overviews print fewer: 17 print one fewer, storybook and supabase two. What took
+  the room is the unread-languages line on 15 of them; the component line (`of 180 .vue and
+  .svelte files only the script block is read`) on storybook and supabase; `8 source files sit in
+  a directory nothing was counted in` on supabase, and the same line with 73 on next.js; `6 files
+  could not be read by this tool's grammar` on vscode, and the same line with 22 on next.js; and on
+  fastlane a root line for `screengrab`, whose Java is read, with the test-precedent sentence that
+  root arms. The other seven that gain the unread-languages line pay another way: six name one
+  area fewer, and prisma drops the test-precedent sentence.
+- Area files. 6,120 of the 6,834 that 0.13.4 wrote are byte-identical, 671 change, 43 are removed
+  and 156 are new. 15 repositories keep every area file as it was.
+- The scope clause. 85 area files in 14 repositories carry `, in .rb files` or the like on a
+  claim line, 567 lines in all.
+- A type checker that degrades. Ghost, prisma, react and eslint read `degraded` in both versions.
+  0.13.4 printed a count line for the type-checked claim in each area and this version prints
+  none: 510 lines are gone, and every area file that held the claim changes, 277 in Ghost, 173 in
+  prisma, 101 in react and 24 in eslint.
+- New areas. appsmith gains 83 over its Java, react 9, eight of them over its Rust crates,
+  fastlane 3 over its Java, storybook 12 over its components, and supabase 16 over its components, Kotlin and Python.
+  storybook also loses 4 areas that deeper ones replace, and supabase 3.
+- The 500-area ceiling. vscode holds 500 areas in both versions. Six areas of 8 files each leave,
+  which stated 18 claims, and six arrive, four of them over the Rust of `cli/src`, which state
+  none: 1,798 claims stated become 1,784. next.js held 500 and holds 497. 30 JavaScript and
+  TypeScript areas of 10 or 11 files leave, which stated 7 claims, and 27 arrive, 26 of them
+  holding Rust, which state none: 429 become 423. openproject holds 500 in both and nothing moves.
+- Claims stated. The number is the same on 29 of the 35. It moves on vscode and next.js as above,
+  and on appsmith (802 to 803), react (127 to 126), storybook (554 to 563) and supabase (918 to
+  927).
+- One claim lost with no file changed. On storybook, `scripts/ci` (34 of 36 sites),
+  `code/addons/a11y/src` (11 of 12) and `code/frameworks/nextjs/src` (32 of 34) stated `exported
+  names are camelCase` in 0.13.4 and print it as `no convention` here. Each had the claim on the
+  strength of the rest of the repository, whose bound for that row rose from 0.9725 to 0.9811
+  with the 180 components this version reads, and the area's own counts stop short of it.
 
 ### Added
 
@@ -97,7 +128,7 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   `head-one-branch` names the file, once, and its findings are about the branch that was read.
 - Vue and Svelte. The `<script>` blocks of a `.vue` or `.svelte` file are read by the parser that
   reads JavaScript and counted by the JavaScript dimensions that hold for a component: 24 for Vue
-  and 24 for Svelte, of 28. A file may hold two blocks (`<script>` and `<script setup>`, or
+  and 24 for Svelte, of the 28 a JavaScript file is asked without the type checker. A file may hold two blocks (`<script>` and `<script setup>`, or
   Svelte's module and instance scripts), and they are read as one program. `lang="ts"` picks
   TypeScript, and the lines `check` reports are the file's own. The scanner that finds the blocks
   agreed with each framework's compiler on 4,100 of 4,100 Vue files and 8,047 of 8,048 Svelte
@@ -172,13 +203,15 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   among them `.erb`, `.haml`, `.css`, `.scss`, `.html`, `.sh` and `.sql`, so a repository holding
   them gains the line or a longer one. `.py`, `.php`, `.go`, `.java`, `.cs`, `.rs`, `.kt` and
   `.kts` leave the line, since those files are read. mastodon gains `469 files hold a language this
-  map does not read (310 .haml, 91 .scss, 47 .erb, 10 .css, 8 .sql, 3 .html)`. Where the overview
-  already sat at its 40 lines, one root folds into the roster's last line to pay for it.
+  map does not read (310 .haml, 91 .scss, 47 .erb, 10 .css, 8 .sql, 3 .html)`. All 35 corpus
+  overviews already sat at their 40 lines, so the line is paid for: of the 22 that gain it, 15 fold
+  one root into the roster's last line, six name one area fewer, and one drops the test-precedent
+  sentence.
 - A claim says which files it was counted over where its area holds three or more files the
   dimension is never asked of: `module-level bindings are const, in .ts files` beside `.vue`
   files, and `rescue blocks use the error they caught, in .rb files` beside `.js` ones. This
   changes existing maps. On the 35 corpus repositories, 85 of 6,947 area files carry the clause,
-  on 573 lines in all, most of them where Ruby sits beside JavaScript: 277 in discourse and 96 in
+  on 567 lines in all, most of them where Ruby sits beside JavaScript: 277 in discourse and 96 in
   decidim. One or two files of another language earn no clause, so a count there leaves them out
   without saying so. The clause joins a line and adds none, and 21 of the 35 carry no clause.
 - A directory whose components sit beside modules counts their namesake tests apart: `85 of 745
@@ -207,14 +240,14 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
 - A background refresh does not run the type checker where the last scan measured it as
   `degraded` and nothing it reads has moved since: this version, the repository's packages, where
   `typescript` resolves, and the name and bytes of the root config. The refresh carries the
-  measured verdict instead. A refresh after a commit measured 4.3s with the checker and 1.2s
-  without on eslint, 8.8s and 2.8s on react, 13.6s and 2.3s on prisma, and 21.1s and 3.8s on Ghost,
-  with peak memory of 808 MB to 2.7 GB against 160 to 242 MB. On those four the verdict was the
+  measured verdict instead. A refresh after a commit measured 4.4s with the checker and 1.2s
+  without on eslint, 8.9s and 2.8s on react, 13.9s and 2.3s on prisma, and 21.2s and 3.8s on Ghost,
+  with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four the verdict was the
   same 50 commits earlier, within 0.3 points. A map written that way says
   `type-checked claims are not counted: 61% of type lookups resolved when measured 2026-10-07
   (low-resolution)` in the overview, and those three words and the day are all that differ from
-  the map the measuring scan wrote: on eslint and Ghost the other 29 and 283 rule files are the
-  same bytes. `/anatomiya:scan` always
+  the map the measuring scan wrote: on eslint, Ghost, prisma and react the other 29, 283, 192 and
+  131 rule files are the same bytes. `/anatomiya:scan` always
   runs the checker, and a checker that reads `ok` runs on every refresh, as in 0.13.4. A
   repository whose code changes lift it over the floor stays `degraded` until someone runs the
   scan. The record's `semantic` gains `carried`, `measuredAt` and `measuredUnder`, and the schema
@@ -224,10 +257,11 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   convention. 298 of 586 sites (degraded-semantic)` in each area; those lines are gone, the
   record holds no slot for them, and the overview says `type-checked claims are not counted: 61%
   of type lookups resolved (low-resolution)` where it said `are counts only`. The counts came
-  from a checker that resolved too few types to be believed. eslint's map prints 24 lines fewer
-  over 24 area files. Ghost's loses 257 such lines over 257 area files and prints 241 fewer in
-  all, since an area at its line budget shows another row in the room; 277 of its area files
-  change. A checker that reads `ok` is not touched.
+  from a checker that resolved too few types to be believed. Four corpus repositories read
+  `degraded`, and between them 510 such lines are gone: 257 in Ghost, 133 in prisma, 96 in react
+  and 24 in eslint. An area at its line budget shows another row in the room, so Ghost's map is
+  241 lines shorter and prisma's 111, and every area file that held the claim changes: 277 in
+  Ghost, 173 in prisma, 101 in react and 24 in eslint. A checker that reads `ok` is not touched.
 - A repository that commits its map sees "What lives where" change once, on its first scan with
   this version: the map's own files are left out of it, which is the Fixed entry that opens `The
   layout counted the map`.

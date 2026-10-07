@@ -437,7 +437,7 @@ root `tsconfig.json`, a root `tsconfig.base.json` where there is none, or a `.ts
 the shared half, its path aliases among it, in the base: read on the compiler's defaults instead,
 three of eight such roots fell under the floor and the base lifts them over it. Plain
 JavaScript with none of the three ran on the compiler's defaults and resolved 25% to 39% on three installed
-repositories, which closes every type-checked slot. A `jsconfig.json` does not count, because the
+repositories, under the floor, so no type-checked claim would be counted there. A `jsconfig.json` does not count, because the
 checker reads only those two names. Where any of these is missing the checker stays off and the
 facts record says why in `semantic.reason`: `no-checked-files`, `plain-javascript`,
 `no-dependencies` or `not-installed`, which also covers a `typescript` of another major that doctor
@@ -650,12 +650,12 @@ source files of languages the row is never asked of, the claim says which files 
 
 ```
 module-level bindings are const, in .ts files: no convention. 10 of 10 sites (concentration)
-imports used only as types are marked import type, in .ts files: no convention. 5 of 8 sites (ratio)  (partial: some sites are not visible statically)
 module-level functions are declared with function, not assigned as arrows: no convention. 12 of 17 sites (ratio)
+imports used only as types are marked import type, in .ts files: no convention. 5 of 8 sites (ratio)  (partial: some sites are not visible statically)
 ```
 
-That area is supabase's `blocks/vue/registry/default`, 13 `.ts` files and 6 `.vue`. The first two
-rows are not asked of Vue and carry the clause; the third is, and does not. The clause sits on the
+Those are three lines of supabase's `blocks/vue/registry/default`, 13 `.ts` files and 6 `.vue`. The
+first and the third row are not asked of Vue and carry the clause; the second is, and does not. The clause sits on the
 sentence because the sentence is the one part every form prints, so it costs no line. One or two
 files earn none: Homebrew's `Library/Homebrew` holds 220 Ruby files and one `.py`, and its Ruby
 claims print bare, so their counts leave that file out without saying so. The floor is the one a
@@ -665,11 +665,9 @@ the clause prints is a question about languages, and what it names is the files 
 `.vue` files reads `, in .tsx files`. Ruby beside JavaScript is the same case, `rescue blocks use
 the error they caught, in .rb files`, and a file with no extension is named whole, `, in .rb files
 and Gemfile`. A row that skipped a whole extension by content, as a typed row skips the `.js` files
-beside `.ts` ones, prints no clause. Measured on the 35-repository corpus with the names drawn from
-the language ids, it changed 87 of 6,887 area files and 705 lines, added a line to none, and put no
-clause in 24 repositories. The count has not been taken again with the names drawn from the files
-asked. With the floor of three, 573 lines in 85 of 6,947 area files carry a clause, in 14 of the
-35 (B56).
+beside `.ts` ones, prints no clause. Measured on the 35-repository corpus, the clause adds a line to
+no file. With the floor of three, 85 of 6,947 area files carry it, in 14 of the 35 repositories;
+with no floor it is 104 area files in 16 (B56).
 
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports whose filename, up to its first
