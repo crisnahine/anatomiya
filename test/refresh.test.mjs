@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -612,6 +612,25 @@ test("a refresh after a degraded scan carries the verdict and does not run the c
   const byHand = (await runScan(dir)).result.semantic;
   assert.deepEqual([byHand.ran, byHand.status, byHand.carried], [true, "degraded", false], "a scan run by hand measures");
   assert.notEqual(byHand.measuredAt, first.measuredAt);
+});
+
+test("a refresh that carries a degraded verdict writes the map the measuring scan wrote, but for the mark", needsTs, async (t) => {
+  const { dir, first } = await typed(t);
+  const rules = join(dir, ".claude", "rules");
+  const written = () => Object.fromEntries(readdirSync(rules).sort().map((name) => [name, readFileSync(join(rules, name), "utf8")]));
+  const slots = () => JSON.parse(readFileSync(join(dir, FACTS), "utf8")).areas;
+  const byHand = { files: written(), slots: slots() };
+  assert.ok(Object.keys(byHand.files).length > 1, "the scan wrote no area file");
+  assert.doesNotMatch(Object.values(byHand.files).join("\n"), /call chain|degraded-semantic/);
+  assert.doesNotMatch(JSON.stringify(byHand.slots), /law_of_demeter/);
+
+  assert.equal((await refreshed(dir)).semantic.carried, true);
+
+  const mark = ` when measured ${first.measuredAt.slice(0, 10)}`;
+  const carried = written();
+  assert.ok(carried["anatomiya-overview.md"].includes(mark), "the overview lost the carried mark");
+  assert.deepEqual({ ...carried, "anatomiya-overview.md": carried["anatomiya-overview.md"].replace(mark, "") }, byHand.files);
+  assert.deepEqual(slots(), byHand.slots);
 });
 
 test("a refresh measures again once the config the root is read through changes", needsTs, async (t) => {

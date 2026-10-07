@@ -1097,12 +1097,36 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
 
   assert.equal(r.semantic.ran, true);
   assert.equal(r.semantic.status, "degraded", `the tier was expected degraded, got ${r.semantic.reason}`);
+  // Neither a line nor a slot: the counts are a checker's that resolved too
+  // few types to be believed, and a refresh that carries the verdict has none.
+  assert.ok(r.areas.length > 0);
   for (const area of r.areas) {
-    for (const d of area.dimensions.filter((x) => x.key === "law_of_demeter")) {
-      assert.equal(d.states, null, `${area.path} stated a semantic claim off a degraded tier`);
-      assert.equal(d.gate, "degraded-semantic", `${area.path} closed it for ${d.gate} instead`);
-    }
+    assert.deepEqual(area.dimensions.filter((d) => d.tier === "semantic").map((d) => d.key), [], area.path);
   }
+  assert.doesNotMatch(factsJson(r), /law_of_demeter|"tier":\s*"semantic"/);
+  const bodies = [...planMap(r).bodies.values()].join("\n");
+  assert.doesNotMatch(bodies, /call chain|degraded-semantic/);
+  assert.match(bodies, /^- type-checked claims are not counted: \S+( of)? type lookups resolved \(\S+\)$/m);
+});
+
+test("an area only the checker counted in is described by no scan whose checker degraded", async (t) => {
+  // A carried verdict folds no type-checked row, so such an area is one
+  // nothing was counted in. A scan that measures the verdict has to agree.
+  const onlyTyped = async (files, options) => {
+    const parsed = await parseAll(files, options);
+    for (const r of parsed.records.values()) r.hits = {};
+    return parsed;
+  };
+  const rows = (r) => r.areas.flatMap((a) => a.dimensions.map((d) => d.key));
+
+  assert.deepEqual(rows(await scan(typedRepo(t), { parseFiles: onlyTyped })), ["law_of_demeter"], "the fixture counts another row");
+
+  const dir = typedRepo(t);
+  writeFileSync(join(dir, "tsconfig.json"), "{ this is not json");
+  const measured = await scan(dir, { parseFiles: onlyTyped });
+  assert.equal(measured.semantic.status, "degraded");
+  assert.deepEqual(measured.areas, []);
+  assert.deepEqual((await scan(dir, { parseFiles: onlyTyped, carried: CARRIED })).areas, []);
 });
 
 test("the resolution rate is taken over the areas the map describes", async (t) => {

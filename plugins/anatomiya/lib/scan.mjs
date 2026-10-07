@@ -46,7 +46,7 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * run side by side. `carried` is a degraded verdict measured by an earlier run
  * (`carriedVerdict`): where the checker could run it is not run, and the verdict
  * is recorded as carried. No type-checked row is counted then, since the counts
- * are the checker's.
+ * are the checker's, and none is kept from a run that measures the tier degraded.
  */
 export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null } = {}) {
   const started = Date.now();
@@ -219,9 +219,16 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     ? areaFiles
     : files.map((f) => f.rel).filter((rel) => !inArea.has(rel));
   const semantic = semanticOver(whole, counted);
+  // A checker that resolved too few types counted nothing to print, so its
+  // rows leave the fold here, as they never enter it where the verdict is
+  // carried: the two scans write the same map.
+  const described =
+    semantic?.status === "degraded"
+      ? folded.map((f) => ({ ...f, dims: f.dims.filter((d) => d.tier !== "semantic") })).filter((f) => f.dims.length > 0)
+      : folded;
 
   const pool = new Map();
-  for (const { dims, measuredArea } of folded) {
+  for (const { dims, measuredArea } of described) {
     for (const d of dims) {
       const baselineDim = measuredArea.dims.find((b) => b.key === d.key) || null;
       // Only slots nothing else has closed. A greenfield area's population is
@@ -246,7 +253,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // everything counts the same way, so the priors every other area borrows do
   // not move with the machine the scan ran on.
   const out = [];
-  for (const { area, areaParsed, dims, measuredArea } of folded) {
+  for (const { area, areaParsed, dims, measuredArea } of described) {
     if (heldIds.has(area.id)) continue;
     // A language with no static import surface is asked neither question: an
     // empty roster there would read as a measured "imports nothing". Ruby
@@ -291,6 +298,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // row is never asked of. Not in the record: the map is written from this
       // object, and nothing reads the scope back.
       extsByLang: extsByLang(area.files),
+      filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))),
       // What a new file in here would import, and what to check for before
       // writing one. Read at HEAD like the roster: both are counts, and neither
       // is a claim anything is gated against.
@@ -298,7 +306,6 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // Over every record in the repository, not this area's: the question is
       // who else reaches in here.
       reused: hasImports ? mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels) : null,
-      filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))),
       dimensions: gated,
     });
   }

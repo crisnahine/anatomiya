@@ -212,12 +212,22 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   with peak memory of 808 MB to 2.7 GB against 160 to 242 MB. On those four the verdict was the
   same 50 commits earlier, within 0.3 points. A map written that way says
   `type-checked claims are not counted: 61% of type lookups resolved when measured 2026-10-07
-  (low-resolution)` in the overview and prints no count line for `a call chain stays inside one
-  type`, so those lines come and go between a scan you run and a refresh. `/anatomiya:scan` always
+  (low-resolution)` in the overview, and those three words and the day are all that differ from
+  the map the measuring scan wrote: on eslint and Ghost the other 29 and 283 rule files are the
+  same bytes. `/anatomiya:scan` always
   runs the checker, and a checker that reads `ok` runs on every refresh, as in 0.13.4. A
   repository whose code changes lift it over the floor stays `degraded` until someone runs the
   scan. The record's `semantic` gains `carried`, `measuredAt` and `measuredUnder`, and the schema
   stays 19.
+- A type checker that reads `degraded` prints no count for its claims, whether this scan measured
+  it or a refresh carried the verdict. 0.13.4 printed `a call chain stays inside one type: no
+  convention. 298 of 586 sites (degraded-semantic)` in each area; those lines are gone, the
+  record holds no slot for them, and the overview says `type-checked claims are not counted: 61%
+  of type lookups resolved (low-resolution)` where it said `are counts only`. The counts came
+  from a checker that resolved too few types to be believed. eslint's map prints 24 lines fewer
+  over 24 area files. Ghost's loses 257 such lines over 257 area files and prints 241 fewer in
+  all, since an area at its line budget shows another row in the room; 277 of its area files
+  change. A checker that reads `ok` is not touched.
 - A repository that commits its map sees "What lives where" change once, on its first scan with
   this version: the map's own files are left out of it, which is the Fixed entry that opens `The
   layout counted the map`.
