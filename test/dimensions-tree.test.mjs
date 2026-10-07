@@ -50,6 +50,8 @@ const CASES = {
       ["<?php\ntry { a(); } catch (A | B $e) { /* ignored */ }\n", [false]],
       ["<?php\ntry { a(); } catch (E $e) { log($x->e); }\n", [false]],
       ["<?php\ntry { a(); } catch (A | B) { return null; }\n", []],
+      // PHP has its own way to bind nothing, so the word is a name like any other there.
+      ["<?php\ntry { a(); } catch (E $ignored) { }\n", [false]],
       ["<?php\ntry { a(); } finally { b(); }\n", []],
     ],
     java: [
@@ -64,6 +66,11 @@ const CASES = {
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { return; }\n    }\n}\n", [false]],
       // An unnamed variable binds nothing: the clause names a type alone.
       ["class A {\n    void m() {\n        try { a(); } catch (E _) { return; }\n    }\n}\n", []],
+      // A handler that names what it caught `ignored` has said it binds nothing, as `_` says it.
+      ["class A {\n    void m() {\n        try { a(); } catch (InterruptedException ignored) { }\n    }\n}\n", []],
+      ["class A {\n    void m() {\n        try { a(); } catch (final E ignored) { return; } catch (F ignore) { } catch (G expected) { } catch (H Ignored) { }\n    }\n}\n", [false, false, false]],
+      // Restoring the interrupt flag reads nothing of the error.
+      ["class A {\n    void m() {\n        try { a(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }\n    }\n}\n", [false]],
       ["class A {\n    void m() {\n        try { a(); } finally { }\n    }\n}\n", []],
     ],
   },
