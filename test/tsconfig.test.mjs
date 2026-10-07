@@ -718,7 +718,6 @@ test("a root with only a base config has the base read", needsTs, () => {
     const r = readConfig(ts, dir);
     assert.equal(r.status, "ok");
     assert.equal(r.reason, null);
-    assert.equal(r.configName, "tsconfig.base.json");
     assert.equal(r.options.strict, true);
     assert.deepEqual(r.options.paths, { "@acme/util": ["libs/util/src/index.ts"] });
     assert.equal(r.options.noEmit, true, "the forced options hold on a base config too");
@@ -734,7 +733,6 @@ test("the root config wins over a base beside it", needsTs, () => {
   });
   try {
     const r = readConfig(ts, dir);
-    assert.equal(r.configName, "tsconfig.json");
     assert.equal(r.options.strict, false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -745,9 +743,10 @@ test("a root with neither config names none", needsTs, () => {
   const dir = repo({ "a.ts": "export const a = 1;\n" });
   try {
     const r = readConfig(ts, dir);
-    assert.equal(r.configName, null);
     assert.equal(r.reason, "no-tsconfig");
     assert.equal(configNameIn(dir), null);
+    // Which file was read is `configNameIn`'s to answer, and the answer here carries nothing no caller reads.
+    assert.deepEqual(Object.keys(r).sort(), ["configPath", "fileNames", "options", "reason", "status"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
