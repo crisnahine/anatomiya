@@ -372,9 +372,11 @@ too, so the line says which files it speaks for.
 
 ## What it measures
 
-58 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. A Vue or Svelte script
-block is asked most of the JavaScript ones: 24 for Vue, 24 for Svelte. Each is one claim about one
-area, with a precision marker where the predicate cannot see every site. Among them:
+62 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. A Vue or Svelte script
+block is asked most of the JavaScript ones: 24 for Vue, 24 for Svelte. Four are asked of the
+languages a tree-sitter grammar reads, each where measured repositories differ on it: 2 for
+Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for Rust, 2 for Kotlin. Each is one claim
+about one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
   translation calls, Rails migrations and callbacks, and the rest of the registry in
@@ -542,7 +544,7 @@ already enforces a rule, the map restating it is waste, not defence in depth.
 
 **JavaScript, TypeScript and Ruby, plus the script blocks of Vue and Svelte files.** A Python, Go
 or Rust repository gets an overview with a layout section and no claims in it, and its "Not
-covered" section counts the files it did not read. One of the 58 needs the type checker and is the only
+covered" section counts the files it did not read. One of the 62 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
@@ -582,7 +584,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 280 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 286 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

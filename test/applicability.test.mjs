@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { PAIRINGS, applyPairings } from "../plugins/anatomiya/lib/pairing.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
-import { declOf } from "../plugins/anatomiya/lib/langs.mjs";
+import { declOf, engineOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { REACT_HOOKS } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
 import { COLUMN_TYPE, DATA_CALLS, FRAMEWORK } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
@@ -652,6 +652,83 @@ container = document.createElement("div")`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_reference :comments, :owner, polymorphic: true\n  end\nend`,
     ],
   },
+
+  // --- dimensions-tree.mjs ---
+  // One row speaks several languages, so a witness names its own where it is not the row's first.
+  caught_error_used: {
+    lang: "php",
+    applicable: [
+      { source: `<?php\ntry { a(); } catch (E $e) { } catch (F $f) { log($f); }\n`, sites: 2 },
+      { lang: "java", source: `class A {\n    void m() {\n        try { a(); } catch (E e) { } catch (F e) { b(); }\n    }\n}\n`, sites: 2 },
+    ],
+    inapplicable: [
+      // A try that only cleans up catches nothing.
+      `<?php\ntry { a(); } finally { b(); }\n`,
+      // A type and no name: the handler used what it was given.
+      `<?php\ntry { a(); } catch (E) { } catch (A | B) { return null; }\n`,
+      { lang: "java", source: `class A {\n    void m() {\n        try { a(); } finally { b(); }\n    }\n}\n` },
+    ],
+  },
+  public_doc_comment: {
+    lang: "python",
+    applicable: [
+      `def run():\n    pass\n`,
+      `class A:\n    def run(self):\n        pass\n`,
+      { lang: "go", source: `package a\n\nfunc Run() {}\n` },
+      { lang: "go", source: `package a\n\nfunc (t T) Run() {}\n` },
+      { lang: "rust", source: `pub fn run() {}\n` },
+      { lang: "php", source: `<?php\nfunction run() {}\n` },
+      { lang: "php", source: `<?php\nclass A\n{\n    function run() {}\n\n    public function walk() {}\n}\n`, sites: 2 },
+      { lang: "kotlin", source: `fun run() {}\n\nclass A {\n    public fun walk() {}\n}\n`, sites: 2 },
+      { lang: "java", source: `class A {\n    public void run() {}\n}\n` },
+      { lang: "java", source: `interface A {\n    void run();\n}\n` },
+      { lang: "csharp", source: `class A\n{\n    public void Run() { }\n}\n` },
+      { lang: "csharp", source: `interface IA\n{\n    void Run();\n}\n` },
+    ],
+    inapplicable: [
+      `def _run():\n    pass\n`,
+      // A function inside a function is nobody's to call.
+      `def _run():\n    def inner():\n        pass\n`,
+      { lang: "go", source: `package a\n\nfunc run() {}\n` },
+      { lang: "go", source: `package a\n\nfunc (b *binding) Bind() {}\n` },
+      // The stubs of an overload set, and a property's setter and deleter.
+      `from typing import overload\n\n\n@overload\ndef run(a: int) -> int: ...\n@overload\ndef run(a: str) -> str: ...\n`,
+      `class A:\n    @_size.setter\n    def size(self, value):\n        pass\n\n    @_size.deleter\n    def size(self):\n        pass\n`,
+      { lang: "rust", source: `fn run() {}\n\npub(crate) fn walk() {}\n\npub(super) fn crawl() {}\n` },
+      { lang: "rust", source: `#[cfg(test)]\nmod tests {\n    pub fn helper() {}\n}\n` },
+      { lang: "rust", source: `#[doc(hidden)]\npub fn run() {}\n\n#[test]\npub fn works() {}\n` },
+      { lang: "rust", source: `pub trait T {\n    fn required(&self);\n\n    fn provided(&self) {}\n}\n` },
+      { lang: "kotlin", source: `actual fun run() {}\n` },
+      { lang: "php", source: `<?php\nclass A\n{\n    private function run() {}\n\n    protected function walk() {}\n}\n` },
+      { lang: "php", source: `<?php\n$a = new class {\n    public function run() {}\n};\n` },
+      { lang: "kotlin", source: `private fun run() {}\n\ninternal fun walk() {}\n\nclass A {\n    protected fun crawl() {}\n\n    override fun toString(): String = ""\n}\n` },
+      { lang: "kotlin", source: `val r = object : Runnable {\n    fun extra() {}\n}\n` },
+      { lang: "java", source: `class A {\n    void run() {}\n\n    private void walk() {}\n\n    protected void crawl() {}\n\n    @Override\n    public String toString() { return ""; }\n}\n` },
+      { lang: "java", source: `interface A {\n    private void run() {}\n}\n` },
+      { lang: "java", source: `class A {\n    Runnable r = new Runnable() {\n        public void run() {}\n    };\n}\n` },
+      { lang: "csharp", source: `class A\n{\n    void Run() { }\n\n    internal void Walk() { }\n\n    protected void Crawl() { }\n\n    public override string ToString() { return ""; }\n}\n` },
+    ],
+  },
+  wildcard_import: {
+    lang: "kotlin",
+    applicable: [{ source: `import a.b.C\nimport a.b.*\nimport a.b.D as E\n`, sites: 3 }],
+    inapplicable: [`package a.b\n\nval x = 2 * 3\n`],
+  },
+  declared_return_type: {
+    lang: "python",
+    applicable: [
+      `def f():\n    pass\n`,
+      { source: `class A:\n    def f(self):\n        def g() -> int:\n            return 1\n        return g\n`, sites: 2 },
+      { lang: "php", source: `<?php\nfunction f() {}\n` },
+      { lang: "php", source: `<?php\ninterface A\n{\n    public function f();\n\n    public function __toString();\n}\n`, sites: 2 },
+    ],
+    inapplicable: [
+      `class A:\n    def __init__(self):\n        pass\n\n    def __eq__(self, other):\n        return True\n`,
+      `f = lambda: 1\n`,
+      { lang: "php", source: `<?php\nclass A\n{\n    public function __construct() {}\n\n    public function __destruct() {}\n}\n` },
+      { lang: "php", source: `<?php\n$f = function () { return 1; };\n$g = fn () => 1;\n` },
+    ],
+  },
 };
 
 /**
@@ -682,22 +759,26 @@ const PAIRING_WITNESSES = Object.fromEntries(
   ])
 );
 
-const jsKeys = Object.keys(WITNESSES).filter((k) => WITNESSES[k].lang !== "ruby");
-const rubyKeys = Object.keys(WITNESSES).filter((k) => WITNESSES[k].lang === "ruby");
+// By the engine that reads the row's language: one of the three needs a Ruby on the machine.
+const keysFor = (engine) => Object.keys(WITNESSES).filter((k) => engineOf(WITNESSES[k].lang) === engine);
+const jsKeys = keysFor("oxc");
+const rubyKeys = keysFor("prism");
+const treeKeys = keysFor("tree-sitter");
 
 // The extension `materialise` will actually give this source, not a second copy
 // of the table. The parse worker picks its grammar from the name, so a private
 // mapping that drifted would hand every JSX witness to the TypeScript grammar,
 // read `<button` as a type assertion, and report five broken predicates.
-const rel = (key, half, i = 0) => `${key}.${half}.${i}.${declOf(WITNESSES[key].lang).scratchExt}`;
 const listed = (v) => (Array.isArray(v) ? v : [v]);
+const langOf = (key, w) => (typeof w === "object" && w.lang) || WITNESSES[key].lang;
+const rel = (key, half, i = 0) => `${key}.${half}.${i}.${declOf(langOf(key, listed(WITNESSES[key][half])[i])).scratchExt}`;
 
 async function hitsFor(keys) {
   const files = keys.flatMap((key) => {
     const w = WITNESSES[key];
     return [
-      ...listed(w.applicable).map((x, i) => ({ rel: rel(key, "applicable", i), source: sourceOf(x), lang: w.lang })),
-      ...listed(w.inapplicable).map((x, i) => ({ rel: rel(key, "inapplicable", i), source: sourceOf(x), lang: w.lang })),
+      ...listed(w.applicable).map((x, i) => ({ rel: rel(key, "applicable", i), source: sourceOf(x), lang: langOf(key, x) })),
+      ...listed(w.inapplicable).map((x, i) => ({ rel: rel(key, "inapplicable", i), source: sourceOf(x), lang: langOf(key, x) })),
     ];
   });
   // One pass for every witness rather than one per dimension: `parseAll` forks
@@ -707,7 +788,7 @@ async function hitsFor(keys) {
 }
 
 const sourceOf = (w) => (typeof w === "string" ? w : w.source);
-const expected = (w) => (typeof w === "string" ? null : w.sites);
+const expected = (w) => (typeof w === "string" ? null : (w.sites ?? null));
 
 /**
  * How many sites the predicate found, or why the witness itself is the problem.
@@ -739,9 +820,9 @@ test("every shipped dimension has a witness pair", () => {
 });
 
 /**
- * Both engines answer the same question, so they get one body. Split by
- * language because only one of them needs a Ruby on the machine, and skipping
- * that half must not take the other with it.
+ * Every engine answers the same question, so they get one body. Split by
+ * engine because only one of them needs a Ruby on the machine, and skipping
+ * that part must not take the others with it.
  */
 async function witnessProblems(keys) {
   const records = await hitsFor(keys);
@@ -785,6 +866,10 @@ test("every JavaScript predicate sees the file its sentence claims, and only tha
 
 test("every Ruby predicate sees the file its sentence claims, and only that one", needsRuby, async () => {
   assert.deepEqual(await witnessProblems(rubyKeys), []);
+});
+
+test("every tree-sitter predicate sees the file its sentence claims, and only that one", async () => {
+  assert.deepEqual(await witnessProblems(treeKeys), []);
 });
 
 test("every obligation counts its producer, and asks nothing of a repository with no companion of that shape", () => {

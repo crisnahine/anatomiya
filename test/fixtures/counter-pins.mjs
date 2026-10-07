@@ -19,6 +19,9 @@ export const ELIGIBLE = [
   "assertion_style", "absent_is_null", "doc_comment_style",
   "record_lookup", "model_callbacks",
   "hook_call_style", "handler_is_named", "handler_memoised",
+  // A library documents its public surface and an application mostly does not: of 21 measured
+  // repositories five sit under 0.40 and five over 0.90, so the inverse is a habit and not a lapse.
+  "public_doc_comment",
 ];
 
 /** Rows whose other side is a defect rather than a style anyone picked. */
@@ -56,4 +59,10 @@ export const REFUSED = [
   // ships without a spec", which is a directive to write one test fewer.
   "rake_task_spec", "model_spec", "service_spec", "job_spec", "worker_spec",
   "controller_spec", "serializer_spec", "model_test", "job_test",
+  // The JavaScript and Ruby rows' reason: a handler that drops its error is an absence.
+  "caught_error_used",
+  // A wildcard is the absence of a list, and the inverse would tell a file to name nothing it takes.
+  "wildcard_import",
+  // An unannotated function is an absence, and the inverse would tell an agent to delete types.
+  "declared_return_type",
 ];

@@ -433,10 +433,12 @@ a backslash is a character in a name rather than a separator.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 49 ship, the filename row included: 28 for JavaScript, 33
+A dimension is one claim about one area. 53 ship, the filename row included: 28 for JavaScript, 33
 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and
 reaches a scan only when the checker runs. A component's script block is asked most of the 28: 24
-for Vue and 24 for Svelte. Each is defined by three quantities, not one.
+for Vue and 24 for Svelte. Four are asked of a tree-sitter tree, each of the languages whose
+measured repositories differ on it: 2 for Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for
+Rust and 2 for Kotlin. Each is defined by three quantities, not one.
 
 | Quantity | Meaning |
 |---|---|
@@ -543,6 +545,10 @@ in `check`.
 | `http_through_client` | partial | ruby | HTTP goes through the repository's own client, not `Net::HTTP` |
 | `class_base` | precise | ruby | classes here inherit `<style>`, learned |
 | `module_include` | precise | ruby | classes here include `<style>`, learned |
+| `caught_error_used` | partial | php, java | exception handlers use the error they caught |
+| `public_doc_comment` | partial | python, php, go, java, csharp, rust, kotlin | public functions carry a doc comment |
+| `wildcard_import` | precise | kotlin | an import names what it takes |
+| `declared_return_type` | precise | python, php | functions declare what they return |
 
 The five JSX rows are the ones that make the JSX total 33 rather than 28: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
@@ -2046,7 +2052,7 @@ line prints and the one `check --format json` gives for the same checkout.
 A caveat is why a run could not answer in full. The sentence is what a human reads; the code is what
 anything else reads, because with prose alone "the diff could not be read" and "one file was read
 from the working tree" are told apart by a substring match on wording nobody promised to keep. There
-are 28. Most appear at most once in a run; the ones that repeat are named under the table.
+are 29. Most appear at most once in a run; the ones that repeat are named under the table.
 
 | Code | What it means |
 |---|---|
@@ -2071,6 +2077,7 @@ are 28. Most appear at most once in a run; the ones that repeat are named under 
 | `head-rejected` | the parser rejected a file's syntax at the head side |
 | `head-oversize` | a file was past the size cap at the head side |
 | `head-unparsed` | a file went unread at the head side for none of the three above: this tool or the filesystem could not produce it |
+| `head-one-branch` | a C# file was read with one branch of each `#if` kept, so what the other branches hold was not checked |
 | `base-unparsed` | a file did not parse at the merge base, so it was skipped |
 | `stripper-missing` | `flow-remove-types` is not installed, so a file written in Flow is rejected rather than read |
 | `engine-missing` | a parser engine is not installed, so no file of its languages was checked; the message names it and its remedy, and a change with nothing else to read refuses instead |
@@ -2086,7 +2093,7 @@ the record names files in and nobody could read. A target that is off adds nothi
 The four head-side unread causes are four codes rather than one because the reader's next move
 differs for each: a crash is this tool's, rejected syntax is the branch's own code, the cap is a
 generated file, and the fourth is this tool or the filesystem. Each of those four can appear once per
-file, and so can `head-unreadable`, `base-unreadable` and `base-unparsed`.
+file, and so can `head-unreadable`, `base-unreadable`, `base-unparsed` and `head-one-branch`.
 
 `no-merge-base` is the one code that can appear twice in one run. Resolving the base emits it when a
 candidate ref resolves and has no fork point with HEAD, and the run then falls to the added-lines

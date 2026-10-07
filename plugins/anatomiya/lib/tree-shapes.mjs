@@ -12,10 +12,11 @@ export const SHAPES = {
     import: ["import_statement", "import_from_statement", "future_import_statement"],
     imported: "name",
     annotation: ["decorator"],
-    wildcard: ["wildcard_import"],
     block: ["block"],
-    noop: ["pass_statement"],
     docstring: ["expression_statement", "string", "concatenated_string"],
+    args: ["argument_list"],
+    // A decorated function sits in a node of its own, between the function and the body that holds it.
+    wrap: ["decorated_definition"],
     tokensOf: [],
     name: "name",
     returnType: "return_type",
@@ -33,6 +34,11 @@ export const SHAPES = {
     block: ["compound_statement"],
     args: ["arguments"],
     call: ["function_call_expression"],
+    scope: ["namespace_definition"],
+    raise: ["throw_expression"],
+    ident: ["name"],
+    // A name is a variable only inside one of these: `$x->e` spells `e` and reads no `$e`.
+    variable: ["variable_name"],
     base: ["base_clause"],
     // What a file holds outside any code: the tags, and the markup around them.
     header: ["php_tag", "text", "text_interpolation"],
@@ -40,6 +46,7 @@ export const SHAPES = {
     name: "name",
     returnType: "return_type",
     callee: "function",
+    caught: "name",
   },
   go: {
     fn: ["function_declaration", "method_declaration"],
@@ -50,8 +57,10 @@ export const SHAPES = {
     import: ["import_declaration"],
     annotation: [],
     header: ["package_clause"],
+    receiverType: ["type_identifier"],
     tokensOf: [],
     name: "name",
+    receiver: "receiver",
   },
   java: {
     fn: ["method_declaration"],
@@ -60,14 +69,20 @@ export const SHAPES = {
     catch: ["catch_clause"],
     import: ["import_declaration"],
     annotation: ["marker_annotation", "annotation"],
-    wildcard: ["asterisk"],
     visibility: ["modifiers"],
     block: ["block"],
     args: ["annotation_argument_list"],
+    raise: ["throw_statement"],
+    ident: ["identifier"],
+    // An enum's methods sit one node deeper than its body, past the constants.
+    wrap: ["enum_body_declarations"],
+    iface: ["interface_declaration"],
     header: ["package_declaration"],
     // `public` and `static` are tokens of `modifiers`, and its text is not kept once an annotation sits beside them.
     tokensOf: ["modifiers"],
     name: "name",
+    caught: "name",
+    member: "field",
   },
   csharp: {
     fn: ["method_declaration", "local_function_statement"],
@@ -79,17 +94,24 @@ export const SHAPES = {
     visibility: ["modifier"],
     block: ["block"],
     args: ["attribute_argument_list"],
+    iface: ["interface_declaration"],
+    // A conditional around whole members holds them, where the file read as written.
+    wrap: ["preproc_if", "preproc_elif", "preproc_else"],
+    // A directive on a line of its own between two members.
+    directive: ["preproc_pragma", "preproc_nullable", "preproc_region", "preproc_endregion", "preproc_line", "preproc_error", "preproc_warning"],
     tokensOf: [],
     name: "name",
   },
   rust: {
     fn: ["function_item"],
     cls: ["impl_item", "trait_item"],
+    scope: ["mod_item"],
     comment: ["line_comment", "block_comment"],
     catch: [],
     import: ["use_declaration"],
     annotation: ["attribute_item", "inner_attribute_item"],
-    wildcard: ["use_wildcard"],
+    // `#![...]` stands on what it is written inside, not on what follows it.
+    inner: ["inner_attribute_item"],
     visibility: ["visibility_modifier"],
     doc: ["outer_doc_comment_marker"],
     args: ["token_tree"],
