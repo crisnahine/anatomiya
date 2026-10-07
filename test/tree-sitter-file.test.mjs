@@ -43,7 +43,8 @@ for (const decl of HOSTED) {
 
   test(`${lang}: an ordinary file is an ok record carrying counts and no tree`, async () => {
     const source = SAMPLES[lang];
-    const r = await parseTreeFile(source, rel, lang);
+    // No row asked: what a row finds in the sample is its own test's to say.
+    const r = await parseTreeFile(source, rel, lang, { rows: [] });
 
     assert.deepEqual(r, {
       rel,
@@ -75,7 +76,7 @@ for (const decl of HOSTED) {
     assert.equal(typeof r.program.children[0].start, "number");
     assert.equal(source.slice(r.program.children[0].start, r.program.children[0].end).length > 0, true);
     assert.deepEqual(r.comments, []);
-    assert.deepEqual(r.hits, {}, "tree mode carries what counts mode carries, and the tree beside it");
+    assert.deepEqual(r.hits, (await parseTreeFile(source, rel, lang)).hits, "tree mode carries what counts mode carries, and the tree beside it");
     assert.deepEqual(JSON.parse(JSON.stringify(r.program)), r.program, "nothing in it is lost over IPC");
   });
 }
@@ -147,7 +148,7 @@ const CONDITIONAL = {
 
 for (const [where, source] of Object.entries(CONDITIONAL)) {
   test(`csharp: a conditional inside ${where} is read with its first branch, and the record says so where a branch went unread`, async () => {
-    const r = await parseTreeFile(source, "src/A.cs", "csharp");
+    const r = await parseTreeFile(source, "src/A.cs", "csharp", { rows: [] });
 
     assert.deepEqual(r, {
       rel: "src/A.cs",
@@ -304,6 +305,18 @@ test("csharp: a row counts a retried file over the text that was kept, never the
   assert.doesNotMatch(texts[0], /string s|#/);
 });
 
+test("csharp: the text a retried tree was read from rides on the record a caller asks the tree of, and on no other", async () => {
+  const source = CONDITIONAL["alternative method signatures"];
+
+  const retried = await parseTreeFile(source, "src/A.cs", "csharp", { withProgram: true });
+
+  assert.equal(retried.oneBranch, true);
+  assert.equal(retried.text.length, source.length);
+  assert.doesNotMatch(retried.text, /string s|#/);
+  assert.equal("text" in (await parseTreeFile(source, "src/A.cs", "csharp")), false, "a count crosses without it");
+  assert.equal("text" in (await parseTreeFile("class A { }\n", "src/A.cs", "csharp", { withProgram: true })), false, "a file read as written is its own text");
+});
+
 test("the conditional retry is C#'s alone: a directive-looking line in another language's rejected file changes nothing", async () => {
   // Blanked, this is a clean Java file: nothing blanks it.
   const r = await parseTreeFile("#if X\nclass B { }\n#else\nclass A { }\n#endif\n", "src/A.java", "java");
@@ -333,7 +346,9 @@ test("a row is handed the walk, the source and the path, and its sites cross as 
 
   // The middle one sits inside a function, which only this engine's own walk knows is one.
   assert.deepEqual(r.hits, { probe: [{ conforming: true, where: "def" }, { conforming: false, where: "def" }, { conforming: true, where: "def" }] });
-  assert.deepEqual(seen, [{ comments: [], source, rel: "src/a.py" }]);
+  // The facets too, read once for the record and handed over, so no row walks the tree again to ask what file this is.
+  assert.deepEqual(seen, [{ comments: [], source, rel: "src/a.py", facets: r.facets }]);
+  assert.equal(seen[0].facets, r.facets);
 });
 
 test("a grammar that is not there reads as a missing parser, and names the file", async (t) => {

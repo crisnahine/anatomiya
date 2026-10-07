@@ -170,6 +170,40 @@ test("the run counts the files read with one branch of their conditionals, and a
   assert.equal((await parseAll([{ rel: "c.ts", source: "export const c = 1\n", lang: "js" }])).oneBranch, 0);
 });
 
+test("a file parsed under a label is read at its own path, so a test collected by its directory is one on both sides of a comparison", async () => {
+  // Nothing in the source names a runner: pytest collects it for where it is.
+  const source = "def test_total():\n    assert 1 == 1\n";
+  const out = await parseAll([
+    { rel: "tests/tests.py", source, lang: "python" },
+    { rel: "head:tests/tests.py", path: "tests/tests.py", source, lang: "python" },
+    { rel: "base:tests/tests.py", path: "tests/tests.py", source, lang: "python" },
+    { rel: "head:src/tests.py", path: "src/tests.py", source, lang: "python" },
+  ], { withProgram: true });
+
+  assert.deepEqual([...out.records.values()].map((r) => [r.rel, r.facets.testRunner]), [
+    ["tests/tests.py", "pytest"],
+    ["head:tests/tests.py", "pytest"],
+    ["base:tests/tests.py", "pytest"],
+    ["head:src/tests.py", null],
+  ]);
+});
+
+test("a Ruby file parsed under a label is read at its own path too", needsRuby, async () => {
+  // No require and no superclass minitest knows: its place under test/ is what says whose case this is.
+  const source = "class TotalCase < Base\n  def test_total\n    assert true\n  end\nend\n";
+  const out = await parseAll([
+    { rel: "test/models/total.rb", source, lang: "ruby" },
+    { rel: "head:test/models/total.rb", path: "test/models/total.rb", source, lang: "ruby" },
+    { rel: "base:test/models/total.rb", path: "test/models/total.rb", source, lang: "ruby" },
+  ], { withProgram: true });
+
+  assert.deepEqual([...out.records.values()].map((r) => [r.rel, r.facets.testRunner]), [
+    ["test/models/total.rb", "minitest"],
+    ["head:test/models/total.rb", "minitest"],
+    ["base:test/models/total.rb", "minitest"],
+  ]);
+});
+
 test("a file the Kotlin grammar cannot finish inside the clock is charged once, and the files beside it are read", async () => {
   // The grammar is quadratic in a file's `<` comparisons: 4,000 of them is 190 KB
   // and seconds of parsing, on any machine, where the same file written with `>` takes 50ms.

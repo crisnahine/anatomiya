@@ -41,6 +41,11 @@ def load(path) -> Order:
     except OSError:
         pass
     return Order([])
+
+
+@cached
+def reserve(order):
+    return order.total
 `;
 
 export const php = `<?php
@@ -96,6 +101,14 @@ enum Currency: string
 function format_total(int $cents): string
 {
     return number_format($cents / 100, 2);
+}
+
+function parse_total(string $text): int
+{
+    if ($text === '') {
+        throw new \\InvalidArgumentException('empty');
+    }
+    return (int) $text;
 }
 ?>
 <p>Totals are in cents.</p>
@@ -166,7 +179,14 @@ interface Summable {
 
 enum Currency {
     USD,
-    EUR
+    EUR;
+
+    String code() {
+        if (this.name() == null) {
+            throw new IllegalStateException();
+        }
+        return this.label;
+    }
 }
 
 record Line(String name, int price) {}
@@ -205,6 +225,23 @@ namespace Billing
                 return 0;
             }
         }
+
+#region Rounding
+#nullable enable
+#pragma warning disable CS0618
+        public int Round(decimal price) => (int)price;
+#line default
+#endregion
+
+#if NET8_0
+        public int Scale() => 100;
+#elif NET6_0
+        public int Scale() => 10;
+#else
+#warning no scale for this target
+#error unsupported target
+        public int Scale() => 1;
+#endif
     }
 
     public interface ISummable

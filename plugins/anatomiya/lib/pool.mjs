@@ -236,7 +236,8 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
 
     startRssPoll();
 
-    w.child.send({ rel: job.file.rel, abs: job.file.abs, lang: job.file.lang, withProgram }, (err) => {
+    // `path` is the file's own where `rel` is a caller's label for one of two revisions of it.
+    w.child.send({ rel: job.file.rel, path: job.file.path, abs: job.file.abs, lang: job.file.lang, withProgram }, (err) => {
       if (!err || w.job !== job) return;
       w.sup.kill("channel closed");
       finish(w, { rel: job.file.rel, ok: false, error: "worker channel closed" }, true);
