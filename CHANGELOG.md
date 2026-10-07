@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.13.4] - 2026-10-07
+
 Hooks, scans and checks take less time and give the same answers, byte for byte, with two
 exceptions listed below: the map a scan leaves when a `ruby` child dies mid-run can differ, and the
 type checker refuses a path that leaves the repository through a link. The numbers below are medians
@@ -3627,7 +3629,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.3...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.4...HEAD
+[0.13.4]: https://github.com/crisnahine/anatomiya/compare/v0.13.3...v0.13.4
 [0.13.3]: https://github.com/crisnahine/anatomiya/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/crisnahine/anatomiya/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/crisnahine/anatomiya/compare/v0.13.0...v0.13.1
