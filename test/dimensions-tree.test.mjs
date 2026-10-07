@@ -106,6 +106,8 @@ const CASES = {
       ["<?php\n$a = new class {\n    public function add() {}\n};\n", []],
       ["<?php\nif (!function_exists('add')) {\n    function add() {}\n}\n", []],
       ["<?php\nnamespace A {\n    function add() {}\n}\n", [false]],
+      // A constructor and a destructor are no site in any language, and PHP reads a method's name without its case.
+      ["<?php\nclass A\n{\n    public function __construct() {}\n\n    public function __destruct() {}\n\n    public function __Construct2() {}\n}\n", [false]],
     ],
     go: [
       ["package a\n\n// Run runs.\nfunc Run() {}\n", [true]],
@@ -144,6 +146,9 @@ const CASES = {
       ["class A {\n    Runnable r = new Runnable() {\n        public void run() {}\n    };\n}\n", []],
       ["enum E {\n    X {\n        public void run() {}\n    };\n}\n", []],
       ["class A {\n    void m() {\n        class Local {\n            public void run() {}\n        }\n    }\n}\n", []],
+      // The runtime calls the entry point and nobody looks its documentation up.
+      ["public class A {\n    public static void main(String[] args) {}\n}\n", []],
+      ["public class A {\n    public void main(String[] args) {}\n}\n", [false]],
     ],
     csharp: [
       ["class A\n{\n    /// <summary>Runs.</summary>\n    [Obsolete]\n    public void Run() { }\n}\n", [true]],
@@ -162,6 +167,8 @@ const CASES = {
       ["class A\n{\n    void Run() { }\n\n    internal void Walk() { }\n\n    protected void Crawl() { }\n}\n", []],
       ["class A\n{\n    public override string ToString() { return \"\"; }\n}\n", []],
       ["class A\n{\n    void M()\n    {\n        void Local() { }\n    }\n}\n", []],
+      ["class A\n{\n    public static void Main(string[] args) { }\n\n    public A() { }\n}\n", []],
+      ["class A\n{\n    public void Main() { }\n\n    public static void main() { }\n}\n", [false, false]],
     ],
     rust: [
       ["/// Runs.\n#[inline]\npub fn run() {}\n", [true]],
@@ -188,6 +195,8 @@ const CASES = {
       ["#[doc(hidden)]\npub mod private {\n    pub fn run() {}\n}\n", []],
       ["pub mod a {\n    /// Runs.\n    pub fn run() {}\n}\n", [true]],
       ["pub trait T {\n    fn required(&self);\n\n    fn provided(&self) {}\n}\n", []],
+      ["pub fn main() {}\n", []],
+      ["struct S;\n\nimpl S {\n    pub fn main(&self) {}\n}\n", [false]],
     ],
     kotlin: [
       ["/** Runs. */\nfun run() {}\n", [true]],
@@ -204,6 +213,9 @@ const CASES = {
       ["expect fun run()\n\n/** Walks. */\nexpect fun walk()\n", [false, true]],
       ["class A {\n    init {\n        fun local() {}\n    }\n}\n", []],
       ["val l = listOf(1).map {\n    fun local() {}\n    1\n}\n", []],
+      ["fun main() {}\n", []],
+      ["fun main(args: Array<String>) {}\n\nclass A(val a: Int) {\n    constructor() : this(1)\n}\n", []],
+      ["class A {\n    fun main() {}\n}\n", [false]],
     ],
   },
 
