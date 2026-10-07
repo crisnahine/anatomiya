@@ -734,7 +734,8 @@ export function renderOverview(result, files, target = TARGETS.claude) {
   // What the scan could not cover, and how many files this tool generated.
   // Neither grows with the repository, so both are paid before anything else.
   // A listing that named an area the target has no file for would promise notes that never arrive.
-  const filed = result.areas.filter((a) => hasFile(a, target));
+  // Nor one whose file there is somebody else's, which the writer hands in as `left`.
+  const filed = result.areas.filter((a) => hasFile(a, target) && !files.left?.includes(a.id));
   const unfiled = result.areas.filter((a) => !hasFile(a, target));
   const fixed = overviewTail(result, filed, files, target);
 

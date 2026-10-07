@@ -216,7 +216,10 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
       out.unreadable.push(name);
       continue;
     }
-    if (!name.startsWith(PREFIX) || !isOwned(entry.head)) {
+    // A link too, in a directory another tool reads: this tool writes files
+    // there, so a link is somebody's own entry whatever it leads to.
+    const theirLink = target.id !== TARGETS.claude.id && isLink(join(dir, name));
+    if (!name.startsWith(PREFIX) || !isOwned(entry.head) || theirLink) {
       out.foreign.push(name);
       continue;
     }
