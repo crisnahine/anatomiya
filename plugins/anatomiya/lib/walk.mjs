@@ -464,3 +464,25 @@ export const value = (n) => {
   while (out && WRAPS.has(out.type)) out = out.expression;
   return out;
 };
+
+/**
+ * The declarators of a Svelte component's props.
+ *
+ * `export let` in a `.svelte` file declares what a parent passes in. It is
+ * neither a module export nor a function anyone chose a form for: its name is
+ * the component's public interface, and `export let onSelect = () => {}` is a
+ * default, which has no `function` spelling and takes no doc comment or return
+ * type of its own. `export const` and `export function` there are real exports
+ * and stay. Read off the path, because a prop in a module script is not
+ * something anyone writes.
+ */
+export function componentProps(program, rel) {
+  const props = new Set();
+  if (!/\.svelte$/.test(rel ?? "")) return props;
+  for (const n of program.body || []) {
+    const exported = n.type === "ExportNamedDeclaration" ? n.declaration : null;
+    if (exported?.type !== "VariableDeclaration" || !["let", "var"].includes(exported.kind)) continue;
+    for (const v of exported.declarations || []) props.add(v);
+  }
+  return props;
+}

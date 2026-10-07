@@ -1,4 +1,4 @@
-import { optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
+import { componentProps, optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
 import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
@@ -428,15 +428,16 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: "module-level functions are assigned to variables, not declared with function",
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a file declaring a function at module level, either as a declaration or as a binding initialised with one; a declaration carrying TypeScript overload signatures is not one, because an overload set has no arrow form",
+      sites: "a file declaring a function at module level, either as a declaration or as a binding initialised with one; a declaration carrying TypeScript overload signatures is not one, because an overload set has no arrow form, and neither is a Svelte component's `export let`, which declares a prop and has no function form",
       blind: null,
     },
     // Measured 0.01 to 1.00 across six repositories, the widest of any
     // structural claim: one repository writes every module function as an
     // arrow const and another writes none of them that way.
-    langs: ["js", "jsx", "vue"],
-    visitor(program, add) {
+    langs: ["js", "jsx", "vue", "svelte"],
+    visitor(program, add, { rel } = {}) {
       const overloads = new Map();
+      const props = componentProps(program, rel);
       return {
         node(n, ctx) {
           noteOverloads(n, overloads);
@@ -449,7 +450,7 @@ export const EXTRA_DIMENSIONS = [
             if (overloads.has(n)) return;
             return add({ node: n, conforming: true, where: declName(n) });
           }
-          if (n.type === "VariableDeclarator" && n.init && isFunctionLike(n.init)) {
+          if (n.type === "VariableDeclarator" && n.init && isFunctionLike(n.init) && !props.has(n)) {
             add({ node: n, conforming: false, where: n.id && n.id.name });
           }
         },
@@ -466,7 +467,7 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file holding an export whose declaration is a function, or a variable declarator initialised with one; an overload implementation conforms when every signature before it declares a return type",
+      sites: "a file holding an export whose declaration is a function, or a variable declarator initialised with one; an overload implementation conforms when every signature before it declares a return type. A Svelte component's `export let` declares a prop and is not one",
       blind: "a plain JavaScript file has no annotation to find, and a typed wrapper hides the one the function has",
     },
     // The whole question is the annotation, so a tree whose annotations were
@@ -478,9 +479,10 @@ export const EXTRA_DIMENSIONS = [
     // file leaves this row's denominator rather than counting a zero nobody
     // could move, which is the same trade `blindWhenStripped` makes.
     needsTypeSyntax: true,
-    langs: ["js", "jsx", "vue"],
-    visitor(program, add) {
+    langs: ["js", "jsx", "vue", "svelte"],
+    visitor(program, add, { rel } = {}) {
       const overloads = new Map();
+      const props = componentProps(program, rel);
       return {
         node(n) {
           noteOverloads(n, overloads);
@@ -499,7 +501,7 @@ export const EXTRA_DIMENSIONS = [
           }
           if (d.type !== "VariableDeclaration") return;
           for (const v of d.declarations || []) {
-            if (!v.init || !isFunctionLike(v.init)) continue;
+            if (!v.init || !isFunctionLike(v.init) || props.has(v)) continue;
             // The annotation sits on the arrow or on the binding it is assigned
             // to, and either one states the boundary type.
             const typed = !!v.init.returnType || !!(v.id && v.id.typeAnnotation);
@@ -830,11 +832,12 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: "code here explains itself; exported functions carry no doc comment",
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file exporting a top-level function or class, by name, as a default, or as a function-valued const; a comment opening with a tool directive or a TODO, FIXME, XXX or HACK note, and a license or copyright header, is not a doc comment on either side",
+      sites: "a file exporting a top-level function or class, by name, as a default, or as a function-valued const; a comment opening with a tool directive or a TODO, FIXME, XXX or HACK note, and a license or copyright header, is not a doc comment on either side. A Svelte component's `export let` declares a prop and is not an export",
       blind: "a doc comment on a re-export, or attached through a wrapper, is not seen",
     },
-    langs: ["js", "jsx", "vue"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add, extra = {}) {
+      const props = componentProps(program, extra.rel);
       // Nearest-first once per file rather than once per export: the walk above
       // steps upward through the directives it skips, so the run has to arrive
       // in the order it is walked.
@@ -855,7 +858,7 @@ export const EXTRA_DIMENSIONS = [
             const d = n.declaration;
             if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") return site(n, d.id?.name);
             const holder = d.type === "VariableDeclaration" &&
-              d.declarations.find((x) => x.init && isFunctionLike(value(x.init)));
+              d.declarations.find((x) => x.init && isFunctionLike(value(x.init)) && !props.has(x));
             if (holder) return site(n, holder.id?.name);
           }
           if (n.type === "ExportDefaultDeclaration") {
