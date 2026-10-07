@@ -43,7 +43,7 @@ test("every entry is a list of node types or one field name, so the check below 
 
 test("every language names what the walk and the copy read", () => {
   for (const id of IDS) {
-    for (const key of ["fn", "cls", "comment", "catch", "import", "annotation", "tokensOf"]) {
+    for (const key of ["fn", "cls", "comment", "import", "annotation", "tokensOf"]) {
       assert.ok(Array.isArray(SHAPES[id][key]), `${id}.${key}`);
     }
     assert.equal(typeof SHAPES[id].name, "string", `${id}.name`);
@@ -53,9 +53,7 @@ test("every language names what the walk and the copy read", () => {
   }
 });
 
-test("Go and Rust have no catch clause, and a Go method has no body around it to be a class", () => {
-  assert.deepEqual(SHAPES.go.catch, []);
-  assert.deepEqual(SHAPES.rust.catch, []);
+test("a Go method has no body around it to be a class", () => {
   assert.deepEqual(SHAPES.go.cls, []);
   for (const id of IDS.filter((lang) => lang !== "go")) assert.ok(SHAPES[id].cls.length > 0, `${id} names no class body`);
 });

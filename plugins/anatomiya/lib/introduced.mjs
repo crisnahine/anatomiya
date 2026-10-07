@@ -27,8 +27,9 @@ import { isFunctionLike, walk } from "./walk.mjs";
  * both revisions, for which rows are asked and for what each row is told the
  * file is: the kind is a property of the file under review, and answering it
  * per revision skipped the whole base side of a file that gained JSX on the
- * branch, and charged a file moved out of a test tree every site it held. `base` and `addedLines` are the two modes and cannot both
- * be given; neither is a file the branch added, where every head site is new.
+ * branch, and charged a file moved out of a test tree every site it held.
+ * `base` and `addedLines` are the two modes and cannot both be given; neither
+ * is a file the branch added, where every head site is new.
  * `rows` narrows the registry, for a test driving one row. `parents` is what
  * `declaredParents` found in the files the branch changed in this area.
  *

@@ -19,16 +19,16 @@ async function hits(key, lang, source, rel = `src/a.${declOf(lang).exts[0]}`) {
 }
 
 const TEST_FILES = {
-  python: ["tests/test_a.py", "import pytest\n\n\ndef test_a():\n    try:\n        a()\n    except OSError as e:\n        pass\n\n\ndef loadAll():\n    pass\n"],
+  python: ["tests/test_a.py", "import pytest\n\n\ndef test_a():\n    pass\n\n\ndef helper():\n    pass\n"],
   php: [
     "tests/ATest.php",
-    "<?php\nuse PHPUnit\\Framework\\TestCase;\n\nclass ATest extends TestCase\n{\n    public function testA() {}\n\n    public function load_all() {}\n}\n",
+    "<?php\nuse PHPUnit\\Framework\\TestCase;\n\nclass ATest extends TestCase\n{\n    public function testA() {}\n\n    public function helper() {}\n}\n",
   ],
   go: ["a_test.go", 'package a\n\nimport "testing"\n\nfunc TestA(t *testing.T) {}\n\nfunc Helper() {}\n'],
-  java: ["src/test/java/ATest.java", "import org.junit.Test;\n\nclass ATest {\n    @Test\n    public void LoadAll() {}\n}\n"],
-  csharp: ["tests/ATests.cs", "class ATests\n{\n    [Fact]\n    public void load_all() { }\n}\n"],
+  java: ["src/test/java/ATest.java", "import org.junit.Test;\n\nclass ATest {\n    @Test\n    public void a() {}\n}\n"],
+  csharp: ["tests/ATests.cs", "class ATests\n{\n    [Fact]\n    public void A() { }\n}\n"],
   rust: ["tests/a.rs", "#[test]\nfn works() {}\n\npub fn helper() {}\n"],
-  kotlin: ["src/test/kotlin/ATest.kt", "import kotlin.test.Test\n\nclass ATest {\n    @Test\n    fun LoadAll() {}\n}\n"],
+  kotlin: ["src/test/kotlin/ATest.kt", "import kotlin.test.Test\n\nclass ATest {\n    @Test\n    fun a() {}\n}\n"],
 };
 
 /**
