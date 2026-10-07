@@ -463,6 +463,17 @@ export function assertApplicability(rows) {
         );
       }
     }
+    // Printed ahead of that clause in an area holding component files, with
+    // their extensions filled in, so it is held to the same line and has a
+    // clause to sit ahead of.
+    if ("componentNotCounted" in a) {
+      const c = a.componentNotCounted;
+      if (typeof c !== "string" || !c.includes("<ext>") || /\s\s|[\r\n]/.test(c) || c.length > 120 || !("notCounted" in a)) {
+        throw new Error(
+          `dimension ${d.key} states applicabilityPredicate.componentNotCounted as ${JSON.stringify(c)}, which is not one line naming <ext> beside a notCounted clause`
+        );
+      }
+    }
     // The tie below is only a tie against a precision this build knows. Both
     // shipped call sites run `assertPrecision` first, but this is exported and
     // a row spelling `"Precise"` would otherwise satisfy neither branch and

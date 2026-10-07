@@ -3329,3 +3329,24 @@ test("the scope costs no line, and a sentence the budget kept without its counts
   assert.deepEqual([...droppedSlots(scoped)], [...droppedSlots(plain)]);
   assert.match(renderArea(scoped), /^ {2}module-level bindings are const, in \.ts files$/m);
 });
+
+test("the forms a row declines name component imports where the area holds components", () => {
+  const extension = (o = {}) =>
+    dim({ key: "import_extension", states: "counter", counterClaim: "relative imports are written without the file extension",
+          candidates: 56, conforming: 0, counterExceptions: [], ...o });
+  const clause = "a specifier naming a directory, an asset, or a .coffee or .es6 source, and a dynamic import()";
+
+  const beside = renderArea(area({ extsByLang: { js: [".ts"], vue: [".vue"] }, dimensions: [extension()] }));
+  assert.match(beside, /^relative imports are written without the file extension\n {2}56 of 56 sites /m);
+  assert.ok(
+    beside.includes(`\n  not counted: an import of a .vue file, which is written with its extension; ${clause}\n`),
+    beside
+  );
+
+  const both = renderArea(area({ extsByLang: { vue: [".vue"], js: [".ts"], svelte: [".svelte"] }, dimensions: [extension()] }));
+  assert.ok(both.includes("\n  not counted: an import of a .svelte or .vue file, which is written with its extension; "), both);
+
+  const modules = area({ extsByLang: { js: [".ts"], jsx: [".tsx"] }, dimensions: [extension()] });
+  assert.ok(renderArea(modules).includes(`\n  not counted: ${clause}\n`), "an area of modules reads as it did");
+  assert.equal(beside.split("\n").length, renderArea(modules).split("\n").length, "and it costs no line");
+});

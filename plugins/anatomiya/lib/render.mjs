@@ -1,5 +1,5 @@
 import { encode, encodePath } from "./encode.mjs";
-import { engineOf, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
+import { embeddedIn, engineOf, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
 import { whyUnread } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
@@ -135,6 +135,22 @@ const NOT_COUNTED = new Map(
   ])
 );
 
+const COMPONENT_NOT_COUNTED = new Map(
+  REGISTRY.filter((d) => d.applicabilityPredicate?.componentNotCounted).map((d) => [
+    d.key,
+    claimLine(d.applicabilityPredicate.componentNotCounted),
+  ])
+);
+
+// The declined form an area's own components make likely, ahead of the rest:
+// beside `.vue` files the import an agent is about to write is a `.vue` one.
+function componentClause(key, area) {
+  const template = COMPONENT_NOT_COUNTED.get(key);
+  const exts = Object.entries(area.extsByLang ?? {}).flatMap(([lang, exts]) => (embeddedIn(lang) ? exts : []));
+  if (!template || exts.length === 0) return "";
+  return `${template.replace("<ext>", exts.sort(byCode).map((e) => encode(e)).join(" or "))}; `;
+}
+
 /**
  * The form this dimension's predicate declines, where a reader would otherwise
  * take it for a counter-example.
@@ -152,9 +168,9 @@ const NOT_COUNTED = new Map(
  * line costs one of forty in every area that states the row, so it is spent
  * where it answers something.
  */
-function notCountedLine(d, side, said) {
+function notCountedLine(d, side, said, area) {
   if (side.conforming !== d.candidates || side.exceptions.length > 0 || side.more) return null;
-  const clause = NOT_COUNTED.get(d.key);
+  const clause = componentClause(d.key, area) + (NOT_COUNTED.get(d.key) ?? "");
   // Once per file. Nine companion rows share one sentence and two of them reach
   // the same area whenever a repository writes both `_spec.rb` and `_test.rb`,
   // so an `app` area printed it three times and spent three of its forty lines
@@ -414,7 +430,7 @@ function areaBlocks(area) {
         companionAudit(d) +
         partialNote(d),
     ];
-    const notCounted = notCountedLine(d, s, said);
+    const notCounted = notCountedLine(d, s, said, area);
     if (notCounted) block.push(notCounted);
     for (const e of s.exceptions) {
       block.push(`  except ${encodePath(e.path)}${e.count > 1 ? ` (${e.count} sites)` : ""}`);
