@@ -101,6 +101,21 @@ test("collect leaves the map's own files out of others, by the names a scan give
   assert.deepEqual(others.map((f) => f.rel).sort(), [...theirs].sort());
 });
 
+test("collect follows a .claude/rules link to where git tracks the map, and nowhere else", needsSymlinks, async (t) => {
+  const named = ["agents/rules/anatomiya-overview.md", "agents/rules/anatomiya-area-0123abcd.md"];
+  const build = (link) => repo(t, (d, { write, mkdir, git }) => {
+    write("src/a.ts");
+    for (const rel of ["agents/rules/team.md", ...named]) write(rel, "x\n");
+    if (link) { mkdir(".claude"); symlinkSync("../agents/rules", join(d, ".claude", "rules"), "dir"); }
+    else write(".claude/rules/team.md", "x\n");
+    git("add", "-A"); git("commit", "-qm", "init");
+  });
+  const under = async (dir) => (await collect(dir)).others.map((f) => f.rel).filter((rel) => rel.startsWith("agents/")).sort();
+
+  assert.deepEqual(await under(build(true)), ["agents/rules/team.md"]);
+  assert.deepEqual(await under(build(false)), [...named, "agents/rules/team.md"].sort());
+});
+
 test("a tracked .env contributes nothing even though git lists it", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write("src/a.ts");
