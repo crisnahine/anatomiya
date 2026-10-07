@@ -125,6 +125,28 @@ const PUBLIC = {
   csharp: (name, words, inInterface) => words.has("public") || (inInterface && shown(words)),
 };
 
+// The methods golint asks no doc comment of: `commonMethods` in golang/lint's lint.go, and the three of `sort.Interface` on a type that has all three.
+const GO_COMMON_METHODS = new Set(["Error", "Read", "ServeHTTP", "String", "Write", "Unwrap"]);
+const GO_SORT_METHODS = ["Len", "Less", "Swap"];
+
+const goReceiver = (fn, sets) => {
+  const receiver = fieldOf(fn, SHAPES.go.receiver);
+  return receiver === null ? null : (firstOf(receiver, sets.receiverType)?.text ?? "");
+};
+
+/** A Go method that satisfies a standard interface by its name. golint reads a package for the sortable types and this reads the file. */
+function goNamedByInterface(program, sets) {
+  const methods = Map.groupBy(program.children.filter((node) => sets.fn.has(node.type) && goReceiver(node, sets) !== null), (fn) => goReceiver(fn, sets));
+  const sortable = (type) => GO_SORT_METHODS.every((name) => methods.get(type).some((fn) => nameOf(fn) === name));
+  return (name, fn) => {
+    const type = goReceiver(fn, sets);
+    return type !== null && (GO_COMMON_METHODS.has(name) || (GO_SORT_METHODS.includes(name) && sortable(type)));
+  };
+}
+
+// Public and still no site, as a question built once per file.
+const NO_SITE = { go: goNamedByInterface };
+
 // An override, and a Kotlin `actual`, take their name and their documentation from what they implement.
 const INHERITED = ["@Override", "@override", "override", "actual"];
 const inherited = (words) => INHERITED.some((word) => words.has(word));
@@ -246,7 +268,7 @@ export const TREE_DIMENSIONS = [
     counterClaim: "public functions carry no doc comment",
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a function or method outside a test file, straight in the file or in the body of a named class or module (so not one inside a function, a block, an `if` or an anonymous class), that is public by its language's rule: in Python a name with no leading underscore, in Go a capitalised name, on a capitalised receiver type where it is a method, in Rust a bare `pub`, in PHP and Kotlin no private, protected or internal modifier, in Java and C# the `public` modifier or membership of an interface. A method marked as an override is not a site, nor is a Kotlin `actual` function, which is documented on its `expect`, a Python `@overload` stub or property setter or deleter, a Rust `#[test]` function, or anything under a Rust `#[cfg(test)]`, alone or inside `all(..)`, on an item or as `#![cfg(test)]` on the file, or under `#[doc(hidden)]`. A Rust trait's methods are not counted: a required one is a signature and a provided one carries no `pub`. It is documented by a docstring in Python, a plain string and never an f-string or bytes, and elsewhere by a doc comment in the comments and attributes that end on the line above it, a C# directive line between them passed over: `/** */` in PHP, Java and Kotlin, `///` or `/** */` in C# and Rust, `#[doc = \"..\"]` in Rust, and in Go any comment but a directive, with no blank line under it",
+      sites: "a function or method outside a test file, straight in the file or in the body of a named class or module (so not one inside a function, a block, an `if` or an anonymous class), that is public by its language's rule: in Python a name with no leading underscore, in Go a capitalised name, on a capitalised receiver type where it is a method, in Rust a bare `pub`, in PHP and Kotlin no private, protected or internal modifier, in Java and C# the `public` modifier or membership of an interface. A method marked as an override is not a site, nor is a Kotlin `actual` function, which is documented on its `expect`, a Python `@overload` stub or property setter or deleter, a Rust `#[test]` function, or anything under a Rust `#[cfg(test)]`, alone or inside `all(..)`, on an item or as `#![cfg(test)]` on the file, or under `#[doc(hidden)]`. A Rust trait's methods are not counted: a required one is a signature and a provided one carries no `pub`. A Go method named `Error`, `Read`, `ServeHTTP`, `String`, `Write` or `Unwrap` is not a site, nor is `Len`, `Less` or `Swap` on a type the file gives all three. It is documented by a docstring in Python, a plain string and never an f-string or bytes, and elsewhere by a doc comment in the comments and attributes that end on the line above it, a C# directive line between them passed over: `/** */` in PHP, Java and Kotlin, `///` or `/** */` in C# and Rust, `#[doc = \"..\"]` in Rust, and in Go any comment but a directive, with no blank line under it",
       blind: `whether the module or the class around a function is itself public is not read, so a function in a private module, under a non-public class or left out of \`__all__\` counts as public. Rust code inside a macro call is not in the tree, so a function written there is not counted`,
     },
     langs: ["python", "php", "go", "java", "csharp", "rust", "kotlin"],
@@ -258,6 +280,7 @@ export const TREE_DIMENSIONS = [
       const sets = SETS.get(lang);
       const out = outside(lang, sets);
       const notOffered = NOT_OFFERED[lang] ?? [];
+      const noSite = NO_SITE[lang]?.(program, sets) ?? (() => false);
       return {
         node(node, ctx) {
           out.note(node, ctx);
@@ -267,7 +290,7 @@ export const TREE_DIMENSIONS = [
           if (!name) return;
           const words = headerOf(node, ctx, sets, shapes);
           if (!PUBLIC[lang](name, words, ctx.cls !== null && sets.iface.has(ctx.cls.type), node, sets)) return;
-          if (inherited(words) || notOffered.some((word) => words.has(word))) return;
+          if (inherited(words) || notOffered.some((word) => words.has(word)) || noSite(name, node, words, ctx)) return;
           const documented = sets.docstring.size > 0 ? hasDocstring(node, sets, source) : documentedAbove(node, ctx, sets, DOC[lang], source);
           add({ node: site(named), conforming: documented, where: name });
         },
@@ -311,4 +334,5 @@ assertKeyed("PUBLIC", PUBLIC, asked("public_doc_comment"));
 assertKeyed("DOC", DOC, asked("public_doc_comment").filter((lang) => !SHAPES[lang].docstring));
 assertKeyed("NOT_OFFERED", NOT_OFFERED, [], asked("public_doc_comment"));
 assertKeyed("OUTSIDE", OUTSIDE, [], asked("public_doc_comment"));
+assertKeyed("NO_SITE", NO_SITE, [], asked("public_doc_comment"));
 assertKeyed("UNTYPED", UNTYPED, asked("declared_return_type"));
