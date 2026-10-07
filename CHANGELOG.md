@@ -111,10 +111,13 @@ scanned by 0.13.4 and by this version.
   the type checker, the "most imported from here" lines or the end-of-turn reuse check, and a
   `.pyi` stub is not read. The notice before a test file is written, and the finding `check`
   reports for a test placed where its siblings have none, read a test by its language's own name
-  in six of the seven, and hold it to a directory of its own project where the build has
-  projects. A Rust test has no name, so no `.rs` file is asked. Asked of the 5,727 test files of
-  those languages that 60 repositories already hold, as if each had just been added, it reports
-  none. A file of the seven that its grammar cannot finish in 5 seconds is counted as crashed and
+  in six of the seven. They say nothing of a test that sits in the one place its language's tool
+  reads it from: a Go `_test.go` beside its package, a Java or Kotlin test in its module's own
+  `src/test`, a C# test in its `.Tests` project. So the first test of an untested Go package is
+  no finding. Python and PHP, where a place is a choice, keep it. A Rust test has no name, so no
+  `.rs` file is asked. In any language, `check` says nothing of a test for a directory the same
+  branch created. Asked of the 5,727 test files of those languages that 60 repositories already
+  hold, as if each had just been added, it reports none. A file of the seven that its grammar cannot finish in 5 seconds is counted as crashed and
   is not tried again; the case measured is Kotlin.
 - Three runtime dependencies, where 0.13.4 had two. The new one is `web-tree-sitter`: JavaScript
   and one WebAssembly module, with no dependency and no install script. The seven grammars ship

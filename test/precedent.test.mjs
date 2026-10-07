@@ -495,11 +495,10 @@ test("each of the seven languages' test names is one, read by the rule the layou
   for (const [path, ext, dirs, said] of [
     ["bare/test_m9.py", ".py", ["tested", "bare"], "bare holds no other test; bare: 0 of 5 .py files have a namesake test"],
     ["bare/m9_test.py", ".py", ["tested", "bare"], "bare holds no other test; bare: 0 of 5 .py files have a namesake test"],
-    ["bare/m9_test.go", ".go", ["tested", "bare"], "bare holds no other test; bare: 0 of 5 .go files have a namesake test"],
     ["tests/Bare/M9Test.php", ".php", ["src/Tested", "src/Bare"], "tests/Bare holds no other test; src/Bare: 0 of 5 .php files have a namesake test"],
-    ["test/Bare.Tests/M9Tests.cs", ".cs", ["src/Tested", "src/Bare"], "test/Bare.Tests holds no other test; src/Bare: 0 of 5 .cs files have a namesake test"],
-    ["bare/src/test/java/shop/bare/M9Test.java", ".java", ["tested/src/main/java/shop/tested", "bare/src/main/java/shop/bare"], "bare/src/test/java/shop/bare holds no other test; bare/src/main/java/shop/bare: 0 of 5 .java files have a namesake test"],
-    ["bare/src/commonTest/kotlin/shop/bare/M9Test.kt", ".kt", ["tested/src/commonMain/kotlin/shop/tested", "bare/src/commonMain/kotlin/shop/bare"], "bare/src/commonTest/kotlin/shop/bare holds no other test; bare/src/commonMain/kotlin/shop/bare: 0 of 5 .kt files have a namesake test"],
+    // A plain test tree is no project of the build's, so the place is a choice there.
+    ["tests/shop/bare/M9Test.java", ".java", ["tested/src/main/java/shop/tested", "bare/src/main/java/shop/bare"], "tests/shop/bare holds no other test; bare/src/main/java/shop/bare: 0 of 5 .java files have a namesake test"],
+    ["tests/Bare/M9Tests.cs", ".cs", ["src/Tested", "src/Bare"], "tests/Bare holds no other test; src/Bare: 0 of 5 .cs files have a namesake test"],
   ]) {
     const found = precedentFindings([path], [tested(ext, dirs[0]), bare(ext, dirs[1])]);
     assert.deepEqual(found.map((f) => f.reason), [said], path);
@@ -513,17 +512,50 @@ test("each of the seven languages' test names is one, read by the rule the layou
   }
 });
 
-test("a test is judged against a directory of its own project, where its language's build has projects", () => {
-  // Two Gradle modules keep one package: the test of one says nothing about how the other tests.
-  const roots = [
-    rootOf(".kt", "okhttp/src/main/kotlin/okhttp3", { with: 50, of: 150, root: null }),
-    rootOf(".kt", "server/src/main/kotlin/mockserver", { with: 2, of: 14, root: null }),
-  ];
-  assert.deepEqual(precedentFindings(["server-junit4/src/test/java/mockserver/junit4/RuleTest.kt"], roots), []);
-  const [own] = precedentFindings(["server/src/test/java/mockserver/junit4/RuleTest.kt"], roots);
-  assert.equal(own.area, "server/src/main/kotlin/mockserver");
-  // A .NET test project answers for the project its name carries, and for no other.
-  const projects = [rootOf(".cs", "src/Lib", { with: 5, of: 5, root: null }), rootOf(".cs", "src/Lib.Extras/Sub", { with: 0, of: 5, root: null })];
-  assert.deepEqual(precedentFindings(["test/Other.Tests/Sub/ATests.cs"], projects), []);
-  assert.equal(precedentFindings(["test/Lib.Extras.Tests/Sub/ATests.cs"], projects).length, 1);
+test("a test sitting in the one place its language's tool reads it from is asked nothing", () => {
+  const tested = (ext, dir) => rootOf(ext, dir, { with: 5, of: 5, root: null });
+  const bare = (ext, dir) => rootOf(ext, dir, { with: 0, of: 5, root: null });
+  for (const [path, ext, dirs] of [
+    // `go test` builds a `_test.go` with the package of its directory and with no other.
+    ["bare/m9_test.go", ".go", ["tested", "bare"]],
+    ["bare/fresh/m9_test.go", ".go", ["tested", "bare"]],
+    // A Maven or Gradle module compiles its tests from its own tree.
+    ["bare/src/test/java/shop/bare/M9Test.java", ".java", ["tested/src/main/java/shop/tested", "bare/src/main/java/shop/bare"]],
+    ["bare/src/commonTest/kotlin/shop/bare/M9Test.kt", ".kt", ["tested/src/commonMain/kotlin/shop/tested", "bare/src/commonMain/kotlin/shop/bare"]],
+    // A .NET test is compiled by the test project it sits in.
+    ["test/Bare.Tests/M9Tests.cs", ".cs", ["src/Tested", "src/Bare"]],
+  ]) {
+    const roots = [tested(ext, dirs[0]), bare(ext, dirs[1])];
+    assert.deepEqual(precedentFindings([path], roots), [], path);
+    assert.equal(noticeFor(path, { roots }), null, path);
+  }
+});
+
+test("a test for a directory the same change created is not held to the files of the directory above it", () => {
+  const roots = [root("app/services", { companions: { with: 6, of: 6, root: "spec" } }), root("src/pages", { files: 9, companions: { with: 0, of: 9, root: null } })];
+  const asked = [];
+  const created = (answer) => (dir) => {
+    asked.push(dir);
+    return answer;
+  };
+
+  assert.equal(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots, { created: created(false) }).length, 1);
+  assert.deepEqual(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots, { created: created(true) }), []);
+  assert.deepEqual(asked, ["src/pages/Listing", "src/pages/Listing"], "the directory asked about is the one the tail was shortened past");
+
+  // A tail a root answers whole is that root's own directory, which a change adding a test to it did not create.
+  asked.length = 0;
+  assert.equal(precedentFindings(["src/pages/__tests__/form.test.ts"], roots, { created: created(true) }).length, 1);
+  assert.deepEqual(asked, []);
+  // With nobody to ask, as before a write, the finding stands.
+  assert.equal(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots).length, 1);
+});
+
+test("a test is judged against a directory of its own project, where its language's layout pairs one", () => {
+  // A PHP `tests` answers for the `src` beside it, and a directory of the same name in another tree is not its to answer for.
+  const tested = rootOf(".php", "src/Tested", { with: 5, of: 5, root: null });
+  const elsewhere = rootOf(".php", "packages/x/Bare", { with: 0, of: 9, root: null });
+  assert.deepEqual(precedentFindings(["tests/Bare/ATest.php"], [tested, elsewhere]), []);
+  const [own] = precedentFindings(["tests/Bare/ATest.php"], [tested, elsewhere, rootOf(".php", "src/Bare", { with: 0, of: 5, root: null })]);
+  assert.equal(own.area, "src/Bare");
 });

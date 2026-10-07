@@ -22,6 +22,7 @@ import { buildPin, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
 import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { runNotice } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 
 // The area record carries a glob in the two halves it is composed from.
 const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
@@ -215,8 +216,14 @@ const PLACED = {
   },
 };
 
+// Where the language's own tool fixes the one place a test sits, and the fixture's layout is that place.
+const FIXED = new Set(["go", "java", "kotlin", "csharp"]);
+
 for (const [lang, { source, spec }] of Object.entries(PLACED)) {
-  test(`${lang}: a test added where its own siblings have none is a finding, and one added beside theirs is not`, async (t) => {
+  const title = FIXED.has(lang)
+    ? `${lang}: a first test added in the one place its tool reads it from is no finding`
+    : `${lang}: a test added where its own siblings have none is a finding, and one added beside theirs is not`;
+  test(title, async (t) => {
     const dir = repo(t, ({ write, commit }) => {
       for (let n = 0; n < 5; n++) {
         write(...source("tested", n));
@@ -238,8 +245,73 @@ for (const [lang, { source, spec }] of Object.entries(PLACED)) {
 
     const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
 
+    if (FIXED.has(lang)) return assert.deepEqual(found, []);
     assert.deepEqual(found.map((f) => [f.path, f.severity]), [[spec("bare", 9)[0], "FIX"]], JSON.stringify(found));
     assert.match(found[0].reason, /holds no other test; .*bare: 0 of 5 \.\w+ files have a namesake test$/);
+  });
+}
+
+const five = (make, ...at) => [0, 1, 2, 3, 4].map((n) => make(...at, n));
+const goIn = (d, n) => [`${d}/m${n}.go`, `package ${d.split("/").at(-1)}\n\nfunc F${n}() int { return ${n} }\n`];
+const goTestIn = (d, n) => [`${d}/m${n}_test.go`, `package ${d.split("/").at(-1)}\n\nimport "testing"\n\nfunc TestF${n}(t *testing.T) {}\n`];
+const pyIn = (d, n) => [`${d}/m${n}.py`, `def f${n}():\n    return ${n}\n`];
+const pyTestIn = (d, n) => [`${d}/test_m${n}.py`, `def test_f${n}():\n    assert True\n`];
+const rustIn = (crate, n) => [`${crate}/src/m${n}.rs`, `pub fn f${n}() -> i32 { ${n} }\n`];
+const PY_TEST = "def test_x():\n    assert True\n";
+
+// A first test, in the shapes a corpus of existing tests cannot hold: [name, the base tree, what the branch adds, the paths found].
+const FIRST_TESTS = [
+  ["Go: the first test of a package whose sibling package has its own",
+    [...five(goIn, "tested"), ...five(goTestIn, "tested"), ...five(goIn, "bare"), ["go.mod", "module x\n"]], [goTestIn("bare", 0)], []],
+  ["Go: a new package below an untested one, with its source and its test",
+    [...five(goIn, "tested"), ...five(goTestIn, "tested"), ...five(goIn, "bare"), ["go.mod", "module x\n"]], [goIn("bare/fresh", 0), goTestIn("bare/fresh", 0)], []],
+  ["Go: a new package below a directory that folds a tested one",
+    [...five(goIn, "pkg/tested"), ...five(goTestIn, "pkg/tested"), ...five(goIn, "pkg/bare"), ["go.mod", "module x\n"]], [goIn("pkg/fresh", 0), goTestIn("pkg/fresh", 0)], []],
+  ["Maven: a module's first src/test", [...five(PLACED.java.source, "tested"), ...five(PLACED.java.spec, "tested"), ...five(PLACED.java.source, "bare"), ["pom.xml", "<project/>\n"]], [PLACED.java.spec("bare", 0)], []],
+  ["C#: a project's first test project",
+    [...five(PLACED.csharp.source, "Tested"), ...five(PLACED.csharp.spec, "Tested"), ...five(PLACED.csharp.source, "Bare")], [PLACED.csharp.spec("Bare", 0), ["test/Bare.Tests/Bare.Tests.csproj", "<Project/>\n"]], []],
+  ["Python: a first test beside untested code, where the tested package keeps its tests beside its own",
+    [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare")], [pyTestIn("src/bare", 0)], ["src/bare/test_m0.py"]],
+  ["Python: a package's own tests directory, where tests live in a top-level tree",
+    [...five(pyIn, "pkga"), ...five(pyIn, "pkgb"), ...five(pyTestIn, "tests"), ["pkga/__init__.py", ""], ["pkgb/__init__.py", ""]], [["pkgb/tests/test_m0.py", PY_TEST]], []],
+  ["Python: one more test in the top-level tree",
+    [...five(pyIn, "pkga"), ...five(pyIn, "pkgb"), ...five(pyTestIn, "tests"), ["pkga/__init__.py", ""], ["pkgb/__init__.py", ""]], [["tests/test_other.py", PY_TEST]], []],
+  ["Rust: a crate's first tests directory",
+    [["Cargo.toml", `[workspace]\nmembers=["a","b"]\n`], ["a/Cargo.toml", `[package]\nname="a"\n`], ["b/Cargo.toml", `[package]\nname="b"\n`], ...five(rustIn, "a"), ...five(rustIn, "b"), ...[0, 1, 2, 3, 4].map((n) => [`a/tests/t${n}.rs`, `#[test]\nfn t${n}() {}\n`])],
+    [["b/tests/first.rs", "#[test]\nfn first() {}\n"]], []],
+  // The directory the test is about arrives with it, so the untested directory above has said nothing about it.
+  ["Python: a new package below an untested one, with its source and its test",
+    [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare")], [pyIn("src/bare/fresh", 0), pyTestIn("src/bare/fresh", 0)], [], ["src/bare/fresh/test_m0.py"]],
+  ["Python: a first test in a package the base already held below an untested one",
+    [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare"), pyIn("src/bare/old", 9)], [pyTestIn("src/bare/old", 9)], ["src/bare/old/test_m9.py"]],
+];
+
+for (const [name, tree, added, found, noticed = found] of FIRST_TESTS) {
+  test(`a first test: ${name}`, async (t) => {
+    const dir = repo(t, ({ write, commit }) => {
+      for (const [rel, body] of tree) write(rel, body);
+      commit("init");
+    });
+    writeMap(await scan(dir), {});
+    const { files } = await collect(dir);
+    writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+    const base = sha(dir);
+
+    // The notice is asked before each file exists, in the order a session writes them.
+    const said = [];
+    for (const [rel, body] of added) {
+      const write = { hook_event_name: "PreToolUse", tool_name: "Write", cwd: dir, tool_input: { file_path: join(dir, rel) } };
+      if ((await runNotice(dir, write)).hookSpecificOutput) said.push(rel);
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), body);
+    }
+    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+    execFileSync("git", ["commit", "-qm", "a first test"], { cwd: dir, stdio: "pipe" });
+
+    const report = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+    assert.deepEqual(report.map((f) => [f.path, f.severity]), found.map((rel) => [rel, "FIX"]), JSON.stringify(report));
+    assert.deepEqual(said, noticed, "the notice before the write");
   });
 }
 

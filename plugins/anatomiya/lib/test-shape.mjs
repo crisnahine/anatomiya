@@ -329,3 +329,21 @@ const PAIRINGS = {
 /** `covered` is the stem the test's name says it covers and `sourceDirs` the family's source directories, which only PHP's pairing reads. */
 export const pairedWith = (testDir, family, covered = "", sourceDirs = []) =>
   PAIRINGS[family]?.(testDir.split("/"), covered, sourceDirs) ?? null;
+
+const inItsProject = (testDir, family) => pairedWith(testDir, family) !== null;
+
+/**
+ * The families whose own tool fixes the one place a test sits, each with how a
+ * test's directory shows it sits there. `go test` builds a `_test.go` with the
+ * package of its directory and with no other, so a Go test is there wherever it
+ * is. Maven and Gradle compile a module's tests from its own `src/test` or
+ * `<set>Test`, and a .NET test is compiled by the test project it sits in,
+ * which are the pairings above.
+ *
+ * Python and PHP are absent: pytest and PHPUnit collect from wherever they are
+ * pointed, so a place there is a choice a repository makes. Rust names no test.
+ */
+const FIXED_PLACE = { go: () => true, java: inItsProject, kotlin: inItsProject, csharp: inItsProject };
+
+/** Whether a test in `testDir` sits where its family's tool reads it from, with nowhere else it could go. */
+export const sitsWhereItsToolReads = (testDir, family) => FIXED_PLACE[family]?.(testDir, family) === true;
