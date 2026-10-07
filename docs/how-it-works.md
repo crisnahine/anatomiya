@@ -1768,9 +1768,10 @@ Every clause is dropped when it counts nothing.
   populations gets its clause from three files up, the floor the precedent rule reads a directory
   at, or where a test credits at least one of its files, so ten components beside one `index.ts`
   print one count, bare, and no `0 of 1 .ts file have a namesake test`, and seven modules beside
-  two components print `1 of 2 .vue files has a namesake test` where one of the two has a test. Where several components carry one stem a test answers one of them: the one
-  under the test's own directory, less the test tree words that directory ends in, or failing that
-  the closest mirror, and an import that names another leaves it with none. That is asked apart
+  two components print `1 of 2 .vue files has a namesake test` where one of the two has a test.
+  Where several components carry one stem a test answers one of them: the one under the test's own
+  directory, less the test tree words that directory ends in, or failing that the closest mirror,
+  and an import that names another leaves it with none. That is asked apart
   from which module the test answers, so one test covers `button.vue` and the `button.ts` beside
   it, and element-plus's `docs/examples/autocomplete/autocomplete.vue` is not credited with the
   test of the packaged `autocomplete.vue`. Otherwise it prints wherever the repository holds any test file at
@@ -2242,10 +2243,10 @@ process that tried it, and fails naming any that still does not load. A grammar 
 something it can put back, and it is not listed as something to install: with one cut short,
 `setup` and `setup --dry-run` print `doctor`'s own line for it, `tree-sitter 0.27.0: grammars: 6
 of 7, kotlin.wasm did not load, reinstall this plugin, which ships its grammar files in its own
-directory`, run no install for it, and end non-zero. It is the only command that installs anything and the only one that
-reaches a package registry; `scan`, `check` and `pin` never call it. The only other outbound call
-anywhere here is the check's shallow-clone path, which is one `ls-remote` and one `fetch --depth=1`
-and nothing else (F5).
+directory`, run no install for it, and end non-zero. It is the only command that installs anything
+and the only one that reaches a package registry; `scan`, `check` and `pin` never call it. The only
+other outbound call anywhere here is the check's shallow-clone path, which is one `ls-remote` and
+one `fetch --depth=1` and nothing else (F5).
 
 Two refusals rather than an attempt. npm that is not on `PATH` is answered with the one sentence that
 fixes it, since npm cannot install itself. And on Windows `setup` refuses and hands over the command

@@ -266,11 +266,11 @@ async function targetLines(cwd) {
 export async function runSetup({ dryRun = false, platform = process.platform } = {}) {
   const root = pluginRoot();
   const rows = await readiness({ engines: NODE_PROBE_IDS });
+  // A grammar file ships in the plugin and no install writes one, so its row is said as doctor says it and asks for no install.
+  const lost = readinessLines(rows.filter(lostGrammar));
   // Present and not ready is a copy resolving from somewhere other than this
   // plugin's own install, one the tool will not use, and the install puts a
   // usable one ahead of it.
-  // A grammar file ships in the plugin and no install writes one, so its row is said as doctor says it and asks for no install.
-  const lost = readinessLines(rows.filter(lostGrammar));
   const needed = rows.filter((r) => (!r.present || !r.ok) && !lostGrammar(r)).map(probeName);
   const where = `${INSTALL.join(" ")} in ${root}`;
   const state =
