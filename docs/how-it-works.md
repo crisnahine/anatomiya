@@ -1702,8 +1702,13 @@ Every clause is dropped when it counts nothing.
   has to be one this tool parses, so a root whose largest is `.png` or `.json` is never asked
   whether its files have tests. Where the other printed extension is a component's, `.vue` or
   `.svelte`, its files get a second count of their own and both clauses name their extension:
-  `85 of 745 .ts files have a namesake test; 79 of 164 .vue files have a namesake test`. The two
-  are never summed. Otherwise it prints wherever the repository holds any test file at
+  `85 of 745 .ts files have a namesake test; 81 of 164 .vue files have a namesake test`. The two
+  are never summed. Where several components carry one stem a test answers one of them: the one
+  under the test's own directory, less the test tree words that directory ends in, or failing that
+  the closest mirror, and an import that names another leaves it with none. That is asked apart
+  from which module the test answers, so one test covers `button.vue` and the `button.ts` beside
+  it, and element-plus's `docs/examples/autocomplete/autocomplete.vue` is not credited with the
+  test of the packaged `autocomplete.vue`. Otherwise it prints wherever the repository holds any test file at
   all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
   cannot carry, because it treats a missing companion as an absence rather than as a habit.
   Each of the seven tree-sitter languages strips its own spelling and no other, and only a test of
