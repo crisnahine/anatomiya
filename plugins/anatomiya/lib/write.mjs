@@ -243,6 +243,8 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // kept under another name carries the key too.
   const mine = explicit && !on ? [...audit.ours, ...audit.unknown.filter((f) => isMapName(f, target))].sort() : audit.ours;
   const stale = blind ? [] : mine.filter((f) => !planned.has(f) && !heldNames.has(f));
+  // Ours and held, so still ours after this run: the next record has to go on naming it.
+  const kept = mine.filter((f) => !planned.has(f) && heldNames.has(f));
   // Claude Code's two directories were held to this before anything was read.
   if (!target.always && (names.length > 0 || stale.length > 0)) refuseNonDirectory(root, target.dir);
 
@@ -252,12 +254,11 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     left: wanted.filter((a) => taken.includes(nameOf(a))).map((a) => a.id),
     names,
     stale,
-    // Ours and held, so still ours after this run: the next record has to go on naming it.
-    kept: audit.ours.filter((f) => !planned.has(f) && heldNames.has(f)),
+    kept,
     // Our prefix and our key, but no map on disk names it: an older build wrote
     // it, or the store was deleted. It still loads, so it is reported; it is not
     // removed, because two of the three facts is not ownership.
-    unknown: audit.unknown.filter((f) => !planned.has(f) && !stale.includes(f)),
+    unknown: audit.unknown.filter((f) => !planned.has(f) && !stale.includes(f) && !kept.includes(f)),
     // Somebody else's, unless this run is writing over it, which it does in
     // Claude Code's directory alone. A generated name there is ours by
     // construction, so a hand-written file that took one is replaced rather
@@ -418,7 +419,8 @@ export function commitMap(root, plan) {
     // and a link put at a directory meanwhile is where the renames would land.
     for (const t of others) own(t.id, t);
     // A removal has no temporary file beside it to hold it to the directory it
-    // was planned in, so each one asks where that directory is now.
+    // was planned in, so each one asks where that directory is now. A rename
+    // asks too, and so refuses in a sentence where it would fail on an errno.
     const byDir = new Map(others.map((t) => [t.at, t]));
     const stillOwn = (path) => {
       const t = byDir.get(dirname(path));
@@ -475,6 +477,7 @@ function replaceAll(staged, removals, pair, stillOwn) {
   const undo = [];
   try {
     for (const [tmp, path] of staged) {
+      stillOwn(path);
       renameSync(tmp, path);
       undo.push([path, before.get(path)]);
     }

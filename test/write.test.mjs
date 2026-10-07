@@ -2451,6 +2451,57 @@ test("a held area's file is kept in every target it exists in", (t) => {
   assert.equal("targets" in readFacts(dir), false);
 });
 
+test("a held area's file that no record names is recorded when its target is turned off, so a later scan finishes", (t) => {
+  const models = area("app/models");
+  const services = area("app/services");
+  const dir = workspace(t);
+  writeMap(result(dir, [models, services]), { targets: ALL });
+  rmSync(join(dir, STORE), { recursive: true, force: true });
+  const partial = result(dir, [services]);
+  partial.parse = { ...partial.parse, unreadable: ["ruby"] };
+  partial.held = [{ id: models.id, path: models.path, fileCount: models.fileCount }];
+  partial.readNothing = false;
+
+  const off = writeMap(partial, { targets: ["claude"] });
+
+  for (const target of OTHERS) {
+    assert.deepEqual(off.targets[target.id].remove, mapOf(target, services));
+    assert.deepEqual(off.targets[target.id].unknown, []);
+    assert.deepEqual(namesIn(dir, target), [areaName(target, models.id)]);
+    assert.deepEqual(readFacts(dir).targets[target.id], [areaName(target, models.id)]);
+  }
+
+  const later = writeMap(result(dir, [models, services]));
+  for (const target of OTHERS) {
+    assert.deepEqual(later.targets[target.id].remove, [areaName(target, models.id)]);
+    assert.deepEqual(namesIn(dir, target), []);
+  }
+});
+
+test("a target directory swapped for a link once the renames began refuses in a sentence, with nothing written through it", needsSymlinks, async (t) => {
+  const race = await swappedAtRename(t);
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    for (const name of mapOf(target, a)) writeFileSync(join(outside, name), OURS);
+    const theirs = tree(outside);
+    const claude = unstamped(snapshot(dir));
+    race.arm(1, join(dir, target.dir), outside);
+
+    assert.throws(
+      () => writeMap(result(dir, [a, area("src/api")])),
+      (err) => err.message === `${target.dir} is no longer a directory of this repository's own, so nothing was written`,
+      target.id
+    );
+
+    assert.equal(race.left, 0, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(outside), theirs);
+    assert.deepEqual(unstamped(snapshot(dir)), claude, `${target.id}: the record and Claude Code's files are the ones that were there`);
+  }
+});
+
 test("the rename order is record, layout, claude, cursor, copilot", async (t) => {
   const dir = workspace(t);
   const a = area("src/services");
