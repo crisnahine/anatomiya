@@ -26,7 +26,7 @@ import {
   hostedBy,
 } from "../plugins/anatomiya/lib/langs.mjs";
 
-import { scriptBlocks } from "../plugins/anatomiya/lib/sfc.mjs";
+import { scriptBlocks } from "../plugins/anatomiya/lib/script-blocks.mjs";
 
 const TREE_SITTER = ["python", "php", "go", "java", "csharp", "rust", "kotlin"];
 

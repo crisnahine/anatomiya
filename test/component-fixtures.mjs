@@ -1,6 +1,6 @@
 /**
  * Twelve components, six per framework, written the way each framework's own
- * docs and its users write them. `test/sfc-rows.test.mjs` asks every JavaScript
+ * docs and its users write them. `test/component-rows.test.mjs` asks every JavaScript
  * row about each one, and the two lists below record what it found.
  */
 
@@ -612,7 +612,7 @@ const svelteTabs = `<script lang="ts" generics="T extends { id: string }">
 <small>{ids().join(", ")}</small>
 `;
 
-export const SFC_FIXTURES = [
+export const COMPONENT_FIXTURES = [
   { id: "vue-setup", lang: "vue", rel: "src/components/UserCard.vue", source: vueSetup },
   { id: "vue-options", lang: "vue", rel: "src/components/TodoList.vue", source: vueOptions },
   { id: "vue-two", lang: "vue", rel: "src/components/PriceTag.vue", source: vueTwo },

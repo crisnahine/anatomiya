@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
-import { scriptBlocks } from "../plugins/anatomiya/lib/sfc.mjs";
+import { scriptBlocks } from "../plugins/anatomiya/lib/script-blocks.mjs";
 
 // Linux is where a child's address space can be capped from a shell: macOS
 // refuses `ulimit -v` outright, and Windows never asks for the raw transfer.

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { scriptBlocks, blankOutside } from "../plugins/anatomiya/lib/sfc.mjs";
+import { scriptBlocks, blankOutside } from "../plugins/anatomiya/lib/script-blocks.mjs";
 
 // What the scanner kept, with each range read back out of the source.
 const read = (source, kind) => {
@@ -195,7 +195,7 @@ test("svelte: the end tag is lower-case </script, optional whitespace, then >", 
   });
 });
 
-test("svelte: the first script tag that states a lang decides for every block", () => {
+test("svelte: the first <script> that states a lang decides for every block", () => {
   assert.deepEqual(read('<script module lang="ts">a</script>\n<script>b</script>', "svelte"), [
     ts("a", "module"),
     ts("b"),

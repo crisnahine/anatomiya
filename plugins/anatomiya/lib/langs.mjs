@@ -222,7 +222,7 @@ const freeze = (decl) => {
   return Object.freeze(decl);
 };
 
-/** The script extractors there are, which is what `embedded` may name. `sfc.mjs` holds its scanners to this list at import. */
+/** The script extractors there are, which is what `embedded` may name. `script-blocks.mjs` holds its scanners to this list at import. */
 export const EXTRACTORS = Object.freeze(["vue", "svelte"]);
 
 export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby, python, php, go, java, csharp, rust, kotlin].map(freeze));

@@ -20,7 +20,7 @@ import { embeddedIn, engineOf, language } from "./langs.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
-import { blankOutside, scriptBlocks } from "./sfc.mjs";
+import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";

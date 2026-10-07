@@ -34,9 +34,9 @@ import { removeStaleHook } from "./hook.mjs";
  * Scan the repository the path is in, and write the map unless this is a dry run.
  *
  * `targets` is the whole set of places it goes, or null for the ones already on.
- * `hold` is the other targets whose files this scan leaves as they are.
+ * `leaveAlone` is the other targets whose files this scan leaves as they are.
  */
-export async function runScan(cwd, { dryRun = false, targets = null, hold = [] } = {}) {
+export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone = [] } = {}) {
   const result = await scan(cwd);
   // Only where it left nothing to read (B13). An engine missing for one
   // language costs that language's files and the scan goes on for the rest:
@@ -45,7 +45,7 @@ export async function runScan(cwd, { dryRun = false, targets = null, hold = [] }
   // language went unread and what to do about it (B41).
   if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
-  const plan = writeMap(result, { dryRun, targets, hold });
+  const plan = writeMap(result, { dryRun, targets, leaveAlone });
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
   // settings, where `${CLAUDE_PLUGIN_ROOT}` is never substituted and Claude Code
   // refuses the hook by name on every prompt and every tool call. The plugin

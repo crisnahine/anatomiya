@@ -26,11 +26,11 @@ import { TARGETS, TARGET_IDS, areaName, overviewName } from "./targets.mjs";
  * Write the map: plan it, and put it on disk unless this is a dry run.
  *
  * `targets` is the whole set of places it goes, by id, or null for the ones
- * already on. Claude Code's is in every set. `hold` is the other targets to
- * leave exactly as they are, for a caller that may not touch their files.
+ * already on. Claude Code's is in every set. `leaveAlone` is the other targets
+ * to leave exactly as they are, for a caller that may not touch their files.
  */
-export function writeMap(result, { dryRun = false, targets = null, hold = [] } = {}) {
-  const plan = planMap(result, { targets, hold });
+export function writeMap(result, { dryRun = false, targets = null, leaveAlone = [] } = {}) {
+  const plan = planMap(result, { targets, leaveAlone });
   return dryRun ? plan : commitMap(result.root, plan);
 }
 
@@ -41,7 +41,7 @@ export function writeMap(result, { dryRun = false, targets = null, hold = [] } =
  * caller that wanted the map without one had to derive it a second time, and a
  * second derivation of the same thing is a drift waiting for a field to move.
  */
-export function planMap(result, { targets = null, hold = [] } = {}) {
+export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   // Resolved before anything is rendered, and before a dry run answers: a plan
   // reporting a clean write that cannot happen is the one answer worse than the
   // failure.
@@ -60,7 +60,7 @@ export function planMap(result, { targets = null, hold = [] } = {}) {
   const previous = readFacts(result.root).facts;
   // After Claude Code's own directories: theirs is the refusal a scan has always
   // given, and the other targets can read as on or off while it does not resolve.
-  const others = otherTargets(result.root, targets, previous, hold);
+  const others = otherTargets(result.root, targets, previous, leaveAlone);
 
   const withDirectives = result.areas.filter((a) => a.dimensions.length > 0);
 
@@ -139,7 +139,7 @@ export function planMap(result, { targets = null, hold = [] } = {}) {
     result: described,
     // The same fields for each other directory, and why one was left alone.
     targets: Object.fromEntries(
-      rest.map((o) => [o.target.id, untouched(o) ? leftAlone(o, previous) : targetPlan(o, described, files)])
+      rest.map((o) => [o.target.id, untouched(o) ? untouchedPlan(o, previous) : targetPlan(o, described, files)])
     ),
   };
 }
@@ -154,7 +154,7 @@ export function planMap(result, { targets = null, hold = [] } = {}) {
  * asked. So does leaving it out by name while the record names files of ours
  * there, which asks for a removal that cannot happen.
  */
-function otherTargets(root, asked, previous, hold) {
+function otherTargets(root, asked, previous, leaveAlone) {
   if (asked !== null) {
     if (!Array.isArray(asked)) throw new Error("targets is a list of names, or null for the ones already on");
     const stranger = asked.find((id) => !TARGET_IDS.includes(id));
@@ -165,7 +165,7 @@ function otherTargets(root, asked, previous, hold) {
     .map((target) => {
       const { state, reason = null, remedy } = targetStatus(root, target);
       const explicit = asked !== null;
-      if (hold.includes(target.id)) return { target, state, reason, remedy, explicit, on: false, held: true };
+      if (leaveAlone.includes(target.id)) return { target, state, reason, remedy, explicit, on: false, leftAlone: true };
       if (state !== "unknown") return { target, state, reason, explicit, on: explicit ? asked.includes(target.id) : state === "on" };
       if (asked?.includes(target.id)) {
         throw new Error(`${reason}, so ${target.dir} could not be written and nothing was written anywhere: ${remedy} and scan again`);
@@ -336,13 +336,13 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
 }
 
 // The record goes on naming what it named, or none of it could be removed once the directory reads again.
-function leftAlone({ target, state, reason, remedy, on, held }, previous) {
+function untouchedPlan({ target, state, reason, remedy, on, leftAlone }, previous) {
   const none = { first: false, write: [], remove: [], foreign: [], unknown: [], replaced: [], unreadableRules: [], listed: false, unfiled: [] };
-  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(held ? { held } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
+  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
 }
 
-// Nobody read it, or the caller said to hold it: neither is written, cleared or turned off.
-const untouched = (o) => o.state === "unknown" || o.held === true;
+// Nobody read it, or the caller said to leave it alone: neither is written, cleared or turned off.
+const untouched = (o) => o.state === "unknown" || o.leftAlone === true;
 
 /**
  * Whether a held area's record on disk is whole enough to carry.
