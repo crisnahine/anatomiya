@@ -17,7 +17,7 @@ import { plural } from "./render-layout.mjs";
 import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
 import { TARGETS } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
-import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
+import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { removeStaleHook } from "./hook.mjs";
@@ -269,7 +269,9 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   // Present and not ready is a copy resolving from somewhere other than this
   // plugin's own install, one the tool will not use, and the install puts a
   // usable one ahead of it.
-  const needed = rows.filter((r) => !r.present || !r.ok).map(probeName);
+  // A grammar file ships in the plugin and no install writes one, so its row is said as doctor says it and asks for no install.
+  const lost = readinessLines(rows.filter(lostGrammar));
+  const needed = rows.filter((r) => (!r.present || !r.ok) && !lostGrammar(r)).map(probeName);
   const where = `${INSTALL.join(" ")} in ${root}`;
   const state =
     needed.length === 0
@@ -278,8 +280,8 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
 
   // With nothing needed there is no install to describe: "nothing to install"
   // followed by "would run npm install" contradicted itself about one install.
-  if (needed.length === 0) return answer(root, needed, { output: state });
-  if (dryRun) return answer(root, needed, { output: `${state}\nwould run ${where}` });
+  if (needed.length === 0) return answer(root, needed, { ok: lost.length === 0, output: [state, ...lost].join("\n") });
+  if (dryRun) return answer(root, needed, { ok: lost.length === 0, output: [state, `would run ${where}`, ...lost].join("\n") });
 
   // npm ships as `npm.cmd` on Windows, and a spawn resolves an extension-less
   // name against `.com` and `.exe` only, so the attempt answers ENOENT on a
@@ -304,7 +306,7 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   const how = err ? `${where} ${err.killed ? `did not finish within ${INSTALL_TIMEOUT_MS / 60_000} minutes` : "failed"}` : `ran ${where}`;
   const said = err ? stderr || stdout || err.message : stdout;
   const lines = [state, how, tail(said)].filter(Boolean);
-  if (err) return answer(root, needed, { ran: true, ok: false, output: lines.join("\n") });
+  if (err) return answer(root, needed, { ran: true, ok: false, output: [...lines, ...lost].join("\n") });
 
   // An exit of 0 says npm finished, not that anything loads. Measured with
   // `npm_config_optional=false`: npm left out oxc's native binding, which is an
@@ -316,10 +318,11 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   // and a module whose evaluation threw stays failed here whatever npm did.
   const { rows: after, error } = await readinessAfresh({ engines: NODE_PROBE_IDS });
   const still = [];
-  for (const r of after ?? []) if (!r.ok) still.push(`${probeName(r)} (${r.reason})`);
+  for (const r of after ?? []) if (!r.ok && !lostGrammar(r)) still.push(`${probeName(r)} (${r.reason})`);
   if (error) lines.push(`npm finished, and whether the engines load now could not be asked: ${error}`);
   else if (still.length) lines.push(`npm finished, and still not loading: ${still.join(", ")}`);
-  return answer(root, needed, { ran: true, ok: !error && still.length === 0, output: lines.join("\n") });
+  lines.push(...lost);
+  return answer(root, needed, { ran: true, ok: !error && still.length === 0 && lost.length === 0, output: lines.join("\n") });
 }
 
 /**

@@ -29,7 +29,8 @@ ways: a first line where nothing was installed at all, and an engine line where 
    engine npm provides loads afterwards, not that every engine is ready: npm cannot install Ruby, so
    an interpreter line stays whatever it was. Nor can it put back a grammar file: those ship in the
    plugin's own directory, so a `tree-sitter` line that names a `.wasm` file that did not load is
-   fixed by reinstalling the plugin, and setup run for it ends non-zero naming the same file.
+   fixed by reinstalling the plugin, and setup run for it prints that line, installs nothing for
+   it, and ends non-zero.
 
 5. **Do not open the generated files with the Read tool.** Reading a context file permanently
    suppresses its automatic injection for the rest of the session. Use `cat` or `head` through

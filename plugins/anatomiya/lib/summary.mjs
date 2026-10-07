@@ -63,6 +63,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     engines: result.parse.engines ?? null,
     // Only where one did not load, so a summary of a healthy run is the record it was.
     ...(result.parse.missingGrammars?.length ? { missingGrammars: result.parse.missingGrammars } : {}),
+    ...(result.parse.unanswered ? { unanswered: result.parse.unanswered } : {}),
     layoutLine: layoutSummary(result.layout, result.areas),
     baseline: {
       status: result.baseline.status,
@@ -358,9 +359,13 @@ function enginesLine(engines) {
  * (`unreadReasons`). A summary carrying no probe at all keeps the old sentence,
  * which is all it can honestly say.
  */
-function blindLines(langs, { engines, missingGrammars }) {
+function blindLines(langs, { engines, missingGrammars, unanswered = {} }) {
   if (!engines) return ["this is usually a missing interpreter rather than a repository that changed"];
-  return unreadReasons(langs, { engines, missingGrammars }).map((r) => r.why);
+  return unreadReasons(langs, { engines, missingGrammars }).map((r) => {
+    // The files nothing was there to read are counted here and on no other line.
+    const n = r.langs.reduce((sum, lang) => sum + (unanswered[lang] ?? 0), 0);
+    return n ? `${plural(n, "file")}: ${r.why}` : r.why;
+  });
 }
 
 /**

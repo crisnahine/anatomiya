@@ -109,7 +109,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `doctor` prints a line for the third engine with the grammars that load, `tree-sitter 0.27.0 ok
   (grammars: 7 of 7)`, and names a grammar file that does not: `grammars: 6 of 7, kotlin.wasm did
   not load`. The fix for that is to reinstall the plugin, since no package install writes a
-  grammar file, and a scan names that one language as unread and reads the rest.
+  grammar file, and a scan names that one language as unread and reads the rest. `setup` prints
+  the same line for it, installs nothing for it and exits non-zero.
 - Three dimensions over the languages a tree-sitter grammar reads, measured on three repositories
   per language and asked only of the languages whose repositories differ:
   `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin and
@@ -125,6 +126,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- A file whose engine or grammar was not there is counted once in the scan summary, on the line
+  that says why: `202 files: prism reported no version: install Ruby 3.4 or newer, ...`. The same
+  files were also counted under `crashed the parser` or `could not be parsed` in the summary,
+  which read as a second fault.
 - A claim says which files it was counted over where its area holds files the dimension is never
   asked of: `module-level bindings are const, in .ts files` beside a `.vue` file, and `rescue
   blocks use the error they caught, in .rb files` beside a `.js` one. This changes existing

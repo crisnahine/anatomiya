@@ -434,6 +434,25 @@ test("a run that read no file of a language for want of its grammar says to rein
   assert.ok(!lines.some((l) => l.includes("setup") || l.includes("ran and answered")), lines.join("\n"));
 });
 
+test("the files of a language no engine or grammar was there for are counted on the line that says why", () => {
+  const lines = scanLines(
+    summary({
+      uncounted: ["js", "kotlin", "ruby"],
+      engines: { oxc: { version: "0.151.0" }, "tree-sitter": { version: "0.27.0" }, prism: { version: null } },
+      missingGrammars: ["kotlin"],
+      unanswered: { kotlin: 1, ruby: 9 },
+    })
+  );
+
+  const at = lines.indexOf("read no js or kotlin or ruby file at all, so none was counted");
+  assert.deepEqual(lines.slice(at + 1, at + 4), [
+    "1 file: the plugin's kotlin grammar did not load: reinstall this plugin, which ships its grammar files in its own directory",
+    // The JavaScript files crashed a parser that was there, and are counted on that line.
+    "oxc 0.151.0 ran and answered for none of them",
+    "9 files: prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH",
+  ]);
+});
+
 test("a run blind to two languages names both", () => {
   assert.ok(
     scanLines(summary({ blind: ["js", "ruby"], wrote: 0 })).includes(
