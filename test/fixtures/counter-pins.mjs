@@ -61,8 +61,6 @@ export const REFUSED = [
   "controller_spec", "serializer_spec", "model_test", "job_test",
   // The JavaScript and Ruby rows' reason: a handler that drops its error is an absence.
   "caught_error_used",
-  // A wildcard is the absence of a list, and the inverse would tell a file to name nothing it takes.
-  "wildcard_import",
   // An unannotated function is an absence, and the inverse would tell an agent to delete types.
   "declared_return_type",
 ];

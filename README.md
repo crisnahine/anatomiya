@@ -374,10 +374,10 @@ too, so the line says which files it speaks for.
 
 ## What it measures
 
-62 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. A Vue or Svelte script
-block is asked most of the JavaScript ones: 24 for Vue, 24 for Svelte. Four are asked of the
+61 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. A Vue or Svelte script
+block is asked most of the JavaScript ones: 24 for Vue, 24 for Svelte. Three are asked of the
 languages a tree-sitter grammar reads, each where measured repositories differ on it: 2 for
-Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for Rust, 2 for Kotlin. Each is one claim
+Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for Rust, 1 for Kotlin. Each is one claim
 about one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
@@ -562,7 +562,7 @@ three Kotlin ones, which use syntax newer than the grammar. A C# file with `#if`
 expression is read with the first branch of each conditional kept, and the scan counts those files
 too. A Python stub (`.pyi`) is not read.
 
-One of the 62 needs the type checker and is the only
+One of the 61 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts

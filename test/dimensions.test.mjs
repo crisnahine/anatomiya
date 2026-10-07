@@ -1088,7 +1088,7 @@ test("a row is walked by its own engine's walk, and one whose engine has none re
     assert.equal(walkFor({ key: "c", langs: [lang] }), walkTree, lang);
   }
   assert.throws(
-    () => walkFor({ key: "wildcard_import", langs: ["python"] }, { oxc: walk, prism: walkRuby }),
-    /^Error: wildcard_import is a row for tree-sitter, and no walk reads a tree-sitter tree$/
+    () => walkFor({ key: "declared_return_type", langs: ["python"] }, { oxc: walk, prism: walkRuby }),
+    /^Error: declared_return_type is a row for tree-sitter, and no walk reads a tree-sitter tree$/
   );
 });

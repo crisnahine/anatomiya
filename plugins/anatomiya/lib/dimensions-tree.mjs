@@ -6,7 +6,7 @@ import { fieldOf, nameOf, site } from "./tree-walk.mjs";
 
 const KINDS = [
   "fn", "cls", "scope", "wrap", "comment", "annotation", "inner", "directive", "catch", "raise", "ident", "variable",
-  "import", "block", "docstring", "doc", "args", "iface", "receiverType",
+  "block", "docstring", "doc", "args", "iface", "receiverType",
 ];
 const SETS = new Map(
   Object.entries(SHAPES).map(([lang, shapes]) => [lang, Object.fromEntries(KINDS.map((kind) => [kind, new Set(shapes[kind] ?? [])]))])
@@ -269,27 +269,6 @@ export const TREE_DIMENSIONS = [
           if (inherited(words) || notOffered.some((word) => words.has(word))) return;
           const documented = sets.docstring.size > 0 ? hasDocstring(node, sets, source) : documentedAbove(node, ctx, sets, DOC[lang], source);
           add({ node: site(named), conforming: documented, where: name });
-        },
-      };
-    },
-  },
-
-  {
-    key: "wildcard_import",
-    tier: "syntactic",
-    claim: "an import names what it takes",
-    counterClaim: null, // a wildcard is the absence of a list, and telling a file to name nothing helps no reader
-    precision: "precise",
-    applicabilityPredicate: {
-      sites: "a Kotlin file holding at least one import, each counted, in a test file too. One taking everything (`import a.b.*`) does not conform",
-      blind: null,
-    },
-    langs: ["kotlin"],
-    visitor(program, add) {
-      const sets = SETS.get(program.lang);
-      return {
-        node(node) {
-          if (sets.import.has(node.type)) add({ node: site(node), conforming: node.tokens?.includes("*") !== true, where: null });
         },
       };
     },

@@ -709,11 +709,6 @@ container = document.createElement("div")`,
       { lang: "csharp", source: `class A\n{\n    void Run() { }\n\n    internal void Walk() { }\n\n    protected void Crawl() { }\n\n    public override string ToString() { return ""; }\n}\n` },
     ],
   },
-  wildcard_import: {
-    lang: "kotlin",
-    applicable: [{ source: `import a.b.C\nimport a.b.*\nimport a.b.D as E\n`, sites: 3 }],
-    inapplicable: [`package a.b\n\nval x = 2 * 3\n`],
-  },
   declared_return_type: {
     lang: "python",
     applicable: [
