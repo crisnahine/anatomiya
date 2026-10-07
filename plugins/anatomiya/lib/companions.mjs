@@ -22,7 +22,7 @@
  * evidence has to come from the file rather than from where it sits.
  */
 
-import { engineOf, language } from "./langs.mjs";
+import { familyOf, language } from "./langs.mjs";
 import { byCode, dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
 import {
   LEARNED_SUFFIX_FLOOR,
@@ -448,13 +448,13 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // `app/javascript/mastodon/models` read 8 of 17 off the Ruby specs, and
       // `app/models` read the TypeScript tests.
       //
-      // The engine and not the language, which is finer than the question:
+      // The family and not the language, which is finer than the question:
       // `language` separates `.tsx` from `.ts` because that is the grammar the
       // parser is asked for, and a component tested by a plain `.ts` file is
       // the ordinary shape in every React repository there is. This branch
       // keeps asking `language`, because a bare basename at the top of two
       // trees is the one match with no structure behind it at all.
-      if (engineOf(language(t.rel)) !== engineOf(language(f.rel))) continue;
+      if (familyOf(language(t.rel)) !== familyOf(language(f.rel))) continue;
       const topLevel = flatPair && TREE.has(t.dir.split("/")[0]) && language(t.rel) === language(f.rel);
       // The same mirror, asked the other way round. `mirrors` is one-directional
       // and the empty-tail arm only ever asked whether the candidate ends in the
