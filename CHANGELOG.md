@@ -7,8 +7,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Vue and Svelte. The `<script>` blocks of a `.vue` or `.svelte` file are read by the parser that
+  reads JavaScript and counted by the JavaScript dimensions that hold for a component: 24 for Vue
+  and 24 for Svelte, of 28. A file may hold two blocks (`<script>` and `<script setup>`, or
+  Svelte's module and instance scripts), and they are read as one program. `lang="ts"` picks
+  TypeScript, and the lines `check` reports are the file's own. The scanner that finds the blocks
+  agreed with each framework's compiler on 4,100 of 4,100 Vue files and 8,047 of 8,048 Svelte
+  files. The one it misses is a top-level script with a space before it, which reads as a
+  component with no script.
+- Three dimensions are not asked of a component, because the answer is in its template:
+  `module-level bindings are const`, `optional values are read with ?.` and `imports used only as
+  types are marked import type`. `failure is returned, not thrown` is not asked of Vue, and `a
+  module that exports a hook exports one` is not asked of Svelte. A Svelte prop (`export let`) is
+  not read as an exported name or function, and a PascalCase function in a Vue script is not read
+  as a function name.
+- A component's template and style block are not read, and the overview's "Not covered" section
+  says so for a repository that holds one: `17 .vue and .svelte files are read for their script
+  block; the template is not read`.
+- Component files learn their own filename class, apart from the modules beside them:
+  `component files here are named PascalCase`.
+- `$lib/` in a SvelteKit project resolves to the importer's own `src/lib` for "most imported from
+  here": 4,210 of 4,213 such imports on one measured repository, where none resolved before. No
+  `svelte.config.js` is read, so a project that repoints the alias resolves nothing through it.
+
 ### Changed
 
+- A claim says which files it was counted over where its area holds files the dimension is never
+  asked of: `module-level bindings are const, in .ts files` beside a `.vue` file, and `rescue
+  blocks use the error they caught, in .rb files` beside a `.js` one. Existing maps change by
+  this. On the 35 measured repositories, 87 of 6,887 area files gain the clause, on 705 lines in
+  all, most of them where Ruby sits beside JavaScript. No file gains or loses a line, and 24 of
+  the 35 do not change.
+- A directory whose components sit beside modules counts their namesake tests apart: `85 of 745
+  .ts files have a namesake test; 79 of 164 .vue files have a namesake test`, on the root line,
+  the tests line and an area's kinds line. The first count does not move.
+- The "Not covered" line that names unread languages knows 24 more extensions, among them `.erb`,
+  `.haml`, `.css`, `.scss`, `.html`, `.sh` and `.sql`, so a repository holding them gains the line
+  or a longer one. mastodon gains `469 files hold a language this map does not read (310 .haml,
+  91 .scss, 47 .erb, 10 .css, 8 .sql, 3 .html)`. Where the overview already sat at its 40 lines,
+  one root folds into the roster's last line to pay for it.
+- The end-of-turn reuse check asks about the lines a component's script added and no others. An
+  edit to a template or a style block asks nothing, where it used to ask about a `<button>`.
 - The type checker reads a root `tsconfig.base.json` where a repository has no root
   `tsconfig.json`, which is how a workspace with one config per package keeps its path aliases.
   Read on the compiler's defaults, every import through an alias resolved to nothing: of eight such

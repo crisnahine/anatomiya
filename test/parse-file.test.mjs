@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 
 import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { scriptBlocks } from "../plugins/anatomiya/lib/sfc.mjs";
 
 // Linux is where a child's address space can be capped from a shell: macOS
 // refuses `ulimit -v` outright, and Windows never asks for the raw transfer.
@@ -292,7 +294,7 @@ test("two blocks are one program", async () => {
 });
 
 test("the same binding imported by both blocks is not a syntax error", async () => {
-  // Each block is a module of its own to the compiler, so each is parsed apart.
+  // Both frameworks allow it, and read as one module it is a redeclaration.
   const source = '<script>\nimport { ref } from "vue";\nexport const a = ref(0);\n</script>\n<script setup>\nimport { ref } from "vue";\nconst b = ref(1);\n</script>\n';
 
   const r = await parseFile(source, "src/Twice.vue", "vue");
@@ -310,6 +312,33 @@ test("a block with lang ts is parsed as TypeScript, and one with none is not", a
   assert.equal(plain.ok, false);
   assert.ok(plain.errors >= 1);
   assert.equal(plain.hits, undefined);
+});
+
+test("a block with no lang is read as a .js file is: an annotation parses, and the tree says it is typed", async () => {
+  // An annotation is what the JSX-only grammar rejects, and what no tag declared.
+  const r = await parseFile("<script>\nexport const x: number = 1;\n</script>\n", "src/A.vue", "vue");
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.facets.typed, true);
+});
+
+test("a block with lang tsx holds JSX", async () => {
+  // An element is what the TypeScript grammar reads as a cast and rejects.
+  const r = await parseFile('<script setup lang="tsx">\nconst el = <div />;\n</script>\n', "src/A.vue", "vue");
+  assert.equal(r.ok, true, r.error);
+});
+
+test("a comment on a script's last line ends where the script does", async () => {
+  // The end tag is blanked to spaces, which a line comment runs on through.
+  for (const [rel, lang] of [["src/A.vue", "vue"], ["src/A.svelte", "svelte"]]) {
+    const source = "<script>\nconst a = 1; // why</script>\n<p>markup</p>\n";
+    const [block] = scriptBlocks(source, lang).blocks;
+
+    const r = await parseFile(source, rel, lang, { withProgram: true });
+
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.comments.map((c) => [source.slice(c.start, c.end), c.value]), [["// why", " why"]], rel);
+    for (const c of r.comments) assert.ok(c.end <= block.end, rel);
+  }
 });
 
 test("a tag's lang marks the file typed before any annotation exists", async () => {
@@ -473,14 +502,15 @@ test("a row asked of a component is handed the file's own text", async (t) => {
 
 test("a component's rows are chosen for its own language and no other", async () => {
   // No blanket mapping onto the JavaScript rows: a row answers a component
-  // only once it lists the language.
-  const r = await parseFile("<script>\ntry { f(); } catch (e) {}\n</script>\n", "src/A.vue", "vue");
+  // only once it lists the language, and the const row lists neither.
+  const r = await parseFile("<script>\nlet a = 1;\ntry { f(); } catch (e) {}\n</script>\n", "src/A.vue", "vue");
   assert.equal(r.ok, true);
-  assert.deepEqual(r.hits, {});
+  assert.deepEqual(Object.keys(r.hits), ["swallowed_error"]);
 });
 
 test("a .svelte.ts module is plain TypeScript, read whole", async () => {
-  const r = await parseFile("export const count = $state(0);\n", "src/state.svelte.ts", "js");
+  const rel = "src/state.svelte.ts";
+  const r = await parseFile("export const count = $state(0);\n", rel, language(rel));
   assert.equal(r.ok, true);
   assert.equal(r.facets.embedded, undefined);
   assert.deepEqual(r.facets.exports, ["count"]);

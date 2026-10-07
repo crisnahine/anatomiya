@@ -17,6 +17,7 @@
 import { posix } from "node:path";
 
 import { SOURCE_OF } from "./companions.mjs";
+import { embeddedIn, language } from "./langs.mjs";
 import { extOf, withoutExtension, byCode } from "./paths.mjs";
 
 /**
@@ -49,6 +50,9 @@ const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"
 // The prefixes a repository points at its own root with. Stripped before the
 // tail match, or `@/utils/user` looks for a directory literally called `@`.
 const ALIASES = ["~/", "@/", "#/", "src/"];
+
+// SvelteKit's alias for the `src/lib` of the importer's own project. A `svelte.config.js` that repoints it is not read.
+const LIB_ALIAS = "$lib/";
 
 /**
  * The modules most files in an area import, top three.
@@ -109,13 +113,16 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   // is never `base.ts`.
   const dirOnly = spec.endsWith("/");
   if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
-    const at = posix.join(posix.dirname(importerRel), spec).replace(/\/+$/, "");
-    const indexes = EXTENSIONS.map((e) => `${at}/index${e}`);
-    const candidates = dirOnly ? indexes : [at, ...emittedFrom(at), ...EXTENSIONS.map((e) => at + e), ...indexes];
-    for (const candidate of candidates) {
-      if (corpusRels.has(candidate)) return candidate;
+    return fileAt(posix.join(posix.dirname(importerRel), spec), dirOnly, corpusRels);
+  }
+
+  if (spec.startsWith(LIB_ALIAS)) {
+    // Nearest first, and never the tail match below: two apps each hold a
+    // `src/lib/utils.ts`, and a `tools/lib` is nobody's `$lib`.
+    for (let dir = posix.dirname(importerRel); ; dir = posix.dirname(dir)) {
+      const found = fileAt(posix.join(dir, "src/lib", spec.slice(LIB_ALIAS.length)), dirOnly, corpusRels);
+      if (found !== null || dir === ".") return found;
     }
-    return null;
   }
 
   const alias = ALIASES.find((a) => spec.startsWith(a));
@@ -123,8 +130,10 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
-  const index = tailIndex(corpusRels);
+  const { stems: index, spelled } = tailIndex(corpusRels);
   if (dirOnly) return index.get(`/${tail}/index`) ?? null;
+  const named = spelled.get(`/${tail}`);
+  if (named !== undefined) return named;
   const whole = index.get(`/${tail}`);
   if (whole !== undefined) return whole;
   // The index is keyed without extensions, so a tail that writes one is looked
@@ -133,6 +142,14 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   const ext = extOf(tail);
   const found = index.get(`/${withoutExtension(tail)}`) ?? null;
   return found !== null && [ext, ...(SOURCE_OF[ext] ?? [])].includes(extOf(found)) ? found : null;
+}
+
+/** The file a path names as written, through an extension it leaves off or emits, or as a directory's index. */
+function fileAt(path, dirOnly, corpusRels) {
+  const at = path.replace(/\/+$/, "");
+  const indexes = EXTENSIONS.map((e) => `${at}/index${e}`);
+  const candidates = dirOnly ? indexes : [at, ...emittedFrom(at), ...EXTENSIONS.map((e) => at + e), ...indexes];
+  return candidates.find((candidate) => corpusRels.has(candidate)) ?? null;
 }
 
 /** The TypeScript sources a path spelled with an emitted extension is compiled from. */
@@ -153,15 +170,23 @@ function tailIndex(corpusRels) {
   if (cached) return cached;
 
   const index = new Map();
+  // A component answers only a tail that spells its extension, as a bundler
+  // resolves it; by its stem it made the module of its name beside it ambiguous.
+  const spelled = new Map();
   for (const rel of corpusRels) {
+    if (embeddedIn(language(rel)) !== null) {
+      register(spelled, rel, rel);
+      continue;
+    }
     const path = withoutExtension(rel);
     register(index, path, rel);
     // A directory resolves through its index file, so the directory's own tails
     // name it too.
     if (path.endsWith("/index")) register(index, path.slice(0, -"/index".length), rel);
   }
-  TAIL_INDEX.set(corpusRels, index);
-  return index;
+  const built = { stems: index, spelled };
+  TAIL_INDEX.set(corpusRels, built);
+  return built;
 }
 
 /**

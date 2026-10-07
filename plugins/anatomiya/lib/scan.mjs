@@ -1,5 +1,5 @@
 import { collect, gitRoot, countUntrackedSource, frameworksIn, langsIn } from "./corpus.mjs";
-import { langHas } from "./langs.mjs";
+import { embeddedIn, langHas } from "./langs.mjs";
 import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
@@ -11,7 +11,7 @@ import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
 import { resolve as resolveBaseline, measure as measureBaseline } from "./baseline.mjs";
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
-import { extOf } from "./paths.mjs";
+import { extOf, extOrName } from "./paths.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 
 /**
@@ -277,6 +277,10 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       baseline: measuredArea.population,
       // The same counts a root line carries, over this area's own files.
       kinds: kinds(area),
+      // For the renderer alone, which says where an area holds files a claim's
+      // row is never asked of. Not in the record: the map is written from this
+      // object, and nothing reads the scope back.
+      extsByLang: extsByLang(area.files),
       // What a new file in here would import, and what to check for before
       // writing one. Read at HEAD like the roster: both are counts, and neither
       // is a claim anything is gated against.
@@ -287,6 +291,9 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       dimensions: gated,
     });
   }
+
+  // Off the corpus and not off what parsed, so the count holds on a busy machine.
+  const scriptOnly = tally(files.filter((f) => embeddedIn(f.lang)).map((f) => extOf(f.rel)));
 
   return {
     root,
@@ -320,6 +327,8 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // roster prints a root's top two and folds the rest away, so the row
       // naming an unread language cannot be counted back off it.
       otherExts: tally(others.map((o) => extOf(o.rel))),
+      // Absent where there is none, so a repository with no component keeps its record.
+      ...(scriptOnly.length > 0 ? { scriptOnly } : {}),
     },
     authors: { files: authors.size, error: authorsError, repo: repoAuthors, shallow },
     parse: {
@@ -366,6 +375,13 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     layout,
     areas: out,
   };
+}
+
+/** Each language's extensions among these files, and the whole name of a file that has none. */
+function extsByLang(files) {
+  const out = {};
+  for (const f of files) (out[f.lang] ??= new Set()).add(extOrName(f.rel));
+  return Object.fromEntries(Object.entries(out).map(([lang, exts]) => [lang, [...exts]]));
 }
 
 /** Distinct authors over the files carrying one side's sites (D4). */

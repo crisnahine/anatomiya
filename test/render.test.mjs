@@ -1993,6 +1993,40 @@ test("a repository read in full carries no unread-language row", () => {
   assert.doesNotMatch(out, /a language this map does not read/);
 });
 
+test("component files are named as read for their script alone, by the extensions present", () => {
+  const overview = (scriptOnly) =>
+    renderOverview(result({ corpus: { files: 90, truncated: false, dropped: {}, ...(scriptOnly ? { scriptOnly } : {}) } }), { uncovered: 0 });
+
+  assert.match(
+    overview([[".vue", 9], [".svelte", 8]]),
+    /^- 17 \.vue and \.svelte files are read for their script block; the template is not read$/m
+  );
+  assert.match(overview([[".svelte", 12]]), /^- 12 \.svelte files are read for their script block; the template is not read$/m);
+  assert.match(overview([[".vue", 1]]), /^- 1 \.vue file is read for its script block; the template is not read$/m);
+  assert.doesNotMatch(overview(null), /script block|template/, "a repository with no component says nothing of one");
+  assert.equal(overview([[".vue", 9]]), overview([[".vue", 9]]), "and the line is the same between two scans");
+});
+
+test("a template, a stylesheet and a shell script are named among what this map does not read", () => {
+  // A Rails fixture of six .erb and six .css files printed no word about twelve unread files.
+  const corpus = { files: 90, truncated: false, dropped: {}, otherExts: [[".md", 40], [".json", 9], [".css", 6], [".erb", 6], [".sh", 2]] };
+  const out = renderOverview(result({ corpus }), { uncovered: 0 });
+
+  assert.match(out, /^- 14 files hold a language this map does not read \(6 \.css, 6 \.erb, 2 \.sh\)$/m);
+  assert.deepEqual(
+    unreadLanguageFiles({ corpus: { otherExts: [".c", ".h", ".cpp", ".swift", ".scala", ".m", ".ex", ".pl"].map((e) => [e, 1]) } }).length,
+    8,
+    "and none of the languages it already named is lost"
+  );
+});
+
+test("no extension this map reads is listed among those it does not", () => {
+  const declared = LANGUAGES.flatMap((l) => l.exts.map((e) => [`.${e}`, 1]));
+
+  assert.ok(declared.length > 10, "the registry declares its extensions bare");
+  assert.deepEqual(unreadLanguageFiles({ corpus: { otherExts: declared } }), []);
+});
+
 test("files dropped as generated are named, since nothing else in the map says they exist", () => {
   // `collect` drops them before anything counts, so without this row a reader
   // who knows the directory is there sees a map that has never heard of it.
@@ -3288,4 +3322,207 @@ test("an overview with no area says no directory made one, and claims nothing be
   assert.match(out, /^## Areas \(0\)\n\nNo directory became an area, so nothing here states a claim\.\n\n## Not covered$/m);
   assert.doesNotMatch(out, /every claim below/);
   assert.doesNotMatch(out, /\n\n\n/, "no run of blank lines");
+});
+
+test("a root that counts its components prints two namesake counts, each naming its extension", () => {
+  // Two facts, and summed they are neither: 85 of 745 .ts and 79 of 164 .vue.
+  const mixed = root("packages/components", {
+    files: 1063,
+    exts: [[".ts", 777], [".vue", 164]],
+    other: 122,
+    companions: { with: 85, of: 745, root: null, ext: ".ts" },
+    componentCompanions: { with: 79, of: 164, root: "packages/components", under: 60, ext: ".vue" },
+  });
+  const lines = renderLayout({ ...clientLayout(), roots: [mixed], more: { roots: 0, files: 0 } });
+
+  assert.equal(
+    lines[2],
+    "- packages/components: 777 .ts, 164 .vue and 122 other; 85 of 745 .ts files have a namesake test; " +
+      "79 of 164 .vue files have a namesake test, 60 under packages/components"
+  );
+  assert.ok(
+    lines[3].endsWith(
+      "; 85 of 745 .ts files under packages/components have a namesake test" +
+        "; 79 of 164 .vue files under packages/components have a namesake test"
+    ),
+    lines[3]
+  );
+  assert.equal(
+    kindsLine(mixed),
+    "kinds: 777 .ts, 164 .vue and 122 other; 0 test files; " +
+      "85 of 745 .ts files have a namesake test; 79 of 164 .vue files have a namesake test"
+  );
+});
+
+test("a component count with no other beside it still says which files it is over", () => {
+  const only = root("src/ui", {
+    exts: [[".ts", 9], [".svelte", 4]],
+    componentCompanions: { with: 1, of: 4, root: null, ext: ".svelte" },
+  });
+
+  assert.equal(kindsLine(only), "kinds: 9 .ts, 4 .svelte; 0 test files; 1 of 4 .svelte files has a namesake test");
+});
+
+const constRow = (o = {}) =>
+  dim({ key: "module_state_const", claim: "module-level bindings are const", conforming: 7, candidates: 7, askedExts: [".ts"], ...o });
+
+test("a claim says which files it was counted over where the area holds others", () => {
+  const mixed = area({ extsByLang: { js: [".ts", ".js"], svelte: [".svelte"] }, dimensions: [constRow({ askedExts: [".ts", ".js"] })] });
+
+  assert.match(renderArea(mixed), /^module-level bindings are const, in \.js and \.ts files\n {2}7 of 7 sites across /m);
+});
+
+test("a counts line and a default-matching line carry the same scope", () => {
+  const out = renderArea(
+    area({
+      extsByLang: { js: [".ts"], vue: [".vue"] },
+      dimensions: [
+        constRow({ directive: false, gate: "evidence" }),
+        dim({ key: "type_only_import", claim: "imports used only as types are marked import type", states: "claim", matchesDefault: true, conforming: 22, askedExts: [".ts"] }),
+      ],
+    })
+  );
+
+  assert.match(out, /^module-level bindings are const, in \.ts files: no convention\. 7 of 7 sites \(evidence\)$/m);
+  assert.match(out, /^imports used only as types are marked import type, in \.ts files: 22 of 22 sites \(matches model default\)$/m);
+});
+
+test("a claim asked of every extension the area holds names none of them", () => {
+  const out = renderArea(
+    area({
+      extsByLang: { js: [".ts"], svelte: [".svelte"], jsx: [".tsx"] },
+      dimensions: [dim({ askedExts: [".ts", ".svelte", ".tsx"] }), constRow({ askedExts: [".ts", ".tsx"] })],
+    })
+  );
+
+  assert.match(out, /^catch blocks use the error they caught$/m);
+  assert.match(out, /^module-level bindings are const, in \.ts and \.tsx files$/m);
+  assert.doesNotMatch(renderArea(area({ dimensions: [constRow()] })), /, in /, "an area that names no extensions is a record, and prints as it did");
+});
+
+test("a row asked of JSX alone is scoped to the extensions a file holding JSX may carry", () => {
+  const jsxRow = REGISTRY.find((d) => d.langs.length === 1 && d.langs[0] === "jsx" && /\w$/.test(d.claim));
+  const row = (askedExts) => dim({ key: jsxRow.key, claim: jsxRow.claim, askedExts });
+  const line = (exts) => new RegExp(`^${jsxRow.claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, in ${exts} files$`, "m");
+
+  assert.match(renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb", "Gemfile"] }, dimensions: [row([".js"])] })), line("\\.js"));
+  assert.match(
+    renderArea(area({ extsByLang: { js: [".ts"], jsx: [".tsx"], vue: [".vue"] }, dimensions: [row([".tsx"])] })),
+    line("\\.tsx"),
+    "a .ts file holds no JSX, so the row was never asked of one"
+  );
+});
+
+test("a JSX row beside .ts files it could have been asked of says nothing of them", () => {
+  const jsxRow = REGISTRY.find((d) => d.langs.length === 1 && d.langs[0] === "jsx");
+  const row = dim({ key: jsxRow.key, claim: jsxRow.claim, askedExts: [".tsx"] });
+
+  assert.doesNotMatch(renderArea(area({ extsByLang: { js: [".js", ".ts"], jsx: [".tsx"] }, dimensions: [row] })), /, in /);
+});
+
+test("a row about type syntax beside .js files it could have been asked of says nothing of them", () => {
+  const typed = REGISTRY.find((d) => d.needsTypeSyntax);
+  const row = dim({ key: typed.key, claim: typed.claim, askedExts: [".ts"] });
+
+  assert.doesNotMatch(renderArea(area({ extsByLang: { js: [".js", ".ts"] }, dimensions: [row] })), /, in /);
+});
+
+test("a claim that does not say which files it was asked of names none", () => {
+  assert.doesNotMatch(renderArea(area({ extsByLang: { js: [".ts"], ruby: [".rb"] }, dimensions: [constRow({ askedExts: undefined })] })), /, in /);
+});
+
+test("three extensions read as a series, in one order whatever order the files came in", () => {
+  const one = renderArea(area({ extsByLang: { js: [".ts"], ruby: [".rb"] }, dimensions: [constRow({ askedExts: [".ts", ".mjs", ".js"] })] }));
+  const other = renderArea(area({ extsByLang: { ruby: [".rb"], js: [".js"] }, dimensions: [constRow({ askedExts: [".js", ".ts", ".mjs"] })] }));
+
+  assert.match(one, /^module-level bindings are const, in \.js, \.mjs and \.ts files$/m);
+  assert.equal(one, other);
+});
+
+const rescueRow = () => dim({ key: "rescue_uses_error", claim: "rescue blocks use the error they caught" });
+// The row was asked of every file but those of the language listed first.
+const scopeOf = (extsByLang, row = constRow()) =>
+  renderArea(area({ extsByLang, dimensions: [{ ...row, askedExts: Object.values(extsByLang).slice(1).flat() }] })).match(/, in .*$/m)?.[0];
+
+test("a file with no extension is named in the scope, after the extensions", () => {
+  const js = [".js"];
+
+  assert.equal(scopeOf({ js, ruby: [".rb", "Gemfile", ".gemspec"] }, rescueRow()), ", in .gemspec and .rb files and Gemfile");
+  assert.equal(scopeOf({ js, ruby: ["Rakefile", "Gemfile"] }, rescueRow()), ", in Gemfile and Rakefile");
+  assert.equal(scopeOf({ js, ruby: ["Rakefile", ".rb", "Gemfile"] }, rescueRow()), ", in .rb files and Gemfile and Rakefile");
+  assert.equal(scopeOf({ js, ruby: ["Rakefile", ".ru", ".rb", ".rake"] }, rescueRow()), ", in .rake, .rb and .ru files and Rakefile");
+});
+
+test("the scope lists extensions by code point, with and before the last and no comma before it", () => {
+  const ruby = [".rb"];
+
+  assert.equal(scopeOf({ ruby, js: [".ts"] }), ", in .ts files");
+  assert.equal(scopeOf({ ruby, js: [".ts", ".js"] }), ", in .js and .ts files");
+  assert.equal(scopeOf({ ruby, js: [".ts", ".cjs"], jsx: [".tsx", ".JSX"] }), ", in .JSX, .cjs, .ts and .tsx files");
+});
+
+test("a declaration file is a TypeScript file in the scope, named once", () => {
+  const ruby = [".rb"];
+
+  assert.equal(scopeOf({ ruby, js: [".d.ts", ".ts"] }), ", in .ts files");
+  assert.equal(scopeOf({ ruby, js: [".ts", ".d.ts", ".js"] }), ", in .js and .ts files");
+  assert.equal(scopeOf({ ruby, js: [".d.mts", ".d.cts", ".d.ts"] }), ", in .cts, .mts and .ts files");
+});
+
+test("the scope goes inside a sentence's full stop and after any other mark a claim ends on", () => {
+  const SCOPED = [
+    ["hook_call_style", "React's hooks are called by their bare name, not through React.", "React's hooks are called by their bare name, not through React, in .js files."],
+    ["optional_chaining", "optional values are read with ?.", "optional values are read with ?., in .js files"],
+    ["nullish_default", "defaults are taken with ??, not ||", "defaults are taken with ??, not ||, in .js files"],
+    ["non_null_assertion", "possibly-absent values are read with ?., not asserted with !", "possibly-absent values are read with ?., not asserted with !, in .js files"],
+    ["test_call_style", "test cases are declared with test(), not it()", "test cases are declared with test(), not it(), in .js files"],
+    ["test_call_style", "test cases are declared with it(), not test()", "test cases are declared with it(), not test(), in .js files"],
+    ["assertion_style", "assertions are written with expect()", "assertions are written with expect(), in .js files"],
+    ["assertion_style", "assertions are written with assert(), not expect()", "assertions are written with assert(), not expect(), in .js files"],
+    [
+      "service_result_shape",
+      "service entry points do not raise, directly or through a bang call like update!",
+      "service entry points do not raise, directly or through a bang call like update!, in .rb files",
+    ],
+  ];
+  const texts = (v) => (typeof v === "string" ? [v] : Object.values(v ?? {}));
+  const marked = REGISTRY.flatMap((d) => [d.claim, d.counterClaim, d.splitClaim, d.noneClaim].flatMap(texts)).filter((s) => /[^\w>]$/.test(s));
+
+  assert.deepEqual(marked.sort(), SCOPED.map(([, claim]) => claim).sort(), "a claim ending on a mark this test has not seen");
+  for (const [key, claim, want] of SCOPED) {
+    const askedExts = [key === "service_result_shape" ? ".rb" : ".js"];
+    const out = renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb"] }, dimensions: [dim({ key, claim, askedExts })] }));
+    assert.equal(out.split("\n").find((line) => line.includes(", in .")), want);
+  }
+});
+
+test("the scope costs no line, and a sentence the budget kept without its counts still carries it", () => {
+  const dims = Array.from({ length: 30 }, (_, i) => (i === 6 ? constRow() : dim({ key: `k${i}`, claim: `claim ${i}` })));
+  const plain = area({ dimensions: dims });
+  const scoped = area({ extsByLang: { js: [".ts"], svelte: [".svelte"] }, dimensions: dims });
+
+  assert.equal(renderArea(scoped).split("\n").length, renderArea(plain).split("\n").length);
+  assert.deepEqual([...droppedSlots(scoped)], [...droppedSlots(plain)]);
+  assert.match(renderArea(scoped), /^ {2}module-level bindings are const, in \.ts files$/m);
+});
+
+test("the forms a row declines name component imports where the area holds components", () => {
+  const extension = (o = {}) =>
+    dim({ key: "import_extension", states: "counter", counterClaim: "relative imports are written without the file extension",
+          candidates: 56, conforming: 0, counterExceptions: [], ...o });
+  const clause = "a specifier naming a directory, an asset, or a .coffee or .es6 source, and a dynamic import()";
+
+  const beside = renderArea(area({ extsByLang: { js: [".ts"], vue: [".vue"] }, dimensions: [extension()] }));
+  assert.match(beside, /^relative imports are written without the file extension\n {2}56 of 56 sites /m);
+  assert.ok(
+    beside.includes(`\n  not counted: an import of a .vue file, which is written with its extension; ${clause}\n`),
+    beside
+  );
+
+  const both = renderArea(area({ extsByLang: { vue: [".vue"], js: [".ts"], svelte: [".svelte"] }, dimensions: [extension()] }));
+  assert.ok(both.includes("\n  not counted: an import of a .svelte or .vue file, which is written with its extension; "), both);
+
+  const modules = area({ extsByLang: { js: [".ts"], jsx: [".tsx"] }, dimensions: [extension()] });
+  assert.ok(renderArea(modules).includes(`\n  not counted: ${clause}\n`), "an area of modules reads as it did");
+  assert.equal(beside.split("\n").length, renderArea(modules).split("\n").length, "and it costs no line");
 });

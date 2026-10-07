@@ -75,6 +75,24 @@ root took. A different unit from an area: it is counted over every tracked file 
 and it says nothing about which area a file belongs to.
 _Avoid_: top-level directory, folder, package, area
 
+**Component**:
+A `.vue` or `.svelte` file: markup holding at most two script blocks. Its script is counted, by the
+dimensions that list its framework, and its template and style are not read. A `.tsx` file is never
+called one here, whatever it renders.
+_Avoid_: single-file component, SFC, view, template
+
+**Script block**:
+The body of one `<script>` tag in a component, found by its framework's own rules. It is the only
+part of a component that is parsed, and a component's two blocks are read as one program at the
+file's own lines.
+_Avoid_: script tag, script section, inline script
+
+**Family**:
+The languages a test may be written in and still answer a source file of another: JavaScript,
+TypeScript, JSX, Vue and Svelte are one family and Ruby is another. A test never answers a file
+outside its own.
+_Avoid_: engine, ecosystem, stack
+
 **Namesake test**:
 A test file that answers one source file by carrying its stem. It says that file is tested, and nothing
 about where its root keeps its tests.

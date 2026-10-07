@@ -43,6 +43,8 @@ export const JS_DECLINED = {
       'import a from "./dir/";',
       'import a from "./dir/..";',
       'import a from "./old.coffee";',
+      'import Card from "./Card.vue";',
+      'import Card from "./Card.svelte";',
     ],
     counted: 'import a from "./utils";',
   },
