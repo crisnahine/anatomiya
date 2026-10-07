@@ -110,15 +110,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (grammars: 7 of 7)`, and names a grammar file that does not: `grammars: 6 of 7, kotlin.wasm did
   not load`. The fix for that is to reinstall the plugin, since no package install writes a
   grammar file, and a scan names that one language as unread and reads the rest.
-- Three dimensions over the languages a tree-sitter grammar reads, each asked only of the languages
-  whose measured repositories differ on it (three repositories per language):
+- Three dimensions over the languages a tree-sitter grammar reads, measured on three repositories
+  per language and asked only of the languages whose repositories differ:
   `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin and
   `functions declare what they return` in Python and PHP, each of which may state its inverse
   where an area writes the other way; `exception handlers use the error they caught` in PHP and
-  Java. A function row passes over test files. Two
-  more candidates are not shipped: how functions are named read over 0.94 in all fifteen
-  repositories, and whether a Kotlin import names what it takes is what ktlint refuses by default.
-  Neither is a language where a claim read as a default: handlers in Python, Kotlin and C#.
+  Java. A function row passes over test files. Not shipped: the handler row in Python, where all
+  three repositories read 1.0000, a language default; the handler row in Kotlin and C#, whose
+  repositories did not differ by 0.15; how functions are named, which read over 0.94 in all
+  fifteen repositories; and whether an import names what it takes, a default in Python and Java,
+  short of the spread in Rust, and in Kotlin a rule ktlint already enforces by default.
 - `check` says so when a C# file was read with one branch of each `#if`: the caveat
   `head-one-branch` names the file, once, and its findings are about the branch that was read.
 
