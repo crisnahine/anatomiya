@@ -495,6 +495,19 @@ test("the nearest project above a component answers its alias", () => {
   assert.equal(specifierToFile("@/lib/utils", "apps/a/src/pages/home.ts", rels), null, "a module's alias is matched as a tail, which two files answer");
 });
 
+test("an alias two directories above a component both answer names neither file", () => {
+  // The root the alias means is one of them and no path says which: a feature's own folder is not it.
+  const button = corpus("src/features/cart/CartPage.vue", "src/features/cart/components/Button.vue", "src/components/Button.vue");
+  assert.equal(specifierToFile("@/components/Button.vue", "src/features/cart/CartPage.vue", button), null);
+  const format = corpus("src/features/cart/Cart.vue", "src/features/cart/utils/format.ts", "src/utils/format.ts");
+  assert.equal(specifierToFile("@/utils/format", "src/features/cart/Cart.vue", format), null);
+  assert.equal(specifierToFile("$lib/utils", "apps/a/src/routes/+page.svelte", corpus("apps/a/src/lib/utils.ts", "src/lib/utils.ts")), null);
+
+  // One file reached from two directories, as `src/components` and as `components` under `src`, is one answer.
+  assert.equal(specifierToFile("@/components/Button.vue", "src/pages/Home.vue", corpus("src/components/Button.vue")), "src/components/Button.vue");
+  assert.equal(specifierToFile("@/components/Button.vue", "src/features/cart/CartPage.vue", corpus("src/components/Button.vue")), "src/components/Button.vue");
+});
+
 test("a component's alias import credits no file of another package", () => {
   const rels = corpus("apps/lib/components/ui/button.tsx", "blocks/vue/components/ui/Button.vue");
   const records = new Map();

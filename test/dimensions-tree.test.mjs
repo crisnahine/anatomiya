@@ -339,6 +339,11 @@ test("a site crosses with the name a reader is sent to, and the class that name 
   assert.deepEqual(await where("public_doc_comment", "go", "package a\n\nfunc (t *T) Run() {}\n\nfunc (s Set[K]) Run() {}\n"), ["T.Run", "Set.Run"]);
   assert.deepEqual(await where("public_doc_comment", "csharp", "struct A\n{\n    public void Run() { }\n}\n"), ["A.Run"]);
   assert.deepEqual(await where("public_doc_comment", "kotlin", "class A {\n    fun run() {}\n\n    companion object {\n        fun make() {}\n    }\n}\n\nobject B {\n    fun run() {}\n}\n"), ["A.run", "A.make", "B.run"]);
+  // A Kotlin extension function is known by the type it is written on, whatever class it is written in.
+  assert.deepEqual(
+    await where("public_doc_comment", "kotlin", "fun Invoice.toDto() {}\n\nfun User.toDto() {}\n\nfun <T> List<T>.second(): T = this[1]\n\nfun shop.Invoice?.orNone() {}\n\nfun plain(): Invoice = Invoice()\n\nclass A {\n    fun Invoice.inA() {}\n}\n"),
+    ["Invoice.toDto", "User.toDto", "List.second", "shop.Invoice.orNone", "plain", "Invoice.inA"]
+  );
   // An `impl` block is known by the type it is for, with or without a trait or a parameter beside it.
   assert.deepEqual(await where("public_doc_comment", "rust", "impl A {\n    pub fn run(&self) {}\n}\n\nimpl<T> B<T> {\n    pub fn run(&self) {}\n}\n\npub fn run() {}\n"), ["A.run", "B.run", "run"]);
   // A function inside a method is in that method's class.

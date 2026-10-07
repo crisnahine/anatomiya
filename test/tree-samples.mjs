@@ -346,4 +346,16 @@ object Currencies {
         return "usd"
     }
 }
+
+fun Order.cents(): Int {
+    return price * 100
+}
+
+fun Order?.orZero(): Int {
+    return this?.price ?: 0
+}
+
+fun (() -> Int).twice(): Int {
+    return this() + this()
+}
 `;

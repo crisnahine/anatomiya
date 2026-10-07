@@ -149,15 +149,23 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   return found !== null && [ext, ...(SOURCE_OF[ext] ?? [])].includes(extOf(found)) ? found : null;
 }
 
-/** The file one of `paths` names under the nearest directory above the importer that holds one, or null. */
+/**
+ * The one file `paths` name under a directory above the importer, or null.
+ *
+ * Null where two directories answer with different files: the alias means one
+ * root and no path says which, and the nearest is a feature's own
+ * `components` as often as it is the project's.
+ */
 function inProject(importerRel, paths, dirOnly, corpusRels) {
+  const found = new Set();
   for (let dir = posix.dirname(importerRel); ; dir = posix.dirname(dir)) {
     for (const path of paths) {
-      const found = fileAt(posix.join(dir, path), dirOnly, corpusRels);
-      if (found !== null) return found;
+      const file = fileAt(posix.join(dir, path), dirOnly, corpusRels);
+      if (file !== null) found.add(file);
     }
-    if (dir === ".") return null;
+    if (dir === ".") break;
   }
+  return found.size === 1 ? [...found][0] : null;
 }
 
 /** The file a path names as written, through an extension it leaves off or emits, or as a directory's index. */

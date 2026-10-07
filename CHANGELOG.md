@@ -161,8 +161,8 @@ scanned by 0.13.4 and by this version.
   `svelte.config.js` is read, so a project that repoints the alias resolves nothing through it.
   `@/`, `~/`, `#/` and `src/` written in a component resolve the same way, inside the component's
   own project and its `src`, and credit nothing where no directory above the component holds the
-  file: a Vue package's `@/components/ui/button` is not counted as an importer of another
-  package's `button.tsx`.
+  file, or where two of them hold different files that the alias could name: a Vue package's
+  `@/components/ui/button` is not counted as an importer of another package's `button.tsx`.
 - The end-of-turn reuse check asks about a component: the lines its script added and no others. An
   edit to a template or a style block asks nothing.
 - `scan --targets cursor,copilot` writes the same map for Cursor and GitHub Copilot as well:
@@ -317,7 +317,10 @@ scanned by 0.13.4 and by this version.
   its `rescue`, and the report named the older class's line, which the branch never touched. A
   Ruby finding inside a method of a class is matched to that class and prints it beside the
   method, `Importer#run`, where 0.13.4 printed `run`. JavaScript has the same misplacement for
-  two classes in one file with a method of the same name, and this version does not fix it.
+  two classes in one file with a method of the same name, and this version does not fix it. In
+  the seven new languages a finding is matched to what its function is written in: the class, the
+  type a Rust `impl` is for, a Go receiver's type, and the type a Kotlin extension function is
+  written on, so `fun Invoice.toDto()` and `fun User.toDto()` in one file are two names.
 - `check` judged a file renamed from a name that is no source against its old text. `notes.txt`
   renamed to `notes.js` with nothing edited was parsed as JavaScript at the merge base, every site
   in it was taken for one the base already held, and nothing was reported. Where the text was not
