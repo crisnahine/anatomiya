@@ -1288,11 +1288,21 @@ test("a commit pruned while the process runs reads as unreachable at once", asyn
   assert.equal(await shaReachable(dir, second), false);
 });
 
-test("a listing read under one caller's bounds does not answer a caller with tighter ones", async (t) => {
+test("a listing read under one caller's bounds does not answer a caller with tighter ones", needsShebang, async (t) => {
+  // A real git can answer inside a millisecond on a fast runner, so a stand-in
+  // waits first: the unbounded caller always gets the listing, the 1 ms one never.
   const { dir, second } = twoCommits(t);
-
-  assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"]);
-  assert.equal(await filesAt(dir, second, { timeout: 1 }), null, "no git answers inside a millisecond");
+  const bin = scratch(t, "anatomiya-git-slow-");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nsleep 0.3\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"]);
+    assert.equal(await filesAt(dir, second, { timeout: 1 }), null, "the tighter bound is asked, and git outlasts it");
+  } finally {
+    process.env.PATH = path;
+  }
 });
 
 test("an answer one caller edits is not the answer the next caller of the same sha gets", async (t) => {
