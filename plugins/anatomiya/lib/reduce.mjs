@@ -6,6 +6,7 @@ import { dirCount } from "./areas.mjs";
 import { holdsTypeSyntax, language, spokenIn } from "./langs.mjs";
 import { defaultSideFor, defaultClassFor } from "./model-defaults.mjs";
 import { GATES, wilsonLower, wilsonUpper } from "./gates.mjs";
+import { extOrName } from "./paths.mjs";
 
 /**
  * How many files a dimension has to speak about before it may state.
@@ -292,6 +293,8 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // renderer prints this one only where there is something to disclose.
       ...(declined.size ? { declined: declined.size } : {}),
       files: [...perFile.keys()],
+      // For the renderer's scope clause, and left out of the record.
+      askedExts: [...new Set(examined.filter(eligible).map((e) => extOrName(e.rel)))].sort(),
       claimFiles,
       counterFiles,
       ...spread(perFile, candidates),

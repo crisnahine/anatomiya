@@ -705,6 +705,28 @@ test("an area of .js components counts the JSX rows over the files that hold JSX
   assert.equal(slot.langFileCount, 6, "the two helpers are not files the row could speak about");
 });
 
+test("a slot carries the extensions of the files its row was asked of, and no others", async () => {
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const files = [
+    { rel: "src/Card.tsx", lang: "jsx" },
+    { rel: "src/use-card.ts", lang: "js" },
+    { rel: "src/legacy.js", lang: "js" },
+    { rel: "src/Rakefile", lang: "ruby" },
+  ];
+  const hit = [{ conforming: true }];
+  const parsed = files.map(({ rel }) => ({
+    rel,
+    ok: true,
+    facets: {},
+    hits: rel.endsWith("x") ? { handler_is_named: hit, explicit_return_type: hit, swallowed_error: hit } : { explicit_return_type: hit, swallowed_error: hit },
+  }));
+  const asked = (key) => reduceArea({ langs: ["jsx", "js", "ruby"], files }, parsed).find((d) => d.key === key).askedExts;
+
+  assert.deepEqual(asked("handler_is_named"), [".tsx"], "a .ts file holds no JSX");
+  assert.deepEqual(asked("explicit_return_type"), [".ts", ".tsx"], "a .js file carries no annotation");
+  assert.deepEqual(asked("swallowed_error"), [".js", ".ts", ".tsx"]);
+});
+
 test("jsxElementNames walks a tree once however many rows ask, and a new tree afresh", async () => {
   // Three rows ask it of the same file; one walk answers all three.
   const { jsxElementNames } = await import("../plugins/anatomiya/lib/dimensions-jsx.mjs");

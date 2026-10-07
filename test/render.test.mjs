@@ -3265,10 +3265,11 @@ test("a component count with no other beside it still says which files it is ove
   assert.equal(kindsLine(only), "kinds: 9 .ts, 4 .svelte; 0 test files; 1 of 4 .svelte files has a namesake test");
 });
 
-const constRow = (o = {}) => dim({ key: "module_state_const", claim: "module-level bindings are const", conforming: 7, candidates: 7, ...o });
+const constRow = (o = {}) =>
+  dim({ key: "module_state_const", claim: "module-level bindings are const", conforming: 7, candidates: 7, askedExts: [".ts"], ...o });
 
 test("a claim says which files it was counted over where the area holds others", () => {
-  const mixed = area({ extsByLang: { js: [".ts", ".js"], svelte: [".svelte"] }, dimensions: [constRow()] });
+  const mixed = area({ extsByLang: { js: [".ts", ".js"], svelte: [".svelte"] }, dimensions: [constRow({ askedExts: [".ts", ".js"] })] });
 
   assert.match(renderArea(mixed), /^module-level bindings are const, in \.js and \.ts files\n {2}7 of 7 sites across /m);
 });
@@ -3279,7 +3280,7 @@ test("a counts line and a default-matching line carry the same scope", () => {
       extsByLang: { js: [".ts"], vue: [".vue"] },
       dimensions: [
         constRow({ directive: false, gate: "evidence" }),
-        dim({ key: "type_only_import", claim: "imports used only as types are marked import type", states: "claim", matchesDefault: true, conforming: 22 }),
+        dim({ key: "type_only_import", claim: "imports used only as types are marked import type", states: "claim", matchesDefault: true, conforming: 22, askedExts: [".ts"] }),
       ],
     })
   );
@@ -3292,7 +3293,7 @@ test("a claim asked of every extension the area holds names none of them", () =>
   const out = renderArea(
     area({
       extsByLang: { js: [".ts"], svelte: [".svelte"], jsx: [".tsx"] },
-      dimensions: [dim(), constRow()],
+      dimensions: [dim({ askedExts: [".ts", ".svelte", ".tsx"] }), constRow({ askedExts: [".ts", ".tsx"] })],
     })
   );
 
@@ -3303,25 +3304,47 @@ test("a claim asked of every extension the area holds names none of them", () =>
 
 test("a row asked of JSX alone is scoped to the extensions a file holding JSX may carry", () => {
   const jsxRow = REGISTRY.find((d) => d.langs.length === 1 && d.langs[0] === "jsx" && /\w$/.test(d.claim));
-  const row = dim({ key: jsxRow.key, claim: jsxRow.claim });
+  const row = (askedExts) => dim({ key: jsxRow.key, claim: jsxRow.claim, askedExts });
+  const line = (exts) => new RegExp(`^${jsxRow.claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, in ${exts} files$`, "m");
 
+  assert.match(renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb", "Gemfile"] }, dimensions: [row([".js"])] })), line("\\.js"));
   assert.match(
-    renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb", "Gemfile"] }, dimensions: [row] })),
-    new RegExp(`^${jsxRow.claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, in \\.js files$`, "m")
+    renderArea(area({ extsByLang: { js: [".ts"], jsx: [".tsx"], vue: [".vue"] }, dimensions: [row([".tsx"])] })),
+    line("\\.tsx"),
+    "a .ts file holds no JSX, so the row was never asked of one"
   );
+});
+
+test("a JSX row beside .ts files it could have been asked of says nothing of them", () => {
+  const jsxRow = REGISTRY.find((d) => d.langs.length === 1 && d.langs[0] === "jsx");
+  const row = dim({ key: jsxRow.key, claim: jsxRow.claim, askedExts: [".tsx"] });
+
   assert.doesNotMatch(renderArea(area({ extsByLang: { js: [".js", ".ts"], jsx: [".tsx"] }, dimensions: [row] })), /, in /);
 });
 
+test("a row about type syntax beside .js files it could have been asked of says nothing of them", () => {
+  const typed = REGISTRY.find((d) => d.needsTypeSyntax);
+  const row = dim({ key: typed.key, claim: typed.claim, askedExts: [".ts"] });
+
+  assert.doesNotMatch(renderArea(area({ extsByLang: { js: [".js", ".ts"] }, dimensions: [row] })), /, in /);
+});
+
+test("a claim that does not say which files it was asked of names none", () => {
+  assert.doesNotMatch(renderArea(area({ extsByLang: { js: [".ts"], ruby: [".rb"] }, dimensions: [constRow({ askedExts: undefined })] })), /, in /);
+});
+
 test("three extensions read as a series, in one order whatever order the files came in", () => {
-  const one = renderArea(area({ extsByLang: { js: [".ts", ".mjs", ".js"], ruby: [".rb"] }, dimensions: [constRow()] }));
-  const other = renderArea(area({ extsByLang: { ruby: [".rb"], js: [".js", ".ts", ".mjs"] }, dimensions: [constRow()] }));
+  const one = renderArea(area({ extsByLang: { js: [".ts"], ruby: [".rb"] }, dimensions: [constRow({ askedExts: [".ts", ".mjs", ".js"] })] }));
+  const other = renderArea(area({ extsByLang: { ruby: [".rb"], js: [".js"] }, dimensions: [constRow({ askedExts: [".js", ".ts", ".mjs"] })] }));
 
   assert.match(one, /^module-level bindings are const, in \.js, \.mjs and \.ts files$/m);
   assert.equal(one, other);
 });
 
 const rescueRow = () => dim({ key: "rescue_uses_error", claim: "rescue blocks use the error they caught" });
-const scopeOf = (extsByLang, row = constRow()) => renderArea(area({ extsByLang, dimensions: [row] })).match(/, in .*$/m)?.[0];
+// The row was asked of every file but those of the language listed first.
+const scopeOf = (extsByLang, row = constRow()) =>
+  renderArea(area({ extsByLang, dimensions: [{ ...row, askedExts: Object.values(extsByLang).slice(1).flat() }] })).match(/, in .*$/m)?.[0];
 
 test("a file with no extension is named in the scope, after the extensions", () => {
   const js = [".js"];
@@ -3369,7 +3392,8 @@ test("the scope goes inside a sentence's full stop and after any other mark a cl
 
   assert.deepEqual(marked.sort(), SCOPED.map(([, claim]) => claim).sort(), "a claim ending on a mark this test has not seen");
   for (const [key, claim, want] of SCOPED) {
-    const out = renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb"] }, dimensions: [dim({ key, claim })] }));
+    const askedExts = [key === "service_result_shape" ? ".rb" : ".js"];
+    const out = renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb"] }, dimensions: [dim({ key, claim, askedExts })] }));
     assert.equal(out.split("\n").find((line) => line.includes(", in .")), want);
   }
 });
