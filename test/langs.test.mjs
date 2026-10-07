@@ -76,7 +76,7 @@ test("only Rust has a tool that collects a file as a test by the directory it si
   assert.equal(Object.isFrozen(declOf("rust").placeTests), true);
   assert.deepEqual(placeTestsOf("rust"), { dir: "tests", runner: "cargo test" });
   assert.equal(placeTestsOf("go"), null);
-  // B21: the two facts are read off the declaration, so the layout spells no language id.
+  // B21: the fact, both its parts, is read off the declaration, so the layout spells no language id.
   const layout = readFileSync(new URL("../plugins/anatomiya/lib/layout.mjs", import.meta.url), "utf8");
   assert.deepEqual(layout.match(/["'`](?:python|php|go|java|csharp|rust|kotlin|vue|svelte|ruby|js|jsx)["'`]/g), null);
 });

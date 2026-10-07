@@ -437,11 +437,7 @@ function unreadableLangs(files, parsed) {
   return [...total.keys()].filter((lang) => unanswered.get(lang) === total.get(lang)).sort();
 }
 
-/**
- * The files whose engine or grammar was not there, per language, and how many
- * of them each bridge charged as which outcome: oxc and tree-sitter answer
- * unreadable for them and prism crashed (`parse.mjs`).
- */
+/** The files no engine or grammar was there for, per language and by the outcome their bridge charged them as, so each is counted once. */
 function unansweredFiles(files, parsed) {
   const byLang = {};
   const charged = { crashed: 0, unreadable: 0 };

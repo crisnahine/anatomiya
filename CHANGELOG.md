@@ -165,7 +165,9 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
 - A file whose engine or grammar was not there is counted once in the scan summary, on the line
   that says why: `246 files: prism reported no version: install Ruby 3.4 or newer, ...`. 0.13.4
   printed `246 files crashed the parser` for the same files and gave the reason on a line with no
-  count, which read as a second fault.
+  count, which read as a second fault. `scan --format json` changes with it: where an engine was
+  missing the answer gains an `unanswered` key that counts those files by language,
+  `{"ruby": 8}`, and `unexamined` holds no `8 files crashed the parser` for them.
 - The type checker reads a root `tsconfig.base.json` where a repository has no root
   `tsconfig.json`, which is how a workspace with one config per package keeps its path aliases.
   Read on the compiler's defaults, every import through an alias resolved to nothing: of eight such

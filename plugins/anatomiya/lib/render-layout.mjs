@@ -115,8 +115,7 @@ const extNoun = (c) => `${encode(c.ext)} file`;
  * The smaller of two populations is spoken of from the floor the precedent gate
  * reads a directory at: 28 of shadcn-svelte's 88 area files read `0 of 1 .ts
  * file have a namesake test` for a lone `index.ts` beside its components.
- * Under the floor it is spoken of where a test credits one of its files: 15 of
- * element-plus's area files hold one or two components and a test of one.
+ * Under the floor a test that credits one of its files earns the clause, since that count is a fact and not an absence.
  *
  * Exported because `scripts/measure-layout.mjs` reads the clauses back.
  */
