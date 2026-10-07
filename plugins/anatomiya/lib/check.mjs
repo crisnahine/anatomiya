@@ -19,7 +19,8 @@ import {
 import { language, MISSING_STRIPPER } from "./langs.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase } from "./render.mjs";
-import { auditRules, isLink, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
+import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
+import { TARGETS } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { remedyFor } from "./readiness.mjs";
@@ -303,28 +304,45 @@ export async function check(cwd, { baseRef = null } = {}) {
   // Everything in there this build did not write is named: the file nobody here
   // wrote, and the file an older build left behind that no map lists. The
   // prefix is not the test, because a hand-written file can take it.
-  const { foreign, unknown, unreadable: unreadableRules, escaped, listed } = auditRules(root, knownNames(facts));
-  // The scan refuses to write through a link out of the repository; the check
-  // has nothing to refuse, so it says what it could not look at. A clean rules
-  // directory reported here would be the same lie as a clean diff reported for
-  // one git would not produce.
-  if (escaped) {
-    caveat(
-      caveats,
-      CAVEATS.RULES_ESCAPED,
-      `${RULES_DIR} resolves outside the repository, so nothing there was examined: this is a symlink in the working tree`
-    );
-  } else if (!listed) {
-    // Same rule again: a directory nobody could list is not one holding
-    // nothing, and the files in it load whether or not this run saw them.
-    caveat(caveats, CAVEATS.RULES_UNLISTED, `${RULES_DIR} could not be listed, so nothing there was examined`);
-  }
-  if (unreadableRules.length) {
-    caveat(
-      caveats,
-      CAVEATS.RULES_UNREADABLE,
-      `${unreadableRules.length} file(s) in ${RULES_DIR} could not be read, so whose they are is unknown`
-    );
+  //
+  // Cursor's and Copilot's directories get the same audit while their target
+  // is on, each under its own name.
+  const audited = (target) => {
+    const { foreign, unknown, unreadable, escaped, listed } = auditRules(root, knownNames(facts, target), target);
+    // The scan refuses to write through a link out of the repository; the check
+    // has nothing to refuse, so it says what it could not look at. A clean rules
+    // directory reported here would be the same lie as a clean diff reported for
+    // one git would not produce.
+    if (escaped) {
+      caveat(
+        caveats,
+        CAVEATS.RULES_ESCAPED,
+        `${target.dir} resolves outside the repository, so nothing there was examined: this is a symlink in the working tree`
+      );
+    } else if (!listed) {
+      // Same rule again: a directory nobody could list is not one holding
+      // nothing, and the files in it load whether or not this run saw them.
+      caveat(caveats, CAVEATS.RULES_UNLISTED, `${target.dir} could not be listed, so nothing there was examined`);
+    }
+    if (unreadable.length) {
+      caveat(
+        caveats,
+        CAVEATS.RULES_UNREADABLE,
+        `${unreadable.length} file(s) in ${target.dir} could not be read, so whose they are is unknown`
+      );
+    }
+    return { foreign, unknown, rules: { escaped, listed, unreadable } };
+  };
+  const { foreign, unknown, rules } = audited(TARGETS.claude);
+  const targets = {};
+  for (const target of Object.values(TARGETS).filter((t) => !t.always)) {
+    const { state, reason } = targetStatus(root, target);
+    if (state === "on") targets[target.id] = { dir: target.dir, state, ...audited(target) };
+    // Unread, and the record says a scan wrote files there: they load whether or not this run saw them.
+    if (state === "unknown" && knownNames(facts, target)?.size) {
+      caveat(caveats, CAVEATS.RULES_UNLISTED, `${target.dir} could not be read (${reason}), so nothing there was examined`);
+      targets[target.id] = { dir: target.dir, state, reason, foreign: [], unknown: [], rules: { escaped: false, listed: false, unreadable: [] } };
+    }
   }
 
   return {
@@ -358,7 +376,10 @@ export async function check(cwd, { baseRef = null } = {}) {
     // caveat prose they were unreadable to anything but a human: four empty
     // lists and `listed: false` is a directory nobody looked in, which reads
     // exactly like one holding nothing foreign.
-    rules: { escaped, listed, unreadable: unreadableRules },
+    rules,
+    // The same for each other directory a scan writes to here. No key where
+    // none is on, so a repository that never named one reads as it did.
+    ...(Object.keys(targets).length ? { targets } : {}),
   };
 }
 

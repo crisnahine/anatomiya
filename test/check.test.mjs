@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsUnreadableDirs } from "./platform.mjs";
-import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import { needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import fs, { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -1133,6 +1133,100 @@ test("our frontmatter with no map naming it is reported apart from a foreign fil
   const rendered = formatReport(r);
   assert.ok(rendered.includes("the map on disk does not name"));
   assert.ok(rendered.includes("anatomiya-area-99999999.md"));
+});
+
+/** One area, scanned for real and written to the targets named, with a branch to check. */
+async function mappedFor(t, targets) {
+  const dir = repo(t, ({ write, commit }) => {
+    for (let i = 0; i < 8; i++) write(`src/f${i}.ts`, clean(2));
+    commit("init");
+  });
+  writeMap(await scan(dir), { targets });
+  execFileSync("git", ["checkout", "-q", "-b", "work"], { cwd: dir, stdio: "pipe" });
+  return dir;
+}
+
+const KEYED = "---\ngenerator: anatomiya\nalwaysApply: false\n---\n\nstale\n";
+
+test("the report names what each other target's directory holds, under that directory's name", async (t) => {
+  const dir = await mappedFor(t, ["claude", "cursor"]);
+  const at = join(dir, ".cursor", "rules");
+  writeFileSync(join(at, "anatomiya-area-deadbeef.mdc"), "# hand-written, our name\n");
+  writeFileSync(join(at, "anatomiya-area-99999999.mdc"), KEYED);
+  writeFileSync(join(at, "team.mdc"), "# a rule of the team's own\n");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.foreign, [], "the Claude directory's own lists are still its own");
+  assert.deepEqual(r.targets, {
+    cursor: {
+      dir: ".cursor/rules",
+      state: "on",
+      foreign: ["anatomiya-area-deadbeef.mdc"],
+      unknown: ["anatomiya-area-99999999.mdc"],
+      rules: { escaped: false, listed: true, unreadable: [] },
+    },
+  });
+  const rendered = formatReport(r);
+  assert.ok(rendered.includes('\n1 file(s) in .cursor/rules this tool did not write:\n  "anatomiya-area-deadbeef.mdc"\n'), rendered);
+  assert.ok(rendered.includes('\n1 file(s) in .cursor/rules the map on disk does not name:\n  "anatomiya-area-99999999.mdc"\n'), rendered);
+  assert.equal(rendered.includes("team.mdc"), false, "a rule under another name is that tool's own");
+  assert.deepEqual(JSON.parse(formatReportJson(r)).targets, r.targets);
+});
+
+test("a target that is off is not audited, so a check with none on reports what it did", async (t) => {
+  const dir = await mappedFor(t, ["claude"]);
+  mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-area-deadbeef.mdc"), "# hand-written, our name\n");
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "# hand-written too, so the target is off\n");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal("targets" in r, false);
+  assert.equal(formatReport(r).includes(".cursor"), false);
+  assert.equal(formatReportJson(r).includes("targets"), false);
+});
+
+test("a file that could not be read in another target's directory is a caveat naming that directory", needsPosixPermissions, async (t) => {
+  const dir = await mappedFor(t, ["claude", "copilot"]);
+  const locked = join(dir, ".github", "instructions", "anatomiya-area-deadbeef.instructions.md");
+  writeFileSync(locked, KEYED);
+  chmodSync(locked, 0o000);
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    r.caveats.filter((c) => c.code === CAVEATS.RULES_UNREADABLE),
+    [{ code: "rules-unreadable", message: "1 file(s) in .github/instructions could not be read, so whose they are is unknown" }]
+  );
+  assert.deepEqual(r.targets.copilot.rules.unreadable, ["anatomiya-area-deadbeef.instructions.md"]);
+});
+
+test("a target the record names files for and nobody can read now is a caveat naming it and why", needsSymlinks, async (t) => {
+  const dir = await mappedFor(t, ["claude", "cursor"]);
+  const moved = join(dir, "elsewhere");
+  fs.renameSync(join(dir, ".cursor"), moved);
+  symlinkSync(moved, join(dir, ".cursor"));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    r.caveats.filter((c) => c.code === CAVEATS.RULES_UNLISTED),
+    [{ code: "rules-unlisted", message: ".cursor/rules could not be read (.cursor is a link), so nothing there was examined" }]
+  );
+  assert.deepEqual(r.targets, {
+    cursor: { dir: ".cursor/rules", state: "unknown", reason: ".cursor is a link", foreign: [], unknown: [], rules: { escaped: false, listed: false, unreadable: [] } },
+  });
+});
+
+test("a target nobody can read that no record names files for is not the check's to mention", needsSymlinks, async (t) => {
+  const dir = await mappedFor(t, ["claude"]);
+  symlinkSync(join(dir, "src"), join(dir, ".cursor"));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal("targets" in r, false);
+  assert.deepEqual(r.caveats.filter((c) => c.code === CAVEATS.RULES_UNLISTED), []);
 });
 
 test("a file edited since its commit is read as it stands, not as it was committed", async (t) => {

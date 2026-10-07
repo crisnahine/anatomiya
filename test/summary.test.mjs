@@ -629,6 +629,156 @@ test("the summary and its lines agree on a whole scan", () => {
   ]);
 });
 
+/* --- the other directories the map goes to --- */
+
+const COPILOT_DIR = ".github/instructions";
+
+/** One other target on the plan, off and untouched, so a case names only what it changes. */
+const target = (o = {}) => ({
+  dir: ".cursor/rules",
+  state: "off",
+  reason: null,
+  on: false,
+  write: [],
+  remove: [],
+  foreign: [],
+  unknown: [],
+  replaced: [],
+  unreadableRules: [],
+  listed: true,
+  unfiled: [],
+  names: [],
+  ...o,
+});
+const files = (n) => Array.from({ length: n }, (_, i) => ({ name: `anatomiya-${i}`, body: "" }));
+const others = (cursor = {}, copilot = {}) => ({ targets: { cursor: target(cursor), copilot: target({ dir: COPILOT_DIR, ...copilot }) } });
+
+// Captured from the build before any target reached the summary.
+const BEFORE_LINES = [
+  "40 files, 1 area, 12ms, root /repo",
+  "engines: oxc 0.144.0",
+  "1 of 3 claims stated, 1 matches the model default, the rest print as counts",
+  UNPINNED,
+  "wrote 2 files",
+  RUNNING_SESSION,
+];
+const BEFORE_JSON =
+  '{\n  "schema": 2,\n  "files": 40,\n  "areas": 1,\n  "durationMs": 12,\n  "root": "/repo",\n  "untracked": 0,\n  "claims": {\n    "stated": 1,\n    "matchingDefault": 1,\n    "total": 3\n  },\n  "engines": {\n    "oxc": {\n      "version": "0.144.0"\n    }\n  },\n  "layoutLine": null,\n  "baseline": {\n    "status": "unpinned",\n    "sha": null,\n    "drift": null,\n    "baseRef": null,\n    "countsOnly": true,\n    "unreadable": null\n  },\n  "hookRemoved": false,\n  "hookRefused": null,\n  "truncated": false,\n  "orphaned": 0,\n  "barren": 0,\n  "unreadFiles": 0,\n  "unexamined": [],\n  "semantic": null,\n  "historyError": null,\n  "historyTruncated": null,\n  "authorGated": 0,\n  "rules": {\n    "foreign": [],\n    "unknown": [],\n    "unreadable": [],\n    "listed": true,\n    "replaced": []\n  },\n  "removed": 0,\n  "wrote": 2,\n  "blind": [],\n  "uncounted": [],\n  "held": 0,\n  "dryRun": false\n}\n';
+
+test("with no other target on and none asked for, the lines and the record are what they were", () => {
+  for (const p of [plan(), plan(others())]) {
+    const s = scanSummary(result(), p);
+
+    assert.deepEqual(scanLines(s), BEFORE_LINES);
+    assert.equal(scanJson(s), BEFORE_JSON);
+  }
+});
+
+test("each other target that was written says how many files, where, and for which tool", () => {
+  // Cursor named on this scan, Copilot on from an earlier one: the same line.
+  const s = scanSummary(result(), plan(others({ on: true, write: files(2) }, { state: "on", on: true, write: files(1) })));
+
+  assert.deepEqual(s.targets, {
+    cursor: { state: "on", dir: ".cursor/rules", wrote: 2, removed: 0, unfiled: 0, foreign: 0 },
+    copilot: { state: "on", dir: COPILOT_DIR, wrote: 1, removed: 0, unfiled: 0, foreign: 0 },
+  });
+  assert.deepEqual(scanLines(s), [
+    ...BEFORE_LINES.slice(0, -1),
+    "wrote 2 files under .cursor/rules for Cursor",
+    "wrote 1 file under .github/instructions for GitHub Copilot",
+    RUNNING_SESSION,
+  ]);
+});
+
+test("a target turned off says what was removed and that it is off", () => {
+  const s = scanSummary(result(), plan(others({ state: "on", remove: ["a", "b", "c"] })));
+
+  assert.deepEqual(s.targets, { cursor: { state: "off", dir: ".cursor/rules", wrote: 0, removed: 3, unfiled: 0, foreign: 0 } });
+  assert.deepEqual(scanLines(s).slice(-3), ["removed 3 files under .cursor/rules", ".cursor/rules is off now", RUNNING_SESSION]);
+});
+
+test("a target that stays on and lost an area's file is not called off", () => {
+  const s = scanSummary(result(), plan(others({}, { state: "on", on: true, write: files(2), remove: ["a"] })));
+
+  assert.deepEqual(scanLines(s).slice(-3), [
+    "wrote 2 files under .github/instructions for GitHub Copilot",
+    "removed 1 file under .github/instructions",
+    RUNNING_SESSION,
+  ]);
+});
+
+test("a dry run says what it would do in each other directory", () => {
+  const p = plan(others({ on: true, write: files(3) }, { state: "on", remove: ["a"] }));
+  const lines = scanLines(scanSummary(result(), p, { dryRun: true }));
+
+  assert.deepEqual(lines.slice(-4), [
+    "would write 2 files",
+    "would write 3 files under .cursor/rules for Cursor",
+    "would remove 1 file under .github/instructions",
+    ".github/instructions would be off",
+  ]);
+});
+
+test("the areas a target has no file for are counted, and only the ones that have one elsewhere", () => {
+  // An area that states nothing has no file in any directory.
+  const two = result({ areas: [...result().areas, { path: "lib", dimensions: [dim()] }, { path: "docs", dimensions: [] }] });
+  const many = scanSummary(two, plan(others({ state: "on", on: true, write: files(1), unfiled: ["docs", "lib", "src"] })));
+  const one = scanSummary(two, plan(others({}, { state: "on", on: true, write: files(2), unfiled: ["docs", "lib"] })));
+
+  assert.equal(many.targets.cursor.unfiled, 2);
+  assert.ok(scanLines(many).includes("2 areas have no pattern Cursor can be given, so no file under .cursor/rules covers them"));
+  assert.ok(
+    scanLines(one).includes("1 area has no pattern GitHub Copilot can be given, so no file under .github/instructions covers it")
+  );
+  const none = scanSummary(two, plan(others({ state: "on", on: true, write: files(3), unfiled: ["docs"] })));
+  assert.equal(scanLines(none).some((l) => l.includes("no pattern")), false);
+});
+
+test("files under this tool's names that it did not write are counted where they were left", () => {
+  // Off and never asked for: a hand-written file at the overview's name is still said.
+  const off = scanSummary(result(), plan(others({ foreign: ["anatomiya-overview.mdc"] })));
+  const on = scanSummary(result(), plan(others({ state: "on", on: true, write: files(2), foreign: ["a"], unknown: ["b"] })));
+
+  assert.deepEqual(off.targets, { cursor: { state: "off", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 1 } });
+  assert.deepEqual(scanLines(off).slice(-3), [
+    "wrote 2 files",
+    ".cursor/rules holds 1 file with this tool's names that it did not write; it was left",
+    RUNNING_SESSION,
+  ]);
+  assert.ok(scanLines(on).includes(".cursor/rules holds 2 files with this tool's names that it did not write; they were left"));
+});
+
+test("a target that was on and could not be read says why, and one never written says nothing", () => {
+  const was = scanSummary(result(), plan(others({ state: "unknown", reason: ".cursor is a link", listed: false, names: ["anatomiya-overview.mdc"] })));
+  const never = scanSummary(result(), plan(others({ state: "unknown", reason: ".cursor is a link", listed: false })));
+
+  assert.deepEqual(was.targets, {
+    cursor: { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: ".cursor is a link" },
+  });
+  assert.deepEqual(scanLines(was).slice(-3), [
+    "wrote 2 files",
+    ".cursor/rules could not be read (.cursor is a link), so nothing there was written or removed",
+    RUNNING_SESSION,
+  ]);
+  assert.deepEqual(scanLines(never), BEFORE_LINES);
+});
+
+test("a run that wrote nothing leaves a target as it found it", () => {
+  const s = scanSummary(result(), plan({ blind: true, unreadable: ["ruby"], ...others({ on: true }, { state: "on", on: true }) }));
+
+  assert.equal(s.targets.cursor.state, "off");
+  assert.equal(s.targets.copilot.state, "on");
+  assert.equal(scanLines(s).some((l) => l.includes(".cursor/rules") || l.includes(COPILOT_DIR)), false);
+});
+
+test("the record carries each target's counts, and the schema it had", () => {
+  const s = JSON.parse(scanJson(scanSummary(result(), plan(others({ on: true, write: files(2) })))));
+
+  assert.equal(s.schema, 2);
+  assert.deepEqual(s.targets, { cursor: { state: "on", dir: ".cursor/rules", wrote: 2, removed: 0, unfiled: 0, foreign: 0 } });
+  assert.deepEqual(Object.keys(s).slice(-2), ["dryRun", "targets"]);
+});
+
 /* --- the pin --- */
 
 const pinFor = (paths) =>
