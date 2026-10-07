@@ -137,10 +137,16 @@ export function isGeneratedName(name, target = TARGETS.claude) {
  *
  * `null` is not an empty set: an empty set says the last scan wrote nothing,
  * and no scan writes nothing. Without the record the third fact is unavailable,
- * so nothing is removable.
+ * so nothing is removable. The same for a Cursor or Copilot directory the
+ * record does not name.
  */
-export function knownNames(facts) {
+export function knownNames(facts, target = TARGETS.claude) {
   if (!facts || !Array.isArray(facts.areas)) return null;
+  if (target.id !== TARGETS.claude.id) {
+    // Stored rather than derived: a target has no file for an area it cannot spell.
+    const listed = facts.targets?.[target.id];
+    return Array.isArray(listed) ? new Set(listed.filter((n) => isGeneratedName(n, target))) : null;
+  }
   const names = new Set([OVERVIEW_FILE]);
   for (const a of facts.areas) {
     if (a && typeof a.id === "string") names.add(areaFilename(a));
@@ -253,15 +259,22 @@ export function resolveRulesDir(root) {
  * it that resolves inside the tree is still somewhere a map must not land.
  */
 export function resolveTargetDir(root, target) {
-  if (target.id === TARGETS.claude.id) return resolveRulesDir(root);
-  const dir = ownDirectory(root, target.dir);
-  if (dir === null) return null;
+  return locateTarget(root, target).dir;
+}
+
+// The directory, or the path in the way and what it is, for a reader to act on.
+function locateTarget(root, target) {
+  if (target.id === TARGETS.claude.id) return { dir: resolveRulesDir(root) };
+  const own = ownDirectory(root, target.dir);
+  if (own.dir === null) return own;
   // A `.claude/rules` link can lead here, and Claude Code would then load this target's files as its own.
   const rules = resolveRulesDir(root);
-  if (rules === null) return dir;
+  if (rules === null) return own;
   // In the native form: the plain one keeps a link's own case on a volume that folds it.
-  const [a, b] = [nativeUpTo(rules), nativeUpTo(dir)];
-  return contains(a, b) || contains(b, a) ? null : dir;
+  const [a, b] = [nativeUpTo(rules), nativeUpTo(own.dir)];
+  return contains(a, b) || contains(b, a)
+    ? blocked(`${RULES_DIR} is a link into the same place as ${target.dir}`, `point ${RULES_DIR} somewhere else`)
+    : own;
 }
 
 function ownDirectory(root, relPath) {
@@ -269,24 +282,33 @@ function ownDirectory(root, relPath) {
   try {
     at = realpathSync(root);
   } catch {
-    return null;
+    return blocked("the repository root could not be read", UNREAD);
   }
   const parts = relPath.split("/");
   for (let i = 0; i < parts.length; i++) {
     const next = join(at, parts[i]);
+    const name = parts.slice(0, i + 1).join("/");
     let entry;
     try {
       entry = lstatSync(next);
     } catch (err) {
       // Only a name with nothing at it is ours to create.
-      return err.code === "ENOENT" ? join(at, ...parts.slice(i)) : null;
+      if (err.code === "ENOENT") return { dir: join(at, ...parts.slice(i)) };
+      return blocked(`${name} could not be read`, UNREAD);
     }
     // Asked of the entry itself, so a link to a directory is a link.
-    if (!entry.isDirectory()) return null;
+    if (!entry.isDirectory()) {
+      return entry.isSymbolicLink()
+        ? blocked(`${name} is a link`, "replace the link with a directory")
+        : blocked(`${name} is not a directory`, "remove it");
+    }
     at = next;
   }
-  return at;
+  return { dir: at };
 }
+
+const blocked = (reason, remedy) => ({ dir: null, reason, remedy });
+const UNREAD = "fix its permissions";
 
 /**
  * Whether a scan keeps writing this target: `on`, `off` or `unknown`.
@@ -297,20 +319,29 @@ function ownDirectory(root, relPath) {
  * that could not be read is unknown, because off is what removes a map.
  */
 export function targetState(root, target) {
-  if (target.always) return "on";
-  const dir = resolveTargetDir(root, target);
-  if (dir === null) return "unknown";
+  return targetStatus(root, target).state;
+}
+
+/**
+ * The same, and for an unknown one the path that made it so, what that path
+ * is, and what a person does about it.
+ */
+export function targetStatus(root, target) {
+  if (target.always) return { state: "on" };
+  const { dir, reason, remedy } = locateTarget(root, target);
+  if (dir === null) return { state: "unknown", reason, remedy };
   const path = join(dir, overviewName(target));
+  const unknown = (what, remedy) => ({ state: "unknown", reason: `${target.dir}/${overviewName(target)} ${what}`, remedy });
   let entry;
   try {
     entry = lstatSync(path);
   } catch (err) {
-    return err.code === "ENOENT" ? "off" : "unknown";
+    return err.code === "ENOENT" ? { state: "off" } : unknown("could not be read", UNREAD);
   }
-  if (!entry.isFile()) return "unknown";
+  if (!entry.isFile()) return entry.isSymbolicLink() ? unknown("is a link", "remove the link") : unknown("is not a file", "remove it");
   const read = readHead(path);
-  if (read.kind !== "file") return "unknown";
-  return isOwned(read.head) ? "on" : "off";
+  if (read.kind !== "file") return unknown("could not be read", UNREAD);
+  return { state: isOwned(read.head) ? "on" : "off" };
 }
 
 /**
