@@ -46,6 +46,10 @@ const js = {
   // it, stated here so it is a decision rather than a dangling else.
   fallback: true,
   engine: "oxc",
+  // What a test of this language may be written in. Finer than the engine,
+  // which hosts a family only until it hosts two.
+  family: "js",
+  embedded: null,
   exts: ["ts", "mts", "cts", "js", "mjs", "cjs"],
   filenames: [],
   scratchExt: "ts",
@@ -74,6 +78,8 @@ const jsx = {
   id: "jsx",
   fallback: false,
   engine: "oxc",
+  family: "js",
+  embedded: null,
   exts: ["tsx", "jsx"],
   filenames: [],
   scratchExt: "tsx",
@@ -87,10 +93,36 @@ const jsx = {
   positions: { offsets: "utf16", lines: false },
 };
 
+// A component file: markup holding at most two script blocks, which are all
+// that is read. `embedded` names whose rules find them. The grammar is the
+// block's own `lang` and the type syntax is the tag's to say, so no extension
+// routes either, and the checker is handed paths it could not open.
+const component = (id) => ({
+  id,
+  fallback: false,
+  engine: "oxc",
+  family: "js",
+  embedded: id,
+  exts: [id],
+  filenames: [],
+  scratchExt: id,
+  grammars: { byExtension: {}, default: "tsx" },
+  dialect: null,
+  commonjs: null,
+  typed: null,
+  capabilities: { semantic: false, importGraph: true },
+  positions: { offsets: "utf16", lines: false },
+});
+
+const vue = component("vue");
+const svelte = component("svelte");
+
 const ruby = {
   id: "ruby",
   fallback: false,
   engine: "prism",
+  family: "ruby",
+  embedded: null,
   exts: ["rb", "rake", "gemspec", "jbuilder"],
   // Ruby whose filename does not carry the language, matched whole so a
   // Gemfile.lock is not a Gemfile. `.rbi` is deliberately absent: a Sorbet
@@ -127,7 +159,10 @@ const freeze = (decl) => {
   return Object.freeze(decl);
 };
 
-export const LANGUAGES = Object.freeze([js, jsx, ruby].map(freeze));
+// The extractors `sfc.mjs` implements, which is what `embedded` may name.
+const EXTRACTORS = ["vue", "svelte"];
+
+export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby].map(freeze));
 
 const BY_ID = new Map(LANGUAGES.map((l) => [l.id, l]));
 const EXT_TO_ID = new Map(LANGUAGES.flatMap((l) => l.exts.map((e) => [e, l.id])));
@@ -145,6 +180,12 @@ export function declOf(id) {
 export function engineOf(id) {
   return declOf(id).engine;
 }
+
+/** The family a language belongs to: what a test of it may be written in. */
+export const familyOf = (id) => declOf(id).family;
+
+/** Whose rules find a language's script blocks, or null where the file is the script. */
+export const embeddedIn = (id) => declOf(id).embedded;
 
 export const EXT_BY_LANG = Object.freeze(Object.fromEntries(LANGUAGES.map((l) => [l.id, l.exts])));
 
@@ -267,6 +308,13 @@ export function assertRegistry(langs) {
     if (decl.fallback) fallbacks++;
     if (!ENGINES[decl.engine]) {
       throw new Error(`${decl.id} names no declared engine: ${decl.engine}`);
+    }
+    if (typeof decl.family !== "string" || !decl.family) throw new Error(`${decl.id} names no family`);
+    if (decl.embedded !== null && !EXTRACTORS.includes(decl.embedded)) {
+      throw new Error(`${decl.id} names no script extractor: ${decl.embedded}`);
+    }
+    if (decl.embedded && decl.engine !== ENGINES.oxc.id) {
+      throw new Error(`${decl.id} embeds its script, which only oxc reads, and routes to ${decl.engine}`);
     }
     const caps = Object.keys(decl.capabilities).sort().join(",");
     if (caps !== "importGraph,semantic") {
