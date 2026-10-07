@@ -49,10 +49,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   merely on leaves such an entry where it is and says how many it left. A name that differs from one
   of the map's only in letter case counts as taken, unless the directory lists both spellings.
 - Cursor and Copilot read looser patterns than Claude Code, and the files say so. A brace set is
-  written as one pattern per extension and a negation is left out, since neither tool can be told
-  one, so an area file can attach for files the area excluded and names them in a closing line. A
-  Copilot file adds that VS Code matches its patterns under any parent directory. An area none of
-  whose patterns can be written for a tool has no file there, and the scan says how many.
+  written as one pattern per extension and a negation is left out, since neither reader that was
+  run takes one and the other Copilot surfaces document none, so an area file can attach for files
+  the area excluded and names them in a closing line. A Copilot file adds that VS Code matches its
+  patterns under any parent directory. An area none of whose patterns can be written for a tool has
+  no file there, and the scan says how many.
 - What those two copies are not. Delivery is not measured in either tool: for Cursor it was read
   from the code of the 3.20.21 app and not seen in a running one, and for Copilot the files were run
   through VS Code 1.140.0's parser and nothing else. The hooks are Claude Code's, so neither tool
@@ -92,10 +93,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   missing file. Plain JavaScript beside a `tsconfig.base.json` is now checked, as it is beside a
   `tsconfig.json`.
 - A repository that commits its map sees "What lives where" change once, on its first scan with
-  this version: the map's own files are no longer counted in it (see Fixed). Apart from that,
-  `scan --targets` changes nothing for a repository that turns no target on. Measured on six
-  repositories, three variants of each, 13 commands per run, against the build it was added to:
-  exit code, output, `git status` and every file in the tree were identical in 18 of 18 runs.
+  this version: the map's own files are no longer counted in it (see Fixed). Measured against
+  0.13.4 on six repositories that turn no target on, each plain, with hand-written Cursor and
+  Copilot files untracked, and with the same committed, 13 commands per run: 8 of the 18 runs were
+  identical apart from the stamp in `refresh.json`, and the other 10 differed only by Vue files
+  being read, the scope clause above, and the two roster changes under Fixed.
 
 ### Fixed
 

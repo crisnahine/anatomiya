@@ -92,8 +92,8 @@ Then, in the repository you want mapped:
 
 It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
 `.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan
-without writing anything. It writes nowhere else unless you ask for the map in Cursor or GitHub
-Copilot as well, which is [Other tools](#other-tools).
+without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
+as well, which is [Other tools](#other-tools).
 
 To keep the map out of git:
 
@@ -128,14 +128,6 @@ a `.worktreeinclude` at the repository root copies the map and the pin in when t
 The layout file saves time only where the copy keeps `facts.json`'s modification time. Elsewhere the
 hooks read the record, as they would with no layout file.
 
-A Cursor or Copilot target is on per checkout, so a worktree that arrives without that target's
-overview file starts with it off. To carry one in, add its line:
-
-```
-**/.cursor/rules/anatomiya-*.mdc
-**/.github/instructions/anatomiya-*.instructions.md
-```
-
 The pin is the last line because the exclude above hides it along with the map, so the copied map
 arrives with the pin it was checked against. A linked worktree with no pin of its own reads its main
 checkout's, but only where that checkout can be named: a repository whose git directory is not the
@@ -143,6 +135,14 @@ checkout's own `.git` (moved out with `--separate-git-dir`) names none, and with
 its worktree checks as if nothing had been pinned. That copy is a snapshot
 of the main checkout taken at that moment, with nothing saying so, where the hooks' borrowed map
 carries its source. `docs/research/why-a-worktree-got-no-map.md` has the sources for both.
+
+A Cursor or Copilot target is on per checkout, so a worktree that arrives without that target's
+overview file starts with it off. To carry one in, add its line:
+
+```
+**/.cursor/rules/anatomiya-*.mdc
+**/.github/instructions/anatomiya-*.instructions.md
+```
 
 Those exclude lines, with the first naming a linked rules directory's target, cover everything a scan
 leaves behind: the first two on every scan, the last two only where a target is on. Four hooks are
@@ -409,7 +409,7 @@ applied.
 The same map can be written for Cursor and for GitHub Copilot. It is off until you ask for it:
 
 ```
-node plugins/anatomiya/bin/anatomiya.mjs scan . --targets cursor,copilot
+node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo --targets cursor,copilot
 ```
 
 Inside Claude Code, ask `/anatomiya:scan` for the Cursor or Copilot map and it passes the flag. The
@@ -427,8 +427,9 @@ You pass the flag once. A target stays on while its `anatomiya-overview` file is
 so every later scan, and the background refresh, keeps writing it. Nothing else remembers the
 choice. The flag names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns
 both off and removes the files this tool wrote there. Deleting a target's overview file by hand
-turns it off as well, and the next scan removes the area files beside it. `/anatomiya:doctor`, run
-inside the repository, prints a line for each target that is on.
+turns it off as well, and the next scan removes the area files beside it. The two directories stay,
+holding none of this tool's files. `/anatomiya:doctor`, run inside the repository, prints a line for
+each target that is on.
 
 Both directories are ones people write rules in, so a scan is strict there. It never writes over a
 file it did not write: where one sits at a name the map needs, a scan that names the target refuses,
@@ -438,9 +439,10 @@ repository, or not exist yet. Your own rule files there are not opened and not r
 entries named `anatomiya-*` are looked at.
 
 The last two exclude lines under [Quick start](#quick-start) keep both copies out of git. To commit
-one instead, which is how Copilot on GitHub.com gets to read it, commit its files. The background
-refresh then leaves the committed copy as it is and keeps the rest current, and a scan you run by
-hand rewrites it.
+one instead, leave its exclude line out and commit its files. GitHub's documentation says the cloud
+agent and code review on GitHub.com read `.github/instructions` from the repository. Nothing here
+observed that. The background refresh then leaves the committed copy as it is and keeps the rest
+current, and a scan you run by hand rewrites it.
 
 What a Cursor or Copilot user gets is the map's files, and not the rest of this tool.
 
@@ -450,15 +452,21 @@ about reuse when a turn ends, and nothing rescans. Those copies change when a Cl
 refresh, or a scan by hand, rewrites them. Each overview there says under its heading that the code
 is right where the two disagree.
 
-**The patterns are looser.** Neither tool can be told to leave a subtree out, so an area file can
-attach for files the area excluded, such as a `fixtures` directory under `test`, and its last lines
-say which. VS Code also matches a pattern under any parent directory. A directory name one of the
-tools cannot be given, one holding a comma for instance, gets no file there, and the scan says how
-many areas that left out.
+**The patterns are looser.** Neither reader that was run takes a pattern that leaves a subtree out,
+and the other Copilot surfaces document none, so an area file can attach for files the area
+excluded, such as a `fixtures` directory under `test`, and its last lines say which. VS Code also
+matches a pattern under any parent directory. An area under a directory name one of the tools
+cannot be given, one holding a double quote for instance, has no file there, and the scan says how
+many areas have none:
 
-**VS Code gets each area twice with the Copilot target on.** VS Code already reads `.claude/rules/`,
-so its agent is offered the `.claude/rules` file and the `.github/instructions` file for the same
-area. The Copilot target is for the Copilot surfaces that read only `.github/instructions`.
+```
+1 area has no pattern Cursor can be given, so no file under .cursor/rules covers it
+```
+
+**VS Code is offered each area twice with the Copilot target on.** VS Code already reads
+`.claude/rules/`, so its agent is offered the `.claude/rules` file and the `.github/instructions`
+file for the same area. The Copilot target is for the Copilot surfaces that read only
+`.github/instructions`.
 
 **Delivery is not measured.** For Cursor it was read from the code of the 3.20.21 app, where an
 area's rule goes to the agent the first time it reads a matching file, and it was not watched in a
@@ -466,8 +474,8 @@ running Cursor. For Copilot the generated files were run through the parser and 
 1.140.0, and no other Copilot surface was read or run. Both copies are files in the right place and
 the right shape. Only the channel into Claude Code is measured.
 
-**Codex is not written for.** It reads one `AGENTS.md` per directory, with no path scoping and
-32 KiB for all of them, so an area file has no place there.
+**Codex is not written for.** By its documentation it reads one `AGENTS.md` per directory, with no
+path scoping and 32 KiB for all of them by default, so an area file has no place there.
 
 ## How it is tested
 

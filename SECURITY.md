@@ -5,7 +5,7 @@ its context automatically. Both halves of that sentence are the threat model.
 
 If you ever run this on a clone, the input is attacker controlled. The output lands in
 `.claude/rules/`, where the agent reads it without being asked, and in `.cursor/rules/` and
-`.github/instructions/` where a scan was asked to write there, which Cursor and GitHub Copilot read
+`.github/instructions/` where that target is on, which Cursor and GitHub Copilot read
 the same way. So the tool sits between an untrusted corpus and a channel that has the agent's
 attention by default.
 
@@ -141,8 +141,8 @@ unattributed context. Deletion needs all three signals at once: the `anatomiya-`
 before this scan's record replaces it. A file with
 the prefix that the tool did not write is reported, never removed.
 
-If you clone an unfamiliar repository, read `.claude/rules/` before you start a session. That is true
-whether or not you use this tool.
+If you clone an unfamiliar repository, read `.claude/rules/`, `.cursor/rules/` and
+`.github/instructions/` before you start a session. That is true whether or not you use this tool.
 
 The two directories every scan writes, `.claude/rules` and `.claude/anatomiya`, are resolved
 component by component. `.claude` must be a real directory rather than a link, and the store must
@@ -159,15 +159,26 @@ repository spells, and says when it is a link, so it never points at the file a 
 included, so a link at any of those leaves is not followed out of `.claude`; a write replaces such a link as an entry
 rather than writing through it.
 
-### Two more directories are written only when asked
+### Two more directories are written where a target is on
 
-Every scan writes `.claude/rules/` and `.claude/anatomiya/` and nothing else. `scan --targets` adds
-up to two more: `.cursor/rules/` for Cursor and `.github/instructions/` for GitHub Copilot. A target
-then stays on while its own overview file is in its directory and carries the `generator: anatomiya`
-key. That file is the whole switch, so a repository can ship one: a clone holding a committed
-`.cursor/rules/anatomiya-overview.mdc` with the key has the Cursor target on, and the first scan run
-there writes that directory without being asked. What that buys the repository is the map's own
-files in its own tree, under the rules below, and nothing else.
+This is the whole of what a scan writes in a repository. Every scan writes `.claude/rules/` and
+`.claude/anatomiya/`. Where `.claude/settings.local.json` still holds the re-delivery hook that
+versions 0.2.4 to 0.2.6 put there, a scan takes that entry out, keeps every other entry, and removes
+the file only when nothing else is left in it (A25). With a target on, a scan also writes
+`.cursor/rules/` for Cursor or `.github/instructions/` for GitHub Copilot. It writes nowhere else
+in the repository.
+
+`scan --targets` turns a target on. It then stays on while its own overview file is in its directory
+and carries the `generator: anatomiya` key. That file is the whole switch, so a repository can ship
+one: a clone holding a committed `.cursor/rules/anatomiya-overview.mdc` with the key has the Cursor
+target on, and the first scan run there writes that directory without being asked. In that
+directory the scan writes only the map's own names, and removes only a regular file under a map
+name that carries the key and that the record on disk lists, or, when a scan leaves the target out
+of `--targets`, any such file under a map name. A repository can commit the record as well, and
+then it chooses which of those files the record lists. The writes and the removals land on tracked
+files: the scan replaces the committed overview and area files and can delete a committed area
+file, so `git status` shows changes nobody made by hand, and `git commit -a` takes them in. The
+background refresh leaves a target alone when git tracks its overview. A scan run by hand does not.
 
 What is written there is only the map: `anatomiya-overview` and `anatomiya-area-<id>` with that
 directory's extension, each asserted to be a bare prefixed name when the plan is built. Temporary
@@ -185,11 +196,18 @@ component the scan creates is looked at again after its `mkdir`.
 A file this tool did not write is never written over in those two directories. An entry at a name
 the map needs is somebody's when it has no key, is a link (whatever it leads to), will not open, is
 a directory or a fifo, or is spelled as that name in another letter case with nothing at the name
-itself, which on a volume that folds case is the same file. A scan that named the target refuses.
-A scan that did not leaves the entry, writes no file at that name, and counts it in its summary;
-where the entry sits at the overview's own name, it refuses as well.
+itself, which on a volume that folds case is the same file. A scan that names the target in
+`--targets` refuses wherever such an entry sits, and writes nothing anywhere. Otherwise it depends
+on the name. At the overview's own name the entry means the target is off, so the scan leaves it
+alone and writes nothing there. Where the record lists no file in that directory, the scan prints
+nothing about it. Where the record does, the scan removes those files under the first rule below,
+prints `.cursor/rules is off now`, and counts the entry in its summary. At an area's name, with the
+target on, the scan leaves the entry, writes no file at that name, and counts it in its summary
+(`.cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was
+left as it is`). A plain scan refuses only when the overview stops being this tool's between the
+moment the scan reads the target's state and the moment it lists the directory.
 
-Removal there has two rules and no third. A scan that does not name the targets removes a file only
+Removal there has two rules. A scan that does not name the targets removes a file only
 on the three signals above: the prefix, the key, and the record on disk naming it. A scan that
 leaves a target out of `--targets` removes every regular file there that has one of the two exact
 names a scan gives (`anatomiya-overview`, or `anatomiya-area-` and eight hex digits), with that
@@ -204,22 +222,36 @@ already replaced, in every directory, removes the temporary files, and removes a
 directory this run made if it is empty. On a repository with no map yet, a failure at that stage can
 leave `.claude/rules` and `.claude/anatomiya` behind, empty.
 
-One window is left, and it is stated here plainly. The last look at a directory and the `rename`
-or `unlink` that follows it are two system calls. Someone who can already write inside the working
-tree while a scan runs can swap `.cursor/rules` or `.github/instructions` for a link between them.
-What they gain is one operation through that link: a file named exactly as one of the map's files,
-in a directory of their choosing that the scanning user can write, is removed, or is replaced by a
+One window is left. The last look at a directory and the `rename` or `unlink` that follows it are
+two system calls. Someone who can already write inside the working tree while a scan runs can swap
+`.cursor/rules` or `.github/instructions` for a link between them. What they gain is one operation
+through that link for each swap they win: a file named exactly as one of the map's files, in a
+directory of their choosing that the scanning user can write, is removed, or is replaced by a
 generated map file. They do not choose the name and they do not choose the bytes beyond what the map
 already carries from the repository through the encoder. Temporary files staged through such a link
 are removed on the refusal, and stay if the process is killed first.
 
-Reading is as narrow as writing. In those two directories only entries named `anatomiya-*` with that
-directory's extension are opened, and whose a file is gets decided from its first 1 MiB, on a handle
-typed before the read. A team's own rule files there are never opened. One read is whole: a file the
-scan is about to replace or remove, already decided to carry the key, is read once through
-`O_NOFOLLOW` so it can be put back if the write fails. A repository that commits a very large file
-under one of the map's names with the key makes that read large, in these directories and in
-`.claude/rules` alike.
+Deciding whose a file is reads little. In those two directories only entries named `anatomiya-*`
+with that directory's extension are opened, and whose a file is gets decided from its first 1 MiB,
+on a handle typed before the read. A team's own rule files there are never opened.
+
+One read is whole, and this tool puts no cap on it. Before its first rename, a scan that writes
+reads whole every file it is about to replace or remove, through `O_NOFOLLOW`, so it can put that
+file back if a later step fails. Those files are `facts.json` and `layout.json` in
+`.claude/anatomiya`; in `.claude/rules`, every file at a name the scan writes, with the key or
+without it, and every file it removes; and in `.cursor/rules` and `.github/instructions`, the files
+it replaces or removes there, which all carry the key, since a person's file at a planned name is
+never planned. A dry run reads none of them whole. Neither does a scan that writes nothing because
+an engine is missing and it read no source file, and a refresh reads none in a target it holds.
+Measured on one machine, a scan's peak resident memory was 65 MB with nothing unusual in the tree,
+667 MB with a 600 MB keyless file at `.claude/rules/anatomiya-overview.md`, 668 MB with a 600 MB
+keyed file at a Cursor area name, 730 MB with a 600 MB `facts.json` and 794 MB with a 600 MB
+`layout.json`. A keyless 600 MB file at a Cursor area name left it at 68 MB. The one limit is
+Node's: it refuses to read a file above 2 GiB in one call, so the scan goes on with no copy of that
+file to put back. With a 3 GiB file at `.claude/rules/anatomiya-overview.md` the scan peaked at
+67 MB and replaced the file. So a repository you do not trust can make a scan hold, whole, every
+file under 2 GiB that it commits at one of those names. Nothing read this way is written anywhere
+but back to the path it came from.
 
 ### Parser crashes are contained by a process boundary
 
@@ -388,6 +420,11 @@ These are real and they are tracked in `DECISIONS.md`.
   The git calls inherit yours, and so does `npm` under `setup`, deliberately: its registry, proxy
   and credential configuration lives there and an install without them reaches the wrong place or
   nothing at all.
+- **The put-back copy is read whole, with no cap of this tool's.** A scan reads every file it is
+  about to replace or remove into memory, so it can put that file back if a later step fails. A
+  repository that commits a large file at one of the map's names, or as `facts.json` or
+  `layout.json`, makes every scan that writes there hold all of it, the background refresh included.
+  The section on the two more directories says which files, and gives the measured numbers.
 
 ## Reporting a vulnerability
 
