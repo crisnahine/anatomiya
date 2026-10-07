@@ -138,7 +138,7 @@ export function isGeneratedName(name, target = TARGETS.claude) {
  * `null` is not an empty set: an empty set says the last scan wrote nothing,
  * and no scan writes nothing. Without the record the third fact is unavailable,
  * so nothing is removable. The same for a Cursor or Copilot directory the
- * record does not name.
+ * record does not name, until a scan is told by name to leave that target out.
  */
 export function knownNames(facts, target = TARGETS.claude) {
   if (!facts || !Array.isArray(facts.areas)) return null;

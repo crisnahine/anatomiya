@@ -224,7 +224,12 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // Ours, and this run is not rewriting it, so its area is gone or states
   // nothing now, unless it is held, which is this run not knowing. Everything
   // else in the directory is left where it is.
-  const stale = blind ? [] : audit.ours.filter((f) => !planned.has(f) && !heldNames.has(f));
+  //
+  // A target left out by name is the exception to asking the record: a clone
+  // can hold the files and not the store, and then no scan could turn it off.
+  // The name and the key decide there, which is what the person asked for.
+  const mine = explicit && !on ? [...audit.ours, ...audit.unknown].sort() : audit.ours;
+  const stale = blind ? [] : mine.filter((f) => !planned.has(f) && !heldNames.has(f));
   // Claude Code's two directories were held to this before anything was read.
   if (!target.always && (names.length > 0 || stale.length > 0)) refuseNonDirectory(root, target.dir);
 
@@ -239,7 +244,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     // Our prefix and our key, but no map on disk names it: an older build wrote
     // it, or the store was deleted. It still loads, so it is reported; it is not
     // removed, because two of the three facts is not ownership.
-    unknown: audit.unknown.filter((f) => !planned.has(f)),
+    unknown: audit.unknown.filter((f) => !planned.has(f) && !stale.includes(f)),
     // Somebody else's, unless this run is writing over it, which it does in
     // Claude Code's directory alone. A generated name there is ours by
     // construction, so a hand-written file that took one is replaced rather
