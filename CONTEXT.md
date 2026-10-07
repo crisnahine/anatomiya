@@ -133,6 +133,13 @@ directory beside a package is paired too, and a test in it answers only the path
 project file is read to find a pair.
 _Avoid_: test module, companion project, sibling project
 
+**Test by place**:
+A file that is a test because of where it sits, whatever its name and whatever it holds: a `.rs`
+file directly under a crate's `tests` directory, which cargo builds as an integration test. A crate
+is a directory holding a `Cargo.toml` or a `src`. Rust is the one language with such a rule, and its
+declaration states it as `placeTests`.
+_Avoid_: positional test, implicit test, integration test file
+
 **One branch**:
 How a C# file is read when the grammar rejects it as written and takes it with every preprocessor
 directive line blanked and only the first branch of each `#if` kept. The file is examined, its
@@ -155,6 +162,14 @@ error in the repository's own code. From a `tree-sitter` grammar the file is **u
 error, or syntax the grammar does not cover, printed on a line of its own as a file this tool's
 grammar could not read. Unread is not unreadable.
 _Avoid_: failed, skipped, error, broken
+
+**Unread**:
+Said of a file one of the seven `tree-sitter` grammars could not read: its tree holds an ERROR or a
+MISSING node. The file gives no site and no facet, leaves every denominator, and is counted on a
+line of its own. The word says nothing about the file, which may hold a syntax error or syntax the
+grammar does not cover. It runs one way only: text the language rejects and the grammar reads clean
+is counted like any other file.
+_Avoid_: unreadable, unparsed, broken, invalid
 
 ### What is counted
 
@@ -261,7 +276,9 @@ A pin that has stopped following the remote default branch while the checkout si
 a commit on the way was made in this clone or carries its committer identity, the tip was not brought
 by a fetch, or git could not say.
 Said to the person in the terminal and never to the agent, and ended by a pin taken by hand or by a
-refresh that finds nothing holding it any more.
+refresh that finds nothing holding it any more. The word is also said of an area: an area holding a
+file of a language no parser answered for is held, its file neither rewritten nor removed, until a
+scan can read that language.
 _Avoid_: block, freeze, lock
 
 **Population**:
@@ -314,6 +331,20 @@ The rescan a detached worker runs on its own when HEAD, the tracked files, the p
 version has moved since the last scan, in a checkout that already holds a map of its own. It follows the pin where it
 is safe to, and keeps the previous map when the rescan fails.
 _Avoid_: rebuild, sync, auto-scan
+
+**Carried verdict**:
+A type checker verdict of `degraded` that a refresh writes again without running the checker. A
+scan measured it, and nothing the checker reads has moved since: this version, the repository's
+packages, where `typescript` resolves, and the name and bytes of the root config. The record marks
+it `carried` with the moment it was measured, and the overview says the day. Only `degraded` is
+carried: an `ok` verdict is measured on every refresh, and a scan run by hand always measures.
+_Avoid_: cached verdict, stale verdict, skipped check
+
+**Left alone**:
+Said of a Cursor or Copilot copy of the map that a refresh neither writes, removes nor turns off,
+because the repository tracks that target's overview file. The rest of the map is written, and the
+record keeps the names it had for that copy. A scan run by hand leaves nothing alone.
+_Avoid_: held, skipped, frozen, locked
 
 **Main checkout**:
 The checkout a linked worktree was added from, the one whose `.git` directory holds the worktree's
