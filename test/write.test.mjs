@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
-import { areaFilename, isOwned, realpathOf, realpathOrNull, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { areaFilename, isOwned, realpathOf, realpathOrNull, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
@@ -880,8 +880,8 @@ function scanSequences(seed, runs) {
   const intruders = every.flatMap((t) => [
     { dir: t.dir, name: `house${t.ext}`, body: "# house rules\n" },
     { dir: t.dir, name: `${PREFIX}notes${t.ext}`, body: "# our name, nobody's key\n" },
-    { dir: t.dir, name: `${PREFIX}area-deadbeef${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nan older build\n" },
-    { dir: t.dir, name: `${PREFIX}overview${t.ext}.bak${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
+    { dir: t.dir, name: `${PREFIX}area-deadbeef${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nan older build\n", says: t },
+    { dir: t.dir, name: `${PREFIX}overview${t.ext}.bak${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n", says: t },
     // A person's own file at a name a scan plans, where another tool reads it.
     ...(t.always ? [] : [overviewName(t), areaName(t, areaId(pool[0])), areaName(t, areaId(pool[3]))].map((name) => ({ dir: t.dir, name, body: "# mine, at a name of yours\n" }))),
   ]);
@@ -902,6 +902,8 @@ function scanSequences(seed, runs) {
     const dir = workspace();
     const written = new Set();
     const theirs = new Map();
+    // The planted files that say this tool wrote them, by the target whose directory holds them.
+    const keyed = new Map();
 
     for (let step = 0; step < 6; step++) {
       if (chance(0.5)) {
@@ -911,6 +913,7 @@ function scanSequences(seed, runs) {
         if (!written.has(at)) {
           writeFileSync(join(dir, at), it.body);
           theirs.set(at, digest(it.body));
+          if (it.says) keyed.set(at, it.says);
         }
       }
       // A fresh clone routinely has the rules without the store, since the one
@@ -942,6 +945,14 @@ function scanSequences(seed, runs) {
       }
       const after = snapshot(dir);
 
+      // Leaving Cursor or Copilot out by name is the one thing that removes a file no record lists.
+      const namedOff = (name) => !blind && !dryRun && targets !== null && !keyed.get(name)?.always && keyed.has(name) && !targets.includes(keyed.get(name).id);
+      for (const name of [...theirs.keys()].filter(namedOff)) {
+        if (after.has(name)) problems.push(`${where}: ${name} says this tool wrote it and outlived its target being left out`);
+        theirs.delete(name);
+        keyed.delete(name);
+        written.add(name);
+      }
       for (const [name, hash] of theirs) {
         if (!after.has(name)) problems.push(`${where}: removed ${name}`);
         else if (after.get(name) !== hash) problems.push(`${where}: modified ${name}`);
@@ -1800,7 +1811,7 @@ test("a target stays on without being named again", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("naming claude alone turns the others off and removes only what this build wrote", () => {
+test("naming claude alone turns the others off and removes every file there that says this tool wrote it", () => {
   const dir = workspace();
   const a = area("src/services");
   const b = area("src/api");
@@ -1818,14 +1829,18 @@ test("naming claude alone turns the others off and removes only what this build 
 
   for (const t of OTHERS) {
     const mine = plan.targets[t.id];
-    assert.deepEqual(mine.remove, mapOf(t, a, b), t.id);
+    // The record never listed the last of them: leaving the target out by name is what removes it.
+    assert.deepEqual(mine.remove, [...mapOf(t, a, b), `${PREFIX}area-deadbeef${t.ext}`].sort(), t.id);
     assert.deepEqual(mine.write, []);
     assert.deepEqual(mine.foreign, [`${PREFIX}notes${t.ext}`]);
-    assert.deepEqual(mine.unknown, [`${PREFIX}area-deadbeef${t.ext}`]);
+    assert.deepEqual(mine.unknown, []);
     assert.deepEqual({ state: mine.state, on: mine.on }, { state: "on", on: false });
-    assert.deepEqual(namesIn(dir, t), [`${PREFIX}area-deadbeef${t.ext}`, `${PREFIX}notes${t.ext}`, `team${t.ext}`].sort());
+    assert.deepEqual(namesIn(dir, t), [`${PREFIX}notes${t.ext}`, `team${t.ext}`].sort());
+    assert.equal(targetState(dir, t), "off");
   }
-  for (const [at, body] of Object.entries(planted)) assert.equal(readFileSync(join(dir, at), "utf8"), body, at);
+  for (const [at, body] of Object.entries(planted)) {
+    if (!at.includes("deadbeef")) assert.equal(readFileSync(join(dir, at), "utf8"), body, at);
+  }
   assert.equal("targets" in readFacts(dir), false, "nothing was written there, so the record names nothing there");
   const claudeAfter = snapshot(dir);
   for (const name of listRules(dir)) assert.equal(claudeAfter[`${RULES}/${name}`], claudeBefore[`${RULES}/${name}`], name);
@@ -1854,42 +1869,83 @@ test("a file with our name and extension but no generator key is never removed w
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a file with our generator key that the last record does not list is never removed", () => {
-  const dir = workspace();
+test("a file with our generator key that the record does not list is removed only when its target is left out by name", (t) => {
+  const dir = workspace(t);
   const a = area("src/services");
   writeMap(result(dir, [a]), { targets: ALL });
-  for (const t of OTHERS) writeFileSync(join(dir, t.dir, areaName(t, "99999999")), OURS);
+  for (const target of OTHERS) writeFileSync(join(dir, target.dir, areaName(target, "99999999")), OURS);
+
+  // Stale by name while the target is on, and two facts of three.
+  for (const targets of [null, ALL]) {
+    const on = writeMap(result(dir, [a]), { targets });
+    for (const target of OTHERS) {
+      assert.deepEqual(on.targets[target.id].remove, [], JSON.stringify(targets));
+      assert.deepEqual(on.targets[target.id].unknown, [areaName(target, "99999999")]);
+      assert.equal(readFileSync(join(dir, target.dir, areaName(target, "99999999")), "utf8"), OURS);
+    }
+  }
 
   const off = writeMap(result(dir, [a]), { targets: ["claude"] });
-  for (const t of OTHERS) {
-    assert.deepEqual(off.targets[t.id].unknown, [areaName(t, "99999999")]);
-    assert.deepEqual(namesIn(dir, t), [areaName(t, "99999999")]);
+  for (const target of OTHERS) {
+    assert.deepEqual(off.targets[target.id].remove, [areaName(target, "99999999"), ...mapOf(target, a)].sort());
+    assert.deepEqual(off.targets[target.id].unknown, []);
+    assert.deepEqual(namesIn(dir, target), []);
   }
-
-  // Nor while the target is on, where it is stale by name and still not ours.
-  const on = writeMap(result(dir, [a]), { targets: ALL });
-  for (const t of OTHERS) {
-    assert.deepEqual(on.targets[t.id].remove, []);
-    assert.deepEqual(on.targets[t.id].unknown, [areaName(t, "99999999")]);
-    assert.equal(readFileSync(join(dir, t.dir, areaName(t, "99999999")), "utf8"), OURS);
-  }
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("a deleted record makes nothing removable in a target being turned off", () => {
-  const dir = workspace();
-  const a = area("src/services");
-  writeMap(result(dir, [a]), { targets: ALL });
-  rmSync(join(dir, STORE), { recursive: true, force: true });
-
-  const plan = writeMap(result(dir, [a]), { targets: ["claude"] });
-
-  for (const t of OTHERS) {
-    assert.deepEqual(plan.targets[t.id].remove, []);
-    assert.deepEqual(plan.targets[t.id].unknown, mapOf(t, a));
-    assert.deepEqual(namesIn(dir, t), mapOf(t, a));
+/** What a fresh clone holds: a target's files committed, and no record beside them. */
+function cloned(t, a, b) {
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  for (const target of OTHERS) {
+    writeFileSync(join(dir, target.dir, `team${target.ext}`), "# the team's own rule\n");
+    writeFileSync(join(dir, target.dir, `${PREFIX}notes${target.ext}`), "# our name, nobody's key\n");
   }
-  rmSync(dir, { recursive: true, force: true });
+  rmSync(join(dir, STORE), { recursive: true, force: true });
+  return dir;
+}
+
+test("a target is turned off by name whether or not the record lists its files", (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  const theirs = (target) => [`${PREFIX}notes${target.ext}`, `team${target.ext}`];
+  const dir = cloned(t, a, b);
+
+  const dry = writeMap(result(dir, [a, b]), { dryRun: true, targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(dry.targets[target.id].remove, mapOf(target, a, b), "a dry run says so");
+    assert.deepEqual(namesIn(dir, target), [...mapOf(target, a, b), ...theirs(target)].sort(), "and removes nothing");
+  }
+
+  const plan = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+
+  for (const target of OTHERS) {
+    const mine = plan.targets[target.id];
+    assert.deepEqual({ state: mine.state, on: mine.on, write: mine.write, unknown: mine.unknown }, { state: "on", on: false, write: [], unknown: [] });
+    assert.deepEqual(mine.remove, mapOf(target, a, b));
+    assert.deepEqual(mine.foreign, [`${PREFIX}notes${target.ext}`]);
+    assert.deepEqual(namesIn(dir, target), theirs(target), "what does not say this tool wrote it stays");
+    assert.equal(readFileSync(join(dir, target.dir, `${PREFIX}notes${target.ext}`), "utf8"), "# our name, nobody's key\n");
+    assert.equal(targetState(dir, target), "off");
+  }
+  assert.equal("targets" in readFacts(dir), false);
+  const again = writeMap(result(dir, [a, b]));
+  for (const target of OTHERS) assert.deepEqual({ state: again.targets[target.id].state, on: again.targets[target.id].on, write: again.targets[target.id].write }, { state: "off", on: false, write: [] });
+});
+
+test("with no record and no target named, nothing in a target is removable", (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  const dir = cloned(t, a, b);
+
+  const plan = writeMap(result(dir, [a]));
+
+  for (const target of OTHERS) {
+    assert.deepEqual({ state: plan.targets[target.id].state, on: plan.targets[target.id].on }, { state: "on", on: true });
+    assert.deepEqual(plan.targets[target.id].remove, []);
+    assert.deepEqual(plan.targets[target.id].unknown, [areaName(target, b.id)], "the area that went away is two facts of three");
+    assert.deepEqual(namesIn(dir, target), [...mapOf(target, a, b), `${PREFIX}notes${target.ext}`, `team${target.ext}`].sort());
+  }
 });
 
 const HAND = "---\nalwaysApply: true\n---\n# Written by hand\n";
