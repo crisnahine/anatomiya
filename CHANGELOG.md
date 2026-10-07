@@ -61,8 +61,13 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   Kotlin ones, which use syntax newer than the grammar. A C# file with `#if` inside an expression
   is read with the first branch of each conditional kept, and the scan says how many: `7 files
   were read with one branch of each #if; the other branches were not read`. None of the seven gets
-  the type checker, the "most imported from here" lines, the end-of-turn reuse check or the notice
-  before a test file is written, and a `.pyi` stub is not read. A file of the seven that its
+  the type checker, the "most imported from here" lines or the end-of-turn reuse check, and a
+  `.pyi` stub is not read. The notice before a test file is written, and the finding `check`
+  reports for a test placed where its siblings have none, read a test by its language's own name
+  in six of the seven, and hold it to a directory of its own project where the build has
+  projects. A Rust test has no name, so no `.rs` file is asked. Asked of the 5,727 test files of
+  those languages that 60 repositories already hold, as if each had just been added, it reports
+  none. A file of the seven that its
   grammar cannot finish in 5 seconds is counted as crashed and is not tried again; the case
   measured is Kotlin.
 - Three runtime dependencies, where 0.13.4 had two. The new one is `web-tree-sitter`: JavaScript

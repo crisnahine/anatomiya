@@ -485,3 +485,45 @@ test("the principle and the finding read the same namesake floor", () => {
   assert.deepEqual(precedentFindings([spec], unmatched), []);
   assert.ok(!principleKeys({ tests: [], roots: unmatched }).includes("test_precedent"));
 });
+
+/** A root of one extension, for a language that names its tests its own way. */
+const rootOf = (ext, dir, companions) => ({ ...root(dir, { files: companions.of, companions: { ...companions, ext } }), exts: [[ext, companions.of]] });
+
+test("each of the seven languages' test names is one, read by the rule the layout reads it by", () => {
+  const tested = (ext, dir) => rootOf(ext, dir, { with: 5, of: 5, root: null });
+  const bare = (ext, dir) => rootOf(ext, dir, { with: 0, of: 5, root: null });
+  for (const [path, ext, dirs, said] of [
+    ["bare/test_m9.py", ".py", ["tested", "bare"], "bare holds no other test; bare: 0 of 5 .py files have a namesake test"],
+    ["bare/m9_test.py", ".py", ["tested", "bare"], "bare holds no other test; bare: 0 of 5 .py files have a namesake test"],
+    ["bare/m9_test.go", ".go", ["tested", "bare"], "bare holds no other test; bare: 0 of 5 .go files have a namesake test"],
+    ["tests/Bare/M9Test.php", ".php", ["src/Tested", "src/Bare"], "tests/Bare holds no other test; src/Bare: 0 of 5 .php files have a namesake test"],
+    ["test/Bare.Tests/M9Tests.cs", ".cs", ["src/Tested", "src/Bare"], "test/Bare.Tests holds no other test; src/Bare: 0 of 5 .cs files have a namesake test"],
+    ["bare/src/test/java/shop/bare/M9Test.java", ".java", ["tested/src/main/java/shop/tested", "bare/src/main/java/shop/bare"], "bare/src/test/java/shop/bare holds no other test; bare/src/main/java/shop/bare: 0 of 5 .java files have a namesake test"],
+    ["bare/src/commonTest/kotlin/shop/bare/M9Test.kt", ".kt", ["tested/src/commonMain/kotlin/shop/tested", "bare/src/commonMain/kotlin/shop/bare"], "bare/src/commonTest/kotlin/shop/bare holds no other test; bare/src/commonMain/kotlin/shop/bare: 0 of 5 .kt files have a namesake test"],
+  ]) {
+    const found = precedentFindings([path], [tested(ext, dirs[0]), bare(ext, dirs[1])]);
+    assert.deepEqual(found.map((f) => f.reason), [said], path);
+  }
+  // The notice before a write is the same finding, said earlier.
+  assert.match(noticeFor("bare/test_m9.py", { roots: [tested(".py", "tested"), bare(".py", "bare")] }), /^anatomiya: bare\/test_m9\.py\n  bare holds no other test; bare: 0 of 5 \.py files have a namesake test\.\n/);
+  // A word a source file wears in earnest names a test only under a test tree, and Rust names none.
+  const roots = [tested(".java", "src/Tested"), bare(".java", "src/Bare")];
+  for (const path of ["src/Bare/M9Test.java", "src/Bare/M9Test.php", "src/Bare/M9Tests.cs", "src/Bare/test_m9.go", "src/Bare/m9.test.py", "src/Bare/tests/m9.rs"]) {
+    assert.deepEqual(precedentFindings([path], roots), [], path);
+  }
+});
+
+test("a test is judged against a directory of its own project, where its language's build has projects", () => {
+  // Two Gradle modules keep one package: the test of one says nothing about how the other tests.
+  const roots = [
+    rootOf(".kt", "okhttp/src/main/kotlin/okhttp3", { with: 50, of: 150, root: null }),
+    rootOf(".kt", "server/src/main/kotlin/mockserver", { with: 2, of: 14, root: null }),
+  ];
+  assert.deepEqual(precedentFindings(["server-junit4/src/test/java/mockserver/junit4/RuleTest.kt"], roots), []);
+  const [own] = precedentFindings(["server/src/test/java/mockserver/junit4/RuleTest.kt"], roots);
+  assert.equal(own.area, "server/src/main/kotlin/mockserver");
+  // A .NET test project answers for the project its name carries, and for no other.
+  const projects = [rootOf(".cs", "src/Lib", { with: 5, of: 5, root: null }), rootOf(".cs", "src/Lib.Extras/Sub", { with: 0, of: 5, root: null })];
+  assert.deepEqual(precedentFindings(["test/Other.Tests/Sub/ATests.cs"], projects), []);
+  assert.equal(precedentFindings(["test/Lib.Extras.Tests/Sub/ATests.cs"], projects).length, 1);
+});

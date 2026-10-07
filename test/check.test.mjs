@@ -192,6 +192,57 @@ test("a test added where its own siblings have none is a finding, and one added 
   assert.match(found[0].reason, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
 });
 
+// One tested directory and one bare one per language, each in the layout that language's repositories keep, and each a
+// root of its own: a module per directory where the build has modules, a project where it has projects.
+const PLACED = {
+  python: { source: (d, n) => [`src/${d}/m${n}.py`, `def f${n}():\n    return ${n}\n`], spec: (d, n) => [`src/${d}/test_m${n}.py`, `def test_f${n}():\n    assert True\n`] },
+  go: { source: (d, n) => [`${d}/m${n}.go`, `package ${d}\n\nfunc F${n}() int { return ${n} }\n`], spec: (d, n) => [`${d}/m${n}_test.go`, `package ${d}\n\nimport "testing"\n\nfunc TestF${n}(t *testing.T) {}\n`] },
+  java: {
+    source: (d, n) => [`${d}/src/main/java/shop/${d}/M${n}.java`, `package shop.${d};\n\nclass M${n} {\n}\n`],
+    spec: (d, n) => [`${d}/src/test/java/shop/${d}/M${n}Test.java`, `package shop.${d};\n\nimport org.junit.jupiter.api.Test;\n\nclass M${n}Test {\n    @Test\n    void runs() {}\n}\n`],
+  },
+  kotlin: {
+    source: (d, n) => [`${d}/src/main/kotlin/shop/${d}/M${n}.kt`, `package shop.${d}\n\nclass M${n}\n`],
+    spec: (d, n) => [`${d}/src/test/kotlin/shop/${d}/M${n}Test.kt`, `package shop.${d}\n\nimport kotlin.test.Test\n\nclass M${n}Test {\n    @Test\n    fun runs() {\n    }\n}\n`],
+  },
+  csharp: {
+    source: (d, n) => [`src/${d}/M${n}.cs`, `namespace Shop;\n\npublic class M${n}\n{\n}\n`],
+    spec: (d, n) => [`test/${d}.Tests/M${n}Tests.cs`, `namespace Shop.Tests;\n\npublic class M${n}Tests\n{\n    [Fact]\n    public void Runs() {}\n}\n`],
+  },
+  php: {
+    source: (d, n) => [`src/${d}/M${n}.php`, `<?php\n\nclass M${n}\n{\n}\n`],
+    spec: (d, n) => [`tests/${d}/M${n}Test.php`, `<?php\n\nclass M${n}Test extends TestCase\n{\n    public function testRuns(): void\n    {\n    }\n}\n`],
+  },
+};
+
+for (const [lang, { source, spec }] of Object.entries(PLACED)) {
+  test(`${lang}: a test added where its own siblings have none is a finding, and one added beside theirs is not`, async (t) => {
+    const dir = repo(t, ({ write, commit }) => {
+      for (let n = 0; n < 5; n++) {
+        write(...source("tested", n));
+        write(...spec("tested", n));
+        write(...source("bare", n));
+      }
+      commit("init");
+    });
+    writeMap(await scan(dir), {});
+    const { files } = await collect(dir);
+    writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+    const base = sha(dir);
+    for (const [rel, body] of [spec("tested", 9), spec("bare", 9)]) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), body);
+    }
+    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+    execFileSync("git", ["commit", "-qm", "two tests"], { cwd: dir, stdio: "pipe" });
+
+    const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+    assert.deepEqual(found.map((f) => [f.path, f.severity]), [[spec("bare", 9)[0], "FIX"]], JSON.stringify(found));
+    assert.match(found[0].reason, /holds no other test; .*bare: 0 of 5 \.\w+ files have a namesake test$/);
+  });
+}
+
 test("a test still sitting in the working tree is asked the same question as a committed one", needsRuby, async (t) => {
   // The whole reason this reads the tree: the answer is wanted before the
   // commit, not after. An addition arrives from `git status` rather than from

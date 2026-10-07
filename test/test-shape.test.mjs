@@ -17,6 +17,7 @@ import {
   FEATURE_TREES,
   PACKAGE_SHELL,
   coveredStem,
+  namesATest,
   isTestTree,
   pairedWith,
 } from "../plugins/anatomiya/lib/test-shape.mjs";
@@ -277,4 +278,27 @@ test("Java and Kotlin: a Main source set and the package root are the words a mi
 
 test("Python's packaging shell is src, and no other family has one", () => {
   assert.deepEqual(PACKAGE_SHELL, { python: "src" });
+});
+
+test("a path names a test by its family's rule: the name alone where the tool reads nothing else, and under a test tree where source wears the word", () => {
+  for (const [rel, family, said] of [
+    ["shop/test_cart.py", "python", true],
+    ["shop/cart_test.py", "python", true],
+    ["shop/cart.py", "python", false],
+    ["shop/cart_test.go", "go", true],
+    ["tests/CartTest.php", "php", true],
+    ["src/CartTest.php", "php", false],
+    ["src/test/java/shop/CartIT.java", "java", true],
+    ["src/main/java/shop/RepeatedTest.java", "java", false],
+    ["shop/commonTest/kotlin/CartTest.kt", "kotlin", true],
+    ["test/Shop.Tests/CartTests.cs", "csharp", true],
+    ["src/Shop/CartTests.cs", "csharp", false],
+    // A directory named for a test is not one: only a whole segment is a tree.
+    ["latest/CartTest.php", "php", false],
+    ["tests/cart.rs", "rust", false],
+    ["shop/cart.test.js", "js", false],
+    ["spec/cart_spec.rb", "ruby", false],
+  ]) {
+    assert.equal(namesATest(rel, family), said, rel);
+  }
 });

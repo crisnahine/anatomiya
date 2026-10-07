@@ -204,6 +204,23 @@ export const FAMILY_TREES = {
 export const isTestTree = (segment, family = null) =>
   TEST_TREES.has(segment) || FAMILY_TREES[family]?.test.test(segment) === true;
 
+const stemAt = (rel) => rel.slice(rel.lastIndexOf("/") + 1).replace(/\.[^./]*$/, "");
+
+/**
+ * Whether a path's own name says its family's tool collects it: the name
+ * alone where the tool reads nothing else, and under a test tree where the
+ * name is a word a source file wears in earnest. False for a family with no
+ * name, and for a language read by the JavaScript rule.
+ *
+ * Asked by the layout of a file it holds and by the placement finding of a
+ * path it was handed, so the two cannot differ on what a test is called.
+ */
+export function namesATest(rel, family) {
+  const names = FAMILY_TEST_NAMES[family];
+  if (!names || coveredStem(stemAt(rel), family) === null) return false;
+  return names.alone === true || rel.split("/").slice(0, -1).some((segment) => isTestTree(segment, family));
+}
+
 /**
  * The directory a family's packaging puts its top-level package under, which
  * no import spells: `src/flask/cli.py` is `flask.cli`. Read where a flat test

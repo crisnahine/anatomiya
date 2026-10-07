@@ -20,8 +20,8 @@ import {
   RUBY_TEST_NAME,
   TEST_ROOTS,
   UNNAMED_RUNNER,
-  coveredStem,
   isTestTree,
+  namesATest,
 } from "./test-shape.mjs";
 
 /**
@@ -198,10 +198,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // written for another: no dotted form, no mirror, no `__tests__`.
   const family = familyOf(lang);
   const names = FAMILY_TEST_NAMES[family];
-  if (names) {
-    if (mirrored?.has(rel)) return true;
-    return coveredStem(stemOf(rel), family) !== null && (names.alone === true || underTestTree(dir, family));
-  }
+  if (names) return mirrored?.has(rel) === true || namesATest(rel, family);
   if (TEST_NAME.test(base)) return true;
   // The Ruby form is the one a non-test file wears in earnest, so it is the one
   // that has to be corroborated by where the file sits. `software_spec.rb` is
