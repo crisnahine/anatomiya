@@ -138,6 +138,8 @@ function targetSummaries(result, plan) {
   const stated = new Set((plan.result ?? result).areas.filter((a) => a.dimensions.length > 0).map((a) => a.path));
   const out = {};
   for (const [id, t] of Object.entries(plan.targets ?? {})) {
+    // Held by a caller nobody is watching, which is why it was held.
+    if (t.held) continue;
     const unread = t.state === "unknown";
     const foreign = t.foreign.length + t.unknown.length;
     // One nobody could read is said only where the record names files there.

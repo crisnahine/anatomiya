@@ -2423,6 +2423,34 @@ test("a target in an unknown state is left exactly as it was, and the plan says 
   assert.deepEqual(listRules(linked), mapOf(TARGETS.claude, a));
 });
 
+test("a held target is neither written nor cleared, and the record goes on naming its files", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  const c = area("src/hooks");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const before = tree(join(dir, cursor.dir));
+
+  const plan = writeMap(result(dir, [a, c]), { hold: ["cursor"] });
+
+  const mine = plan.targets.cursor;
+  assert.deepEqual(
+    { held: mine.held, state: mine.state, write: mine.write, remove: mine.remove, names: mine.names },
+    { held: true, state: "on", write: [], remove: [], names: mapOf(cursor, a, b) }
+  );
+  assert.deepEqual(tree(join(dir, cursor.dir)), before, "every byte there is what it was");
+  assert.equal(targetState(dir, cursor), "on", "and it is not turned off");
+  assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a, b), copilot: mapOf(copilot, a, c) });
+  assert.deepEqual(namesIn(dir, copilot), mapOf(copilot, a, c), "the one not held is written as usual");
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, c));
+  assert.equal("held" in plan.targets.copilot, false);
+
+  // The next scan that holds nothing catches it up.
+  const next = writeMap(result(dir, [a, c]));
+  assert.deepEqual(next.targets.cursor.remove, [areaName(cursor, b.id)]);
+  assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, c));
+});
+
 test("an area that went away is removed from every target", (t) => {
   const dir = workspace(t);
   const stays = area("src/services");

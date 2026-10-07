@@ -786,6 +786,13 @@ test("a target that was on and could not be read says why, and one never written
   assert.deepEqual(scanLines(never), BEFORE_LINES);
 });
 
+test("a target the scan was told to hold says nothing, whatever the record names there", () => {
+  const held = scanSummary(result(), plan(others({ state: "on", held: true, names: ["anatomiya-overview.mdc"] })));
+
+  assert.deepEqual(scanLines(held), BEFORE_LINES);
+  assert.equal(scanJson(held), BEFORE_JSON);
+});
+
 test("a run that wrote nothing leaves a target as it found it", () => {
   const s = scanSummary(result(), plan({ blind: true, unreadable: ["ruby"], ...others({ on: true }, { state: "on", on: true }) }));
 
