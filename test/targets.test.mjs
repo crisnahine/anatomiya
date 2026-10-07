@@ -34,23 +34,31 @@ const fenceOf = (text) => {
 };
 
 test("the three targets, their directories and their extensions", () => {
+  const wrote =
+    "Written by anatomiya, a scanner that is run outside this editor; where this and the code disagree, the code is right and this map is stale.";
   assert.deepEqual(TARGETS, {
     claude: {
-      id: "claude", dir: ".claude/rules", ext: ".md", always: true, reader: "Claude Code",
+      id: "claude", dir: ".claude/rules", ext: ".md", always: true, reader: "Claude Code", wrote: null, widens: null,
       reads: "Read a file before editing it: these notes load when you read, not when you grep.",
       listed: "loaded when you read one of its files",
     },
     cursor: {
-      id: "cursor", dir: ".cursor/rules", ext: ".mdc", always: false, reader: "Cursor",
-      reads: "Open a file before editing it: an area's notes attach when one of its files is in context.",
+      id: "cursor", dir: ".cursor/rules", ext: ".mdc", always: false, reader: "Cursor", wrote, widens: null,
+      reads:
+        "An area's notes attach when one of its files is in context; where they have not, read the anatomiya-area-*.mdc file under .cursor/rules whose globs name the file before editing it.",
       listed: "attached when one of its files is in context",
     },
     copilot: {
-      id: "copilot", dir: ".github/instructions", ext: ".instructions.md", always: false, reader: "GitHub Copilot",
-      reads: "Open a file before editing it: an area's notes apply to the files its pattern names.",
+      id: "copilot", dir: ".github/instructions", ext: ".instructions.md", always: false, reader: "GitHub Copilot", wrote,
+      widens: "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.",
+      reads:
+        "Before editing a file, read the anatomiya file under .github/instructions whose applyTo matches it: an area's notes apply to the files its patterns name.",
       listed: "applied to the files its pattern names",
     },
   });
+  // A sentence that names a directory or a file names the target's own.
+  assert.ok(cursor.reads.includes(`${areaName(cursor, "*")} file under ${cursor.dir} `));
+  assert.ok(copilot.reads.includes(` under ${copilot.dir} `));
   assert.deepEqual(TARGET_IDS, ["claude", "cursor", "copilot"]);
   assert.ok(Object.isFrozen(TARGETS) && Object.isFrozen(TARGET_IDS) && TARGET_IDS.every((id) => Object.isFrozen(TARGETS[id])));
   assert.equal(claude.dir, RULES_DIR);
