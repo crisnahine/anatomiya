@@ -110,12 +110,11 @@ export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 // 19 stores `counterAuthors`. A slot shown on its counter side printed the
 // claim side's author count, because the record carried no other, and a held
 // area re-renders from the record. An older record prints what it printed.
-// 20 stores `targets`: the filenames a scan left in the Cursor and Copilot
-// directories, by target. The record naming a file is the third fact ownership
-// needs, and those names cannot be derived from the areas the way Claude Code's
-// are, since a target is given no file for an area it cannot spell a pattern of.
-// A target with no key was not written, so an older record owns nothing there.
-export const FACTS_SCHEMA = 20;
+// `targets` came with no new number: the filenames a scan left in the Cursor and
+// Copilot directories, under a key no older reader looks at. No field moved, and
+// a bump would have every build already installed refuse the record and enforce
+// nothing from it. An older record owns nothing there, as does one with no key.
+export const FACTS_SCHEMA = 19;
 
 /**
  * Which of a dimension's two sentences an area is about, with the counts and

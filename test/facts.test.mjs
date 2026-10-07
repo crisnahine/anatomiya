@@ -7,7 +7,7 @@ import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, factsJson, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { atomic, factsJson, schemaProblem, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { knownNames } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 
@@ -71,8 +71,8 @@ test("the names written for each target survive the round trip, and a target tha
   const { facts, unreadable } = readFacts(dir);
 
   assert.equal(unreadable, null);
-  assert.equal(facts.schema, 20);
-  assert.equal(FACTS_SCHEMA, 20);
+  assert.equal(facts.schema, 19);
+  assert.equal(FACTS_SCHEMA, 19, "the key moved no field, so the number every installed build reads stays");
   assert.deepEqual(facts.targets, { cursor });
   assert.deepEqual(knownNames(facts, TARGETS.cursor), new Set(cursor));
   assert.equal(knownNames(facts, TARGETS.copilot), null, "no key is a target that scan did not write, so nothing there is known");
@@ -81,21 +81,29 @@ test("the names written for each target survive the round trip, and a target tha
   assert.equal("targets" in JSON.parse(factsJson(result([dim()]), { cursor: [], copilot: [] })), false);
 });
 
-test("a record written before the targets were stored reads with none", (t) => {
+test("a record with no target named reads with none", (t) => {
   const dir = root(t);
   writeFacts(dir, result([dim()]));
-  const raw = JSON.parse(readFileSync(join(dir, FACTS_PATH), "utf8"));
-  assert.equal("targets" in raw, false, "a plain write names no target");
-  writeFileSync(join(dir, FACTS_PATH), JSON.stringify({ ...raw, schema: 19 }));
+  assert.equal("targets" in JSON.parse(readFileSync(join(dir, FACTS_PATH), "utf8")), false, "a plain write names no target");
 
   const { facts, unreadable } = readFacts(dir);
 
   assert.equal(unreadable, null);
-  assert.equal(facts.schema, 19);
   assert.equal(facts.targets, undefined);
   assert.equal(knownNames(facts, TARGETS.cursor), null);
   assert.equal(knownNames(facts, TARGETS.copilot), null);
   assert.equal(knownNames(facts).has("anatomiya-area-aaaaaaaa.md"), true, "and Claude Code's names are read as before");
+});
+
+test("a build that has never heard of the targets reads a record naming them", () => {
+  // Such a build's check and refresh refuse a schema above their own, so the key came with no new number.
+  const named = JSON.parse(factsJson(result([dim()]), { cursor: ["anatomiya-overview.mdc"] }));
+
+  assert.equal(named.schema, 19);
+  assert.equal(schemaProblem(named), null);
+  const { targets, ...rest } = named;
+  assert.deepEqual(targets, { cursor: ["anatomiya-overview.mdc"] });
+  assert.equal(JSON.stringify(rest, null, 2) + "\n", factsJson(result([dim()])), "and without the key it is the record that build writes, to the byte");
 });
 
 test("a target's names in a record somebody edited are held to that target's own names", () => {
