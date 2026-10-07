@@ -87,7 +87,7 @@ test("a broken file counts every ERROR and MISSING node it holds", async () => {
 });
 
 test("a file the grammar marks broken without a node to show for it still counts one error", async () => {
-  // Kotlin wants a line break after a member, and says so with a hidden token.
+  // The grammar, not Kotlin, wants a line break after a member, and says so with a hidden token.
   const r = await parseTreeFile("class A { fun f() {} }\n", "src/A.kt", "kotlin");
   assert.equal(r.ok, false);
   assert.equal(r.errors, 1);
