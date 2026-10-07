@@ -1645,9 +1645,9 @@ When a change is asked for, follow what this repository already does and carry i
 Generated files: 2 under .claude/rules/anatomiya-*.md
 Any other file there was not written by this tool.
 `;
-// The record as the build before the targets wrote it, apart from the schema number.
+// The record as the build before the targets wrote it.
 const BEFORE_FACTS = {
-  schema: 20,
+  schema: 19,
   root: "<root>",
   scannedAt: "2026-01-01T00:00:00.000Z",
   corpus: { files: 100, truncated: false, dropped: {}, orphaned: 8 },
@@ -1716,6 +1716,9 @@ test("with no target asked for and none on, the plan and the disk are what they 
   const record = readFileSync(join(dir, STORE, "facts.json"), "utf8");
   assert.equal(record, JSON.stringify({ ...BEFORE_FACTS, root: dir }, null, 2) + "\n", "the record's bytes, key order included");
   assert.equal("targets" in JSON.parse(record), false);
+  const { record: stamp, ...layout } = JSON.parse(readFileSync(join(dir, STORE, "layout.json"), "utf8"));
+  assert.deepEqual(layout, { schema: 19, layout: null });
+  assert.deepEqual(Object.keys(stamp), ["size", "mtimeMs"]);
   for (const t of OTHERS) {
     assert.deepEqual(
       { state: targets[t.id].state, on: targets[t.id].on, write: targets[t.id].write, remove: targets[t.id].remove },
