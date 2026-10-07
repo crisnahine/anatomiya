@@ -228,6 +228,12 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   Ruby finding inside a method of a class is matched to that class and prints it beside the
   method, `Importer#run`, where 0.13.4 printed `run`. JavaScript has the same misplacement for
   two classes in one file with a method of the same name, and this version does not fix it.
+- `check` judged a file renamed from a name that is no source against its old text. `notes.txt`
+  renamed to `notes.js` with nothing edited was parsed as JavaScript at the merge base, every site
+  in it was taken for one the base already held, and nothing was reported. Where the text was not
+  JavaScript, a `.txt` renamed to `.rb`, the file was skipped with a false `did not parse at the
+  merge base`. A file that was no source at the base is new to the map, and this version checks
+  it as an added file: every site in it is the branch's.
 
 ## [0.13.4] - 2026-10-07
 
