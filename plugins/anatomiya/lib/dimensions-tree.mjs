@@ -278,7 +278,7 @@ export const TREE_DIMENSIONS = [
     key: "declared_return_type",
     tier: "syntactic",
     claim: "functions declare what they return",
-    counterClaim: null, // an unannotated function is an absence, and the inverse would tell an agent to delete types
+    counterClaim: "functions declare no return type",
     precision: "precise",
     applicabilityPredicate: {
       sites: "a Python or PHP file outside the tests declaring a named function or method, at any depth; a lambda, a closure and an arrow function carry no name and are not sites, and neither is a Python method named with double underscores on both sides or a PHP __construct or __destruct",
