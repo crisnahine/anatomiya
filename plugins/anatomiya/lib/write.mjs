@@ -10,6 +10,7 @@ import {
   auditRules,
   blockedOnTheWay,
   isGeneratedName,
+  isMapName,
   knownNames,
   leafReplaceable,
   outsideClaude,
@@ -227,8 +228,9 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   //
   // A target left out by name is the exception to asking the record: a clone
   // can hold the files and not the store, and then no scan could turn it off.
-  // The name and the key decide there, which is what the person asked for.
-  const mine = explicit && !on ? [...audit.ours, ...audit.unknown].sort() : audit.ours;
+  // The key decides there, for a name a scan gives a file: a copy somebody
+  // kept under another name carries the key too.
+  const mine = explicit && !on ? [...audit.ours, ...audit.unknown.filter((f) => isMapName(f, target))].sort() : audit.ours;
   const stale = blind ? [] : mine.filter((f) => !planned.has(f) && !heldNames.has(f));
   // Claude Code's two directories were held to this before anything was read.
   if (!target.always && (names.length > 0 || stale.length > 0)) refuseNonDirectory(root, target.dir);

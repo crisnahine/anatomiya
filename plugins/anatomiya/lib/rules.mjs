@@ -132,6 +132,20 @@ export function isGeneratedName(name, target = TARGETS.claude) {
 }
 
 /**
+ * A name a scan gives a file: the overview's, or an area's eight hex digits.
+ *
+ * Narrower than the rule above, for the two directories people write in by
+ * hand. A copy somebody kept of a generated file carries the key and the
+ * prefix, so there only a name this tool can produce is its to remove.
+ */
+export function isMapName(name, target = TARGETS.claude) {
+  if (!isGeneratedName(name, target)) return false;
+  return name === overviewName(target) || AREA_STEM.test(name.slice(0, -target.ext.length));
+}
+
+const AREA_STEM = /^anatomiya-area-[0-9a-f]{8}$/;
+
+/**
  * The filenames the map on disk says this build wrote, or `null` when there is
  * no map to ask.
  *
@@ -145,7 +159,7 @@ export function knownNames(facts, target = TARGETS.claude) {
   if (target.id !== TARGETS.claude.id) {
     // Stored rather than derived: a target has no file for an area it cannot spell.
     const listed = facts.targets?.[target.id];
-    return Array.isArray(listed) ? new Set(listed.filter((n) => isGeneratedName(n, target))) : null;
+    return Array.isArray(listed) ? new Set(listed.filter((n) => isMapName(n, target))) : null;
   }
   const names = new Set([OVERVIEW_FILE]);
   for (const a of facts.areas) {
