@@ -872,6 +872,9 @@ test("a doctor asks every engine and the optional checker, and answers a line ea
   assert.deepEqual([...new Set(rows.map((r) => r.engine))], [...PROBE_IDS]);
   assert.equal(lines.length, rows.length, "an extra answers a line of its own");
   assert.ok(lines.some((l) => l.startsWith("oxc ")), lines.join("\n"));
+  const treeSitter = lines.filter((l) => l.startsWith("tree-sitter "));
+  assert.equal(treeSitter.length, 1, "one line for the engine and its grammars together");
+  assert.match(treeSitter[0], /^tree-sitter \d+\.\d+\.\d+ ok \(grammars: 7 of 7\)$/);
 });
 
 /**
@@ -944,7 +947,7 @@ test("a setup on Windows refuses rather than spawning an npm it cannot start", a
 
   assert.equal(ok, false);
   assert.equal(ran, false);
-  assert.deepEqual(needed, ["oxc", "flow-remove-types", "typescript"], "the copy has no node_modules, so there is something to install");
+  assert.deepEqual(needed, ["oxc", "flow-remove-types", "tree-sitter", "typescript"], "the copy has no node_modules, so there is something to install");
   assert.match(output, /npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund/, output);
   // Compared as the same directory rather than as the same string: node
   // resolves a module's own path, so `pluginRoot()` answers the realpath while

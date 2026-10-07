@@ -18,6 +18,33 @@ import {
   embeddedIn,
 } from "../plugins/anatomiya/lib/langs.mjs";
 
+const TREE_SITTER = ["python", "php", "go", "java", "csharp", "rust", "kotlin"];
+
+test("a language tree-sitter reads declares its extensions, one grammar named after it, and nothing it cannot answer", () => {
+  const EXTS = { python: ["py"], php: ["php"], go: ["go"], java: ["java"], csharp: ["cs"], rust: ["rs"], kotlin: ["kt", "kts"] };
+  for (const id of TREE_SITTER) {
+    const decl = declOf(id);
+    assert.deepEqual(decl.exts, EXTS[id], id);
+    assert.deepEqual(decl.filenames, [], id);
+    assert.equal(decl.fallback, false, id);
+    for (const ext of decl.exts) assert.equal(grammarFor(id, `src/a.${ext}`), id, `.${ext}`);
+    assert.deepEqual(decl.positions, { offsets: "utf16", lines: false }, id);
+    assert.equal(langHas(id, "semantic"), false, id);
+    assert.equal(langHas(id, "importGraph"), false, id);
+    assert.equal(decl.dialect, null, id);
+    assert.equal(decl.commonjs, null, id);
+    assert.equal(decl.typed, null, id);
+  }
+  // A stub describes types rather than anything anyone wrote.
+  assert.equal(language("src/a.pyi"), "js");
+  assert.deepEqual(ENGINES["tree-sitter"], {
+    id: "tree-sitter",
+    host: "node",
+    module: "web-tree-sitter",
+    remedy: "node bin/anatomiya.mjs setup in the plugin directory",
+  });
+});
+
 test("the Flow retry covers every JavaScript extension the corpus accepts", () => {
   // The retry used to carry its own list of extensions, so adding one to the
   // table above left it silently uncovered: the file entered the corpus, oxc
@@ -50,10 +77,10 @@ test("only .js and .cjs may run under Node's own CommonJS wrapper", () => {
   for (const ext of EXT_BY_LANG.ruby) assert.equal(mayBeCommonJS(`app/a.${ext}`), false, `.${ext}`);
 });
 
-test("the registry declares five languages, frozen, in engine-group order", () => {
+test("the registry declares twelve languages, frozen, in engine-group order", () => {
   assert.deepEqual(
     LANGUAGES.map((l) => l.id),
-    ["js", "jsx", "vue", "svelte", "ruby"]
+    ["js", "jsx", "vue", "svelte", "ruby", "python", "php", "go", "java", "csharp", "rust", "kotlin"]
   );
   for (const decl of LANGUAGES) assert.ok(Object.isFrozen(decl), decl.id);
 });
@@ -97,13 +124,15 @@ test("every language names the family a test of it may be written in", () => {
   // tested by a Ruby spec.
   for (const id of ["js", "jsx", "vue", "svelte"]) assert.equal(familyOf(id), "js", id);
   assert.equal(familyOf("ruby"), "ruby");
-  assert.throws(() => familyOf("python"), /python/);
+  // Seven languages on one engine, and a Go test is no test of a Python file.
+  for (const id of TREE_SITTER) assert.equal(familyOf(id), id, id);
+  assert.throws(() => familyOf("swift"), /swift/);
 });
 
 test("only the two component languages name a script extractor", () => {
   assert.equal(embeddedIn("vue"), "vue");
   assert.equal(embeddedIn("svelte"), "svelte");
-  for (const id of ["js", "jsx", "ruby"]) assert.equal(embeddedIn(id), null, id);
+  for (const id of ["js", "jsx", "ruby", ...TREE_SITTER]) assert.equal(embeddedIn(id), null, id);
 });
 
 test("a component language retries no dialect and claims no checker", () => {
@@ -165,7 +194,7 @@ test("a scratch name routes back to its own declaration", () => {
 });
 
 test("an undeclared id refuses loudly", () => {
-  assert.throws(() => declOf("python"), /python/);
+  assert.throws(() => declOf("swift"), /swift/);
 });
 
 test("a declaration retrying a commonjs wrapper for an extension it does not own refuses to load", () => {
@@ -208,7 +237,8 @@ test("the engine a language routes to is read off its declaration", () => {
   assert.equal(engineOf("vue"), "oxc");
   assert.equal(engineOf("svelte"), "oxc");
   assert.equal(engineOf("ruby"), "prism");
-  assert.throws(() => engineOf("python"), /python/);
+  for (const id of TREE_SITTER) assert.equal(engineOf(id), "tree-sitter", id);
+  assert.throws(() => engineOf("swift"), /swift/);
 });
 
 test("the sentence for an absent stripper names the module the engine declares", () => {

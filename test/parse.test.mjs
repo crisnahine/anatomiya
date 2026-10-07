@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
+import { needsSymlinks } from "./platform.mjs";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
+import { installLacking } from "./plugin-install.mjs";
 
 import { parseAll, poolSizeFor } from "../plugins/anatomiya/lib/parse.mjs";
 import { GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
@@ -111,6 +113,89 @@ test("the Ruby bridge reports its own engine's version the same way", needsRuby,
   const out = await parseAll([{ rel: "a.rb", source: "class A\nend\n", lang: "ruby" }]);
 
   assert.match(out.engines.prism.version, /^\d+\.\d+/);
+});
+
+test("a batch of one Python, one TypeScript and one Ruby file comes back read, and the run names all three engines", needsRuby, async () => {
+  const out = await parseAll([
+    { rel: "a.py", source: "x = 1\n", lang: "python" },
+    { rel: "a.ts", source: "export const a = 1\n", lang: "js" },
+    { rel: "a.rb", source: "class A\nend\n", lang: "ruby" },
+  ]);
+
+  assert.deepEqual([...out.records.values()].map((r) => [r.rel, r.kind]), [["a.ts", "ok"], ["a.rb", "ok"], ["a.py", "ok"]], "in the registry's engine order");
+  assert.deepEqual(Object.keys(out.engines), ["oxc", "prism", "tree-sitter"]);
+  for (const [id, engine] of Object.entries(out.engines)) assert.match(engine.version, /^\d+\.\d+/, id);
+  assert.deepEqual(out.missingEngines, []);
+  assert.deepEqual(out.missingGrammars, []);
+});
+
+/** `parseAll` run out of another install of the plugin, since which modules resolve there is the thing under test. */
+function parseAllFrom(install, files) {
+  const script = `
+    import { parseAll } from ${JSON.stringify(pathToFileURL(join(install, "lib", "parse.mjs")).href)};
+    const out = await parseAll(${JSON.stringify(files)});
+    process.stdout.write(JSON.stringify({ ...out, records: [...out.records.values()] }));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+}
+
+test("an install older than the tree-sitter runtime costs that engine's languages and no other", needsSymlinks, (t) => {
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+
+  const out = parseAllFrom(install, [
+    { rel: "a.py", source: "x = 1\n", lang: "python" },
+    { rel: "a.ts", source: "export const a = 1\n", lang: "js" },
+  ]);
+
+  const [ts, py] = out.records;
+  assert.equal(ts.kind, "ok");
+  assert.equal(py.kind, "unreadable");
+  assert.equal(py.missingParser, true);
+  assert.notEqual(py.crashed, true, "the worker started and said what is missing");
+  assert.match(out.missingParser, /^web-tree-sitter is not installed: /);
+  assert.deepEqual(out.missingEngines, ["tree-sitter"]);
+  assert.deepEqual(out.missingGrammars, []);
+  assert.equal(out.engines["tree-sitter"].version, null, "an engine that did not load reports no version");
+  assert.match(out.engines.oxc.version, /^\d+\.\d+/);
+});
+
+test("a runtime that is installed and will not load reports no version, so nothing reads it as having run", needsSymlinks, (t) => {
+  // The manifest is there and the module throws: a version on the ready
+  // message would have the summary say the engine ran and answered for nothing.
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+  const broken = join(install, "node_modules", "web-tree-sitter");
+  mkdirSync(broken);
+  writeFileSync(join(broken, "package.json"), JSON.stringify({ name: "web-tree-sitter", version: "9.9.9", type: "module", exports: "./index.js" }));
+  writeFileSync(join(broken, "index.js"), 'throw new Error("its wasm is gone");\n');
+
+  const out = parseAllFrom(install, [{ rel: "a.py", source: "x = 1\n", lang: "python" }]);
+
+  assert.equal(out.records[0].kind, "unreadable");
+  assert.equal(out.missingParser, "web-tree-sitter is not installed: its wasm is gone");
+  assert.deepEqual(out.missingEngines, ["tree-sitter"]);
+  assert.equal(out.engines["tree-sitter"].version, null);
+});
+
+test("a grammar file that is gone costs its own language, and the engine goes on reading the rest", needsSymlinks, (t) => {
+  const install = installLacking(t, { grammars: ["kotlin"] });
+
+  const out = parseAllFrom(install, [
+    { rel: "a.py", source: "x = 1\n", lang: "python" },
+    { rel: "a.kt", source: "val x = 1\n", lang: "kotlin" },
+    { rel: "b.kts", source: "val y = 2\n", lang: "kotlin" },
+  ]);
+
+  const [py, kt, kts] = out.records;
+  assert.equal(py.kind, "ok");
+  for (const r of [kt, kts]) {
+    assert.equal(r.kind, "unreadable", r.rel);
+    assert.equal(r.missingParser, true, r.rel);
+    assert.equal(r.missingGrammar, "kotlin", r.rel);
+  }
+  assert.match(out.missingParser, /^grammars\/kotlin\.wasm did not load: /);
+  assert.deepEqual(out.missingGrammars, ["kotlin"], "named once, as the language it is");
+  assert.deepEqual(out.missingEngines, [], "the engine is there: it read the Python file");
+  assert.match(out.engines["tree-sitter"].version, /^\d+\.\d+/);
 });
 
 test("an interpreter that is not there names its own engine and no other", async (t) => {

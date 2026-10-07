@@ -998,7 +998,7 @@ test("mixed languages produce a brace-expanded extension list", () => {
 });
 
 test("a glob over no known language throws instead of matching nothing", () => {
-  assert.throws(() => glob("src", ["python"]), /no known extensions/);
+  assert.throws(() => glob("src", ["swift"]), /no known extensions/);
   assert.throws(() => glob("src", []), /no known extensions/);
 });
 

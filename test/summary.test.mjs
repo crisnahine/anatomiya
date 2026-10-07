@@ -423,6 +423,17 @@ test("an engine its own clock stopped before it answered is not called a missing
   assert.ok(!lines.some((l) => l.includes("setup")), lines.join("\n"));
 });
 
+test("a run that read no file of a language for want of its grammar says to reinstall, not to set up", () => {
+  const lines = scanLines(
+    summary({ uncounted: ["kotlin"], held: 1, engines: { "tree-sitter": { version: "0.27.0" } }, missingGrammars: ["kotlin"] })
+  );
+
+  const at = lines.indexOf("read no kotlin file at all, so none was counted and 1 area holding one was left as the last scan wrote it");
+  assert.ok(at !== -1, lines.join("\n"));
+  assert.match(lines[at + 1], /^the plugin's kotlin grammar did not load: reinstall /);
+  assert.ok(!lines.some((l) => l.includes("setup") || l.includes("ran and answered")), lines.join("\n"));
+});
+
 test("a run blind to two languages names both", () => {
   assert.ok(
     scanLines(summary({ blind: ["js", "ruby"], wrote: 0 })).includes(

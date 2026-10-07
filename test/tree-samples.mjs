@@ -97,6 +97,8 @@ function format_total(int $cents): string
 {
     return number_format($cents / 100, 2);
 }
+?>
+<p>Totals are in cents.</p>
 `;
 
 export const go = `// Package billing adds up orders.
@@ -210,6 +212,7 @@ namespace Billing
         int Total(Order order);
     }
 
+    [Obsolete("use Line")]
     public struct Money
     {
         public int Cents;
@@ -250,6 +253,10 @@ impl fmt::Display for Order {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.total())
     }
+}
+
+mod units {
+    pub const CENTS: i64 = 100;
 }
 
 pub fn describe(order: &Order) -> String {

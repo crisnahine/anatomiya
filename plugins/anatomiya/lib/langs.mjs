@@ -27,6 +27,7 @@
 export const ENGINES = Object.freeze({
   oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory" },
   prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH" },
+  "tree-sitter": { id: "tree-sitter", host: "node", module: "web-tree-sitter", remedy: "node bin/anatomiya.mjs setup in the plugin directory" },
 });
 
 const STRIPPER = ENGINES.oxc.extras.find((e) => e.role === "stripper");
@@ -137,6 +138,35 @@ const ruby = {
   positions: { offsets: null, lines: true },
 };
 
+// A language tree-sitter reads whole, through the one grammar file named after
+// its id. The family is its own: a Go test is no test of a Python file.
+const grammar = (id, exts) => ({
+  id,
+  fallback: false,
+  engine: "tree-sitter",
+  family: id,
+  embedded: null,
+  exts,
+  filenames: [],
+  scratchExt: exts[0],
+  grammars: { byExtension: {}, default: id },
+  dialect: null,
+  commonjs: null,
+  typed: null,
+  capabilities: { semantic: false, importGraph: false },
+  positions: { offsets: "utf16", lines: false },
+});
+
+// `.pyi` is deliberately absent, as `.rbi` is: a stub describes types rather
+// than anything anyone wrote.
+const python = grammar("python", ["py"]);
+const php = grammar("php", ["php"]);
+const go = grammar("go", ["go"]);
+const java = grammar("java", ["java"]);
+const csharp = grammar("csharp", ["cs"]);
+const rust = grammar("rust", ["rs"]);
+const kotlin = grammar("kotlin", ["kt", "kts"]);
+
 const freeze = (decl) => {
   Object.freeze(decl.exts);
   Object.freeze(decl.filenames);
@@ -162,7 +192,7 @@ const freeze = (decl) => {
 // The extractors `sfc.mjs` implements, which is what `embedded` may name.
 const EXTRACTORS = ["vue", "svelte"];
 
-export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby].map(freeze));
+export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby, python, php, go, java, csharp, rust, kotlin].map(freeze));
 
 const BY_ID = new Map(LANGUAGES.map((l) => [l.id, l]));
 const EXT_TO_ID = new Map(LANGUAGES.flatMap((l) => l.exts.map((e) => [e, l.id])));

@@ -22,7 +22,7 @@ import { droppedSlots, unexaminedPhrase } from "./render.mjs";
 import { auditRules, isLink, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
-import { remedyFor } from "./readiness.mjs";
+import { remedyForMissing } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
 import { isTestPath, precedentFindings } from "./precedent.mjs";
@@ -232,7 +232,7 @@ export async function check(cwd, { baseRef = null } = {}) {
       "the corpus could not be listed, so no routing claim was checked"))
     : new Set();
 
-  const { findings, missingEngines, missingParser } = await collect(root, {
+  const { findings, missingEngines, missingGrammars, missingParser } = await collect(root, {
     examined,
     areas,
     base,
@@ -350,7 +350,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     caveats,
     // Which engine is absent, beside the message it produced: the remedy is
     // the engine's and npm cannot install an interpreter.
-    parse: { missingParser, missingEngines },
+    parse: { missingParser, missingEngines, missingGrammars },
     semantic: { claims: semanticClaims },
     foreign,
     unknown,
@@ -765,7 +765,7 @@ async function collect(root, run) {
       }
     }
 
-    const { records: parsed, missingEngines, missingParser, missingStripper } = await parseAll(entries, { withProgram: true });
+    const { records: parsed, missingEngines, missingGrammars, missingParser, missingStripper } = await parseAll(entries, { withProgram: true });
     const findings = [];
 
     // Per area, as the fold holds them: a base one changed file adds is what
@@ -911,10 +911,10 @@ async function collect(root, run) {
     // what to do: a check that examined files of another language now goes on
     // for them rather than refusing over this (B41), so it says so once.
     if (missingParser) {
-      caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyFor(missingEngines[0])}, then check again`);
+      caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyForMissing({ missingEngines, missingGrammars })}, then check again`);
     }
 
-    return { findings, missingParser, missingEngines };
+    return { findings, missingParser, missingEngines, missingGrammars };
   } finally {
     // The sources the report quotes are held in the parent, so nothing past
     // here needs the files: leaving them until the run ends would keep two

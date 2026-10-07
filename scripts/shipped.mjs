@@ -108,14 +108,12 @@ function declarationIn(root, manifest) {
  * is a value and not a name a pattern can look for. A call that is neither
  * resolves to a path that is not a file, and the walk drops it.
  */
-const SPECIFIERS = [
-  /(?:from|import)\s*(["'])(\.[^"']*)\1/g,
-  /\(\s*(["'])(\.[^"']*)\1\s*\)/g,
-  // A sibling resolved rather than imported. Both of this tool's workers are
-  // started this way, `new URL("./parse-worker.mjs", import.meta.url)` handed
-  // to a child process, so nothing imports the two files it cannot run without.
-  /new\s+URL\s*\(\s*(["'])(\.[^"']*)\1/g,
-];
+// A sibling resolved rather than imported. This tool's workers are started
+// this way, `new URL("./parse-worker.mjs", import.meta.url)` handed to a child
+// process, so nothing imports the files it cannot run without.
+const RESOLVED = /new\s+URL\s*\(\s*(["'])(\.[^"']*)\1/g;
+
+const SPECIFIERS = [/(?:from|import)\s*(["'])(\.[^"']*)\1/g, /\(\s*(["'])(\.[^"']*)\1\s*\)/g, RESOLVED];
 
 /**
  * What ends a sentence rather than a filename.
@@ -160,7 +158,7 @@ export function reachableFrom(root, entries) {
   const queue = entries.map((rel) => ({ rel, from: null }));
 
   while (queue.length > 0) {
-    const { rel, from } = queue.shift();
+    const { rel, from, held = false } = queue.shift();
     if (files.has(rel)) continue;
     const path = join(root, rel);
     if (!isFile(path)) {
@@ -174,12 +172,19 @@ export function reachableFrom(root, entries) {
       continue;
     }
     files.add(rel);
+    // Read by name out of a directory, so it is data: nothing in it is a specifier.
+    if (held) continue;
 
     const body = readFileSync(path, "utf8");
     for (const pattern of SPECIFIERS) {
       for (const [, , specifier] of body.matchAll(pattern)) {
         const reached = inside(root, resolve(dirname(path), specifier));
-        if (reached !== null) queue.push({ rel: reached, from: null });
+        if (reached === null) continue;
+        // A directory resolved this way is read from by a name chosen at run
+        // time, as the grammars are, so every file in it is one the plugin loads.
+        if (pattern === RESOLVED && isDirectory(join(root, reached))) {
+          for (const file of filesIn(root, reached)) queue.push({ rel: file, from: null, held: true });
+        } else queue.push({ rel: reached, from: null });
       }
     }
     // Read in every file rather than in the entry points alone. The loader
@@ -274,6 +279,14 @@ export function pluginRootsIn(marketplace) {
 function isFile(path) {
   try {
     return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isDirectory(path) {
+  try {
+    return statSync(path).isDirectory();
   } catch {
     return false;
   }

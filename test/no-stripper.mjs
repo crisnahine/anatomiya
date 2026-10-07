@@ -17,7 +17,7 @@ export function installWithoutStripper(t) {
   const home = mkdtempSync(join(tmpdir(), "anatomiya-nostrip-"));
   t.after(() => rmSync(home, { recursive: true, force: true }));
 
-  for (const d of ["lib", "bin"]) cpSync(join(ANATOMIYA, d), join(home, d), { recursive: true });
+  for (const d of ["lib", "bin", "grammars"]) cpSync(join(ANATOMIYA, d), join(home, d), { recursive: true });
   mkdirSync(join(home, "node_modules"), { recursive: true });
   // Everything the parser needs, and deliberately not the stripper. hermes is
   // the stripper's own dependency and goes with it.

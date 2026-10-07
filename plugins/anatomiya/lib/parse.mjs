@@ -24,10 +24,13 @@
  * version per engine that ran, and `missingEngines` names the ones whose
  * install is absent, so a caller can spell the remedy for the engine that is
  * actually missing rather than for whichever one it thought of first.
+ * `missingGrammars` names the languages whose grammar file an engine that is
+ * there could not load: one language's loss, with a remedy of its own.
  */
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createPool, defaultPoolSize } from "./pool.mjs";
 import { parseRuby } from "./ruby.mjs";
@@ -115,11 +118,9 @@ function guardsFor(bag, files) {
   return merged;
 }
 
-// oxc runs in a pool of warm child processes because `parseSync` can raise an
-// uncatchable SIGSEGV, and a process boundary is the only thing that contains
-// one (B2).
-async function runOxc(files, { engine, withProgram, guards }) {
-  const pool = createPool({ size: poolSizeFor(files.length), withProgram, guards });
+// One batch through a pool of warm child processes, each hosting `worker`.
+async function runPool(files, { engine, withProgram, guards }, worker) {
+  const pool = createPool({ size: poolSizeFor(files.length), withProgram, guards, worker, engine });
   try {
     const results = await Promise.all(files.map((f) => pool.parse(f)));
     // Read after the parses, because the version arrives on a worker's ready
@@ -129,6 +130,20 @@ async function runOxc(files, { engine, withProgram, guards }) {
     await pool.close();
   }
 }
+
+// oxc runs in the pool because `parseSync` can raise an uncatchable SIGSEGV,
+// and a process boundary is the only thing that contains one (B2). The pool's
+// own default worker is oxc's.
+const runOxc = (files, options) => runPool(files, options);
+
+// Absolute, because a forked child starts in the temp directory and a relative
+// path would be looked for there.
+const TREE_SITTER_WORKER = fileURLToPath(new URL("./tree-sitter-worker.mjs", import.meta.url));
+
+// tree-sitter runs in the pool because its wasm heap is capped and never
+// shrinks: once a file fills it, every later parse in that process fails, and
+// a new process is the only thing that recovers.
+const runTreeSitter = (files, options) => runPool(files, options, TREE_SITTER_WORKER);
 
 // prism is safe in-process, so it needs no pool; it runs in Ruby, so there is
 // a process boundary anyway and it is a streamed one (B4).
@@ -152,7 +167,7 @@ async function runPrism(files, { withProgram, guards, frameworks }) {
 // reaches child_process, so a declaration names its engine and this map is
 // where the name becomes a call. A fourth language on an existing engine adds
 // no row here; a new engine adds one, deliberately visible.
-const ADAPTERS = { oxc: runOxc, prism: runPrism };
+const ADAPTERS = { oxc: runOxc, prism: runPrism, "tree-sitter": runTreeSitter };
 
 // Batch order is the registry's, derived rather than trusted to the table
 // above: records insertion order feeds downstream ties, and a new engine
@@ -206,6 +221,7 @@ async function run(files, { withProgram, guards, frameworks }) {
   const tallies = Object.fromEntries(PARSE_OUTCOMES.map((kind) => [kind, 0]));
   const engines = {};
   const missingEngines = [];
+  const missingGrammars = [];
   let missingParser = null;
   let missingStripper = false;
   let truncated = false;
@@ -218,8 +234,10 @@ async function run(files, { withProgram, guards, frameworks }) {
     if (r.missingParser) {
       if (!missingParser) missingParser = r.error;
       // Which engine, because the remedy differs: npm installs one of them and
-      // cannot install the other.
-      if (!missingEngines.includes(engine)) missingEngines.push(engine);
+      // cannot install the other. A grammar that did not load is not the
+      // engine missing: the engine answered, and went on to its other languages.
+      const [list, name] = r.missingGrammar ? [missingGrammars, r.missingGrammar] : [missingEngines, engine];
+      if (!list.includes(name)) list.push(name);
     }
     // One rejected file that could have been retried is enough: the dependency
     // is absent for the whole run, not for that file.
@@ -254,5 +272,5 @@ async function run(files, { withProgram, guards, frameworks }) {
     truncated = truncated || out.truncated;
   }
 
-  return { records, tallies, truncated, engines, missingEngines, missingParser, missingStripper };
+  return { records, tallies, truncated, engines, missingEngines, missingGrammars, missingParser, missingStripper };
 }

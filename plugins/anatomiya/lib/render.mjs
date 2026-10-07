@@ -1,6 +1,6 @@
 import { encode, encodePath } from "./encode.mjs";
-import { engineOf, MISSING_STRIPPER } from "./langs.mjs";
-import { whyUnread } from "./readiness.mjs";
+import { MISSING_STRIPPER } from "./langs.mjs";
+import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { globText } from "./areas.mjs";
@@ -239,8 +239,8 @@ export function unexaminedLines(parse, { stable = false } = {}) {
 // closed rather than exhaustive: missing one here means silence about it,
 // never a wrong name for it.
 const OTHER_LANGUAGE_EXTS = new Set([
-  ".java", ".kt", ".kts", ".rs", ".go", ".py", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh",
-  ".cs", ".swift", ".php", ".scala", ".m", ".mm", ".ex", ".exs", ".pl", ".pm",
+  ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh",
+  ".swift", ".scala", ".m", ".mm", ".ex", ".exs", ".pl", ".pm",
 ]);
 
 /**
@@ -828,11 +828,7 @@ function overviewTail(result, files) {
  * Empty on a run that read every language it holds.
  */
 function unreadLines(parse) {
-  const langs = parse?.unreadable ?? [];
-  return [...new Set(langs.map(engineOf))].map((id) => {
-    const of = langs.filter((l) => engineOf(l) === id);
-    return `no ${of.join(" or ")} file was read: ${whyUnread(id, parse.engines)}`;
-  });
+  return unreadReasons(parse?.unreadable ?? [], parse ?? {}).map(({ langs, why }) => `no ${langs.join(" or ")} file was read: ${why}`);
 }
 
 /**
