@@ -666,7 +666,12 @@ const BEFORE_JSON =
   '{\n  "schema": 2,\n  "files": 40,\n  "areas": 1,\n  "durationMs": 12,\n  "root": "/repo",\n  "untracked": 0,\n  "claims": {\n    "stated": 1,\n    "matchingDefault": 1,\n    "total": 3\n  },\n  "engines": {\n    "oxc": {\n      "version": "0.144.0"\n    }\n  },\n  "layoutLine": null,\n  "baseline": {\n    "status": "unpinned",\n    "sha": null,\n    "drift": null,\n    "baseRef": null,\n    "countsOnly": true,\n    "unreadable": null\n  },\n  "hookRemoved": false,\n  "hookRefused": null,\n  "truncated": false,\n  "orphaned": 0,\n  "barren": 0,\n  "unreadFiles": 0,\n  "unexamined": [],\n  "semantic": null,\n  "historyError": null,\n  "historyTruncated": null,\n  "authorGated": 0,\n  "rules": {\n    "foreign": [],\n    "unknown": [],\n    "unreadable": [],\n    "listed": true,\n    "replaced": []\n  },\n  "removed": 0,\n  "wrote": 2,\n  "blind": [],\n  "uncounted": [],\n  "held": 0,\n  "dryRun": false\n}\n';
 
 test("with no other target on and none asked for, the lines and the record are what they were", () => {
-  for (const p of [plan(), plan(others())]) {
+  // Off and never asked for, or unread with no file recorded there: whatever the directory holds is not this scan's to say.
+  const strangers = others(
+    { foreign: ["anatomiya-overview.mdc"], unknown: ["anatomiya-area-deadbeef.mdc"], unreadableRules: ["anatomiya-area-0badf00d.mdc"] },
+    { state: "unknown", reason: ".github is a link", listed: false }
+  );
+  for (const p of [plan(), plan(others()), plan(strangers)]) {
     const s = scanSummary(result(), p);
 
     assert.deepEqual(scanLines(s), BEFORE_LINES);
@@ -735,17 +740,35 @@ test("the areas a target has no file for are counted, and only the ones that hav
 });
 
 test("files under this tool's names that it did not write are counted where they were left", () => {
-  // Off and never asked for: a hand-written file at the overview's name is still said.
-  const off = scanSummary(result(), plan(others({ foreign: ["anatomiya-overview.mdc"] })));
+  const one = scanSummary(result(), plan(others({ state: "on", on: true, write: files(2), foreign: ["a"] })));
   const on = scanSummary(result(), plan(others({ state: "on", on: true, write: files(2), foreign: ["a"], unknown: ["b"] })));
+  // Turned off by this scan, so it is said once more on the way out.
+  const off = scanSummary(result(), plan(others({ state: "on", remove: ["c"], foreign: ["a"] })));
 
-  assert.deepEqual(off.targets, { cursor: { state: "off", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 1 } });
-  assert.deepEqual(scanLines(off).slice(-3), [
-    "wrote 2 files",
+  assert.equal(one.targets.cursor.foreign, 1);
+  assert.deepEqual(scanLines(one).slice(-3), [
+    "wrote 2 files under .cursor/rules for Cursor",
     ".cursor/rules holds 1 file with this tool's names that it did not write; it was left",
     RUNNING_SESSION,
   ]);
   assert.ok(scanLines(on).includes(".cursor/rules holds 2 files with this tool's names that it did not write; they were left"));
+  assert.ok(scanLines(off).includes(".cursor/rules holds 1 file with this tool's names that it did not write; it was left"));
+});
+
+test("a file that could not be read in a target this scan wrote is named under that directory, as one in .claude/rules is", () => {
+  const names = ["anatomiya-area-0badf00d.mdc", "anatomiya-area-deadbeef.mdc"];
+  const s = scanSummary(result(), plan({ unreadableRules: ["anatomiya-area-1.md"], ...others({ state: "on", on: true, write: files(2), unreadableRules: names }) }));
+
+  assert.deepEqual(s.targets.cursor, { state: "on", dir: ".cursor/rules", wrote: 2, removed: 0, unfiled: 0, foreign: 0, unreadable: names });
+  assert.deepEqual(scanLines(s).slice(-4), [
+    "wrote 2 files under .cursor/rules for Cursor",
+    '"anatomiya-area-0badf00d.mdc" in .cursor/rules/ could not be read, so whose it is was not established',
+    '"anatomiya-area-deadbeef.mdc" in .cursor/rules/ could not be read, so whose it is was not established',
+    RUNNING_SESSION,
+  ]);
+  assert.ok(scanLines(s).includes('"anatomiya-area-1.md" in .claude/rules/ could not be read, so whose it is was not established'));
+  const crafted = scanSummary(result(), plan(others({ state: "on", on: true, write: files(2), unreadableRules: ["anatomiya-ev\u202eli.mdc"] })));
+  assert.doesNotMatch(JSON.parse(scanJson(crafted)).targets.cursor.unreadable[0], /\u202e/);
 });
 
 test("a target that was on and could not be read says why, and one never written says nothing", () => {

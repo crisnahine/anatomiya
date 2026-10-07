@@ -128,8 +128,9 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
 /**
  * What the scan did in each other directory the map goes to, by target id.
  *
- * A target that is off, was not asked for and holds nothing under this tool's
- * names has no entry, so a repository that never named one reads as it did.
+ * A target this scan found off and left off has no entry, whatever its
+ * directory holds: that is somebody else's directory until a scan is asked to
+ * write there, and a repository that never named one reads as it did.
  * `state` is the one the scan leaves behind, or would on a dry run.
  */
 function targetSummaries(result, plan) {
@@ -140,7 +141,7 @@ function targetSummaries(result, plan) {
     const unread = t.state === "unknown";
     const foreign = t.foreign.length + t.unknown.length;
     // One nobody could read is said only where the record names files there.
-    const quiet = unread ? t.names.length === 0 : !t.on && t.state === "off" && t.remove.length === 0 && foreign === 0;
+    const quiet = unread ? t.names.length === 0 : !t.on && t.state === "off" && t.remove.length === 0;
     if (quiet) continue;
     out[id] = {
       state: unread || plan.blind ? t.state : t.on ? "on" : "off",
@@ -149,11 +150,15 @@ function targetSummaries(result, plan) {
       removed: t.remove.length,
       unfiled: t.unfiled.filter((path) => stated.has(path)).length,
       foreign,
+      ...(t.unreadableRules.length ? { unreadable: t.unreadableRules } : {}),
       ...(unread ? { reason: t.reason } : {}),
     };
   }
   return out;
 }
+
+const UNREAD_ONE = "could not be read, so whose it is was not established";
+const UNREAD_MANY = "could not be read, so whose they are was not established";
 
 /** The lines for the other directories, in the targets' own order. */
 function targetLines(s) {
@@ -178,6 +183,7 @@ function targetLines(s) {
           `${one(t.foreign) ? "it was" : "they were"} left`
       );
     }
+    lines.push(...ruleFileLines(t.unreadable ?? [], UNREAD_ONE, UNREAD_MANY, t.dir));
     if (t.state === "unknown") lines.push(`${t.dir} could not be read (${t.reason}), so nothing there was written or removed`);
   }
   return lines;
@@ -243,13 +249,7 @@ export function scanLines(s) {
     )
   );
   // Whose it is was never established, so neither sentence above is true of it.
-  lines.push(
-    ...ruleFileLines(
-      s.rules.unreadable,
-      "could not be read, so whose it is was not established",
-      "could not be read, so whose they are was not established"
-    )
-  );
+  lines.push(...ruleFileLines(s.rules.unreadable, UNREAD_ONE, UNREAD_MANY));
   if (!s.rules.listed) lines.push(`${RULES_DIR}/ could not be listed, so nothing in it was examined`);
   // A generated name is ours by construction, so this is not a refusal. It is
   // still the one case where a scan replaces a file somebody wrote by hand.
@@ -328,6 +328,9 @@ function encodeScan(s) {
       unreadable: s.rules.unreadable.map(locator),
       replaced: s.rules.replaced.map(locator),
     },
+    ...(s.targets
+      ? { targets: Object.fromEntries(Object.entries(s.targets).map(([id, t]) => [id, t.unreadable ? { ...t, unreadable: t.unreadable.map(locator) } : t])) }
+      : {}),
   };
 }
 
@@ -366,11 +369,11 @@ function blindLines(langs, engines) {
  * their verb: "and 2 more file(s) ... that was not written" gave one line two
  * numbers.
  */
-function ruleFileLines(names, one, many) {
+function ruleFileLines(names, one, many, dir = RULES_DIR) {
   const { shown, rest } = listSome(names, LISTED.report);
-  const lines = shown.map((name) => `${encodePath(name)} in ${RULES_DIR}/ ${one}`);
+  const lines = shown.map((name) => `${encodePath(name)} in ${dir}/ ${one}`);
   if (rest) {
-    lines.push(`and ${rest} more ${rest === 1 ? "file" : "files"} in ${RULES_DIR}/ that ${rest === 1 ? one : many}`);
+    lines.push(`and ${rest} more ${rest === 1 ? "file" : "files"} in ${dir}/ that ${rest === 1 ? one : many}`);
   }
   return lines;
 }

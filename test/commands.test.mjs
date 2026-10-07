@@ -551,12 +551,10 @@ test("a person's file at a name a named target writes refuses the scan in the wr
   });
   assert.equal(existsSync(join(dir, ".claude")), false);
 
-  // Not named, the target is off: the file stays and the scan says it is not ours.
+  // Not named, the target is off: the file stays and the scan has nothing to say about it.
   const { summary } = await runScan(dir);
-  assert.ok(
-    scanLines(summary).includes(".cursor/rules holds 1 file with this tool's names that it did not write; it was left"),
-    scanLines(summary).join("\n")
-  );
+  assert.equal("targets" in summary, false);
+  assert.equal(scanLines(summary).some((l) => l.includes(".cursor")), false, scanLines(summary).join("\n"));
   assert.equal(readFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "utf8"), "# mine\n");
 });
 
@@ -932,6 +930,9 @@ test("a doctor run inside a repository says which other targets are on there, an
   const dir = repo(t);
   const engines = (await runDoctor()).lines;
   assert.deepEqual((await runDoctor({ cwd: dir })).lines, engines, "nothing for a target that is off");
+  symlinkSync(join(dir, "src"), join(dir, ".cursor"));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines, engines, "nor for one nobody can read that no scan here wrote to");
+  rmSync(join(dir, ".cursor"));
 
   await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
   rmSync(join(dir, ".github"), { recursive: true });
