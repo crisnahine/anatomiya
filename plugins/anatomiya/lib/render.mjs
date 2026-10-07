@@ -1047,15 +1047,16 @@ export const truncatedHistoryLine = (shallow, gated = 0) =>
  * not named, because a repository whose own types are loose reads the same as
  * one whose checker could not be set up.
  *
- * A carried verdict counts nothing, since the checker did not run, and quotes
- * the rate of the run that measured it, by that run's day.
+ * A degraded tier prints no count, measured or carried. A carried verdict
+ * quotes the rate of the run that measured it, by that run's day, and those
+ * words are all that tell the two overviews apart.
  */
 export function degradedSemanticSentence(semantic) {
   if (!semantic || semantic.status !== "degraded" || (semantic.ran !== true && semantic.carried !== true)) return null;
   const rate = semantic.typedResolutionRate;
   const pct = rate === null || rate === undefined ? "no" : `${Math.round(rate * 100)}% of`;
-  if (semantic.carried !== true) return `type-checked claims are counts only: ${pct} type lookups resolved (${semantic.reason})`;
-  return `type-checked claims are not counted: ${pct} type lookups resolved when measured ${String(semantic.measuredAt).slice(0, 10)} (${semantic.reason})`;
+  const measured = semantic.carried === true ? ` when measured ${String(semantic.measuredAt).slice(0, 10)}` : "";
+  return `type-checked claims are not counted: ${pct} type lookups resolved${measured} (${semantic.reason})`;
 }
 
 const count = (xs, noun) => plural(xs.length, noun);

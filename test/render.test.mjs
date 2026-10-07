@@ -2658,11 +2658,11 @@ test("the summary and the overview word a degraded tier with one sentence", () =
   // drifted once on a count they both print.
   assert.equal(
     degradedSemanticSentence({ ran: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.1495 }),
-    "type-checked claims are counts only: 15% of type lookups resolved (low-resolution)"
+    "type-checked claims are not counted: 15% of type lookups resolved (low-resolution)"
   );
   assert.equal(
     degradedSemanticSentence({ ran: true, status: "degraded", reason: "no-checker", typedResolutionRate: null }),
-    "type-checked claims are counts only: no type lookups resolved (no-checker)"
+    "type-checked claims are not counted: no type lookups resolved (no-checker)"
   );
 
   // Carried by a refresh: nothing was counted, and the rate is the last run's.
@@ -2683,7 +2683,7 @@ test("the overview says a degraded tier through the shared sentence", () => {
     { uncovered: 0 }
   );
 
-  assert.match(out, /^- type-checked claims are counts only: 15% of type lookups resolved \(low-resolution\)$/m, out);
+  assert.match(out, /^- type-checked claims are not counted: 15% of type lookups resolved \(low-resolution\)$/m, out);
 });
 
 test("the overview says a carried verdict in the same one line", () => {
@@ -2692,7 +2692,7 @@ test("the overview says a carried verdict in the same one line", () => {
   const out = renderOverview(result({ semantic }), { uncovered: 0 });
 
   assert.match(out, /^- type-checked claims are not counted: 15% of type lookups resolved when measured 2026-10-08 \(low-resolution\)$/m, out);
-  assert.equal(out.split("\n").length, measured.split("\n").length, "a carried verdict took another line");
+  assert.equal(out.replace(" when measured 2026-10-08", ""), measured, "a carried verdict and a measured one differ by more than the mark");
 });
 
 /* --- which directives a file had no room to state (#70) --- */

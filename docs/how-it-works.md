@@ -445,8 +445,9 @@ names. A background refresh leaves it off in one more case: the record's tier re
 a run measured it, and the stamp it was measured under still holds, which is this build's version,
 whether the root holds packages, where `typescript` resolves, and the name and bytes of the config
 the root is read through. The refresh then writes the recorded status, reason and rate with
-`semantic.carried` true and the run's `semantic.measuredAt`, counts no type-checked row, and the
-overview says `type-checked claims are not counted` with the rate and the day it was measured. A
+`semantic.carried` true and the run's `semantic.measuredAt`, and the overview's sentence adds the
+day it was measured. Every other byte of the map is what the measuring scan wrote, since a degraded
+tier's rows are in neither. A
 scan run by hand always measures, and so does a refresh after any of those moved; an `ok` tier is
 measured on every refresh (B8). A pin does not switch it off: a pinned file unchanged since the pin reuses its working-tree
 record, type-checked hits included, so an area whose checked pinned files are all unchanged is
@@ -470,7 +471,8 @@ second scan in one process sees the tree as it is then.
 
 The checker builds one program over every JavaScript and TypeScript file, then measures the share
 of property accesses whose receiver resolved to a real type. Under 0.80 the tier is degraded and its
-claims print as counts only (B8). The share is taken over files in an area the map describes,
+rows leave the fold: no area file prints a count for one, `facts.json` holds no slot for one, and
+the overview says `type-checked claims are not counted` with the rate and the reason (B8). The share is taken over files in an area the map describes,
 because those are the only files a claim is counted over: one untyped minified bundle in no area
 took a repository whose own code resolved fully down to 3% and read as a broken tsconfig, and a
 directory of bundles that was discovered and then dropped for counting nothing did the same. Each

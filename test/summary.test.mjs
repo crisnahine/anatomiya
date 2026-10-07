@@ -1104,11 +1104,11 @@ test("a degraded semantic tier is on the summary, not only in the map", () => {
   // all said so; the terminal the caller was watching was the one surface that
   // did not.
   const lines = scanLines(
-    summary({ semantic: "type-checked claims are counts only: 15% of type lookups resolved (low-resolution)" })
+    summary({ semantic: "type-checked claims are not counted: 15% of type lookups resolved (low-resolution)" })
   );
 
   assert.ok(
-    lines.includes("type-checked claims are counts only: 15% of type lookups resolved (low-resolution)"),
+    lines.includes("type-checked claims are not counted: 15% of type lookups resolved (low-resolution)"),
     lines.join("\n")
   );
 });

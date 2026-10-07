@@ -612,10 +612,10 @@ otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
 `jsconfig.json` does not count. It costs: a scan with it measured about 5x a plain one on a
 3,800-file repository and about 10x on a 2,600-file one, and the checker is whole-program, so it
-cannot be narrowed to the files you changed. The map says when the checker answered badly. While
-that answer stands and the plugin version, the repository's packages and its root config are
-unchanged, a background refresh keeps the answer without running the checker, and prints no count
-for this claim; `/anatomiya:scan` always runs it. On four repositories that read degraded, that
+cannot be narrowed to the files you changed. The map says when the checker answered badly, and
+prints no count for this claim then. While that answer stands and the plugin version, the
+repository's packages and its root config are unchanged, a background refresh keeps the answer
+without running the checker; `/anatomiya:scan` always runs it. On four repositories that read degraded, that
 took a refresh from 4.3s to 21.1s down to 1.2s to 3.8s.
 
 **A Vue or Svelte file is read for its script block, never its template.** The `<script>` blocks
