@@ -209,8 +209,9 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // A directory or a fifo at the name is the same answer: a refresh nobody is
   // watching may not stop over an entry in a directory another tool owns.
   const theirs = [audit.foreign, audit.unreadable, audit.occupied];
-  // An entry spelled as a planned name in another case is that name on a volume
-  // that folds case, so writing ours writes over it. Somebody's, whatever it says.
+  // An entry spelled as a planned name in another case, with nothing at the name
+  // itself, may be that name on this volume, so writing ours may write over it.
+  // Somebody's, whatever it says.
   const alias = (n) => spelledOtherwise(audit.entries, n);
   const taken = target.always ? [] : all.filter((n) => alias(n) !== undefined || theirs.some((list) => list.includes(n)));
   if (taken.length && (explicit || taken.includes(overviewName(target)))) {
