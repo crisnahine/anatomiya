@@ -1311,13 +1311,13 @@ line. A pattern the reader would change before matching is left out as well: for
 starts with a quote, `!` or `#`, and a lone `true` or `false`; for Copilot one holding a comma, a
 brace, a double quote, a backslash or a line break. An area with no pattern left has no file in that
 directory, the overview there lists and counts only the areas that have one, and both it and the
-scan's summary say how many have none. An area file can end in up to three lines about its own
-delivery:
+scan's summary say how many have none. An area file can end in up to three lines about what its
+patterns match:
 
 ```
-This file also attaches for test/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}, which the area leaves out.
-VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.
-This file does not attach for src/q\"t/**/*.{cjs,cts,js,mjs,mts,ts}, which Cursor cannot be given.
+This file's patterns also match test/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}, which the area leaves out.
+VS Code also matches this file's patterns under any parent directory, so they can match a file outside the area.
+This file's patterns do not match src/q\"t/**/*.{cjs,cts,js,mjs,mts,ts}, which Cursor cannot be given.
 ```
 
 The first names the negations a written pattern reaches. The second is in a Copilot file with a

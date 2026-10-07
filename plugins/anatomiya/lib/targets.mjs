@@ -36,7 +36,7 @@ export const TARGETS = Object.freeze({
       "Each area has its own file under .github/instructions whose `applyTo:` names that area's files: before editing a file, read the one that names it.",
     listed: "whose `applyTo:` names its files",
     wrote: WROTE,
-    widens: "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.",
+    widens: "VS Code also matches this file's patterns under any parent directory, so they can match a file outside the area.",
   }),
 });
 
@@ -97,9 +97,9 @@ const within = (dir, parent) => parent === "" || dir === parent || dir.startsWit
 /**
  * An area's globs as one target can read them, each spelled by the caller's `text`.
  *
- * `dropped` is the negations the target cannot be told, so its file attaches
- * for more than the area. `unspellable` is the opposite: patterns that could
- * not be written, so the file does not attach there, and a negation only they
+ * `dropped` is the negations the target cannot be told, so its file's patterns
+ * match more than the area. `unspellable` is the opposite: patterns that could
+ * not be written, so the file matches nothing there, and a negation only they
  * reach is in neither list. `widened` is what the target reads more loosely
  * than written: VS Code puts `**` and a slash in front of a pattern that starts
  * with neither, so `app/*.rb` also matches `vendor/x/app/a.rb`.

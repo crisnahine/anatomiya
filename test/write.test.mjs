@@ -1879,6 +1879,32 @@ test("a file that cannot be replaced or removed is named in a sentence with its 
   locked = null;
 });
 
+test("a locked file whose rollback loses a file says the scan stopped part way, and never that everything was put back", async (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  const dir = workspace(t);
+  writeMap(result(dir, [a]));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  let renames = 0;
+  // Two files take their replacement, the third is locked, and so is every put-back after it.
+  fs.renameSync = (...args) => {
+    if (++renames > 2) throw Object.assign(new Error(`EPERM: operation not permitted, rename '${args[0]}'`), { code: "EPERM" });
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+
+  assert.throws(() => writeMap(result(dir, [a, b])), {
+    message: /^\.claude\/\S+ could not be replaced \(EPERM\), so the scan stopped part way: the file is locked or read-only, so close what holds it or change its mode, then scan again$/,
+  });
+  assert.ok(renames > 3, "a put-back was tried and refused");
+});
+
 test("naming claude alone turns the others off and removes every file there that says this tool wrote it", (t) => {
   const dir = workspace(t);
   const a = area("src/services");

@@ -34,8 +34,10 @@ const GRAMMARS = fileURLToPath(new URL("../grammars/", import.meta.url));
 
 let runtime = null;
 // One parser per grammar file for the life of the process: a warm worker pays each load once.
-// A file that did not load holds its error here. Loaded again for every file, a grammar that
-// instantiates and then fails took 2.9 GB in 1,500 files, since nothing frees an instance.
+// A file that did not load holds its error here, whatever stopped it, for the life of the process:
+// one that could not be read off the disk is remembered like one that is broken, and is not tried
+// again. Loaded again for every file, a grammar that instantiates and then fails took 2.9 GB in
+// 1,500 files, since nothing frees an instance.
 const parsers = new Map();
 
 const missing = (message, extra = {}) => Object.assign(new Error(message), { missingParser: true }, extra);
