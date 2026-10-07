@@ -206,6 +206,20 @@ was over the size cap. The second is new in this shape. Both parsers recover fro
 hand back a tree, oxc to an almost empty one and prism to one holding nodes nobody wrote, and
 counting either moves the denominator without moving the code. So a parse reporting errors answers
 `ok: false` and contributes no sites, which is what every other unexamined file already gets.
+
+What a rejection means is the engine's to say. oxc and prism are their languages' own parsers, so a
+file they reject holds a syntax error. A tree-sitter grammar covers less than its language, so a
+file it rejects is counted on a line of its own, as one that could not be read by this tool's
+grammar, and the line says the file may be fine.
+
+The C# grammar reads `#if` around whole statements and whole members and nowhere else, and real C#
+writes it inside base lists, parameter lists, call chains and initializers: 18 of serilog's 216
+files and 66 of Newtonsoft.Json's 951 were rejected for it, over a quarter of each repository's
+lines. A `.cs` file the grammar rejects is parsed once more with every directive line blanked and
+every branch of each `#if` but the first, in place, so no offset or line moves, and the second
+tree is taken only where it is clean. That reads 17 of the 18 and all 66. A file read this way
+is counted over the branch that was kept, and where another branch went unread the scan counts
+the file on a line of its own: read with one branch of each `#if`.
 prism is asked to parse as the interpreter it runs on (as 3.3, its oldest grammar, on an older
 one), because by default it parses as the newest Ruby it knows, and `a[0, k: 1] = 2`, valid until
 3.4, read as a syntax error on Ruby 3.3.
@@ -1543,12 +1557,72 @@ well as RSpec's, so a file written only in those two is minitest where it says s
 `_test.rb` name or a top-level `test/` directory, or a `require` of `minitest` or anything under it.
 A call on `RSpec` itself, or `context`, `feature` or `shared_examples`, is RSpec whatever the path.
 
+For Python, PHP, Go, Java, C#, Rust and Kotlin: whether the file declares a case, and which runner
+collects it. A case is an annotation or a name. The annotations are JUnit's five (`@Test`,
+`@ParameterizedTest`, `@RepeatedTest`, `@TestFactory`, `@TestTemplate`), the seven of xUnit, NUnit
+and MSTest (`[Fact]`, `[Theory]`, `[Test]`, `[TestCase]`, `[TestCaseSource]`, `[TestMethod]`,
+`[DataTestMethod]`), PHPUnit's `#[Test]`, and Rust's `#[test]` under any path, so `#[tokio::test]`
+is one. An annotation renamed by its import is read through the import (`import org.junit.Test as
+T`, `using T = NUnit.Framework.TestAttribute;`), and a C# attribute is read with or without its
+`Attribute` suffix. The names are `test*` on a Python or PHP function and `Test`, `Benchmark`,
+`Fuzz` or `Example` on a Go one, and a name alone says nothing: `def test_connection` is ordinary
+code. It is a case beside one of three things. An import of the runner, matched on the module the
+import names and never on a name it brings in, so `from app import unittest` and `import "my.testing"`
+import no runner: `pytest`, `unittest` other than its `mock`, `django.test`, anything under
+`PHPUnit`. A PHP base class whose name ends in `TestCase`, because Slim and composer extend one of
+their own and 206 of their 214 test files import nothing of PHPUnit's. Or a path the language's own
+tool collects by, which is the only place a path is read:
+
+| Language | The path that makes a named function a case | Measured |
+|---|---|---|
+| Go | the file is `_test.go`, and nothing else is asked | 10 files in caddy and hugo declare `func Test` or `func Fuzz` outside one and `go test` runs none |
+| Python | the file is `test_*.py` or `*_test.py`, or sits under a test tree | the ordinary pytest file imports nothing from pytest: fastapi went from 289 files read as tests to 519, django from 179 to 854 |
+| PHP | the file is `*Test.php` under a test tree | a class under `tests` that is not so named is a fixture PHPUnit never loads |
+| Rust | the file is under a `tests` directory, or is a `tests.rs` | see below |
+
+A case with no import beside it takes the runner the path implies: `go test`, `phpunit`, and in
+Python `pytest` for a function at file level or a method of a class with no base, `unittest` for a
+method of a class something made. Django's `TestCase` is unittest's, so `django.test` says
+`unittest`. A Go `_test.go` file carries `go test` with or without a case in it, because the
+compiler builds it for nothing else. A pytest fixture is not a case whatever it is called (a
+conftest names one `test_client`), and neither is a function inside a function. Pest's `it(...)`
+and `test(...)` at file level count under a test tree only.
+
+Rust is the one language whose tests mostly sit in the file they test. cargo builds every `.rs`
+directly in a crate's `tests` directory as an integration test, whatever it holds, so such a file is
+a test by place: a crate is a directory holding a `Cargo.toml` or a `src`. ripgrep declares 349 of
+its 365 cases with a macro of its own, `rgtest!`, 333 of them in six of the ten files directly
+under `tests`, and reading those by their attributes alone printed `3 cargo test specs under
+crates` where the line is `15 cargo test specs`. A file deeper down, `tests/common/mod.rs` or
+`tests/ui/*.rs`, is a module those targets include or a fixture, and is a test only where its own
+`#[test]` says so: serde keeps 118 compile-fail sources under `tests/ui`, and ripgrep's two
+`tests/index` files, 16 `rgtest!` cases, read as no test.
+Under any other `tests` directory, and in a `tests.rs`, a `#[test]` makes a test file wherever in
+the file it is. Anywhere else the same attribute is the file's own unit tests, in a `mod tests` or
+beside the code, and the file stays a source file carrying `inlineTests`: ripgrep holds 34 such
+files. Such a file is not asked for a namesake test, and its root's line counts it in a clause of
+its own.
+
 A file is a test by its facets, its name or its position, and by nothing else. The facets first: a
 known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
 counts when it carries `.test.`, `.spec.`, `.cy.` or `-test.`, `-spec.` on the name alone, and when
 it carries `_spec.rb` or `_test.rb` and a test tree above it agrees. The Ruby form is the one a
 non-test file wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
 own `software_spec_spec.rb` under `test/`.
+The seven languages above each have a name of their own and answer by it alone, never by the forms
+here or the two rules below: a Go `_test.go` and a Python `test_*.py` or `*_test.py` on the name,
+because the compiler and pytest collect by it (578 Go files, 567 holding a case; 1,180 Python
+files, 1,168 holding one); a PHP `*Test.php`, a Java or Kotlin `*Test`, `*Tests` or `*IT`, and a C#
+`*Tests` or `*Test` where a test tree above it agrees, because a source file wears those words too
+(junit's own `RepeatedTest.java`, Laravel's `UnitTest.php`). Of 3,691 files so named in twelve
+repositories, 17 sit outside every test tree and 9 of those are not tests; 141 sit inside one with
+no case of their own, most of them a subclass that inherits its cases. `IT` needs a lower-case
+letter or a digit before it, so `EXIT` is not one, and `Spec` is not a suffix at all: two files in
+the 21 repositories end in it and neither is a test. A test tree for these is the six names below
+plus the ones the family's own build uses: a Gradle source set ending in `Test` (`commonTest`,
+`jvmTest`) for Java and Kotlin, a dotted project name ending in `Tests` (`Serilog.Tests`) for C#,
+and a `Test` namespace directory for PHP. Rust has no name, and a file there is a test by its facets
+or by sitting directly in a crate's `tests`.
 Then a `__tests__` path segment, because nothing but a test is ever put in one. Last, for a source
 file under a top-level `test`, `tests` or `spec` directory, a source file outside that tree whose
 path the file's own tail mirrors: eslint's `tests/lib/rules/no-var.js` covers `lib/rules/no-var.js`
@@ -1570,6 +1644,7 @@ Every clause is dropped when it counts nothing.
 - <root>: <n1> <ext1>[ (JSX)][, <n2> <ext2>][ and <k> other]
         [; <t> <Runner> specs[ under <sub>]]
         [; <c> of <n>[ <ext> files] has|have a namesake test[, <v>][ under <test root>]]
+        [; <i> holds its|hold their own tests]
         [; <c2> of <n2> <ext2> files has|have a namesake test[, <v>][ under <test root>]]
         [; <m> sibling modules[ named <up to three stems>]; <f> of <j> JSX files inline a helper]
 ```
@@ -1627,6 +1702,47 @@ Every clause is dropped when it counts nothing.
   are never summed. Otherwise it prints wherever the repository holds any test file at
   all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
   cannot carry, because it treats a missing companion as an absence rather than as a habit.
+  Each of the seven tree-sitter languages strips its own spelling and no other, and only a test of
+  the same language answers: `auth_test.go` covers `auth.go`, `test_auth.py` and `auth_test.py`
+  cover `auth.py`, `FooTest.java`, `FooTests.kt` and `FooIT.java` cover `Foo`, `FooTests.cs` covers
+  `Foo.cs`, `FooTest.php` covers `Foo.php`, and a Rust file under `tests` covers the source of its
+  own stem. Each also reads its own tree words out of both sides of a mirror, beside the seven above.
+  A Java or Kotlin path is its package, which is what follows the last `java` or `kotlin` directory,
+  so `src/main/java/a` mirrors `src/test/java/a` whatever the source set or the module is called:
+  okhttp's `commonJvmAndroid` read 25 of 152 before that and 50 after. A package written as one
+  dotted directory, `java/tools.fastlane.screengrab`, is the package a directory per name spells. Where no such directory
+  exists a Gradle source set drops out, so `core/commonMain/src/k` mirrors `core/jvmTest/src/k`. The
+  rest: the `.Tests` on a .NET project, so
+  `test/Serilog.Tests/Core` mirrors `src/Serilog/Core`; a `Test` directory for PHP, so composer's
+  `tests/Composer/Test/Util` mirrors `src/Composer/Util`. A Python package directly under `src` is
+  read as the top of the tree, which is where every import puts it, so a flat `tests/test_cli.py`
+  answers `src/flask/cli.py`: flask read 0 of 24 before that and 9 of 24 after, the nine a reader
+  counts by hand. A Python test tree files its tests by feature below its top level, so a test
+  there answers a package at the top of the tree from the tree's own top level or from the path
+  that mirrors the source's, and from nowhere deeper: fastapi's
+  `tests/test_telemetry/test_exceptions.py` tests OpenTelemetry spans, and it answered
+  `fastapi/exceptions.py` with two more of the 6 files credited under `fastapi`. A `tests`
+  directory beside a package mirrors that package directory for directory, where one source file
+  beside it carries the stem: `examples/tutorial/tests/test_auth.py` covers
+  `examples/tutorial/flaskr/auth.py`, and flask's `examples` read 0 of 12 before that and 3 of 12
+  after. Four families pair a whole project with its tests, and there a test covers the one source
+  file of its stem at any depth: a .NET test project and the project its name carries
+  (`Serilog.Tests` and `Serilog`), a Maven or Gradle `src/test` or `<set>Test` source set and what
+  sits beside it, a PHP `tests` and the `src` or `app` beside it. serilog keeps
+  `test/Serilog.Tests/Core/BatchingSinkTests.cs` for `src/Serilog/Core/Sinks/Batching/BatchingSink.cs`
+  and read 18 of 113 where 28 have a test named for them; gson went from 27 of 80 to 34, and
+  Laravel from 166 of 1,630 to 277. Two source files of one stem in the project are credited with
+  nothing by it, since the stem cannot say which the test was written for. A flat test directory
+  is no pairing: ktor keeps `<module>/jvm/test`, and about half of the stem matches there are
+  another class's. Such a match votes for the place the mirrored tests name, where it sits inside
+  one. A Rust file holding its own tests has no other file carrying its stem, so it is
+  in neither number of the namesake count and the clause after it says how many there are:
+  ripgrep's `crates` reads `0 of 56 have a namesake test; 34 hold their own tests`, and tokio's
+  `tokio` reads `2 of 306` with 47 more that hold theirs. Counted as having a namesake, 80 of the
+  101 Rust files credited in three repositories were credited for a module inside themselves under
+  words that name another file. Where every file a root would ask holds its own tests the namesake
+  count is dropped and the clause stands alone, `4 hold their own tests`. The tests line and an
+  area's kinds line carry the same clause.
 - The helper facet, JavaScript and JSX roots only: how many non-test `.ts` and `.js` modules sit
   beside the JSX files, the three commonest stems among them that appear more than once, and how
   many of the JSX files define a module-level function they do not export, out of how many JSX
@@ -1664,13 +1780,18 @@ than a rule.
 |---|---|
 | Match sibling test shape; skip tests where siblings have none. | the tests line printed |
 | Match directory granularity; don't extract into a sibling module what the directory's files inline. | at least one root printed a helper facet |
-| An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed. | one root has 3 or more files with a namesake test, and another has fewer than 3 of at least 3 |
+| An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed. | one root has 3 or more files with a namesake test, and a root the section prints has fewer than 3 of at least 3, counting a file that holds its own tests as tested |
 
 The third settles the disagreement between a count and an imperative in the same voice: a
 directory with producers and no tests beside a user instruction to always write one. Both halves of
 its gate matter. A zero means no namesake was matched, never that the directory is untested, so the
 repository has to be seen pairing tests with sources somewhere before the sentence can say it does
-not here.
+not here. That half is asked of every root the roster counted, printed or folded, since it is a fact
+about the repository. The other is asked of the printed roots only: the directory with no precedent
+has to have a line, or the sentence reads as being about the directories that do. fastlane printed
+it over five Ruby roots at 15 to 86 namesakes each, armed by a Java directory of 19 files folded
+into `and 8 more directories`. Of 56 repositories measured, six printed it on a folded root alone
+and no longer do.
 
 ### In an area file
 

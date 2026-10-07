@@ -6,7 +6,7 @@ import { absentInterpreter } from "./child.mjs";
 import { scan } from "./scan.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
-import { engineOf, language } from "./langs.mjs";
+import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
@@ -17,7 +17,7 @@ import { plural } from "./render-layout.mjs";
 import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
 import { TARGETS } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
-import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
+import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { removeStaleHook } from "./hook.mjs";
@@ -192,7 +192,7 @@ async function absentSkipWorktree(root) {
 /** Answer the branch against the map on disk. */
 export async function runCheck(cwd, { baseRef = null } = {}) {
   const report = await check(cwd, { baseRef });
-  const { missingParser, missingEngines } = report.parse;
+  const { missingParser } = report.parse;
   if (missingParser) {
     // The scan's rule, for the same reason: a change that touched a Gemfile
     // beside a TypeScript file went unchecked because one file of another
@@ -200,7 +200,7 @@ export async function runCheck(cwd, { baseRef = null } = {}) {
     // change examined needed the missing engine, since a report of no findings
     // there reads as a check that ran (B13). Otherwise each unread file carries
     // its own caveat, and one more says which engine and what to do.
-    const readable = report.examined.some((c) => !missingEngines.includes(engineOf(language(c.path))));
+    const readable = report.examined.some((c) => !couldNotRead(report.parse, language(c.path)));
     if (!readable) throw notInstalled(report.parse, "check");
   }
   return { report };
@@ -383,5 +383,5 @@ function npmInstall(cwd) {
  * npm, which is the one thing that cannot install an interpreter.
  */
 function notInstalled(parse, command) {
-  return new Error(`${parse.missingParser}\n${remedyFor(parse.missingEngines[0])}, then ${command} again`);
+  return new Error(`${parse.missingParser}\n${remedyForMissing(parse)}, then ${command} again`);
 }

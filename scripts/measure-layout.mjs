@@ -36,7 +36,7 @@ import {
   tally,
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
-import { embeddedIn } from "../plugins/anatomiya/lib/langs.mjs";
+import { embeddedIn, familyOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
@@ -142,11 +142,11 @@ function recountRoot(path, corpus, testFiles, byStem) {
     tests: testGroupsOf(own, dir),
     testRoot: tests.length * 2 > own.length,
     companions:
-      producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)
+      producers.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(producers[0].lang))
         ? { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt }
         : null,
     componentCompanions:
-      components.length > 0 && testFiles.length > 0 && !underTestTree(dir)
+      components.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(components[0].lang))
         ? { ...namesakeCompanions(components, testFiles, dir, byStem), ext: componentExt }
         : null,
     helpers: null,

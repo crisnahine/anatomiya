@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { needsPathControl, needsShebang, needsSpawnableNpm, needsSymlinks, needsWindows } from "./platform.mjs";
 import { PACK_ARGV, pluginRootsIn, reachableFrom, shipped } from "../scripts/shipped.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
+import { ANATOMIYA } from "../scripts/plugins.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -302,6 +303,38 @@ test("a file a module resolves rather than imports is reached too", needsSpawnab
   });
 
   assert.deepEqual(shipped(dir), ["package.json files does not ship lib/worker.mjs, which hooks/hooks.json reaches"]);
+});
+
+test("a directory a module resolves is loaded from by name, so every file in it has to ship", needsSpawnableNpm, (t) => {
+  // The grammars are read this way: one `new URL` names the directory and the
+  // file inside it is chosen per language at run time, so no specifier ever
+  // spells a grammar and a list that left the directory out shipped a plugin
+  // that reads none of them.
+  const resolving = (at) => {
+    writeFileSync(
+      join(at, "lib", "work.mjs"),
+      [`const GRAMMARS = new URL("../grammars/", import.meta.url);`, `export const work = () => GRAMMARS;`].join("\n"),
+    );
+    mkdirSync(join(at, "grammars", "extra"), { recursive: true });
+    writeFileSync(join(at, "grammars", "python.wasm"), "wasm");
+    writeFileSync(join(at, "grammars", "extra", "go.wasm"), "wasm");
+  };
+
+  const left = packaged(t, { files: [".claude-plugin/plugin.json", "hooks/", "bin/", "lib/"], extra: resolving });
+  assert.deepEqual(shipped(left).sort(), [
+    "package.json files does not ship grammars/extra/go.wasm, which hooks/hooks.json reaches",
+    "package.json files does not ship grammars/python.wasm, which hooks/hooks.json reaches",
+  ]);
+
+  const carried = packaged(t, { files: [".claude-plugin/plugin.json", "hooks/", "bin/", "lib/", "grammars/"], extra: resolving });
+  assert.deepEqual(shipped(carried), []);
+});
+
+test("the grammars this plugin loads are files the shipped-set walk reaches", () => {
+  const { files } = reachableFrom(ANATOMIYA, ["lib/tree-sitter-file.mjs"]);
+
+  const grammars = files.filter((file) => file.startsWith("grammars/")).sort();
+  assert.deepEqual(grammars, ["csharp", "go", "java", "kotlin", "php", "python", "rust"].map((id) => `grammars/${id}.wasm`).concat("grammars/grammars.json").sort());
 });
 
 test("the walk follows require and import alike, and stops at what it does not own", (t) => {

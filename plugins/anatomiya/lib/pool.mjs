@@ -9,7 +9,7 @@ import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 
 const execFileAsync = promisify(execFile);
-const WORKER = fileURLToPath(new URL("./parse-worker.mjs", import.meta.url));
+const OXC_WORKER = fileURLToPath(new URL("./parse-worker.mjs", import.meta.url));
 
 export const GUARDS = {
   maxBytes: MAX_FILE_BYTES,
@@ -44,18 +44,18 @@ const STDERR_BYTES = 2048;
 /**
  * A pool of warm child processes, one file per message.
  *
- * Warm matters: a process per file would pay fork cost on every file. A
+ * Warm matters: a process per file would pay fork cost on every file. An oxc
  * respawn after a crash costs about a millisecond, so a poison file costs one
  * file rather than the run.
  *
  * A worker answers with per-dimension counts. `withProgram` additionally sends
  * the tree back, which only the check path wants and only for the files a diff
- * touched: the tree serialises to 16x the size of its source, and asking for it
+ * touched: oxc's tree serialises to 16x the size of its source, and asking for it
  * across a whole repository is what held pool throughput to 2.8x on eleven
  * cores no matter how many workers ran.
  */
-export function createPool({ size, withProgram = false, execArgv = [], guards = null } = {}) {
-  const limits = guardsOver(GUARDS, guards, "oxc");
+export function createPool({ size, withProgram = false, execArgv = [], guards = null, worker = OXC_WORKER, engine = "oxc", retryTimeouts = true } = {}) {
+  const limits = guardsOver(GUARDS, guards, engine);
   const workers = [];
   const idle = [];
   const queue = [];
@@ -81,7 +81,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // file answers, where the supervisor's two clocks time a whole run.
     const sup = guardedChild({
       kind: "fork",
-      modulePath: WORKER,
+      modulePath: worker,
       execArgv,
       stdio: ["ignore", "ignore", "pipe", "ipc"],
       stderrBytes: STDERR_BYTES,
@@ -105,7 +105,11 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
         if (msg.engine) versions[msg.engine] = msg.version ?? null;
         return release(w);
       }
-      finish(w, msg);
+      // A worker whose parser is past recovery says so on its last reply. It
+      // keeps that answer and is handed nothing more: its exit spawns the next.
+      const retire = msg?.retire === true;
+      finish(w, msg, retire);
+      if (retire) w.sup.kill("retired");
     });
 
     // An uncatchable crash lands here, not in a try/catch. The file is charged
@@ -120,7 +124,9 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // takes is a property of the machine, not of the file, and a file charged
     // as crashed in one scan and parsed in the next moves the unexamined count
     // in the always-loaded overview (A5). A worker over the RSS ceiling, or one that died by itself,
-    // is a poison file and gets the one attempt.
+    // is a poison file and gets the one attempt. So does every kill where
+    // `retryTimeouts` is off, which is for a parser whose time is the file's:
+    // alone it takes as long again.
     child.on("exit", (code, signal) => died(code, signal));
 
     // A fork that never started emits this and never 'exit': a cwd that is
@@ -137,7 +143,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
 
     function died(code, signal, cause = null) {
       const timedOut = w.sup.killedBy() === "timeout";
-      if (w.job && timedOut && !closed && w.job.crowded && retryOnce(w.job)) {
+      if (w.job && timedOut && !closed && retryTimeouts && w.job.crowded && retryOnce(w.job)) {
         const job = w.job;
         w.job = null;
         if (w.timer) clearTimeout(w.timer);

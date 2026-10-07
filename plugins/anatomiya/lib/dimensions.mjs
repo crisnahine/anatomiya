@@ -1,5 +1,6 @@
 import { walk, fromVisitor, isFunctionLike, declName, value, boundNames, optionalChain } from "./walk.mjs";
 import { walkRuby } from "./ruby-walk.mjs";
+import { walkTree } from "./tree-walk.mjs";
 import { engineOf } from "./langs.mjs";
 import { EXTRA_DIMENSIONS } from "./dimensions-extra.mjs";
 import { RUBY_DIMENSIONS } from "./dimensions-ruby.mjs";
@@ -376,8 +377,18 @@ export const ALL_DIMENSIONS = [
 // callers that ask one row at a time: the check, and the tests. Here, where the
 // tree rows meet, because the parse worker and the Ruby shard read this list
 // and must not reach `registry.mjs`.
-const WALKS = { oxc: walk, prism: walkRuby };
-for (const d of ALL_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, WALKS[engineOf(d.langs[0])]);
+const WALKS = { oxc: walk, prism: walkRuby, "tree-sitter": walkTree };
+for (const d of ALL_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, walkFor(d));
+
+/**
+ * The walk a row's engine reads its tree with. Refused at import where there
+ * is none: a row walked by another engine's walk counts nothing and says nothing.
+ */
+export function walkFor(row, walks = WALKS) {
+  const engine = engineOf(row.langs[0]);
+  if (!walks[engine]) throw new Error(`${row.key} is a row for ${engine}, and no walk reads a ${engine} tree`);
+  return walks[engine];
+}
 
 export const PRECISIONS = ["precise", "partial"];
 

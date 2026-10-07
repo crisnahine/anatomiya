@@ -25,16 +25,27 @@
 import { familyOf, language } from "./langs.mjs";
 import { byCode, dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
 import {
+  FAMILY_TEST_NAMES,
+  FAMILY_TREES,
+  FEATURE_TREES,
   LEARNED_SUFFIX_FLOOR,
   LEARNED_SUFFIX_SHARE,
   NAMESAKE_SUFFIXES,
+  PACKAGE_SHELL,
+  coveredStem,
+  pairedWith,
   startsAtSeparator,
   TEST_TREES,
   TREE,
 } from "./test-shape.mjs";
 
+const familyAt = (rel) => familyOf(language(rel));
+
 const namesakeStem = (rel) => {
   const stem = stemOf(rel);
+  // A family with a spelling of its own is read by it alone: `FooTest.java` covers `Foo`, and `foo_spec.py` covers nothing.
+  const family = familyAt(rel);
+  if (FAMILY_TEST_NAMES[family]) return coveredStem(stem, family) ?? stem;
   for (const suffix of NAMESAKE_SUFFIXES) {
     if (stem.length > suffix.length && stem.endsWith(suffix)) return stem.slice(0, -suffix.length);
   }
@@ -50,7 +61,22 @@ const tailOf = (rel, rootPath) => {
   return dir.startsWith(`${rootPath}/`) ? dir.slice(rootPath.length + 1) : dir;
 };
 
-const withoutTree = (dir) => dir.split("/").filter((seg) => !TREE.has(seg)).join("/");
+// The tree words every family shares, and the ones this family's own build
+// adds: a Gradle source set drops out, `Serilog.Tests` is `Serilog`, and a
+// Java path is its package, which is what follows the last `java` directory.
+const withoutTree = (dir, family) => {
+  const own = FAMILY_TREES[family];
+  let kept = [];
+  for (const seg of dir.split("/")) {
+    if (own?.packagesUnder?.has(seg)) kept = [];
+    if (TREE.has(seg) || own?.source?.test(seg) || own?.packagesUnder?.has(seg)) continue;
+    const cut = own ? seg.replace(own.test, "") : seg;
+    // A package is one dotted directory in one tree and a directory per name in the next.
+    if (own?.packagesUnder) kept.push(...cut.split(".").filter(Boolean));
+    else if (cut !== "") kept.push(cut);
+  }
+  return kept.join("/");
+};
 
 /**
  * The repository-relative path a relative import names, spelled exactly as the
@@ -162,12 +188,13 @@ const wholeRoot = (dir, tail) =>
  * names `src/vs/base/test`. Null where the two part on an ordinary name, since
  * a vote for that directory would name a place neither side keeps tests in.
  */
-function mirrorRoot(sourceDir, testDir) {
+function mirrorRoot(sourceDir, testDir, family) {
   const source = sourceDir.split("/");
   const test = testDir.split("/");
   let i = 0;
   while (i < source.length && i < test.length && source[i] === test[i]) i++;
-  return i < test.length && TREE.has(test[i]) ? test.slice(0, i + 1).join("/") : null;
+  const tree = i < test.length && (TREE.has(test[i]) || FAMILY_TREES[family]?.test.test(test[i]) === true);
+  return tree ? test.slice(0, i + 1).join("/") : null;
 }
 
 /**
@@ -286,7 +313,7 @@ function assignOwners(byStem, sourceFiles) {
       let best = -1;
       let winners = [];
       for (const f of sources) {
-        const n = sharedTail(t.bare, withoutTree(dirOf(f.rel)));
+        const n = sharedTail(t.bare, withoutTree(dirOf(f.rel), familyAt(f.rel)));
         if (n > best) {
           best = n;
           winners = [f.rel];
@@ -301,6 +328,27 @@ function assignOwners(byStem, sourceFiles) {
         continue;
       }
       if (imported.length === 1 && winners.includes(imported[0])) t.owner = imported[0];
+    }
+  }
+}
+
+/**
+ * The one source file each test file's own project holds under the stem the
+ * test names, where the family's layout pairs the test's directory with a
+ * project at all.
+ *
+ * Two sources of one stem in the project decide nothing: the stem alone
+ * cannot say which the test was written for.
+ */
+function assignPairs(byStem, sourceFiles) {
+  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${familyAt(f.rel)}\u0000${stemOf(f.rel)}`);
+  for (const [stem, candidates] of byStem) {
+    for (const t of candidates) {
+      const family = familyAt(t.rel);
+      const inProject = pairedWith(t.dir, family);
+      if (inProject === null) continue;
+      const held = (sourcesByStem.get(`${family}\u0000${stem}`) ?? []).filter((f) => inProject(dirOf(f.rel)));
+      if (held.length === 1) t.paired = held[0].rel;
     }
   }
 }
@@ -359,12 +407,13 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
     const dir = dirOf(t.rel);
     // `owner` is null until the corpus decides one, never absent: an absent key
     // would make "nobody asked" and "nobody owns it" the same reading.
-    byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir), covers: coversOf(t), owner: null });
+    byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir, familyAt(t.rel)), covers: coversOf(t), owner: null, paired: null });
   }
   if (sourceFiles !== null) registerLearnedSpellings(byStem, sourceFiles);
   // This order picks the root that gets rendered.
   for (const candidates of byStem.values()) candidates.sort((a, b) => byCode(a.rel, b.rel));
   if (sourceFiles !== null) assignOwners(byStem, sourceFiles);
+  if (sourceFiles !== null) assignPairs(byStem, sourceFiles);
   return byStem;
 }
 
@@ -383,8 +432,18 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
 export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem = namesakeIndex(testFiles)) {
   const votes = new Map();
   let answered = 0;
+  // A file holding its own tests has no other file to carry its stem, so it is
+  // neither credited nor owed one, and is counted apart.
+  let inline = 0;
+  // A paired match shares no path with its source, so where it votes is settled once the mirrors have voted.
+  const pairedAt = [];
   for (const f of sourceFiles) {
+    if (f.facets?.inlineTests === true) {
+      inline++;
+      continue;
+    }
     const fDir = dirOf(f.rel);
+    const family = familyAt(f.rel);
     const tail = tailOf(f.rel, rootPath);
     // The tail with the tree words dropped, falling back to the whole
     // directory's when that leaves nothing. A tail that is only tree words is
@@ -393,7 +452,7 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // want of a shape read the package 0 of 2 where `packages` above it and
     // `packages/foo/src` below it both read 2 of 2. One file, three roots,
     // three answers, and the middle one wrong.
-    const bare = withoutTree(tail) || withoutTree(dirOf(f.rel));
+    const bare = withoutTree(tail, family) || withoutTree(fDir, family);
     // An empty tail has no suffix to mirror, so the root's own directory
     // stands in for it: a candidate still has to mirror that, or both sides
     // have to sit at the top of the tree. That second half is the flat
@@ -405,8 +464,10 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // where `apps/www` answered by a repository-wide `test/`, or a top-level
     // script answered by one package's own tests, is the shape a monorepo
     // keeps beside the package instead.
-    const rootBare = tail === "" ? withoutTree(fDir) : null;
-    const flatPair = tail === "" && !fDir.includes("/");
+    const rootBare = tail === "" ? withoutTree(fDir, family) : null;
+    const shell = PACKAGE_SHELL[family];
+    const top = shell && fDir.startsWith(`${shell}/`) ? fDir.slice(shell.length + 1) : fDir;
+    const flatPair = tail === "" && !top.includes("/");
     // The two spellings an import may use for this file: with its extension, and
     // without, which is how TypeScript and every bundler write it. Split once
     // here rather than once per candidate that shares the stem.
@@ -431,6 +492,7 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // one inside the root. The corpus holds no case, so this changes no line it
     // prints and settles a shape it does not contain.
     let kept = null;
+    let pair = null;
     for (const t of byStem.get(stemOf(f.rel)) ?? []) {
       // Another source in the corpus is the one this test was written for, so
       // it is not evidence about this file however the two paths line up.
@@ -454,8 +516,13 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // the ordinary shape in every React repository there is. This branch
       // keeps asking `language`, because a bare basename at the top of two
       // trees is the one match with no structure behind it at all.
-      if (familyOf(language(t.rel)) !== familyOf(language(f.rel))) continue;
-      const topLevel = flatPair && TREE.has(t.dir.split("/")[0]) && language(t.rel) === language(f.rel);
+      if (familyAt(t.rel) !== family) continue;
+      const topLevel =
+        flatPair &&
+        TREE.has(t.dir.split("/")[0]) &&
+        language(t.rel) === language(f.rel) &&
+        // A tree that files by feature answers a flat package from its own top level only.
+        (!FEATURE_TREES.has(family) || !t.dir.includes("/"));
       // The same mirror, asked the other way round. `mirrors` is one-directional
       // and the empty-tail arm only ever asked whether the candidate ends in the
       // root, so a root whose tree-less form is longer than the test tree's
@@ -485,13 +552,14 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
         !whole &&
         (t.covers.has(f.rel) || (RESOLVABLE.has(extOf(f.rel)) && t.covers.has(noExtension)));
       const mirrored = !whole && bare !== "" && mirrors(t.bare, bare);
-      if (!whole && !mirrored && !covered) continue;
+      const paired = t.paired === f.rel;
+      if (!whole && !mirrored && !covered && !paired) continue;
       matched = true;
       // The first candidate that names a place, not the first that matches: a
       // mirror parting on an ordinary name names none, and stopping there threw
       // away a vote the next candidate was going to cast.
       if (whole || mirrored) {
-        const named = whole ? wholeRoot(t.dir, tail) : mirrorRoot(fDir, t.dir);
+        const named = whole ? wholeRoot(t.dir, tail) : mirrorRoot(fDir, t.dir, family);
         if (named !== null) {
           structural = true;
           if (named) {
@@ -499,7 +567,8 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
             break;
           }
         }
-      } else if (kept === null || (!inside(kept, rootPath) && inside(t.dir, rootPath))) kept = t.dir;
+      } else if (paired) pair = { dir: t.dir, crossed: mirrorRoot(fDir, t.dir, family) };
+      else if (kept === null || (!inside(kept, rootPath) && inside(t.dir, rootPath))) kept = t.dir;
     }
     if (!matched) continue;
     // One vote per answered source file, so the top vote and the count it is
@@ -508,7 +577,16 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     answered++;
     // Structure that named nothing has still answered, so the edge does not get
     // to name a place in its stead.
+    if (prefix === null && !structural && pair !== null) pairedAt.push(pair);
     const vote = prefix ?? (structural ? null : kept);
+    if (vote !== null) votes.set(vote, (votes.get(vote) ?? 0) + 1);
+  }
+
+  // The place the mirrored tests named, where the paired test sits inside one, and the tree it crossed otherwise:
+  // serilog's 10 paired tests are all under the `test/Serilog.Tests` its 18 mirrored ones name.
+  const named = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  for (const { dir, crossed } of pairedAt) {
+    const vote = named.find(([place]) => dir === place || dir.startsWith(`${place}/`))?.[0] ?? crossed;
     if (vote !== null) votes.set(vote, (votes.get(vote) ?? 0) + 1);
   }
 
@@ -525,5 +603,5 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
   // Half the matches name the place, so the count there travels with it the
   // way a runner group's `under` does. Absent where every match sits there.
   const under = root !== null && top[1] !== answered ? { under: top[1] } : {};
-  return { with: answered, of: sourceFiles.length, root, ...under };
+  return { with: answered, of: sourceFiles.length - inline, root, ...under, ...(inline > 0 ? { inline } : {}) };
 }

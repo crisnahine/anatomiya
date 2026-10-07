@@ -23,7 +23,7 @@ import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus }
 import { TARGETS } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
-import { remedyFor } from "./readiness.mjs";
+import { remedyForMissing } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
 import { isTestPath, precedentFindings } from "./precedent.mjs";
@@ -233,7 +233,7 @@ export async function check(cwd, { baseRef = null } = {}) {
       "the corpus could not be listed, so no routing claim was checked"))
     : new Set();
 
-  const { findings, missingEngines, missingParser } = await collect(root, {
+  const { findings, missingEngines, missingGrammars, missingParser } = await collect(root, {
     examined,
     areas,
     base,
@@ -368,7 +368,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     caveats,
     // Which engine is absent, beside the message it produced: the remedy is
     // the engine's and npm cannot install an interpreter.
-    parse: { missingParser, missingEngines },
+    parse: { missingParser, missingEngines, missingGrammars },
     semantic: { claims: semanticClaims },
     foreign,
     unknown,
@@ -786,7 +786,7 @@ async function collect(root, run) {
       }
     }
 
-    const { records: parsed, missingEngines, missingParser, missingStripper } = await parseAll(entries, { withProgram: true });
+    const { records: parsed, missingEngines, missingGrammars, missingParser, missingStripper } = await parseAll(entries, { withProgram: true });
     const findings = [];
 
     // Per area, as the fold holds them: a base one changed file adds is what
@@ -932,10 +932,10 @@ async function collect(root, run) {
     // what to do: a check that examined files of another language now goes on
     // for them rather than refusing over this (B41), so it says so once.
     if (missingParser) {
-      caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyFor(missingEngines[0])}, then check again`);
+      caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyForMissing({ missingEngines, missingGrammars })}, then check again`);
     }
 
-    return { findings, missingParser, missingEngines };
+    return { findings, missingParser, missingEngines, missingGrammars };
   } finally {
     // The sources the report quotes are held in the parent, so nothing past
     // here needs the files: leaving them until the run ends would keep two
@@ -1134,7 +1134,8 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
  * causes kept apart, because the reader's next move differs for each: a crash
  * is this tool's problem, rejected syntax is the branch's own code, the cap is
  * a generated file nobody writes by hand, and the rest is this tool or the
- * filesystem.
+ * filesystem. A rejected record says what its engine's rejection means, and a
+ * grammar's is worded as this tool's limit under the same code.
  *
  * The sentence and the code sit in one table, so the split a human reads and
  * the split anything else branches on can never name different causes.
@@ -1153,7 +1154,7 @@ const unreadOf = (parse) => UNREAD[parse && parse.kind] ?? UNREAD_ELSE;
 
 /** The cause as a sentence. This surface names one file, so it is singular. */
 export function unreadReason(parse) {
-  return unexaminedPhrase(unreadOf(parse).phrase, 1);
+  return unexaminedPhrase(unreadOf(parse).phrase, 1, parse?.rejects);
 }
 
 /** The same cause as a code, for a reader that does not read the sentence. */

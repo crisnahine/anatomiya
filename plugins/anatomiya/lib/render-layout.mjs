@@ -89,15 +89,22 @@ const namesakeVerb = (withTest) => (withTest === 1 ? "has" : "have");
  * Exported for the same reason `plural` is: the corpus harness reads this
  * clause back off the printed line, and its own copy of the verb went stale.
  */
-export const namesakeClause = ({ with: withTest, of, root, under }, noun = null, over = null) =>
-  `${withTest} of ${noun === null ? of : plural(of, noun)}` +
+export const namesakeClause = ({ with: withTest, of, root, under, inline = 0 }, noun = null, over = null) => {
   // Which directory the denominator was counted over. Only the tests line asks
   // for it: that line speaks for the whole repository, and `1046 of 1575 .rb
   // files have a namesake test` read repository-wide when 1575 was `app/services`
   // alone.
-  (over ? ` under ${pathText(over)}` : "") +
-  ` ${namesakeVerb(withTest)} a namesake test` +
-  (root ? `${under !== undefined && under !== withTest ? `, ${under}` : ""} under ${pathText(root)}` : "");
+  const place = over ? ` under ${pathText(over)}` : "";
+  // A file that holds its own tests is in neither number, so the line says how many there are.
+  const held = (subject) => `${subject} ${inline === 1 ? "holds its" : "hold their"} own tests`;
+  if (of === 0 && inline > 0) return held(`${noun === null ? inline : plural(inline, noun)}${place}`);
+  return (
+    `${withTest} of ${noun === null ? of : plural(of, noun)}${place}` +
+    ` ${namesakeVerb(withTest)} a namesake test` +
+    (root ? `${under !== undefined && under !== withTest ? `, ${under}` : ""} under ${pathText(root)}` : "") +
+    (inline > 0 ? `; ${held(inline)}` : "")
+  );
+};
 
 const extNoun = (c) => `${encode(c.ext)} file`;
 
@@ -322,8 +329,8 @@ export function renderLayout(layout, budget = Infinity) {
   if (layout.roots.length === 0 && layout.tests.length === 0) return [];
 
   // The record stores the keys; the sentences live where their gates do.
-  const sentence = new Map(PRINCIPLES.map((p) => [p.key, p.sentence]));
-  let said = (layout.principles ?? []).map((k) => sentence.get(k)).filter(Boolean);
+  const principle = new Map(PRINCIPLES.map((p) => [p.key, p]));
+  let said = (layout.principles ?? []).map((k) => principle.get(k)).filter(Boolean);
   let tests = testsLineText(layout);
 
   const owed = () => LAYOUT_FRAME + (tests ? 1 : 0) + (said.length > 0 ? 1 + said.length : 0);
@@ -356,6 +363,7 @@ export function renderLayout(layout, budget = Infinity) {
   if (fold && shown.length < room) lines.push(fold);
 
   if (tests) lines.push(tests);
+  said = said.filter((p) => !p.onPage || p.onPage(shown)).map((p) => p.sentence);
   if (said.length > 0) lines.push("", ...said);
 
   lines.push("");

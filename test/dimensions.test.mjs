@@ -14,7 +14,10 @@ import {
   KINDS,
   PRINCIPLE_NAMES,
   PRECISIONS,
+  walkFor,
 } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
+import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { PAIRINGS, companionOf } from "../plugins/anatomiya/lib/pairing.mjs";
@@ -1073,4 +1076,18 @@ test("a nested binding of the same name does not use the caught error", () => {
     candidates: 1,
     conforming: 1,
   });
+});
+
+test("a row is walked by its own engine's walk, and one whose engine has none refuses to load", () => {
+  // A miss used to fall through to the oxc walk, which finds no child it knows
+  // in another engine's tree: the row counted nothing and nothing said so.
+  assert.equal(walkFor({ key: "a", langs: ["js", "jsx"] }), walk);
+  assert.equal(walkFor({ key: "b", langs: ["ruby"] }), walkRuby);
+  for (const lang of ["python", "php", "go", "java", "csharp", "rust", "kotlin"]) {
+    assert.equal(walkFor({ key: "c", langs: [lang] }), walkTree, lang);
+  }
+  assert.throws(
+    () => walkFor({ key: "wildcard_import", langs: ["python"] }, { oxc: walk, prism: walkRuby }),
+    /^Error: wildcard_import is a row for tree-sitter, and no walk reads a tree-sitter tree$/
+  );
 });

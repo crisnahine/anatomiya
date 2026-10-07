@@ -8,7 +8,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 import { needsPathControl, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
-import { installWithoutDependencies } from "./plugin-install.mjs";
+import { installLacking, installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
 import { SUMMARY_SCHEMA } from "../plugins/anatomiya/lib/summary.mjs";
 
@@ -73,6 +73,97 @@ test("nothing is written to the repository when the parser is missing", (t) => {
     () => execFileSync("ls", [join(repo, ".claude", "rules")], { stdio: "pipe" }),
     "no rule files were written from a scan that parsed nothing"
   );
+});
+
+/** A committed repository holding eight files per named directory, each written by `body(i)`. */
+function repoOf(t, dirs) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-langs-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [sub, ext, body] of dirs) {
+    mkdirSync(join(dir, sub), { recursive: true });
+    for (let i = 0; i < 8; i++) writeFileSync(join(dir, sub, `f${i}.${ext}`), body(i));
+  }
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  return dir;
+}
+
+const PY = ["app", "py", (i) => `def total_${i}(lines):\n    return sum(lines)\n`];
+const TS = ["src", "ts", (i) => `const a${i} = 1\nexport { a${i} }\n`];
+const KT = ["core", "kt", (i) => `fun total${i}(lines: List<Int>): Int {\n    return lines.sum()\n}\n`];
+
+const rulesIn = (repo) => (existsSync(join(repo, ".claude", "rules")) ? readdirSync(join(repo, ".claude", "rules")).sort() : []);
+
+test("a Python repository on an install older than the tree-sitter runtime is refused, with the command that installs it", needsSymlinks, (t) => {
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+  const repo = repoOf(t, [PY]);
+
+  const { code, stderr } = runFrom(install, ["scan", repo], process.env.PATH);
+
+  assert.equal(code, 1, "a scan that read nothing must not exit 0");
+  assert.match(stderr, /web-tree-sitter is not installed/);
+  assert.match(stderr, /bin\/anatomiya\.mjs setup in .*, then scan again/);
+  assert.deepEqual(rulesIn(repo), [], "and nothing was written from it");
+});
+
+test("a TypeScript and Python repository on that install has its TypeScript mapped and its Python named as unread", needsSymlinks, (t) => {
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+  const repo = repoOf(t, [PY, TS]);
+
+  const { code, stdout } = runFrom(install, ["scan", repo], process.env.PATH);
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^read no python file at all, so none was counted/m, stdout);
+  assert.match(stdout, /^tree-sitter reported no version: run node bin\/anatomiya\.mjs setup in /m, stdout);
+  assert.match(stdout, /^engines: oxc \d[\d.]*$/m, "the engine that did not load is not listed as one that answered");
+  const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+  assert.match(overview, /^- no python file was read: tree-sitter reported no version: run node bin\/anatomiya\.mjs setup in /m, overview);
+  assert.match(overview, /^## Areas \(1\)$/m, overview);
+  const [area, ...others] = rulesIn(repo).filter((name) => name !== "anatomiya-overview.md");
+  assert.deepEqual(others, [], "the area this run could not read is not described");
+  assert.match(readFileSync(join(repo, ".claude", "rules", area), "utf8"), /^# src  8 files$/m);
+});
+
+test("a Kotlin repository on an install that lost its Kotlin grammar is refused, and told to reinstall", needsSymlinks, (t) => {
+  const install = installLacking(t, { grammars: ["kotlin"] });
+  const repo = repoOf(t, [KT]);
+
+  const { code, stderr } = runFrom(install, ["scan", repo], process.env.PATH);
+
+  assert.equal(code, 1);
+  assert.match(stderr, /grammars\/kotlin\.wasm did not load/);
+  assert.match(stderr, /^reinstall .*, then scan again$/m, stderr);
+  assert.doesNotMatch(stderr, /setup/, "no install writes a grammar file");
+  assert.deepEqual(rulesIn(repo), []);
+});
+
+test("a Python and Kotlin repository on that install has its Python read and its Kotlin named with the grammar", needsSymlinks, (t) => {
+  const install = installLacking(t, { grammars: ["kotlin"] });
+  const repo = repoOf(t, [PY, KT]);
+
+  const { code, stdout } = runFrom(install, ["scan", repo], process.env.PATH);
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^read no kotlin file at all, so none was counted/m, stdout);
+  assert.match(stdout, /^the plugin's kotlin grammar did not load: reinstall /m, stdout);
+  assert.match(stdout, /^engines: tree-sitter \d[\d.]*$/m, stdout);
+  assert.doesNotMatch(stdout, /setup|ran and answered for none/, stdout);
+  const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+  assert.match(overview, /^- no kotlin file was read: the plugin's kotlin grammar did not load: reinstall /m, overview);
+});
+
+test("doctor names a grammar the install lost on the engine's own line", needsSymlinks, (t) => {
+  const install = installLacking(t, { grammars: ["rust"] });
+
+  const { code, stdout } = runFrom(install, ["doctor"], process.env.PATH);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /^tree-sitter \d[\d.]*: grammars: 6 of 7, rust\.wasm did not load, reinstall /m, stdout);
+  assert.match(stdout, /^oxc \d[\d.]* ok$/m, stdout);
 });
 
 /** A branch off the base with one added file, which is what a check examines. */
@@ -790,6 +881,7 @@ test("doctor answers a line per engine and exits 0 whatever it found", () => {
   assert.match(out, /^oxc \d/m, out);
   assert.match(out, /^flow-remove-types /m, out);
   assert.match(out, /^prism /m, out);
+  assert.match(out, /^tree-sitter \d[\d.]* ok \(grammars: 7 of 7\)$/m, out);
   assert.match(out, /^typescript /m, out);
 });
 
@@ -857,7 +949,7 @@ test("setup runs npm in the plugin's own directory, with the arguments it printe
   const { code, stdout } = runFrom(install, ["setup"], bin);
 
   assert.equal(code, 0, stdout);
-  assert.match(stdout, /^not installed: oxc, flow-remove-types, typescript$/m, stdout);
+  assert.match(stdout, /^not installed: oxc, flow-remove-types, tree-sitter, typescript$/m, stdout);
   assert.match(stdout, /added 2 packages/, "npm's own words come back");
   assert.deepEqual(
     readFileSync(join(install, "npm-argv.txt"), "utf8").trim().split("\n"),

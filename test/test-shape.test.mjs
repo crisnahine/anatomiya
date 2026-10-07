@@ -12,6 +12,13 @@ import {
   TREE,
   RUNNER_LABELS,
   UNNAMED_RUNNER,
+  FAMILY_TEST_NAMES,
+  FAMILY_TREES,
+  FEATURE_TREES,
+  PACKAGE_SHELL,
+  coveredStem,
+  isTestTree,
+  pairedWith,
 } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { PAIRINGS } from "../plugins/anatomiya/lib/pairing.mjs";
 
@@ -73,4 +80,163 @@ test("every pairing suffix starts with a namesake suffix, so the two cannot drif
 test("the runner labels stay the two a reader spells differently", () => {
   assert.deepEqual(Object.keys(RUNNER_LABELS).sort(), ["cypress", "rspec"]);
   assert.equal(UNNAMED_RUNNER, "test files");
+});
+
+test("the seven tree-sitter families each name their tests, and no other family does", () => {
+  assert.deepEqual(Object.keys(FAMILY_TEST_NAMES), ["python", "php", "go", "java", "csharp", "rust", "kotlin"]);
+  for (const family of ["js", "ruby", "vue", "svelte"]) assert.equal(coveredStem("a_test", family), null, family);
+});
+
+test("Go: a _test file is a test by its name alone and covers the file beside it", () => {
+  assert.equal(FAMILY_TEST_NAMES.go.alone, true);
+  assert.equal(coveredStem("auth_test", "go"), "auth");
+  assert.equal(coveredStem("auth", "go"), null);
+  assert.equal(coveredStem("_test", "go"), null);
+  // The prefix is Python's and reads as nothing here.
+  assert.equal(coveredStem("test_auth", "go"), null);
+});
+
+test("Python: test_ in front or _test behind is a test by its name alone", () => {
+  assert.equal(FAMILY_TEST_NAMES.python.alone, true);
+  assert.equal(coveredStem("test_auth", "python"), "auth");
+  assert.equal(coveredStem("auth_test", "python"), "auth");
+  assert.equal(coveredStem("auth", "python"), null);
+  assert.equal(coveredStem("testing", "python"), null);
+  assert.equal(coveredStem("test_", "python"), null);
+  assert.equal(coveredStem("AuthTest", "python"), null);
+});
+
+test("PHP: a Test suffix is a test name that a test tree has to corroborate", () => {
+  assert.notEqual(FAMILY_TEST_NAMES.php.alone, true);
+  assert.equal(coveredStem("AppTest", "php"), "App");
+  assert.equal(coveredStem("App", "php"), null);
+  assert.equal(coveredStem("Contest", "php"), null);
+  assert.equal(coveredStem("AppTests", "php"), null);
+  assert.equal(coveredStem("AppTestCase", "php"), null);
+});
+
+test("Java and Kotlin: Test, Tests and IT are test names that a test tree has to corroborate", () => {
+  for (const family of ["java", "kotlin"]) {
+    assert.notEqual(FAMILY_TEST_NAMES[family].alone, true, family);
+    assert.equal(coveredStem("FooTest", family), "Foo", family);
+    assert.equal(coveredStem("FooTests", family), "Foo", family);
+    assert.equal(coveredStem("FooIT", family), "Foo", family);
+    assert.equal(coveredStem("URLTest", family), "URL", family);
+    for (const not of ["Foo", "Contest", "Audit", "EXIT", "Test", "Tests", "IT", "FooTestCase", "TestFoo"]) {
+      assert.equal(coveredStem(not, family), null, `${family} ${not}`);
+    }
+  }
+});
+
+test("Spec is not a test suffix in any family: two files in 21 repositories wear it and neither is a test", () => {
+  for (const family of Object.keys(FAMILY_TEST_NAMES)) {
+    assert.equal(coveredStem("FooSpec", family), null, family);
+    assert.equal(coveredStem("SpecHelper", family), null, family);
+  }
+});
+
+test("C#: Tests and Test are test names that a test tree has to corroborate", () => {
+  assert.notEqual(FAMILY_TEST_NAMES.csharp.alone, true);
+  assert.equal(coveredStem("LoggerTests", "csharp"), "Logger");
+  assert.equal(coveredStem("LoggerTest", "csharp"), "Logger");
+  assert.equal(coveredStem("Logger", "csharp"), null);
+  assert.equal(coveredStem("LoggerIT", "csharp"), null);
+  assert.equal(coveredStem("Contest", "csharp"), null);
+});
+
+test("Rust has no test name: cargo collects by directory", () => {
+  assert.notEqual(FAMILY_TEST_NAMES.rust.alone, true);
+  for (const stem of ["test_de", "de_test", "DeTest", "tests"]) assert.equal(coveredStem(stem, "rust"), null, stem);
+});
+
+test("a test tree has the names every family shares, and the ones its own family adds", () => {
+  for (const family of [null, "js", "python", "kotlin", "csharp"]) assert.ok(isTestTree("tests", family), String(family));
+  // A Gradle source set, and a .NET test project named for the project it covers.
+  for (const set of ["commonTest", "jvmTest", "androidTest", "integrationTest"]) {
+    assert.ok(isTestTree(set, "kotlin"), set);
+    assert.ok(isTestTree(set, "java"), set);
+    assert.ok(!isTestTree(set, "python"), set);
+    assert.ok(!isTestTree(set, null), set);
+  }
+  for (const not of ["main", "commonMain", "Contest", "latest", "Test"]) assert.ok(!isTestTree(not, "kotlin"), not);
+  for (const project of ["Serilog.Tests", "Newtonsoft.Json.Tests", "Serilog.PerformanceTests"]) {
+    assert.ok(isTestTree(project, "csharp"), project);
+    assert.ok(!isTestTree(project, "java"), project);
+  }
+  assert.ok(!isTestTree("Serilog", "csharp"));
+  assert.ok(!isTestTree("Serilog.Testing", "csharp"));
+  assert.ok(isTestTree("Test", "php"));
+  // The namespace directory is singular: composer's is `tests/Composer/Test`, and no measured repository writes `Tests`.
+  assert.ok(!isTestTree("Tests", "php"));
+  assert.ok(!isTestTree("Test", "csharp"));
+  assert.deepEqual(Object.keys(FAMILY_TREES).sort(), ["csharp", "java", "kotlin", "php"]);
+});
+
+test("Python files its tests by feature below the top of the tree, and no other family is held to that", () => {
+  assert.deepEqual([...FEATURE_TREES], ["python"]);
+});
+
+test("Python: a tests directory is paired with the package beside it, directory for directory", () => {
+  const paired = pairedWith("examples/tutorial/tests", "python");
+  assert.ok(paired("examples/tutorial/flaskr"));
+  assert.ok(paired("examples/tutorial/src/flaskr"));
+  for (const not of ["examples/tutorial", "examples/tutorial/flaskr/api", "examples/javascript/js_example", "flaskr", "examples/tutorial/src"]) {
+    assert.ok(!paired(not), not);
+  }
+  assert.ok(pairedWith("examples/tutorial/tests/api", "python")("examples/tutorial/flaskr/api"));
+  assert.ok(pairedWith("tests", "python")("flaskr"));
+  assert.equal(pairedWith("examples/tutorial/flaskr", "python"), null);
+  for (const family of ["js", "ruby", "go", "rust"]) assert.equal(pairedWith("examples/tutorial/tests", family), null, family);
+});
+
+test("a test project or tree is paired with the project it is named for or sits beside", () => {
+  // .NET: `Serilog.Tests` is named for `Serilog`, wherever either sits.
+  const serilog = pairedWith("test/Serilog.Tests/Core", "csharp");
+  assert.ok(serilog("src/Serilog/Core/Sinks"));
+  assert.ok(!serilog("src/Serilog.Sinks.File"));
+  assert.ok(!serilog("test/Serilog.Tests/Support"));
+  assert.ok(pairedWith("tests/Jellyfin.Api.Tests/Auth", "csharp")("Jellyfin.Api/Controllers"));
+  assert.equal(pairedWith("test/Serilog/Core", "csharp"), null);
+
+  // Maven and Gradle: `src/test` beside `src/main`, and a source set beside the others.
+  for (const family of ["java", "kotlin"]) {
+    const module = pairedWith("gson/src/test/java/com/google/gson/functional", family);
+    assert.ok(module("gson/src/main/java/com/google/gson"), family);
+    assert.ok(!module("extras/src/main/java/com/google/gson"), family);
+    assert.ok(!module("gson/src/test/java/com/google/gson"), family);
+    assert.ok(!module("gson"), family);
+    const set = pairedWith("core/jvmTest/src/k", family);
+    assert.ok(set("core/commonMain/src/k"), family);
+    assert.ok(!set("core/commonTest/src/k"), family);
+    assert.ok(!set("formats/commonMain/src/k"), family);
+    // A `test` directory under no `src` is a flat test directory.
+    assert.equal(pairedWith("ktor-utils/jvm/test/io/ktor", family), null, family);
+  }
+
+  // PHP: `tests` beside `src` or `app`.
+  const laravel = pairedWith("tests/Integration/Generators", "php");
+  assert.ok(laravel("src/Illuminate/Database/Console"));
+  assert.ok(laravel("app/Models"));
+  assert.ok(!laravel("Slim/Routing"));
+  assert.ok(!laravel("types/Cache"));
+  assert.ok(pairedWith("packages/mail/tests/Unit", "php")("packages/mail/src"));
+  assert.ok(!pairedWith("packages/mail/tests/Unit", "php")("packages/queue/src"));
+  assert.equal(pairedWith("src/Illuminate/Testing", "php"), null);
+});
+
+test("Java and Kotlin: a Main source set and the package root are the words a mirror reads out of a path", () => {
+  for (const family of ["java", "kotlin"]) {
+    const trees = FAMILY_TREES[family];
+    for (const set of ["commonMain", "jvmMain", "androidMain"]) assert.ok(trees.source.test(set), `${family} ${set}`);
+    for (const not of ["main", "Main", "commonTest", "domain", "commonJvmAndroid"]) assert.ok(!trees.source.test(not), `${family} ${not}`);
+    assert.deepEqual([...trees.packagesUnder].sort(), ["java", "kotlin"], family);
+  }
+  for (const family of ["csharp", "php"]) {
+    assert.equal(FAMILY_TREES[family].source, undefined, family);
+    assert.equal(FAMILY_TREES[family].packagesUnder, undefined, family);
+  }
+});
+
+test("Python's packaging shell is src, and no other family has one", () => {
+  assert.deepEqual(PACKAGE_SHELL, { python: "src" });
 });
