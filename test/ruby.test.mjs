@@ -2381,7 +2381,12 @@ process.stdout.write(JSON.stringify(out.results.map((r) => [r.rel, Boolean(r.cra
   try {
     const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 20_000 });
     assert.equal(stdout, '[["a.rb",true],["b.rb",true]]');
-    assert.equal(exists(Number(readFileSync(writer, "utf8"))), false, "the writer died on the closed pipe");
+    // The writer dies on its next write and init reaps it after that, so it can
+    // outlive the parent by a moment.
+    const pid = Number(readFileSync(writer, "utf8"));
+    const deadline = Date.now() + 5_000;
+    while (exists(pid) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    assert.equal(exists(pid), false, "the writer died on the closed pipe");
   } finally {
     try {
       process.kill(Number(readFileSync(writer, "utf8")), "SIGKILL");
@@ -2391,10 +2396,36 @@ process.stdout.write(JSON.stringify(out.results.map((r) => [r.rel, Boolean(r.cra
   }
 });
 
-test("a check reads a tree 700 blocks deep: it crosses to the parent whole", needsRuby, async () => {
+/** A program of `depth` nested blocks, in the shape prism answers `a {` with. */
+function nestedBlocks(depth) {
+  let body;
+  for (let line = depth; line >= 1; line--) {
+    const block = { t: "block", line, ...(body ? { body: { t: "statements", line: line + 1, body: [body] } } : {}) };
+    body = { t: "call", line, name: "a", block };
+  }
+  return { t: "program", line: 1, statements: { t: "statements", line: 1, body: [body] } };
+}
+
+test("a check's tree nested deeper than a message decodes crosses to the parent whole", needsShebang, async () => {
+  // 1,000 blocks is 4,000 levels of JSON, past what the parent can decode off a
+  // structured-clone message, whatever depth this runner's prism could parse.
+  const home = mkdtempSync(join(dir, "deep-"));
+  const lines = join(home, "lines");
+  const program = nestedBlocks(1_000);
+  writeFileSync(lines, JSON.stringify({ rel: "a.rb", ok: true, ast: program, errors: 0, length: 1 }) + "\n");
+  const ruby = stubRuby("deep", ["cat >/dev/null", READY, `cat '${lines}'`]);
+  const out = await parseRuby([pair[0]], { ruby, dimensions: [] });
+
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.error ?? null, Boolean(r.crashed)]), [["a.rb", true, null, false]]);
+  assert.equal(JSON.stringify(out.results[0].program), JSON.stringify(program), "every level arrived");
+});
+
+test("a check reads a tree 700 blocks deep with the real prism", needsRuby, async (t) => {
   const deep = write("deep_blocks", "a {\n".repeat(700) + "}\n".repeat(700));
   const out = await parseRuby([deep], { dimensions: [] });
 
+  // Windows runs ruby on a smaller stack, and prism gives up before 700 levels.
+  if (out.results[0].error === "parser exhausted") return t.skip("this ruby's prism answers `parser exhausted` at 700 levels");
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.error ?? null]), [["deep_blocks.rb", true, null]]);
   assert.equal(JSON.stringify(out.results[0].program).split('"t":"block"').length - 1, 700);
 });
