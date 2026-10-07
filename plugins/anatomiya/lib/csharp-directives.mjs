@@ -36,11 +36,14 @@ function stringEnd(source, quote) {
   let run = 1;
   while (source[quote + run] === '"') run++;
   if (run >= 3) {
-    const close = source.indexOf('"'.repeat(run), quote + run);
-    if (close === -1) return n;
-    let end = close + run;
-    while (source[end] === '"') end++;
-    return end;
+    // Counted in one pass: a needle of `run` quotes fails late at every shorter run, and a megabyte of them took 22 s.
+    let seen = 0;
+    for (let i = quote + run; i < n; i++) {
+      if (source[i] === '"') seen++;
+      else if (seen >= run) return i;
+      else seen = 0;
+    }
+    return n;
   }
   for (let i = quote + 1; i < n; i++) {
     const ch = source[i];
