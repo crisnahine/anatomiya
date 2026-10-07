@@ -44,19 +44,21 @@ test("the three targets, their directories and their extensions", () => {
     },
     cursor: {
       id: "cursor", dir: ".cursor/rules", ext: ".mdc", always: false, reader: "Cursor", wrote, widens: null,
-      reads: "Read a file before editing it: an area's notes attach when you read one of its files.",
-      listed: "attached when you read one of its files",
+      reads: "Each area has its own file under .cursor/rules whose `globs:` names that area's files: before editing a file, read the one that names it.",
+      listed: "whose `globs:` names its files",
     },
     copilot: {
       id: "copilot", dir: ".github/instructions", ext: ".instructions.md", always: false, reader: "GitHub Copilot", wrote,
       widens: "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.",
       reads:
-        "Before editing a file, read the anatomiya file under .github/instructions whose applyTo matches it: an area's notes apply to the files its patterns name.",
-      listed: "applied to the files its pattern names",
+        "Each area has its own file under .github/instructions whose `applyTo:` names that area's files: before editing a file, read the one that names it.",
+      listed: "whose `applyTo:` names its files",
     },
   });
   // A sentence that names a directory names the target's own.
-  assert.ok(copilot.reads.includes(` under ${copilot.dir} `));
+  for (const target of [cursor, copilot]) assert.ok(target.reads.includes(` under ${target.dir} `), target.id);
+  // Delivery is measured for Claude Code alone, so no other target's sentence says when a file arrives.
+  for (const target of [cursor, copilot]) assert.doesNotMatch(`${target.reads} ${target.listed}`, /\b(attach|applied|load|arrive)/i, target.id);
   assert.deepEqual(TARGET_IDS, ["claude", "cursor", "copilot"]);
   assert.ok(Object.isFrozen(TARGETS) && Object.isFrozen(TARGET_IDS) && TARGET_IDS.every((id) => Object.isFrozen(TARGETS[id])));
   assert.equal(claude.dir, RULES_DIR);

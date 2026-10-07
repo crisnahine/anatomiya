@@ -3753,7 +3753,7 @@ test("naming the claude target changes nothing", () => {
 });
 
 // The Claude literal with the lines a target owns put in: its frontmatter key,
-// who wrote the file, how an area's notes arrive, and where the files are.
+// who wrote the file, what an area's file is, and where the files are.
 const overviewFor = (key, reads, listed, generated) => {
   const expected = [...CLAUDE_OVERVIEW];
   expected.splice(2, 0, key);
@@ -3764,25 +3764,25 @@ const overviewFor = (key, reads, listed, generated) => {
   return expected;
 };
 
-test("the cursor overview always applies, names what wrote it and says how an area's notes arrive", () => {
+test("the cursor overview always applies, names what wrote it and says what an area's file is", () => {
   assert.deepEqual(
     renderOverview(noted(), NOTED_FILES, cursor).split("\n"),
     overviewFor(
       "alwaysApply: true",
-      "Read a file before editing it: an area's notes attach when you read one of its files.",
-      "attached when you read one of its files",
+      "Each area has its own file under .cursor/rules whose `globs:` names that area's files: before editing a file, read the one that names it.",
+      "whose `globs:` names its files",
       ".cursor/rules/anatomiya-*.mdc"
     )
   );
 });
 
-test("the copilot overview applies to every file and tells the reader to read the matching file itself", () => {
+test("the copilot overview applies to every file and says what an area's file is", () => {
   assert.deepEqual(
     renderOverview(noted(), NOTED_FILES, copilot).split("\n"),
     overviewFor(
       'applyTo: "**"',
-      "Before editing a file, read the anatomiya file under .github/instructions whose applyTo matches it: an area's notes apply to the files its patterns name.",
-      "applied to the files its pattern names",
+      "Each area has its own file under .github/instructions whose `applyTo:` names that area's files: before editing a file, read the one that names it.",
+      "whose `applyTo:` names its files",
       ".github/instructions/anatomiya-*.instructions.md"
     )
   );
@@ -3802,8 +3802,8 @@ test("several unnamed areas are listed in each reader's own words", () => {
   const many = result({ areas: [silent("a"), silent("b"), silent("c")] });
   const tail = (target) => renderOverview(many, { uncovered: 0 }, target).split("\n").find((l) => l.startsWith("- 3 areas"));
   assert.equal(tail(claude), "- 3 areas, each in its own file, loaded when you read one of its files");
-  assert.equal(tail(cursor), "- 3 areas, each in its own file, attached when you read one of its files");
-  assert.equal(tail(copilot), "- 3 areas, each in its own file, applied to the files its pattern names");
+  assert.equal(tail(cursor), "- 3 areas, each in its own file, whose `globs:` names its files");
+  assert.equal(tail(copilot), "- 3 areas, each in its own file, whose `applyTo:` names its files");
 });
 
 test("a cursor area file carries generator, globs and alwaysApply in that order, and the body claude gets", () => {
@@ -3914,7 +3914,7 @@ test("an overview lists and counts only the areas its target has a file for, and
     "## Areas (2)",
     "",
     "- src/services — 40 files, 1 stated",
-    "- and 1 more area in its own file, attached when you read one of its files",
+    "- and 1 more area in its own file, whose `globs:` names its files",
     "- 1 area has no pattern Cursor can be given, so no file here covers it: lib/odd.",
   ]);
 

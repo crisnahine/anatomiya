@@ -448,7 +448,14 @@ so every later scan, and the background refresh, keeps writing it. Nothing else 
 choice. The flag names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns
 both off and removes the files this tool wrote there. Deleting a target's overview file by hand
 turns it off as well, and the next scan removes the area files beside it. The two directories stay,
-holding none of this tool's files. `/anatomiya:doctor`, run inside the repository, prints a line for
+holding none of this tool's files. In a clone that brings a committed overview file, the first scan
+says on that directory's line which file switched the target on and what switches it off:
+
+```
+wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-overview.mdc switched on: `scan --targets claude` switches it off
+```
+
+`/anatomiya:doctor`, run inside the repository, prints a line for
 each target that is on.
 
 Both directories are ones people write rules in, so a scan is strict there. It never writes over a
@@ -461,8 +468,30 @@ entries named `anatomiya-*` are looked at.
 The last two exclude lines under [Quick start](#quick-start) keep both copies out of git. To commit
 one instead, leave its exclude line out and commit its files. GitHub's documentation says the cloud
 agent and code review on GitHub.com read `.github/instructions` from the repository. Nothing here
-observed that. The background refresh then leaves the committed copy as it is and keeps the rest
-current, and a scan you run by hand rewrites it.
+observed that.
+
+What the background refresh does then depends on which files git tracks:
+
+- **A target's overview file.** The refresh leaves that target's files as the commit has them and
+  keeps the other copies current.
+- **A target's area files and not its overview.** The refresh rewrites them, so `git status` shows a
+  change nobody made. Commit the overview with them.
+- **The `.claude/rules` map.** The refresh leaves the repository alone: nothing is rewritten, the
+  Cursor and Copilot copies included, whether git tracks those or not.
+
+A scan you run by hand rewrites every copy that is on.
+
+A teammate's clone of a repository that commits a copy holds the files and no record of them: the
+record is in `.claude/anatomiya/`, which the exclude lines keep out of git. A plain scan removes an
+area file only where the record names it. So in that clone the file of an area that has since gone
+stays in the directory as a rule file, and every scan counts it:
+
+```
+.cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was left as it is
+```
+
+To clear it, run `scan --targets claude`, which removes every file of this tool from both
+directories, then name the targets again.
 
 What a Cursor or Copilot user gets is the map's files, and not the rest of this tool.
 
