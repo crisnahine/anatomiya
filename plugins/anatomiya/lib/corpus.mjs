@@ -5,7 +5,7 @@ import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
-import { isLink, isMapName, readHead, STORE_DIR } from "./rules.mjs";
+import { isLink, isMapName, readHead, STORE_DIR, trackedRulesDir } from "./rules.mjs";
 import { TARGETS } from "./targets.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
@@ -128,9 +128,12 @@ function excludedAt(path) {
 }
 
 // By name, with no head read: a hand-written file under one of these exact names is left out with the map.
-function isOwnOutput(path) {
-  if (path.startsWith(`${STORE_DIR}/`)) return true;
-  return Object.values(TARGETS).some((t) => path.startsWith(`${t.dir}/`) && isMapName(path.slice(t.dir.length + 1), t));
+// Git lists a map written through a `.claude/rules` link under the link's target, so that is the directory asked.
+function ownOutput(root) {
+  const dirs = Object.values(TARGETS).map((t) => [t.id === TARGETS.claude.id ? trackedRulesDir(root) : t.dir, t]);
+  return (path) =>
+    path.startsWith(`${STORE_DIR}/`) ||
+    dirs.some(([dir, t]) => path.startsWith(`${dir}/`) && isMapName(path.slice(dir.length + 1), t));
 }
 
 export function isSource(path) {
@@ -464,6 +467,7 @@ export async function collect(root) {
   // Where each folded name sits in `files`. Only a fold that collides is asked
   // for file identity, so a stat per file is not the price of the rare case.
   const byFold = new Map();
+  const isOwnOutput = ownOutput(root);
 
   await lsFiles(root, (rel) => {
     const { drop, abs } = classify(root, rel, generatedRules);

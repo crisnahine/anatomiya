@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
+import { needsPosixPaths, needsSymlinks } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -1418,11 +1418,41 @@ test("three scans with every target on leave every file byte-identical after the
   assert.deepEqual(rosterLines(third, ".claude"), [], "nor the store and the map under .claude");
 });
 
-test("the same three scans agree when the map is left untracked and not ignored", async (t) => {
+test("three scans with every target on and the map untracked leave every file byte-identical", async (t) => {
   const { first, second, third } = await threeScans(t, () => {});
 
   assert.deepEqual(second, first);
   assert.deepEqual(third, first);
   assert.deepEqual(rosterLines(third, ".github"), ["- .github: 3 .yml"]);
   assert.deepEqual(rosterLines(third, ".cursor"), ["- .cursor/rules: 3 .mdc"]);
+});
+
+test("three scans leave a map committed through a .claude/rules link byte-identical", needsSymlinks, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 8; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("agents/rules/team.md", "# ours\n");
+    mkdirSync(join(d, ".claude"));
+    symlinkSync("../agents/rules", join(d, ".claude", "rules"), "dir");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
+  const written = () => Object.fromEntries(
+    readdirSync(join(dir, "agents/rules")).sort().map((n) => [n, readFileSync(join(dir, "agents/rules", n), "utf8")])
+  );
+  const scanned = async () => { writeMap(await scan(dir)); return written(); };
+
+  const first = await scanned();
+  git("add", "-A");
+  git("commit", "-qm", "the map");
+  assert.match(git("ls-files"), /^agents\/rules\/anatomiya-overview\.md$/m, "git tracks the map under the link's target");
+  const second = await scanned();
+  const third = await scanned();
+
+  assert.ok(Object.keys(first).some((n) => n.startsWith("anatomiya-area-")), "an area file");
+  assert.deepEqual(second, first);
+  assert.deepEqual(third, first);
+  const roster = third["anatomiya-overview.md"].split("## What lives where\n\n")[1].split("\n\n")[0].split("\n");
+  // The link and the team's one file, and none of the three the scan wrote beside it.
+  assert.deepEqual(roster, ["- src: 8 .ts", "- and 2 files in 2 directories too small for a line of their own"]);
 });

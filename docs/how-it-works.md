@@ -1243,11 +1243,14 @@ a fact about where things live. Nothing extra is parsed for it, and a file the p
 is counted under its extension and appears in no other count.
 
 The map's own files are left out, so a repository that commits its map prints the same counts on the
-next scan: everything under `.claude/anatomiya/`, and in `.claude/rules`, `.cursor/rules` and
-`.github/instructions` a file named `anatomiya-overview` or `anatomiya-area-<8 hex digits>` with
-that directory's extension. It is decided by the name alone, whether or not that target is on, and
+next scan: every file under `.claude/anatomiya/` that is not source, and in `.claude/rules`,
+`.cursor/rules` and `.github/instructions` a file named `anatomiya-overview` or
+`anatomiya-area-<8 hex digits>` with that directory's extension. Where `.claude/rules` is a link to
+another directory in the repository, git tracks the map under that directory, so the rule asks
+there instead, once per scan. It is decided by the name alone, whether or not that target is on, and
 no file is opened for it, so a hand-written file under one of those exact names is left out too.
-Every other file in those directories is a team's own and is counted.
+Every other file in those directories is a team's own and is counted, and so is a source file under
+`.claude/anatomiya/`, which is read like any other.
 
 It describes the tree as it is rather than the pinned population, because it is counts and never a
 directive: a tests line that moves when an agent adds a test file is a true count that flips
