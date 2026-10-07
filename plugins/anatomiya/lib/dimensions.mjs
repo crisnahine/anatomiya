@@ -150,7 +150,7 @@ export const DIMENSIONS = [
       sites: "a file holding at least one catch clause, whether or not it binds the error",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -176,7 +176,7 @@ export const DIMENSIONS = [
       sites: "a file that throws outside a catch, or returns a result: a Result.* call, an ok(), err(), Ok() or Err() call, or an object literal carrying an ok key, or one carrying an error or success key whose every key is error, success, data, value, result, valid or isValid. An object carrying any other key beside error is a view-model or state, not a result, and so is whatever getDerivedStateFromError returns",
       blind: "a throw inside a helper the caller wraps is invisible from the file that throws",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "svelte"],
     visitor(program, add) {
       // Every throw before every result, the order two walks gave.
       const results = [];
@@ -274,7 +274,7 @@ export const DIMENSIONS = [
       sites: "a file declaring at least one async function",
       blind: "a caller-level wrapper handling the failure is invisible from the function that fails",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {

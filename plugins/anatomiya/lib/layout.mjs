@@ -86,6 +86,9 @@ export function mirroredTests(files) {
   return mirrored;
 }
 
+// A component with no script still holds its markup, which is the file.
+const holdsNothing = (facets) => facets?.empty === true && !facets.embedded;
+
 /**
  * A test file is one the parse saw import a runner or call `describe`, one
  * whose own name says so, one sitting in a `__tests__` directory, or one
@@ -119,7 +122,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // holds code declares its cases in whatever vocabulary its runner spells them,
   // and reading that absence as "not a test" costs vscode 1,864 of its 2,366
   // (`test` nested inside `suite`) and this client's whole Cypress suite.
-  if (facets?.empty) return false;
+  if (holdsNothing(facets)) return false;
   const base = baseOf(rel);
   if (TEST_NAME.test(base)) return true;
   const dir = dirOf(rel);
@@ -423,7 +426,7 @@ export function layoutIndexes(files, mirrored = mirroredTests(files)) {
   // retires the spec outright: the real file elsewhere in the tree then reads
   // untested and the roster loses the place along with the count.
   const sources = files.filter(
-    (f) => f.lang && !f.facets?.empty && !isTestFile(f, mirrored) && !isStoryFile(f.rel));
+    (f) => f.lang && !holdsNothing(f.facets) && !isTestFile(f, mirrored) && !isStoryFile(f.rel));
   return { testFiles, mirrored, byStem: namesakeIndex(testFiles, sources) };
 }
 
@@ -459,7 +462,7 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
     (f) =>
       f.lang &&
       extOf(f.rel) === producerExt &&
-      !f.facets?.empty &&
+      !holdsNothing(f.facets) &&
       !isTestFile(f, mirrored) &&
       !isStoryFile(f.rel));
   const stories = own.filter((f) => isStoryFile(f.rel));

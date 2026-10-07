@@ -7,7 +7,9 @@ import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
-import { renderOverview } from "../plugins/anatomiya/lib/render.mjs";
+import { renderArea, renderOverview } from "../plugins/anatomiya/lib/render.mjs";
+import { planMap } from "../plugins/anatomiya/lib/write.mjs";
+import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
 import { globsReach } from "../plugins/anatomiya/lib/areas.mjs";
 import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
@@ -1359,4 +1361,39 @@ test("the parse starts before the baseline answers, and the map is the same as w
   assert.equal(order, "parse first");
   assert.equal(plain.areas[0].baseline.status, "ok", "the fixture reaches the baseline");
   assert.deepEqual(stable(delayed), stable(plain));
+});
+
+test("a directory of components becomes an area that counts its scripts and its names", async (t) => {
+  const names = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
+  const script = `import { api } from "../api";\n\nasync function loadItem(id) {\n  try {\n    return await api.get(id);\n  } catch (err) {\n    console.error(err);\n  }\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of names) {
+      write(`src/components/${name}.vue`, `<template>\n  <div @click="loadItem(1)" />\n</template>\n\n<script setup>\n${script}</script>\n`);
+      write(`src/lib/${name}.svelte`, `<script>\n${script}</script>\n\n<button onclick={() => loadItem(1)}>load</button>\n`);
+    }
+    // Markup alone: no script to read, and still a component with a name.
+    write("src/components/PlainBanner.vue", "<template>\n  <p>hello</p>\n</template>\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  for (const [path, ext, files] of [["src/components", ".vue", 9], ["src/lib", ".svelte", 8]]) {
+    const area = result.areas.find((a) => a.path === path);
+    assert.ok(area, `${path} is an area`);
+    assert.match(renderArea(area), new RegExp(`^paths:\\n  - "${path}/\\*\\*/\\*\\${ext}"$`, "m"));
+    const named = dimension(result, path, "file_naming_case");
+    assert.equal(named.learned, "PascalCase");
+    assert.equal(named.learnedKind, "component");
+    assert.equal(named.candidates, files, "a component with no script still votes with its name");
+    assert.deepEqual(
+      [dimension(result, path, "swallowed_error").candidates, dimension(result, path, "function_naming_case").candidates],
+      [8, 8],
+      "the script rows count inside the block"
+    );
+  }
+
+  const lines = [...scanLines(scanSummary(result, planMap(result))), renderOverview(result, { uncovered: 0 })].join("\n");
+  assert.doesNotMatch(lines, /nothing was counted in/);
 });
