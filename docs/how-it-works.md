@@ -1020,8 +1020,8 @@ checkout reaches the worst case, once per context window and per map: measured o
 parallel reads gave four copies from the parent and one from inside the checkout.
 `scripts/measure-echo.mjs` replays the rule over a transcript store: on 3,502 local transcripts it kept
 7,857 of 65,977 deliveries. The measurements behind the rule are in
-`docs/research/what-a-repeated-hook-context-costs.md`. There is still no flag for it: the one option
-a scan takes says where the map is written, and nothing tunes a hook.
+`docs/research/what-a-repeated-hook-context-costs.md`. There is still no flag for it: nothing a
+scan takes tunes a hook.
 
 That last row is the ceiling on the whole design. A `paths` rule attaches when the agent uses the
 Read tool on a matching file or when an `@file` mention names it, and from Claude Code 2.1.288 when
@@ -1177,13 +1177,14 @@ the rename.
 
 ### The same map for Cursor and Copilot
 
-`scan --targets cursor,copilot` writes the map twice more, for two readers that do not load
-`.claude/rules/` the way Claude Code does. The bodies are the ones described above. The directory,
-the extension and the frontmatter are each reader's own (A102, A103):
+`scan --targets cursor,copilot` writes the map twice more: for Cursor, which does not read
+`.claude/rules/`, and for the Copilot surfaces that read only `.github/instructions`. The bodies are
+the ones described above. The directory, the extension and the frontmatter are each reader's own
+(A102, A103):
 
 | Target | Files | Overview frontmatter | Area frontmatter |
 |---|---|---|---|
-| `claude` | `.claude/rules/anatomiya-*.md` | none | `paths:`, a list |
+| `claude` | `.claude/rules/anatomiya-*.md` | the key alone | `paths:`, a list |
 | `cursor` | `.cursor/rules/anatomiya-*.mdc` | `alwaysApply: true` | `globs:`, one unquoted comma-separated line, then `alwaysApply: false` |
 | `copilot` | `.github/instructions/anatomiya-*.instructions.md` | `applyTo: "**"` | `applyTo:`, one quoted comma-separated string |
 
@@ -1201,37 +1202,48 @@ a non-directory on the path, a path that will not open, an overview that is a li
 scan neither writes nor clears an unknown target, and says so only where the record names files
 there.
 
-The patterns change on the way. Both readers split on commas, so a brace set
-`test/**/*.{js,ts}` is written as one pattern per extension. Neither can be told a negation: in
-Cursor 3.20.21 a leading `!` is a pattern of its own that matches nearly every file, and in VS Code
-it matches none. So a negation is left out, and the area file says so in a closing line. A pattern
-the reader would change before matching is left out as well: for Cursor one holding `---`, a comma,
-a brace, a backslash or a line break, one with a space at either edge, one that starts with a quote,
-`!` or `#`, and a lone `true` or `false`; for Copilot one holding a comma, a brace, a double quote,
-a backslash or a line break. An area with no pattern left has no file in that directory, the
-overview there lists and counts only the areas that have one, and both it and the scan's summary
-say how many have none. An area file can end in up to three lines about its own delivery:
+The patterns change on the way. A brace set `test/**/*.{js,ts}` works in both readers that were run,
+and is still written as one pattern per extension: Cursor's documentation shows only comma-separated
+patterns, GitHub's says nothing about braces, and no Copilot surface but VS Code was read. The cost
+is length: `test/**/*.{cjs,cts,js,mjs,mts,ts}` becomes six patterns on one line. Neither can be told
+a negation: in Cursor 3.20.21 a leading `!` is a pattern of its own that matches nearly every file,
+and in VS Code it matches none. So a negation is left out, and the area file says so in a closing
+line. A pattern the reader would change before matching is left out as well: for Cursor one holding
+`---`, a comma, a brace, a backslash or a line break, one with a space at either edge, one that
+starts with a quote, `!` or `#`, and a lone `true` or `false`; for Copilot one holding a comma, a
+brace, a double quote, a backslash or a line break. An area with no pattern left has no file in that
+directory, the overview there lists and counts only the areas that have one, and both it and the
+scan's summary say how many have none. An area file can end in up to three lines about its own
+delivery:
 
 ```
 This file also attaches for test/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}, which the area leaves out.
 VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.
-This file does not attach for a,b/**/*.js, which Cursor cannot be given.
+This file does not attach for src/q\"t/**/*.{cjs,cts,js,mjs,mts,ts}, which Cursor cannot be given.
 ```
 
 The first names the negations a written pattern reaches. The second is in a Copilot file with a
 pattern that does not start with `**/`, since VS Code puts `**/` in front of one. The third names
-the patterns that could not be written. Each list stops at six patterns and counts the rest.
+the patterns that could not be written, where the area still has one that could. The line above came
+from an area `src` holding 8 files of its own and 2 in `src/q"t`, with a second area at `src/api`,
+so its cover names each of its directories. Each list stops at six patterns and counts the rest.
 
-The overview differs in two places. Under the heading the Cursor and Copilot files carry
-`Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code
-is right and this map is stale.`, which the echo says to a Claude Code session and no hook says to
-these readers. And the read-before-editing sentence is the reader's own: `Read a file before editing
-it: an area's notes attach when you read one of its files.` for Cursor, and for Copilot `Before
-editing a file, read the anatomiya file under .github/instructions whose applyTo matches it: an
-area's notes apply to the files its patterns name.` The count at the foot names that directory's own
-files, `Generated files: 4 under .cursor/rules/anatomiya-*.mdc`. Every target's overview keeps to 40
-lines: where the extra head lines would take a Cursor or Copilot overview past it, the sentences
-about other files in the directory share one line.
+Besides the frontmatter, the overview differs in four lines. Under the heading the Cursor and
+Copilot files carry `Written by anatomiya, a scanner run on this repository; where this and the code
+disagree, the code is right and this map is stale.`, which the echo says to a Claude Code session
+and no hook says to these readers. The read-before-editing sentence is the reader's own: `Read a
+file before editing it: an area's notes attach when you read one of its files.` for Cursor, and for
+Copilot `Before editing a file, read the anatomiya file under .github/instructions whose applyTo
+matches it: an area's notes apply to the files its patterns name.` The Areas listing says how an
+area's file arrives: `loaded when you read one of its files` for Claude Code, `attached when you
+read one of its files` for Cursor and `applied to the files its pattern names` for Copilot. The
+count at the foot names that directory's own files, `Generated files: 4 under
+.cursor/rules/anatomiya-*.mdc`. Two cases change more lines. Where the extra head lines would take a
+Cursor or Copilot overview past 40 lines, the sentences about other files in the directory share one
+line. Where an area has no file there, the `## Areas` count is lower and one more line says how many
+have none. Over 196,608 combinations of the optional lines, rendered for each target, no overview
+passed 40 (A103). An input outside those can pass 40, for Claude's overview too:
+`test/render.test.mjs` renders one at 41, on a shape it says no scan reaches.
 
 The plan is made per target, and all of it before anything is created. The two `.claude`
 directories are resolved first, then each other target's state is read, then each directory that is

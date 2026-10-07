@@ -261,7 +261,8 @@ _Avoid_: rule file, doc, context file
 **Target**:
 One of the three places a scan can write the map, each for one reader: `claude` for Claude Code,
 `cursor` for Cursor and `copilot` for GitHub Copilot. The first is always written. Each of the other
-two is written only once a scan is asked for it, and stays on while its own overview is there.
+two is written while its own overview, carrying this tool's key, is in its directory, which
+`scan --targets` puts there and a clone can bring with it.
 _Avoid_: destination, backend, integration, export, format
 
 **Refresh**:
