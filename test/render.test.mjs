@@ -3264,3 +3264,68 @@ test("a component count with no other beside it still says which files it is ove
 
   assert.equal(kindsLine(only), "kinds: 9 .ts, 4 .svelte; 0 test files; 1 of 4 .svelte files has a namesake test");
 });
+
+const constRow = (o = {}) => dim({ key: "module_state_const", claim: "module-level bindings are const", conforming: 7, candidates: 7, ...o });
+
+test("a claim says which files it was counted over where the area holds others", () => {
+  const mixed = area({ extsByLang: { js: [".ts", ".js"], svelte: [".svelte"] }, dimensions: [constRow()] });
+
+  assert.match(renderArea(mixed), /^module-level bindings are const, in \.js and \.ts files\n {2}7 of 7 sites across /m);
+});
+
+test("a counts line and a default-matching line carry the same scope", () => {
+  const out = renderArea(
+    area({
+      extsByLang: { js: [".ts"], vue: [".vue"] },
+      dimensions: [
+        constRow({ directive: false, gate: "evidence" }),
+        dim({ key: "type_only_import", claim: "imports used only as types are marked import type", states: "claim", matchesDefault: true, conforming: 22 }),
+      ],
+    })
+  );
+
+  assert.match(out, /^module-level bindings are const, in \.ts files: no convention\. 7 of 7 sites \(evidence\)$/m);
+  assert.match(out, /^imports used only as types are marked import type, in \.ts files: 22 of 22 sites \(matches model default\)$/m);
+});
+
+test("a claim asked of every extension the area holds names none of them", () => {
+  const out = renderArea(
+    area({
+      extsByLang: { js: [".ts"], svelte: [".svelte"], jsx: [".tsx"] },
+      dimensions: [dim(), constRow()],
+    })
+  );
+
+  assert.match(out, /^catch blocks use the error they caught$/m);
+  assert.match(out, /^module-level bindings are const, in \.ts and \.tsx files$/m);
+  assert.doesNotMatch(renderArea(area({ dimensions: [constRow()] })), /, in /, "an area that names no extensions is a record, and prints as it did");
+});
+
+test("a row asked of JSX alone is scoped to the extensions a file holding JSX may carry", () => {
+  const jsxRow = REGISTRY.find((d) => d.langs.length === 1 && d.langs[0] === "jsx");
+  const row = dim({ key: jsxRow.key, claim: jsxRow.claim });
+
+  assert.match(
+    renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb", "(none)"] }, dimensions: [row] })),
+    new RegExp(`^${jsxRow.claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, in \\.js files$`, "m")
+  );
+  assert.doesNotMatch(renderArea(area({ extsByLang: { js: [".js", ".ts"], jsx: [".tsx"] }, dimensions: [row] })), /, in /);
+});
+
+test("three extensions read as a series, in one order whatever order the files came in", () => {
+  const one = renderArea(area({ extsByLang: { js: [".ts", ".mjs", ".js"], ruby: [".rb"] }, dimensions: [constRow()] }));
+  const other = renderArea(area({ extsByLang: { ruby: [".rb"], js: [".js", ".ts", ".mjs"] }, dimensions: [constRow()] }));
+
+  assert.match(one, /^module-level bindings are const, in \.js, \.mjs and \.ts files$/m);
+  assert.equal(one, other);
+});
+
+test("the scope costs no line, and a sentence the budget kept without its counts still carries it", () => {
+  const dims = Array.from({ length: 30 }, (_, i) => (i === 6 ? constRow() : dim({ key: `k${i}`, claim: `claim ${i}` })));
+  const plain = area({ dimensions: dims });
+  const scoped = area({ extsByLang: { js: [".ts"], svelte: [".svelte"] }, dimensions: dims });
+
+  assert.equal(renderArea(scoped).split("\n").length, renderArea(plain).split("\n").length);
+  assert.deepEqual([...droppedSlots(scoped)], [...droppedSlots(plain)]);
+  assert.match(renderArea(scoped), /^ {2}module-level bindings are const, in \.ts files$/m);
+});

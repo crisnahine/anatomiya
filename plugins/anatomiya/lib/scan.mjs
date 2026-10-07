@@ -277,6 +277,10 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       baseline: measuredArea.population,
       // The same counts a root line carries, over this area's own files.
       kinds: kinds(area),
+      // For the renderer alone, which names the extensions a claim was counted
+      // over where the area holds others. Not in the record: the map is written
+      // from this object, and nothing reads the scope back.
+      extsByLang: extsByLang(area.files),
       // What a new file in here would import, and what to check for before
       // writing one. Read at HEAD like the roster: both are counts, and neither
       // is a claim anything is gated against.
@@ -359,6 +363,13 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     layout,
     areas: out,
   };
+}
+
+/** Each language's extensions among these files, as the kinds line spells them. */
+function extsByLang(files) {
+  const out = {};
+  for (const f of files) (out[f.lang] ??= new Set()).add(extOf(f.rel));
+  return Object.fromEntries(Object.entries(out).map(([lang, exts]) => [lang, [...exts]]));
 }
 
 /** Distinct authors over the files carrying one side's sites (D4). */
