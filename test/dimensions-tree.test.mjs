@@ -190,14 +190,6 @@ const CASES = {
     ],
   },
 
-  wildcard_import: {
-    kotlin: [
-      ["import a.b.C\nimport a.b.D as E\n", [true, true]],
-      ["import a.b.*\n", [false]],
-      ["package a.b\n\nval x = 2 * 3\n", []],
-    ],
-  },
-
   declared_return_type: {
     python: [
       ["def f() -> int:\n    return 1\n", [true]],
@@ -228,7 +220,6 @@ test("the rows are registered, each for the languages whose measured repositorie
   assert.deepEqual(langs, {
     caught_error_used: ["php", "java"],
     public_doc_comment: ["python", "php", "go", "java", "csharp", "rust", "kotlin"],
-    wildcard_import: ["kotlin"],
     declared_return_type: ["python", "php"],
   });
   for (const d of TREE_DIMENSIONS) {
@@ -268,9 +259,7 @@ for (const key of TESTLESS) {
   });
 }
 
-test("the rows that judge every file do count a test file", async () => {
-  const test = "import kotlin.test.Test\n\nclass ATest {\n    @Test\n    fun a() {}\n}\n";
-  assert.deepEqual(await hits("wildcard_import", "kotlin", test, "src/test/kotlin/ATest.kt"), [{ conforming: true, where: null }]);
+test("the row that judges every file does count a test file", async () => {
   const [rel, source] = ["src/test/java/ATest.java", "import org.junit.Test;\n\nclass ATest {\n    @Test\n    public void a() {\n        try { b(); } catch (E e) { }\n    }\n}\n"];
   assert.deepEqual(await hits("caught_error_used", "java", source, rel), [{ conforming: false, where: "a" }]);
 });
@@ -282,7 +271,6 @@ test("a site crosses with the name a reader is sent to", async () => {
   assert.deepEqual(await hits("caught_error_used", "php", "<?php\ntry { a(); } catch (E $e) { }\n"), [{ conforming: false, where: null }]);
   assert.deepEqual(await hits("public_doc_comment", "go", "package a\n\n// Run runs.\nfunc Run() {}\n"), [{ conforming: true, where: "Run" }]);
   assert.deepEqual(await hits("declared_return_type", "php", "<?php\nfunction f() {}\n"), [{ conforming: false, where: "f" }]);
-  assert.deepEqual(await hits("wildcard_import", "kotlin", "import a.b.*\n"), [{ conforming: false, where: null }]);
 });
 
 test("a row asked alone points at what it judged: a function by its name, so a line added to its body is no new site", async () => {

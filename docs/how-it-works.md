@@ -477,12 +477,12 @@ a backslash is a character in a name rather than a separator.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 53 ship, the filename row included: 28 for JavaScript, 33
+A dimension is one claim about one area. 52 ship, the filename row included: 28 for JavaScript, 33
 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and
 reaches a scan only when the checker runs. A component's script block is asked most of the 28: 24
-for Vue and 24 for Svelte. Four are asked of a tree-sitter tree, each of the languages whose
+for Vue and 24 for Svelte. Three are asked of a tree-sitter tree, each of the languages whose
 measured repositories differ on it: 2 for Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for
-Rust and 2 for Kotlin. Each is defined by three quantities, not one.
+Rust and 1 for Kotlin. Each is defined by three quantities, not one.
 
 | Quantity | Meaning |
 |---|---|
@@ -591,7 +591,6 @@ in `check`.
 | `module_include` | precise | ruby | classes here include `<style>`, learned |
 | `caught_error_used` | partial | php, java | exception handlers use the error they caught |
 | `public_doc_comment` | partial | python, php, go, java, csharp, rust, kotlin | public functions carry a doc comment |
-| `wildcard_import` | precise | kotlin | an import names what it takes |
 | `declared_return_type` | precise | python, php | functions declare what they return |
 
 The five JSX rows are the ones that make the JSX total 33 rather than 28: a `.tsx` or `.jsx` file is
