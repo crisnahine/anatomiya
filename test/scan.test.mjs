@@ -1399,7 +1399,7 @@ test("a directory of components becomes an area that counts its scripts and its 
   const lines = [...scanLines(scanSummary(result, planMap(result))), renderOverview(result, { uncovered: 0 })].join("\n");
   assert.doesNotMatch(lines, /nothing was counted in/);
   assert.deepEqual(result.corpus.scriptOnly, [[".vue", 9], [".svelte", 8]]);
-  assert.match(lines, /^- 17 \.vue and \.svelte files are read for their script block; the template is not read$/m);
+  assert.match(lines, /^- of 17 \.vue and \.svelte files only the script block is read; the template is not$/m);
 });
 
 test("a claim counted over a Gemfile names it, not the label the kinds line gives a file with no extension", async (t) => {

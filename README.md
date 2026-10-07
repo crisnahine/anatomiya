@@ -464,7 +464,7 @@ types are marked import type`. `failure is returned, not thrown` is left out for
 that exports a hook exports one` for Svelte. The five JSX dimensions and the type-checked one are
 never asked of a component. Nothing is counted about markup: its directives, its event bindings, or
 which components it renders. The overview says so on every scan of a repository that holds one:
-`17 .vue and .svelte files are read for their script block; the template is not read`.
+`of 17 .vue and .svelte files only the script block is read; the template is not`.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
 files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 205 of 2,468

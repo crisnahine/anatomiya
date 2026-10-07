@@ -24,8 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   not read as an exported name or function, and a PascalCase function in a Vue script is not read
   as a function name.
 - A component's template and style block are not read, and the overview's "Not covered" section
-  says so for a repository that holds one: `17 .vue and .svelte files are read for their script
-  block; the template is not read`.
+  says so for a repository that holds one: `of 17 .vue and .svelte files only the script block is
+  read; the template is not`.
 - Component files learn their own filename class, apart from the modules beside them:
   `component files here are named PascalCase`.
 - `$lib/` in a SvelteKit project resolves to the importer's own `src/lib` for "most imported from
