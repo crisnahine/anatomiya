@@ -195,7 +195,7 @@ two may import the same name and one module may not declare a name twice, and th
 into one program in file order. A block marked `lang="ts"` takes the TypeScript grammar, and one
 with no `lang` is read as a `.js` file is. A script that never closes, or a syntax error in either
 block, leaves the whole file rejected. A component with no script at all is read as an empty file:
-it keeps its name and its place in the layout and holds no sites. Neither retry above runs for a
+it keeps its name and its place in the layout and holds no site but its filename. Neither retry above runs for a
 component. The template and the style block are never read, and the overview's Not covered section
 says so wherever the corpus holds one: `of 17 .vue and .svelte files only the script block is read; the
 template is not`.
@@ -421,7 +421,7 @@ a backslash is a character in a name rather than a separator.
 
 A dimension is one claim about one area. 49 ship, the filename row included: 28 for JavaScript, 33
 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and
-reaches a scan only when the checker runs. A component's script block is asked a part of the 28: 24
+reaches a scan only when the checker runs. A component's script block is asked most of the 28: 24
 for Vue and 24 for Svelte. Each is defined by three quantities, not one.
 
 | Quantity | Meaning |
@@ -534,8 +534,9 @@ The five JSX rows are the ones that make the JSX total 33 rather than 28: a `.ts
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 11 to 16.
 
-A row is asked of a component's script only where it lists `vue` or `svelte` itself, and each was
-listed after being run on components of that framework and read against what a person would count.
+A row is asked of a component's script only where it lists `vue` or `svelte` itself. Each row was
+run on six hand-written components per framework and is listed where its sites match the ones a
+person reading the component counts.
 Three rows are asked of neither, because the answer is in the template. `module_state_const`: a
 top-level `let` in a component is state the template writes, and 1,252 of 2,568 measured Svelte
 sites are one. `optional_chaining`: `props` is never absent, and 1,424 of 1,425 measured Vue sites
@@ -549,10 +550,10 @@ Two skips keep the listed rows true. In a `.svelte` file `export let` declares a
 declarator is no site for the six rows that would read it as an exported name or an exported
 function. In a `.vue` file a PascalCase function is no `function_naming_case` site, since it is a
 component the template renders and the template is not read. The filename row counts components
-apart from the modules beside them and says so: `component files here are named PascalCase`. Its
-sentence about relative imports declines a component import, which is written with its extension,
-and where the area holds components the not-counted line names that first: `not counted: an import
-of a .vue file, which is written with its extension; ...`.
+apart from the modules beside them and says so: `component files here are named PascalCase`.
+`import_extension` does not count an import of a component, which is always written with its
+extension. Where the area holds components, its not-counted line names that first: `not counted: an
+import of a .vue file, which is written with its extension; ...`.
 
 An area delivers on one glob for every language in it, so a claim counted over a directory's `.ts`
 files reaches an agent editing the `.vue` file beside them. Where an area holds a source file of a
@@ -566,15 +567,17 @@ module-level bindings are const, in .ts files: 11 of 11 sites (matches model def
 module-level functions are declared with function, not assigned as arrows: no convention. 31 of 31 sites (evidence)
 ```
 
-That area holds ten `.ts` files and one `.vue`. The first two rows are not asked of Vue and carry
+That area is vitepress's `docs`, ten `.ts` files and one `.vue`. The first two rows are not asked of Vue and carry
 the clause; the third is, and does not. The clause sits on the sentence because the sentence is the
 one part every form prints, so it costs no line. Whether it prints is a question about languages,
 and what it names is the files the row was asked of: a JSX row in an area of `.ts`, `.tsx` and
 `.vue` files reads `, in .tsx files`. Ruby beside JavaScript is the same case, `rescue blocks use
 the error they caught, in .rb files`, and a file with no extension is named whole, `, in .rb files
 and Gemfile`. A row that skipped a whole extension by content, as a typed row skips the `.js` files
-beside `.ts` ones, prints no clause. Measured on the 35-repository corpus, it changes 87 of 6,887
-area files and 705 lines, adds a line to none, and leaves 24 repositories as they were.
+beside `.ts` ones, prints no clause. Measured on the 35-repository corpus with the names drawn from
+the language ids, it changed 87 of 6,887 area files and 705 lines, added a line to none, and put no
+clause in 24 repositories. The count has not been taken again with the names drawn from the files
+asked.
 
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports whose filename, up to its first
