@@ -73,7 +73,8 @@ const STRUCTURAL = [
 
 // A block-level marker only bites in the first position of a line, so it is
 // stripped there rather than everywhere: "issue #42" survives intact.
-const BLOCK_MARKER = /^(?:[#>*+-]+|\d+[.)])\s*/;
+// A number opens a list only before a space or the end, so `13.x` and `404.vue` are names.
+const BLOCK_MARKER = /^(?:[#>*+-]+|\d+[.)](?=\s|$))\s*/;
 
 // Built on the first cap: most hook processes import this module and never cap.
 let graphemes = null;

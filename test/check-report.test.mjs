@@ -466,6 +466,12 @@ test("a base ref that is the empty string is no ref at all", () => {
   assert.equal(out.split("\n")[0], "base none, 0 changed files, compare");
 });
 
+test("a base branch named for a version line prints whole", () => {
+  const out = formatReport(bare({ base: { ref: "13.x", sha: "aaaaaaa", mergeBase: null, shallow: false } }));
+
+  assert.equal(out.split("\n")[0], "base 13.x (aaaaaaa), 0 changed files, compare");
+});
+
 test("a file the branch deleted is counted in the header and listed in the record", () => {
   // Deletions left the count, so a branch that only dropped a spec printed
   // "0 changed files" above a MUST-FIX about the spec it dropped.
