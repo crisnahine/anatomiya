@@ -35,7 +35,7 @@ const GRAMMARS = fileURLToPath(new URL("../grammars/", import.meta.url));
 let runtime = null;
 // One parser per grammar file for the life of the process: a warm worker pays each load once.
 // A file that did not load holds its error here, whatever stopped it, for the life of the process:
-// one that could not be read off the disk is remembered like one that is broken, and is not tried
+// one that could not be read off the disk is remembered like one that does not instantiate, and is not tried
 // again. Loaded again for every file, a grammar that instantiates and then fails took 2.9 GB in
 // 1,500 files, since nothing frees an instance.
 const parsers = new Map();
@@ -79,8 +79,8 @@ async function parserFor(grammar, dir, lang) {
 }
 
 /**
- * How many ERROR and MISSING nodes a broken tree holds, and never fewer than
- * one: a grammar can mark a tree broken through a token it does not show.
+ * How many ERROR and MISSING nodes a rejected tree holds, and never fewer than
+ * one: a grammar can reject a tree through a token it does not show.
  *
  * Only called on a tree whose root says it has an error, and only a subtree
  * that says the same is entered, so a clean file pays one property read.

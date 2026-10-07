@@ -26,7 +26,7 @@ process.on("message", async ({ rel, path = rel, abs, lang, withProgram = false, 
     if (!(err instanceof RangeError)) throw err;
     // The channel serialises with JSON, which recurses and runs out of stack on
     // a tree nested a few thousand levels deep. Only tree mode sends one. No
-    // error count, because the file is not broken: it could not be carried.
+    // error count, because the file was not rejected: it could not be carried.
     process.send({ rel, ok: false, error: "the tree is too deep to send" });
   }
 });

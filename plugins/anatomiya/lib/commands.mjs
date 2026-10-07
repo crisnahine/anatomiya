@@ -245,7 +245,7 @@ async function targetLines(cwd) {
     const known = knownNames(facts, target);
     if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);
     if (state !== "on") continue;
-    // A name a scan gives a file, and the key, with or without a record: a clone holds the files and not the store.
+    // A name a scan gives a file, and the key, with or without a record: a clone holds the files and not the record.
     const { ours, unknown, listed } = auditRules(root, known, target);
     const mine = [...ours, ...unknown].filter((name) => isMapName(name, target));
     lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);

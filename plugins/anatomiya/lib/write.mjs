@@ -249,7 +249,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // Everything else in the directory is left where it is.
   //
   // A target left out by name is the exception to asking the record: a clone
-  // can hold the files and not the store, and then no scan could turn it off.
+  // can hold the files and not the record, and then no scan could turn it off.
   // The key decides there, for a name a scan gives a file: a copy somebody
   // kept under another name carries the key too.
   const mine = explicit && !on ? [...audit.ours, ...audit.unknown.filter((f) => isMapName(f, target))].sort() : audit.ours;

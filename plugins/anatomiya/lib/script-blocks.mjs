@@ -280,7 +280,7 @@ for (const kind of new Set([...EXTRACTORS, ...Object.keys(SCANNERS)])) {
  *
  * `start` and `end` bound the body in the string as given, a BOM counted.
  * `unterminated` says a script the rules accept was opened and never ended,
- * which is a broken file and not a file with no script.
+ * which is a file to reject and not a file with no script.
  */
 export function scriptBlocks(source, kind) {
   if (!Object.hasOwn(SCANNERS, kind)) throw new Error(`no script extractor named ${kind}`);
