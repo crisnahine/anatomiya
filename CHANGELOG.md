@@ -236,7 +236,11 @@ scanned by 0.13.4 and by this version.
   the floor reads `low-resolution`, as any config that was read does. A root with neither file
   runs on the defaults, as in 0.13.4: one of five measured resolves that way, so nothing is
   skipped for the missing file. Plain JavaScript beside a `tsconfig.base.json` is checked, as it
-  is beside a `tsconfig.json`.
+  is beside a `tsconfig.json`. eslint and prisma hold a base and stay under the floor (60.9% and
+  65.9%), and react and Ghost hold neither file (60.2% and 54.9%): no fact about a root that can be
+  read without running the checker was found to tell these four from the roots that resolve. So a
+  repository whose checker degrades still pays for it once on each scan a person runs, and from
+  this version does not pay on a background refresh, which is the entry below.
 - A background refresh does not run the type checker where the last scan measured it as
   `degraded` and nothing it reads has moved since: this version, the repository's packages, where
   `typescript` resolves, and the name and bytes of the root config. The refresh carries the
