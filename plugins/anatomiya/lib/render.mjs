@@ -52,24 +52,23 @@ const KINDS_LINES = 2;
  */
 const spellGlob = (g) => globText(g, (dir) => encodePath(dir).slice(1, -1));
 
-// A JS area on Copilot widens one pattern per extension, so six is one glob's worth.
-const PATTERNS_NAMED = 6;
+const NAMED = 6;
+const some = (names) => {
+  const { shown, rest } = listSome(names, NAMED);
+  return shown.join(", ") + (rest ? ` and ${rest} more` : "");
+};
 
 /**
  * What a target's reading of the cover gets wrong, in the file that is misdelivered.
  *
- * A widened pattern is printed as the target reads it. The sentence is encoded
- * whole: a pattern's tail can hold a directory name, and encoding a pattern
- * alone would strip its leading `*`.
+ * Each sentence is encoded whole: a pattern's tail can hold a directory name,
+ * and encoding a pattern alone would strip its leading `*`.
  */
 function attachLines(target, { dropped, widened, unspellable }) {
-  const some = (patterns) => {
-    const { shown, rest } = listSome(patterns, PATTERNS_NAMED);
-    return shown.join(", ") + (rest ? ` and ${rest} more` : "");
-  };
-  const extra = [...dropped, ...widened.map((p) => `**/${p}`)];
   const lines = [];
-  if (extra.length) lines.push(`This file also attaches for ${some(extra)}, which the area leaves out.`);
+  if (dropped.length) lines.push(`This file also attaches for ${some(dropped)}, which the area leaves out.`);
+  // Every widened pattern is already in the frontmatter, so the line names none.
+  if (widened.length) lines.push(target.widens);
   if (unspellable.length) {
     lines.push(`This file does not attach for ${some(unspellable)}, which ${target.reader} cannot be given.`);
   }
@@ -675,6 +674,7 @@ export function renderOverview(result, files, target = TARGETS.claude) {
     "",
     "# Repository map",
     "",
+    ...(target.wrote ? [target.wrote] : []),
     "Facts counted from this repository's own code, per directory.",
     // One line with the legend, so the key to every counts line costs the
     // roster nothing on a repository whose overview sits at its bound.
@@ -733,7 +733,10 @@ export function renderOverview(result, files, target = TARGETS.claude) {
 
   // What the scan could not cover, and how many files this tool generated.
   // Neither grows with the repository, so both are paid before anything else.
-  const fixed = overviewTail(result, files, target);
+  // A listing that named an area the target has no file for would promise notes that never arrive.
+  const filed = result.areas.filter((a) => hasFile(a, target));
+  const unfiled = result.areas.filter((a) => !hasFile(a, target));
+  const fixed = overviewTail(result, filed, files, target);
 
   // The roster is paid next and shrinks into what is left of the bound, minus
   // the `## Areas` heading and its blank and the lines the two listings below
@@ -741,9 +744,9 @@ export function renderOverview(result, files, target = TARGETS.claude) {
   // and one line of areas. Pushed unbudgeted it was head, and `Math.max(2, ...)`
   // has nothing to give back: seven roots on a repository with a full tail put
   // the overview six lines past its bound.
-  const listings = otherFiles(files.others, 1).length + 1;
+  const listings = otherFiles(files.others, 1).length + 1 + (unfiled.length ? 1 : 0);
   head.push(...renderLayout(result.layout, MAX_LINES - head.length - fixed.length - 2 - listings));
-  head.push(`## Areas (${result.areas.length})`, "");
+  head.push(`## Areas (${filed.length})`, "");
 
   // Two listings do grow: the areas, and the rule files this tool did not write.
   // They share whatever is left, and each keeps at least one line, because a
@@ -751,14 +754,14 @@ export function renderOverview(result, files, target = TARGETS.claude) {
   // Budgeting the areas alone was the bug: the other listing was rendered first
   // and unbounded, and a repository with enough of both put the overview eight
   // lines past its bound.
-  const room = Math.max(2, MAX_LINES - head.length - fixed.length);
+  const room = Math.max(2, MAX_LINES - head.length - fixed.length - (unfiled.length ? 1 : 0));
   const others = otherFiles(files.others, Math.max(1, room - 1));
   // No area at all left the heading over two blank lines, which reads as a
   // listing that failed to print rather than as a repository where no directory
   // cleared the floor and kept a count. Why is not said here: the causes are the
   // Not covered lines, and an empty repository has none of them.
   const listing = result.areas.length
-    ? areaListing(result, Math.max(1, room - others.length), target)
+    ? areaListing(filed, unfiled, Math.max(1, room - others.length), target)
     : ["No directory became an area, so nothing here states a claim."];
 
   return [...head, ...listing, ...fixed, ...others].join("\n") + "\n";
@@ -773,12 +776,12 @@ export function renderOverview(result, files, target = TARGETS.claude) {
  * 5,489-file Rails repository, 143 of 151 areas stated nothing and 89% of an
  * always-loaded file went on their names.
  */
-function areaListing(result, budget, target) {
+function areaListing(areas, unfiled, budget, target) {
   // The same partition the area file makes: a slot the model writes by default
   // is a counts line there, so it must not earn the area a name here.
   const stated = (a) =>
     a.dimensions.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true).length;
-  const eligible = result.areas.filter((a) => stated(a) > 0);
+  const eligible = areas.filter((a) => stated(a) > 0);
 
   // A trailing count is owed unless every area is named, and an area the budget
   // cuts is as unnamed as one that states nothing: two numbers a reader has to
@@ -786,7 +789,7 @@ function areaListing(result, budget, target) {
   // cut. Reserved on both causes, because reserving on the first alone put the
   // trailer one line past the bound whenever every area stated something and
   // they still did not all fit.
-  const namesEveryArea = eligible.length === result.areas.length && eligible.length <= budget;
+  const namesEveryArea = eligible.length === areas.length && eligible.length <= budget;
   const lines = eligible
     .slice(0, Math.max(0, namesEveryArea ? budget : budget - 1))
     .map((a) => `- ${encode(a.path)} — ${a.fileCount} files, ${stated(a)} stated`);
@@ -795,20 +798,27 @@ function areaListing(result, budget, target) {
   // areas all carry counts and state nothing lists none of them, which is the
   // ordinary case before any convention is measured, and "and 3 more areas"
   // under an empty listing reads as three areas withheld on top of three shown.
-  const unnamed = result.areas.length - lines.length;
+  const unnamed = areas.length - lines.length;
   if (unnamed > 0) {
     const what = unnamed === 1
       ? `area in its own file, ${target.listed}`
       : `areas, each in its own file, ${target.listed}`;
     lines.push(lines.length ? `- and ${unnamed} more ${what}` : `- ${unnamed} ${what}`);
   }
+  if (unfiled.length) {
+    const one = unfiled.length === 1;
+    lines.push(
+      `- ${plural(unfiled.length, "area")} ${one ? "has" : "have"} no pattern ${target.reader} can be given, ` +
+        `so no file here covers ${one ? "it" : "them"}: ${some(unfiled.map((a) => encode(a.path)))}.`
+    );
+  }
   return lines;
 }
 
 /**
- * What the scan could not cover, and who wrote the files in `.claude/rules/`.
+ * What the scan could not cover, and who wrote the files in the target's directory.
  */
-function overviewTail(result, files, target) {
+function overviewTail(result, filed, files, target) {
   const lines = ["", "## Not covered", ""];
 
   // Two different facts, and only the first was ever what the sentence said.
@@ -853,7 +863,7 @@ function overviewTail(result, files, target) {
   const degraded = degradedSemanticSentence(result.semantic);
   if (degraded) lines.push(`- ${degraded}`);
 
-  const generatedCount = result.areas.filter((a) => a.dimensions.length > 0 && hasFile(a, target)).length + 1;
+  const generatedCount = filed.filter((a) => a.dimensions.length > 0).length + 1;
   lines.push("", `Generated files: ${generatedCount} under ${target.dir}/${PREFIX}*${target.ext}`);
   return lines;
 }

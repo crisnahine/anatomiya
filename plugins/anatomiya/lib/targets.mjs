@@ -10,27 +10,33 @@
  * generator key are spelled here, and `test/targets.test.mjs` holds them equal
  * to the ones `rules.mjs` carries.
  */
-// `reads` and `listed` are the two sentences that say when a file reaches the
-// reader, which is the one thing about the body the three tools do not share.
-const describe = (id, dir, ext, reader, reads, listed) =>
-  Object.freeze({ id, dir, ext, always: id === "claude", reader, reads, listed });
+// The sentences are the ones whose truth depends on the reader: when a file
+// reaches it, and what it has to be told that Claude Code's hook says on its own.
+const describe = (id, dir, ext, reader, said) =>
+  Object.freeze({ id, dir, ext, always: id === "claude", reader, wrote: null, widens: null, ...said });
+
+const WROTE =
+  "Written by anatomiya, a scanner that is run outside this editor; where this and the code disagree, the code is right and this map is stale.";
 
 export const TARGETS = Object.freeze({
-  claude: describe(
-    "claude", ".claude/rules", ".md", "Claude Code",
-    "Read a file before editing it: these notes load when you read, not when you grep.",
-    "loaded when you read one of its files"
-  ),
-  cursor: describe(
-    "cursor", ".cursor/rules", ".mdc", "Cursor",
-    "Open a file before editing it: an area's notes attach when one of its files is in context.",
-    "attached when one of its files is in context"
-  ),
-  copilot: describe(
-    "copilot", ".github/instructions", ".instructions.md", "GitHub Copilot",
-    "Open a file before editing it: an area's notes apply to the files its pattern names.",
-    "applied to the files its pattern names"
-  ),
+  claude: describe("claude", ".claude/rules", ".md", "Claude Code", {
+    reads: "Read a file before editing it: these notes load when you read, not when you grep.",
+    listed: "loaded when you read one of its files",
+  }),
+  cursor: describe("cursor", ".cursor/rules", ".mdc", "Cursor", {
+    reads:
+      "An area's notes attach when one of its files is in context; where they have not, read the anatomiya-area-*.mdc file under .cursor/rules whose globs name the file before editing it.",
+    listed: "attached when one of its files is in context",
+    wrote: WROTE,
+  }),
+  copilot: describe("copilot", ".github/instructions", ".instructions.md", "GitHub Copilot", {
+    // In VS Code's agent mode nothing attaches for a file the agent opens: the model reads the match itself.
+    reads:
+      "Before editing a file, read the anatomiya file under .github/instructions whose applyTo matches it: an area's notes apply to the files its patterns name.",
+    listed: "applied to the files its pattern names",
+    wrote: WROTE,
+    widens: "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.",
+  }),
 });
 
 export const TARGET_IDS = Object.freeze(Object.keys(TARGETS));
