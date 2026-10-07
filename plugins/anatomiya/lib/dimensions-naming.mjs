@@ -263,6 +263,8 @@ export const NAMING_CORPUS = [
       sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`), and neither is a stem of capitals alone in a file that holds JSX, which React reads as a component (`SBA.jsx`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
       blind: null,
     },
+    // None of the seven tree-sitter languages. Over three repositories each, the commonest class is 83% to 100% of the
+    // names somebody wrote and no language spreads 0.15 between repositories: Go reaches 0.12, Rust 0.13, PHP 0.10.
     langs: ["js", "jsx", "ruby", "vue", "svelte"],
     classify: classifyBasename,
     // Which names answer the claim at all. Separate from `classify` because
