@@ -149,11 +149,12 @@ const AREA_STEM = /^anatomiya-area-[0-9a-f]{8}$/;
 const folded = (name) => name.toUpperCase().toLowerCase();
 
 /**
- * The entry that holds `name` on a volume that folds case without being spelled
- * as it, or undefined. Asked on every volume, since the tree may be checked out
- * on one that folds.
+ * The entry a write to `name` may land on: one spelled otherwise that a volume
+ * folding case would answer with, or undefined. A listing that holds `name`
+ * itself has none, since no volume that folds can list both spellings.
  */
-export const spelledOtherwise = (entries, name) => entries.find((e) => e !== name && folded(e) === folded(name));
+export const spelledOtherwise = (entries, name) =>
+  entries.includes(name) ? undefined : entries.find((e) => folded(e) === folded(name));
 
 /**
  * The filenames the map on disk says this build wrote, or `null` when there is

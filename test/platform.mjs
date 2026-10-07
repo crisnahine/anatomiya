@@ -6,7 +6,8 @@
  * systems where the input is possible, and a test that cannot create its own
  * input proves nothing about the code either way.
  */
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -145,3 +146,43 @@ export const needsFoldingFilesystem = folds
 export const needsCaseSensitiveFilesystem = folds
   ? { skip: "the temp directory folds case, so two names that differ in case cannot both be written" }
   : {};
+
+/**
+ * A directory where two names that differ in case are two files, as `{ dir }`,
+ * or `{ skip }` saying why this machine has none.
+ *
+ * The temp directory itself where it keeps case apart. On macOS a disk image,
+ * which needs no privilege, detached and deleted after the test.
+ */
+export function caseSensitiveDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-case-"));
+  if (!folds) {
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    return { dir };
+  }
+  const image = join(dir, "volume.dmg");
+  const mount = join(dir, "volume");
+  const quiet = { stdio: "ignore" };
+  t.after(() => {
+    try {
+      execFileSync("hdiutil", ["detach", mount, "-force", "-quiet"], quiet);
+    } catch {
+      // Never attached.
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+  if (process.platform !== "darwin") {
+    return { skip: "the temp directory folds case, and only macOS can make a case-sensitive volume without a privilege" };
+  }
+  try {
+    execFileSync("hdiutil", ["create", "-size", "20m", "-fs", "Case-sensitive APFS", "-volname", "anatomiya-case", "-quiet", image], quiet);
+    mkdirSync(mount);
+    execFileSync("hdiutil", ["attach", image, "-mountpoint", mount, "-nobrowse", "-quiet"], quiet);
+  } catch (err) {
+    return { skip: `hdiutil could not make a case-sensitive volume here (${err.code ?? `exit ${err.status}`})` };
+  }
+  // Not the volume's root, which holds the system's own entries.
+  const inside = join(mount, "work");
+  mkdirSync(inside);
+  return { dir: inside };
+}

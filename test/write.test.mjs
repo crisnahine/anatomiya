@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsBindableSocketPath, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { caseSensitiveDir, needsBindableSocketPath, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -2158,6 +2158,45 @@ test("an entry spelled as an area's name in another case holds that name", (t) =
         assert.deepEqual(namesIn(dir, target), [theirs]);
         assert.equal(readFileSync(join(dir, target.dir, theirs), "utf8"), body);
       }
+    }
+  }
+});
+
+test("a volume that tells two spellings apart keeps both: the other spelling is an ordinary file there", (t) => {
+  const volume = caseSensitiveDir(t);
+  if (volume.skip) return t.skip(volume.skip);
+  const a = area("src/services");
+  const b = area("src/api");
+  for (const target of OTHERS) {
+    for (const body of [HAND, OURS]) {
+      const dir = mkdtempSync(join(volume.dir, "repo-"));
+      const said = `${target.id}, ${body === OURS ? "keyed" : "keyless"}`;
+      const named = ["claude", target.id];
+      writeMap(result(dir, [a, b]), { targets: named });
+      const overview = overviewName(target).replace("anatomiya-overview", "Anatomiya-Overview");
+      const areaFile = areaName(target, b.id).replace(b.id, b.id.toUpperCase());
+      for (const name of [overview, areaFile, `team${target.ext}`]) writeFileSync(join(dir, target.dir, name), body);
+      const all = [...mapOf(target, a, b), overview, areaFile, `team${target.ext}`].sort();
+      assert.deepEqual(namesIn(dir, target), all, `${said}: the control, both spellings are in the listing`);
+      assert.equal(targetState(dir, target), "on", said);
+
+      // Under the prefix it is listed as any file there that the record does not name; outside it, as `team` is: not at all.
+      const others = body === OURS ? { foreign: [], unknown: [areaFile] } : { foreign: [areaFile], unknown: [] };
+      for (const targets of [undefined, named]) {
+        for (const dryRun of [true, false]) {
+          const mine = writeMap(result(dir, [a, b]), { dryRun, targets }).targets[target.id];
+          const how = `${said}, ${targets ? "named" : "plain"}, ${dryRun ? "dry run" : "real write"}`;
+          assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a, b), `${how}: every exact name is planned`);
+          assert.deepEqual({ foreign: mine.foreign, unknown: mine.unknown, remove: mine.remove, replaced: mine.replaced }, { ...others, remove: [], replaced: [] }, how);
+        }
+      }
+      assert.deepEqual(namesIn(dir, target), all, said);
+      for (const name of [overview, areaFile]) assert.equal(readFileSync(join(dir, target.dir, name), "utf8"), body, `${said}: ${name} keeps its bytes`);
+      assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a, b), `${said}: the record names the exact spellings alone`);
+
+      const off = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+      assert.deepEqual(off.targets[target.id].remove, mapOf(target, a, b), `${said}: removal is by the exact name`);
+      assert.deepEqual(namesIn(dir, target), [overview, areaFile, `team${target.ext}`].sort(), said);
     }
   }
 });

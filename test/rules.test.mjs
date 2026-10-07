@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,11 +17,12 @@ import {
   isOwned,
   resolveRulesDir,
   resolveTargetDir,
+  spelledOtherwise,
   targetState,
 } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
-import { needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import { caseSensitiveDir, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
 
 const { claude, cursor, copilot } = TARGETS;
 const OWNED = `---\ngenerator: ${GENERATOR}\nalwaysApply: true\n---\n# Repository map\n`;
@@ -320,6 +321,31 @@ test("unknown: a directory whose entries cannot be looked at", needsUnreadableDi
     assert.equal(targetState(dir, cursor), "unknown");
   } finally {
     chmodSync(join(dir, ".cursor", "rules"), 0o755);
+  }
+});
+
+test("another spelling holds a name only where the listing does not also hold the name itself", () => {
+  const name = overviewName(cursor);
+  const theirs = "Anatomiya-Overview.mdc";
+  assert.equal(spelledOtherwise([theirs, "team.mdc"], name), theirs, "alone, it may be what a write to the name lands on");
+  assert.equal(spelledOtherwise([theirs, name], name), undefined, "beside the name, the volume tells the two apart");
+  assert.equal(spelledOtherwise([name, theirs, "ANATOMIYA-OVERVIEW.MDC"], name), undefined, "however many spellings there are");
+  assert.equal(spelledOtherwise([name], name), undefined);
+  assert.equal(spelledOtherwise([], name), undefined);
+});
+
+test("on: our overview beside somebody's file spelled in another case", (t) => {
+  const volume = caseSensitiveDir(t);
+  if (volume.skip) return t.skip(volume.skip);
+  for (const target of [cursor, copilot]) {
+    const at = join(volume.dir, target.id, target.dir);
+    mkdirSync(at, { recursive: true });
+    writeFileSync(join(at, overviewName(target)), OWNED);
+    for (const body of [HAND, OWNED]) {
+      writeFileSync(join(at, overviewName(target).replace("anatomiya-overview", "Anatomiya-Overview")), body);
+      assert.equal(readdirSync(at).length, 2, "the control: two entries");
+      assert.equal(targetState(join(volume.dir, target.id), target), "on", target.id);
+    }
   }
 });
 
