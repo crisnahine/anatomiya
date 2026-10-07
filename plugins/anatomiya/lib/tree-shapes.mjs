@@ -16,6 +16,7 @@ export const SHAPES = {
     block: ["block"],
     noop: ["pass_statement"],
     docstring: ["expression_statement", "string", "concatenated_string"],
+    args: ["argument_list"],
     tokensOf: [],
     name: "name",
     returnType: "return_type",

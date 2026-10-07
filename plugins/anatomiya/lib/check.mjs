@@ -756,12 +756,12 @@ async function collect(root, run) {
       // A file read from the working tree is the one side that arrives as bytes.
       // The parser gets a copy rather than the live path, because the text every
       // offset here is resolved against is the copy this run read.
-      entries.push({ rel: `head:${job.file.path}`, lang: job.lang, ...(job.abs ? { abs: job.abs } : { source: job.source }) });
+      entries.push({ rel: `head:${job.file.path}`, path: job.file.path, lang: job.lang, ...(job.abs ? { abs: job.abs } : { source: job.source }) });
       // Under the path it had at the base, which is what picks the grammar: a
       // `.ts` renamed to `.tsx` was parsed as TSX, where a generic arrow that
       // is valid TypeScript is a syntax error, and the whole file was skipped.
       if (job.base !== null) {
-        entries.push({ rel: `base:${job.file.from}`, lang: language(job.file.from), abs: job.baseAbs });
+        entries.push({ rel: `base:${job.file.from}`, path: job.file.from, lang: language(job.file.from), abs: job.baseAbs });
       }
     }
 
@@ -780,7 +780,7 @@ async function collect(root, run) {
         lang: job.lang,
         frameworks,
         capabilities,
-        head: { program: headParse.program, source: job.source, comments: headParse.comments, facets: headParse.facets },
+        head: { program: headParse.program, source: headParse.text ?? job.source, comments: headParse.comments, facets: headParse.facets },
       });
       if (!declaredIn.has(area.path)) declaredIn.set(area.path, new Map());
       const into = declaredIn.get(area.path);
@@ -839,8 +839,9 @@ async function collect(root, run) {
         lang: job.lang,
         frameworks,
         capabilities,
-        head: { program: headParse.program, source: job.source, comments: headParse.comments, stripped: headParse.stripped, facets: headParse.facets },
-        base: mode === "added-lines" || !baseParse ? null : { program: baseParse.program, source: job.base, comments: baseParse.comments, stripped: baseParse.stripped },
+        // The text each tree was read from, which for a C# file read with one branch is not the file as written.
+        head: { program: headParse.program, source: headParse.text ?? job.source, comments: headParse.comments, stripped: headParse.stripped, facets: headParse.facets },
+        base: mode === "added-lines" || !baseParse ? null : { program: baseParse.program, source: baseParse.text ?? job.base, comments: baseParse.comments, stripped: baseParse.stripped },
         addedLines: mode === "added-lines" ? (added && added.get(path)) || [] : null,
         parents: area ? declaredIn.get(area.path) : undefined,
       });
