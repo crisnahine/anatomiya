@@ -8,7 +8,7 @@
  * other dimension. Nothing here imports the registry, because the registry
  * imports this file.
  */
-import { isFunctionLike } from "./walk.mjs";
+import { componentProps, isFunctionLike } from "./walk.mjs";
 import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./stems.mjs";
 import { encode } from "./encode.mjs";
@@ -308,7 +308,7 @@ function exportedPopulation(d) {
  * so a specifier answers none of the three rows rather than guessing which
  * one.
  */
-function exportedSites(program) {
+function exportedSites(program, props = null) {
   const out = [];
   for (const n of program.body) {
     // A default export usually names what it declares, and one class per file
@@ -325,7 +325,7 @@ function exportedSites(program) {
     const d = n.declaration;
     if (d?.type === "VariableDeclaration") {
       for (const decl of d.declarations) {
-        if (decl.id?.type !== "Identifier") continue;
+        if (decl.id?.type !== "Identifier" || props?.has(decl)) continue;
         const population = decl.init?.type === "ClassExpression" ? "class" : "value";
         out.push({
           node: decl.id,
@@ -365,17 +365,21 @@ export const NAMING_AST = [
     applicabilityPredicate: {
       // Module level only, matching function_style's altitude: a method answers
       // to its class's convention, which is a different sentence.
-      sites: "a file declaring a module-level function, or binding one to a module-level variable, under a name that spells a naming class; a function whose body yields JSX, one bound to a name annotated as a React component type (FC, FunctionComponent, ComponentType), or one whose name this file renders as an element, is a component whose name JSX decides and is not a site, and one this file calls with new or reads a prototype off is a constructor and is not a site either",
+      sites: "a file declaring a module-level function, or binding one to a module-level variable, under a name that spells a naming class; a function whose body yields JSX, one bound to a name annotated as a React component type (FC, FunctionComponent, ComponentType), or one whose name this file renders as an element, is a component whose name JSX decides and is not a site, and one this file calls with new or reads a prototype off is a constructor and is not a site either. In a Vue file a PascalCase function is taken for a component the template renders, and a Svelte component's `export let` declares a prop; neither is a site",
       blind: null,
     },
     langs: ["js", "jsx", "vue", "svelte"],
-    visitor(program, add) {
+    visitor(program, add, { rel } = {}) {
       const constructed = new Set();
       const named = [];
+      const props = componentProps(program, rel);
+      // The template is not read, so a capitalised function in a Vue script is
+      // taken for the component the template mounts under that name.
+      const inVue = /\.vue$/.test(rel ?? "");
       return {
         node(n, ctx) {
           noteConstructed(n, constructed);
-          if (ctx.enclosing !== null) return;
+          if (ctx.enclosing !== null || props.has(n)) return;
           let name = null;
           let fn = null;
           if (n.type === "FunctionDeclaration" && n.id) {
@@ -403,6 +407,7 @@ export const NAMING_AST = [
             // A component returning JSX and one this file only renders are the same
             // thing, so excluding one of them alone would be arbitrary.
             if (rendered.has(name) || constructed.has(name) || yieldsJsx(fn)) continue;
+            if (inVue && cls === "PascalCase") continue;
             // The id node rides along so the check can point at the declaration
             // rather than line 1; the worker strips nodes before IPC either way.
             add({ node: id, conforming: false, where: name, class: cls });
@@ -430,11 +435,11 @@ export const NAMING_AST = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or the name of one this file binds, to a lazy or dynamic import, or to a styled template, a name annotated as a React component type (FC, FunctionComponent, ComponentType), and a name this file renders as an element, are components whose name JSX decides and are not sites, and a name this file calls with new or reads a prototype off is a constructor and is not a site either",
+      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or the name of one this file binds, to a lazy or dynamic import, or to a styled template, a name annotated as a React component type (FC, FunctionComponent, ComponentType), and a name this file renders as an element, are components whose name JSX decides and are not sites, and a name this file calls with new or reads a prototype off is a constructor and is not a site either. A Svelte component's `export let` declares a prop and is not an export",
       blind: null,
     },
-    langs: ["js", "jsx", "vue"],
-    visitor(program, add) {
+    langs: ["js", "jsx", "vue", "svelte"],
+    visitor(program, add, { rel } = {}) {
       const constructed = new Set();
       return {
         node(n) {
@@ -447,7 +452,7 @@ export const NAMING_AST = [
           // this row binds a name to a call, so only this row meets a component a
           // `forwardRef`, a `memo` or a `styled` template made.
           let rendered = null;
-          for (const s of exportedSites(program)) {
+          for (const s of exportedSites(program, componentProps(program, rel))) {
             if (s.population !== "value") continue;
             const cls = classifyWord(s.name);
             if (!cls) continue;

@@ -66,7 +66,7 @@ const EXPECTED = {
   function_naming_case: {
     "vue-setup": "camelCase camelCase camelCase", "vue-two": "camelCase camelCase snake_case",
     "vue-js-setup": "snake_case", "svelte-runes": "camelCase camelCase camelCase",
-    "svelte-legacy": "camelCase camelCase camelCase snake_case", "svelte-store": "camelCase camelCase",
+    "svelte-legacy": "camelCase snake_case", "svelte-store": "camelCase camelCase",
     "svelte-two": "camelCase camelCase camelCase", "svelte-tabs": "camelCase snake_case",
   },
   exported_symbol_case: {
@@ -185,5 +185,66 @@ test("svelte is listed exactly where vue is, unless the exclusion names one fram
 test("a row gains the two ids after its own, so its walk stays the oxc walk", () => {
   for (const row of REGISTRY.filter((r) => FRAMEWORKS.some((l) => r.langs.includes(l)))) {
     assert.equal(row.langs[0], "js", row.key);
+  }
+});
+
+const hitsOf = async (key, rel, source) => {
+  const lang = rel.slice(rel.lastIndexOf(".") + 1);
+  const record = await parseFile(source, rel, ["vue", "svelte"].includes(lang) ? lang : "js", { withProgram: true });
+  assert.equal(record.ok, true, `${rel} parses`);
+  const hits = [];
+  rowByKey(key).run(record.program, (hit) => hits.push(hit), { comments: record.comments, source, rel });
+  return hits;
+};
+
+test("a function a Vue template renders as a component is not a function name", async () => {
+  // The shape of element-plus's table examples: a row renderer declared in the
+  // script, capitalised because the template mounts it as `<Row>`.
+  const body = `
+import { cloneVNode } from "vue";
+
+const colSpanIndex = 1;
+
+const Row = ({ rowData, cells }) => {
+  cells[colSpanIndex] = cloneVNode(cells[colSpanIndex], { rowData });
+  return cells;
+};
+
+function CustomizedHeader({ cells }) {
+  return cells;
+}
+
+const generateColumns = (length = 10) => Array.from({ length });
+`;
+  const vue = `<template>\n  <el-table-v2 :columns="generateColumns()">\n    <template #row="props"><Row v-bind="props" /></template>\n  </el-table-v2>\n</template>\n\n<script lang="ts" setup>${body}</script>\n`;
+
+  const names = async (rel, source) => (await hitsOf("function_naming_case", rel, source)).map((h) => `${h.where} ${h.class}`);
+  assert.deepEqual(await names("docs/examples/table-v2/colspan.vue", vue), ["generateColumns camelCase"]);
+  assert.deepEqual(
+    await names("docs/examples/table-v2/colspan.ts", body),
+    ["Row PascalCase", "CustomizedHeader PascalCase", "generateColumns camelCase"],
+    "a module has no template to render it, so the name still votes"
+  );
+});
+
+test("a Svelte prop is a prop to every row that reads an export or a function", async () => {
+  const script = `
+  export let onDelete = () => {};
+  export var formatLabel = (text: string) => text.trim();
+  export const parseLabel = (text: string) => text.trim();
+  export function resetLabel() {}
+`;
+  const svelte = `<script lang="ts">${script}</script>\n\n<button on:click={onDelete}>{formatLabel("x")}</button>\n`;
+  const sites = async (key, rel, source) => (await hitsOf(key, rel, source)).map((h) => h.where);
+
+  for (const [key, inComponent, inModule] of [
+    ["function_style", ["parseLabel", "resetLabel"], ["onDelete", "formatLabel", "parseLabel", "resetLabel"]],
+    ["explicit_return_type", ["parseLabel", "resetLabel"], ["onDelete", "formatLabel", "parseLabel", "resetLabel"]],
+    ["doc_comment_style", ["parseLabel", "resetLabel"], ["onDelete", "formatLabel", "parseLabel", "resetLabel"]],
+    ["exported_symbol_case", ["parseLabel", "resetLabel"], ["onDelete", "formatLabel", "parseLabel", "resetLabel"]],
+    ["function_naming_case", ["parseLabel", "resetLabel"], ["onDelete", "formatLabel", "parseLabel", "resetLabel"]],
+  ]) {
+    assert.deepEqual(await sites(key, "src/lib/Todo.svelte", svelte), inComponent, `${key} in a component`);
+    assert.deepEqual(await sites(key, "src/lib/todo.ts", script), inModule, `${key} in a module`);
   }
 });
