@@ -23,7 +23,8 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    ```
 
    The same map is then also written under `.cursor/rules/` and `.github/instructions/`, and every
-   later scan keeps writing a target that is on, so do not pass the flag again. `--targets` names
+   later scan keeps writing a target that is on, which it is while its `anatomiya-overview` file
+   is there, so do not pass the flag again. `--targets` names
    the whole set: `--targets cursor` leaves Copilot out, and `--targets claude` turns both off and
    removes the files this tool wrote there. Pass it only when the user asks for a target to be
    added or dropped. If the scan refuses over a file or a link in one of those directories, show
@@ -50,8 +51,8 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    - one group of lines per other directory, where one is involved: how many files it wrote under
      `.cursor/rules` or `.github/instructions`, how many it removed there, that the directory is
      off now, how many areas have no file there because no pattern of theirs can be given to that
-     tool, how many files there carry this tool's names and were left because it did not write
-     them, and a directory it could not read, with the reason
+     tool, how many entries named `anatomiya-*` there it neither wrote nor removed, and a
+     directory it could not read, with the reason and what to do about it
    - every file in `.claude/rules/` this tool did not write, since those also reach the agent on
      every turn. The scanner names them one per line, and names separately any file carrying our
      frontmatter that no map lists, which it leaves alone rather than removing

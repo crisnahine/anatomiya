@@ -4,9 +4,9 @@ import { statedSide } from "./facts.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { engineOf } from "./langs.mjs";
 import { whyUnread } from "./readiness.mjs";
-import { listSome, LISTED, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
+import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
-import { TARGETS, TARGET_IDS } from "./targets.mjs";
+import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
 
 /**
  * What a command answered, and the lines that say it.
@@ -180,15 +180,32 @@ function targetLines(s) {
       );
     }
     if (t.foreign) {
+      // An entry, since a directory can hold the name, and neither verb claims who wrote it.
       lines.push(
-        `${t.dir} holds ${plural(t.foreign, "file")} with this tool's names that it did not write; ` +
-          `${one(t.foreign) ? "it was" : "they were"} left`
+        `${t.dir} holds ${one(t.foreign) ? "1 entry" : `${t.foreign} entries`} named ${PREFIX}* that this scan neither wrote nor removed; ` +
+          `${one(t.foreign) ? "it was left as it is" : "they were left as they are"}`
       );
     }
     lines.push(...ruleFileLines(t.unreadable ?? [], UNREAD_ONE, UNREAD_MANY, t.dir));
-    if (t.state === "unknown") lines.push(`${t.dir} could not be read (${t.reason}), so nothing there was written or removed`);
+    if (t.state === "unknown") {
+      const remedy = unreadRemedy(id, t);
+      lines.push(`${t.dir} could not be read (${t.reason}), so nothing there was written or removed${remedy ? `: ${remedy}, then scan again` : ""}`);
+    }
   }
   return lines;
+}
+
+/**
+ * What a person does about a target that could not be read, from the reason
+ * `targetStatus` gave. Null for a reason not known here, which then prints alone.
+ */
+function unreadRemedy(id, t) {
+  const reason = String(t.reason ?? "");
+  if (reason.includes(" is a link into the same place as ")) return `point ${RULES_DIR} somewhere else`;
+  if (reason.endsWith(" could not be read")) return "make it readable";
+  const at = /^(.+) is (?:a link|not a directory|not a file)$/.exec(reason)?.[1];
+  if (at === undefined) return null;
+  return at === `${t.dir}/${overviewName(TARGETS[id])}` ? `move or delete ${at}` : `make ${at} a directory of this repository`;
 }
 
 /** The scan summary as the lines the CLI prints, in the order it prints them. */

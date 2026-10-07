@@ -946,6 +946,25 @@ test("a doctor run inside a repository says which other targets are on there, an
   ]);
 });
 
+test("a doctor counts the names a scan gives a file, and says when the directory cannot be listed", needsPosixPermissions, async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  const rules = join(dir, ".cursor", "rules");
+  // A copy somebody kept: this tool's key, under a name no scan gives a file.
+  writeFileSync(join(rules, "anatomiya-my-notes.mdc"), readFileSync(join(rules, "anatomiya-overview.mdc")));
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, 2 files"]);
+
+  // Entered and not listed: the overview still reads as this tool's.
+  chmodSync(rules, 0o311);
+  try {
+    assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, could not be listed"]);
+  } finally {
+    chmodSync(rules, 0o755);
+  }
+});
+
 test("a doctor run outside any repository answers about the installation alone", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-none-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

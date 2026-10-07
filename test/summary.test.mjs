@@ -748,11 +748,11 @@ test("files under this tool's names that it did not write are counted where they
   assert.equal(one.targets.cursor.foreign, 1);
   assert.deepEqual(scanLines(one).slice(-3), [
     "wrote 2 files under .cursor/rules for Cursor",
-    ".cursor/rules holds 1 file with this tool's names that it did not write; it was left",
+    ".cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was left as it is",
     RUNNING_SESSION,
   ]);
-  assert.ok(scanLines(on).includes(".cursor/rules holds 2 files with this tool's names that it did not write; they were left"));
-  assert.ok(scanLines(off).includes(".cursor/rules holds 1 file with this tool's names that it did not write; it was left"));
+  assert.ok(scanLines(on).includes(".cursor/rules holds 2 entries named anatomiya-* that this scan neither wrote nor removed; they were left as they are"));
+  assert.ok(scanLines(off).includes(".cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was left as it is"));
 });
 
 test("a file that could not be read in a target this scan wrote is named under that directory, as one in .claude/rules is", () => {
@@ -780,10 +780,42 @@ test("a target that was on and could not be read says why, and one never written
   });
   assert.deepEqual(scanLines(was).slice(-3), [
     "wrote 2 files",
-    ".cursor/rules could not be read (.cursor is a link), so nothing there was written or removed",
+    ".cursor/rules could not be read (.cursor is a link), so nothing there was written or removed: make .cursor a directory of this repository, then scan again",
     RUNNING_SESSION,
   ]);
   assert.deepEqual(scanLines(never), BEFORE_LINES);
+});
+
+test("a target that could not be read says what to do about each thing that can be in the way", () => {
+  // Every reason `targetStatus` gives, for both directories where the path differs.
+  const cases = [
+    [".cursor is a link", "make .cursor a directory of this repository"],
+    [".cursor/rules is a link", "make .cursor/rules a directory of this repository"],
+    [".cursor is not a directory", "make .cursor a directory of this repository"],
+    [".cursor/rules is not a directory", "make .cursor/rules a directory of this repository"],
+    [".cursor could not be read", "make it readable"],
+    ["the repository root could not be read", "make it readable"],
+    [".cursor/rules/anatomiya-overview.mdc could not be read", "make it readable"],
+    [".cursor/rules/anatomiya-overview.mdc is a link", "move or delete .cursor/rules/anatomiya-overview.mdc"],
+    [".cursor/rules/anatomiya-overview.mdc is not a file", "move or delete .cursor/rules/anatomiya-overview.mdc"],
+    [".claude/rules is a link into the same place as .cursor/rules", "point .claude/rules somewhere else"],
+  ];
+  for (const [reason, remedy] of cases) {
+    const s = scanSummary(result(), plan(others({ state: "unknown", reason, listed: false, names: ["anatomiya-overview.mdc"] })));
+    assert.ok(
+      scanLines(s).includes(`.cursor/rules could not be read (${reason}), so nothing there was written or removed: ${remedy}, then scan again`),
+      scanLines(s).join("\n")
+    );
+  }
+  const copilot = { state: "unknown", listed: false, names: ["anatomiya-overview.instructions.md"] };
+  for (const [reason, remedy] of [
+    [".github is a link", "make .github a directory of this repository"],
+    [".github/instructions/anatomiya-overview.instructions.md is not a file", "move or delete .github/instructions/anatomiya-overview.instructions.md"],
+    [".claude/rules is a link into the same place as .github/instructions", "point .claude/rules somewhere else"],
+  ]) {
+    const s = scanSummary(result(), plan(others({}, { ...copilot, reason })));
+    assert.ok(scanLines(s).includes(`${COPILOT_DIR} could not be read (${reason}), so nothing there was written or removed: ${remedy}, then scan again`), scanLines(s).join("\n"));
+  }
 });
 
 test("a target the scan was told to hold says nothing, whatever the record names there", () => {
