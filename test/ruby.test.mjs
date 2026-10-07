@@ -6,7 +6,8 @@ import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realp
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { choosePrism, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize } from "../plugins/anatomiya/lib/ruby.mjs";
+import { Worker } from "node:worker_threads";
+import { choosePrism, heldHeap, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
@@ -2215,9 +2216,31 @@ function exists(pid) {
   }
 }
 
+test("the smallest hold is at least twice what a shard thread uses before it reads a file", async () => {
+  // A thread that has only loaded its modules already owns part of its hold,
+  // and that part grows with the code. Both numbers are V8's own, read on a
+  // thread started with the limits the smallest shard gets.
+  const lib = (name) => new URL(`../plugins/anatomiya/lib/${name}`, import.meta.url).href;
+  const stats = await new Promise((resolve, reject) => {
+    const worker = new Worker(
+      `const { parentPort, workerData } = require("node:worker_threads");
+       Promise.all(workerData.map((url) => import(url))).then(() => parentPort.postMessage(require("node:v8").getHeapStatistics()));`,
+      { eval: true, execArgv: [], workerData: [lib("ruby.mjs"), lib("dimensions.mjs")], resourceLimits: heldHeap(0) }
+    );
+    worker.once("message", resolve);
+    worker.once("error", reject);
+  });
+
+  assert.ok(
+    stats.used_heap_size * 2 <= stats.heap_size_limit,
+    `the thread uses ${stats.used_heap_size} bytes of a ${stats.heap_size_limit} byte hold before any Ruby is read`
+  );
+});
+
 test("a tree too large for a shard's held heap is read again on a full one, and the first child is stopped and reaped", { ...needsRuby, ...needsShebang }, async () => {
-  // 233 KB of nested calls, under the size where the hold grows to cover the
-  // densest shapes, and dense enough to outgrow the hold its size buys there.
+  // 253 KB of calls nested without parentheses, under the size where the hold
+  // grows to cover the densest shapes. Measured, it runs out of a 40 MB hold
+  // where its size buys 24 MB; the same size of `a(a(` ran out by 1 MB.
   // The stand-in logs the pid of every parse child and execs, so the pid is
   // the interpreter's own, still blocked writing a tree the dead thread never
   // read.
@@ -2236,7 +2259,7 @@ test("a tree too large for a shard's held heap is read again on a full one, and 
     ].join("\n"),
     { mode: 0o755 }
   );
-  const big = write("heap_heavy", ("a(".repeat(300) + ")".repeat(300) + "\n").repeat(265));
+  const big = write("heap_heavy", ("p ".repeat(300) + "a\n").repeat(430));
   const out = await parseRuby([big], { ruby, dimensions: RUBY_DIMENSIONS });
 
   assert.equal(out.results[0].ok, true, out.results[0].error);
@@ -2267,7 +2290,7 @@ test("a held heap that runs out keeps the records already answered and reads aga
     { mode: 0o755 }
   );
   const small = [write("held_small_a", "a = 1\n"), write("held_small_b", "b = 2\n")];
-  const big = write("held_dense", ("a(".repeat(300) + ")".repeat(300) + "\n").repeat(265));
+  const big = write("held_dense", ("p ".repeat(300) + "a\n").repeat(430));
   const out = await parseRuby([...small, big], { ruby, dimensions: RUBY_DIMENSIONS, shards: 1 });
 
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["held_small_a.rb", true, 1], ["held_small_b.rb", true, 1], ["held_dense.rb", true, 1]]);
