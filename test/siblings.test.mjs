@@ -418,3 +418,43 @@ test("a component's importers are counted where they spell its name", () => {
     { name: "Foo (default)", file: "src/components/Foo.vue", importers: 3 },
   ]);
 });
+
+test("SvelteKit's $lib names a file under src/lib, as the other root prefixes name theirs", () => {
+  const rels = corpus("src/lib/utils.ts", "src/lib/components/ui/button/index.ts", "src/lib/Card.svelte", "src/routes/+page.svelte");
+
+  assert.equal(specifierToFile("$lib/utils", "src/routes/+page.svelte", rels), "src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/utils.js", "src/routes/+page.svelte", rels), "src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/components/ui/button", "src/routes/+page.svelte", rels), "src/lib/components/ui/button/index.ts");
+  assert.equal(specifierToFile("$lib/components/ui/button/", "src/routes/+page.svelte", rels), "src/lib/components/ui/button/index.ts");
+  assert.equal(specifierToFile("$lib/Card.svelte", "src/routes/+page.svelte", rels), "src/lib/Card.svelte");
+  assert.equal(specifierToFile("$lib/Card", "src/routes/+page.svelte", rels), null, "a bare stem is no component here either");
+});
+
+test("a $lib tail answers only from a lib directory, and two of them answer nothing", () => {
+  const elsewhere = corpus("src/components/ui/button.ts", "src/routes/+page.svelte");
+  assert.equal(specifierToFile("$lib/components/ui/button", "src/routes/+page.svelte", elsewhere), null);
+  assert.equal(specifierToFile("@/components/ui/button", "src/routes/+page.svelte", elsewhere), "src/components/ui/button.ts");
+
+  const twice = corpus("docs/src/lib/utils.ts", "apps/www/src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/utils", "docs/src/routes/+page.svelte", twice), null);
+});
+
+test("SvelteKit's virtual modules name no file", () => {
+  // Every place a prefix read as an alias could land.
+  const rels = corpus(
+    "src/app/navigation.ts",
+    "src/lib/app/navigation.ts",
+    "src/lib/navigation.ts",
+    "src/lib/state.ts",
+    "src/env/static/public.ts",
+    "src/lib/env/static/public.ts",
+    "src/lib/static/public.ts",
+    "src/lib/dynamic/private.ts",
+    "src/service-worker.ts",
+    "src/lib/service-worker/index.ts"
+  );
+
+  for (const spec of ["$app/navigation", "$app/state", "$env/static/public", "$env/dynamic/private", "$service-worker"]) {
+    assert.equal(specifierToFile(spec, "src/routes/+page.svelte", rels), null, spec);
+  }
+});
