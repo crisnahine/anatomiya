@@ -1568,7 +1568,17 @@ Every clause is dropped when it counts nothing.
   directory beside a package mirrors that package directory for directory, where one source file
   beside it carries the stem: `examples/tutorial/tests/test_auth.py` covers
   `examples/tutorial/flaskr/auth.py`, and flask's `examples` read 0 of 12 before that and 3 of 12
-  after. A Rust file holding its own tests has no other file carrying its stem, so it is
+  after. Four families pair a whole project with its tests, and there a test covers the one source
+  file of its stem at any depth: a .NET test project and the project its name carries
+  (`Serilog.Tests` and `Serilog`), a Maven or Gradle `src/test` or `<set>Test` source set and what
+  sits beside it, a PHP `tests` and the `src` or `app` beside it. serilog keeps
+  `test/Serilog.Tests/Core/BatchingSinkTests.cs` for `src/Serilog/Core/Sinks/Batching/BatchingSink.cs`
+  and read 18 of 113 where 28 have a test named for them; gson went from 27 of 80 to 34, and
+  Laravel from 166 of 1,630 to 277. Two source files of one stem in the project are credited with
+  nothing by it, since the stem cannot say which the test was written for. A flat test directory
+  is no pairing: ktor keeps `<module>/jvm/test`, and about half of the stem matches there are
+  another class's. Such a match votes for the place the mirrored tests name, where it sits inside
+  one. A Rust file holding its own tests has no other file carrying its stem, so it is
   in neither number of the namesake count and the clause after it says how many there are:
   ripgrep's `crates` reads `0 of 56 have a namesake test; 34 hold their own tests`, and tokio's
   `tokio` reads `2 of 306` with 47 more that hold theirs. Counted as having a namesake, 80 of the
