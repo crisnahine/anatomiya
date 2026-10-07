@@ -31,6 +31,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `$lib/` in a SvelteKit project resolves to the importer's own `src/lib` for "most imported from
   here": 4,210 of 4,213 such imports on one measured repository, where none resolved before. No
   `svelte.config.js` is read, so a project that repoints the alias resolves nothing through it.
+- Four dimensions over the languages a tree-sitter grammar reads, each asked only of the languages
+  whose measured repositories differ on it (three repositories per language):
+  `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin, which may
+  also state its inverse; `functions declare what they return` in Python and PHP; `exception
+  handlers use the error they caught` in PHP and Java; `an import names what it takes` in Kotlin.
+  A function row passes over test files. A fifth candidate, how functions are named, read over 0.94
+  in all fifteen repositories and is not shipped, and neither is a language where a claim
+  read as a default: handlers in Python, Kotlin and C#, wildcard imports in Python, Java and Rust.
+- `check` says so when a C# file was read with one branch of each `#if`: the caveat
+  `head-one-branch` names the file, once, and its findings are about the branch that was read.
 
 ### Changed
 

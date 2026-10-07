@@ -21,7 +21,7 @@ import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { PAIRINGS, companionOf } from "../plugins/anatomiya/lib/pairing.mjs";
-import { JS_DECLINED, PATH_DECLINED, RUBY_DECLINED } from "./declined-fixtures.mjs";
+import { JS_DECLINED, PATH_DECLINED, RUBY_DECLINED, TREE_DECLINED } from "./declined-fixtures.mjs";
 // The battery that stamps these rows runs where the registry is assembled.
 import "../plugins/anatomiya/lib/registry.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
@@ -912,8 +912,8 @@ test("the rows that name a declined form are the rows one true clause can name",
   const declared = REGISTRY.filter((d) => d.applicabilityPredicate?.notCounted).map((d) => d.key);
 
   assert.deepEqual(declared.slice().sort(), [
-    "column_null_declared", "controller_spec", "extends_base", "import_extension", "job_spec",
-    "job_test", "model_spec", "model_test", "non_null_assertion", "nullish_default",
+    "column_null_declared", "controller_spec", "declared_return_type", "extends_base", "import_extension",
+    "job_spec", "job_test", "model_spec", "model_test", "non_null_assertion", "nullish_default",
     "optional_chaining", "rake_task_spec", "reference_foreign_key", "route_env", "route_logging",
     "route_network", "serializer_spec", "service_spec", "spread_on_component", "worker_spec",
   ]);
@@ -1023,6 +1023,7 @@ test("no row carries a clause that nothing runs", () => {
   const pinned = new Set([
     ...Object.keys(JS_DECLINED),
     ...Object.keys(RUBY_DECLINED),
+    ...Object.keys(TREE_DECLINED),
     ...PAIRINGS.map((p) => p.key),
   ]);
 

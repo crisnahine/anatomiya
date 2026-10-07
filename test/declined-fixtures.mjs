@@ -11,7 +11,8 @@
  * Apart from either test file because three parsers answer for these rows and
  * one of them may be absent. `test/dimensions.test.mjs` runs the JS and the
  * path-only rows and holds every clause to having an entry here at all;
- * `test/dimensions-rails.test.mjs` runs the Ruby ones and skips where prism is.
+ * `test/dimensions-rails.test.mjs` runs the Ruby ones and skips where prism is,
+ * and `test/dimensions-tree.test.mjs` the ones a tree-sitter grammar answers for.
  * The coverage check has to run either way, or a row could grow a clause on a
  * machine with no Ruby and nothing would ask for its fixture.
  */
@@ -135,5 +136,22 @@ export const RUBY_DECLINED = {
     counted: {
       rf_declared: "def change\n    add_reference :comments, :user, foreign_key: true\n  end",
     },
+  },
+};
+
+/** Rows a tree-sitter grammar answers for. A source is its entry's own language unless it names another. */
+export const TREE_DECLINED = {
+  declared_return_type: {
+    lang: "python",
+    declined: [
+      "class A:\n    def __init__(self):\n        pass\n",
+      "class A:\n    def __eq__(self, other):\n        return True\n",
+      { lang: "php", src: "<?php\nclass A\n{\n    public function __construct() {}\n}\n" },
+      { lang: "php", src: "<?php\nclass A\n{\n    public function __destruct() {}\n}\n" },
+    ],
+    counted: [
+      "class A:\n    def _init(self):\n        pass\n",
+      { lang: "php", src: "<?php\nclass A\n{\n    public function __clone() {}\n}\n" },
+    ],
   },
 };

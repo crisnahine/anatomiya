@@ -817,6 +817,9 @@ async function collect(root, run) {
         caveat(caveats, unreadCode(headParse), `${path} ${unreadReason(headParse)}, so it was not checked`);
         continue;
       }
+      if (headParse.oneBranch) {
+        caveat(caveats, CAVEATS.HEAD_ONE_BRANCH, `${path} was read with one branch of each #if, so its other branches were not checked`);
+      }
 
       // The path the file had at the base, so a rename keeps every identity;
       // introduced.mjs says why the line never is one.
