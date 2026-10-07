@@ -5,7 +5,7 @@ import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
-import { TARGETS, TARGET_IDS } from "./targets.mjs";
+import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
 
 /**
  * What a command answered, and the lines that say it.
@@ -155,6 +155,8 @@ function targetSummaries(result, plan) {
       unfiled: t.unfiled.filter((path) => stated.has(path)).length,
       foreign,
       ...(t.unreadableRules.length ? { unreadable: t.unreadableRules } : {}),
+      // Once: the record names files there from this scan on.
+      ...(t.first === true && t.write.length ? { switchedOnBy: `${t.dir}/${overviewName(TARGETS[id])}` } : {}),
       // The remedy is for the line below, and `encodeScan` keeps it out of the record.
       ...(unread ? { reason: t.reason, remedy: t.remedy } : {}),
     };
@@ -173,7 +175,9 @@ function targetLines(s) {
     if (!t) continue;
     const { reader } = TARGETS[id];
     const one = (n) => n === 1;
-    if (t.wrote) lines.push(`${s.dryRun ? "would write" : "wrote"} ${plural(t.wrote, "file")} under ${t.dir} for ${reader}`);
+    // Nobody named the target on this scan, so the line says what did and how to undo it.
+    const why = t.switchedOnBy ? `, which ${t.switchedOnBy} switched on: \`scan --targets claude\` switches it off` : "";
+    if (t.wrote) lines.push(`${s.dryRun ? "would write" : "wrote"} ${plural(t.wrote, "file")} under ${t.dir} for ${reader}${why}`);
     if (t.removed) lines.push(`${s.dryRun ? "would remove" : "removed"} ${plural(t.removed, "file")} under ${t.dir}`);
     if (t.removed && t.state === "off") lines.push(s.dryRun ? `${t.dir} would be off` : `${t.dir} is off now`);
     if (t.unfiled) {

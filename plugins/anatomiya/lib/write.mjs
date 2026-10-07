@@ -262,6 +262,8 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
 
   return {
     filed,
+    // On with no flag and no file of ours on record: the overview somebody committed is all that asked.
+    first: !target.always && on && !explicit && !knownNames(previous, target)?.size,
     // The areas whose name somebody else's file holds, and the held ones this
     // directory has no file of, for the overview to leave out.
     left: [...wanted.filter((a) => taken.includes(nameOf(a))), ...held.filter((a) => !kept.includes(nameOf(a)))].map((a) => a.id),
@@ -318,6 +320,7 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
     state,
     reason,
     on,
+    first: laid.first,
     write: [...bodies].map(([name, body]) => ({ name, body })),
     remove: laid.stale,
     foreign: laid.foreign,
@@ -334,7 +337,7 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
 
 // The record goes on naming what it named, or none of it could be removed once the directory reads again.
 function leftAlone({ target, state, reason, remedy, on, held }, previous) {
-  const none = { write: [], remove: [], foreign: [], unknown: [], replaced: [], unreadableRules: [], listed: false, unfiled: [] };
+  const none = { first: false, write: [], remove: [], foreign: [], unknown: [], replaced: [], unreadableRules: [], listed: false, unfiled: [] };
   return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(held ? { held } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
 }
 
@@ -442,7 +445,10 @@ export function commitMap(root, plan) {
       const t = byDir.get(dirname(path));
       if (t) own(t.id, t, PUT_BACK);
     };
-    replaceAll(staged, removals, { record: factsPath, was: readLayout(root) }, stillOwn);
+    // Each file by the repository's own spelling of where it is, for a refusal to name.
+    const spelled = new Map([[rulesDir, RULES_DIR], [storeDir, STORE_DIR], ...others.map((t) => [t.at, t.dir])]);
+    const said = (path) => `${spelled.get(dirname(path))}/${basename(path)}`;
+    replaceAll(staged, removals, { record: factsPath, was: readLayout(root) }, stillOwn, said);
   } catch (err) {
     for (const [tmp] of staged) quietUnlink(tmp);
     // Deepest first, and only while empty: `rmdir` refuses anything else.
@@ -455,6 +461,18 @@ export function commitMap(root, plan) {
 
 const UNTOUCHED = "stopped before writing anything there";
 const PUT_BACK = "stopped and put back what it had replaced";
+
+// What a file somebody holds open, or made read-only, answers a rename or a removal with.
+const LOCKED = ["EPERM", "EACCES", "EBUSY"];
+
+// `locked` carries the sentence's first half, for the rollback to say what it put back.
+function lockedFile(err, at, verb) {
+  if (!LOCKED.includes(err.code)) return err;
+  return Object.assign(new Error(err.message, { cause: err }), { locked: `${at} could not be ${verb} (${err.code})` });
+}
+
+const lockedSentence = (locked, did) =>
+  `${locked}, so the scan ${did}: the file is locked or read-only, so close what holds it or change its mode, then scan again`;
 
 // `moved` names the directory, for the rollback to say what it could not reach.
 function movedAway(dir, did) {
@@ -493,9 +511,10 @@ function makeOwnDirectory(at, rel, made) {
  * directory is no longer where the plan found it.
  *
  * A rename in a directory the temporary file was just created in still fails:
- * Windows refuses one over a file another process holds open.
+ * Windows refuses one over a file another process holds open. `said` names a
+ * path for the sentence that failure gets.
  */
-function replaceAll(staged, removals, pair, stillOwn) {
+function replaceAll(staged, removals, pair, stillOwn, said) {
   // Read before the first rename, so the window between the facts and the last
   // file holds renames and nothing else.
   const before = new Map([...staged.map(([, path]) => path), ...removals].map((p) => [p, previousBytes(p)]));
@@ -508,7 +527,7 @@ function replaceAll(staged, removals, pair, stillOwn) {
       } catch (err) {
         // A directory swapped since the look above fails here on an errno, so it is asked once more.
         stillOwn(path);
-        throw err;
+        throw lockedFile(err, said(path), "replaced");
       }
       undo.push([path, before.get(path)]);
     }
@@ -519,7 +538,7 @@ function replaceAll(staged, removals, pair, stillOwn) {
         unlinkSync(path);
       } catch (err) {
         if (err.code === "ENOENT") continue;
-        throw err;
+        throw lockedFile(err, said(path), "removed");
       }
       undo.push([path, previous]);
     }
@@ -538,6 +557,7 @@ function replaceAll(staged, removals, pair, stillOwn) {
     }
     // What this run had already put in a directory went with it when it moved.
     if (err.moved && lost > 0) err.message = movedAway(err.moved, `${PUT_BACK} everywhere else`).message;
+    if (err.locked) err.message = lockedSentence(err.locked, lost > 0 ? "stopped part way" : PUT_BACK);
     throw err;
   }
 }
