@@ -1100,3 +1100,56 @@ test("a module the parse found empty stays out of both sides, beside a component
 
   assert.deepEqual([record.companions.with, record.companions.of], [1, 2]);
 });
+
+const mixedPackage = (component, lang) => [
+  ...files(5, (i) => file(`pkg/m${i}.ts`, "js", {})),
+  ...files(3, (i) => file(`pkg/C${i}.${component}`, lang, { embedded: lang })),
+  file("pkg/__tests__/m0.test.ts", "js", { testRunner: "vitest" }),
+  file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }),
+  file("pkg/__tests__/C1.test.ts", "js", { testRunner: "vitest" }),
+];
+
+test("a root's components are counted on their own, beside the modules and never into them", () => {
+  // element-plus's packages/components read 85 of 745 over its .ts files and
+  // said nothing of 164 .vue components, 79 of which have a namesake test.
+  for (const [ext, lang] of [["vue", "vue"], ["svelte", "svelte"]]) {
+    const corpus = mixedPackage(ext, lang);
+    const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+    assert.deepEqual(record.exts, [[".ts", 8], [`.${ext}`, 3]]);
+    assert.deepEqual(record.companions, { with: 1, of: 5, root: null, ext: ".ts" }, "the first count is the one it was");
+    assert.deepEqual(record.componentCompanions, { with: 2, of: 3, root: "pkg/__tests__", ext: `.${ext}` });
+  }
+});
+
+test("a component count is over an extension the line printed, or it is not taken", () => {
+  // The denominator has to be a number the reader can see beside it.
+  const corpus = [...mixedPackage("vue", "vue"), ...files(4, (i) => file(`pkg/d${i}.json`))];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".ts", 8], [".json", 4]]);
+  assert.equal("componentCompanions" in record, false);
+});
+
+test("a root with one counted extension carries one count, component or not", () => {
+  const vue = [
+    ...files(4, (i) => file(`src/components/C${i}.vue`, "vue", { embedded: "vue" })),
+    file("src/components/C0.spec.ts", "js", { testRunner: "vitest" }),
+  ];
+  assert.equal("componentCompanions" in rootFacts({ path: "src/components", dir: "src/components", files: vue }, layoutIndexes(vue)), false);
+
+  const plain = [
+    ...files(5, (i) => file(`pkg/m${i}.ts`, "js", {})),
+    ...files(3, (i) => file(`pkg/C${i}.tsx`, "jsx", { jsx: true })),
+    file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  assert.equal("componentCompanions" in rootFacts({ path: "pkg", dir: "pkg", files: plain }, layoutIndexes(plain)), false);
+});
+
+test("components inside a test tree are what the tests run on, and are not asked either", () => {
+  const corpus = mixedPackage("svelte", "svelte").map((f) => ({ ...f, rel: `test/apps/${f.rel}` }));
+  const record = rootFacts({ path: "test/apps/pkg", dir: "test/apps/pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.equal("companions" in record, false);
+  assert.equal("componentCompanions" in record, false);
+});

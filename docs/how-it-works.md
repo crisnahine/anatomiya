@@ -1345,7 +1345,8 @@ Every clause is dropped when it counts nothing.
 ```
 - <root>: <n1> <ext1>[ (JSX)][, <n2> <ext2>][ and <k> other]
         [; <t> <Runner> specs[ under <sub>]]
-        [; <c> of <n> has|have a namesake test[, <v>][ under <test root>]]
+        [; <c> of <n>[ <ext> files] has|have a namesake test[, <v>][ under <test root>]]
+        [; <c2> of <n2> <ext2> files has|have a namesake test[, <v>][ under <test root>]]
         [; <m> sibling modules[ named <up to three stems>]; <f> of <j> JSX files inline a helper]
 ```
 
@@ -1396,7 +1397,10 @@ Every clause is dropped when it counts nothing.
   `gym/spec` stated `1 of 1 has a namesake test` over one empty `spec_helper.rb`. The denominator is the top extension the line already printed,
   or `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. That extension
   has to be one this tool parses, so a root whose largest is `.png` or `.json` is never asked
-  whether its files have tests. Otherwise it prints wherever the repository holds any test file at
+  whether its files have tests. Where the other printed extension is a component's, `.vue` or
+  `.svelte`, its files get a second count of their own and both clauses name their extension:
+  `85 of 745 .ts files have a namesake test; 79 of 164 .vue files have a namesake test`. The two
+  are never summed. Otherwise it prints wherever the repository holds any test file at
   all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
   cannot carry, because it treats a missing companion as an absence rather than as a habit.
 - The helper facet, JavaScript and JSX roots only: how many non-test `.ts` and `.js` modules sit
@@ -1418,7 +1422,8 @@ strict prefix to nothing, and 28 of the 35 measured repositories printed at leas
 which is the clause failing at the only job it has. The
 trailing clause takes the first root printed that is not a test directory and has a namesake count,
 and nouns it with the extension that root's namesake count was taken over, which is not always its
-first: a root holding more screenshots than components counts the components. So a repository whose tests are all feature-named
+first: a root holding more screenshots than components counts the components. A root that counts
+its components a second time prints that count here too, as a clause of its own. So a repository whose tests are all feature-named
 end-to-end specs says out loud that `0 of 504 .tsx files have a namesake test`. That clause is what
 makes the line a denominator rather than a total. It names the population it counted over by the
 root's own label, so a root holding only the files at one level reads

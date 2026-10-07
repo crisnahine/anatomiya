@@ -26,6 +26,7 @@ import { corpusRepos, semanticCell } from "./e2e-corpus.mjs";
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
+  holdsNothing,
   isStoryFile,
   isTestFile,
   majorityDir,
@@ -35,6 +36,7 @@ import {
   tally,
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
+import { embeddedIn } from "../plugins/anatomiya/lib/langs.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
@@ -119,8 +121,12 @@ function recountRoot(path, corpus, testFiles, byStem) {
   // root whose bulk is screenshots or markdown has real producers under the
   // second one, and reading only exts[0] counts every one of them as zero.
   const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
-  const producers = own.filter(
-    (f) => f.lang && extOf(f.rel) === producerExt && !f.facets?.empty && !isTest(f) && !isStoryFile(f.rel));
+  const producersOf = (counted) =>
+    own.filter((f) => f.lang && extOf(f.rel) === counted && !holdsNothing(f.facets) && !isTest(f) && !isStoryFile(f.rel));
+  const producers = producersOf(producerExt);
+  const componentExt = exts.find(
+    ([ext]) => ext !== producerExt && own.some((f) => f.lang && extOf(f.rel) === ext && embeddedIn(f.lang) !== null))?.[0];
+  const components = producersOf(componentExt);
   const stories = own.filter((f) => isStoryFile(f.rel));
 
   const jsxByExt = new Map(tally(jsxFiles.map((f) => extOf(f.rel))));
@@ -138,6 +144,10 @@ function recountRoot(path, corpus, testFiles, byStem) {
     companions:
       producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)
         ? { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt }
+        : null,
+    componentCompanions:
+      components.length > 0 && testFiles.length > 0 && !underTestTree(dir)
+        ? { ...namesakeCompanions(components, testFiles, dir, byStem), ext: componentExt }
         : null,
     helpers: null,
   };
@@ -294,7 +304,7 @@ function checkSection(section, corpus, root, recordRoots) {
   // The same index the scan hands its roots, over the same corpus: the sources
   // are what decide ownership and what a second spelling is learned from, and
   // an index built from the test files alone answers a narrower question.
-  const sources = corpus.filter((f) => f.lang && !f.facets?.empty && !isTest(f) && !isStoryFile(f.rel));
+  const sources = corpus.filter((f) => f.lang && !holdsNothing(f.facets) && !isTest(f) && !isStoryFile(f.rel));
   const byStem = namesakeIndex(testFiles, sources);
   let printedFiles = 0;
 
@@ -342,10 +352,16 @@ function checkSection(section, corpus, root, recordRoots) {
       if (clause !== expected) fail(`${parsed.label} tests clause: printed "${clause}", recount "${expected}"`);
     }
 
+    const also = counted.componentCompanions;
     if (counted.companions) {
       const clause = clauses.shift();
-      const expected = namesakeClause(counted.companions);
+      const expected = namesakeClause(counted.companions, also ? `${counted.companions.ext} file` : null);
       if (clause !== expected) fail(`${parsed.label} namesake clause: printed "${clause}", recount "${expected}"`);
+    }
+    if (also) {
+      const clause = clauses.shift();
+      const expected = namesakeClause(also, `${also.ext} file`);
+      if (clause !== expected) fail(`${parsed.label} component clause: printed "${clause}", recount "${expected}"`);
     }
 
     if (counted.helpers) {
@@ -420,6 +436,12 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
     const clause = clauses.shift();
     const expected = namesakeClause({ ...top.companions, root: null }, `${top.companions.ext} file`, top.dir && top.path);
     if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
+    const also = top.componentCompanions;
+    if (also) {
+      const second = clauses.shift();
+      const want = namesakeClause({ ...also, root: null }, `${also.ext} file`, top.dir && top.path);
+      if (second !== want) fail(`tests line component clause: printed "${second}", recount "${want}"`);
+    }
   }
   if (clauses.length) fail(`tests line carries a clause the recount has no ground for: ${clauses[0]}`);
 }
