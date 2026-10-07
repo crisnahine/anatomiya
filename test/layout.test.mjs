@@ -1077,7 +1077,7 @@ test("a component is not a module the JSX roster could have inlined", () => {
   assert.equal(layoutFacts(corpus, { minFiles: 3 }).roots[0].helpers.siblingModules, 2);
 });
 
-test("a component with markup and no script still owes a test and is still counted as one", () => {
+test("a component with markup and no script still owes a test", () => {
   const markup = { empty: true, embedded: "vue" };
   const corpus = [
     ...files(4, (i) => file(`src/components/C${i}.vue`, "vue", i < 2 ? markup : { embedded: "vue" })),
@@ -1087,7 +1087,22 @@ test("a component with markup and no script still owes a test and is still count
   const record = rootFacts({ path: "src/components", dir: "src/components", files: corpus }, layoutIndexes(corpus));
 
   assert.deepEqual(record.companions, { with: 2, of: 4, root: "src/components", ext: ".vue" });
-  assert.equal(isTestFile(file("src/__tests__/Fixture.svelte", "svelte", { empty: true, embedded: "svelte" })), true);
+});
+
+test("a component with no script is never a test, wherever it sits and whatever it is named", () => {
+  const svelte = { empty: true, embedded: "svelte" };
+  const vue = { empty: true, embedded: "vue" };
+
+  assert.equal(isTestFile(file("src/__tests__/Fixture.svelte", "svelte", svelte)), false);
+  assert.equal(isTestFile(file("src/__tests__/Foo.vue", "vue", vue)), false);
+  assert.equal(isTestFile(file("src/Foo.test.vue", "vue", vue)), false);
+  assert.equal(isTestFile(file("test/unit/Foo.vue", "vue", vue), new Set(["test/unit/Foo.vue"])), false);
+  assert.equal(
+    isTestFile(file("src/__tests__/Foo.vue", "vue", { embedded: "vue" })),
+    isTestFile(file("src/__tests__/Foo.tsx", "jsx", {})),
+    "a component that holds a script is read the way a module there is"
+  );
+  assert.equal(isTestFile(file("src/__tests__/Foo.vue", "vue", { embedded: "vue" })), true);
 });
 
 test("a module the parse found empty stays out of both sides, beside a component that does not", () => {
