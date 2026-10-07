@@ -217,6 +217,12 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   writes its area. The encoder took the number for the marker of a numbered list, which it is
   only before a space or at the end of the value. A path that opens with anything else was never
   cut: `src/pages/404.vue` printed whole.
+- `check` put a Ruby finding on the wrong line where a branch wrote a class above another whose
+  method has the same name and breaks the same claim: two classes each with a `run` that swallows
+  its `rescue`, and the report named the older class's line, which the branch never touched. A
+  Ruby finding inside a method of a class is matched to that class and prints it beside the
+  method, `Importer#run`, where 0.13.4 printed `run`. JavaScript has the same misplacement for
+  two classes in one file with a method of the same name, and this version does not fix it.
 
 ## [0.13.4] - 2026-10-07
 

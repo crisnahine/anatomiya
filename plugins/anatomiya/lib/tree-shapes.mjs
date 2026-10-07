@@ -114,8 +114,11 @@ export const SHAPES = {
     inner: ["inner_attribute_item"],
     doc: ["outer_doc_comment_marker"],
     args: ["token_tree"],
+    // An `impl` block has no name of its own: it is known by the type it is written for.
+    receiverType: ["type_identifier"],
     tokensOf: [],
     name: "name",
+    implFor: "type",
     renamed: "alias",
   },
   kotlin: {

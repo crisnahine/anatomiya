@@ -324,13 +324,23 @@ test("a file the layout calls a test file holds no site of a row that leaves tes
 
 test("the row that judges every file does count a test file", async () => {
   const [rel, source] = ["src/test/java/ATest.java", "import org.junit.Test;\n\nclass ATest {\n    @Test\n    public void a() {\n        try { b(); } catch (E e) { }\n    }\n}\n"];
-  assert.deepEqual(await hits("caught_error_used", "java", source, rel), [{ conforming: false, where: "a" }]);
+  assert.deepEqual(await hits("caught_error_used", "java", source, rel), [{ conforming: false, where: "ATest.a" }]);
 });
 
-test("a site crosses with the name a reader is sent to", async () => {
+test("a site crosses with the name a reader is sent to, and the class that name is written in", async () => {
   assert.deepEqual(await hits("caught_error_used", "java", "class A {\n    void m() {\n        try { a(); } catch (E e) { }\n    }\n}\n"), [
-    { conforming: false, where: "m" },
+    { conforming: false, where: "A.m" },
   ]);
+  const where = async (key, lang, source) => (await hits(key, lang, source)).map((h) => h.where);
+  assert.deepEqual(await where("public_doc_comment", "python", "class A:\n    def run(self):\n        pass\n\n\ndef run():\n    pass\n"), ["A.run", "run"]);
+  assert.deepEqual(await where("declared_return_type", "php", "<?php\nclass A\n{\n    public function f() {}\n}\n\ninterface B\n{\n    public function f();\n}\n"), ["A.f", "B.f"]);
+  assert.deepEqual(await where("public_doc_comment", "go", "package a\n\nfunc (t *T) Run() {}\n\nfunc (s Set[K]) Run() {}\n"), ["T.Run", "Set.Run"]);
+  assert.deepEqual(await where("public_doc_comment", "csharp", "struct A\n{\n    public void Run() { }\n}\n"), ["A.Run"]);
+  assert.deepEqual(await where("public_doc_comment", "kotlin", "class A {\n    fun run() {}\n\n    companion object {\n        fun make() {}\n    }\n}\n\nobject B {\n    fun run() {}\n}\n"), ["A.run", "A.make", "B.run"]);
+  // An `impl` block is known by the type it is for, with or without a trait or a parameter beside it.
+  assert.deepEqual(await where("public_doc_comment", "rust", "impl A {\n    pub fn run(&self) {}\n}\n\nimpl<T> B<T> {\n    pub fn run(&self) {}\n}\n\npub fn run() {}\n"), ["A.run", "B.run", "run"]);
+  // A function inside a method is in that method's class.
+  assert.deepEqual(await where("declared_return_type", "python", "class A:\n    def f(self):\n        def g():\n            pass\n"), ["A.f", "A.g"]);
   assert.deepEqual(await hits("caught_error_used", "php", "<?php\ntry { a(); } catch (E $e) { }\n"), [{ conforming: false, where: null }]);
   assert.deepEqual(await hits("public_doc_comment", "go", "package a\n\n// Run runs.\nfunc Run() {}\n"), [{ conforming: true, where: "Run" }]);
   assert.deepEqual(await hits("declared_return_type", "php", "<?php\nfunction f() {}\n"), [{ conforming: false, where: "f" }]);
@@ -357,7 +367,7 @@ test("a csharp file read with one branch of each conditional is judged on the br
   const r = await parseTreeFile(source, "src/A.cs", "csharp");
 
   assert.equal(r.oneBranch, true);
-  assert.deepEqual(r.hits.public_doc_comment, [{ conforming: true, where: "Run" }]);
+  assert.deepEqual(r.hits.public_doc_comment, [{ conforming: true, where: "A.Run" }]);
 });
 
 for (const [key, { lang, declined, counted }] of Object.entries(TREE_DECLINED)) {

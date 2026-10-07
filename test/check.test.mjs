@@ -2917,6 +2917,22 @@ test("a bare body added above two others is the one reported", needsRuby, async 
   assert.equal(found[0].where, "NewWorker", "the body this branch added, not the one it sat above");
 });
 
+test("a rescue written above an old one, in a method of the same name in another class, is reported on the line the branch wrote", needsRuby, async (t) => {
+  const cls = (name) => `class ${name}\n  def run\n    go\n  rescue StandardError\n    nil\n  end\nend\n`;
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/a.rb", cls("A"));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/a.rb", `${cls("B")}\n${cls("A")}`);
+    commit("a second class, written first");
+  });
+  facts(dir, { sha: sha(dir, "main"), path: "app/models", dimensions: [dim({ key: "rescue_uses_error" })] });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "rescue_uses_error").map((f) => [f.line, f.where]), [[4, "B#run"]]);
+});
+
 test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {
   // The grouped site's identity used to be the include call's own node, which
   // is `call include` for every body in the file, so one new violating body
@@ -5509,7 +5525,7 @@ test("a C# file read with one branch is judged on the text its tree was read fro
 
   const scanned = await parseTreeFile(perTarget(SPLIT), "src/components/A.cs", "csharp");
   assert.equal(scanned.oneBranch, true);
-  assert.deepEqual(scanned.hits.public_doc_comment, [{ conforming: true, where: "Load" }]);
+  assert.deepEqual(scanned.hits.public_doc_comment, [{ conforming: true, where: "A.Load" }]);
 
   const report = await check(dir, { baseRef: "main" });
 
@@ -5561,6 +5577,48 @@ test("a test file pytest collects by its directory is a test file to the check o
   assert.deepEqual(report.examined.map((e) => e.path).sort(), ["tests/more.py", "tests/tests.py"]);
   assert.deepEqual(report.caveats, []);
   assert.deepEqual(report.findings, []);
+});
+
+for (const [lang, rel, glob, old, added, line] of [
+  ["Python", "src/py/views.py", "**/*.py", "class A:\n    def run(self):\n        return 1\n", "class B:\n    def run(self):\n        return 2\n\n\n", 2],
+  ["Java", "src/java/Views.java", "**/*.java", "class A {\n    public void run() {}\n}\n", "class B {\n    public void run() {}\n}\n\n", 2],
+  ["Go", "src/go/views.go", "**/*.go", "package views\n\nfunc (a A) Run() {}\n", "package views\n\nfunc (b B) Run() {}\n", 3],
+  ["Rust", "src/rs/views.rs", "**/*.rs", "struct A;\n\nimpl A {\n    pub fn run(&self) {}\n}\n", "struct B;\n\nimpl B {\n    pub fn run(&self) {}\n}\n\n", 4],
+]) {
+  test(`${lang}: a method written above an old one of its name, in another class, is reported on the line the branch wrote`, async (t) => {
+    const dir = repo(t, ({ git, write, commit }) => {
+      write(rel, old);
+      commit("base");
+      git("checkout", "-q", "-b", "work");
+      // Go's package clause stays the file's first line.
+      write(rel, lang === "Go" ? `${added}\n${old.replace("package views\n\n", "")}` : added + old);
+      commit("a second class");
+    });
+    const documented = dim({ key: "public_doc_comment", precision: "partial" });
+    const at = dirname(rel);
+    facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: at, globs: [{ negated: false, dir: at, tail: glob }], fileCount: 8, dimensions: [documented] }] });
+
+    const report = await check(dir, { baseRef: "main" });
+
+    assert.deepEqual(report.caveats, []);
+    assert.deepEqual(forKey(report, "public_doc_comment").map((f) => [f.line, f.where]), [[line, lang === "Python" || lang === "Java" || lang === "Rust" ? "B.run" : "B.Run"]]);
+  });
+}
+
+test("a handler written above an old one of its text, in a method of the same name in another class, is reported on the line the branch wrote", async (t) => {
+  const cls = (name) => `class ${name} {\n    void run() {\n        try { go(); } catch (E e) { }\n    }\n}\n`;
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/java/Views.java", cls("A"));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/java/Views.java", `${cls("B")}\n${cls("A")}`);
+    commit("a second class");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "src/java", globs: [{ negated: false, dir: "src/java", tail: "**/*.java" }], fileCount: 8, dimensions: [dim({ key: "caught_error_used", precision: "partial" })] }] });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(report, "caught_error_used").map((f) => [f.line, f.where]), [[3, "B.run"]]);
 });
 
 test("a Rust file cargo builds as a test by where it sits is a test file to the check, a case in it or none", async (t) => {
