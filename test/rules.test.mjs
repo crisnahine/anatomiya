@@ -21,7 +21,7 @@ import {
 } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
-import { needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import { needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
 
 const { claude, cursor, copilot } = TARGETS;
 const OWNED = `---\ngenerator: ${GENERATOR}\nalwaysApply: true\n---\n# Repository map\n`;
@@ -206,6 +206,19 @@ test("a target directory that is Claude Code's own, holds it or sits in it does 
   assert.equal(resolveTargetDir(dir, cursor), join(dir, ".cursor", "rules"));
   assert.equal(targetState(dir, cursor), "on");
   assert.equal(resolveTargetDir(dir, copilot), join(dir, ".github", "instructions"));
+});
+
+test("a rules link spelled in another case still overlaps the directory it leads to", { ...needsSymlinks, ...needsFoldingFilesystem }, (t) => {
+  // The plain realpath keeps the link's spelling, so the two paths compared unequal.
+  for (const [target, to] of [[copilot, "../.GitHub/instructions"], [cursor, "../.Cursor/rules"], [copilot, "../.GITHUB"]]) {
+    const dir = workspace(t);
+    put(dir, `${target.dir}/${overviewName(target)}`, OWNED);
+    mkdirSync(join(dir, ".claude"));
+    symlinkSync(to, join(dir, RULES_DIR));
+    assert.notEqual(resolveRulesDir(dir), null, `${to}: the control, the link resolves`);
+    assert.equal(resolveTargetDir(dir, target), null, to);
+    assert.equal(targetState(dir, target), "unknown", to);
+  }
 });
 
 test("claude is always on", (t) => {

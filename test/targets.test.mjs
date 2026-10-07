@@ -45,7 +45,7 @@ test("the three targets, their directories and their extensions", () => {
     cursor: {
       id: "cursor", dir: ".cursor/rules", ext: ".mdc", always: false, reader: "Cursor", wrote, widens: null,
       reads: "Read a file before editing it: an area's notes attach when you read one of its files.",
-      listed: "attached when one of its files is in context",
+      listed: "attached when you read one of its files",
     },
     copilot: {
       id: "copilot", dir: ".github/instructions", ext: ".instructions.md", always: false, reader: "GitHub Copilot", wrote,
@@ -174,6 +174,18 @@ test("cursor trims each pattern and unwraps a quoted line, so neither edge may h
     const p = plain({ dir, tail: tail ?? "*.js" });
     assert.deepEqual(at(dir, tail), { ...NONE, patterns: [p] }, JSON.stringify(p));
   }
+});
+
+test("a lone cursor pattern that reads as a boolean is not written", () => {
+  // Cursor's reader turns a `globs` value of exactly `true` or `false` into a boolean.
+  for (const word of ["true", "false"]) {
+    const lone = [{ negated: false, dir: "", tail: word }];
+    assert.deepEqual(spelledGlobs(cursor, lone, plain), { ...NONE, unspellable: [word] });
+    assert.deepEqual(spelledGlobs(copilot, lone, plain).patterns, [word]);
+    const beside = [...lone, { negated: false, dir: "lib", tail: "*.js" }];
+    assert.deepEqual(spelledGlobs(cursor, beside, plain), { ...NONE, patterns: [word, "lib/*.js"] });
+  }
+  assert.deepEqual(spelledGlobs(cursor, [{ negated: false, dir: "", tail: "True" }], plain).patterns, ["True"]);
 });
 
 test("cursor takes a comment mark, a colon and a space, and a closing colon as part of the pattern", () => {
