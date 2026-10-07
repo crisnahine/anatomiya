@@ -14,7 +14,8 @@ import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, oper
 import { pluginRoot } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { checkerStamp } from "./semantic.mjs";
-import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, trackedRulesDir } from "./rules.mjs";
+import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
 const LOCK_FILE = "refresh.lock";
@@ -113,7 +114,8 @@ async function passes(root, store, { scan, pin }) {
       return { reason: state.ok ? "current" : "failed-before", pinned, held };
     }
     try {
-      await scan(root);
+      const hold = await committedTargets(root);
+      await (hold.length > 0 ? scan(root, { hold }) : scan(root));
     } catch (err) {
       // The previous map stays: a scan that throws has written nothing or
       // put back what it replaced, and one that would not run now will not
@@ -413,6 +415,24 @@ async function mapTracked(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
   const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`]);
   return r.ok && r.stdout.length > 0;
+}
+
+/**
+ * The other targets that are on and whose overview the repository commits, by
+ * id. A scan here leaves those files as the commit has them, for the reason
+ * above, and still writes the map nobody commits: a repository that commits
+ * only the copy another tool reads from the remote has no other way to keep
+ * the local one current. A question git could not answer holds the target.
+ */
+async function committedTargets(root) {
+  const magic = (await caseMagic(root)) ? ":(icase)" : "";
+  const held = [];
+  for (const t of Object.values(TARGETS)) {
+    if (t.always || targetState(root, t) !== "on") continue;
+    const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${t.dir}/${overviewName(t)}`]);
+    if (!r.ok || r.stdout.length > 0) held.push(t.id);
+  }
+  return held;
 }
 
 async function gitBusy(root) {

@@ -985,8 +985,8 @@ paid per turn and per tool call, so a hook loads only what its verb uses. The bi
 payload reader and the readiness check and nothing else, each verb imports its own module when it
 runs (`hook-verbs.mjs` for the echo, the notice and the end-of-turn check, `refresh.mjs` for the
 refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check.
-Every hook process used to load 65 modules; the echo now loads 12, the notice 12 until it reads its
-rules and 24 after, the end-of-turn check 20 and the refresh 27. The echo went from 65ms to 39ms
+Every hook process used to load 65 modules; the echo now loads 13, the notice 13 until it reads its
+rules and 25 after, the end-of-turn check 21 and the refresh 28. The echo went from 65ms to 39ms
 against 26ms for bare node (A100). A module that will not
 load throws inside the same boundary as everything else, so the hook still answers `{}`.
 
@@ -1217,7 +1217,10 @@ the holder's last look at HEAD is not lost. It stamps what a scan depends on (HE
 `typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
 map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
 merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run the type checker
-to the rescan, which decides it the way any scan does. A scan that throws writes nothing, so the
+to the rescan, which decides it the way any scan does. Where the repository tracks the overview of
+a Cursor or Copilot copy of the map, the rescan holds that directory as it is and writes the rest:
+nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
+by hand rewrites it. A scan that throws writes nothing, so the
 previous map stays; the same stamp is tried again only after half an hour, and the echo says the
 refresh failed until a refresh or a scan run by hand succeeds. A scan run by hand records its stamp
 too, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
@@ -1309,6 +1312,16 @@ Every tracked file, from the same `git ls-files -z` pass and under the same deny
 directories as section 1, and not only the source extensions: a directory holding 40 `.md` files is
 a fact about where things live. Nothing extra is parsed for it, and a file the parse never reached
 is counted under its extension and appears in no other count.
+
+The map's own files are left out, so a repository that commits its map prints the same counts on the
+next scan: every file under `.claude/anatomiya/` that is not source, and in `.claude/rules`,
+`.cursor/rules` and `.github/instructions` a file named `anatomiya-overview` or
+`anatomiya-area-<8 hex digits>` with that directory's extension. Where `.claude/rules` is a link to
+another directory in the repository, git tracks the map under that directory, so the rule asks
+there instead, once per scan. It is decided by the name alone, whether or not that target is on, and
+no file is opened for it, so a hand-written file under one of those exact names is left out too.
+Every other file in those directories is a team's own and is counted, and so is a source file under
+`.claude/anatomiya/`, which is read like any other.
 
 It describes the tree as it is rather than the pinned population, because it is counts and never a
 directive: a tests line that moves when an agent adds a test file is a true count that flips

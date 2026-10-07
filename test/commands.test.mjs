@@ -506,6 +506,58 @@ test("a pin leaves out its map where the index spells .claude in another case th
   assert.ok(existsSync(join(dir, PIN_PATH)));
 });
 
+test("a pin leaves out the map's copies for Cursor and Copilot, and nothing else beside them", async (t) => {
+  // A repository that commits those copies has them rewritten by every scan,
+  // and they are no more part of the population than the Claude ones.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
+  writeFileSync(join(dir, ".cursor", "rules", "team.mdc"), "# the team's own\n");
+  git("add", "-A");
+  git("commit", "-qm", "commit the map");
+  for (const [at, name] of [[".cursor/rules", "anatomiya-overview.mdc"], [".github/instructions", "anatomiya-overview.instructions.md"]]) {
+    writeFileSync(join(dir, at, name), "rewritten by a scan\n");
+  }
+
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+
+  writeFileSync(join(dir, ".cursor", "rules", "team.mdc"), "# edited\n");
+  await assert.rejects(() => runPin(dir), /commit or stash/, "a rule somebody wrote there is still a difference");
+});
+
+test("a scan handed a set of targets writes that set, and one handed none writes what is on", async (t) => {
+  const dir = repo(t);
+
+  const named = await runScan(dir, { targets: ["claude", "cursor"] });
+  const kept = await runScan(dir);
+  const off = await runScan(dir, { targets: ["claude"] });
+
+  assert.deepEqual(named.summary.targets, { cursor: { state: "on", dir: ".cursor/rules", wrote: 2, removed: 0, unfiled: 0, foreign: 0 } });
+  assert.deepEqual(kept.summary.targets, named.summary.targets);
+  assert.deepEqual(off.summary.targets, { cursor: { state: "off", dir: ".cursor/rules", wrote: 0, removed: 2, unfiled: 0, foreign: 0 } });
+  assert.deepEqual(readdirSync(join(dir, ".cursor", "rules")), []);
+  assert.equal(existsSync(join(dir, ".github")), false);
+});
+
+test("a person's file at a name a named target writes refuses the scan in the writer's sentence", async (t) => {
+  const dir = repo(t);
+  mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "# mine\n");
+
+  await assert.rejects(() => runScan(dir, { targets: ["claude", "cursor"] }), {
+    message:
+      ".cursor/rules/anatomiya-overview.mdc was not written by this tool, so .cursor/rules could not be written and nothing was written anywhere: move or delete it and scan again",
+  });
+  assert.equal(existsSync(join(dir, ".claude")), false);
+
+  // Not named, the target is off: the file stays and the scan has nothing to say about it.
+  const { summary } = await runScan(dir);
+  assert.equal("targets" in summary, false);
+  assert.equal(scanLines(summary).some((l) => l.includes(".cursor")), false, scanLines(summary).join("\n"));
+  assert.equal(readFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "utf8"), "# mine\n");
+});
+
 test("a pin refuses while a merge has left a path unmerged, under .claude/ as well", async (t) => {
   // `ls-files` lists an unmerged path once per stage, so a pin taken mid-merge
   // recorded the file three times and a corpus two larger than the tree, and
@@ -872,6 +924,61 @@ test("a doctor asks every engine and the optional checker, and answers a line ea
   assert.deepEqual([...new Set(rows.map((r) => r.engine))], [...PROBE_IDS]);
   assert.equal(lines.length, rows.length, "an extra answers a line of its own");
   assert.ok(lines.some((l) => l.startsWith("oxc ")), lines.join("\n"));
+});
+
+test("a doctor run inside a repository says which other targets are on there, and why one could not be read", needsSymlinks, async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines, engines, "nothing for a target that is off");
+  symlinkSync(join(dir, "src"), join(dir, ".cursor"));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines, engines, "nor for one nobody can read that no scan here wrote to");
+  rmSync(join(dir, ".cursor"));
+
+  await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
+  rmSync(join(dir, ".github"), { recursive: true });
+  symlinkSync(join(dir, "src"), join(dir, ".github"));
+
+  const { lines } = await runDoctor({ cwd: join(dir, "src") });
+
+  assert.deepEqual(lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".github/instructions: could not be read (.github is a link)",
+  ]);
+});
+
+test("a doctor counts the names a scan gives a file, and says when the directory cannot be listed", needsPosixPermissions, async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  const rules = join(dir, ".cursor", "rules");
+  // A copy somebody kept: this tool's key, under a name no scan gives a file.
+  writeFileSync(join(rules, "anatomiya-my-notes.mdc"), readFileSync(join(rules, "anatomiya-overview.mdc")));
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, 2 files"]);
+
+  // Entered and not listed: the overview still reads as this tool's.
+  chmodSync(rules, 0o311);
+  try {
+    assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, could not be listed"]);
+  } finally {
+    chmodSync(rules, 0o755);
+  }
+});
+
+test("a doctor counts a target's files where the clone holds them and no record", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  rmSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, 2 files"]);
+});
+
+test("a doctor run outside any repository answers about the installation alone", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-none-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines, (await runDoctor()).lines);
 });
 
 /**

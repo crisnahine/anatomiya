@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { needsPathControl, needsRemovableCwd, needsShebang, needsUnreadableDirs, needsWindows } from "./platform.mjs";
+import { needsPathControl, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
@@ -484,6 +484,221 @@ for (const cmd of ["scan", "check", "pin", "doctor", "setup"]) {
   });
 }
 
+/* --- the other directories a scan writes to --- */
+
+const CURSOR = join(".cursor", "rules");
+const COPILOT = join(".github", "instructions");
+const listed = (repo, dir) => (existsSync(join(repo, dir)) ? readdirSync(join(repo, dir)).sort() : null);
+
+/** The binary's exit code and both streams, whichever way it came out. */
+function ran(...args) {
+  const r = spawnSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), ...args], { encoding: "utf8" });
+  return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+}
+
+test("scan --targets writes the map for each tool named, and says so per directory", (t) => {
+  const repo = repoWithSource(t);
+
+  // Any case, and spaces around a name.
+  const out = anatomiya(repo, "scan", "--targets", "Cursor, COPILOT");
+
+  assert.match(out, /^wrote 2 files$/m, out);
+  assert.match(out, /^wrote 2 files under \.cursor\/rules for Cursor$/m, out);
+  assert.match(out, /^wrote 2 files under \.github\/instructions for GitHub Copilot$/m, out);
+  const stems = listed(repo, join(".claude", "rules")).map((n) => n.replace(/\.md$/, ""));
+  assert.equal(stems.length, 2);
+  assert.deepEqual(listed(repo, CURSOR), stems.map((n) => `${n}.mdc`));
+  assert.deepEqual(listed(repo, COPILOT), stems.map((n) => `${n}.instructions.md`));
+});
+
+test("a target stays on with no flag, and --targets claude turns the others off", (t) => {
+  const repo = repoWithSource(t);
+  anatomiya(repo, "scan", "--targets=cursor");
+  const plain = /^wrote 2 files\n(?!wrote)/m;
+
+  const kept = anatomiya(repo, "scan");
+  assert.match(kept, /^wrote 2 files under \.cursor\/rules for Cursor$/m, kept);
+  assert.doesNotMatch(kept, /instructions/, "and nothing turned the other one on");
+  assert.equal(listed(repo, COPILOT), null);
+
+  const dry = anatomiya(repo, "scan", "--dry-run", "--targets", "claude");
+  assert.match(dry, /^would remove 2 files under \.cursor\/rules$/m, dry);
+  assert.match(dry, /^\.cursor\/rules would be off$/m, dry);
+  assert.equal(listed(repo, CURSOR).length, 2, "and the dry run removed nothing");
+
+  const off = anatomiya(repo, "scan", "--targets", "claude");
+  assert.match(off, /^removed 2 files under \.cursor\/rules$/m, off);
+  assert.match(off, /^\.cursor\/rules is off now$/m, off);
+  assert.deepEqual(listed(repo, CURSOR), []);
+
+  const after = anatomiya(repo, "scan");
+  assert.match(after, plain, after);
+  assert.doesNotMatch(after, /\.cursor/, after);
+  assert.deepEqual(listed(repo, CURSOR), []);
+});
+
+test("a dry run with --targets plans every directory and writes none", (t) => {
+  const repo = repoWithSource(t);
+
+  const out = anatomiya(repo, "scan", "--dry-run", "--targets", "cursor,copilot");
+
+  assert.match(out, /^would write 2 files$/m, out);
+  assert.match(out, /^would write 2 files under \.cursor\/rules for Cursor$/m, out);
+  assert.match(out, /^would write 2 files under \.github\/instructions for GitHub Copilot$/m, out);
+  for (const dir of [".claude", ".cursor", ".github"]) assert.equal(existsSync(join(repo, dir)), false, dir);
+});
+
+test("the scan record names each other target only where one is involved", (t) => {
+  const repo = repoWithSource(t);
+
+  const none = JSON.parse(anatomiya(repo, "scan", "--format", "json"));
+  const one = JSON.parse(anatomiya(repo, "scan", "--format", "json", "--targets", "copilot"));
+
+  assert.equal("targets" in none, false);
+  assert.equal(one.schema, SUMMARY_SCHEMA);
+  assert.deepEqual(one.targets, {
+    copilot: { state: "on", dir: ".github/instructions", wrote: 2, removed: 0, unfiled: 0, foreign: 0 },
+  });
+});
+
+test("a --targets the scan cannot take is refused before anything runs", (t) => {
+  const repo = repoWithSource(t);
+
+  for (const [args, message] of [
+    [["scan", repo, "--targets", "windsurf"], /^unknown target: windsurf; the targets are claude, cursor, copilot$/m],
+    [["scan", repo, "--targets"], /^--targets needs at least one name$/m],
+    [["scan", repo, "--targets="], /^--targets needs at least one name$/m],
+    [["scan", repo, "--targets", ","], /^--targets needs at least one name$/m],
+    [["scan", repo, "--targets", "--dry-run"], /^--targets needs at least one name$/m],
+    [["scan", repo, "--targets", "cursor", "--targets=copilot"], /^--targets may be given once$/m],
+    [["check", repo, "--targets", "cursor"], /^check takes no --targets option$/m],
+    [["pin", repo, "--targets=cursor"], /^pin takes no --targets option$/m],
+    [["doctor", "--targets", "cursor"], /^doctor takes no --targets option$/m],
+    [["setup", "--targets", "cursor"], /^setup takes no --targets option$/m],
+  ]) {
+    const { code, stderr, stdout } = ran(...args);
+    assert.equal(code, 2, args.slice(2).join(" "));
+    assert.match(stderr, message, args.join(" "));
+    assert.match(stderr, /usage: anatomiya scan .*\[--targets <list>\]/, "and it prints the usage, which names the flag");
+    assert.equal(stdout, "");
+  }
+  for (const dir of [".claude", ".cursor", ".github"]) assert.equal(existsSync(join(repo, dir)), false, dir);
+});
+
+test("a named target that cannot be written refuses the scan in the writer's own sentence", needsSymlinks, (t) => {
+  const repo = repoWithSource(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  symlinkSync(elsewhere, join(repo, ".cursor"));
+
+  const { code, stderr, stdout } = ran("scan", repo, "--targets", "cursor");
+
+  assert.equal(code, 1);
+  assert.equal(
+    stderr,
+    "anatomiya: .cursor is a link, so .cursor/rules could not be written and nothing was written anywhere: make .cursor a directory of this repository and scan again\n"
+  );
+  assert.equal(stdout, "");
+  assert.equal(existsSync(join(repo, ".claude")), false, "the Claude files included");
+  assert.deepEqual(readdirSync(elsewhere), []);
+});
+
+test("turning off a target that cannot be read refuses the scan and says why", needsSymlinks, (t) => {
+  const repo = repoWithSource(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan", "--targets", "copilot");
+  // The record names two files there, and now nobody can look.
+  rmSync(join(repo, ".github"), { recursive: true });
+  symlinkSync(elsewhere, join(repo, ".github"));
+  const rules = ruleFiles(repo);
+
+  const { code, stderr, stdout } = ran("scan", repo, "--targets", "claude");
+
+  assert.equal(code, 1);
+  assert.equal(
+    stderr,
+    "anatomiya: .github is a link, so .github/instructions could not be turned off and nothing was written anywhere: make .github a directory of this repository and scan again\n"
+  );
+  assert.equal(stdout, "");
+  assert.deepEqual(ruleFiles(repo), rules);
+  assert.deepEqual(readdirSync(elsewhere), []);
+});
+
+test("a target that cannot be read is given one remedy, refused or summarised, and the record does not carry it", needsSymlinks, (t) => {
+  const repo = repoWithSource(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan", "--targets", "copilot");
+  rmSync(join(repo, ".github"), { recursive: true });
+  symlinkSync(elsewhere, join(repo, ".github"));
+  const remedy = "make .github a directory of this repository";
+  const why = ".github is a link";
+
+  const plain = ran("scan", repo);
+  assert.equal(plain.code, 0);
+  assert.ok(
+    plain.stdout.split("\n").includes(`.github/instructions could not be read (${why}), so nothing there was written or removed: ${remedy}, then scan again`),
+    plain.stdout
+  );
+  for (const [targets, verb] of [["claude,copilot", "written"], ["claude", "turned off"]]) {
+    const { code, stderr } = ran("scan", repo, "--targets", targets);
+    assert.equal(code, 1, targets);
+    assert.equal(stderr, `anatomiya: ${why}, so .github/instructions could not be ${verb} and nothing was written anywhere: ${remedy} and scan again\n`);
+  }
+  const record = JSON.parse(ran("scan", repo, "--format", "json").stdout);
+  assert.deepEqual(record.targets.copilot, { state: "unknown", dir: ".github/instructions", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: why });
+});
+
+test("a repository that never turned a target on reads the same whatever sits in the other tools' directories", needsSymlinks, (t) => {
+  const repo = repoWithBranch(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan");
+  // The one thing that moves between two runs of unchanged source.
+  const settled = (out) => out.replace(/, \d+ms, /, ", Nms, ").replace(/"durationMs": \d+/, '"durationMs": 0');
+  const said = () => ({
+    scan: settled(anatomiya(repo, "scan")),
+    json: settled(anatomiya(repo, "scan", "--format", "json")),
+    dry: settled(anatomiya(repo, "scan", "--dry-run")),
+    check: anatomiya(repo, "check"),
+    doctor: execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "doctor"], { cwd: repo, encoding: "utf8" }),
+  });
+  const before = said();
+  assert.equal("targets" in JSON.parse(before.json), false);
+
+  // A link at `.cursor`, to a directory holding a hand-written file at the overview's name.
+  const hand = "---\nalwaysApply: true\n---\n# Written by hand\n";
+  mkdirSync(join(elsewhere, "rules"));
+  writeFileSync(join(elsewhere, "rules", "anatomiya-overview.mdc"), hand);
+  symlinkSync(elsewhere, join(repo, ".cursor"));
+  // A team's own instructions, one of them under this tool's prefix and another at its overview's name.
+  mkdirSync(join(repo, COPILOT), { recursive: true });
+  const theirs = {
+    "style.instructions.md": '---\napplyTo: "**"\n---\n# House style\n',
+    "anatomiya-notes.instructions.md": "# Notes on the map\n",
+    "anatomiya-overview.instructions.md": hand,
+  };
+  for (const [name, body] of Object.entries(theirs)) writeFileSync(join(repo, COPILOT, name), body);
+
+  const after = said();
+
+  for (const what of Object.keys(before)) assert.equal(after[what], before[what], what);
+  for (const [name, body] of Object.entries(theirs)) assert.equal(readFileSync(join(repo, COPILOT, name), "utf8"), body, name);
+  assert.deepEqual(readdirSync(join(elsewhere, "rules")), ["anatomiya-overview.mdc"]);
+});
+
+test("doctor names each other target that is on in the repository it is run in", (t) => {
+  const repo = repoWithSource(t);
+  const doctor = () => execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "doctor"], { cwd: repo, encoding: "utf8" });
+  const before = doctor();
+  anatomiya(repo, "scan", "--targets", "cursor");
+
+  const out = doctor();
+
+  assert.equal(out, `${before}.cursor/rules: on, 2 files\n`);
+});
+
 /* --- one answer, three writers --- */
 
 test("a scan answers as a record for a reader that is not a terminal", (t) => {
@@ -944,6 +1159,17 @@ test("--help and -h still print the usage with no command word", () => {
     });
     assert.match(out, /^usage: anatomiya scan/, `${flag} prints the usage`);
   }
+});
+
+test("the usage says what --targets writes, that a target stays on, and how to turn one off", () => {
+  const out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "--help"], { stdio: "pipe", encoding: "utf8" });
+  // Joined, so where a line wraps is not what is held.
+  const usage = out.replace(/\s+/g, " ");
+
+  assert.match(usage, /--targets is a scan option: a comma-separated list of cursor and copilot\./);
+  assert.match(usage, /also written under \.cursor\/rules for Cursor and under \.github\/instructions for GitHub Copilot\./);
+  assert.match(usage, /A target stays on for every later scan while its anatomiya-overview file is there, until --targets names a set without it\./);
+  assert.match(usage, /--targets claude turns the others off and removes what this tool wrote there\./);
 });
 
 test("a mistyped --base exits non-zero and names the argument, not the repository", (t) => {

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { readPayload, respond } from "../lib/hook.mjs";
 import { unsupportedNode } from "../lib/readiness.mjs";
+import { parseTargets } from "../lib/targets.mjs";
 
 const USAGE = [
-  "usage: anatomiya scan   [path] [--dry-run] [--format <name>]",
+  "usage: anatomiya scan   [path] [--dry-run] [--targets <list>] [--format <name>]",
   "       anatomiya check  [path] [--base <ref>] [--format <name>]",
   "       anatomiya pin    [path] [--dry-run] [--format <name>]",
   "       anatomiya doctor",
@@ -25,6 +26,13 @@ const USAGE = [
   "reader that is not a terminal. github prints one annotation per finding and",
   "is a check option only, since nothing else here has findings. doctor and",
   "setup print lines for a person to read and take neither.",
+  "",
+  "--targets is a scan option: a comma-separated list of cursor and copilot.",
+  "The same map is then also written under .cursor/rules for Cursor and under",
+  ".github/instructions for GitHub Copilot. A target stays on for every later",
+  "scan while its anatomiya-overview file is there, until --targets names a",
+  "set without it. --targets claude turns the others off and removes what",
+  "this tool wrote there.",
   "",
   "[path] picks the repository, not a subtree: every command covers the whole",
   "repository the path is in, and scan prints the root it resolved to. doctor",
@@ -53,7 +61,7 @@ const COMMANDS = {
       const { runScan } = await import("../lib/commands.mjs");
       const { noteScan } = await import("../lib/refresh-run.mjs");
       const { scanJson, scanLines } = await import("../lib/summary.mjs");
-      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun });
+      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun, targets: opts.targets });
       // A scan run by hand is the refresh's answer too: it clears a failed
       // refresh the echo is reporting, and the next refresh has nothing to redo.
       if (!opts.dryRun) await noteScan(result.root);
@@ -99,7 +107,7 @@ const COMMANDS = {
       // Exit 0 whichever way it came out: what it found is the report, and a
       // non-zero exit would read as a probe that could not run.
       const { runDoctor } = await import("../lib/commands.mjs");
-      const { lines } = await runDoctor();
+      const { lines } = await runDoctor({ cwd: sessionDir(true) });
       console.log(lines.join("\n"));
     },
   },
@@ -233,7 +241,7 @@ function parseArgs(argv) {
   }
   const cmd = argv.shift();
   const spec = COMMANDS[cmd];
-  const opts = { cmd, path: null, dryRun: false, baseRef: null, format: "text" };
+  const opts = { cmd, path: null, dryRun: false, baseRef: null, format: "text", targets: null };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -251,6 +259,18 @@ function parseArgs(argv) {
       const value = arg === "--base" ? argv[++i] : arg.slice("--base=".length);
       if (!value || value.startsWith("-")) fail(`--base needs a ref\n${USAGE}`);
       opts.baseRef = value;
+      continue;
+    }
+    if (arg === "--targets" || arg.startsWith("--targets=")) {
+      if (cmd !== "scan") fail(`${cmd} takes no --targets option\n${USAGE}`);
+      if (opts.targets !== null) fail(`--targets may be given once\n${USAGE}`);
+      const value = arg === "--targets" ? argv[++i] : arg.slice("--targets=".length);
+      try {
+        // An option where the list belongs is a list nobody gave.
+        opts.targets = parseTargets(value?.startsWith("-") ? "" : value);
+      } catch (err) {
+        fail(`${err.message}\n${USAGE}`);
+      }
       continue;
     }
     if (arg === "--format" || arg.startsWith("--format=")) {

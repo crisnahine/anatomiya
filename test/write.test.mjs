@@ -1,23 +1,32 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsBindableSocketPath, needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
+import { caseSensitiveDir, needsBindableSocketPath, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
-import { areaFilename, isOwned, realpathOf, realpathOrNull, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { areaFilename, isOwned, realpathOf, realpathOrNull, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
+import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 
 const RULES = ".claude/rules";
 const STORE = ".claude/anatomiya";
 
-function workspace() {
-  return mkdtempSync(join(tmpdir(), "anatomiya-write-"));
+function workspace(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-write-"));
+  t?.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+function elsewhere(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
 }
 
 const dim = (o = {}) => ({
@@ -87,7 +96,12 @@ test("files land in .claude/rules with the facts beside them", () => {
   // third line here is a dirty `git status` for anyone who followed the
   // documented exclude. The settings file was on this list while the scan
   // installed its hook there, and a scan only takes that entry out now.
-  assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`]);
+  assert.deepEqual(EXCLUDE_LINES, [
+    `${RULES}/${PREFIX}*.md`,
+    `${STORE}/`,
+    `.cursor/rules/${PREFIX}*.mdc`,
+    `.github/instructions/${PREFIX}*.instructions.md`,
+  ]);
   assert.equal(EXCLUDE_LINES.includes(SETTINGS_PATH), false, "nothing this writes lives there");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -854,41 +868,54 @@ test("every name a scan plans is a bare file under the rules directory", () => {
  * Deterministic, because a failing seed has to replay. `Math.random` gives a
  * run nobody can redo.
  */
-function scanSequences(seed, runs) {
+function scanSequences(t, seed, runs) {
   let state = seed;
   const rnd = () => ((state = (state * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
   const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
   const chance = (p) => rnd() < p;
 
   const pool = ["src/a", "src/b", "src/c", "lib/x", "lib/y"];
-  // Every shape the three-fact rule has to answer for.
-  const intruders = [
-    { name: "house.md", body: "# house rules\n" },
-    { name: `${PREFIX}notes.md`, body: "# our name, nobody's key\n" },
-    { name: `${PREFIX}area-deadbeef.md`, body: "---\ngenerator: anatomiya\n---\n\nan older build\n" },
-    { name: `${PREFIX}overview.md.bak.md`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
-  ];
+  const every = Object.values(TARGETS);
+  // Every shape the three-fact rule has to answer for, in each directory's own extension.
+  const intruders = every.flatMap((t) => [
+    { dir: t.dir, name: `house${t.ext}`, body: "# house rules\n" },
+    { dir: t.dir, name: `${PREFIX}notes${t.ext}`, body: "# our name, nobody's key\n" },
+    { dir: t.dir, name: `${PREFIX}area-deadbeef${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nan older build\n", says: t },
+    // Our key under our prefix, at names no scan gives a file: a copy somebody kept.
+    { dir: t.dir, name: `${PREFIX}overview${t.ext}.bak${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
+    { dir: t.dir, name: `${PREFIX}my-notes${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
+    // A person's own file at a name a scan plans, where another tool reads it.
+    ...(t.always ? [] : [overviewName(t), areaName(t, areaId(pool[0])), areaName(t, areaId(pool[3]))].map((name) => ({ dir: t.dir, name, body: "# mine, at a name of yours\n" }))),
+  ]);
+  const record = (dir) => (existsSync(join(dir, STORE, "facts.json")) ? readFileSync(join(dir, STORE, "facts.json"), "utf8") : null);
+  const sets = [null, ["claude"], ["claude", "cursor"], ["claude", "copilot"], ["claude", "cursor", "copilot"]];
   const digest = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7);
   const snapshot = (dir) =>
     new Map(
-      (existsSync(rules(dir)) ? readdirSync(rules(dir)) : [])
-        .filter((n) => statSync(join(rules(dir), n)).isFile())
-        .map((n) => [n, digest(readFileSync(join(rules(dir), n), "utf8"))])
+      every.flatMap((t) =>
+        (existsSync(join(dir, t.dir)) ? readdirSync(join(dir, t.dir)) : [])
+          .filter((n) => statSync(join(dir, t.dir, n)).isFile())
+          .map((n) => [`${t.dir}/${n}`, digest(readFileSync(join(dir, t.dir, n), "utf8"))])
+      )
     );
 
   const problems = [];
   for (let run = 0; run < runs; run++) {
-    const dir = workspace();
+    const dir = workspace(t);
     const written = new Set();
     const theirs = new Map();
+    // The planted files that say this tool wrote them, by the target whose directory holds them.
+    const keyed = new Map();
 
     for (let step = 0; step < 6; step++) {
-      if (chance(0.4)) {
+      if (chance(0.5)) {
         const it = pick(intruders);
-        mkdirSync(rules(dir), { recursive: true });
-        if (!written.has(it.name)) {
-          writeFileSync(join(rules(dir), it.name), it.body);
-          theirs.set(it.name, digest(it.body));
+        const at = `${it.dir}/${it.name}`;
+        mkdirSync(join(dir, it.dir), { recursive: true });
+        if (!written.has(at)) {
+          writeFileSync(join(dir, at), it.body);
+          theirs.set(at, digest(it.body));
+          if (it.says) keyed.set(at, it.says);
         }
       }
       // A fresh clone routinely has the rules without the store, since the one
@@ -897,30 +924,70 @@ function scanSequences(seed, runs) {
 
       const blind = chance(0.15);
       const dryRun = chance(0.15);
+      const targets = pick(sets);
       const areas = pool.filter(() => chance(0.5)).map((p) => area(p));
       const scan = result(dir, areas);
       if (blind) scan.parse = { ...scan.parse, unreadable: ["ruby"] };
 
+      const where = `run ${run} step ${step} targets ${JSON.stringify(targets)}`;
       const before = snapshot(dir);
-      const plan = writeMap(scan, { dryRun });
-      const after = snapshot(dir);
-
-      for (const [name, hash] of theirs) {
-        if (!after.has(name)) problems.push(`run ${run} step ${step}: removed ${name}`);
-        else if (after.get(name) !== hash) problems.push(`run ${run} step ${step}: modified ${name}`);
-      }
-      if (dryRun) {
-        if (before.size !== after.size) problems.push(`run ${run} step ${step}: a dry run wrote`);
+      const recordBefore = record(dir);
+      let plan;
+      try {
+        plan = writeMap(scan, { dryRun, targets });
+      } catch (err) {
+        // The one refusal a sequence can reach: a named target with a person's file at a name it writes.
+        const named = every.find((t) => !t.always && targets?.includes(t.id) && err.message.startsWith(`${t.dir}/`));
+        if (!named || !/ was not written by this tool, so .* nothing was written anywhere/.test(err.message)) throw err;
+        const now = snapshot(dir);
+        if (before.size !== now.size || [...before].some(([name, hash]) => now.get(name) !== hash) || record(dir) !== recordBefore) {
+          problems.push(`${where}: refused, and the disk changed`);
+        }
         continue;
       }
-      for (const name of plan.write) {
-        if (!after.has(name)) problems.push(`run ${run} step ${step}: ${name} never landed`);
+      const after = snapshot(dir);
+
+      // Leaving Cursor or Copilot out by name is the one thing that removes a file no record lists.
+      const namedOff = (name) => !blind && !dryRun && targets !== null && !keyed.get(name)?.always && keyed.has(name) && !targets.includes(keyed.get(name).id);
+      for (const name of [...theirs.keys()].filter(namedOff)) {
+        if (after.has(name)) problems.push(`${where}: ${name} says this tool wrote it and outlived its target being left out`);
+        theirs.delete(name);
+        keyed.delete(name);
         written.add(name);
       }
-      for (const name of plan.remove) written.delete(name);
+      for (const [name, hash] of theirs) {
+        if (!after.has(name)) problems.push(`${where}: removed ${name}`);
+        else if (after.get(name) !== hash) problems.push(`${where}: modified ${name}`);
+      }
+      if (dryRun) {
+        if (before.size !== after.size) problems.push(`${where}: a dry run wrote`);
+        continue;
+      }
+      const wrote = [
+        ...plan.write.map((n) => `${RULES}/${n}`),
+        ...Object.values(plan.targets).flatMap((t) => t.write.map((w) => `${t.dir}/${w.name}`)),
+      ];
+      const removed = [
+        ...plan.remove.map((n) => `${RULES}/${n}`),
+        ...Object.values(plan.targets).flatMap((t) => t.remove.map((n) => `${t.dir}/${n}`)),
+      ];
+      for (const name of wrote) {
+        if (!after.has(name)) problems.push(`${where}: ${name} never landed`);
+        written.add(name);
+      }
+      for (const name of removed) {
+        if (!written.has(name)) problems.push(`${where}: removed ${name}, which no scan here wrote`);
+        if (after.has(name)) problems.push(`${where}: ${name} was planned for removal and is still there`);
+        written.delete(name);
+      }
+      // Nothing changes on disk that the plan did not say.
+      for (const name of new Set([...before.keys(), ...after.keys()])) {
+        if (before.get(name) === after.get(name) || wrote.includes(name) || removed.includes(name)) continue;
+        problems.push(`${where}: ${name} changed and the plan names it nowhere`);
+      }
       if (blind) {
         for (const [name, hash] of before) {
-          if (after.get(name) !== hash) problems.push(`run ${run} step ${step}: a blind run touched ${name}`);
+          if (after.get(name) !== hash) problems.push(`${where}: a blind run touched ${name}`);
         }
       }
     }
@@ -929,12 +996,12 @@ function scanSequences(seed, runs) {
   return problems;
 }
 
-test("no sequence of scans removes or rewrites a file this build did not write", () => {
+test("no sequence of scans removes or rewrites a file this build did not write", (t) => {
   // The one failure that cannot be recovered from inside this tool: somebody's
   // hand-written context deleted. Verified red against removal on two facts
   // rather than three, which is the defect A3 names.
   for (const seed of [1, 7, 42]) {
-    assert.deepEqual(scanSequences(seed, 40).slice(0, 5), [], `seed ${seed}`);
+    assert.deepEqual(scanSequences(t, seed, 40).slice(0, 5), [], `seed ${seed}`);
   }
 });
 
@@ -1507,4 +1574,1472 @@ test("a held area whose committed record is malformed is dropped, not carried in
     assert.deepEqual(plan.held, [], JSON.stringify(bad));
   }
   rmSync(dir, { recursive: true, force: true });
+});
+
+/* --- the same map in the Cursor and Copilot directories --- */
+
+const { cursor, copilot } = TARGETS;
+const ALL = ["claude", "cursor", "copilot"];
+const OTHERS = [cursor, copilot];
+const namesIn = (dir, target) => (existsSync(join(dir, target.dir)) ? readdirSync(join(dir, target.dir)).sort() : null);
+const mapOf = (target, ...areas) => [...areas.map((a) => areaName(target, a.id)), overviewName(target)].sort();
+const OURS = "---\ngenerator: anatomiya\n---\n\nan older build\n";
+
+/** Every file under the root by its path, with its bytes, and a link as where it leads. */
+function tree(dir, rel = "") {
+  const out = {};
+  for (const e of readdirSync(join(dir, rel), { withFileTypes: true })) {
+    const at = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isSymbolicLink()) out[at] = "-> link";
+    else if (e.isDirectory()) Object.assign(out, { [`${at}/`]: "", ...tree(dir, at) });
+    else out[at] = readFileSync(join(dir, at), "utf8");
+  }
+  return out;
+}
+
+/** The tree with the layout file's stamp left out, as `unstamped` does for a snapshot. */
+function settled(dir) {
+  const all = tree(dir);
+  const key = `${STORE}/layout.json`;
+  if (key in all) {
+    const layout = JSON.parse(all[key]);
+    delete layout.record;
+    all[key] = layout;
+  }
+  return all;
+}
+
+/** Count and record every call of one `node:fs` export, and make the `n`th from now throw when armed. */
+async function watched(t, name) {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs[name];
+  const watch = { calls: [], left: 0, failOn: (n) => { watch.left = n; } };
+  fs[name] = (...args) => {
+    watch.calls.push(args);
+    if (watch.left > 0 && --watch.left === 0) throw Object.assign(new Error(`EPERM: operation not permitted, ${name}`), { code: "EPERM" });
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  });
+  return watch;
+}
+
+const BEFORE_PLAN = {
+  write: ["anatomiya-overview.md", "anatomiya-area-5c06cdf8.md"],
+  remove: [],
+  foreign: [],
+  unknown: [],
+  replaced: [],
+  unreadableRules: [],
+  listed: true,
+  uncovered: 20,
+  orphaned: 8,
+  unreadable: [],
+  held: [],
+  blind: false,
+};
+const BEFORE_KEYS = ["write", "remove", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
+const BEFORE_AREA = `---
+generator: anatomiya
+paths:
+  - "src/services/**/*.ts"
+---
+
+# src/services  40 files
+
+catch blocks use the error they caught
+  21 of 22 sites across 8 of 40 files, 4 authors
+  except "src/services/legacy.ts"
+`;
+const BEFORE_OVERVIEW = `---
+generator: anatomiya
+---
+
+# Repository map
+
+Facts counted from this repository's own code, per directory.
+A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.
+
+Read a file before editing it: these notes load when you read, not when you grep.
+When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
+When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.
+
+## Areas (2)
+
+- src/services — 40 files, 1 stated
+- and 1 more area in its own file, loaded when you read one of its files
+
+## Not covered
+
+- 8 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)
+- 12 source files sit in a directory nothing was counted in
+- memory, GC and I/O behaviour: runtime only, nothing static to count
+
+Generated files: 2 under .claude/rules/anatomiya-*.md
+Any other file there was not written by this tool.
+`;
+// The record as the build before the targets wrote it.
+const BEFORE_FACTS = {
+  schema: 19,
+  root: "<root>",
+  scannedAt: "2026-01-01T00:00:00.000Z",
+  corpus: { files: 100, truncated: false, dropped: {}, orphaned: 8 },
+  parse: { parsed: 100, crashed: 0, skipped: 0 },
+  semantic: { ran: false, status: null, reason: null, typedResolutionRate: null },
+  suppressAll: false,
+  authors: null,
+  layout: null,
+  areas: [
+    {
+      id: "5c06cdf8",
+      path: "src/services",
+      globs: [{ negated: false, dir: "src/services", tail: "**/*.ts" }],
+      fileCount: 40,
+      kinds: null,
+      imports: null,
+      reused: null,
+      dimensions: [
+        {
+          key: "swallowed_error",
+          precision: "precise",
+          applicability: 8,
+          langFileCount: 40,
+          candidates: 22,
+          conforming: 21,
+          authors: 4,
+          ratio: 0.9545,
+          bound: 0,
+          priorBound: 0,
+          directive: true,
+          gate: null,
+          exceptions: [{ path: "src/services/legacy.ts", count: 1 }],
+          moreExceptions: 0,
+          states: "claim",
+        },
+      ],
+    },
+    { id: "15bf0633", path: "src/types", globs: [{ negated: false, dir: "src/types", tail: "**/*.ts" }], fileCount: 40, kinds: null, imports: null, reused: null, dimensions: [] },
+  ],
+};
+
+test("with no target asked for and none on, the plan and the disk are what they were", (t) => {
+  // Every literal here was captured from the build before a second directory existed.
+  const dir = workspace(t);
+  const scan = result(dir, [area("src/services"), area("src/types", [])]);
+
+  const plan = writeMap(scan);
+
+  const { bodies, result: planned, root, targets, ...fields } = plan;
+  assert.deepEqual(fields, BEFORE_PLAN);
+  assert.deepEqual(Object.keys(plan).filter((k) => k !== "targets"), BEFORE_KEYS);
+  assert.equal(root, dir);
+  assert.equal(planned, scan, "the scan itself, with nothing added to it");
+  assert.deepEqual([...bodies], [["anatomiya-overview.md", BEFORE_OVERVIEW], ["anatomiya-area-5c06cdf8.md", BEFORE_AREA]]);
+  assert.deepEqual(Object.keys(tree(dir)), [
+    ".claude/",
+    ".claude/anatomiya/",
+    ".claude/anatomiya/facts.json",
+    ".claude/anatomiya/layout.json",
+    ".claude/rules/",
+    ".claude/rules/anatomiya-area-5c06cdf8.md",
+    ".claude/rules/anatomiya-overview.md",
+  ]);
+  assert.equal(readFileSync(join(rules(dir), "anatomiya-overview.md"), "utf8"), BEFORE_OVERVIEW);
+  assert.equal(readFileSync(join(rules(dir), "anatomiya-area-5c06cdf8.md"), "utf8"), BEFORE_AREA);
+  const record = readFileSync(join(dir, STORE, "facts.json"), "utf8");
+  assert.equal(record, JSON.stringify({ ...BEFORE_FACTS, root: dir }, null, 2) + "\n", "the record's bytes, key order included");
+  assert.equal("targets" in JSON.parse(record), false);
+  const { record: stamp, ...layout } = JSON.parse(readFileSync(join(dir, STORE, "layout.json"), "utf8"));
+  assert.deepEqual(layout, { schema: 19, layout: null });
+  assert.deepEqual(Object.keys(stamp), ["size", "mtimeMs"]);
+  for (const t of OTHERS) {
+    assert.deepEqual(
+      { state: targets[t.id].state, on: targets[t.id].on, write: targets[t.id].write, remove: targets[t.id].remove },
+      { state: "off", on: false, write: [], remove: [] }
+    );
+  }
+});
+
+test("a named target gets the overview and one file per area with a directive", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  const scan = () => result(dir, [a, b, area("src/types", [])]);
+
+  const dry = writeMap(scan(), { dryRun: true, targets: ALL });
+  assert.deepEqual(tree(dir), {}, "a dry run creates nothing in any directory");
+  assert.deepEqual(dry.targets.cursor.write.map((w) => w.name).sort(), mapOf(cursor, a, b));
+
+  const plan = writeMap(scan(), { targets: ALL });
+
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, b));
+  for (const t of OTHERS) {
+    assert.deepEqual(namesIn(dir, t), mapOf(t, a, b), t.id);
+    const mine = plan.targets[t.id];
+    assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(t, a, b));
+    assert.deepEqual({ dir: mine.dir, state: mine.state, on: mine.on, remove: mine.remove, unfiled: mine.unfiled }, { dir: t.dir, state: "off", on: true, remove: [], unfiled: [] });
+    for (const { name, body } of mine.write) {
+      assert.equal(readFileSync(join(dir, t.dir, name), "utf8"), body, name);
+      assert.ok(isOwned(body), name);
+    }
+    assert.match(readFileSync(join(dir, t.dir, overviewName(t)), "utf8"), new RegExp(`^Generated files: 3 under ${t.dir.replaceAll(".", "\\.")}/`, "m"));
+  }
+  const head = (t) => readFileSync(join(dir, t.dir, areaName(t, a.id)), "utf8").split("\n").slice(0, 5);
+  assert.deepEqual(head(cursor), ["---", "generator: anatomiya", "globs: src/services/**/*.ts", "alwaysApply: false", "---"]);
+  assert.deepEqual(head(copilot).slice(0, 4), ["---", "generator: anatomiya", 'applyTo: "src/services/**/*.ts"', "---"]);
+  assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a, b), copilot: mapOf(copilot, a, b) });
+  for (const t of OTHERS) assert.deepEqual(readdirSync(join(dir, t.dir)).filter((n) => n.includes(".tmp-")), []);
+});
+
+test("a target stays on without being named again", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a]), { targets: ["claude", "cursor"] });
+
+  const plan = writeMap(result(dir, [a, b]));
+
+  assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, b));
+  assert.deepEqual({ state: plan.targets.cursor.state, on: plan.targets.cursor.on }, { state: "on", on: true });
+  assert.equal(namesIn(dir, copilot), null, "the one never asked for is not created");
+  assert.equal(existsSync(join(dir, ".github")), false);
+  assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a, b) });
+});
+
+test("naming claude alone turns the others off and removes every file there that says this tool wrote it", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const planted = {};
+  for (const t of OTHERS) {
+    planted[`${t.dir}/team${t.ext}`] = "# the team's own rule\n";
+    planted[`${t.dir}/${PREFIX}notes${t.ext}`] = "# our name, nobody's key\n";
+    planted[`${t.dir}/${PREFIX}area-deadbeef${t.ext}`] = OURS;
+  }
+  for (const [at, body] of Object.entries(planted)) writeFileSync(join(dir, at), body);
+  const claudeBefore = snapshot(dir);
+
+  const plan = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+
+  for (const t of OTHERS) {
+    const mine = plan.targets[t.id];
+    // The record never listed the last of them: leaving the target out by name is what removes it.
+    assert.deepEqual(mine.remove, [...mapOf(t, a, b), `${PREFIX}area-deadbeef${t.ext}`].sort(), t.id);
+    assert.deepEqual(mine.write, []);
+    assert.deepEqual(mine.foreign, [`${PREFIX}notes${t.ext}`]);
+    assert.deepEqual(mine.unknown, []);
+    assert.deepEqual({ state: mine.state, on: mine.on }, { state: "on", on: false });
+    assert.deepEqual(namesIn(dir, t), [`${PREFIX}notes${t.ext}`, `team${t.ext}`].sort());
+    assert.equal(targetState(dir, t), "off");
+  }
+  for (const [at, body] of Object.entries(planted)) {
+    if (!at.includes("deadbeef")) assert.equal(readFileSync(join(dir, at), "utf8"), body, at);
+  }
+  assert.equal("targets" in readFacts(dir), false, "nothing was written there, so the record names nothing there");
+  const claudeAfter = snapshot(dir);
+  for (const name of listRules(dir)) assert.equal(claudeAfter[`${RULES}/${name}`], claudeBefore[`${RULES}/${name}`], name);
+
+  const again = writeMap(result(dir, [a, b]));
+  for (const t of OTHERS) assert.deepEqual({ on: again.targets[t.id].on, write: again.targets[t.id].write, remove: again.targets[t.id].remove }, { on: false, write: [], remove: [] });
+});
+
+test("a file with our name and extension but no generator key is never removed when a target is turned off", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  // The record still names it: the prefix and the record are two facts of three.
+  const body = "# written by hand over a name the record lists\n";
+  for (const t of OTHERS) writeFileSync(join(dir, t.dir, areaName(t, a.id)), body);
+
+  const plan = writeMap(result(dir, [a]), { targets: ["claude"] });
+
+  for (const t of OTHERS) {
+    assert.deepEqual(plan.targets[t.id].remove, [overviewName(t)]);
+    assert.deepEqual(plan.targets[t.id].foreign, [areaName(t, a.id)]);
+    assert.deepEqual(namesIn(dir, t), [areaName(t, a.id)]);
+    assert.equal(readFileSync(join(dir, t.dir, areaName(t, a.id)), "utf8"), body);
+  }
+});
+
+test("a file with our generator key that the record does not list is removed only when its target is left out by name", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  for (const target of OTHERS) writeFileSync(join(dir, target.dir, areaName(target, "99999999")), OURS);
+
+  // Stale by name while the target is on, and two facts of three.
+  for (const targets of [null, ALL]) {
+    const on = writeMap(result(dir, [a]), { targets });
+    for (const target of OTHERS) {
+      assert.deepEqual(on.targets[target.id].remove, [], JSON.stringify(targets));
+      assert.deepEqual(on.targets[target.id].unknown, [areaName(target, "99999999")]);
+      assert.equal(readFileSync(join(dir, target.dir, areaName(target, "99999999")), "utf8"), OURS);
+    }
+  }
+
+  const off = writeMap(result(dir, [a]), { targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(off.targets[target.id].remove, [areaName(target, "99999999"), ...mapOf(target, a)].sort());
+    assert.deepEqual(off.targets[target.id].unknown, []);
+    assert.deepEqual(namesIn(dir, target), []);
+  }
+});
+
+test("turning a target off removes only the names a scan gives a file, whatever else carries the key", (t) => {
+  const a = area("src/services");
+  const kept = (target) => [
+    `${PREFIX}my-notes${target.ext}`,
+    `${PREFIX}overview copy${target.ext}`,
+    `${PREFIX}overview${target.ext}.bak${target.ext}`,
+    `${PREFIX}area-DEADBEEF${target.ext}`,
+    `${PREFIX}area-deadbee${target.ext}`,
+    `${PREFIX}area-deadbeef0${target.ext}`,
+  ].sort();
+
+  // With the record, and as a clone holds it: without. A record naming them makes no difference either.
+  for (const record of ["kept", "gone", "names them"]) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    for (const target of OTHERS) for (const name of kept(target)) writeFileSync(join(dir, target.dir, name), OURS);
+    if (record === "gone") rmSync(join(dir, STORE), { recursive: true, force: true });
+    if (record === "names them") {
+      const facts = readFacts(dir);
+      for (const target of OTHERS) facts.targets[target.id].push(...kept(target));
+      writeFileSync(join(dir, STORE, "facts.json"), JSON.stringify(facts));
+    }
+
+    const plan = writeMap(result(dir, [a]), { targets: ["claude"] });
+
+    for (const target of OTHERS) {
+      assert.deepEqual(plan.targets[target.id].remove, mapOf(target, a), `${target.id}, record ${record}`);
+      assert.deepEqual(namesIn(dir, target), kept(target), `${target.id}, record ${record}`);
+      for (const name of kept(target)) assert.equal(readFileSync(join(dir, target.dir, name), "utf8"), OURS, name);
+    }
+  }
+});
+
+/** What a fresh clone holds: a target's files committed, and no record beside them. */
+function cloned(t, a, b) {
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  for (const target of OTHERS) {
+    writeFileSync(join(dir, target.dir, `team${target.ext}`), "# the team's own rule\n");
+    writeFileSync(join(dir, target.dir, `${PREFIX}notes${target.ext}`), "# our name, nobody's key\n");
+  }
+  rmSync(join(dir, STORE), { recursive: true, force: true });
+  return dir;
+}
+
+test("a target is turned off by name whether or not the record lists its files", (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  const theirs = (target) => [`${PREFIX}notes${target.ext}`, `team${target.ext}`];
+  const dir = cloned(t, a, b);
+
+  const dry = writeMap(result(dir, [a, b]), { dryRun: true, targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(dry.targets[target.id].remove, mapOf(target, a, b), "a dry run says so");
+    assert.deepEqual(namesIn(dir, target), [...mapOf(target, a, b), ...theirs(target)].sort(), "and removes nothing");
+  }
+
+  const plan = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+
+  for (const target of OTHERS) {
+    const mine = plan.targets[target.id];
+    assert.deepEqual({ state: mine.state, on: mine.on, write: mine.write, unknown: mine.unknown }, { state: "on", on: false, write: [], unknown: [] });
+    assert.deepEqual(mine.remove, mapOf(target, a, b));
+    assert.deepEqual(mine.foreign, [`${PREFIX}notes${target.ext}`]);
+    assert.deepEqual(namesIn(dir, target), theirs(target), "what does not say this tool wrote it stays");
+    assert.equal(readFileSync(join(dir, target.dir, `${PREFIX}notes${target.ext}`), "utf8"), "# our name, nobody's key\n");
+    assert.equal(targetState(dir, target), "off");
+  }
+  assert.equal("targets" in readFacts(dir), false);
+  const again = writeMap(result(dir, [a, b]));
+  for (const target of OTHERS) assert.deepEqual({ state: again.targets[target.id].state, on: again.targets[target.id].on, write: again.targets[target.id].write }, { state: "off", on: false, write: [] });
+});
+
+test("with no record and no target named, nothing in a target is removable", (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  const dir = cloned(t, a, b);
+
+  const plan = writeMap(result(dir, [a]));
+
+  for (const target of OTHERS) {
+    assert.deepEqual({ state: plan.targets[target.id].state, on: plan.targets[target.id].on }, { state: "on", on: true });
+    assert.deepEqual(plan.targets[target.id].remove, []);
+    assert.deepEqual(plan.targets[target.id].unknown, [areaName(target, b.id)], "the area that went away is two facts of three");
+    assert.deepEqual(namesIn(dir, target), [...mapOf(target, a, b), `${PREFIX}notes${target.ext}`, `team${target.ext}`].sort());
+  }
+});
+
+const HAND = "---\nalwaysApply: true\n---\n# Written by hand\n";
+const moved = (target, did) =>
+  `${target.dir} was replaced by something else while the map was being written, so the scan ${did}: look at what is at ${target.dir} now, then scan again`;
+const UNTOUCHED = "stopped before writing anything there";
+const PUT_BACK = "stopped and put back what it had replaced";
+const PUT_BACK_ELSEWHERE = "stopped and put back what it had replaced everywhere else";
+const refusal = (target, name, what = "was not written by this tool") =>
+  `${target.dir}/${name} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`;
+
+test("a foreign overview does not turn a target on", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    mkdirSync(join(dir, target.dir), { recursive: true });
+    writeFileSync(join(dir, target.dir, overviewName(target)), HAND);
+  }
+
+  const left = writeMap(result(dir, [a]));
+
+  for (const target of OTHERS) {
+    assert.deepEqual({ state: left.targets[target.id].state, on: left.targets[target.id].on }, { state: "off", on: false });
+    assert.deepEqual(left.targets[target.id].foreign, [overviewName(target)], "said to be somebody else's");
+    assert.deepEqual(left.targets[target.id].replaced, []);
+    assert.deepEqual(namesIn(dir, target), [overviewName(target)]);
+    assert.equal(readFileSync(join(dir, target.dir, overviewName(target)), "utf8"), HAND);
+  }
+});
+
+test("a person's file at a name a named target writes refuses the scan before anything is written anywhere", (t) => {
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    for (const name of [overviewName(target), areaName(target, a.id)]) {
+      const dir = workspace(t);
+      mkdirSync(join(dir, target.dir), { recursive: true });
+      writeFileSync(join(dir, target.dir, name), HAND);
+      const before = tree(dir);
+
+      for (const dryRun of [true, false]) {
+        assert.throws(
+          () => writeMap(result(dir, [a]), { dryRun, targets: ["claude", target.id] }),
+          (err) => err.message === refusal(target, name),
+          `${name}, ${dryRun ? "dry run" : "real write"}`
+        );
+      }
+
+      assert.deepEqual(tree(dir), before, `${name}: its bytes, and no directory of Claude Code's either`);
+    }
+  }
+});
+
+test("a person's file at a name a target that is merely on writes is left as it is, and that area has no file there", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  // Taking the key out is how a person says the file is theirs now.
+  for (const target of OTHERS) writeFileSync(join(dir, target.dir, areaName(target, b.id)), HAND);
+  const overviews = () => OTHERS.map((target) => readFileSync(join(dir, target.dir, overviewName(target)), "utf8"));
+
+  const plan = writeMap(result(dir, [a, b]));
+
+  for (const target of OTHERS) {
+    const mine = plan.targets[target.id];
+    assert.deepEqual({ state: mine.state, on: mine.on, remove: mine.remove, replaced: mine.replaced }, { state: "on", on: true, remove: [], replaced: [] });
+    assert.deepEqual(mine.foreign, [areaName(target, b.id)]);
+    assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a), "the name is not planned");
+    assert.equal(readFileSync(join(dir, target.dir, areaName(target, b.id)), "utf8"), HAND);
+    assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a), "and the record does not call it ours");
+    const overview = readFileSync(join(dir, target.dir, overviewName(target)), "utf8");
+    assert.match(overview, /^## Areas \(1\)$/m, "the overview promises no notes for it");
+    assert.match(overview, /^Generated files: 2 under /m);
+    assert.ok(overview.includes(`- "${areaName(target, b.id)}"`), "and names it as a file this tool did not write");
+  }
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, b));
+  const first = overviews();
+  writeMap(result(dir, [a, b]));
+  assert.deepEqual(overviews(), first, "byte-stable across two scans of unchanged source");
+
+  // Named, the same file refuses; turned off, it stays.
+  const before = tree(dir);
+  assert.throws(() => writeMap(result(dir, [a, b]), { targets: ALL }), (err) => err.message === refusal(cursor, areaName(cursor, b.id)));
+  assert.deepEqual(tree(dir), before);
+  writeMap(result(dir, [a, b]), { targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(namesIn(dir, target), [areaName(target, b.id)]);
+    assert.equal(readFileSync(join(dir, target.dir, areaName(target, b.id)), "utf8"), HAND);
+  }
+});
+
+// Whether this volume answers for a name spelled in another case, as macOS and Windows do by default.
+const FOLDS = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-fold-"));
+  try {
+    writeFileSync(join(dir, "probe"), "");
+    return existsSync(join(dir, "PROBE"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
+test("an overview spelled in another case is somebody's file: the target reads off, and naming it refuses", (t) => {
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    // Keyed too: a name this tool never spells is not its file, whatever the file says.
+    for (const body of [HAND, OURS]) {
+      const dir = workspace(t);
+      const theirs = overviewName(target).replace("anatomiya-overview", "Anatomiya-Overview");
+      mkdirSync(join(dir, target.dir), { recursive: true });
+      writeFileSync(join(dir, target.dir, theirs), body);
+      assert.equal(existsSync(join(dir, target.dir, overviewName(target))), FOLDS, "the control: this volume folds the two names, or keeps them apart");
+      const before = tree(dir);
+
+      assert.equal(targetState(dir, target), "off", target.id);
+      for (const dryRun of [true, false]) {
+        assert.throws(
+          () => writeMap(result(dir, [a]), { dryRun, targets: ["claude", target.id] }),
+          (err) => err.message === refusal(target, theirs),
+          `${target.id}, ${dryRun ? "dry run" : "real write"}`
+        );
+      }
+      assert.deepEqual(tree(dir), before, "named: its bytes, and nothing of Claude Code's either");
+
+      const plan = writeMap(result(dir, [a]));
+      const mine = plan.targets[target.id];
+      assert.deepEqual({ state: mine.state, on: mine.on, write: mine.write, remove: mine.remove }, { state: "off", on: false, write: [], remove: [] });
+      assert.deepEqual(namesIn(dir, target), [theirs]);
+      assert.equal(readFileSync(join(dir, target.dir, theirs), "utf8"), body, "not named: its bytes");
+    }
+  }
+});
+
+test("an entry spelled as an area's name in another case holds that name", (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  const spellings = (target) => {
+    const name = areaName(target, b.id);
+    return [
+      name.replace(b.id, b.id.toUpperCase()),
+      name.replace(PREFIX, "Anatomiya-"),
+      name.slice(0, -target.ext.length) + target.ext.toUpperCase(),
+      // The long s, which APFS folds onto `s` and a plain lower-casing does not.
+      name.replace("area", "area".replace("a", "A")).replace(target.ext, target.ext.replace("s", "ſ")),
+    ];
+  };
+  for (const target of OTHERS) {
+    for (const theirs of spellings(target)) {
+      for (const body of [HAND, OURS]) {
+        const dir = workspace(t);
+        const said = `${target.id}, ${theirs}`;
+        assert.notEqual(theirs, areaName(target, b.id));
+        writeMap(result(dir, [a, b]), { targets: ["claude", target.id] });
+        rmSync(join(dir, target.dir, areaName(target, b.id)));
+        writeFileSync(join(dir, target.dir, theirs), body);
+        assert.equal(existsSync(join(dir, target.dir, areaName(target, b.id))), FOLDS, `${said}: the control`);
+        const held = [theirs, ...mapOf(target, a)].sort();
+
+        for (const dryRun of [true, false]) {
+          const mine = writeMap(result(dir, [a, b]), { dryRun }).targets[target.id];
+          assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a), `${said}: the name is not planned`);
+          assert.deepEqual({ foreign: mine.foreign, unknown: mine.unknown, remove: mine.remove }, { foreign: [theirs], unknown: [], remove: [] }, said);
+        }
+        assert.deepEqual(namesIn(dir, target), held, said);
+        assert.equal(readFileSync(join(dir, target.dir, theirs), "utf8"), body, `${said}: its bytes after a plain scan`);
+        assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a), `${said}: the record does not call it ours`);
+        // A name outside ASCII goes through the overview's encoder, which is not this test's subject.
+        if (/^[\x20-\x7e]+$/.test(theirs)) {
+          assert.ok(readFileSync(join(dir, target.dir, overviewName(target)), "utf8").includes(`- "${theirs}"`), `${said}: the overview names it as spelled`);
+        }
+
+        const before = tree(dir);
+        for (const dryRun of [true, false]) {
+          assert.throws(() => writeMap(result(dir, [a, b]), { dryRun, targets: ["claude", target.id] }), (err) => err.message === refusal(target, theirs), said);
+        }
+        assert.deepEqual(tree(dir), before, `${said}: its bytes after a named scan`);
+
+        const off = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+        assert.deepEqual(off.targets[target.id].remove, mapOf(target, a), `${said}: removal is by the exact name`);
+        assert.deepEqual(namesIn(dir, target), [theirs]);
+        assert.equal(readFileSync(join(dir, target.dir, theirs), "utf8"), body);
+      }
+    }
+  }
+});
+
+test("a volume that tells two spellings apart keeps both: the other spelling is an ordinary file there", (t) => {
+  const volume = caseSensitiveDir(t);
+  if (volume.skip) return t.skip(volume.skip);
+  const a = area("src/services");
+  const b = area("src/api");
+  for (const target of OTHERS) {
+    for (const body of [HAND, OURS]) {
+      const dir = mkdtempSync(join(volume.dir, "repo-"));
+      const said = `${target.id}, ${body === OURS ? "keyed" : "keyless"}`;
+      const named = ["claude", target.id];
+      writeMap(result(dir, [a, b]), { targets: named });
+      const overview = overviewName(target).replace("anatomiya-overview", "Anatomiya-Overview");
+      const areaFile = areaName(target, b.id).replace(b.id, b.id.toUpperCase());
+      for (const name of [overview, areaFile, `team${target.ext}`]) writeFileSync(join(dir, target.dir, name), body);
+      const all = [...mapOf(target, a, b), overview, areaFile, `team${target.ext}`].sort();
+      assert.deepEqual(namesIn(dir, target), all, `${said}: the control, both spellings are in the listing`);
+      assert.equal(targetState(dir, target), "on", said);
+
+      // Under the prefix it is listed as any file there that the record does not name; outside it, as `team` is: not at all.
+      const others = body === OURS ? { foreign: [], unknown: [areaFile] } : { foreign: [areaFile], unknown: [] };
+      for (const targets of [undefined, named]) {
+        for (const dryRun of [true, false]) {
+          const mine = writeMap(result(dir, [a, b]), { dryRun, targets }).targets[target.id];
+          const how = `${said}, ${targets ? "named" : "plain"}, ${dryRun ? "dry run" : "real write"}`;
+          assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a, b), `${how}: every exact name is planned`);
+          assert.deepEqual({ foreign: mine.foreign, unknown: mine.unknown, remove: mine.remove, replaced: mine.replaced }, { ...others, remove: [], replaced: [] }, how);
+        }
+      }
+      assert.deepEqual(namesIn(dir, target), all, said);
+      for (const name of [overview, areaFile]) assert.equal(readFileSync(join(dir, target.dir, name), "utf8"), body, `${said}: ${name} keeps its bytes`);
+      assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a, b), `${said}: the record names the exact spellings alone`);
+
+      const off = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+      assert.deepEqual(off.targets[target.id].remove, mapOf(target, a, b), `${said}: removal is by the exact name`);
+      assert.deepEqual(namesIn(dir, target), [overview, areaFile, `team${target.ext}`].sort(), said);
+    }
+  }
+});
+
+/** What a scan does with an entry at an area's name that no rename can replace, in each other directory. */
+function oddEntryAtAnAreaName(t, make) {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  for (const target of OTHERS) {
+    rmSync(join(dir, target.dir, areaName(target, b.id)));
+    make(join(dir, target.dir, areaName(target, b.id)));
+  }
+  const still = () => OTHERS.map((target) => lstatSync(join(dir, target.dir, areaName(target, b.id))).isFile());
+
+  // Merely on: the scan goes on, and the name is somebody else's.
+  for (const dryRun of [true, false]) {
+    const plan = writeMap(result(dir, [a, b]), { dryRun });
+    for (const target of OTHERS) {
+      const mine = plan.targets[target.id];
+      assert.deepEqual({ state: mine.state, on: mine.on, remove: mine.remove, replaced: mine.replaced }, { state: "on", on: true, remove: [], replaced: [] });
+      assert.deepEqual(mine.foreign, [areaName(target, b.id)]);
+      assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a), "the name is not planned");
+    }
+  }
+  assert.deepEqual(still(), [false, false], "the entry is what it was");
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, b), "and the rest was written");
+  for (const target of OTHERS) {
+    assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a));
+    const overview = readFileSync(join(dir, target.dir, overviewName(target)), "utf8");
+    assert.match(overview, /^## Areas \(1\)$/m);
+    assert.ok(overview.includes(`- "${areaName(target, b.id)}"`), "named as a file this tool did not write");
+  }
+
+  // Named, it refuses as a person's file does; turned off, it stays.
+  // Not `tree`: reading a fifo never returns.
+  const held = () => [readFileSync(join(dir, STORE, "facts.json"), "utf8"), listRules(dir), ...OTHERS.map((target) => namesIn(dir, target))];
+  const before = held();
+  for (const dryRun of [true, false]) {
+    assert.throws(() => writeMap(result(dir, [a, b]), { dryRun, targets: ALL }), (err) => err.message === refusal(cursor, areaName(cursor, b.id), "is not a file"));
+  }
+  assert.deepEqual(held(), before);
+  const off = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(off.targets[target.id].remove, mapOf(target, a));
+    assert.deepEqual(namesIn(dir, target), [areaName(target, b.id)]);
+  }
+  assert.deepEqual(still(), [false, false]);
+}
+
+test("a directory at a name a target that is merely on writes is left, and that area has no file there", (t) => {
+  oddEntryAtAnAreaName(t, (path) => {
+    mkdirSync(path);
+    writeFileSync(join(path, "inside.md"), "# somebody's\n");
+  });
+});
+
+test("a fifo at a name a target that is merely on writes is left, and that area has no file there", needsPosixSpecialFiles, (t) => {
+  oddEntryAtAnAreaName(t, (path) => execFileSync("mkfifo", [path]));
+});
+
+test("an overview that stops being this tool's while a plain scan is planned refuses, and is not written over", async (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ["claude", "cursor"] });
+  const overview = join(dir, cursor.dir, overviewName(cursor));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.readdirSync;
+  let swapped = false;
+  // The target has read as on by the time its directory is listed, which is when the person's file lands.
+  fs.readdirSync = (path, ...rest) => {
+    if (!swapped && String(path).split(sep).join("/").endsWith(`/${cursor.dir}`)) {
+      swapped = true;
+      writeFileSync(overview, HAND);
+    }
+    return real(path, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.readdirSync = real;
+    syncBuiltinESMExports();
+  });
+
+  assert.throws(() => writeMap(result(dir, [a])), (err) => err.message === refusal(cursor, overviewName(cursor)));
+
+  assert.equal(swapped, true, "the control, the swap happened");
+  assert.equal(readFileSync(overview, "utf8"), HAND);
+});
+
+test("a link at a generated name is somebody else's in a directory another tool reads", needsSymlinks, (t) => {
+  // It leads to a file carrying our key, and the record names it: all three facts, of a file this tool never wrote.
+  const dir = workspace(t);
+  const outside = elsewhere(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  writeFileSync(join(outside, "victim.md"), OURS);
+  for (const target of OTHERS) {
+    rmSync(join(dir, target.dir, areaName(target, b.id)));
+    symlinkSync(join(outside, "victim.md"), join(dir, target.dir, areaName(target, b.id)));
+  }
+  const linked = (target) => lstatSync(join(dir, target.dir, areaName(target, b.id))).isSymbolicLink();
+
+  const on = writeMap(result(dir, [a, b]));
+  for (const target of OTHERS) {
+    assert.deepEqual(on.targets[target.id].foreign, [areaName(target, b.id)]);
+    assert.deepEqual(on.targets[target.id].write.map((w) => w.name).sort(), mapOf(target, a));
+    assert.equal(linked(target), true, "left while the target is on");
+  }
+  assert.throws(() => writeMap(result(dir, [a, b]), { targets: ALL }), (err) => err.message === refusal(cursor, areaName(cursor, b.id)));
+
+  const gone = writeMap(result(dir, [a]));
+  const off = writeMap(result(dir, [a]), { targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(gone.targets[target.id].remove, [], "not removed with the area");
+    assert.deepEqual(off.targets[target.id].remove, mapOf(target, a));
+    assert.equal(linked(target), true, "nor with the target");
+  }
+  assert.equal(readFileSync(join(outside, "victim.md"), "utf8"), OURS);
+});
+
+test("a file at a planned name that could not be read is not written over in a directory another tool reads", needsPosixPermissions, (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ["claude", "cursor"] });
+  const shut = join(dir, cursor.dir, areaName(cursor, b.id));
+  writeFileSync(shut, HAND);
+  chmodSync(shut, 0o000);
+
+  const plan = writeMap(result(dir, [a, b]));
+
+  assert.deepEqual(plan.targets.cursor.unreadableRules, [areaName(cursor, b.id)]);
+  assert.deepEqual(plan.targets.cursor.write.map((w) => w.name).sort(), mapOf(cursor, a));
+  assert.throws(
+    () => writeMap(result(dir, [a, b]), { targets: ["claude", "cursor"] }),
+    (err) => err.message === refusal(cursor, areaName(cursor, b.id), "could not be read")
+  );
+  chmodSync(shut, 0o644);
+  assert.equal(readFileSync(shut, "utf8"), HAND);
+});
+
+test("a link at .github refuses the scan before any directory is touched", needsSymlinks, (t) => {
+  const dir = workspace(t);
+  const outside = elsewhere(t);
+  mkdirSync(join(outside, "instructions"));
+  writeFileSync(join(outside, "instructions", overviewName(copilot)), OURS);
+  symlinkSync(outside, join(dir, ".github"));
+  const before = tree(outside);
+
+  for (const dryRun of [true, false]) {
+    assert.throws(
+      () => writeMap(result(dir, [area("src/services")]), { dryRun, targets: ALL }),
+      (err) => err.message === ".github is a link, so .github/instructions could not be written and nothing was written anywhere: make .github a directory of this repository and scan again",
+      dryRun ? "dry run" : "real write"
+    );
+  }
+
+  assert.deepEqual(tree(outside), before, "nothing through the link");
+  assert.deepEqual(tree(dir), { ".github": "-> link" }, "and no directory of ours, the Claude ones included");
+});
+
+test("naming an unknown target refuses before any directory is touched", needsSymlinks, (t) => {
+  for (const [target, at, made, sentence] of [
+    [cursor, ".cursor", (p) => symlinkSync(elsewhere(t), p), ".cursor is a link"],
+    [cursor, ".cursor", (p) => writeFileSync(p, "a file\n"), ".cursor is not a directory"],
+    [copilot, ".github/instructions", (p) => writeFileSync(p, "a file\n"), ".github/instructions is not a directory"],
+    [cursor, `.cursor/rules/${overviewName(cursor)}`, (p) => mkdirSync(p), `.cursor/rules/${overviewName(cursor)} is not a file`],
+    [copilot, `.github/instructions/${overviewName(copilot)}`, (p) => symlinkSync("elsewhere.md", p), `.github/instructions/${overviewName(copilot)} is a link`],
+  ]) {
+    const dir = workspace(t);
+    mkdirSync(join(dir, at, ".."), { recursive: true });
+    made(join(dir, at));
+    const before = tree(dir);
+
+    for (const dryRun of [true, false]) {
+      assert.throws(
+        () => writeMap(result(dir, [area("src/services")]), { dryRun, targets: ["claude", target.id] }),
+        (err) => err.message.startsWith(`${sentence}, so ${target.dir} could not be written and nothing was written anywhere: `),
+        `${sentence}, ${dryRun ? "dry run" : "real write"}`
+      );
+    }
+    assert.deepEqual(tree(dir), before, sentence);
+  }
+});
+
+test("the Claude directories are refused first, whatever the other targets are", needsSymlinks, (t) => {
+  const dir = workspace(t);
+  const outside = elsewhere(t);
+  symlinkSync(outside, join(dir, ".claude"));
+  symlinkSync(outside, join(dir, ".cursor"));
+
+  assert.throws(() => writeMap(result(dir, [area("src/services")]), { targets: ALL }), (err) => err.message.startsWith(".claude/rules resolves where this tool does not write"));
+  assert.deepEqual(readdirSync(outside), []);
+});
+
+test("a target nobody can name is refused, not ignored", (t) => {
+  const dir = workspace(t);
+  assert.throws(() => writeMap(result(dir, [area("src/services")]), { targets: ["claude", "windsurf"] }), /unknown target: windsurf; the targets are claude, cursor, copilot/);
+  assert.throws(() => writeMap(result(dir, [area("src/services")]), { targets: "cursor" }), /targets is a list of names/);
+  assert.deepEqual(tree(dir), {});
+});
+
+test("a target in an unknown state is left exactly as it was, and the plan says why", { ...needsSymlinks, ...needsPosixPermissions }, (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+
+  // An overview that cannot be opened: whether it is ours was never read.
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const overview = join(dir, cursor.dir, overviewName(cursor));
+  const areaBefore = readFileSync(join(dir, cursor.dir, areaName(cursor, b.id)), "utf8");
+  chmodSync(overview, 0o000);
+  try {
+    // Left out by name, with files of ours the record names: that asks for a removal nobody can check.
+    const held = () => [readFileSync(join(dir, STORE, "facts.json"), "utf8"), listRules(dir), namesIn(dir, cursor), namesIn(dir, copilot)];
+    const before = held();
+    for (const targets of [["claude"], ["claude", "copilot"]]) {
+      for (const dryRun of [true, false]) {
+        assert.throws(
+          () => writeMap(result(dir, [a]), { dryRun, targets }),
+          (err) =>
+            err.message ===
+            `.cursor/rules/${overviewName(cursor)} could not be read, so .cursor/rules could not be turned off and nothing was written anywhere: make it readable and scan again`,
+          JSON.stringify(targets)
+        );
+      }
+    }
+    assert.deepEqual(held(), before, "refused, and the disk is what it was");
+
+    const plan = writeMap(result(dir, [a]));
+    assert.deepEqual(
+      { state: plan.targets.cursor.state, reason: plan.targets.cursor.reason, on: plan.targets.cursor.on, write: plan.targets.cursor.write, remove: plan.targets.cursor.remove },
+      { state: "unknown", reason: `.cursor/rules/${overviewName(cursor)} could not be read`, on: false, write: [], remove: [] }
+    );
+    assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, b), "the area that went away is still there");
+    assert.equal(readFileSync(join(dir, cursor.dir, areaName(cursor, b.id)), "utf8"), areaBefore);
+    // The record keeps naming them, or they could never be removed once the file is readable again.
+    assert.deepEqual(readFacts(dir).targets.cursor, mapOf(cursor, a, b));
+  } finally {
+    chmodSync(overview, 0o644);
+  }
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a), "while the rest was written as usual");
+  const healed = writeMap(result(dir, [a]));
+  assert.deepEqual(healed.targets.cursor.remove, [areaName(cursor, b.id)]);
+  assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a));
+
+  // A link at `.cursor`, and no record of a file there: where it leads is not
+  // this repository's to write, and leaving it out by name asks for nothing.
+  const linked = workspace(t);
+  const outside = elsewhere(t);
+  mkdirSync(join(outside, "rules"));
+  writeFileSync(join(outside, "rules", overviewName(cursor)), OURS);
+  writeFileSync(join(outside, "rules", areaName(cursor, b.id)), OURS);
+  symlinkSync(outside, join(linked, ".cursor"));
+  const before = tree(outside);
+
+  for (const targets of [null, ["claude"]]) {
+    const left = writeMap(result(linked, [a]), { targets });
+    assert.deepEqual(
+      { state: left.targets.cursor.state, reason: left.targets.cursor.reason, write: left.targets.cursor.write, remove: left.targets.cursor.remove },
+      { state: "unknown", reason: ".cursor is a link", write: [], remove: [] }
+    );
+  }
+  assert.deepEqual(tree(outside), before);
+  assert.deepEqual(listRules(linked), mapOf(TARGETS.claude, a));
+});
+
+test("a held target is neither written nor cleared, and the record goes on naming its files", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  const c = area("src/hooks");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const before = tree(join(dir, cursor.dir));
+
+  const plan = writeMap(result(dir, [a, c]), { hold: ["cursor"] });
+
+  const mine = plan.targets.cursor;
+  assert.deepEqual(
+    { held: mine.held, state: mine.state, write: mine.write, remove: mine.remove, names: mine.names },
+    { held: true, state: "on", write: [], remove: [], names: mapOf(cursor, a, b) }
+  );
+  assert.deepEqual(tree(join(dir, cursor.dir)), before, "every byte there is what it was");
+  assert.equal(targetState(dir, cursor), "on", "and it is not turned off");
+  assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a, b), copilot: mapOf(copilot, a, c) });
+  assert.deepEqual(namesIn(dir, copilot), mapOf(copilot, a, c), "the one not held is written as usual");
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, c));
+  assert.equal("held" in plan.targets.copilot, false);
+
+  // The next scan that holds nothing catches it up.
+  const next = writeMap(result(dir, [a, c]));
+  assert.deepEqual(next.targets.cursor.remove, [areaName(cursor, b.id)]);
+  assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, c));
+});
+
+test("an area that went away is removed from every target", (t) => {
+  const dir = workspace(t);
+  const stays = area("src/services");
+  const goes = area("src/api");
+  writeMap(result(dir, [stays, goes]), { targets: ALL });
+
+  const plan = writeMap(result(dir, [stays]));
+
+  assert.deepEqual(plan.remove, [areaFilename(goes)]);
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, stays));
+  for (const t of OTHERS) {
+    assert.deepEqual(plan.targets[t.id].remove, [areaName(t, goes.id)]);
+    assert.deepEqual(namesIn(dir, t), mapOf(t, stays));
+  }
+  assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, stays), copilot: mapOf(copilot, stays) });
+});
+
+test("an area no pattern of which Copilot can be given has no file there, and a stale one from an earlier scan is removed", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const q = area("src/quoted");
+  writeMap(result(dir, [a, q]), { targets: ALL });
+  assert.deepEqual(namesIn(dir, copilot), mapOf(copilot, a, q));
+  // The same area, now only reachable through a directory neither reader's list can hold.
+  const moved = { ...q, globs: [{ negated: false, dir: 'src/quoted/a"b', tail: "**/*.ts" }] };
+
+  const plan = writeMap(result(dir, [a, moved]));
+
+  for (const t of OTHERS) {
+    const mine = plan.targets[t.id];
+    assert.deepEqual(mine.unfiled, ["src/quoted"], t.id);
+    assert.deepEqual(mine.remove, [areaName(t, q.id)]);
+    assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(t, a));
+    assert.deepEqual(namesIn(dir, t), mapOf(t, a));
+    const overview = readFileSync(join(dir, t.dir, overviewName(t)), "utf8");
+    assert.match(overview, /^Generated files: 2 under /m, "the count is the files that are there");
+    assert.match(overview, new RegExp(`^- 1 area has no pattern ${t.reader} can be given`, "m"));
+    assert.deepEqual(readFacts(dir).targets[t.id], mapOf(t, a));
+  }
+  // Claude Code takes the pattern quoted, so its file stays.
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, q));
+  assert.deepEqual(plan.remove, []);
+});
+
+test("a target directory that became a link after the plan was made refuses the commit", needsSymlinks, (t) => {
+  const dir = workspace(t);
+  const outside = elsewhere(t);
+  mkdirSync(join(outside, "rules"));
+  const plan = planMap(result(dir, [area("src/services")]), { targets: ["claude", "cursor"] });
+  symlinkSync(outside, join(dir, ".cursor"));
+
+  assert.throws(() => commitMap(dir, plan), (err) => err.message === moved(cursor, UNTOUCHED));
+
+  assert.deepEqual(readdirSync(join(outside, "rules")), []);
+  assert.equal(existsSync(join(dir, ".claude")), false, "and nothing of Claude Code's either");
+});
+
+test("a run that read nothing writes and removes nothing in any directory", (t) => {
+  const dir = workspace(t);
+  writeMap(result(dir, [area("app/models"), area("app/services")]), { targets: ALL });
+  const before = tree(dir);
+  const blind = () => {
+    const scan = result(dir, []);
+    scan.parse = { ...scan.parse, crashed: scan.corpus.files, unreadable: ["ruby"] };
+    return scan;
+  };
+
+  for (const targets of [null, ["claude"], ALL]) {
+    const plan = writeMap(blind(), { targets });
+    assert.equal(plan.blind, true);
+    for (const t of OTHERS) assert.deepEqual({ write: plan.targets[t.id].write, remove: plan.targets[t.id].remove }, { write: [], remove: [] });
+    assert.deepEqual(tree(dir), before, JSON.stringify(targets));
+  }
+
+  // Nor does it create a directory for a target it was asked to start.
+  const fresh = workspace(t);
+  const first = result(fresh, []);
+  first.parse = { ...first.parse, crashed: first.corpus.files, unreadable: ["ruby"] };
+  writeMap(first, { targets: ALL });
+  assert.deepEqual(tree(fresh), {});
+});
+
+test("a held area's file is kept in every target it exists in", (t) => {
+  const dir = workspace(t);
+  const models = area("app/models");
+  const services = area("app/services");
+  writeMap(result(dir, [models, services]), { targets: ALL });
+  const kept = Object.fromEntries(OTHERS.map((t) => [t.id, readFileSync(join(dir, t.dir, areaName(t, models.id)), "utf8")]));
+  const partial = () => {
+    const scan = result(dir, [area("app/services", [dim({ conforming: 22, exceptions: [] })])]);
+    scan.parse = { ...scan.parse, unreadable: ["ruby"] };
+    scan.held = [{ id: models.id, path: models.path, fileCount: models.fileCount }];
+    scan.readNothing = false;
+    return scan;
+  };
+
+  const plan = writeMap(partial());
+
+  for (const t of OTHERS) {
+    assert.deepEqual(plan.targets[t.id].remove, []);
+    assert.deepEqual(plan.targets[t.id].write.map((w) => w.name).sort(), mapOf(t, services));
+    assert.equal(readFileSync(join(dir, t.dir, areaName(t, models.id)), "utf8"), kept[t.id], "neither removed nor rewritten");
+    assert.match(readFileSync(join(dir, t.dir, areaName(t, services.id)), "utf8"), /22 of 22/);
+    assert.deepEqual(readFacts(dir).targets[t.id], mapOf(t, models, services), "and the record still names it");
+  }
+
+  // Turned off by a run that cannot speak for the area: the rest goes, the held file stays owned.
+  const off = writeMap(partial(), { targets: ["claude"] });
+  for (const t of OTHERS) {
+    assert.deepEqual(off.targets[t.id].remove, mapOf(t, services));
+    assert.deepEqual(namesIn(dir, t), [areaName(t, models.id)]);
+    assert.deepEqual(readFacts(dir).targets[t.id], [areaName(t, models.id)]);
+  }
+
+  // And the next run that can read it finishes turning the target off.
+  const later = writeMap(result(dir, [models, services]));
+  for (const t of OTHERS) {
+    assert.deepEqual({ state: later.targets[t.id].state, on: later.targets[t.id].on, remove: later.targets[t.id].remove }, { state: "off", on: false, remove: [areaName(t, models.id)] });
+    assert.deepEqual(namesIn(dir, t), []);
+  }
+  assert.equal("targets" in readFacts(dir), false);
+});
+
+test("a held area's file that no record names is recorded when its target is turned off, so a later scan finishes", (t) => {
+  const models = area("app/models");
+  const services = area("app/services");
+  const dir = workspace(t);
+  writeMap(result(dir, [models, services]), { targets: ALL });
+  rmSync(join(dir, STORE), { recursive: true, force: true });
+  const partial = result(dir, [services]);
+  partial.parse = { ...partial.parse, unreadable: ["ruby"] };
+  partial.held = [{ id: models.id, path: models.path, fileCount: models.fileCount }];
+  partial.readNothing = false;
+
+  const off = writeMap(partial, { targets: ["claude"] });
+
+  for (const target of OTHERS) {
+    assert.deepEqual(off.targets[target.id].remove, mapOf(target, services));
+    assert.deepEqual(off.targets[target.id].unknown, []);
+    assert.deepEqual(namesIn(dir, target), [areaName(target, models.id)]);
+    assert.deepEqual(readFacts(dir).targets[target.id], [areaName(target, models.id)]);
+  }
+
+  const later = writeMap(result(dir, [models, services]));
+  for (const target of OTHERS) {
+    assert.deepEqual(later.targets[target.id].remove, [areaName(target, models.id)]);
+    assert.deepEqual(namesIn(dir, target), []);
+  }
+});
+
+test("a target directory swapped for a link once the renames began refuses in a sentence, with nothing written through it", needsSymlinks, async (t) => {
+  const race = await swappedAtRename(t);
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    for (const name of mapOf(target, a)) writeFileSync(join(outside, name), OURS);
+    const theirs = tree(outside);
+    const claude = unstamped(snapshot(dir));
+    race.arm(1, join(dir, target.dir), outside);
+
+    assert.throws(
+      () => writeMap(result(dir, [a, area("src/api")])),
+      (err) => err.message === moved(target, PUT_BACK),
+      target.id
+    );
+
+    assert.equal(race.left, 0, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(outside), theirs);
+    assert.deepEqual(unstamped(snapshot(dir)), claude, `${target.id}: the record and Claude Code's files are the ones that were there`);
+  }
+});
+
+test("the rename order is record, layout, claude, cursor, copilot", async (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  const c = area("src/hooks");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const before = settled(dir);
+  const renames = await watched(t, "renameSync");
+  const kind = (path) => {
+    const rel = String(path).split(sep).join("/");
+    if (rel.endsWith(`${STORE}/facts.json`)) return "record";
+    if (rel.endsWith(`${STORE}/layout.json`)) return "layout";
+    return ["claude", "cursor", "copilot"].find((id) => rel.includes(`/${TARGETS[id].dir}/`));
+  };
+
+  // Each position in turn: whatever had been renamed is put back, in every directory.
+  const positions = 2 + 3 * 3;
+  for (let n = 1; n <= positions; n++) {
+    renames.calls.length = 0;
+    renames.failOn(n);
+    assert.throws(() => writeMap(result(dir, [a, c])), /EPERM/, `rename ${n}`);
+    assert.deepEqual(settled(dir), before, `after a failure at rename ${n}`);
+    const done = renames.calls.slice(0, n).map(([, to]) => kind(to));
+    assert.deepEqual(done, ["record", "layout", "claude", "claude", "claude", "cursor", "cursor", "cursor", "copilot", "copilot", "copilot"].slice(0, n));
+  }
+
+  renames.calls.length = 0;
+  writeMap(result(dir, [a, c]));
+  assert.deepEqual(
+    renames.calls.map(([, to]) => kind(to)),
+    ["record", "layout", "claude", "claude", "claude", "cursor", "cursor", "cursor", "copilot", "copilot", "copilot"]
+  );
+  for (const [from] of renames.calls) assert.match(String(from), /\.tmp-/, "each one a temporary file staged beside its destination");
+});
+
+test("every temporary file is staged before the first rename, each beside its destination", async (t) => {
+  const dir = workspace(t);
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = { openSync: fs.openSync, renameSync: fs.renameSync };
+  const events = [];
+  fs.openSync = (path, flags, ...rest) => {
+    if (flags === "wx") events.push(["stage", String(path)]);
+    return real.openSync(path, flags, ...rest);
+  };
+  fs.renameSync = (from, to) => (events.push(["rename", String(from), String(to)]), real.renameSync(from, to));
+  syncBuiltinESMExports();
+  t.after(() => {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  });
+
+  writeMap(result(dir, [area("src/services")]), { targets: ALL });
+
+  const firstRename = events.findIndex(([what]) => what === "rename");
+  assert.equal(firstRename, 2 + 3 * 2, "the record, the layout file and two files in each of three directories");
+  assert.equal(events.slice(firstRename).every(([what]) => what === "rename"), true, "no file is staged after the first rename");
+  for (const [, from, to] of events.slice(firstRename)) assert.ok(from.startsWith(`${to}.tmp-`), `${from} is not beside ${to}`);
+});
+
+test("a throw on the last rename puts back every directory", async (t) => {
+  const dir = workspace(t);
+  writeMap(result(dir, [area("src/services"), area("src/api")]), { targets: ALL });
+  const before = settled(dir);
+  await failNth(t, "renameSync", 2 + 3 * 3);
+
+  assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /EPERM/);
+
+  assert.deepEqual(settled(dir), before, "all three directories and the record, with no temporary file in any");
+  assert.notEqual(readLayout(dir), null);
+});
+
+test("a removal that fails in the last directory puts back every directory", async (t) => {
+  const dir = workspace(t);
+  writeMap(result(dir, [area("src/services"), area("src/api")]), { targets: ALL });
+  const before = settled(dir);
+  // One stale file in each of the three directories, removed in that order.
+  await failNth(t, "unlinkSync", 3);
+
+  assert.throws(() => writeMap(result(dir, [area("src/services")])), /EPERM/);
+
+  assert.deepEqual(settled(dir), before);
+});
+
+test("a rollback removes the directory this run created, and leaves one it did not", async (t) => {
+  const renames = await watched(t, "renameSync");
+  const scan = (dir) => writeMap(result(dir, [area("src/services")]), { targets: ALL });
+
+  for (const n of [1, 2 + 2 + 1, 2 + 2 * 3]) {
+    const fresh = workspace(t);
+    renames.failOn(n);
+    assert.throws(() => scan(fresh), /EPERM/);
+    assert.equal(existsSync(join(fresh, ".cursor")), false, `rename ${n}: .cursor and .cursor/rules were this run's`);
+    assert.equal(existsSync(join(fresh, ".github")), false, `rename ${n}: and so were .github and .github/instructions`);
+  }
+
+  const dir = workspace(t);
+  mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(dir, ".github", "workflows", "ci.yml"), "on: push\n");
+  mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+  const emptyGithub = workspace(t);
+  mkdirSync(join(emptyGithub, ".github"));
+  for (const root of [dir, emptyGithub]) {
+    renames.failOn(2 + 2 * 3);
+    assert.throws(() => scan(root), /EPERM/);
+  }
+  assert.deepEqual(readdirSync(join(dir, ".github")), ["workflows"], "the instructions directory is gone, and .github is not ours to remove");
+  assert.deepEqual(readdirSync(join(dir, ".cursor", "rules")), [], "a directory that was already there stays, empty as it was");
+  assert.deepEqual(readdirSync(join(emptyGithub, ".github")), [], "even an empty .github, when this run did not make it");
+  assert.equal(existsSync(join(emptyGithub, ".cursor")), false);
+});
+
+test("a link raced into a created directory refuses and rolls back", needsSymlinks, async (t) => {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.mkdirSync;
+  let race = null;
+  // The race itself: the directory this run just made is swapped for a link before it is looked at again.
+  fs.mkdirSync = (path, ...rest) => {
+    const made = real(path, ...rest);
+    if (race !== null && String(path).split(sep).join("/").endsWith(`/${race.at}`)) {
+      rmdirSync(path);
+      symlinkSync(race.to, path);
+    }
+    return made;
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.mkdirSync = real;
+    syncBuiltinESMExports();
+  });
+
+  for (const at of [".cursor", ".cursor/rules", ".github", ".github/instructions"]) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    mkdirSync(join(outside, "rules"));
+    mkdirSync(join(outside, "instructions"));
+    race = { at, to: outside };
+
+    assert.throws(
+      () => writeMap(result(dir, [area("src/services")]), { targets: ALL }),
+      (err) => err.message === `${at} is not a directory, so nothing was written: remove it and scan again`,
+      at
+    );
+
+    race = null;
+    assert.deepEqual(tree(outside), { "instructions/": "", "rules/": "" }, `${at}: nothing was written through the link`);
+    assert.equal(lstatSync(join(dir, at)).isSymbolicLink(), true, `${at}: the link is somebody else's, so it stays`);
+    assert.equal(existsSync(join(dir, STORE, "facts.json")), false, `${at}: no record`);
+    assert.deepEqual(existsSync(rules(dir)) ? readdirSync(rules(dir)) : [], [], `${at}: no Claude file`);
+    for (const t2 of OTHERS) {
+      if (at.startsWith(t2.dir.split("/")[0])) continue;
+      assert.equal(existsSync(join(dir, t2.dir.split("/")[0])), false, `${at}: the other target's directory was taken back out`);
+    }
+  }
+});
+
+test("a target directory swapped for a link while its files were staged refuses before any is renamed", needsSymlinks, async (t) => {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.openSync;
+  let race = null;
+  // The directory is this run's own and empty until its first temporary file, which is when it is swapped.
+  fs.openSync = (path, flags, ...rest) => {
+    const at = String(path).split(sep).join("/");
+    if (race !== null && flags === "wx" && at.includes(`/${race.at}/`)) {
+      const parent = at.slice(0, at.lastIndexOf("/"));
+      rmdirSync(parent);
+      symlinkSync(race.to, parent);
+      race = null;
+    }
+    return real(path, flags, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.openSync = real;
+    syncBuiltinESMExports();
+  });
+
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    race = { at: target.dir, to: outside };
+
+    assert.throws(
+      () => writeMap(result(dir, [area("src/services")]), { targets: ALL }),
+      (err) => err.message === moved(target, UNTOUCHED),
+      target.id
+    );
+
+    assert.equal(race, null, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(readdirSync(outside), [], `${target.id}: nothing is left where the link leads`);
+    assert.equal(lstatSync(join(dir, target.dir)).isSymbolicLink(), true, `${target.id}: the link is somebody else's, so it stays`);
+    assert.equal(existsSync(join(dir, STORE, "facts.json")), false, `${target.id}: no record`);
+    assert.deepEqual(readdirSync(rules(dir)), [], `${target.id}: no Claude file`);
+    for (const other of OTHERS.filter((o) => o !== target)) {
+      assert.equal(existsSync(join(dir, other.dir.split("/")[0])), false, `${target.id}: the other target's directory was taken back out`);
+    }
+  }
+});
+
+/** Swap one target's directory for a link to `to` as the `n`th rename from now returns: after the last look before the renames. */
+async function swappedAtRename(t) {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  const race = { left: 0, at: null, to: null, arm: (n, at, to) => Object.assign(race, { left: n, at, to }) };
+  fs.renameSync = (from, to) => {
+    const done = real(from, to);
+    if (race.left > 0 && --race.left === 0) {
+      rmSync(race.at, { recursive: true });
+      symlinkSync(race.to, race.at);
+    }
+    return done;
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+  return race;
+}
+
+test("a target directory swapped for a link once the renames began has nothing removed through it when the target is turned off", needsSymlinks, async (t) => {
+  const race = await swappedAtRename(t);
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    // Somebody else's files, under the very names this scan is about to remove.
+    for (const name of mapOf(target, a)) writeFileSync(join(outside, name), OURS);
+    const theirs = tree(outside);
+    const other = OTHERS.find((o) => o !== target);
+    const before = { record: readFileSync(join(dir, STORE, "facts.json"), "utf8"), claude: unstamped(snapshot(dir)), other: namesIn(dir, other) };
+    race.arm(1, join(dir, target.dir), outside);
+
+    assert.throws(
+      () => writeMap(result(dir, [a]), { targets: ["claude"] }),
+      (err) => err.message === moved(target, PUT_BACK),
+      target.id
+    );
+
+    assert.equal(race.left, 0, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(outside), theirs, `${target.id}: nothing where the link leads was removed`);
+    assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), before.record, `${target.id}: the record is the one that was there`);
+    assert.deepEqual(unstamped(snapshot(dir)), before.claude);
+    assert.deepEqual(namesIn(dir, other), before.other, `${target.id}: and nothing was removed from the other directory either`);
+  }
+});
+
+test("a target directory swapped for a link after its files were renamed has no stale file removed through it, and nothing put back there", needsSymlinks, async (t) => {
+  const race = await swappedAtRename(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    for (const name of mapOf(target, a, b)) writeFileSync(join(outside, name), OURS);
+    const theirs = tree(outside);
+    const other = OTHERS.find((o) => o !== target);
+    const before = { record: readFileSync(join(dir, STORE, "facts.json"), "utf8"), claude: unstamped(snapshot(dir)), other: tree(join(dir, other.dir)) };
+    // The record, its layout file and two files in each of three directories.
+    race.arm(2 + 3 * 2, join(dir, target.dir), outside);
+
+    assert.throws(
+      () => writeMap(result(dir, [a])),
+      // Its own new files went with the directory, wherever that is now.
+      (err) => err.message === moved(target, PUT_BACK_ELSEWHERE),
+      target.id
+    );
+
+    assert.equal(race.left, 0, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(outside), theirs, `${target.id}: nothing where the link leads was removed or written`);
+    assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), before.record);
+    assert.deepEqual(unstamped(snapshot(dir)), before.claude, `${target.id}: Claude Code's stale file is back`);
+    assert.deepEqual(tree(join(dir, other.dir)), before.other, `${target.id}: and so is the other directory's`);
+  }
+});
+
+test("a target directory swapped for a link between the last look and the rename refuses in the same sentence, not an errno", needsSymlinks, async (t) => {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  let race = null;
+  // Inside the rename itself, so the look before it has already passed.
+  fs.renameSync = (from, to) => {
+    if (race !== null && String(to).startsWith(race.at + sep)) {
+      rmSync(race.at, { recursive: true });
+      symlinkSync(race.to, race.at);
+      race = null;
+    }
+    return real(from, to);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+  const a = area("src/services");
+
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    for (const name of mapOf(target, a)) writeFileSync(join(outside, name), OURS);
+    const theirs = tree(outside);
+    const claude = unstamped(snapshot(dir));
+    race = { at: join(realpathSync(dir), ...target.dir.split("/")), to: outside };
+
+    assert.throws(() => writeMap(result(dir, [a, area("src/api")])), (err) => err.message === moved(target, PUT_BACK), target.id);
+
+    assert.equal(race, null, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(outside), theirs, `${target.id}: nothing where the link leads was written`);
+    assert.deepEqual(unstamped(snapshot(dir)), claude, `${target.id}: the record and Claude Code's files are the ones that were there`);
+  }
+});
+
+test("nothing is removed until every file has been renamed into place", async (t) => {
+  // Removed first, an orphan is gone while the record and the overview on disk still name it.
+  const dir = workspace(t);
+  const stays = area("src/services");
+  writeMap(result(dir, [stays, area("src/api")]), { targets: ALL });
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = { renameSync: fs.renameSync, unlinkSync: fs.unlinkSync };
+  const events = [];
+  for (const name of Object.keys(real)) fs[name] = (...args) => (events.push(name), real[name](...args));
+  syncBuiltinESMExports();
+  t.after(() => {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  });
+
+  writeMap(result(dir, [stays]));
+
+  const renames = 2 + 3 * 2;
+  assert.deepEqual(events, [...Array(renames).fill("renameSync"), "unlinkSync", "unlinkSync", "unlinkSync"], "the record, its layout file and two files in each directory, then one orphan in each");
+});
+
+test("a target directory that cannot be written is refused by name before a dry run answers", needsPosixPermissions, (t) => {
+  const dir = workspace(t);
+  mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+  chmodSync(join(dir, ".cursor", "rules"), 0o555);
+  try {
+    for (const dryRun of [true, false]) {
+      assert.throws(
+        () => writeMap(result(dir, [area("src/services")]), { dryRun, targets: ["claude", "cursor"] }),
+        (err) => err.message === ".cursor/rules is not writable, so the map could not be written: fix its permissions and scan again"
+      );
+    }
+  } finally {
+    chmodSync(join(dir, ".cursor", "rules"), 0o755);
+  }
+  assert.equal(existsSync(join(dir, ".claude")), false);
+});
+
+test("a directory holding a generated name in a target is reported, not an errno", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  mkdirSync(join(dir, copilot.dir, areaName(copilot, a.id)), { recursive: true });
+
+  for (const dryRun of [true, false]) {
+    assert.throws(
+      () => writeMap(result(dir, [a]), { dryRun, targets: ALL }),
+      (err) => err.message === refusal(copilot, areaName(copilot, a.id), "is not a file")
+    );
+  }
+  assert.equal(existsSync(join(dir, ".claude")), false);
+  assert.equal(existsSync(join(dir, ".cursor")), false);
+  // Left off, the shape is nobody's business.
+  assert.deepEqual(writeMap(result(dir, [a])).targets.copilot.write, []);
 });

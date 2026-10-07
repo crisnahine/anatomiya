@@ -14,7 +14,9 @@ import { caseMagic, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
-import { listSome, LISTED, PREFIX, RULES_DIR, trackedRulesDir } from "./rules.mjs";
+import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
+import { TARGETS } from "./targets.mjs";
+import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
@@ -28,8 +30,13 @@ import { removeStaleHook } from "./hook.mjs";
  * nothing, so a caller that is not a terminal gets the same answer.
  */
 
-/** Scan the repository the path is in, and write the map unless this is a dry run. */
-export async function runScan(cwd, { dryRun = false } = {}) {
+/**
+ * Scan the repository the path is in, and write the map unless this is a dry run.
+ *
+ * `targets` is the whole set of places it goes, or null for the ones already on.
+ * `hold` is the other targets whose files this scan leaves as they are.
+ */
+export async function runScan(cwd, { dryRun = false, targets = null, hold = [] } = {}) {
   const result = await scan(cwd);
   // Only where it left nothing to read (B13). An engine missing for one
   // language costs that language's files and the scan goes on for the rest:
@@ -38,7 +45,7 @@ export async function runScan(cwd, { dryRun = false } = {}) {
   // language went unread and what to do about it (B41).
   if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
-  const plan = writeMap(result, { dryRun });
+  const plan = writeMap(result, { dryRun, targets, hold });
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
   // settings, where `${CLAUDE_PLUGIN_ROOT}` is never substituted and Claude Code
   // refuses the hook by name on every prompt and every tool call. The plugin
@@ -156,12 +163,13 @@ async function refuseUnlikeHead(root) {
   // A staged, edited or deleted tracked file is listed against a commit that
   // does not hold it, and every scan after reads that area as a population
   // change for as long as the pin stands. This tool's own output under
-  // `.claude/` is left out: a repository that commits its map rewrites it on
-  // every scan, and it is never part of the population. A map written through
-  // a `.claude/rules` link is stored under the link's target.
+  // `.claude/` is left out, and its generated names in every other directory a
+  // scan writes: a repository that commits its map rewrites it on every scan,
+  // and it is never part of the population. A map written through a
+  // `.claude/rules` link is stored under the link's target.
   const rules = trackedRulesDir(root);
   const exclude = `:(${["exclude", await caseMagic(root)].filter(Boolean).join(",")})`;
-  const own = rules === RULES_DIR ? [] : [`${exclude}${rules}/${PREFIX}*.md`];
+  const own = [...(rules === RULES_DIR ? [] : [`${rules}/${PREFIX}*.md`]), ...EXCLUDE_LINES].map((line) => `${exclude}${line}`);
   const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]);
   if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
   if (dirty.stdout.length > 0) {
@@ -208,12 +216,39 @@ export async function runCheck(cwd, { baseRef = null } = {}) {
  * and drop what to do about it: printed on the lead and on every row it
  * explains, one sentence appeared four times and the report read as four faults
  * again, which is what the lead is there to stop.
+ *
+ * `cwd` is where it was run from. Inside a repository, each other directory the
+ * map is written to there gets a line after the engines.
  */
-export async function runDoctor() {
+export async function runDoctor({ cwd = null } = {}) {
   const rows = await readiness({ engines: PROBE_IDS });
   const problem = installProblem(rows);
-  const lines = readinessLines(rows, { installSaid: problem !== null });
+  const lines = [...readinessLines(rows, { installSaid: problem !== null }), ...(await targetLines(cwd))];
   return { rows, lines: problem === null ? lines : [problem, ...lines] };
+}
+
+/** One line per Cursor or Copilot target that is on, or that the record names files in and nobody can read; none for any other. */
+async function targetLines(cwd) {
+  let root;
+  try {
+    root = await gitRoot(cwd);
+  } catch {
+    // Not a repository, no directory or no git: the engines are the whole answer.
+    return [];
+  }
+  const facts = readFacts(root).facts;
+  const lines = [];
+  for (const target of Object.values(TARGETS).filter((t) => !t.always)) {
+    const { state, reason } = targetStatus(root, target);
+    const known = knownNames(facts, target);
+    if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);
+    if (state !== "on") continue;
+    // A name a scan gives a file, and the key, with or without a record: a clone holds the files and not the store.
+    const { ours, unknown, listed } = auditRules(root, known, target);
+    const mine = [...ours, ...unknown].filter((name) => isMapName(name, target));
+    lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);
+  }
+  return lines;
 }
 
 /**
