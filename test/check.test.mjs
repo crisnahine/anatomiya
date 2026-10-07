@@ -21,6 +21,7 @@ import { renderArea } from "../plugins/anatomiya/lib/render.mjs";
 import { buildPin, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
+import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 
 // The area record carries a glob in the two halves it is composed from.
 const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
@@ -5375,4 +5376,133 @@ test("an edit to a component's markup alone is read and reports nothing", async 
   assertExamined(report, "src/components/UserCard.vue");
   assert.deepEqual(report.findings, []);
   assert.deepEqual(report.caveats, []);
+});
+
+test("a C# file read with one branch of each conditional says so, and one read whole says nothing", async (t) => {
+  const whole = (name) => `class ${name}\n{\n    public void F(string s)\n    {\n    }\n}\n`;
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/A.cs", whole("A"));
+    write("src/B.cs", whole("B"));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/A.cs", "class A\n{\n#if SPAN\n    public void F(System.ReadOnlySpan<char> s)\n#else\n    public void F(string s)\n#endif\n    {\n    }\n}\n");
+    write("src/B.cs", whole("B").replace("string s", "int n"));
+    commit("a signature per target");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.examined.map((e) => e.path).sort(), ["src/A.cs", "src/B.cs"]);
+  // The findings on such a file are about the branch that was read, and a reader has to be told the rest was not.
+  assert.deepEqual(r.caveats.filter((c) => c.code === CAVEATS.HEAD_ONE_BRANCH), [
+    { code: "head-one-branch", message: "src/A.cs was read with one branch of each #if, so its other branches were not checked" },
+  ]);
+});
+
+const perTarget = (signature) => `class A\n{\n    /// <summary>Loads.</summary>\n${signature}\n    {\n    }\n}\n`;
+const SPLIT = "#if NET8_0\n    public void Load(string path, int extra)\n#else\n    public void Load(string path)\n#endif";
+
+test("a C# file read with one branch is judged on the text its tree was read from, as the scan judged it", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/A.cs", perTarget("    public void Load(string path)"));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/A.cs", perTarget(SPLIT));
+    commit("a signature per target");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: componentArea([dim({ key: "public_doc_comment", precision: "partial" })], "cs") });
+
+  const scanned = await parseTreeFile(perTarget(SPLIT), "src/components/A.cs", "csharp");
+  assert.equal(scanned.oneBranch, true);
+  assert.deepEqual(scanned.hits.public_doc_comment, [{ conforming: true, where: "Load" }]);
+
+  const report = await check(dir, { baseRef: "main" });
+
+  // The doc comment sits above the #if. In the file as written that line is in the gap, and in the text the tree was read from it is blank.
+  assert.deepEqual(report.examined.map((e) => e.path), ["src/components/A.cs"]);
+  assert.deepEqual(report.caveats.map((c) => c.code), [CAVEATS.HEAD_ONE_BRANCH]);
+  assert.deepEqual(forKey(report, "public_doc_comment"), []);
+});
+
+test("the base side of such a file is read from its own tree's text too, so what it already held is not charged to the branch", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/A.cs", perTarget(SPLIT));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/A.cs", perTarget(SPLIT).replace("    {\n    }", "    {\n        Run();\n    }"));
+    commit("a body");
+  });
+  const undocumented = counterDim({ key: "public_doc_comment", precision: "partial", claim: "public functions carry a doc comment", counterClaim: "public functions carry no doc comment" });
+  facts(dir, { sha: sha(dir, "main"), areas: componentArea([undocumented], "cs") });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  // Where the area documents nothing, the documented function is the one that breaks, and it was there before the branch.
+  assert.deepEqual(report.examined.map((e) => e.path), ["src/components/A.cs"]);
+  assert.deepEqual(report.caveats.map((c) => c.code), [CAVEATS.HEAD_ONE_BRANCH]);
+  assert.deepEqual(forKey(report, "public_doc_comment"), []);
+});
+
+test("a test file pytest collects by its directory is a test file to the check on both sides, as it is to the scan", async (t) => {
+  // No runner is imported and the name is not a test's: only the path says pytest collects this.
+  const cases = "def test_total():\n    assert 1 == 1\n";
+  const helper = "\n\ndef build_order():\n    return 1\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("tests/tests.py", cases + helper);
+    write("tests/more.py", cases);
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("tests/tests.py", cases + helper.replace("return 1", "return 2"));
+    write("tests/more.py", cases + helper);
+    commit("a helper");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "tests", globs: [{ negated: false, dir: "tests", tail: "**/*.py" }], fileCount: 8, dimensions: [documented] }] });
+
+  assert.deepEqual((await parseTreeFile(cases + helper, "tests/more.py", "python")).hits.public_doc_comment, undefined, "the scan counts nothing here");
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.examined.map((e) => e.path).sort(), ["tests/more.py", "tests/tests.py"]);
+  assert.deepEqual(report.caveats, []);
+  assert.deepEqual(report.findings, []);
+});
+
+test("a file renamed out of a test tree is not charged the sites it already held", async (t) => {
+  // Under tests/ pytest collects it and the row counts nothing in it; under src/ it is source. Nothing in it changed.
+  const source = "def test_data():\n    assert 1 == 1\n\n\ndef load_tools(path):\n    return path\n\n\ndef save_tools(path):\n    return path\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("tests/tools.py", source);
+    write("src/py/a.py", "def a():\n    \"\"\"A.\"\"\"\n");
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "tests/tools.py", "src/py/tools.py");
+    commit("move it");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "src/py", globs: [{ negated: false, dir: "src/py", tail: "**/*.py" }], fileCount: 8, dimensions: [documented] }] });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.examined.map((e) => e.path), ["src/py/tools.py"]);
+  assert.deepEqual(report.findings, []);
+});
+
+test("a file that stops being a test file by what it holds is not charged the sites it already held", async (t) => {
+  const source = "import pytest\n\n\ndef load_tools(path):\n    return path\n\n\ndef test_data():\n    assert 1 == 1\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/py/tools.py", source);
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/py/tools.py", source.replace("import pytest\n\n\n", "").replace("def test_data():\n    assert 1 == 1\n", "def data():\n    \"\"\"Data.\"\"\"\n"));
+    commit("no longer a test");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "src/py", globs: [{ negated: false, dir: "src/py", tail: "**/*.py" }], fileCount: 8, dimensions: [documented] }] });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.examined.map((e) => e.path), ["src/py/tools.py"]);
+  assert.deepEqual(forKey(report, "public_doc_comment").map((f) => f.line), []);
 });

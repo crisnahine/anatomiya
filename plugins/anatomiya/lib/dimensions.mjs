@@ -9,6 +9,7 @@ import { RAILS_DIMENSIONS } from "./dimensions-rails.mjs";
 import { SEMANTIC_DIMENSIONS } from "./dimensions-semantic.mjs";
 import { NAMING_AST } from "./dimensions-naming.mjs";
 import { CAPABILITY_DIMENSIONS } from "./dimensions-capability.mjs";
+import { TREE_DIMENSIONS } from "./dimensions-tree.mjs";
 import { CAPABILITY_WORDS } from "./stems.mjs";
 // The framework field is held to the declared profiles, so a row naming a
 // framework nobody detects cannot ship as a slot that can only read zero (C8).
@@ -371,6 +372,7 @@ export const ALL_DIMENSIONS = [
   ...SEMANTIC_DIMENSIONS,
   ...NAMING_AST,
   ...CAPABILITY_DIMENSIONS,
+  ...TREE_DIMENSIONS,
 ];
 
 // A visitor row's `run` walks the tree alone, on its engine's walk, for the

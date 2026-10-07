@@ -56,6 +56,8 @@ export const CAVEATS = Object.freeze({
   HEAD_REJECTED: "head-rejected",
   HEAD_OVERSIZE: "head-oversize",
   HEAD_UNPARSED: "head-unparsed",
+  // Read, and not whole: a C# file's findings are about one branch of each conditional.
+  HEAD_ONE_BRANCH: "head-one-branch",
   BASE_UNPARSED: "base-unparsed",
   STRIPPER_MISSING: "stripper-missing",
   // An engine that is not installed, said once with its remedy beside the one

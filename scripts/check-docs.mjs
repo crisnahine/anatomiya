@@ -397,6 +397,8 @@ export function checkDocs() {
   const jsx = rowsForLangs(["jsx"]).length;
   const ruby = rowsForLangs(["ruby"]).length;
   const component = { Vue: rowsForLangs(["vue"]).length, Svelte: rowsForLangs(["svelte"]).length };
+  // The names prose gives the tree-sitter languages, beside the id the registry knows each by.
+  const TREE_LANGS = [["Python", "python"], ["PHP", "php"], ["Go", "go"], ["Java", "java"], ["C#", "csharp"], ["Rust", "rust"], ["Kotlin", "kotlin"]];
   const obligations = rowsOfKind("pairing").length;
 
   // Section 4 of the walkthrough counts the rows asked of a file, so the
@@ -434,6 +436,11 @@ export function checkDocs() {
     }
     for (const m of text.matchAll(/(\d+)\s+for\s+(Vue|Svelte)\b/g)) {
       claim(rel, Number(m[1]) === component[m[2]], `says "${m[1]} for ${m[2]}", the registry holds ${component[m[2]]} asked of a ${m[2]} script`);
+    }
+    for (const [name, id] of TREE_LANGS) {
+      for (const m of text.matchAll(new RegExp(`(\\d+)\\s+for\\s+${name.replace(/\W/g, "\\$&")}(?![\\w#])`, "g"))) {
+        claim(rel, Number(m[1]) === rowsForLangs([id]).length, `says "${m[1]} for ${name}", the registry holds ${rowsForLangs([id]).length} asked of ${name}`);
+      }
     }
     for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
       claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);

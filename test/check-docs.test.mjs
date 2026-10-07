@@ -248,6 +248,18 @@ test("the rows a component's script is asked are read against the registry, per 
   }
 });
 
+test("the rows asked of each tree-sitter language are read against the registry", (t) => {
+  for (const name of ["Python", "PHP", "Go", "Java", "C#", "Rust", "Kotlin"]) {
+    const dir = repoCopy(t);
+    const wrong = bumpCount(dir, new RegExp(`(\\d+)\\s+for\\s+${name.replace("#", "\\#")}(?![\\w#])`), "docs/how-it-works.md");
+
+    const { status, output } = check(dir);
+
+    assert.equal(status, 1, `docs/how-it-works.md states "${wrong}" and passed`);
+    assert.ok(output.includes(`for ${name}", the registry holds`), `${name}: ${output}`);
+  }
+});
+
 test("the README's share of the dimension total is read against the registry", (t) => {
   // "One of the 57 needs the type checker" survived a 58th row: the gate read
   // "N dimensions" and nothing else, so a count spelled any other way drifted.
