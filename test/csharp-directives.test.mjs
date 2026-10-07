@@ -185,6 +185,23 @@ for (const token of ["'\\u0041'", "'\\n'", '"a"', '@"a"', "/* */"]) {
   });
 }
 
+// A needle of the opening run's length fails late at every shorter run: 22 s on this megabyte.
+test("a raw string opened by a long run of quotes is closed in one pass over the shorter runs after it", () => {
+  const tail = "\n#if X\na();\n#else\nb();\n#endif\n";
+  const source = '"'.repeat(250_000) + "x" + ('"'.repeat(249_999) + "y").repeat(3) + tail;
+  for (let run = 0; run < 3; run++) {
+    const from = performance.now();
+    const out = withOneBranch(source);
+    const took = performance.now() - from;
+    assert.equal(out, null, "the string never closes, so its directives are its text");
+    assert.ok(took < 2000, `run ${run + 1}: ${Math.round(took)} ms`);
+  }
+  const closed = '"'.repeat(5) + '\n#if A\n"""x"""\n#if B\n' + '"'.repeat(7) + tail;
+  const out = withOneBranch(closed);
+  assertInPlace(closed, out.text);
+  assert.equal(out.text, closed.slice(0, -tail.length) + "\n     \na();\n     \n    \n      \n");
+});
+
 test("conditionals that do not balance are not guessed at", () => {
   assert.equal(withOneBranch("#if X\na();\n"), null);
   assert.equal(withOneBranch("a();\n#endif\n"), null);
