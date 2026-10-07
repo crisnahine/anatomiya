@@ -1,12 +1,12 @@
 // test/semantic.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, symlinkSync, utimesSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { repo } from "./ts-repo.mjs";
-import { needsPosixPermissions } from "./platform.mjs";
+import { needsPosixPermissions, needsSymlinks } from "./platform.mjs";
 import { scratch } from "./git-worktrees.mjs";
 import {
   loadTypeScript,
@@ -501,4 +501,66 @@ test("the stamp a verdict is measured under moves with the build, the root confi
   assert.equal(new Set([none, base, edited, built]).size, 4);
   assert.equal(verdictStamp(dir, "1.0.1"), built, "and holds still while they do");
   assert.match(built, /^[0-9a-f]{64}$/);
+});
+
+/** A root with one installed package, as `hasInstall` asks. */
+function installed(t) {
+  const dir = scratch(t, "anatomiya-verdict-install-");
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+  return dir;
+}
+
+test("the stamp moves when a package lands in an install that already held one", (t) => {
+  const dir = installed(t);
+  const partial = verdictStamp(dir, "1.0.0");
+  assert.equal(verdictStamp(dir, "1.0.0"), partial);
+  assert.equal(checkerStamp(dir), checkerStamp(dir));
+  const held = checkerStamp(dir);
+
+  mkdirSync(join(dir, "node_modules", "right-pad"));
+  // A directory's own time can stand still across two writes in one tick.
+  utimesSync(join(dir, "node_modules"), new Date(), new Date(Date.now() + 5000));
+
+  assert.notEqual(verdictStamp(dir, "1.0.0"), partial);
+  assert.equal(checkerStamp(dir), held, "the stamp that starts a refresh holds only whether there is an install");
+});
+
+for (const record of [".package-lock.json", ".modules.yaml", ".yarn-state.yml", ".yarn-integrity"]) {
+  test(`the stamp moves with the install record ${record}: when it appears, grows, or is rewritten at the same size`, (t) => {
+    const dir = installed(t);
+    const deps = join(dir, "node_modules");
+    const still = new Date("2026-01-01T00:00:00Z");
+    // Held still, so only the record moves the stamp.
+    const stamp = () => {
+      utimesSync(deps, still, still);
+      return verdictStamp(dir, "1.0.0");
+    };
+    const none = stamp();
+    writeFileSync(join(deps, record), "a");
+    utimesSync(join(deps, record), still, still);
+    const written = stamp();
+    writeFileSync(join(deps, record), "ab");
+    utimesSync(join(deps, record), still, still);
+    const grown = stamp();
+    writeFileSync(join(deps, record), "cd");
+    utimesSync(join(deps, record), still, new Date("2026-01-02T00:00:00Z"));
+    const rewritten = stamp();
+
+    assert.equal(new Set([none, written, grown, rewritten]).size, 4);
+    assert.equal(stamp(), rewritten);
+  });
+}
+
+test("an install linked in from outside the repository moves no stamp", needsSymlinks, (t) => {
+  const dir = scratch(t, "anatomiya-verdict-linked-");
+  const outside = scratch(t, "anatomiya-verdict-outside-");
+  mkdirSync(join(outside, "left-pad"));
+  symlinkSync(outside, join(dir, "node_modules"), "dir");
+  const before = verdictStamp(dir, "1.0.0");
+
+  writeFileSync(join(outside, ".package-lock.json"), "{}");
+  mkdirSync(join(outside, "right-pad"));
+  utimesSync(outside, new Date(), new Date(Date.now() + 5000));
+
+  assert.equal(verdictStamp(dir, "1.0.0"), before);
 });

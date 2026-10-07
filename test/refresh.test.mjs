@@ -562,15 +562,17 @@ test("a refresh leaves the type checker to the scan's own decision", async (t) =
 const FACTS = join(".claude", "anatomiya", "facts.json");
 const BROKEN = "{ this is not json";
 
-/** A committed TypeScript repository with its packages on disk and one root config, scanned by hand. */
-async function typed(t, { name = "tsconfig.json", config = BROKEN } = {}) {
+const TRIMS = "(s: string) {\n  return s.trim().toLowerCase()\n}\n";
+
+/** A committed TypeScript repository with its packages on disk and one root config (none where `config` is null), scanned by hand. */
+async function typed(t, { name = "tsconfig.json", config = BROKEN, body = TRIMS } = {}) {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-typed-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   init(dir);
   writeFileSync(join(dir, ".gitignore"), "node_modules\n");
-  writeFileSync(join(dir, name), config);
+  if (config !== null) writeFileSync(join(dir, name), config);
   mkdirSync(join(dir, "src"));
-  for (let i = 0; i < 8; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(s: string) {\n  return s.trim().toLowerCase()\n}\n`);
+  for (let i = 0; i < 8; i++) writeFileSync(join(dir, "src", `f${i}.ts`), body.replace(/^/, `export function f${i}`));
   mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
   commit(dir, "init");
   const { result } = await runScan(dir);
@@ -648,6 +650,34 @@ test("a refresh measures again once the config the root is read through changes"
   writeFileSync(join(dir, "tsconfig.json"), `{"compilerOptions":{"strict":true}}`);
   const edited = await refreshed(dir);
   assert.deepEqual([edited.semantic.ran, edited.semantic.status], [true, "ok"], "an edited config was not measured");
+});
+
+test("a refresh measures again once an install puts in the packages the checker could not resolve", needsTs, async (t) => {
+  const body = `(s: string) {\n  const v = make(s);\n  return other(v.a.b.c).d.e.f + v.x.y.z;\n}\n`;
+  const imports = `import { make } from "missing-pkg";\nimport { other } from "also-missing";\n`;
+  const { dir, first } = await typed(t, { config: null, body });
+  for (let i = 0; i < 8; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `${imports}export function f${i}${body}`);
+  commit(dir, "import two packages that are not installed");
+  const partial = (await runScan(dir)).result.semantic;
+  await noteScan(dir);
+  assert.deepEqual([first.ran, partial.ran, partial.status, partial.typedResolutionRate], [true, true, "degraded", 0]);
+  assert.equal((await refreshed(dir)).semantic.carried, true);
+
+  const declares = {
+    "missing-pkg": "export declare function make(s: string): { a: { b: { c: string } }, x: { y: { z: number } } };",
+    "also-missing": "export declare function other(s: string): { d: { e: { f: number } } };",
+  };
+  for (const [name, types] of Object.entries(declares)) {
+    mkdirSync(join(dir, "node_modules", name));
+    writeFileSync(join(dir, "node_modules", name, "package.json"), JSON.stringify({ name, version: "1.0.0", types: "index.d.ts" }));
+    writeFileSync(join(dir, "node_modules", name, "index.d.ts"), types);
+  }
+  // A directory's own time can stand still across writes in one tick.
+  utimesSync(join(dir, "node_modules"), new Date(), new Date(Date.now() + 5000));
+
+  const after = await refreshed(dir);
+  assert.deepEqual([after.semantic.ran, after.semantic.carried, after.semantic.status, after.semantic.typedResolutionRate], [true, false, "ok", 1]);
+  assert.equal(after.options, null);
 });
 
 test("a verdict measured by another build, or stamped by none, is measured once and carried after", needsTs, async (t) => {
