@@ -232,6 +232,22 @@ test("a command file that spells an invocation the CLI refuses fails", (t) => {
   assert.match(flag.output, /commands\/check\.md: .*check \. --deep/);
 });
 
+test("the rows a component's script is asked are read against the registry, per framework", (t) => {
+  // "24 for Vue" sat beside "28 for JavaScript" with nothing reading it, so a
+  // row listed for one framework and not the other would leave both stale.
+  for (const [phrasing, lang] of [[/(\d+)\s+for\s+Vue/, "Vue"], [/(\d+)\s+for\s+Svelte/, "Svelte"]]) {
+    for (const rel of ["README.md", "docs/how-it-works.md"]) {
+      const dir = repoCopy(t);
+      const wrong = bumpCount(dir, phrasing, rel);
+
+      const { status, output } = check(dir);
+
+      assert.equal(status, 1, `${rel} states "${wrong}" and passed`);
+      assert.match(output, new RegExp(`${rel.replace(/[.]/g, "\\.")}: says "\\d+ for ${lang}", the registry holds \\d+ asked of a ${lang} script`));
+    }
+  }
+});
+
 test("the README's share of the dimension total is read against the registry", (t) => {
   // "One of the 57 needs the type checker" survived a 58th row: the gate read
   // "N dimensions" and nothing else, so a count spelled any other way drifted.

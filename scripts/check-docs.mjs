@@ -396,6 +396,7 @@ export function checkDocs() {
   const js = rowsForLangs(["js"]).length;
   const jsx = rowsForLangs(["jsx"]).length;
   const ruby = rowsForLangs(["ruby"]).length;
+  const component = { Vue: rowsForLangs(["vue"]).length, Svelte: rowsForLangs(["svelte"]).length };
   const obligations = rowsOfKind("pairing").length;
 
   // Section 4 of the walkthrough counts the rows asked of a file, so the
@@ -430,6 +431,9 @@ export function checkDocs() {
     }
     for (const m of text.matchAll(/(\d+)\s+for\s+Ruby/g)) {
       claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", the registry holds ${ruby}`);
+    }
+    for (const m of text.matchAll(/(\d+)\s+for\s+(Vue|Svelte)\b/g)) {
+      claim(rel, Number(m[1]) === component[m[2]], `says "${m[1]} for ${m[2]}", the registry holds ${component[m[2]]} asked of a ${m[2]} script`);
     }
     for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
       claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);

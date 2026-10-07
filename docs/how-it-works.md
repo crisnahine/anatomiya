@@ -17,11 +17,14 @@ path and a newline split turns one hostile filename into two corpus entries.
 
 | Filter | Value |
 |---|---|
-| Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .rb .rake .gemspec .jbuilder` |
+| Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .vue .svelte .rb .rake .gemspec .jbuilder` |
 | Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
 | Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixture`, `fixtures` and any `<word>_fixture(s)`, `__fixtures__`, `snapshot`, `snapshots`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens` and their `-test(s)` or `_test(s)` compounds (`golden-test`), `__mocks__`, `mocks`, `cases` and a camelCase word ending in `Cases` (`configCases`), `dist`, `coverage`, `.next`, and `build` unless a `src` directory sits above it. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
 | Caps | none on the repository; 1 MB per file, which skips a bundle or a compiled file and says so. Measured across 35 repositories, no hand-written source exceeds 850 KB, and every file between 1 and 4 MB sat at the parse timeout boundary, flipping between crashed and parsed with machine load |
+
+A `.vue` or `.svelte` file is source for its script block alone (section 3). A `.svelte.js` or
+`.svelte.ts` file is a plain module and is read whole.
 
 Fixture and vendor directories are excluded because that code is deliberately unidiomatic. In one
 measured repository, 18 of 85 discovered areas were fixture directories, and a map that teaches a
@@ -137,7 +140,8 @@ Which parser reads a file is declared, not spelled. `plugins/anatomiya/lib/langs
 language: its extensions, its extensionless filenames, the scratch extension a path-less blob is
 written under, the grammar route per real extension, the dialect the retry may strip, the
 capabilities its callers ask about, how its tree nodes are addressed (`positions`: UTF-16 offsets
-or line numbers), and the name of the engine that hosts it. The seam routes each
+or line numbers), the family a test of it may be written in, whose rules find its script blocks
+where it is a component, and the name of the engine that hosts it. The seam routes each
 batch by that declaration, so nothing past it names a language or an engine. The registry is a leaf
 the parser child can read, which is what lets the corpus filter, the delivery globs, the grammar
 choice and the retry all take the same facts from one place; a wrong declaration fails at import,
@@ -177,6 +181,24 @@ not a file that declined. Every claim that
 reads code is answered as usual. If `flow-remove-types` is not installed at all the retry cannot
 run, and the scan and the check both say so by name rather than leaving a pile of rejected files
 with no explanation.
+
+A `.vue` or `.svelte` file is read by the same parser, through its script blocks. oxc reads no
+markup, so a scanner finds the blocks first: at most two, Vue's `<script>` and `<script setup>` or
+Svelte's module and instance scripts, by each compiler's own rules for where a block starts and
+ends. It never reads the JavaScript, because both compilers end a body at the first `</script`,
+inside a string too. Set beside `@vue/compiler-sfc` and `svelte/compiler`, it found the same blocks
+in 4,100 of 4,100 Vue files, in 3,586 of 3,586 Svelte files from three repositories, and in 4,461
+of 4,462 of Svelte's own test components. Everything outside a block is then replaced with spaces,
+line breaks kept, so the length in UTF-16 code units does not move and every offset and every line
+is the file's own, which is how the Flow strip keeps them. Each block is parsed apart, because the
+two may import the same name and one module may not declare a name twice, and the trees are joined
+into one program in file order. A block marked `lang="ts"` takes the TypeScript grammar, and one
+with no `lang` is read as a `.js` file is. A script that never closes, or a syntax error in either
+block, leaves the whole file rejected. A component with no script at all is read as an empty file:
+it keeps its name and its place in the layout and holds no sites. Neither retry above runs for a
+component. The template and the style block are never read, and the overview's Not covered section
+says so wherever the corpus holds one: `17 .vue and .svelte files are read for their script block;
+the template is not read`.
 
 A file is unexamined in four ways, and the scan names them apart because the reader's next move
 differs: it crashed the parser, the parser rejected its syntax, this tool could not read it, or it
@@ -399,7 +421,8 @@ a backslash is a character in a name rather than a separator.
 
 A dimension is one claim about one area. 49 ship, the filename row included: 28 for JavaScript, 33
 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and
-reaches a scan only when the checker runs. Each is defined by three quantities, not one.
+reaches a scan only when the checker runs. A component's script block is asked a part of the 28: 24
+for Vue and 24 for Svelte. Each is defined by three quantities, not one.
 
 | Quantity | Meaning |
 |---|---|
@@ -459,22 +482,22 @@ in `check`.
 
 | Key | Precision | Languages | Claim |
 |---|---|---|---|
-| `swallowed_error` | precise | js, jsx | catch blocks use the error they caught |
+| `swallowed_error` | precise | js, jsx, vue, svelte | catch blocks use the error they caught |
 | `module_state_const` | precise | js, jsx | module-level bindings are const |
-| `function_style` | precise | js, jsx | module-level functions are declared with function, not assigned as arrows |
-| `import_extension` | precise | js, jsx | relative imports carry the file extension |
-| `nullish_default` | precise | js, jsx | defaults are taken with `??`, not `\|\|` |
-| `hook_per_module` | partial | js, jsx | a module that exports a hook exports one |
-| `test_call_style` | precise | js, jsx | test cases are declared with `test()`, not `it()` |
-| `error_shape` | partial | js, jsx | failure is returned, not thrown |
-| `async_error_handling` | partial | js, jsx | async functions handle their own failures |
+| `function_style` | precise | js, jsx, vue, svelte | module-level functions are declared with function, not assigned as arrows |
+| `import_extension` | precise | js, jsx, vue, svelte | relative imports carry the file extension |
+| `nullish_default` | precise | js, jsx, vue, svelte | defaults are taken with `??`, not `\|\|` |
+| `hook_per_module` | partial | js, jsx, vue | a module that exports a hook exports one |
+| `test_call_style` | precise | js, jsx, vue, svelte | test cases are declared with `test()`, not `it()` |
+| `error_shape` | partial | js, jsx, svelte | failure is returned, not thrown |
+| `async_error_handling` | partial | js, jsx, vue, svelte | async functions handle their own failures |
 | `optional_chaining` | partial | js, jsx | optional values are read with `?.` |
-| `explicit_return_type` | partial | js, jsx | exported functions declare their return type |
+| `explicit_return_type` | partial | js, jsx, vue, svelte | exported functions declare their return type |
 | `type_only_import` | partial | js, jsx | imports used only as types are marked `import type` |
-| `non_null_assertion` | partial | js, jsx | possibly-absent values are read with `?.`, not asserted with `!` |
-| `absent_is_null` | partial | js, jsx | an absent value is returned as null, not undefined |
-| `iterate_with_for_of` | partial | js, jsx | collections are iterated with `for...of`, not `.forEach` |
-| `assertion_style` | partial | js, jsx | assertions are written with `expect()` |
+| `non_null_assertion` | partial | js, jsx, vue, svelte | possibly-absent values are read with `?.`, not asserted with `!` |
+| `absent_is_null` | partial | js, jsx, vue, svelte | an absent value is returned as null, not undefined |
+| `iterate_with_for_of` | partial | js, jsx, vue, svelte | collections are iterated with `for...of`, not `.forEach` |
+| `assertion_style` | partial | js, jsx, vue, svelte | assertions are written with `expect()` |
 | `hook_call_style` | precise | jsx | React's hooks are called by their bare name, not through React. |
 | `handler_is_named` | precise | jsx | an event handler prop is given a named function, not an inline arrow |
 | `spread_on_component` | precise | jsx | a prop spread lands on a component, not on a host element |
@@ -491,17 +514,17 @@ in `check`.
 | `column_null_declared` | partial | ruby | a column on a table the migration creates is declared `null: false` |
 | `table_primary_key_declared` | partial | ruby | new tables declare their primary key type |
 | `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
-| `function_naming_case` | precise | js, jsx | functions are named `<style>`, learned |
-| `exported_symbol_case` | precise | js, jsx | exported names are `<style>`, learned |
-| `exported_class_case` | precise | js, jsx | exported classes are named `<style>`, learned |
-| `exported_type_case` | precise | js, jsx | exported types are named `<style>`, learned |
-| `extends_base` | precise | js, jsx | classes here extend `<style>`, learned |
-| `interface_prefix` | precise | js, jsx | interfaces are named with a `<style>` prefix, learned |
-| `type_alias_prefix` | precise | js, jsx | type aliases are named with a `<style>` prefix, learned |
-| `doc_comment_style` | partial | js, jsx | exported functions carry a doc comment |
-| `route_logging` | partial | js, jsx | logging goes through the repository's own logger, not the console |
-| `route_network` | partial | js, jsx | network calls go through the repository's own client, not fetch directly |
-| `route_env` | partial | js, jsx | environment reads go through the repository's own config module, not process.env |
+| `function_naming_case` | precise | js, jsx, vue, svelte | functions are named `<style>`, learned |
+| `exported_symbol_case` | precise | js, jsx, vue, svelte | exported names are `<style>`, learned |
+| `exported_class_case` | precise | js, jsx, vue, svelte | exported classes are named `<style>`, learned |
+| `exported_type_case` | precise | js, jsx, vue, svelte | exported types are named `<style>`, learned |
+| `extends_base` | precise | js, jsx, vue, svelte | classes here extend `<style>`, learned |
+| `interface_prefix` | precise | js, jsx, vue, svelte | interfaces are named with a `<style>` prefix, learned |
+| `type_alias_prefix` | precise | js, jsx, vue, svelte | type aliases are named with a `<style>` prefix, learned |
+| `doc_comment_style` | partial | js, jsx, vue, svelte | exported functions carry a doc comment |
+| `route_logging` | partial | js, jsx, vue, svelte | logging goes through the repository's own logger, not the console |
+| `route_network` | partial | js, jsx, vue, svelte | network calls go through the repository's own client, not fetch directly |
+| `route_env` | partial | js, jsx, vue, svelte | environment reads go through the repository's own config module, not process.env |
 | `logger_over_puts` | partial | ruby | output goes through a logger, not puts |
 | `http_through_client` | partial | ruby | HTTP goes through the repository's own client, not `Net::HTTP` |
 | `class_base` | precise | ruby | classes here inherit `<style>`, learned |
@@ -510,6 +533,48 @@ in `check`.
 The five JSX rows are the ones that make the JSX total 33 rather than 28: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 11 to 16.
+
+A row is asked of a component's script only where it lists `vue` or `svelte` itself, and each was
+listed after being run on components of that framework and read against what a person would count.
+Three rows are asked of neither, because the answer is in the template. `module_state_const`: a
+top-level `let` in a component is state the template writes, and 1,252 of 2,568 measured Svelte
+sites are one. `optional_chaining`: `props` is never absent, and 1,424 of 1,425 measured Vue sites
+are a read with no `?.`, nearly all off `props`. `type_only_import`: a component the template renders is a
+value there, so one also named in a type reads as type-only. `error_shape` is not asked of Vue,
+where `setup()` returns the bindings its template reads and `return { data, error }` reads as a
+returned result, and `hook_per_module` is not asked of Svelte, where a prop named `useCache` reads
+as an exported hook. The five JSX rows and the type-checked row are asked of neither.
+
+Two skips keep the listed rows true. In a `.svelte` file `export let` declares a prop, so its
+declarator is no site for the six rows that would read it as an exported name or an exported
+function. In a `.vue` file a PascalCase function is no `function_naming_case` site, since it is a
+component the template renders and the template is not read. The filename row counts components
+apart from the modules beside them and says so: `component files here are named PascalCase`. Its
+sentence about relative imports declines a component import, which is written with its extension,
+and where the area holds components the not-counted line names that first: `not counted: an import
+of a .vue file, which is written with its extension; ...`.
+
+An area delivers on one glob for every language in it, so a claim counted over a directory's `.ts`
+files reaches an agent editing the `.vue` file beside them. Where an area holds a source file of a
+language the row is never asked of, the claim says which files it was counted over:
+
+```
+imports used only as types are marked import type, in .ts files
+  16 of 16 sites across 9 of 10 files, 8 authors  (partial: some sites are not visible statically)
+
+module-level bindings are const, in .ts files: 11 of 11 sites (matches model default)
+module-level functions are declared with function, not assigned as arrows: no convention. 31 of 31 sites (evidence)
+```
+
+That area holds ten `.ts` files and one `.vue`. The first two rows are not asked of Vue and carry
+the clause; the third is, and does not. The clause sits on the sentence because the sentence is the
+one part every form prints, so it costs no line. Whether it prints is a question about languages,
+and what it names is the files the row was asked of: a JSX row in an area of `.ts`, `.tsx` and
+`.vue` files reads `, in .tsx files`. Ruby beside JavaScript is the same case, `rescue blocks use
+the error they caught, in .rb files`, and a file with no extension is named whole, `, in .rb files
+and Gemfile`. A row that skipped a whole extension by content, as a typed row skips the `.js` files
+beside `.ts` ones, prints no clause. Measured on the 35-repository corpus, it changes 87 of 6,887
+area files and 705 lines, adds a line to none, and leaves 24 repositories as they were.
 
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports whose filename, up to its first
@@ -1307,6 +1372,10 @@ on `module.exports` is reachable at runtime, so that is a narrowing of the facet
 about CommonJS. The parser's static record holds only the ESM ones, so a repository written in
 `require` reported no exports at all and every function in it as a private helper.
 
+A component's script answers the same facets, with one more saying which framework's rules found
+it. A component with no script still counts as a source file that could have a test. It is never a
+test file itself, whatever it is named, because a runner collects nothing from markup.
+
 For Ruby: whether it declares cases in the RSpec vocabulary, inherits a minitest test case, or
 defines a `test_` method inside a class. A DSL call counts where it takes a block and sits outside
 every method, which is the altitude the JavaScript half reads: inside a `def` the call runs when
@@ -1456,7 +1525,13 @@ An area file gets the same counts over its own files, on one line under the head
 kinds: 40 .mjs; 0 test files; 28 of 40 have a namesake test
 ```
 
-and, for JavaScript and JSX areas, two roster lines under the directives:
+Where the area counts its components apart, the line carries both clauses:
+
+```
+kinds: 10 .ts, 4 .vue; 0 test files; 4 of 10 .ts files have a namesake test; 4 of 4 .vue files have a namesake test
+```
+
+JavaScript, JSX, Vue and Svelte areas also get two roster lines under the directives:
 
 ```
 most files here import: styled-components (84%), ~/components/base (61%), formik (60%)
@@ -1481,7 +1556,9 @@ one ending in `/` names a directory and resolves only through its `index`, the w
 TypeScript read `./base/`, `./` and `../`, SvelteKit's `$lib/` resolves the same way against the `src/lib` of the nearest
 directory above the importer that holds the file, anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
 tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` or
-`svelte.config.js` is read. Only importers outside the area count: a directory importing its own files is how it is
+`svelte.config.js` is read. A component is named only by a specifier that spells its extension:
+`./Foo.vue` is that file and a bare `./Foo` never is, since a bundler needs the extension written.
+Only importers outside the area count: a directory importing its own files is how it is
 written, not who depends on it. This is the counted form of "check before creating", and Ruby has
 no static import surface, so there is no Ruby line.
 
@@ -1714,7 +1791,8 @@ Roughly, in order of how much they move the number of stated claims:
 - **Actual consistency.** The ratio gate is 0.90. Anything your team is 80% consistent about will
   print as counts, not as a claim. On the example repository, the ratio gate is the one most of the
   slots that did not state failed.
-- **Language.** JavaScript, TypeScript and Ruby only.
+- **Language.** JavaScript, TypeScript and Ruby, and the script blocks of Vue and Svelte files.
+  Nothing else is read, a component's template included.
 - **Repository size.** No cap. A 2,468 file repository takes about 1.8 seconds against a pinned
   baseline, a 5,477 file Ruby repository about 6.2, and a synthetic 100,000 file repository about
   9.2. Scaling is close to linear in file count. There was a 50,000 file cap, and hitting it did not
