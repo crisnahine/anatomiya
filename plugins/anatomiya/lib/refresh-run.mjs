@@ -187,7 +187,7 @@ async function stampOf(root) {
     .update("\0")
     .update(pinBytes)
     .update("\0")
-    .update(buildVersion())
+    .update(buildVersion() ?? "")
     .update("\0")
     .update(checkerStamp(root))
     .digest("hex");

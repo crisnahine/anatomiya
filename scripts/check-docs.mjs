@@ -31,7 +31,7 @@ import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules
 import { FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { GATES } from "../plugins/anatomiya/lib/gates.mjs";
-import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
+import { ENGINES, LANGUAGES, hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PROBE_IDS } from "../plugins/anatomiya/lib/readiness.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
@@ -793,7 +793,7 @@ export function checkDocs() {
   // three. A number or a number word, so the phrasing a sentence reads best in
   // is still a phrasing this parses.
   const N = `\\d+|${WORDS.join("|")}`;
-  const hosted = LANGUAGES.filter((l) => l.engine === "tree-sitter").length;
+  const hosted = hostedBy("tree-sitter").length;
   const COUNTS = [
     [`(${N})\\s+runtime\\s+dependencies`, deps.length, (n) => `the plugin's manifest declares ${n}`],
     [`(${N})\\s+parser\\s+engines`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`],

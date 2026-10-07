@@ -22,6 +22,7 @@ import {
   pairedWith,
 } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { PAIRINGS } from "../plugins/anatomiya/lib/pairing.mjs";
+import { stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 
 test("the dotted namesake suffixes are the ones the name regexes count", () => {
   for (const stem of ["a.test", "a.spec", "a.cy"]) {
@@ -306,4 +307,13 @@ test("a path names a test by its family's rule: the name alone where the tool re
   ]) {
     assert.equal(namesATest(rel, family), said, rel);
   }
+});
+
+test("a name that is all extension has itself for a stem, and names no test", () => {
+  // The one kind of path a last-dot cut and `stemOf` read differently among these languages: "" against ".py".
+  for (const [rel, family] of [["tests/.py", "python"], ["pkg/.go", "go"], ["tests/.php", "php"], ["src/test/java/.java", "java"]]) {
+    assert.equal(namesATest(rel, family), false, rel);
+  }
+  assert.equal(coveredStem(stemOf("tests/.py"), "python"), null);
+  assert.equal(stemOf("tests/.py"), ".py");
 });

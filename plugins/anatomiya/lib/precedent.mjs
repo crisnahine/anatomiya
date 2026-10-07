@@ -8,8 +8,7 @@
  * instead, and answers it from counts the scan already took (H38).
  */
 import { byCode, dirOf } from "./paths.mjs";
-import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, namesATest, pairedWith, sitsWhereItsToolReads } from "./test-shape.mjs";
-import { withoutTree } from "./companions.mjs";
+import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, namesATest, pairedWith, sitsWhereItsToolReads, withoutTree } from "./test-shape.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";

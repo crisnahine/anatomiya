@@ -187,12 +187,12 @@ function vue(source) {
         start: tag.end,
         end: close.end,
         lang: typeof lang === "string" && lang ? lang : "js",
-        role: tag.attrs.has("setup") ? "setup" : "instance",
+        setup: tag.attrs.has("setup"),
         src: tag.attrs.has("src"),
       };
       // An empty block is no block, so it does not use up its kind's one place.
       if (block.src || source.slice(block.start, block.end).trim() !== "") {
-        if (block.role === "setup") setup ??= block;
+        if (block.setup) setup ??= block;
         else plain ??= block;
       }
     }
@@ -202,7 +202,7 @@ function vue(source) {
   const blocks = [setup, plain]
     .filter((b) => b && !b.src && LANGS.has(b.lang))
     .sort((a, b) => a.start - b.start)
-    .map(({ start, end, lang, role }) => ({ start, end, lang, role }));
+    .map(({ start, end, lang }) => ({ start, end, lang }));
   return { blocks, unterminated };
 }
 
@@ -255,8 +255,8 @@ function svelte(source) {
       if (!dirty) {
         const block = { start: tag.end, end: close.end };
         if (tag.attrs.has("module") || tag.attrs.get("context") === "module") {
-          module ??= { ...block, role: "module" };
-        } else instance ??= { ...block, role: "instance" };
+          module ??= block;
+        } else instance ??= block;
       }
     }
     i = close.after;
@@ -264,7 +264,7 @@ function svelte(source) {
   const blocks = [module, instance]
     .filter(Boolean)
     .sort((a, b) => a.start - b.start)
-    .map(({ start, end, role }) => ({ start, end, lang: ts ? "ts" : "js", role }));
+    .map(({ start, end }) => ({ start, end, lang: ts ? "ts" : "js" }));
   return { blocks, unterminated };
 }
 

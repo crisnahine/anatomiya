@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dimensionsFor } from "./dimensions.mjs";
 import { collectHits } from "./walk.mjs";
 import { withOneBranch } from "./csharp-directives.mjs";
-import { ENGINES, LANGUAGES, grammarFor, mayHoldDirectives } from "./langs.mjs";
+import { ENGINES, declOf, grammarFor, hostedBy, mayHoldDirectives } from "./langs.mjs";
 import { treeFacets } from "./tree-facets.mjs";
 import { copyTree, walkTree } from "./tree-walk.mjs";
 import { installedVersion } from "./version.mjs";
@@ -196,16 +196,17 @@ export function failure(rel, err) {
   };
 }
 
-const HOSTED = LANGUAGES.filter((l) => l.engine === ENGINE);
+const HOSTED = hostedBy(ENGINE);
 
 /** Which of the grammars this engine's languages name load here, asked the way a parse asks. */
 export async function probeGrammars({ grammars = GRAMMARS } = {}) {
   const absent = [];
-  for (const { id, grammars: named } of HOSTED) {
+  for (const id of HOSTED) {
+    const named = declOf(id).grammars.default;
     try {
-      await parserFor(named.default, grammars, id);
+      await parserFor(named, grammars, id);
     } catch {
-      absent.push(named.default);
+      absent.push(named);
     }
   }
   return { total: HOSTED.length, missing: absent };

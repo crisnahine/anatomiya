@@ -12,7 +12,7 @@
  * data the child can load.
  */
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { absentInterpreter } from "./child.mjs";
 import { firstLine } from "./encode.mjs";
 import { ENGINES, engineOf } from "./langs.mjs";
-import { installedVersion, olderThan } from "./version.mjs";
+import { installedVersion, manifestVersion, olderThan } from "./version.mjs";
 
 /**
  * The type checker, probed beside the engines and deliberately not one of them.
@@ -127,14 +127,8 @@ export function pluginRoot() {
   return dirname(dirname(fileURLToPath(import.meta.url)));
 }
 
-/** The version this build's own manifest states, or `""` where it cannot be read: what a stamp means by "this build". */
-export function buildVersion() {
-  try {
-    return JSON.parse(readFileSync(join(pluginRoot(), "package.json"), "utf8")).version ?? "";
-  } catch {
-    return "";
-  }
-}
+/** The version this build's own manifest states, or null where it cannot be read: what a stamp means by "this build". */
+export const buildVersion = () => manifestVersion(pluginRoot());
 
 /** The declaration behind an engine name. An unknown name is a bug, so it says so. */
 function probeFor(id) {

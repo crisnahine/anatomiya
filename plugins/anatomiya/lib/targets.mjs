@@ -53,6 +53,17 @@ export const PREFIX = "anatomiya-";
 
 const HEAD = ["---", `generator: ${GENERATOR}`];
 
+/**
+ * Refuse a table keyed by target that lacks one of the three or holds a key that is none.
+ *
+ * Called where each such table loads: a target one lacks is otherwise a
+ * TypeError on the first area written for it, in the middle of a scan.
+ */
+export function assertPerTarget(name, table) {
+  for (const id of TARGET_IDS) if (!Object.hasOwn(table, id)) throw new Error(`${name} has no entry for ${id}`);
+  for (const id of Object.keys(table)) if (!TARGET_IDS.includes(id)) throw new Error(`${name} holds ${id}, which is no target`);
+}
+
 /** Refuse a list holding a name that is no target's id, naming the first and the ids there are. */
 export function assertTargets(names) {
   const unknown = names.find((n) => !TARGET_IDS.includes(n));
@@ -75,7 +86,9 @@ export const areaName = (target, areaId) => `${PREFIX}area-${areaId}${target.ext
 
 // A comma separates patterns in both tools and a brace left after expansion
 // would hide one. The rest is what each reader changes on the way to its matcher.
+// Claude Code is handed every pattern as the caller spells it.
 const UNSPELLABLE = {
+  claude: null,
   // No YAML here: Cursor cuts the line at its first colon and keeps the rest raw.
   // It ends the frontmatter at any `---`, trims each pattern, unwraps a value
   // that opens and closes on one quote, and turns a backslash into a slash.
@@ -83,6 +96,10 @@ const UNSPELLABLE = {
   cursor: /---|[,{}\\\r\n]|^[\s"'!#]|\s$/,
   copilot: /[,{}"\\\r\n]/,
 };
+// Cursor reads a `globs` value of exactly `true` or `false` as a boolean.
+const MISREAD_ALONE = { claude: null, cursor: /^(true|false)$/, copilot: null };
+assertPerTarget("UNSPELLABLE", UNSPELLABLE);
+assertPerTarget("MISREAD_ALONE", MISREAD_ALONE);
 const EXT_BRACE = /\.\{([^{}]+)\}$/;
 
 const expanded = (g) => {
@@ -106,9 +123,10 @@ const within = (dir, parent) => parent === "" || dir === parent || dir.startsWit
  */
 export function spelledGlobs(target, globs, text) {
   const out = { patterns: [], widened: [], dropped: [], unspellable: [] };
-  if (isClaude(target)) return { ...out, patterns: globs.map((g) => text(g)) };
+  const unspellable = UNSPELLABLE[target.id];
+  if (unspellable === null) return { ...out, patterns: globs.map((g) => text(g)) };
   // Read off the emitted string: an encoder can fold a comma in that the name did not hold.
-  const cannot = (p) => UNSPELLABLE[target.id].test(p);
+  const cannot = (p) => unspellable.test(p);
   const written = [];
   for (const g of globs.filter((g) => !g.negated)) {
     const each = expanded(g).map((e) => text(e));
@@ -119,15 +137,14 @@ export function spelledGlobs(target, globs, text) {
     out.patterns.push(...each);
     written.push(g);
   }
-  // Cursor reads a `globs` value of exactly `true` or `false` as a boolean.
-  if (target.id === "cursor" && out.patterns.length === 1 && /^(true|false)$/.test(out.patterns[0])) {
+  if (out.patterns.length === 1 && MISREAD_ALONE[target.id]?.test(out.patterns[0])) {
     out.unspellable.push(text(written.pop()));
     out.patterns = [];
   }
   // Only a pattern that recurses matches below its own directory.
   const reached = (g) => written.some(({ dir, tail }) => g.dir === dir || (tail.startsWith("**/") && within(g.dir, dir)));
   out.dropped = globs.filter((g) => g.negated && reached(g)).map((g) => text({ ...g, negated: false }));
-  if (target.id === "copilot") out.widened = out.patterns.filter((p) => !p.startsWith("**/"));
+  if (target.widens !== null) out.widened = out.patterns.filter((p) => !p.startsWith("**/"));
   return out;
 }
 
@@ -137,15 +154,22 @@ const SCOPE = {
   copilot: (patterns) => [`applyTo: "${patterns.join(",")}"`],
 };
 const EVERYWHERE = { claude: [], cursor: ["alwaysApply: true"], copilot: ['applyTo: "**"'] };
+// Why a target cannot be handed an area file with no pattern, or null where it can.
+const NEEDS_A_PATTERN = {
+  // Measured for Claude Code: a `paths` key with nothing under it loads on every turn.
+  claude: () => "an area file with no pattern would load on every turn",
+  cursor: null,
+  // An `applyTo` cannot match nothing, so the writer leaves this file out.
+  copilot: (target) => `no pattern of this area can be written for ${target.reader}`,
+};
+assertPerTarget("SCOPE", SCOPE);
+assertPerTarget("EVERYWHERE", EVERYWHERE);
+assertPerTarget("NEEDS_A_PATTERN", NEEDS_A_PATTERN);
 
 /** The lines from one `---` fence to the other, both included. */
 export function frontmatter(target, { kind, patterns = [] }) {
   if (kind === "overview") return [...HEAD, ...EVERYWHERE[target.id], "---"];
-  if (patterns.length === 0) {
-    // Measured for Claude Code: a `paths` key with nothing under it loads on every turn.
-    if (isClaude(target)) throw new Error("an area file with no pattern would load on every turn");
-    // An `applyTo` cannot match nothing, so the writer leaves this file out.
-    if (target.id === "copilot") throw new Error(`no pattern of this area can be written for ${target.reader}`);
-  }
+  const refused = patterns.length === 0 ? NEEDS_A_PATTERN[target.id] : null;
+  if (refused) throw new Error(refused(target));
   return [...HEAD, ...SCOPE[target.id](patterns), "---"];
 }

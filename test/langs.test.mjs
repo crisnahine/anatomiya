@@ -101,10 +101,9 @@ test("a declaration whose place tests name no directory or no runner refuses to 
 
 test("what a component's unread markup changes about its script is the declaration's to say, and is asked of the path", () => {
   for (const decl of LANGUAGES) {
-    const said = { vue: { propsByExportLet: false, mountsByName: true }, svelte: { propsByExportLet: true, mountsByName: false } }[decl.id] ?? null;
-    assert.deepEqual(decl.markup, said, decl.id);
+    const said = { vue: "mountsByName", svelte: "propsByExportLet" }[decl.id] ?? null;
+    assert.equal(decl.markup, said, decl.id);
   }
-  assert.equal(Object.isFrozen(declOf("vue").markup), true);
   assert.equal(exportLetIsProp("src/Card.svelte"), true);
   assert.equal(templateMountsByName("src/Card.vue"), true);
   for (const rel of ["src/Card.vue", "src/state.svelte.ts", "src/a.ts", "Card.svelte/a.js", ""]) assert.equal(exportLetIsProp(rel), false, rel);
@@ -119,9 +118,8 @@ test("what a component's unread markup changes about its script is the declarati
 test("a declaration that does not say what its markup changes, or says it of a file with no markup, refuses to load", () => {
   const with_ = (id, markup) => LANGUAGES.map((l) => (l.id === id ? { ...l, markup } : l));
   assert.throws(() => assertRegistry(with_("svelte", null)), /svelte embeds its script and does not say what its markup changes/);
-  assert.throws(() => assertRegistry(with_("svelte", { propsByExportLet: true })), /svelte does not say whether its markup mountsByName/);
-  assert.throws(() => assertRegistry(with_("vue", { propsByExportLet: "no", mountsByName: true })), /vue does not say whether its markup propsByExportLet/);
-  assert.throws(() => assertRegistry(with_("go", { propsByExportLet: false, mountsByName: false })), /go has no markup to change its script/);
+  assert.throws(() => assertRegistry(with_("svelte", "slots")), /svelte says its markup changes its script by slots, which is none of propsByExportLet, mountsByName/);
+  assert.throws(() => assertRegistry(with_("go", "mountsByName")), /go has no markup to change its script/);
   assert.throws(() => assertRegistry(with_("js", undefined)), /js has no markup to change its script/);
 });
 

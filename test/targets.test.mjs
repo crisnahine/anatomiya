@@ -8,6 +8,7 @@ import {
   PREFIX,
   TARGETS,
   TARGET_IDS,
+  assertPerTarget,
   assertTargets,
   isClaude,
   parseTargets,
@@ -366,4 +367,14 @@ test("the claude frontmatter is byte-equal to what the renderer writes today", (
   const result = { root: "/repo", corpus: { files: 0, truncated: false, dropped: {} }, parse: { parsed: 0, crashed: 0, skipped: 0 }, suppressAll: true, areas: [] };
   const overview = renderOverview(result, { uncovered: 0 });
   assert.deepEqual(frontmatter(claude, { kind: "overview" }), fenceOf(overview));
+});
+
+test("a table keyed by target is refused where it lacks a target or holds a key that is none", () => {
+  const whole = Object.fromEntries(TARGET_IDS.map((id) => [id, null]));
+  assert.doesNotThrow(() => assertPerTarget("T", whole));
+  const { copilot: _, ...short } = whole;
+  assert.throws(() => assertPerTarget("T", short), /^Error: T has no entry for copilot$/);
+  assert.throws(() => assertPerTarget("T", { ...whole, windsurf: null }), /^Error: T holds windsurf, which is no target$/);
+  // An inherited name is no entry.
+  assert.throws(() => assertPerTarget("T", Object.create(whole)), /T has no entry for claude/);
 });

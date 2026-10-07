@@ -12,11 +12,14 @@ import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-/** The version the manifest in a directory states for the package of this name, or null where there is none to read, it is another package's, or it states none. */
-export function manifestVersion(dir, name) {
+/**
+ * The version the manifest in a directory states for the package of this name, or null where there is none to read, it is
+ * another package's, or it states none. Asked for no name, it is the version of whichever package the directory holds.
+ */
+export function manifestVersion(dir, name = null) {
   try {
     const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
-    return manifest.name === name ? (manifest.version ?? null) : null;
+    return name === null || manifest.name === name ? (manifest.version ?? null) : null;
   } catch {
     return null;
   }

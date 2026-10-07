@@ -125,9 +125,6 @@ export function walkTree(program, visit) {
 /** The first child filling this field of the node, or null. */
 export const fieldOf = (node, name) => node.children.find((child) => child.field === name) ?? null;
 
-/** Every child filling this field, for a field that repeats. */
-export const fieldsOf = (node, name) => node.children.filter((child) => child.field === name);
-
 /** The one field every entry of the table puts a definition's name in. A table naming two is refused: `nameOf` reads one. */
 export function nameFieldOf(shapes) {
   const names = [...new Set(Object.values(shapes).map((entry) => entry.name))];

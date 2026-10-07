@@ -530,6 +530,7 @@ test("the stamp a verdict is measured under moves with the build, the root confi
 
   assert.equal(new Set([none, base, edited, built]).size, 4);
   assert.equal(verdictStamp(dir, "1.0.1"), built, "and holds still while they do");
+  assert.equal(verdictStamp(dir, null), verdictStamp(dir, ""), "a build whose manifest could not be read is stamped as no version");
   assert.match(built, /^[0-9a-f]{64}$/);
 });
 

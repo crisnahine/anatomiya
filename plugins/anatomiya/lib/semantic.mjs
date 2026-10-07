@@ -76,9 +76,6 @@ export function checkerStamp(root, { specifier = "typescript" } = {}) {
   return `${hasInstall(root)}\0${configNameIn(root) ?? ""}\0${resolved}`;
 }
 
-// More than any config a person writes; past it an edit is not seen.
-const CONFIG_STAMP_BYTES = 1024 * 1024;
-
 /**
  * What a verdict is measured under: this build, `checkerStamp`, what an install
  * leaves behind, and the bytes of the config the root is read through, since an
@@ -87,18 +84,19 @@ const CONFIG_STAMP_BYTES = 1024 * 1024;
 export function verdictStamp(root, build) {
   const name = configNameIn(root);
   const config = name === null ? "" : configStamp(root, join(root, name));
-  return createHash("sha256").update(`${build}\0${checkerStamp(root)}\0${installStamp(root)}\0${config}`).digest("hex");
+  return createHash("sha256").update(`${build ?? ""}\0${checkerStamp(root)}\0${installStamp(root)}\0${config}`).digest("hex");
 }
 
 /**
  * A root config's bytes, or what stands in for them. One that leaves the
  * repository gives the reason the checker refuses it for and is not opened.
  * Bounded and typed: the file comes with the repository, and one linked to an
- * endless device read whole never returns.
+ * endless device read whole never returns. The bound is more than any config
+ * a person writes; past it an edit is not seen.
  */
 function configStamp(root, path) {
   if (!insideRoot(root, path)) return CONFIG_REFUSALS.escaped;
-  const entry = readHead(path, CONFIG_STAMP_BYTES);
+  const entry = readHead(path);
   return entry.kind === "file" ? entry.head : entry.kind;
 }
 
