@@ -43,7 +43,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       # 3.4, not 3.3: 3.3 ships prism 0.19, which the parser child rejects by
       # version because a rescue chain and a constant path are spelled
@@ -118,7 +118,7 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       # One run, and every floor read off its record rather than off the total
       # node prints. A floor over a whole scope says nothing about one file
@@ -173,7 +173,7 @@ jobs:
         with:
           node-version: "22"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       # Every number in the prose that the code also states. Both drifted in one
       # afternoon: the README claimed 21 dimensions after 31 shipped, and a gate
@@ -277,7 +277,7 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Scan a real repository
         shell: bash

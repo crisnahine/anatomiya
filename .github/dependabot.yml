@@ -1,6 +1,6 @@
 version: 2
 
-# Monthly and grouped. There are two runtime dependencies and a handful of actions, so a
+# Monthly and grouped. There are three runtime dependencies and a handful of actions, so a
 # weekly ungrouped schedule would open more pull requests than there is work.
 updates:
   # The root only, on purpose. `plugins/anatomiya/package-lock.json` is not

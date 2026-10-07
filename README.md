@@ -86,7 +86,7 @@ Or skip the plugin and run it from a clone:
 
 ```
 git clone https://github.com/crisnahine/anatomiya
-cd anatomiya && npm install
+cd anatomiya && npm install --ignore-scripts
 node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo
 ```
 
@@ -484,7 +484,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 ## Development
 
 ```
-npm install
+npm install --ignore-scripts
 node --test 'test/**/*.test.mjs'
 ```
 

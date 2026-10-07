@@ -44,7 +44,7 @@ jobs:
           echo "release notes:"
           cat "$RUNNER_TEMP/notes.md"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       # The runner image ships no prism, so without this the release would run
       # with every Ruby test skipped and ship a tier nothing verified.
