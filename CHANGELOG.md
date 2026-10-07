@@ -112,9 +112,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   under one of those exact names is left out with it.
 - The overview's sentence about a directory with no test precedent prints only where such a
   directory has a line in the same section. A root the line budget folded away could put it there
-  alone, so it read as being about the directories that were printed: on backstage, fastlane,
-  vscode, prisma and next.js it was armed only by a folded root and is gone. A repository that
-  prints an untested directory keeps it.
+  alone, so it read as being about the directories that were printed. Against 0.13.4 it is gone
+  from four of the 35 measured repositories. On prisma and next.js that release printed it with
+  the directory that armed it folded. On backstage and vscode that directory
+  (`docs-ui/src/app/components`, `src/vscode-dts`) had a line in that release and is folded in
+  this version, so the sentence goes with it. A repository that prints an untested directory
+  keeps it.
 
 ## [0.13.4] - 2026-10-07
 

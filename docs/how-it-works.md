@@ -1588,9 +1588,13 @@ compiler builds it for nothing else. A pytest fixture is not a case whatever it 
 conftest names one `test_client`), and neither is a function inside a function. Pest's `it(...)`
 and `test(...)` at file level count under a test tree only.
 
-Rust is the one language whose tests mostly sit in the file they test. cargo builds every `.rs`
-directly in a crate's `tests` directory as an integration test, whatever it holds, so such a file is
-a test by place: a crate is a directory holding a `Cargo.toml` or a `src`. ripgrep declares 349 of
+Rust is the one language whose tests mostly sit in the file they test. By default cargo builds
+every `.rs` directly in a crate's `tests` directory as an integration test, whatever it holds, so
+such a file is a test by place: a crate is a directory holding a `Cargo.toml` or a `src`. A manifest
+can turn that default off and the scan reads no manifest. ripgrep sets `autotests = false` and
+declares one target, `tests/tests.rs`: the other nine files directly under `tests` are its modules,
+all ten count as specs, and four of the ten hold no case (the target file, `hay.rs`, `util.rs` and
+`macros.rs`). ripgrep declares 349 of
 its 365 cases with a macro of its own, `rgtest!`, 333 of them in six of the ten files directly
 under `tests`, and reading those by their attributes alone printed `3 cargo test specs under
 crates` where the line is `15 cargo test specs`. A file deeper down, `tests/common/mod.rs` or
@@ -1731,8 +1735,14 @@ Every clause is dropped when it counts nothing.
   sits beside it, a PHP `tests` and the `src` or `app` beside it. serilog keeps
   `test/Serilog.Tests/Core/BatchingSinkTests.cs` for `src/Serilog/Core/Sinks/Batching/BatchingSink.cs`
   and read 18 of 113 where 28 have a test named for them; gson went from 27 of 80 to 34, and
-  Laravel from 166 of 1,630 to 277. Two source files of one stem in the project are credited with
-  nothing by it, since the stem cannot say which the test was written for. A flat test directory
+  Laravel from 166 of 1,630 to 270. Two source files of one stem in the project are credited with
+  nothing by it, since the stem cannot say which the test was written for. A PHP test whose name
+  is its directory's name and a class after it covers, by the pairing, only a source under a
+  directory of that name: Laravel's `tests/Session/SessionStoreTest.php` tests
+  `Illuminate\Session\Store` and does not answer `Cache/SessionStore.php`. Seven Laravel files
+  and one of composer's lose a credit to that, five of them credited to a test of another class
+  and three rightly (`Cache/DatabaseLock.php`, tested from `tests/Integration/Database`, is one).
+  A flat test directory
   is no pairing: ktor keeps `<module>/jvm/test`, and about half of the stem matches there are
   another class's. Such a match votes for the place the mirrored tests name, where it sits inside
   one. A Rust file holding its own tests has no other file carrying its stem, so it is
@@ -1788,10 +1798,15 @@ its gate matter. A zero means no namesake was matched, never that the directory 
 repository has to be seen pairing tests with sources somewhere before the sentence can say it does
 not here. That half is asked of every root the roster counted, printed or folded, since it is a fact
 about the repository. The other is asked of the printed roots only: the directory with no precedent
-has to have a line, or the sentence reads as being about the directories that do. fastlane printed
-it over five Ruby roots at 15 to 86 namesakes each, armed by a Java directory of 19 files folded
-into `and 8 more directories`. Of 56 repositories measured, six printed it on a folded root alone
-and no longer do.
+has to have a line, or the sentence reads as being about the directories that do. Asked of every
+counted root, fastlane prints it over five Ruby roots at 15 to 86 namesakes each, armed by a Java
+directory of 19 files folded into `and 8 more directories`. Of 56 repositories measured with one
+build, six print it on a folded root alone under that reading and none of the six under this one.
+
+A sentence the printed roots do not arm holds no line. The roots are fitted to the budget without
+it, up to the first root that would arm it: vscode's overview prints `extensions` in that line.
+Where the next root in line is the arming one, as on fastlane, the root and the sentence cannot
+both have the line and it stays empty.
 
 ### In an area file
 

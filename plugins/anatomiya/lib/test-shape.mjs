@@ -136,8 +136,8 @@ const JVM_NAMES = { camel: ["Tests", "Test", "IT"] };
  * absent: two files in the 21 repositories end in it and neither is a test.
  * `TestCase` is what a base class is called, 69 files and 24 with no case.
  *
- * Rust has no name. cargo collects by place, a file directly in a crate's
- * `tests`, and a file's own unit tests sit inside it.
+ * Rust has no name. cargo collects by place by default, a file directly in a
+ * crate's `tests`, and a file's own unit tests sit inside it.
  */
 export const FAMILY_TEST_NAMES = {
   python: { prefixes: ["test_"], suffixes: ["_test"], alone: true },
