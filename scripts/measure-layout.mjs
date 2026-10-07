@@ -26,7 +26,7 @@ import { corpusRepos, semanticCell } from "./e2e-corpus.mjs";
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
-  holdsNothing,
+  isProducer,
   isStoryFile,
   isTestFile,
   majorityDir,
@@ -121,8 +121,7 @@ function recountRoot(path, corpus, testFiles, byStem) {
   // root whose bulk is screenshots or markdown has real producers under the
   // second one, and reading only exts[0] counts every one of them as zero.
   const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
-  const producersOf = (counted) =>
-    own.filter((f) => f.lang && extOf(f.rel) === counted && !holdsNothing(f.facets) && !isTest(f) && !isStoryFile(f.rel));
+  const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
   const producers = producersOf(producerExt);
   const componentExt = exts.find(
     ([ext]) => ext !== producerExt && own.some((f) => f.lang && extOf(f.rel) === ext && embeddedIn(f.lang) !== null))?.[0];
@@ -309,7 +308,7 @@ function checkSection(section, corpus, root, recordRoots) {
   // The same index the scan hands its roots, over the same corpus: the sources
   // are what decide ownership and what a second spelling is learned from, and
   // an index built from the test files alone answers a narrower question.
-  const sources = corpus.filter((f) => f.lang && !holdsNothing(f.facets) && !isTest(f) && !isStoryFile(f.rel));
+  const sources = corpus.filter((f) => isProducer(f, mirrored));
   const byStem = namesakeIndex(testFiles, sources);
   let printedFiles = 0;
 

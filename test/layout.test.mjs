@@ -1091,20 +1091,33 @@ test("a component with markup and no script still owes a test", () => {
   assert.deepEqual(record.companions, { with: 2, of: 4, root: "src/components", ext: ".vue" });
 });
 
-test("a component with no script is never a test, wherever it sits and whatever it is named", () => {
-  const svelte = { empty: true, embedded: "svelte" };
-  const vue = { empty: true, embedded: "vue" };
+test("a component is never a test, wherever it sits, whatever it is named and whatever its script holds", () => {
+  // No runner collects a `.vue` or `.svelte` file: vitepress keeps its e2e
+  // site's 5 theme components under `__tests__` and read 78 test files for 73.
+  for (const [lang, ext] of [["vue", "vue"], ["svelte", "svelte"]]) {
+    for (const facets of [{ empty: true, embedded: lang }, { embedded: lang }, { embedded: lang, testRunner: "vitest", testCalls: true }]) {
+      assert.equal(isTestFile(file(`src/__tests__/Fixture.${ext}`, lang, facets)), false);
+      assert.equal(isTestFile(file(`src/Foo.test.${ext}`, lang, facets)), false);
+      assert.equal(isTestFile(file(`test/unit/Foo.${ext}`, lang, facets), new Set([`test/unit/Foo.${ext}`])), false);
+    }
+  }
+  assert.equal(isTestFile(file("src/__tests__/Foo.tsx", "jsx", {})), true, "a module there is one");
+});
 
-  assert.equal(isTestFile(file("src/__tests__/Fixture.svelte", "svelte", svelte)), false);
-  assert.equal(isTestFile(file("src/__tests__/Foo.vue", "vue", vue)), false);
-  assert.equal(isTestFile(file("src/Foo.test.vue", "vue", vue)), false);
-  assert.equal(isTestFile(file("test/unit/Foo.vue", "vue", vue), new Set(["test/unit/Foo.vue"])), false);
-  assert.equal(
-    isTestFile(file("src/__tests__/Foo.vue", "vue", { embedded: "vue" })),
-    isTestFile(file("src/__tests__/Foo.tsx", "jsx", {})),
-    "a component that holds a script is read the way a module there is"
-  );
-  assert.equal(isTestFile(file("src/__tests__/Foo.vue", "vue", { embedded: "vue" })), true);
+test("a component in a tests directory is in neither number of the namesake count, and owns no test", () => {
+  const corpus = [
+    ...files(3, (i) => file(`pkg/src/C${i}.vue`, "vue", { embedded: "vue" })),
+    file("pkg/__tests__/Host.vue", "vue", { embedded: "vue" }),
+    file("pkg/__tests__/C0.vue", "vue", { embedded: "vue" }),
+    { ...file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }), facets: { testRunner: "vitest", imports: [{ module: "./C0.vue" }] } },
+    file("pkg/__tests__/C1.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".vue", 5], [".ts", 2]]);
+  assert.deepEqual(record.tests, [{ runner: "vitest", files: 2, sub: "__tests__", under: 2 }]);
+  assert.deepEqual(record.companions, { with: 2, of: 3, root: "pkg/__tests__", ext: ".vue" });
+  assert.equal(testsLine(corpus)[0].files, 2);
 });
 
 test("a module the parse found empty stays out of both sides, beside a component that does not", () => {
