@@ -51,7 +51,7 @@ const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"
 // tail match, or `@/utils/user` looks for a directory literally called `@`.
 const ALIASES = ["~/", "@/", "#/", "src/"];
 
-// SvelteKit's alias for `src/lib`. Its tail keeps `lib`, so only a file under one answers.
+// SvelteKit's alias for the `src/lib` of the importer's own project. A `svelte.config.js` that repoints it is not read.
 const LIB_ALIAS = "$lib/";
 
 /**
@@ -113,18 +113,20 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   // is never `base.ts`.
   const dirOnly = spec.endsWith("/");
   if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
-    const at = posix.join(posix.dirname(importerRel), spec).replace(/\/+$/, "");
-    const indexes = EXTENSIONS.map((e) => `${at}/index${e}`);
-    const candidates = dirOnly ? indexes : [at, ...emittedFrom(at), ...EXTENSIONS.map((e) => at + e), ...indexes];
-    for (const candidate of candidates) {
-      if (corpusRels.has(candidate)) return candidate;
-    }
-    return null;
+    return fileAt(posix.join(posix.dirname(importerRel), spec), dirOnly, corpusRels);
   }
 
-  const rooted = spec.startsWith(LIB_ALIAS) ? `src/lib/${spec.slice(LIB_ALIAS.length)}` : spec;
-  const alias = ALIASES.find((a) => rooted.startsWith(a));
-  const tail = (alias ? rooted.slice(alias.length) : rooted).replace(/\/+$/, "");
+  if (spec.startsWith(LIB_ALIAS)) {
+    // Nearest first, and never the tail match below: two apps each hold a
+    // `src/lib/utils.ts`, and a `tools/lib` is nobody's `$lib`.
+    for (let dir = posix.dirname(importerRel); ; dir = posix.dirname(dir)) {
+      const found = fileAt(posix.join(dir, "src/lib", spec.slice(LIB_ALIAS.length)), dirOnly, corpusRels);
+      if (found !== null || dir === ".") return found;
+    }
+  }
+
+  const alias = ALIASES.find((a) => spec.startsWith(a));
+  const tail = (alias ? spec.slice(alias.length) : spec).replace(/\/+$/, "");
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
@@ -140,6 +142,14 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   const ext = extOf(tail);
   const found = index.get(`/${withoutExtension(tail)}`) ?? null;
   return found !== null && [ext, ...(SOURCE_OF[ext] ?? [])].includes(extOf(found)) ? found : null;
+}
+
+/** The file a path names as written, through an extension it leaves off or emits, or as a directory's index. */
+function fileAt(path, dirOnly, corpusRels) {
+  const at = path.replace(/\/+$/, "");
+  const indexes = EXTENSIONS.map((e) => `${at}/index${e}`);
+  const candidates = dirOnly ? indexes : [at, ...emittedFrom(at), ...EXTENSIONS.map((e) => at + e), ...indexes];
+  return candidates.find((candidate) => corpusRels.has(candidate)) ?? null;
 }
 
 /** The TypeScript sources a path spelled with an emitted extension is compiled from. */

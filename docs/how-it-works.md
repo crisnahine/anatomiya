@@ -1478,9 +1478,10 @@ module, so it is named for the module it comes from, `user (default)`, and an in
 directory. A specifier is mapped to a file the way
 `pairing.mjs` learns a companion root: a relative one resolves against the importer's directory,
 one ending in `/` names a directory and resolves only through its `index`, the way Node and
-TypeScript read `./base/`, `./` and `../`, anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, SvelteKit's `$lib/` is read as `src/lib/`, and a
-tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` is
-read. Only importers outside the area count: a directory importing its own files is how it is
+TypeScript read `./base/`, `./` and `../`, SvelteKit's `$lib/` resolves the same way against the `src/lib` of the nearest
+directory above the importer that holds the file, anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
+tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` or
+`svelte.config.js` is read. Only importers outside the area count: a directory importing its own files is how it is
 written, not who depends on it. This is the counted form of "check before creating", and Ruby has
 no static import surface, so there is no Ruby line.
 

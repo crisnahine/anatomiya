@@ -430,13 +430,39 @@ test("SvelteKit's $lib names a file under src/lib, as the other root prefixes na
   assert.equal(specifierToFile("$lib/Card", "src/routes/+page.svelte", rels), null, "a bare stem is no component here either");
 });
 
-test("a $lib tail answers only from a lib directory, and two of them answer nothing", () => {
-  const elsewhere = corpus("src/components/ui/button.ts", "src/routes/+page.svelte");
-  assert.equal(specifierToFile("$lib/components/ui/button", "src/routes/+page.svelte", elsewhere), null);
-  assert.equal(specifierToFile("@/components/ui/button", "src/routes/+page.svelte", elsewhere), "src/components/ui/button.ts");
+test("$lib is the importer's own project's src/lib, in a repository holding two", () => {
+  const rels = corpus(
+    "apps/a/src/lib/utils.ts",
+    "apps/a/src/lib/ui/button/index.ts",
+    "apps/a/src/lib/Card.svelte",
+    "apps/a/src/lib/count.svelte.ts",
+    "apps/b/src/lib/utils.ts",
+    "apps/b/src/lib/only-b.ts"
+  );
+  const fromA = (spec, importer = "apps/a/src/routes/+page.svelte") => specifierToFile(spec, importer, rels);
 
-  const twice = corpus("docs/src/lib/utils.ts", "apps/www/src/lib/utils.ts");
-  assert.equal(specifierToFile("$lib/utils", "docs/src/routes/+page.svelte", twice), null);
+  assert.equal(fromA("$lib/utils"), "apps/a/src/lib/utils.ts");
+  assert.equal(fromA("$lib/utils.js"), "apps/a/src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/utils", "apps/b/src/routes/blog/+page.ts", rels), "apps/b/src/lib/utils.ts");
+  assert.equal(fromA("$lib/utils", "apps/a/src/lib/ui/button/button.svelte"), "apps/a/src/lib/utils.ts", "from inside src/lib too");
+  assert.equal(fromA("$lib/ui/button"), "apps/a/src/lib/ui/button/index.ts");
+  assert.equal(fromA("$lib/ui/button/index.js"), "apps/a/src/lib/ui/button/index.ts");
+  assert.equal(fromA("$lib/ui/button/"), "apps/a/src/lib/ui/button/index.ts");
+  assert.equal(fromA("$lib/Card.svelte"), "apps/a/src/lib/Card.svelte");
+  assert.equal(fromA("$lib/count.svelte"), "apps/a/src/lib/count.svelte.ts");
+  assert.equal(fromA("$lib/count.svelte.js"), "apps/a/src/lib/count.svelte.ts");
+  assert.equal(fromA("$lib/only-b"), null, "another app's file is not this one's");
+});
+
+test("$lib names nothing outside a src/lib above the importer", () => {
+  const page = "app/src/routes/+page.svelte";
+
+  assert.equal(specifierToFile("$lib/x", page, corpus("tools/lib/x.ts")), null, "a lib with no src");
+  assert.equal(specifierToFile("$lib/x", page, corpus("app/src/lib/sub/lib/x.ts")), null, "a lib nested in the real one");
+  assert.equal(specifierToFile("$lib/x", page, corpus("app/src/components/x.ts")), null);
+  assert.equal(specifierToFile("$lib/x", "scripts/build.ts", corpus("site/src/lib/x.ts")), null, "no src/lib above the importer");
+  assert.equal(specifierToFile("$lib/x", "site/src/routes/+page.svelte", corpus("site/src/lib/x.ts", "tools/lib/x.ts")), "site/src/lib/x.ts");
+  assert.equal(specifierToFile("@/components/x", page, corpus("app/src/components/x.ts")), "app/src/components/x.ts", "the root prefixes read as they did");
 });
 
 test("SvelteKit's virtual modules name no file", () => {
