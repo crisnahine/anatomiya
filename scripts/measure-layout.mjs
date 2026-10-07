@@ -249,6 +249,9 @@ export function foldCounts(line) {
 
 const otherText = (n) => (n ? ` and ${n} other` : "");
 
+// As many printed clauses as the expected text holds: a namesake clause is two where files hold their own tests.
+const take = (clauses, expected) => clauses.splice(0, expected.split("; ").length).join("; ");
+
 /**
  * The printed clauses of one root line, as numbers and labels.
  *
@@ -297,10 +300,12 @@ function checkSection(section, corpus, root, recordRoots) {
   if (section.includes(TRUNCATED_LAYOUT)) return { roots: 0, folded: 0, principles: 0, truncated: true };
 
   const bullets = section.filter((l) => l.startsWith("- "));
-  const rootLines = bullets.filter((l) => !l.startsWith("- tests: ") && !l.startsWith("- and "));
+  const testFiles = corpus.filter(isTest);
+  // The tests line is the last bullet of a repository that has tests. A root named `tests` prints the same prefix.
+  const testsLine = testFiles.length > 0 && bullets.at(-1)?.startsWith("- tests: ") ? bullets.at(-1) : undefined;
+  const rootLines = bullets.slice(0, testsLine ? -1 : undefined).filter((l) => !l.startsWith("- and "));
   if (rootLines.length === 0) fail(`${HEADING} printed no root line`);
 
-  const testFiles = corpus.filter(isTest);
   // The same index the scan hands its roots, over the same corpus: the sources
   // are what decide ownership and what a second spelling is learned from, and
   // an index built from the test files alone answers a narrower question.
@@ -354,13 +359,13 @@ function checkSection(section, corpus, root, recordRoots) {
 
     const also = counted.componentCompanions;
     if (counted.companions) {
-      const clause = clauses.shift();
       const expected = namesakeClause(counted.companions, also ? `${counted.companions.ext} file` : null);
+      const clause = take(clauses, expected);
       if (clause !== expected) fail(`${parsed.label} namesake clause: printed "${clause}", recount "${expected}"`);
     }
     if (also) {
-      const clause = clauses.shift();
       const expected = namesakeClause(also, `${also.ext} file`);
+      const clause = take(clauses, expected);
       if (clause !== expected) fail(`${parsed.label} component clause: printed "${clause}", recount "${expected}"`);
     }
 
@@ -400,7 +405,7 @@ function checkSection(section, corpus, root, recordRoots) {
     );
   }
 
-  checkTestsLine(bullets.find((l) => l.startsWith("- tests: ")), corpus, recordRoots, testFiles, byStem);
+  checkTestsLine(testsLine, corpus, recordRoots, testFiles, byStem);
 
   const principles = section.filter((l) => l !== "" && !l.startsWith("- ") && l !== HEADING).length;
   return { roots: rootLines.length, folded, principles, truncated: false };
@@ -433,13 +438,13 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
   // are recounted here like every other.
   const top = topNamesakeRoot(recordRoots, corpus, testFiles, byStem);
   if (top) {
-    const clause = clauses.shift();
     const expected = namesakeClause({ ...top.companions, root: null }, `${top.companions.ext} file`, top.dir && top.path);
+    const clause = take(clauses, expected);
     if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
     const also = top.componentCompanions;
     if (also) {
-      const second = clauses.shift();
       const want = namesakeClause({ ...also, root: null }, `${also.ext} file`, top.dir && top.path);
+      const second = take(clauses, want);
       if (second !== want) fail(`tests line component clause: printed "${second}", recount "${want}"`);
     }
   }
