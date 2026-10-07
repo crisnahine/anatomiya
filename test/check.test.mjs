@@ -5702,11 +5702,13 @@ test("a test file pytest collects by its directory is a test file to the check o
   assert.deepEqual(report.findings, []);
 });
 
-for (const [lang, rel, glob, old, added, line] of [
-  ["Python", "src/py/views.py", "**/*.py", "class A:\n    def run(self):\n        return 1\n", "class B:\n    def run(self):\n        return 2\n\n\n", 2],
-  ["Java", "src/java/Views.java", "**/*.java", "class A {\n    public void run() {}\n}\n", "class B {\n    public void run() {}\n}\n\n", 2],
-  ["Go", "src/go/views.go", "**/*.go", "package views\n\nfunc (a A) Run() {}\n", "package views\n\nfunc (b B) Run() {}\n", 3],
-  ["Rust", "src/rs/views.rs", "**/*.rs", "struct A;\n\nimpl A {\n    pub fn run(&self) {}\n}\n", "struct B;\n\nimpl B {\n    pub fn run(&self) {}\n}\n\n", 4],
+for (const [lang, rel, glob, old, added, line, where] of [
+  ["Python", "src/py/views.py", "**/*.py", "class A:\n    def run(self):\n        return 1\n", "class B:\n    def run(self):\n        return 2\n\n\n", 2, "B.run"],
+  ["Java", "src/java/Views.java", "**/*.java", "class A {\n    public void run() {}\n}\n", "class B {\n    public void run() {}\n}\n\n", 2, "B.run"],
+  ["Go", "src/go/views.go", "**/*.go", "package views\n\nfunc (a A) Run() {}\n", "package views\n\nfunc (b B) Run() {}\n", 3, "B.Run"],
+  ["Rust", "src/rs/views.rs", "**/*.rs", "struct A;\n\nimpl A {\n    pub fn run(&self) {}\n}\n", "struct B;\n\nimpl B {\n    pub fn run(&self) {}\n}\n\n", 4, "B.run"],
+  // An extension function is written on a type and inside no class.
+  ["Kotlin", "src/kt/Mappers.kt", "**/*.kt", "fun User.toDto(): UserDto {\n    return UserDto(name)\n}\n", "fun Invoice.toDto(): InvoiceDto {\n    return InvoiceDto(total)\n}\n\n", 1, "Invoice.toDto"],
 ]) {
   test(`${lang}: a method written above an old one of its name, in another class, is reported on the line the branch wrote`, async (t) => {
     const dir = repo(t, ({ git, write, commit }) => {
@@ -5724,7 +5726,7 @@ for (const [lang, rel, glob, old, added, line] of [
     const report = await check(dir, { baseRef: "main" });
 
     assert.deepEqual(report.caveats, []);
-    assert.deepEqual(forKey(report, "public_doc_comment").map((f) => [f.line, f.where]), [[line, lang === "Python" || lang === "Java" || lang === "Rust" ? "B.run" : "B.Run"]]);
+    assert.deepEqual(forKey(report, "public_doc_comment").map((f) => [f.line, f.where]), [[line, where]]);
   });
 }
 

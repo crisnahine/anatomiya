@@ -129,6 +129,9 @@ export const SHAPES = {
     annotation: ["annotation"],
     args: ["value_arguments"],
     header: ["package_header"],
+    // An extension function is written on a type and inside no class: the type stands before the name, in no field.
+    receiverBeforeName: ["user_type", "nullable_type", "parenthesized_type"],
+    receiverType: ["user_type"],
     // The `as` of `import a.B as C` is a token of `import`, and the name after it has no field.
     tokensOf: ["import"],
     renames: { token: "as" },

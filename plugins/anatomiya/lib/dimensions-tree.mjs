@@ -7,7 +7,7 @@ import { fieldOf, nameOf, site } from "./tree-walk.mjs";
 
 const KINDS = [
   "fn", "cls", "scope", "wrap", "comment", "annotation", "inner", "directive", "catch", "raise", "ident", "variable",
-  "block", "docstring", "doc", "args", "iface", "receiverType",
+  "block", "docstring", "doc", "args", "iface", "receiverType", "receiverBeforeName",
 ];
 const SETS = new Map(
   Object.entries(SHAPES).map(([lang, shapes]) => [lang, Object.fromEntries(KINDS.map((kind) => [kind, new Set(shapes[kind] ?? [])]))])
@@ -144,9 +144,25 @@ function goNamedByInterface(program, sets) {
   };
 }
 
-/** What a function is written in: the nearest class around it that has a name, the type a Rust `impl` is for, or in Go its receiver's type. Null at file level. */
+/** The type a Kotlin extension function is written on, by its name without its arguments, or null for any other function. */
+function extendedType(fn, shapes, sets) {
+  for (const child of fn.children) {
+    if (child.field === shapes.name) return null;
+    if (!sets.receiverBeforeName.has(child.type)) continue;
+    const type = firstOf(child, sets.receiverType);
+    return type ? type.children.filter((part) => part.children.length === 0).map((part) => part.text).join(".") : null;
+  }
+  return null;
+}
+
+/**
+ * What a function is written in: in Go its receiver's type, in Kotlin the type an extension function is written on, and else
+ * the nearest class around it that has a name or the type a Rust `impl` is for. Null at file level.
+ */
 function ownerOf(fn, ctx, shapes, sets) {
   if (shapes.receiver) return goReceiver(fn, sets) || null;
+  const extended = extendedType(fn, shapes, sets);
+  if (extended) return extended;
   for (let i = ctx.stack.length - 1; i >= 0; i--) {
     const body = ctx.stack[i];
     if (!sets.cls.has(body.type)) continue;
