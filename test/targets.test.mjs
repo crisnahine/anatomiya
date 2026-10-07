@@ -44,8 +44,7 @@ test("the three targets, their directories and their extensions", () => {
     },
     cursor: {
       id: "cursor", dir: ".cursor/rules", ext: ".mdc", always: false, reader: "Cursor", wrote, widens: null,
-      reads:
-        "An area's notes attach when one of its files is in context; where they have not, read the anatomiya-area-*.mdc file under .cursor/rules whose globs name the file before editing it.",
+      reads: "Read a file before editing it: an area's notes attach when you read one of its files.",
       listed: "attached when one of its files is in context",
     },
     copilot: {
@@ -56,8 +55,7 @@ test("the three targets, their directories and their extensions", () => {
       listed: "applied to the files its pattern names",
     },
   });
-  // A sentence that names a directory or a file names the target's own.
-  assert.ok(cursor.reads.includes(`${areaName(cursor, "*")} file under ${cursor.dir} `));
+  // A sentence that names a directory names the target's own.
   assert.ok(copilot.reads.includes(` under ${copilot.dir} `));
   assert.deepEqual(TARGET_IDS, ["claude", "cursor", "copilot"]);
   assert.ok(Object.isFrozen(TARGETS) && Object.isFrozen(TARGET_IDS) && TARGET_IDS.every((id) => Object.isFrozen(TARGETS[id])));
@@ -138,24 +136,47 @@ test("a single extension has no brace to expand", () => {
   assert.deepEqual(spelledGlobs(cursor, [{ negated: false, dir: "app/models", tail: "*.py" }], plain).patterns, ["app/models/*.py"]);
 });
 
+const refused = (target, dir) =>
+  spelledGlobs(target, [
+    { negated: false, dir, tail: "**/*.{js,ts}" },
+    { negated: false, dir: "ok", tail: `**/${dir}/**/*.js` },
+    { negated: false, dir: "ok", tail: "*.js" },
+    { negated: true, dir: "ok", tail: "x/*.js" },
+  ], plain);
+
 test("a positive pattern a target cannot write is unspellable, and never a dropped negation", () => {
-  for (const dir of ["a,b", "a{b", "a}b", 'a"b', "a\\b", "a\nb", "a\rb"]) {
+  for (const dir of ["a,b", "a{b", "a}b", "a\\b", "a\nb", "a\rb"]) {
     for (const target of [cursor, copilot]) {
-      const out = spelledGlobs(target, [
-        { negated: false, dir, tail: "**/*.{js,ts}" },
-        { negated: false, dir: "ok", tail: `**/${dir}/**/*.js` },
-        { negated: false, dir: "ok", tail: "*.js" },
-        { negated: true, dir, tail: "*.js" },
-      ], plain);
+      const out = refused(target, dir);
       const at = JSON.stringify(dir);
       assert.deepEqual(out.patterns, ["ok/*.js"], at);
       assert.deepEqual(out.unspellable, [`${dir}/**/*.{js,ts}`, `ok/**/${dir}/**/*.js`], at);
-      assert.deepEqual(out.dropped, [`${dir}/*.js`], at);
+      assert.deepEqual(out.dropped, ["ok/x/*.js"], at);
     }
   }
 });
 
-test("cursor's unquoted line also cannot carry a comment mark, a mapping colon or a closing colon", () => {
+test("each target refuses what its own reader would change: a fence for cursor, a quote for copilot", () => {
+  assert.deepEqual(refused(cursor, "a---b").unspellable, ["a---b/**/*.{js,ts}", "ok/**/a---b/**/*.js"]);
+  assert.deepEqual(refused(copilot, "a---b").unspellable, []);
+  assert.deepEqual(refused(copilot, 'a"b').unspellable, ['a"b/**/*.{js,ts}', 'ok/**/a"b/**/*.js']);
+  assert.deepEqual(refused(cursor, 'a"b').unspellable, []);
+  assert.deepEqual(refused(cursor, "a--b").unspellable, []);
+});
+
+test("cursor trims each pattern and unwraps a quoted line, so neither edge may hold a space nor the start a quote", () => {
+  const at = (dir, tail = "*.js") => spelledGlobs(cursor, [{ negated: false, dir, tail }], plain);
+  for (const [dir, tail] of [[" a"], ["\ta"], ['"a'], ["'a"], ["lib", "x "], ["", "x\u00a0"]]) {
+    const p = plain({ dir, tail: tail ?? "*.js" });
+    assert.deepEqual(at(dir, tail), { ...NONE, unspellable: [p] }, JSON.stringify(p));
+  }
+  for (const [dir, tail] of [["a b"], ['a"'], ["a'b"], ["lib", 'x"']]) {
+    const p = plain({ dir, tail: tail ?? "*.js" });
+    assert.deepEqual(at(dir, tail), { ...NONE, patterns: [p] }, JSON.stringify(p));
+  }
+});
+
+test("cursor takes a comment mark, a colon and a space, and a closing colon as part of the pattern", () => {
   const globs = [
     { negated: false, dir: "a #b", tail: "*.js" },
     { negated: false, dir: "a: b", tail: "*.js" },
@@ -164,8 +185,55 @@ test("cursor's unquoted line also cannot carry a comment mark, a mapping colon o
     { negated: false, dir: "a#b", tail: "*.js" },
   ];
   const all = ["a #b/*.js", "a: b/*.js", "lib/x:", "a:b/*.js", "a#b/*.js"];
-  assert.deepEqual(spelledGlobs(cursor, globs, plain), { ...NONE, patterns: all.slice(3), unspellable: all.slice(0, 3) });
+  assert.deepEqual(spelledGlobs(cursor, globs, plain), { ...NONE, patterns: all });
   assert.deepEqual(spelledGlobs(copilot, globs, plain), { ...NONE, patterns: all, widened: all });
+});
+
+test("a negation is dropped only where a pattern that was written reaches it", () => {
+  const not = (dir) => ({ negated: true, dir, tail: "x/*.js" });
+  const odd = { negated: false, dir: "a,b", tail: "**/*.js" };
+  for (const target of [cursor, copilot]) {
+    // The file does not attach under the pattern at all, so it cannot attach for too much there.
+    assert.deepEqual(spelledGlobs(target, [odd, not("a,b")], plain), { ...NONE, unspellable: ["a,b/**/*.js"] }, target.id);
+    const mixed = spelledGlobs(target, [odd, not("a,b"), { negated: false, dir: "ok", tail: "**/*.js" }, not("ok/deep"), not("okay")], plain);
+    assert.deepEqual(mixed.dropped, ["ok/deep/x/*.js"], target.id);
+    const root = spelledGlobs(target, [odd, { negated: false, dir: "", tail: "**/*.rb" }, not("a,b")], plain);
+    assert.deepEqual(root.dropped, ["a,b/x/*.js"], target.id);
+    const above = spelledGlobs(target, [{ negated: false, dir: "ok/deep", tail: "*.js" }, { negated: true, dir: "ok", tail: "**/gen/*.js" }], plain);
+    assert.deepEqual(above.dropped, ["ok/**/gen/*.js"], target.id);
+  }
+});
+
+// Mirrors the frontmatter reader of Cursor 3.20.21; the research note on its .mdc parser holds the evidence.
+const cursorReads = (line) => {
+  const value = line.slice(line.indexOf(":") + 1).trim();
+  const parts = [];
+  for (let i = 0, from = 0, depth = 0; i <= value.length; i++) {
+    if (value[i] === "{") depth++;
+    else if (value[i] === "}" && depth > 0) depth--;
+    else if (i === value.length || (value[i] === "," && depth === 0)) parts.push(value.slice(from, (from = i + 1) - 1).trim());
+  }
+  return parts.filter(Boolean);
+};
+
+test("the globs line is spelled so that cursor's reader gets back the patterns it was written from", () => {
+  for (const [line, got] of [
+    ["globs: **/*.rb", ["**/*.rb"]],
+    ["globs: *.py,src/**/*.ts", ["*.py", "src/**/*.ts"]],
+    ["globs: test/**/*.cjs, test/**/*.ts , src/*.rb", ["test/**/*.cjs", "test/**/*.ts", "src/*.rb"]],
+    ["globs: src/**/*.{ts,tsx}", ["src/**/*.{ts,tsx}"]],
+    ["globs: a b/**/*.ts", ["a b/**/*.ts"]],
+    ["globs: a/# b/*.ts", ["a/# b/*.ts"]],
+    ["globs: a: b/*.ts", ["a: b/*.ts"]],
+    ["globs: a: b/# c/*.ts,x:", ["a: b/# c/*.ts", "x:"]],
+  ]) assert.deepEqual(cursorReads(line), got, line);
+
+  const dirs = ["test", "a #b", "a: b", "a b", 'q"r', "a:b"];
+  const globs = [...dirs.map((dir) => ({ negated: false, dir, tail: "**/*.{js,ts}" })), { negated: false, dir: "lib", tail: "x:" }];
+  const { patterns, unspellable } = spelledGlobs(cursor, globs, plain);
+  assert.deepEqual(unspellable, []);
+  assert.equal(patterns.length, 13);
+  assert.deepEqual(cursorReads(frontmatter(cursor, { kind: "area", patterns })[2]), patterns);
 });
 
 test("the check reads the string that is emitted, so a comma the encoder folds in is caught", () => {

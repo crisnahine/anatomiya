@@ -3357,7 +3357,7 @@ test("the cursor overview always applies, names what wrote it and says how an ar
     renderOverview(noted(), NOTED_FILES, cursor).split("\n"),
     overviewFor(
       "alwaysApply: true",
-      "An area's notes attach when one of its files is in context; where they have not, read the anatomiya-area-*.mdc file under .cursor/rules whose globs name the file before editing it.",
+      "Read a file before editing it: an area's notes attach when you read one of its files.",
       "attached when one of its files is in context",
       ".cursor/rules/anatomiya-*.mdc"
     )
@@ -3451,6 +3451,11 @@ test("a pattern a target cannot be given is named, with the reader that cannot t
   const all = [...SCOPED_GLOBS, bad];
   assert.deepEqual(last(cursor, 4, all), ["", ALSO, notGiven("a,b/**/*.{js,ts}", "Cursor"), ""]);
   assert.deepEqual(last(copilot, 5, all), ["", ALSO, WIDENS, notGiven("a,b/**/*.{js,ts}", "GitHub Copilot"), ""]);
+
+  // A negation under the pattern that was not written carves nothing out of this file.
+  const carved = [{ negated: false, dir: "ok", tail: "**/*.rb" }, bad, { negated: true, dir: "a,b", tail: "gen/*.js" }];
+  assert.deepEqual(last(cursor, 3, carved), ["", notGiven("a,b/**/*.{js,ts}", "Cursor"), ""]);
+  assert.deepEqual(last(copilot, 4, carved), ["", WIDENS, notGiven("a,b/**/*.{js,ts}", "GitHub Copilot"), ""]);
 });
 
 const unwritable = (path, o = {}) =>
