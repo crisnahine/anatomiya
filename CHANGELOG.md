@@ -7,8 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Hooks, scans and checks take less time and give the same answers, byte for byte. The numbers below
-are medians measured against 0.13.3 on one machine, under the same load for both.
+Hooks, scans and checks take less time and give the same answers, byte for byte, with two
+exceptions listed below: the map a scan leaves when a `ruby` child dies mid-run can differ, and the
+type checker refuses a path that leaves the repository through a link. The numbers below are medians
+measured against 0.13.3 on one machine, under the same load for both.
 
 ### Added
 
@@ -33,11 +35,11 @@ are medians measured against 0.13.3 on one machine, under the same load for both
   back counts, so the parent no longer reads or walks a Ruby tree; `check` still gets the trees of
   the files a diff touched. The Ruby dimensions and facets share one walk of each tree: 5.5 walks a
   file where it was 22.5. A large Ruby corpus is still read by up to four children, never more than
-  the machine's cores less one. On a large Rails API the parse phase went from 3,378ms to 1,820ms
-  and the scan from 4,507ms to 2,793ms, and its peak memory rose 10%, from 178 MB to 196 MB, for the
-  threads' heaps; discourse's scan went from 13.5s to 7.6s. When a `ruby` child dies mid-run, which
-  files it charges follows the byte balance of the batches, so the degraded map can differ from
-  0.13.3's: on 2,100 files under a `ruby` that hangs after five records, 3 areas against 1.
+  the machine's cores less one. On a large Rails API the parse phase went from 3,378ms to 1,820ms.
+  Its scan, timed on the command line, went from 4,507ms to 2,793ms, and its peak memory rose 10%,
+  from 178 MB to 196 MB, for the threads' heaps; discourse's scan went from 13.5s to 7.6s. When a
+  `ruby` child dies mid-run, which files it charges follows the byte balance of the batches, so the
+  degraded map can differ from 0.13.3's.
 - `check` resolves HEAD once, runs its independent git reads side by side and asks git once per
   commit sha: 25 git calls to 20 on a two-file branch here, and that check went from 422ms to
   285ms.

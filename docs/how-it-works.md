@@ -242,16 +242,18 @@ still ask one row at a time, through a `run` that `dimensions.mjs` builds from t
 its engine's walk. A row that reads only `program.body` never walked, and keeps its `run`.
 
 A JavaScript file's facets take a walk of their own first, because they choose its rows: JSX and type
-syntax decide which rows the file gets, and only those rows go on the shared walk. Riding the rows'
-walk would save that walk, 502ms beside 4,269ms of rows summed over empire-flippers/client's 2,486
-files, but every row the file could get would have to walk before the facets ruled any out: a file
-on this repository walks 25 rows, and would walk all 32 a JavaScript file can get. A Ruby batch's
-rows are chosen from its languages and the repository's frameworks before any file is read, so the
+syntax decide which rows the file gets, and only those rows go on the shared walk. That walk costs
+502ms of `parseFile` beside 4,269ms of rows, summed over empire-flippers/client's 2,486 files. A build
+that rode the rows' walk instead had every row the file could get walk before the facets ruled any
+out, all 32 a JavaScript file can get where a file on this repository walks 25, and its parse
+workers' CPU rose 9% on this repository with the scan's wall flat, so it was taken back. A Ruby
+batch's rows are chosen from its languages and the repository's frameworks before any file is read, so the
 Ruby facets choose nothing and ride the rows' walk, as a visitor `collectHits` takes beside the rows
 in its `also` list. They are not a row: they run when no row was asked for, as on the check's Ruby
 path, and a throw in them is held until their `done`, which throws it for the bridge to answer with no
-test runner, so it never stops a row's walk. That took one walk off every Ruby file: a file on
-empire-flippers/api takes 5.5 walks, where 0.13.3 took 22.5.
+test runner, so it never stops a row's walk. Riding the rows' walk takes the facets' own walk off
+every Ruby file, and the rows sharing one walk (B49) take the rest: a file on empire-flippers/api
+takes 5.5 walks, where 0.13.3 took 22.5.
 
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
@@ -830,12 +832,12 @@ file, one shipped beside a forged registration, a submodule, and a git directory
 answers with its own map.
 
 Both reads are bounded and typed rather than plain, for the reason the map's is: a named pipe at
-either path never returns, and the record is the whole count of a repository, measured at 9,957,450
-bytes on microsoft/vscode, so the bound the rendered map is held to would have silenced the notice on
-exactly the repositories where a directory nobody read is easiest to miss.
+either path never returns, and the record is the whole count of a repository, 10,217,406 bytes as
+this build writes it for microsoft/vscode, so the bound the rendered map is held to would have
+silenced the notice on exactly the repositories where a directory nobody read is easiest to miss.
 
 The notice, the end-of-turn check and the refresh want only the record's `layout`, 2,037 bytes of
-the 10,217,406 this build writes for vscode, so a scan writes it a second time on its own, as
+that record, so a scan writes it a second time on its own, as
 `.claude/anatomiya/layout.json`, stamped with the size and mtime of the record file it was taken
 from. A hook reads it only where its schema is one this build reads and the record on disk has
 exactly that size and that mtime, and reads the record otherwise. A length alone passed a record

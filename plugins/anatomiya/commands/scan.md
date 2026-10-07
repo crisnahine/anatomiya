@@ -72,8 +72,8 @@ installed, the repository's own dependencies are on disk inside it, and it has a
 `tsconfig.json` or a TypeScript source file that is not a declaration file. A `node_modules` linked
 in from outside the repository is not read, so it counts as no dependencies, and a `jsconfig.json`
 does not count as a config. Missing any of these, the scan leaves the checker off and records why in
-`semantic.reason`; plain JavaScript reads `plain-javascript`. With it, a scan measured about 3x a
-plain one on a 3,800-file repository and about 6x on a 2,600-file one, and it cannot be narrowed to
+`semantic.reason`; plain JavaScript reads `plain-javascript`. With it, a scan measured about 5x a
+plain one on a 3,800-file repository and about 10x on a 2,600-file one, and it cannot be narrowed to
 the files that changed. On a pinned repository a type-checked claim is measured against its area's
 pinned files, and stays closed in an area where a checked file changed since the pin. The share of
 type lookups that resolved is taken over files in the areas the map describes, so a vendored bundle

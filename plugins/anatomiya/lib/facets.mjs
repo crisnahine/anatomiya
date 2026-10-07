@@ -169,10 +169,11 @@ function visitorOf(node, done) {
  * and exports it saw. The record is already built and was being discarded.
  *
  * Its own walk, ahead of the rows', because the facets choose which rows the
- * file gets. Riding the rows' walk instead saved that walk, 502ms beside the
- * rows' 4,269ms on empire-flippers/client's 2,486 files, but every row the file
- * could get had to walk before the facets could rule any out: on this
- * repository a file walks 25 rows, and would have walked all 32.
+ * file gets. It costs 502ms of `parseFile` beside the rows' 4,269ms on
+ * empire-flippers/client's 2,486 files. A build that rode the rows' walk had
+ * every row the file could get walk before the facets ruled any out, 32 where
+ * a file on this repository walks 25, and its workers' CPU rose 9% there with
+ * the scan's wall flat.
  */
 export function jsFacets({ program, module: mod }) {
   const imports = [];
