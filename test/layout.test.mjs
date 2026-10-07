@@ -460,6 +460,7 @@ test("the namesake index carries the fields a pair would recompute", () => {
       bare: "modules/budgets/models",
       covers: new Set(),
       owner: null,
+      componentOwner: null,
       paired: null,
     },
   ]);
@@ -1127,7 +1128,7 @@ const mixedPackage = (component, lang) => [
 
 test("a root's components are counted on their own, beside the modules and never into them", () => {
   // element-plus's packages/components read 85 of 745 over its .ts files and
-  // said nothing of 164 .vue components, 79 of which have a namesake test.
+  // said nothing of 164 .vue components, 81 of which have a namesake test.
   for (const [ext, lang] of [["vue", "vue"], ["svelte", "svelte"]]) {
     const corpus = mixedPackage(ext, lang);
     const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));

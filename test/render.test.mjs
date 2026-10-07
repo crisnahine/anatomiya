@@ -3357,32 +3357,32 @@ test("an overview with no area says no directory made one, and claims nothing be
 });
 
 test("a root that counts its components prints two namesake counts, each naming its extension", () => {
-  // Two facts, and summed they are neither: 85 of 745 .ts and 79 of 164 .vue.
+  // Two facts, and summed they are neither: 85 of 745 .ts and 81 of 164 .vue.
   const mixed = root("packages/components", {
     files: 1063,
     exts: [[".ts", 777], [".vue", 164]],
     other: 122,
     companions: { with: 85, of: 745, root: null, ext: ".ts" },
-    componentCompanions: { with: 79, of: 164, root: "packages/components", under: 60, ext: ".vue" },
+    componentCompanions: { with: 81, of: 164, root: "packages/components", under: 60, ext: ".vue" },
   });
   const lines = renderLayout({ ...clientLayout(), roots: [mixed], more: { roots: 0, files: 0 } });
 
   assert.equal(
     lines[2],
     "- packages/components: 777 .ts, 164 .vue and 122 other; 85 of 745 .ts files have a namesake test; " +
-      "79 of 164 .vue files have a namesake test, 60 under packages/components"
+      "81 of 164 .vue files have a namesake test, 60 under packages/components"
   );
   assert.ok(
     lines[3].endsWith(
       "; 85 of 745 .ts files under packages/components have a namesake test" +
-        "; 79 of 164 .vue files under packages/components have a namesake test"
+        "; 81 of 164 .vue files under packages/components have a namesake test"
     ),
     lines[3]
   );
   assert.equal(
     kindsLine(mixed),
     "kinds: 777 .ts, 164 .vue and 122 other; 0 test files; " +
-      "85 of 745 .ts files have a namesake test; 79 of 164 .vue files have a namesake test"
+      "85 of 745 .ts files have a namesake test; 81 of 164 .vue files have a namesake test"
   );
 });
 

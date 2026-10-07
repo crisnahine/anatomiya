@@ -303,7 +303,7 @@ test("namesakeIndex builds the stem map namesakeCompanions is handed", () => {
   const index = namesakeIndex([file("spec/models/foo_spec.rb")]);
 
   assert.deepEqual(index.get("foo"), [
-    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set(), owner: null, paired: null },
+    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set(), owner: null, componentOwner: null, paired: null },
   ]);
 });
 
@@ -1051,4 +1051,46 @@ test("a test in a paired project covers the one source of its stem there, at any
   const sources = [file("src/Serilog/Core/Pipeline.cs"), file("src/Serilog/Events/LogEvent.cs"), sink];
   const specs = [file("test/Serilog.Tests/Core/PipelineTests.cs"), file("test/Serilog.Tests/Events/LogEventTests.cs"), ...sinkTests];
   assert.deepEqual(namesakeCompanions(sources, specs, "src/Serilog", namesakeIndex(specs, sources)), { with: 3, of: 3, root: "test/Serilog.Tests" });
+});
+
+test("a TypeScript test is owned by the component it imports, so a component elsewhere of the same stem is not credited", () => {
+  // element-plus: `packages/components/autocomplete/__tests__/autocomplete.test.tsx`
+  // imports `../src/autocomplete.vue`, and `docs/examples/autocomplete/autocomplete.vue`
+  // read as tested by it.
+  for (const [ext, test] of [["svelte", "widget.test.ts"], ["vue", "widget.test.tsx"], ["ts", "widget.test.ts"]]) {
+    const own = file(`packages/core/widget/src/widget.${ext}`);
+    const docs = [file(`docs/ui/widget/widget.${ext}`), file(`docs/ui/badge.${ext}`)];
+    const tests = [imports(`packages/core/widget/__tests__/${test}`, [`../src/widget.${ext}`])];
+    const byStem = namesakeIndex(tests, [own, ...docs]);
+
+    assert.equal(byStem.get("widget")[0][ext === "ts" ? "owner" : "componentOwner"], own.rel, ext);
+    assert.deepEqual(namesakeCompanions(docs, tests, "docs/ui", byStem), { with: 0, of: 2, root: null }, ext);
+    assert.equal(namesakeCompanions([own], tests, "packages/core/widget", byStem).with, 1, ext);
+  }
+});
+
+test("a test covers a component and the module of its name beside it, and each is asked on its own", () => {
+  // element-plus keeps `button.vue` beside `button.ts`, and one `button.test.tsx` covers the pair.
+  const pair = [file("packages/button/src/button.vue"), file("packages/button/src/button.ts")];
+  const docs = [file("docs/examples/button/button.vue"), file("docs/examples/button/other.vue")];
+  const tests = [imports("packages/button/__tests__/button.test.ts", ["../src/button.vue", "../src/button"])];
+  const byStem = namesakeIndex(tests, [...pair, ...docs]);
+
+  assert.equal(namesakeCompanions(pair, tests, "packages/button", byStem).with, 2);
+  assert.equal(namesakeCompanions(docs, tests, "docs/examples", byStem).with, 0);
+});
+
+test("a component under the test's own directory owns it where nothing is imported by name", () => {
+  // shadcn-svelte: `message-scroller.test.ts` imports its fixtures and sits one
+  // directory above the component, and two docs copies share its last segment.
+  const own = file("packages/primitives/src/lib/scroller/components/scroller.svelte");
+  const docs = [file("docs/src/lib/registry/ui/scroller/scroller.svelte"), file("docs/src/lib/registry/examples/scroller/scroller.svelte")];
+  for (const dir of ["packages/primitives/src/lib/scroller", "packages/primitives/src/lib/scroller/__tests__"]) {
+    const tests = [imports(`${dir}/scroller.test.ts`, ["./fixtures/host.svelte"])];
+    const byStem = namesakeIndex(tests, [own, ...docs]);
+
+    assert.equal(byStem.get("scroller")[0].componentOwner, own.rel, dir);
+    assert.equal(namesakeCompanions(docs, tests, "docs/src/lib/registry", byStem).with, 0, dir);
+    assert.equal(namesakeCompanions([docs[0]], tests, "docs/src/lib/registry/ui", byStem).with, 0, dir);
+  }
 });

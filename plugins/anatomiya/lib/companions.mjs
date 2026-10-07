@@ -22,7 +22,7 @@
  * evidence has to come from the file rather than from where it sits.
  */
 
-import { familyOf, language } from "./langs.mjs";
+import { embeddedIn, familyOf, language } from "./langs.mjs";
 import { byCode, dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
 import {
   FAMILY_TEST_NAMES,
@@ -279,57 +279,76 @@ function sharedTail(a, b) {
  * than broken on a name, which is the posture `companionRoot` already takes.
  * Unowned is what every candidate is when no source list is handed in, so a
  * caller that has no corpus asks exactly the question it used to.
+ *
+ * Asked twice per test, once among the sources of its own language and once
+ * among the components of its family, because one test covers `button.vue` and
+ * the `button.ts` beside it: asked once over both, 47 of the 85 `.ts` files
+ * credited under element-plus's `packages/components` lose the test to the
+ * component of their name.
  */
 function assignOwners(byStem, sourceFiles) {
   // Keyed by language as well as by name, the way `learnStemExtras` is: a Ruby
   // spec is not a JavaScript module's test, and letting one own the other's
   // stem took the spec off the file it was structurally written for.
-  const sourcesByStem = new Map();
-  for (const f of sourceFiles) {
-    const key = `${language(f.rel)}\u0000${stemOf(f.rel)}`;
-    if (!sourcesByStem.has(key)) sourcesByStem.set(key, []);
-    sourcesByStem.get(key).push(f);
-  }
+  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${ownerGroup(f.rel)}\u0000${stemOf(f.rel)}`);
 
   for (const [stem, candidates] of byStem) {
     for (const t of candidates) {
       // Per candidate, not per bucket: one stem holds every language that
       // spells it, so `foo_spec.rb` and `foo.test.js` sit together and each has
       // to be read against the sources of its own language.
-      const sources = sourcesByStem.get(`${language(t.rel)}\u0000${stem}`);
-      if (!sources || sources.length < 2) continue;
-      // Structure decides, the import edge breaks a tie, and where the two
-      // disagree nothing is decided.
-      //
-      // Both orders were tried and each has a counter-example the other gets
-      // right. Taken outright the edge moved a spec off the file in its own
-      // directory onto a same-stem module it named as a stub; used only as a
-      // tiebreak it discarded an explicit import whenever any structural noise
-      // separated the candidates. The corpus settles neither: no repository in
-      // it holds the shape. So the disagreement is left unowned, which is this
-      // file's posture everywhere else, and costs at worst the false positive
-      // the whole pass exists to remove rather than the false negative that
-      // would retire a real test.
-      let best = -1;
-      let winners = [];
-      for (const f of sources) {
-        const n = sharedTail(t.bare, withoutTree(dirOf(f.rel), familyAt(f.rel)));
-        if (n > best) {
-          best = n;
-          winners = [f.rel];
-        } else if (n === best) winners.push(f.rel);
-      }
-      const imported = sources
-        .filter((f) => t.covers.has(f.rel) || t.covers.has(withoutExtension(f.rel)))
-        .map((f) => f.rel);
-      if (winners.length === 1) {
-        // A test that imports one file and mirrors another has said two things.
-        if (imported.length === 0 || imported.includes(winners[0])) t.owner = winners[0];
-        continue;
-      }
-      if (imported.length === 1 && winners.includes(imported[0])) t.owner = imported[0];
+      t.owner = ownerAmong(t, sourcesByStem.get(`${language(t.rel)}\u0000${stem}`));
+      const components = sourcesByStem.get(`${componentsOf(familyAt(t.rel))}\u0000${stem}`);
+      // A component under the test's own directory is nearer than any mirror:
+      // shadcn-svelte's `message-scroller.test.ts` sits one level above the
+      // component and shares one trailing segment with each of two docs copies.
+      const home = homeOf(t.dir);
+      const held = home === "" ? [] : (components ?? []).filter((f) => `${dirOf(f.rel)}/`.startsWith(`${home}/`));
+      t.componentOwner = ownerAmong(t, components, held.length > 0 ? held : components);
     }
   }
+}
+
+const componentsOf = (family) => `${family} component`;
+const ownerGroup = (rel) => (embeddedIn(language(rel)) === null ? language(rel) : componentsOf(familyAt(rel)));
+
+// The directory a test is filed for: its own, less the test tree words it ends in.
+const homeOf = (dir) => {
+  const segments = dir.split("/");
+  while (segments.length > 0 && TEST_TREES.has(segments.at(-1))) segments.pop();
+  return segments.join("/");
+};
+
+/** The one of `sources` this test answers, looked for by structure among `near`, or null. */
+function ownerAmong(t, sources, near = sources) {
+  if (!sources || sources.length < 2) return null;
+  // Structure decides, the import edge breaks a tie, and where the two
+  // disagree nothing is decided.
+  //
+  // Both orders were tried and each has a counter-example the other gets
+  // right. Taken outright the edge moved a spec off the file in its own
+  // directory onto a same-stem module it named as a stub; used only as a
+  // tiebreak it discarded an explicit import whenever any structural noise
+  // separated the candidates. The corpus settles neither: no repository in
+  // it holds the shape. So the disagreement is left unowned, which is this
+  // file's posture everywhere else, and costs at worst the false positive
+  // the whole pass exists to remove rather than the false negative that
+  // would retire a real test.
+  let best = -1;
+  let winners = [];
+  for (const f of near) {
+    const n = sharedTail(t.bare, withoutTree(dirOf(f.rel), familyAt(f.rel)));
+    if (n > best) {
+      best = n;
+      winners = [f.rel];
+    } else if (n === best) winners.push(f.rel);
+  }
+  const imported = sources
+    .filter((f) => t.covers.has(f.rel) || t.covers.has(withoutExtension(f.rel)))
+    .map((f) => f.rel);
+  // A test that imports one file and mirrors another has said two things.
+  if (winners.length === 1) return imported.length === 0 || imported.includes(winners[0]) ? winners[0] : null;
+  return imported.length === 1 && winners.includes(imported[0]) ? imported[0] : null;
 }
 
 /**
@@ -407,7 +426,7 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
     const dir = dirOf(t.rel);
     // `owner` is null until the corpus decides one, never absent: an absent key
     // would make "nobody asked" and "nobody owns it" the same reading.
-    byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir, familyAt(t.rel)), covers: coversOf(t), owner: null, paired: null });
+    byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir, familyAt(t.rel)), covers: coversOf(t), owner: null, componentOwner: null, paired: null });
   }
   if (sourceFiles !== null) registerLearnedSpellings(byStem, sourceFiles);
   // This order picks the root that gets rendered.
@@ -444,6 +463,7 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     }
     const fDir = dirOf(f.rel);
     const family = familyAt(f.rel);
+    const component = embeddedIn(language(f.rel)) !== null;
     const tail = tailOf(f.rel, rootPath);
     // The tail with the tree words dropped, falling back to the whole
     // directory's when that leaves nothing. A tail that is only tree words is
@@ -496,7 +516,8 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     for (const t of byStem.get(stemOf(f.rel)) ?? []) {
       // Another source in the corpus is the one this test was written for, so
       // it is not evidence about this file however the two paths line up.
-      if (t.owner !== null && t.owner !== f.rel) continue;
+      const owner = component ? t.componentOwner : t.owner;
+      if (owner !== null && owner !== f.rel) continue;
       // Two files at the top of the tree share a stem and nothing else, so this
       // branch asks the one question the nested path never had to: the
       // directories part first there, and here they do not. A JS script is not
