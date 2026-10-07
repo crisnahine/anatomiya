@@ -1433,12 +1433,17 @@ compiler builds it for nothing else. A pytest fixture is not a case whatever it 
 conftest names one `test_client`), and neither is a function inside a function. Pest's `it(...)`
 and `test(...)` at file level count under a test tree only.
 
-Rust is the one language whose tests mostly sit in the file they test. cargo collects a file under
-`tests`, so a `#[test]` there makes a test file wherever in the file it is. Anywhere else the same
-attribute is the file's own unit tests, in a `mod tests` or beside the code, and the file stays a
-source file carrying `inlineTests`: ripgrep holds 34 such files and 3 that cargo collects. serde
-keeps 118 compile-fail sources under `tests/ui`, which is why the directory alone makes nothing a
-test.
+Rust is the one language whose tests mostly sit in the file they test. cargo builds every `.rs`
+directly in a crate's `tests` directory as an integration test, whatever it holds, so such a file is
+a test by place: a crate is a directory holding a `Cargo.toml` or a `src`. ripgrep declares 349 of
+its 365 cases with a macro of its own, `rgtest!`, in ten files directly under `tests`, and reading
+them by their attributes alone printed `3 cargo test specs under crates`. A file deeper down,
+`tests/common/mod.rs` or `tests/ui/*.rs`, is a module those targets include or a fixture, and is a
+test only where its own `#[test]` says so: serde keeps 118 compile-fail sources under `tests/ui`.
+Under any other `tests` directory, and in a `tests.rs`, a `#[test]` makes a test file wherever in
+the file it is. Anywhere else the same attribute is the file's own unit tests, in a `mod tests` or
+beside the code, and the file stays a source file carrying `inlineTests`: ripgrep holds 34 such
+files.
 
 A file is a test by its facets, its name or its position, and by nothing else. The facets first: a
 known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
@@ -1458,7 +1463,8 @@ letter or a digit before it, so `EXIT` is not one, and `Spec` is not a suffix at
 the 21 repositories end in it and neither is a test. A test tree for these is the six names below
 plus the ones the family's own build uses: a Gradle source set ending in `Test` (`commonTest`,
 `jvmTest`) for Java and Kotlin, a dotted project name ending in `Tests` (`Serilog.Tests`) for C#,
-and a `Test` namespace directory for PHP. Rust has no name, and a file there is a test by its facets.
+and a `Test` namespace directory for PHP. Rust has no name, and a file there is a test by its facets
+or by sitting directly in a crate's `tests`.
 Then a `__tests__` path segment, because nothing but a test is ever put in one. Last, for a source
 file under a top-level `test`, `tests` or `spec` directory, a source file outside that tree whose
 path the file's own tail mirrors: eslint's `tests/lib/rules/no-var.js` covers `lib/rules/no-var.js`
