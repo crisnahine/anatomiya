@@ -123,7 +123,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // holds code declares its cases in whatever vocabulary its runner spells them,
   // and reading that absence as "not a test" costs vscode 1,864 of its 2,366
   // (`test` nested inside `suite`) and this client's whole Cypress suite.
-  if (holdsNothing(facets)) return false;
+  if (facets?.empty === true) return false;
   const base = baseOf(rel);
   if (TEST_NAME.test(base)) return true;
   const dir = dirOf(rel);
