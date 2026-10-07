@@ -9,7 +9,8 @@ import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 import { repo } from "./ts-repo.mjs";
 import {
   readConfig,
-  CONFIG_NAME,
+  CONFIG_NAMES,
+  configNameIn,
   FORCED_OPTIONS,
   confinedCompilerHost,
   confinedParseHost,
@@ -262,7 +263,7 @@ test("readConfig hands both TypeScript entry points a normalised path", needsTs,
     // every path it holds and then asserts the two forms are equal, so two
     // spellings is the `Debug Failure` this exists to avoid.
     for (const p of seen) assert.doesNotMatch(p, /\\/, `${p} reached TypeScript with a backslash in it`);
-    const dirs = new Set(seen.map((p) => (p.endsWith(CONFIG_NAME) ? p.slice(0, -CONFIG_NAME.length - 1) : p)));
+    const dirs = new Set(seen.map((p) => (p.endsWith(CONFIG_NAMES[0]) ? p.slice(0, -CONFIG_NAMES[0].length - 1) : p)));
     assert.equal(dirs.size, 1, `two spellings of one directory reached TypeScript: ${[...dirs].join(" and ")}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -703,4 +704,101 @@ test("a path handed to TypeScript carries forward slashes on either platform", (
   // so backslashes crash it the moment a config has an error to report.
   assert.equal(toTsPath("C:\\repo\\src\\a.ts"), "C:/repo/src/a.ts");
   assert.equal(toTsPath("/repo/src/a.ts"), "/repo/src/a.ts");
+});
+
+test("a root with only a base config has the base read", needsTs, () => {
+  // An Nx-style root keeps its options, the path aliases among them, in
+  // `tsconfig.base.json` and one config per package. Unread, every import
+  // through an alias resolved to any.
+  const dir = repo({
+    "tsconfig.base.json": `{"compilerOptions":{"strict":true,"baseUrl":".","paths":{"@acme/util":["libs/util/src/index.ts"]}}}`,
+    "a.ts": "export const a = 1;\n",
+  });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "ok");
+    assert.equal(r.reason, null);
+    assert.equal(r.configName, "tsconfig.base.json");
+    assert.equal(r.options.strict, true);
+    assert.deepEqual(r.options.paths, { "@acme/util": ["libs/util/src/index.ts"] });
+    assert.equal(r.options.noEmit, true, "the forced options hold on a base config too");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the root config wins over a base beside it", needsTs, () => {
+  const dir = repo({
+    "tsconfig.json": `{"compilerOptions":{"strict":false}}`,
+    "tsconfig.base.json": `{"compilerOptions":{"strict":true}}`,
+  });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.configName, "tsconfig.json");
+    assert.equal(r.options.strict, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a root with neither config names none", needsTs, () => {
+  const dir = repo({ "a.ts": "export const a = 1;\n" });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.configName, null);
+    assert.equal(r.reason, "no-tsconfig");
+    assert.equal(configNameIn(dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a base config extending outside the repository is refused and reported", needsTs, () => {
+  const dir = repo({ "tsconfig.base.json": `{"extends":"../../outside/tsconfig.json"}` });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "degraded");
+    assert.equal(r.reason, "extends-escaped");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a base config that does not parse is degraded with its own reason", needsTs, () => {
+  const dir = repo({ "tsconfig.base.json": "{ this is not json" });
+  try {
+    assert.equal(readConfig(ts, dir).reason, "unparseable");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a directory named like a base config is degraded, never a throw", needsTs, () => {
+  const dir = repo({ "tsconfig.base.json/keep.txt": "" });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "degraded");
+    assert.equal(r.reason, "unparseable");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a base config that is a link out of the repository is refused, not followed", { skip: needsTs.skip || needsSymlinks.skip }, () => {
+  const away = repo({ "tsconfig.base.json": `{"compilerOptions":{"strict":true}}` });
+  const dir = repo({ "a.ts": "export const a = 1;\n" });
+  try {
+    symlinkSync(join(away, "tsconfig.base.json"), join(dir, "tsconfig.base.json"));
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "degraded");
+    assert.equal(r.reason, "config-escaped");
+    assert.notEqual(r.options.strict, true, "nothing the outside file says reaches the checker");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(away, { recursive: true, force: true });
+  }
+});
+
+test("the config names are the root's own first and the shared base second", () => {
+  assert.deepEqual([...CONFIG_NAMES], ["tsconfig.json", "tsconfig.base.json"]);
 });
