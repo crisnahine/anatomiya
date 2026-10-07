@@ -2639,6 +2639,85 @@ test("a target directory swapped for a link while its files were staged refuses 
   }
 });
 
+/** Swap one target's directory for a link to `to` as the `n`th rename from now returns: after the last look before the renames. */
+async function swappedAtRename(t) {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  const race = { left: 0, at: null, to: null, arm: (n, at, to) => Object.assign(race, { left: n, at, to }) };
+  fs.renameSync = (from, to) => {
+    const done = real(from, to);
+    if (race.left > 0 && --race.left === 0) {
+      rmSync(race.at, { recursive: true });
+      symlinkSync(race.to, race.at);
+    }
+    return done;
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+  return race;
+}
+
+test("a target directory swapped for a link once the renames began has nothing removed through it when the target is turned off", needsSymlinks, async (t) => {
+  const race = await swappedAtRename(t);
+  const a = area("src/services");
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    // Somebody else's files, under the very names this scan is about to remove.
+    for (const name of mapOf(target, a)) writeFileSync(join(outside, name), OURS);
+    const theirs = tree(outside);
+    const other = OTHERS.find((o) => o !== target);
+    const before = { record: readFileSync(join(dir, STORE, "facts.json"), "utf8"), claude: unstamped(snapshot(dir)), other: namesIn(dir, other) };
+    race.arm(1, join(dir, target.dir), outside);
+
+    assert.throws(
+      () => writeMap(result(dir, [a]), { targets: ["claude"] }),
+      (err) => err.message === `${target.dir} is no longer a directory of this repository's own, so nothing was written`,
+      target.id
+    );
+
+    assert.equal(race.left, 0, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(outside), theirs, `${target.id}: nothing where the link leads was removed`);
+    assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), before.record, `${target.id}: the record is the one that was there`);
+    assert.deepEqual(unstamped(snapshot(dir)), before.claude);
+    assert.deepEqual(namesIn(dir, other), before.other, `${target.id}: and nothing was removed from the other directory either`);
+  }
+});
+
+test("a target directory swapped for a link after its files were renamed has no stale file removed through it, and nothing put back there", needsSymlinks, async (t) => {
+  const race = await swappedAtRename(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    for (const name of mapOf(target, a, b)) writeFileSync(join(outside, name), OURS);
+    const theirs = tree(outside);
+    const other = OTHERS.find((o) => o !== target);
+    const before = { record: readFileSync(join(dir, STORE, "facts.json"), "utf8"), claude: unstamped(snapshot(dir)), other: tree(join(dir, other.dir)) };
+    // The record, its layout file and two files in each of three directories.
+    race.arm(2 + 3 * 2, join(dir, target.dir), outside);
+
+    assert.throws(
+      () => writeMap(result(dir, [a])),
+      (err) => err.message === `${target.dir} is no longer a directory of this repository's own, so nothing was written`,
+      target.id
+    );
+
+    assert.equal(race.left, 0, `${target.id}: the control, the swap happened`);
+    assert.deepEqual(tree(outside), theirs, `${target.id}: nothing where the link leads was removed or written`);
+    assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), before.record);
+    assert.deepEqual(unstamped(snapshot(dir)), before.claude, `${target.id}: Claude Code's stale file is back`);
+    assert.deepEqual(tree(join(dir, other.dir)), before.other, `${target.id}: and so is the other directory's`);
+  }
+});
+
 test("nothing is removed until every file has been renamed into place", async (t) => {
   // Removed first, an orphan is gone while the record and the overview on disk still name it.
   const dir = workspace(t);
