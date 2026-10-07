@@ -3358,7 +3358,7 @@ test("the cursor overview always applies, names what wrote it and says how an ar
     overviewFor(
       "alwaysApply: true",
       "Read a file before editing it: an area's notes attach when you read one of its files.",
-      "attached when one of its files is in context",
+      "attached when you read one of its files",
       ".cursor/rules/anatomiya-*.mdc"
     )
   );
@@ -3390,7 +3390,7 @@ test("several unnamed areas are listed in each reader's own words", () => {
   const many = result({ areas: [silent("a"), silent("b"), silent("c")] });
   const tail = (target) => renderOverview(many, { uncovered: 0 }, target).split("\n").find((l) => l.startsWith("- 3 areas"));
   assert.equal(tail(claude), "- 3 areas, each in its own file, loaded when you read one of its files");
-  assert.equal(tail(cursor), "- 3 areas, each in its own file, attached when one of its files is in context");
+  assert.equal(tail(cursor), "- 3 areas, each in its own file, attached when you read one of its files");
   assert.equal(tail(copilot), "- 3 areas, each in its own file, applied to the files its pattern names");
 });
 
@@ -3502,7 +3502,7 @@ test("an overview lists and counts only the areas its target has a file for, and
     "## Areas (2)",
     "",
     "- src/services — 40 files, 1 stated",
-    "- and 1 more area in its own file, attached when one of its files is in context",
+    "- and 1 more area in its own file, attached when you read one of its files",
     "- 1 area has no pattern Cursor can be given, so no file here covers it: lib/odd.",
   ]);
 

@@ -25,7 +25,7 @@ export const TARGETS = Object.freeze({
   }),
   cursor: describe("cursor", ".cursor/rules", ".mdc", "Cursor", {
     reads: "Read a file before editing it: an area's notes attach when you read one of its files.",
-    listed: "attached when one of its files is in context",
+    listed: "attached when you read one of its files",
     wrote: WROTE,
   }),
   copilot: describe("copilot", ".github/instructions", ".instructions.md", "GitHub Copilot", {
@@ -97,9 +97,14 @@ export function spelledGlobs(target, globs, text) {
       continue;
     }
     out.patterns.push(...each);
-    written.push(g.dir);
+    written.push(g);
   }
-  const reached = (g) => written.some((dir) => within(g.dir, dir) || within(dir, g.dir));
+  // Cursor reads a `globs` value of exactly `true` or `false` as a boolean.
+  if (target.id === "cursor" && out.patterns.length === 1 && /^(true|false)$/.test(out.patterns[0])) {
+    out.unspellable.push(text(written.pop()));
+    out.patterns = [];
+  }
+  const reached = (g) => written.some(({ dir }) => within(g.dir, dir) || within(dir, g.dir));
   out.dropped = globs.filter((g) => g.negated && reached(g)).map((g) => text({ ...g, negated: false }));
   if (target.id === "copilot") out.widened = out.patterns.filter((p) => !p.startsWith("**/"));
   return out;

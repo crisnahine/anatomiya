@@ -258,8 +258,10 @@ export function resolveTargetDir(root, target) {
   if (dir === null) return null;
   // A `.claude/rules` link can lead here, and Claude Code would then load this target's files as its own.
   const rules = resolveRulesDir(root);
-  if (rules !== null && (contains(rules, dir) || contains(dir, rules))) return null;
-  return dir;
+  if (rules === null) return dir;
+  // In the native form: the plain one keeps a link's own case on a volume that folds it.
+  const [a, b] = [nativeUpTo(rules), nativeUpTo(dir)];
+  return contains(a, b) || contains(b, a) ? null : dir;
 }
 
 function ownDirectory(root, relPath) {
