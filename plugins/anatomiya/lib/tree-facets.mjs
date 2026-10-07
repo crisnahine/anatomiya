@@ -7,6 +7,7 @@
  * builds `_test.go` and nothing else, cargo a file under `tests`, and pytest a
  * `test_*.py` that imports nothing from pytest at all.
  */
+import { assertKeyed, hostedBy, placeTestsOf } from "./langs.mjs";
 import { coveredStem, isTestTree } from "./test-shape.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
 import { fieldOf, nameOf, walkTree } from "./tree-walk.mjs";
@@ -78,21 +79,23 @@ const RUNNERS = {
     ]),
     // `[Fact]` is the class `FactAttribute`, and either spelling compiles.
     markSuffix: "Attribute",
-    alias: (node) => (node.children.length > 1 ? fieldOf(node, "name") : null),
+    alias: (node, shapes) => (node.children.length > 1 ? fieldOf(node, shapes.usingAlias) : null),
   },
   rust: {
     marks: new Map([["test", "cargo test"]]),
     // cargo collects a file under `tests`; tokio splits a module's unit tests into a `tests.rs` beside it, 5 files and 5 holding cases.
-    claims: (rel) => dirsAt(rel).includes("tests") || stemAt(rel) === "tests",
+    claims: (rel) => dirsAt(rel).includes(placeTestsOf("rust").dir) || stemAt(rel) === "tests",
     inline: true,
   },
   kotlin: {
     imports: [[/^kotlin\.test(\.|$)/, "kotlin.test"], ...JVM_IMPORTS],
     marks: JVM_CASES,
-    // `import a.B as C` has no field for `C`: it is the child after the `as` token.
-    alias: (node) => (node.tokens?.includes("as") ? node.children.at(-1) : null),
+    // `import a.B as C` has no field for `C`: it is the child after the token that renames.
+    alias: (node, shapes) => (node.tokens?.includes(shapes.renames.token) ? node.children.at(-1) : null),
   },
 };
+
+assertKeyed("RUNNERS", RUNNERS, hostedBy("tree-sitter"));
 
 // Pest declares a case by calling one of these at file level, and imports nothing to do it.
 const PEST_CALLS = new Set(["it", "test"]);
@@ -119,9 +122,9 @@ const lastSegment = (path) => path.slice(path.lastIndexOf(".") + 1);
  * into one path, `from unittest import mock, TestCase` read as `unittest.mock`.
  * The name an import is renamed to is no part of where it came from.
  */
-function importPaths(node, imported, alias) {
+function importPaths(node, { imported, renamed: field = null }, alias) {
   const isName = typeof imported === "string" ? (n) => n.field === imported : (n) => imported?.includes(n.type) === true;
-  const renamed = (n) => n === alias || n.field === "alias";
+  const renamed = (n) => n === alias || (field !== null && n.field === field);
   const own = (name) => {
     const out = [];
     const work = [name];
@@ -173,8 +176,8 @@ export function treeFacets(program, lang, rel = "") {
 
   walkTree(program, (node, ctx) => {
     if (imports.has(node.type)) {
-      const alias = rules.alias?.(node) ?? null;
-      const paths = importPaths(node, shapes.imported, alias);
+      const alias = rules.alias?.(node, shapes) ?? null;
+      const paths = importPaths(node, shapes, alias);
       imported.push(...paths);
       if (alias) aliases.set(alias.text, lastSegment(paths[0]));
     } else if (annotations.has(node.type)) {

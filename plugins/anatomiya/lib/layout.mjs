@@ -85,7 +85,7 @@ export const LEVEL_ONLY_LABEL = " (files at this level)";
  * corpus and asking it per file walks it again.
  *
  * A language with a test name of its own takes no mirror, and the set holds
- * the one place such a language's tool collects by instead: `cargoTests`.
+ * the one place such a language's tool collects by instead: `placedTests`.
  */
 export function mirroredTests(files) {
   const named = (f) => FAMILY_TEST_NAMES[familyOf(f.lang)] !== undefined;
@@ -96,7 +96,7 @@ export function mirroredTests(files) {
     for (let i = 0; i < segments.length; i++) outside.add(segments.slice(i).join("/"));
   }
 
-  const mirrored = cargoTests(files);
+  const mirrored = placedTests(files);
   for (const f of files) {
     if (!f.lang || named(f) || !inTestRoot(f.rel)) continue;
     const under = withoutExtension(f.rel).slice(f.rel.indexOf("/") + 1);
@@ -106,26 +106,30 @@ export function mirroredTests(files) {
 }
 
 /**
- * The Rust files cargo builds as integration tests by default: every one
- * directly in a crate's `tests`, whatever it holds. A crate is a directory with
- * a `Cargo.toml` or a `src` in it. A file one level deeper is a module those
- * targets include, and is a test only by its own facets.
+ * The files a language's tool builds as tests by where they sit: every one
+ * directly in the declared directory of a project, whatever it holds. A
+ * project is a directory with the declared manifest or source directory in
+ * it. A file one level deeper is a module those targets include, and is a test
+ * only by its own facets.
  *
  * No manifest is read, so a crate that sets `autotests = false` is counted by
- * the default too: ripgrep builds one target, and the 10 files counted under
- * its `tests` are that target and its 9 modules.
+ * cargo's default too: ripgrep builds one target, and the 10 files counted
+ * under its `tests` are that target and its 9 modules.
  */
-function cargoTests(files) {
-  const crates = new Set();
-  for (const { rel } of files) {
-    if (baseOf(rel) === "Cargo.toml") crates.add(dirOf(rel));
-    const dirs = dirOf(rel).split("/");
-    for (let i = 0; i < dirs.length; i++) if (dirs[i] === "src") crates.add(dirs.slice(0, i).join("/"));
-  }
+function placedTests(files) {
   const out = new Set();
-  for (const f of files) {
-    if (!f.lang || baseOf(dirOf(f.rel)) !== placeTestsOf(f.lang)?.dir) continue;
-    if (crates.has(dirOf(dirOf(f.rel)))) out.add(f.rel);
+  const places = new Set(files.map((f) => (f.lang ? placeTestsOf(f.lang) : null)).filter(Boolean));
+  for (const place of places) {
+    const projects = new Set();
+    for (const { rel } of files) {
+      if (baseOf(rel) === place.manifest) projects.add(dirOf(rel));
+      const dirs = dirOf(rel).split("/");
+      for (let i = 0; i < dirs.length; i++) if (dirs[i] === place.sources) projects.add(dirs.slice(0, i).join("/"));
+    }
+    for (const f of files) {
+      if (!f.lang || placeTestsOf(f.lang) !== place || baseOf(dirOf(f.rel)) !== place.dir) continue;
+      if (projects.has(dirOf(dirOf(f.rel)))) out.add(f.rel);
+    }
   }
   return out;
 }

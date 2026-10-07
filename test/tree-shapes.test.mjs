@@ -15,12 +15,18 @@ await Parser.init();
 const LANGUAGES = new Map();
 for (const id of IDS) LANGUAGES.set(id, await Language.load(join(ANATOMIYA, "grammars", `${id}.wasm`)));
 
-/** Every name in one language's entry its grammar does not know: a list is node types, a string is a field. */
+const isToken = (value) => !Array.isArray(value) && typeof value === "object" && typeof value?.token === "string" && value.token !== "";
+
+/** Every name in one language's entry its grammar does not know: a list is node types, a string is a field, `{ token }` an anonymous token. */
 function unknownNames(shapes, language) {
   const unknown = [];
   for (const [key, value] of Object.entries(shapes)) {
     if (typeof value === "string") {
       if (language.fieldIdForName(value) === null) unknown.push(`${key}: ${value}`);
+      continue;
+    }
+    if (isToken(value)) {
+      if (language.idForNodeType(value.token, false) === null) unknown.push(`${key}: ${value.token}`);
       continue;
     }
     for (const name of value) if (language.idForNodeType(name, true) === null) unknown.push(`${key}: ${name}`);
@@ -32,12 +38,24 @@ test("the table holds the seven languages the engine reads, and no other", () =>
   assert.deepEqual(Object.keys(SHAPES), IDS);
 });
 
-test("every entry is a list of node types or one field name, so the check below reads all of it", () => {
+test("every entry is a list of node types, one field name or one token, so the check below reads all of it", () => {
   for (const id of IDS) {
     for (const [key, value] of Object.entries(SHAPES[id])) {
       const listed = Array.isArray(value) && value.every((name) => typeof name === "string" && name !== "");
-      assert.ok(listed || (typeof value === "string" && value !== ""), `${id}.${key}`);
+      assert.ok(listed || (typeof value === "string" && value !== "") || isToken(value), `${id}.${key}`);
     }
+  }
+});
+
+test("a renamed import is found by what its grammar marks the new name with: a field, the directive's own name, or a token", () => {
+  assert.deepEqual(
+    IDS.map((id) => [id, SHAPES[id].renamed ?? SHAPES[id].usingAlias ?? SHAPES[id].renames ?? null]),
+    [["python", "alias"], ["php", "alias"], ["go", null], ["java", null], ["csharp", "name"], ["rust", "alias"], ["kotlin", { token: "as" }]],
+  );
+  // The readers spell none of them.
+  for (const module of ["tree-facets.mjs", "tree-walk.mjs"]) {
+    const src = readFileSync(join(ANATOMIYA, "lib", module), "utf8");
+    assert.deepEqual(src.match(/["'`](?:name|alias|as)["'`]/g), null, module);
   }
 });
 
@@ -66,14 +84,20 @@ test("every node type and field the table names is one the vendored grammar know
 function unproduced(shapes, program) {
   const types = new Set();
   const fields = new Set();
+  const tokens = new Set();
   walkTree(program, (node) => {
     types.add(node.type);
     if (node.field) fields.add(node.field);
+    for (const token of node.tokens ?? []) tokens.add(token);
   });
   const missing = [];
   for (const [key, value] of Object.entries(shapes)) {
     if (typeof value === "string") {
       if (!fields.has(value)) missing.push(`${key}: ${value}`);
+      continue;
+    }
+    if (isToken(value)) {
+      if (!tokens.has(value.token)) missing.push(`${key}: ${value.token}`);
       continue;
     }
     for (const name of value) if (!types.has(name)) missing.push(`${key}: ${name}`);
@@ -117,6 +141,9 @@ test("a misspelt node type or field is reported by name", () => {
   }
   // A token is not a node type: `public` is in the Java grammar, and only as an anonymous one.
   assert.deepEqual(unknownNames({ fn: ["public"] }, LANGUAGES.get("java")), ["fn: public"]);
+  assert.deepEqual(unknownNames({ renames: { token: "public" } }, LANGUAGES.get("java")), []);
+  assert.deepEqual(unknownNames({ renames: { token: "az" } }, LANGUAGES.get("kotlin")), ["renames: az"]);
+  assert.deepEqual(unproduced({ renames: { token: "typealias" } }, copied("kotlin", SAMPLES.kotlin)), ["renames: typealias"]);
 });
 
 test("the table imports nothing", () => {

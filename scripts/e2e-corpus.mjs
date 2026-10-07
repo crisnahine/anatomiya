@@ -35,7 +35,7 @@ import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
 import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
-import { familyOf, language } from "../plugins/anatomiya/lib/langs.mjs";
+import { LANGUAGES, assertKeyed, familyOf, language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, readRecord, statedSide } from "../plugins/anatomiya/lib/facts.mjs";
@@ -251,6 +251,7 @@ const langsOf = (key) => rowByKey(key)?.langs ?? [];
 // Null where the language has no class to give a base.
 const JS_PROBE = { comment: "// e2e probe\n", subclass: "class ZzProbe extends NotTheBase {}\n" };
 const PROBES = {
+  js: JS_PROBE,
   ruby: { comment: "# e2e probe\n", subclass: "class ZzProbe < NotTheBase\nend\n" },
   python: { comment: "# e2e probe\n", subclass: "class ZzProbe(NotTheBase):\n    pass\n" },
   php: { comment: "<?php\n// e2e probe\n", subclass: "<?php\n\nclass ZzProbe extends NotTheBase\n{\n}\n" },
@@ -261,10 +262,11 @@ const PROBES = {
   kotlin: { comment: "// e2e probe\n", subclass: "class ZzProbe : NotTheBase()\n" },
 };
 
+assertKeyed("PROBES", PROBES, [...new Set(LANGUAGES.map((l) => l.family))]);
+
 /** The probe file's text for one extension and row, or null where the language cannot break that row. */
 export function probeBody(ext, key, kind = null) {
-  const family = familyOf(language(`f${ext}`));
-  const probe = PROBES[family] ?? JS_PROBE;
+  const probe = PROBES[familyOf(language(`f${ext}`))];
   if (key !== "file_naming_case") return probe.subclass;
   // Only a JavaScript file can carry the element a row narrowed to JSX asks about.
   return kind === "jsx" && probe === JS_PROBE ? "// e2e probe\nexport const ZzProbeElement = () => <div />\n" : probe.comment;

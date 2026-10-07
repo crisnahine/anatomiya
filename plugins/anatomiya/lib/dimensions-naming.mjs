@@ -8,6 +8,7 @@
  * other dimension. Nothing here imports the registry, because the registry
  * imports this file.
  */
+import { templateMountsByName } from "./langs.mjs";
 import { componentProps, isFunctionLike } from "./walk.mjs";
 import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./stems.mjs";
@@ -374,9 +375,9 @@ export const NAMING_AST = [
       const constructed = new Set();
       const named = [];
       const props = componentProps(program, rel);
-      // The template is not read, so a capitalised function in a Vue script is
-      // taken for the component the template mounts under that name.
-      const inVue = /\.vue$/.test(rel ?? "");
+      // The template is not read, so where one mounts a function by its name a
+      // capitalised function is taken for the component it mounts.
+      const mounted = templateMountsByName(rel ?? "");
       return {
         node(n, ctx) {
           noteConstructed(n, constructed);
@@ -408,7 +409,7 @@ export const NAMING_AST = [
             // A component returning JSX and one this file only renders are the same
             // thing, so excluding one of them alone would be arbitrary.
             if (rendered.has(name) || constructed.has(name) || yieldsJsx(fn)) continue;
-            if (inVue && cls === "PascalCase") continue;
+            if (mounted && cls === "PascalCase") continue;
             // The id node rides along so the check can point at the declaration
             // rather than line 1; the worker strips nodes before IPC either way.
             add({ node: id, conforming: false, where: name, class: cls });
