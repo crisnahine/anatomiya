@@ -3302,11 +3302,11 @@ test("a claim asked of every extension the area holds names none of them", () =>
 });
 
 test("a row asked of JSX alone is scoped to the extensions a file holding JSX may carry", () => {
-  const jsxRow = REGISTRY.find((d) => d.langs.length === 1 && d.langs[0] === "jsx");
+  const jsxRow = REGISTRY.find((d) => d.langs.length === 1 && d.langs[0] === "jsx" && /\w$/.test(d.claim));
   const row = dim({ key: jsxRow.key, claim: jsxRow.claim });
 
   assert.match(
-    renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb", "(none)"] }, dimensions: [row] })),
+    renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb", "Gemfile"] }, dimensions: [row] })),
     new RegExp(`^${jsxRow.claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, in \\.js files$`, "m")
   );
   assert.doesNotMatch(renderArea(area({ extsByLang: { js: [".js", ".ts"], jsx: [".tsx"] }, dimensions: [row] })), /, in /);
@@ -3318,6 +3318,60 @@ test("three extensions read as a series, in one order whatever order the files c
 
   assert.match(one, /^module-level bindings are const, in \.js, \.mjs and \.ts files$/m);
   assert.equal(one, other);
+});
+
+const rescueRow = () => dim({ key: "rescue_uses_error", claim: "rescue blocks use the error they caught" });
+const scopeOf = (extsByLang, row = constRow()) => renderArea(area({ extsByLang, dimensions: [row] })).match(/, in .*$/m)?.[0];
+
+test("a file with no extension is named in the scope, after the extensions", () => {
+  const js = [".js"];
+
+  assert.equal(scopeOf({ js, ruby: [".rb", "Gemfile", ".gemspec"] }, rescueRow()), ", in .gemspec and .rb files and Gemfile");
+  assert.equal(scopeOf({ js, ruby: ["Rakefile", "Gemfile"] }, rescueRow()), ", in Gemfile and Rakefile");
+  assert.equal(scopeOf({ js, ruby: ["Rakefile", ".rb", "Gemfile"] }, rescueRow()), ", in .rb files and Gemfile and Rakefile");
+  assert.equal(scopeOf({ js, ruby: ["Rakefile", ".ru", ".rb", ".rake"] }, rescueRow()), ", in .rake, .rb and .ru files and Rakefile");
+});
+
+test("the scope lists extensions by code point, with and before the last and no comma before it", () => {
+  const ruby = [".rb"];
+
+  assert.equal(scopeOf({ ruby, js: [".ts"] }), ", in .ts files");
+  assert.equal(scopeOf({ ruby, js: [".ts", ".js"] }), ", in .js and .ts files");
+  assert.equal(scopeOf({ ruby, js: [".ts", ".cjs"], jsx: [".tsx", ".JSX"] }), ", in .JSX, .cjs, .ts and .tsx files");
+});
+
+test("a declaration file is a TypeScript file in the scope, named once", () => {
+  const ruby = [".rb"];
+
+  assert.equal(scopeOf({ ruby, js: [".d.ts", ".ts"] }), ", in .ts files");
+  assert.equal(scopeOf({ ruby, js: [".ts", ".d.ts", ".js"] }), ", in .js and .ts files");
+  assert.equal(scopeOf({ ruby, js: [".d.mts", ".d.cts", ".d.ts"] }), ", in .cts, .mts and .ts files");
+});
+
+test("the scope goes inside a sentence's full stop and after any other mark a claim ends on", () => {
+  const SCOPED = [
+    ["hook_call_style", "React's hooks are called by their bare name, not through React.", "React's hooks are called by their bare name, not through React, in .js files."],
+    ["optional_chaining", "optional values are read with ?.", "optional values are read with ?., in .js files"],
+    ["nullish_default", "defaults are taken with ??, not ||", "defaults are taken with ??, not ||, in .js files"],
+    ["non_null_assertion", "possibly-absent values are read with ?., not asserted with !", "possibly-absent values are read with ?., not asserted with !, in .js files"],
+    ["test_call_style", "test cases are declared with test(), not it()", "test cases are declared with test(), not it(), in .js files"],
+    ["test_call_style", "test cases are declared with it(), not test()", "test cases are declared with it(), not test(), in .js files"],
+    ["assertion_style", "assertions are written with expect()", "assertions are written with expect(), in .js files"],
+    ["assertion_style", "assertions are written with assert(), not expect()", "assertions are written with assert(), not expect(), in .js files"],
+    [
+      "service_result_shape",
+      "service entry points do not raise, directly or through a bang call like update!",
+      "service entry points do not raise, directly or through a bang call like update!, in .rb files",
+    ],
+  ];
+  const texts = (v) => (typeof v === "string" ? [v] : Object.values(v ?? {}));
+  const marked = REGISTRY.flatMap((d) => [d.claim, d.counterClaim, d.splitClaim, d.noneClaim].flatMap(texts)).filter((s) => /[^\w>]$/.test(s));
+
+  assert.deepEqual(marked.sort(), SCOPED.map(([, claim]) => claim).sort(), "a claim ending on a mark this test has not seen");
+  for (const [key, claim, want] of SCOPED) {
+    const out = renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb"] }, dimensions: [dim({ key, claim })] }));
+    assert.equal(out.split("\n").find((line) => line.includes(", in .")), want);
+  }
 });
 
 test("the scope costs no line, and a sentence the budget kept without its counts still carries it", () => {

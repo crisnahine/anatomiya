@@ -11,7 +11,7 @@ import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
 import { resolve as resolveBaseline, measure as measureBaseline } from "./baseline.mjs";
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
-import { extOf } from "./paths.mjs";
+import { baseOf, extOf } from "./paths.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 
 /**
@@ -365,10 +365,10 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   };
 }
 
-/** Each language's extensions among these files, as the kinds line spells them. */
+/** Each language's extensions among these files, and the whole name of a file that has none. */
 function extsByLang(files) {
   const out = {};
-  for (const f of files) (out[f.lang] ??= new Set()).add(extOf(f.rel));
+  for (const f of files) (out[f.lang] ??= new Set()).add(extOf(f.rel).startsWith(".") ? extOf(f.rel) : baseOf(f.rel));
   return Object.fromEntries(Object.entries(out).map(([lang, exts]) => [lang, [...exts]]));
 }
 
