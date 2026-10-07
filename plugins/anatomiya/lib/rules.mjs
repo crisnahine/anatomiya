@@ -329,9 +329,7 @@ function ownDirectory(root, relPath) {
     }
     // Asked of the entry itself, so a link to a directory is a link.
     if (!entry.isDirectory()) {
-      return entry.isSymbolicLink()
-        ? blocked(`${name} is a link`, "replace the link with a directory")
-        : blocked(`${name} is not a directory`, "remove it");
+      return blocked(`${name} is ${entry.isSymbolicLink() ? "a link" : "not a directory"}`, `make ${name} a directory of this repository`);
     }
     at = next;
   }
@@ -339,7 +337,7 @@ function ownDirectory(root, relPath) {
 }
 
 const blocked = (reason, remedy) => ({ dir: null, reason, remedy });
-const UNREAD = "fix its permissions";
+const UNREAD = "make it readable";
 
 /**
  * Whether a scan keeps writing this target: `on`, `off` or `unknown`.
@@ -355,21 +353,23 @@ export function targetState(root, target) {
 
 /**
  * The same, and for an unknown one the path that made it so, what that path
- * is, and what a person does about it.
+ * is, and what a person does about it: the one remedy every sentence about it
+ * gives.
  */
 export function targetStatus(root, target) {
   if (target.always) return { state: "on" };
   const { dir, reason, remedy } = locateTarget(root, target);
   if (dir === null) return { state: "unknown", reason, remedy };
   const path = join(dir, overviewName(target));
-  const unknown = (what, remedy) => ({ state: "unknown", reason: `${target.dir}/${overviewName(target)} ${what}`, remedy });
+  const said = `${target.dir}/${overviewName(target)}`;
+  const unknown = (what, remedy = `move or delete ${said}`) => ({ state: "unknown", reason: `${said} ${what}`, remedy });
   let entry;
   try {
     entry = lstatSync(path);
   } catch (err) {
     return err.code === "ENOENT" ? { state: "off" } : unknown("could not be read", UNREAD);
   }
-  if (!entry.isFile()) return entry.isSymbolicLink() ? unknown("is a link", "remove the link") : unknown("is not a file", "remove it");
+  if (!entry.isFile()) return unknown(entry.isSymbolicLink() ? "is a link" : "is not a file");
   const read = readHead(path);
   if (read.kind !== "file") return unknown("could not be read", UNREAD);
   // A volume that folds case answers for an entry spelled another way, and that one is somebody's.
