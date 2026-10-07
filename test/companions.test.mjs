@@ -815,3 +815,60 @@ test("one stem holding two languages decides each against its own sources", () =
   assert.equal(owners["spec/models/nested/foo_spec.rb"], "app/models/nested/foo.rb");
   assert.equal(owners["test/nested/foo.test.js"], "src/nested/foo.js");
 });
+
+test("a spec importing a component by its full name covers it", () => {
+  // Nested under a flat test root, so no path shape answers and only the
+  // import can.
+  for (const ext of ["vue", "svelte"]) {
+    const source = [file(`pkg/src/Foo.${ext}`)];
+    const tests = [imports("test/Foo.spec.ts", [`../pkg/src/Foo.${ext}`])];
+
+    assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 1, ext);
+  }
+});
+
+test("a bare stem does not resolve to a component", () => {
+  // A bundler needs the extension spelled, and `./Foo.vue.js` is another file.
+  for (const ext of ["vue", "svelte"]) {
+    const source = [file(`pkg/src/Foo.${ext}`)];
+    for (const spec of ["../pkg/src/Foo", `../pkg/src/Foo.${ext}.js`, `../pkg/src/Foo.${ext}.ts`]) {
+      const tests = [imports("test/Foo.spec.ts", [spec])];
+
+      assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 0, spec);
+    }
+  }
+});
+
+test("a loader query on a component names the file it names on any other", () => {
+  const source = [file("pkg/src/Foo.vue"), file("pkg/src/worker.ts")];
+  const tests = [
+    imports("test/Foo.spec.ts", ["../pkg/src/Foo.vue?raw"]),
+    imports("test/worker.spec.ts", ["../pkg/src/worker.ts?raw"]),
+  ];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 2);
+});
+
+test("a component with a test of its name beside it reads as a .tsx file there does", () => {
+  // Neither test imports anything: the directory the two share is the evidence.
+  const beside = (ext) => {
+    const source = [file(`src/components/Bar.${ext}`), file(`src/components/Baz.${ext}`)];
+    const tests = [imports("src/components/Bar.test.ts", [])];
+    return namesakeCompanions(source, tests, "src/components", namesakeIndex(tests, source));
+  };
+
+  assert.deepEqual(beside("tsx"), { with: 1, of: 2, root: null });
+  assert.deepEqual(beside("vue"), beside("tsx"));
+  assert.deepEqual(beside("svelte"), beside("tsx"));
+});
+
+test("a component with a same-stem test in an unrelated directory reads as a .tsx file there does", () => {
+  const apart = (ext) => {
+    const source = [file(`apps/www/Page0.${ext}`)];
+    const tests = [imports("test/Page0.test.ts", [])];
+    return namesakeCompanions(source, tests, "apps/www", namesakeIndex(tests, source));
+  };
+
+  assert.deepEqual(apart("tsx"), { with: 0, of: 1, root: null });
+  assert.deepEqual(apart("vue"), apart("tsx"));
+});
