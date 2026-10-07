@@ -294,29 +294,29 @@ test("an open script with no end is reported, not guessed", () => {
 
 // The clock bounds are sized against the quadratic scans they guard, which take
 // over 6,000 ms on these inputs; a linear one takes under 150 ms on a busy machine.
+// Each input is scanned five times, because a slow path can appear only once the
+// engine has optimised the scanner, which is after the first call in a process.
+const scanFiveTimes = (source, kind, expected) => {
+  for (let scan = 1; scan <= 5; scan++) {
+    const before = performance.now();
+    const found = read(source, kind);
+    const took = performance.now() - before;
+    assert.deepEqual(found, expected, kind);
+    assert.ok(took < 5000, `${kind} scan ${scan} took ${Math.round(took)} ms`);
+  }
+};
+
 test("a megabyte of markup is scanned in linear time", () => {
   const markup = "<div>".repeat(200_000);
   assert.equal(markup.length, 1_000_000);
   const script = "<script>const a = 1;</script>";
-  for (const [kind, source] of [
-    ["vue", `<template>${markup}</template>\n${script}`],
-    ["svelte", `${markup}\n${script}`],
-  ]) {
-    const before = performance.now();
-    const found = read(source, kind);
-    const took = performance.now() - before;
-    assert.deepEqual(found, [js("const a = 1;")], kind);
-    assert.ok(took < 5000, `${kind} took ${Math.round(took)} ms`);
-  }
+  scanFiveTimes(`<template>${markup}</template>\n${script}`, "vue", [js("const a = 1;")]);
+  scanFiveTimes(`${markup}\n${script}`, "svelte", [js("const a = 1;")]);
 });
 
 test("a long tag name costs no more for each end tag it is held against", () => {
   const source = `<${"a".repeat(249_999)}>${"</>".repeat(250_000)}</${"A".repeat(249_999)}>`;
-  const before = performance.now();
-  const found = read(`${source}\n<script>const a = 1;</script>`, "vue");
-  const took = performance.now() - before;
-  assert.deepEqual(found, [js("const a = 1;")]);
-  assert.ok(took < 5000, `took ${Math.round(took)} ms`);
+  scanFiveTimes(`${source}\n<script>const a = 1;</script>`, "vue", [js("const a = 1;")]);
 });
 
 test("the scanner never throws", () => {

@@ -23,14 +23,17 @@ function openTag(source, lt) {
   let i = lt + 1;
   while (!endsName(source[i])) i++;
   const name = source.slice(lt + 1, i);
+  // Lower-cased here, once: left to the loop that holds it against each end
+  // tag, the engine builds the string again for every candidate.
+  const lower = name.toLowerCase();
   const attrs = new Map();
   for (;;) {
     while (isSpace(source[i])) i++;
     const c = source[i];
     if (c === undefined) return null;
-    if (c === ">") return { name, attrs, end: i + 1, selfClosing: false };
+    if (c === ">") return { name, lower, attrs, end: i + 1, selfClosing: false };
     if (c === "/") {
-      if (source[i + 1] === ">") return { name, attrs, end: i + 2, selfClosing: true };
+      if (source[i + 1] === ">") return { name, lower, attrs, end: i + 2, selfClosing: true };
       i++;
       continue;
     }
@@ -61,8 +64,7 @@ function openTag(source, lt) {
 // Vue's raw text ends at `</name` in any letter case, then `>` or whitespace.
 // The name is held against each `</` one character at a time: a name has no
 // `/`, so no character is read twice and a long name costs nothing extra.
-function rawEnd(source, from, name) {
-  const lower = name.toLowerCase();
+function rawEnd(source, from, lower) {
   for (let at = source.indexOf("</", from); at !== -1; at = source.indexOf("</", at + 2)) {
     let k = 0;
     while (k < lower.length && source[at + 2 + k]?.toLowerCase() === lower[k]) k++;
@@ -132,10 +134,9 @@ function templateEnd(source, from) {
     if (!tag) return null;
     i = tag.end;
     if (tag.selfClosing) continue;
-    const name = tag.name.toLowerCase();
-    if (name === "template") depth++;
-    else if (RAW_IN_TEMPLATE.has(name)) {
-      const close = rawEnd(source, i, name);
+    if (tag.lower === "template") depth++;
+    else if (RAW_IN_TEMPLATE.has(tag.lower)) {
+      const close = rawEnd(source, i, tag.lower);
       if (!close) return null;
       i = close.after;
     }
@@ -173,7 +174,7 @@ function vue(source) {
       ? { end: tag.end, after: tag.end }
       : html
         ? templateEnd(source, tag.end)
-        : rawEnd(source, tag.end, tag.name);
+        : rawEnd(source, tag.end, tag.lower);
     if (!close) {
       unterminated = tag.name === "script";
       break;
