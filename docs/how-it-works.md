@@ -207,13 +207,13 @@ id and loaded from the plugin's own directory the first time a file of that lang
 takes its package's `php` grammar, so a `.php` file with no open tag is text, as PHP reads it, and
 counts as an empty file. The engine runs in the pool oxc runs in, under the same guards, in a child
 whose shell is `plugins/anatomiya/lib/tree-sitter-worker.mjs` over the body
-`plugins/anatomiya/lib/tree-sitter-file.mjs`. The process is there for another reason than oxc's.
-Nothing here segfaults, but a wasm tree is memory the collector never frees, and a wasm heap that
+`plugins/anatomiya/lib/tree-sitter-file.mjs`. oxc runs in a child because it can segfault. This
+engine runs in one because a wasm tree is memory the collector never frees, and a wasm heap that
 reaches its cap fails every later parse in that process. So the body copies each tree into plain
 objects and deletes the wasm tree before a row or a facet reads anything. The copy keeps named
 nodes only, each with its type, its UTF-16 offsets, its line, its field name, and for a leaf its
-text up to 256 characters. Measured in one process, the resident size sat at 432 to 433 MB from the
-10th to the 300th parse of a 990 KB Python file. A parse that traps anyway answers its own file as
+text up to 256 characters. Measured in one process over two runs, the resident size stayed between 340
+and 435 MB from the 10th to the 300th parse of a 990 KB Python file. A parse that traps anyway answers its own file as
 unreadable and tells the pool to retire the worker, and the pool starts another before it hands
 out the next file.
 
@@ -224,7 +224,7 @@ have counted zero.
 
 A file is unexamined in four ways, and the scan names them apart because the reader's next move
 differs: it crashed the parser, the parser rejected its syntax, this tool could not read it, or it
-was over the size cap. The second is new in this shape. All three engines recover from a syntax error and
+was over the size cap. The second is new in this shape. All three parser engines recover from a syntax error and
 hand back a tree, oxc an almost empty one, prism one holding nodes nobody wrote and tree-sitter
 one with an ERROR or MISSING node where it lost its place, and
 counting any of them moves the denominator without moving the code. So a parse reporting errors answers
@@ -234,7 +234,7 @@ What a rejection means is the engine's to say. oxc and prism are their languages
 file they reject holds a syntax error. A tree-sitter grammar covers less than its language, so a
 file it rejects is counted on a line of its own, and the line says which two things that can mean:
 `82 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar
-does not cover; the files may be fine.` That is ktor, where each of the 82 was opened and none holds a syntax error.
+does not cover; the files may be fine.` That is ktor. A reading of its 82 files found no syntax error in any; no Kotlin compiler was run on them.
 On three repositories per language, the largest share of a repository's lines left unread is 0.00%
 for Python (one file in django, a fixture broken on purpose), 0.02% for PHP, none for Go and Rust,
 0.97% for Java, 4.35% for C# and 7.88% for Kotlin.
@@ -243,8 +243,8 @@ The C# grammar reads `#if` around whole statements and whole members and nowhere
 writes it inside base lists, parameter lists, call chains and initializers. It also rejects a file
 whose last line is a `#pragma`, `#endregion` or `#nullable` with no line break after it. Read as
 written, 18 of serilog's 216 files and 66 of Newtonsoft.Json's 951 are rejected, 27.7% and 25.9% of
-each repository's lines. A `.cs` file the grammar rejects is parsed twice more at most, and a
-retry is taken only where its tree is clean. The first appends a line break where the file ends
+each repository's lines. The engine parses a `.cs` file its grammar rejects at most twice more, and
+takes a retry only where its tree is clean. The first appends a line break where the file ends
 without one, which drops nothing and moves no offset: it reads 23 of Newtonsoft.Json's 66, each
 ending in a `#pragma` line. The second blanks every directive line and every branch of each `#if`
 but the first, in place, so no offset or line moves: it reads 17 of serilog's 18 and the other 43
@@ -300,10 +300,11 @@ a container held to two cores, `cpus()` still lists every core of the host. The 
 exists so a normal parse never pays for the polling.
 
 A tree-sitter parse the wall clock kills is not retried, because the slow case measured is the
-grammar and not the machine. The Kotlin grammar is quadratic in a file's `<` comparisons: 1,000
-functions of one comparison each (48 KB) parsed in 0.4 seconds, 2,000 in 1.6 and 4,000 (195 KB) in
-6.4, and the 4,000 written with `>` in 0.09. A second parse alone would take as long as the
-first.
+grammar and not the machine. The Kotlin grammar is quadratic in one shape of `<` comparison, a name
+on the left and a number, string or character literal on the right, `a < 0`: 1,000 functions of one
+each (48 KB) parsed in 0.4 seconds, 2,000 in 1.6 and 4,000 (195 KB) in 6.4, and the 4,000 written
+with `>` in 0.07. At 2,000 functions `a < b`, `0 < a`, `a <= 0` and `f() < 0` each parsed in under
+0.1 seconds. A second parse alone would take as long as the first.
 
 The dimensions run in the worker, not in the parent. They are 85% of the scan's CPU (1.57ms per file
 against 0.27ms to parse), and running them in the parent left that 85% on one core: throughput
@@ -1782,29 +1783,26 @@ Every clause is dropped when it counts nothing.
   own stem. Each also reads its own tree words out of both sides of a mirror, beside the seven above.
   A Java or Kotlin path is its package, which is what follows the last `java` or `kotlin` directory,
   so `src/main/java/a` mirrors `src/test/java/a` whatever the source set or the module is called:
-  okhttp's `commonJvmAndroid` read 25 of 152 before that and 50 after. A package written as one
+  okhttp's `commonJvmAndroid` reads 55 of 152, 49 of them under `jvmTest`. A package written as one
   dotted directory, `java/tools.fastlane.screengrab`, is the package a directory per name spells. Where no such directory
   exists a Gradle source set drops out, so `core/commonMain/src/k` mirrors `core/jvmTest/src/k`. The
   rest: the `.Tests` on a .NET project, so
   `test/Serilog.Tests/Core` mirrors `src/Serilog/Core`; a `Test` directory for PHP, so composer's
   `tests/Composer/Test/Util` mirrors `src/Composer/Util`. A Python package directly under `src` is
   read as the top of the tree, which is where every import puts it, so a flat `tests/test_cli.py`
-  answers `src/flask/cli.py`: flask read 0 of 24 before that and 9 of 24 after, the nine a reader
-  counts by hand. A Python test tree files its tests by feature below its top level, so a test
+  answers `src/flask/cli.py`: flask reads 9 of 24 under `src/flask`. A Python test tree files its tests by feature below its top level, so a test
   there answers a package at the top of the tree from the tree's own top level or from the path
   that mirrors the source's, and from nowhere deeper: fastapi's
-  `tests/test_telemetry/test_exceptions.py` tests OpenTelemetry spans, and it answered
-  `fastapi/exceptions.py` with two more of the 6 files credited under `fastapi`. A `tests`
+  `tests/test_telemetry/test_exceptions.py` tests OpenTelemetry spans and does not answer
+  `fastapi/exceptions.py`, and `fastapi` reads 3 of 50. A `tests`
   directory beside a package mirrors that package directory for directory, where one source file
   beside it carries the stem: `examples/tutorial/tests/test_auth.py` covers
-  `examples/tutorial/flaskr/auth.py`, and flask's `examples` read 0 of 12 before that and 3 of 12
-  after. Four families pair a whole project with its tests, and there a test covers the one source
+  `examples/tutorial/flaskr/auth.py`, and flask's `examples` reads 3 of 12. Four families pair a whole project with its tests, and there a test covers the one source
   file of its stem at any depth: a .NET test project and the project its name carries
   (`Serilog.Tests` and `Serilog`), a Maven or Gradle `src/test` or `<set>Test` source set and what
   sits beside it, a PHP `tests` and the `src` or `app` beside it. serilog keeps
   `test/Serilog.Tests/Core/BatchingSinkTests.cs` for `src/Serilog/Core/Sinks/Batching/BatchingSink.cs`
-  and read 18 of 113 where 28 have a test named for them; gson went from 27 of 80 to 34, and
-  Laravel from 166 of 1,630 to 267. Two source files of one stem in the project are credited with
+  and reads 28 of 113; gson reads 34 of 80 and Laravel 267 of 1,630. Two source files of one stem in the project are credited with
   nothing by it, since the stem cannot say which the test was written for. A PHP test whose name
   is its directory's name, alone or with a class after it, covers, by the pairing, only a source
   under a directory of that name: Laravel's `tests/Session/SessionStoreTest.php` tests
@@ -2165,9 +2163,9 @@ Roughly, in order of how much they move the number of stated claims:
   print as counts, not as a claim. On the example repository, the ratio gate is the one most of the
   slots that did not state failed.
 - **Language.** JavaScript, TypeScript and Ruby, the script blocks of Vue and Svelte files, and
-  Python, PHP, Go, Java, C#, Rust and Kotlin for the few rows section 4 counts for each. Nothing
+  Python, PHP, Go, Java, C#, Rust and Kotlin for the one to three rows section 4 counts for each. Nothing
   else is read, a component's template included. A map of one of those seven mostly prints counts:
-  a scan of fastapi states 1 of 86 claims, hugo 0 of 102 and ktor 0 of 290.
+  a scan of fastapi states 1 of 86 claims, hugo 0 of 102 and ktor 0 of 133.
 - **Repository size.** No cap. A 2,468 file repository takes about 1.8 seconds against a pinned
   baseline, a 5,477 file Ruby repository about 6.2, and a synthetic 100,000 file repository about
   9.2. Scaling is close to linear in file count. There was a 50,000 file cap, and hitting it did not
@@ -2227,7 +2225,7 @@ object and exits 0, as it does on any failure.
 | `node` | the process itself | its version is 22.0.0 or newer, the floor both manifests declare in `engines` | install Node 22 or newer and put it first on `PATH` |
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
-| `tree-sitter` | node | `web-tree-sitter` imports and each of the seven grammar files loads. The line carries the count, `grammars: 7 of 7`, and one that does not load is named on it: `grammars: 6 of 7, kotlin.wasm did not load` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
+| `tree-sitter` | node | `web-tree-sitter` imports and the file of each of the seven grammars loads. The line carries the count, `grammars: 7 of 7`, and one that does not load is named on it: `grammars: 6 of 7, kotlin.wasm did not load` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
 | `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version rather than called absent, and the scan leaves the checker off. Optional: only the type checker needs it | the same install |
 

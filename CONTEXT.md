@@ -79,7 +79,7 @@ _Avoid_: top-level directory, folder, package, area
 One of the three parser engines a language is routed to: `oxc` for JavaScript, TypeScript and a
 component's script blocks, `prism` for Ruby, and `tree-sitter` for Python, PHP, Go, Java, C#, Rust
 and Kotlin. A language names its engine in its declaration, and `doctor` prints a line for each.
-The word also names the model and effort a measurement trial ran at, which is another thing.
+The word has a second meaning: the model and effort a measurement trial ran at.
 _Avoid_: parser (for the three as a set), backend, family
 
 **Grammar**:
@@ -112,8 +112,8 @@ _Avoid_: engine, ecosystem, stack
 
 **Namesake test**:
 A test file that answers one source file by carrying its stem. It says that file is tested, and nothing
-about where its root keeps its tests. Always another file: a Rust source file with a `#[cfg(test)]`
-module **holds its own tests**, has no namesake test, and is counted apart from the files asked for one.
+about where its root keeps its tests. Always another file: a Rust source file with a `#[test]`
+function **holds its own tests**, has no namesake test, and is counted apart from the files asked for one.
 _Avoid_: unit test, matching spec, paired test, sibling test
 
 **Holds its own tests**:

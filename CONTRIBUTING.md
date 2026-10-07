@@ -345,8 +345,10 @@ witness, on a row the share never flagged.
 ### A row over a tree-sitter tree, and a language on that engine
 
 A row for one of the seven tree-sitter languages reads a plain copy of the tree: nodes of
-`{ type, start, end, line, field, text, children }`, with offsets in UTF-16 units into the source
-the row is handed. The wasm tree is deleted before the row runs (B62), so there is no other node to
+`{ type, start, end, line, field, text, tokens, children }`, with offsets in UTF-16 units into the
+source the row is handed. The copy keeps named nodes only. `tokens` is the one place a row sees an
+anonymous token: it lists them for a node whose type its language names under `tokensOf` in
+`plugins/anatomiya/lib/tree-shapes.mjs`. The root also carries `lang`. The wasm tree is deleted before the row runs (B62), so there is no other node to
 reach for.
 
 A row never spells a node type or a field name. Those go in `plugins/anatomiya/lib/tree-shapes.mjs`, one entry per
@@ -379,6 +381,10 @@ A language new to the engine is these sites, in order:
    with an ERROR node and one with a MISSING token
 7. `scripts/check-docs.mjs` (`TREE_LANGS`): the name prose gives it, and `scripts/e2e-corpus.mjs`:
    its probe body
+8. the sentences `npm run check:docs` holds to the registry: `SECURITY.md` names the grammar's
+   `package@version`, every sentence that counts the grammars (`seven grammars`) counts one more,
+   and so does the count of declarations in DECISIONS B21 (`The registry holds twelve
+   declarations`)
 
 `test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids and fail until the
 new one is in it. Before anything ships, measure how much of three real repositories the grammar

@@ -7,8 +7,80 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Seven more languages are read: Python, PHP, Go, Java, C#, Rust and Kotlin, through tree-sitter,
+which makes three parser engines. The script blocks of Vue and Svelte files are read as well,
+`scan --targets cursor,copilot` writes the same map for Cursor and GitHub Copilot, and the type
+checker reads a root `tsconfig.base.json` where a repository has no root `tsconfig.json`.
+
+No map written by 0.13.4 comes out the same from this version. Scanned with both on the 35 corpus
+repositories, which are JavaScript, TypeScript and Ruby, every overview differs in the "Not covered"
+line for files in a language the map does not read: 22 gain the line and 13 print another count. 80 of
+6,947 area files gain a clause such as `, in .rb files` on a claim line. The number of claims
+stated is the same on 26 of the 35. The other nine also hold components or files of the seven
+languages and gain slots or areas for them: react gains nine areas over its Rust crates, and
+vscode, at 500 areas in both versions, drops six areas and gains six, four of them over the Rust
+of its `cli`, and goes from 1,798 claims stated to 1,784.
+
 ### Added
 
+- Python, PHP, Go, Java, C#, Rust and Kotlin. tree-sitter joins oxc and prism, which makes three
+  parser engines, and reads `.py`, `.php`, `.go`, `.java`, `.cs`, `.rs`, `.kt` and `.kts` files
+  through seven grammars the plugin carries. In 0.13.4 a scan of such a repository wrote a layout
+  section and no area: flask got `83 files hold a language this map does not read (83 .py)`. This
+  version adds areas, test files and namesake tests counted by the language's own naming, and the
+  dimensions of the `Three dimensions` entry in this list. Expect mostly counts, and a claim only
+  where a directory is consistent: a scan of fastapi states 1 of 86 claims, hugo 0 of 102, ktor 0
+  of 133 and tokio 14 of 33.
+- Test files and namesake tests in those seven languages. A test file is found by what the
+  language's own tool collects: `_test.go`; `test_*.py` and `*_test.py`; under a test tree,
+  `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and `*Test.php` for
+  PHP; a `.rs` file directly under a crate's `tests`. The tests line names the runner:
+  `389 go test specs`, `22 of 27 pytest specs under tests`, `38 of 40 xunit specs under
+  test/Serilog.Tests`. A namesake test is matched inside the language, across the layout its build
+  uses: `55 of 152 .kt files under okhttp/src/commonJvmAndroid/kotlin/okhttp3 have a namesake
+  test`, `28 of 113 .cs files under src/Serilog have a namesake test`. A Rust file that holds its
+  own `#[test]` functions is asked for no namesake and is counted apart: `0 of 56 .rs files under
+  crates have a namesake test; 34 hold their own tests`. A C# test project is paired by name only
+  (`Serilog.Tests` with `Serilog`), so a project tested from one named for another is not
+  credited.
+- Three dimensions over the languages a tree-sitter grammar reads, measured on three repositories
+  per language and asked only of the languages whose repositories differ:
+  `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin and
+  `functions declare what they return` in Python and PHP, each of which may state its inverse
+  where an area writes the other way; `exception handlers use the error they caught` in PHP and
+  Java. A function row passes over test files. Not shipped: the handler row in Python, where all
+  three repositories read 1.0000, a language default; the handler row in Kotlin and C#, whose
+  repositories did not differ by 0.15; how functions are named, which read over 0.94 in all
+  fifteen repositories; and whether an import names what it takes, a default in Python and Java,
+  short of the spread in Rust, and in Kotlin a rule ktlint already enforces by default.
+- What is not read in those seven. A grammar reads less than its language, and a file one cannot
+  read is left out of every count and counted on a line of its own: `82 files could not be read by
+  this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may
+  be fine.` Measured on three repositories per language, that is under 1% of the lines of every
+  Python, PHP, Go, Java and Rust repository, 4.35% of serilog's C#, and 1.32% to 7.88% of the
+  Kotlin ones, which use syntax newer than the grammar. A C# file with `#if` inside an expression
+  is read with the first branch of each conditional kept, and the scan says how many: `7 files
+  were read with one branch of each #if; the other branches were not read`. None of the seven gets
+  the type checker, the "most imported from here" lines, the end-of-turn reuse check or the notice
+  before a test file is written, and a `.pyi` stub is not read. A file of the seven that its
+  grammar cannot finish in 5 seconds is counted as crashed and is not tried again; the case
+  measured is Kotlin.
+- Three runtime dependencies, where 0.13.4 had two. The new one is `web-tree-sitter`: JavaScript
+  and one WebAssembly module, with no dependency and no install script. The seven grammars ship
+  inside the plugin as `.wasm` files, 12 MB in all, each a copy of the file in its grammar's npm
+  package, and `plugins/anatomiya/grammars/grammars.json` records the package, the version and the
+  SHA-256 of each. Nothing is downloaded for them. An install whose `node_modules` is older than
+  this version does not hold the package: `/anatomiya:doctor` prints `tree-sitter absent:
+  web-tree-sitter did not load` with the command, and `/anatomiya:setup` installs it. Until then a
+  scan maps every other language, says no file of these seven was read, and refuses a repository
+  that holds nothing else.
+- `doctor` prints a line for tree-sitter with the grammars that load, `tree-sitter 0.27.0 ok
+  (grammars: 7 of 7)`, and names a grammar file that does not: `grammars: 6 of 7, kotlin.wasm did
+  not load`. The fix for that is to reinstall the plugin, since no package install writes a
+  grammar file. A scan says no file of that one language was read and reads the rest. `setup`
+  prints the same line for it, installs nothing for it and exits non-zero.
+- `check` says so when a C# file was read with one branch of each `#if`: the caveat
+  `head-one-branch` names the file, once, and its findings are about the branch that was read.
 - Vue and Svelte. The `<script>` blocks of a `.vue` or `.svelte` file are read by the parser that
   reads JavaScript and counted by the JavaScript dimensions that hold for a component: 24 for Vue
   and 24 for Svelte, of 28. A file may hold two blocks (`<script>` and `<script setup>`, or
@@ -31,7 +103,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Component files learn their own filename class, apart from the modules beside them:
   `component files here are named PascalCase`.
 - `$lib/` in a SvelteKit project resolves to the importer's own `src/lib` for "most imported from
-  here": 4,210 of 4,213 such imports on one measured repository, where none resolved before. No
+  here": 4,210 of 4,213 such imports on one measured repository, where 0.13.4 resolved none. No
   `svelte.config.js` is read, so a project that repoints the alias resolves nothing through it.
 - The end-of-turn reuse check asks about a component: the lines its script added and no others. An
   edit to a template or a style block asks nothing.
@@ -64,108 +136,48 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   written for.
 - The record names the files written for each target under an optional `targets` key, present only
   where a target is on. The schema stays 19, so a build that does not know the key reads the record
-  as before.
+  as 0.13.4 does.
 - Two more exclude lines in the README, `.cursor/rules/anatomiya-*.mdc` and
   `.github/instructions/anatomiya-*.instructions.md`, which match nothing until a target is on.
-- Python, PHP, Go, Java, C#, Rust and Kotlin. A third parser engine, tree-sitter, reads `.py`,
-  `.php`, `.go`, `.java`, `.cs`, `.rs`, `.kt` and `.kts` files through seven grammars the plugin
-  carries. A repository of one of these languages got a layout section and no claims. It gets
-  areas, test files and namesake tests counted by the language's own naming, and the dimensions in
-  the entry after the next two. Expect mostly counts, and a claim only where a directory is
-  consistent: a scan of fastapi states 1 of 86 claims, hugo 0 of 102, ktor 0 of 290 and tokio 14
-  of 33.
-- Test files and namesake tests in those seven languages. A test file is found by what the
-  language's own tool collects: `_test.go`; `test_*.py` and `*_test.py`; under a test tree,
-  `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and `*Test.php` for
-  PHP; a `.rs` file directly under a crate's `tests`. The tests line names the runner:
-  `389 go test specs`, `22 of 27 pytest specs under tests`, `38 of 40 xunit specs under
-  test/Serilog.Tests`. A namesake test is matched inside the language, across the layout its build
-  uses: `55 of 152 .kt files under okhttp/src/commonJvmAndroid/kotlin/okhttp3 have a namesake
-  test`, `28 of 113 .cs files under src/Serilog have a namesake test`. A Rust file that holds its
-  own `#[test]` functions is asked for no namesake and is counted apart: `0 of 56 .rs files under
-  crates have a namesake test; 34 hold their own tests`. A C# test project is paired by name only
-  (`Serilog.Tests` with `Serilog`), so a project tested from one named for another is not
-  credited.
-- What is not read in those seven. A grammar reads less than its language, and a file one cannot
-  read is left out of every count and counted on a line of its own: `82 files could not be read by
-  this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may
-  be fine.` Measured on three repositories per language, that is under 1% of the lines of every
-  Python, PHP, Go, Java and Rust repository, 4.35% of serilog's C#, and 1.32% to 7.88% of the
-  Kotlin ones, which use syntax newer than the grammar. A C# file with `#if` inside an expression
-  is read with the first branch of each conditional kept, and the scan says how many: `7 files
-  were read with one branch of each #if; the other branches were not read`. None of the seven gets
-  the type checker, the "most imported from here" lines, the end-of-turn reuse check or the notice
-  before a test file is written, and a `.pyi` stub is not read. A Kotlin file the grammar cannot
-  finish in 5 seconds is counted as crashed and is not tried again.
-- One more runtime dependency, `web-tree-sitter`: JavaScript and one WebAssembly module, with no
-  dependency and no install script. The seven grammars ship inside the plugin as `.wasm` files, 12
-  MB in all, each a copy of the file in its grammar's npm package, and
-  `plugins/anatomiya/grammars/grammars.json` records the package, the version and the SHA-256 of
-  each. Nothing is downloaded for them. An install whose `node_modules` is older than this version
-  does not hold the package: `/anatomiya:doctor` prints `tree-sitter
-  absent: web-tree-sitter did not load` with the command, and `/anatomiya:setup` installs it.
-  Until then a scan maps every other language and names these seven as unread, and refuses a
-  repository that holds nothing else.
-- `doctor` prints a line for the third engine with the grammars that load, `tree-sitter 0.27.0 ok
-  (grammars: 7 of 7)`, and names a grammar file that does not: `grammars: 6 of 7, kotlin.wasm did
-  not load`. The fix for that is to reinstall the plugin, since no package install writes a
-  grammar file, and a scan names that one language as unread and reads the rest. `setup` prints
-  the same line for it, installs nothing for it and exits non-zero.
-- Three dimensions over the languages a tree-sitter grammar reads, measured on three repositories
-  per language and asked only of the languages whose repositories differ:
-  `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin and
-  `functions declare what they return` in Python and PHP, each of which may state its inverse
-  where an area writes the other way; `exception handlers use the error they caught` in PHP and
-  Java. A function row passes over test files. Not shipped: the handler row in Python, where all
-  three repositories read 1.0000, a language default; the handler row in Kotlin and C#, whose
-  repositories did not differ by 0.15; how functions are named, which read over 0.94 in all
-  fifteen repositories; and whether an import names what it takes, a default in Python and Java,
-  short of the spread in Rust, and in Kotlin a rule ktlint already enforces by default.
-- `check` says so when a C# file was read with one branch of each `#if`: the caveat
-  `head-one-branch` names the file, once, and its findings are about the branch that was read.
 
 ### Changed
 
-- A file whose engine or grammar was not there is counted once in the scan summary, on the line
-  that says why: `202 files: prism reported no version: install Ruby 3.4 or newer, ...`. The same
-  files were also counted under `crashed the parser` or `could not be parsed` in the summary,
-  which read as a second fault.
+- The "Not covered" line for files in a language this map does not read knows 24 more extensions,
+  among them `.erb`, `.haml`, `.css`, `.scss`, `.html`, `.sh` and `.sql`, so a repository holding
+  them gains the line or a longer one. `.py`, `.php`, `.go`, `.java`, `.cs`, `.rs`, `.kt` and
+  `.kts` leave the line, since those files are read. mastodon gains `469 files hold a language this
+  map does not read (310 .haml, 91 .scss, 47 .erb, 10 .css, 8 .sql, 3 .html)`. Where the overview
+  already sat at its 40 lines, one root folds into the roster's last line to pay for it.
 - A claim says which files it was counted over where its area holds files the dimension is never
   asked of: `module-level bindings are const, in .ts files` beside a `.vue` file, and `rescue
   blocks use the error they caught, in .rb files` beside a `.js` one. This changes existing
-  maps. On the 35 corpus repositories, 87 of 6,887 area files gained the clause, on 705 lines in
-  all, most of them where Ruby sits beside JavaScript. No file gained or lost a line, and 24 of
-  the 35 gained no clause. That count was taken with the clause naming extensions by language,
-  and has not been taken again with it naming only the files a dimension was asked of.
+  maps. On the 35 corpus repositories, 80 of 6,947 area files gained the clause, on 792 lines in
+  all, most of them where Ruby sits beside JavaScript: 350 in discourse and 160 in decidim. The
+  clause joins a line and adds none, and 21 of the 35 gained no clause.
 - A directory whose components sit beside modules counts their namesake tests apart: `85 of 745
   .ts files have a namesake test; 81 of 164 .vue files have a namesake test`, on the root line,
   the tests line and an area's kinds line, whichever of the two the directory holds more of. The
   smaller of the two is counted on the line where the directory holds three or more of it or a
-  test credits one of its files, so ten components beside one `index.ts` print one count. The count over the first extension does
-  not move. A test answers one component of its stem where
+  test credits one of its files, so ten components beside one `index.ts` print one count. The
+  count over the first extension does not move. A test answers one component of its stem where
   the repository holds several: the one under the test's own directory, or the one it imports. A
   docs example named like a packaged component is not credited with that package's test.
-- The "Not covered" line that names unread languages knows 24 more extensions, among them `.erb`,
-  `.haml`, `.css`, `.scss`, `.html`, `.sh` and `.sql`, so a repository holding them gains the line
-  or a longer one. `.py`, `.php`, `.go`, `.java`, `.cs`, `.rs`, `.kt` and `.kts` leave the line,
-  since those files are read. mastodon gains `469 files hold a language this map does not read (310 .haml,
-  91 .scss, 47 .erb, 10 .css, 8 .sql, 3 .html)`. Where the overview already sat at its 40 lines,
-  one root folds into the roster's last line to pay for it.
+- A file whose engine or grammar was not there is counted once in the scan summary, on the line
+  that says why: `246 files: prism reported no version: install Ruby 3.4 or newer, ...`. 0.13.4
+  printed `246 files crashed the parser` for the same files and gave the reason on a line with no
+  count, which read as a second fault.
 - The type checker reads a root `tsconfig.base.json` where a repository has no root
   `tsconfig.json`, which is how a workspace with one config per package keeps its path aliases.
   Read on the compiler's defaults, every import through an alias resolved to nothing: of eight such
-  repositories measured, three read `degraded` and now read `ok` (79.9% to 84.9%, 68.9% to 91.7%
-  and 76.7% to 85.5% of type lookups resolved). A base that resolves under the floor reads
-  `low-resolution`, as any config that was read does. A root with neither file runs on the
-  defaults as before: one of five measured resolves that way, so nothing is skipped for the
-  missing file. Plain JavaScript beside a `tsconfig.base.json` is now checked, as it is beside a
-  `tsconfig.json`.
+  repositories measured, three read `degraded` in 0.13.4 and read `ok` in this version (79.9% to
+  84.9%, 68.9% to 91.7% and 76.7% to 85.5% of type lookups resolved). A base that resolves under
+  the floor reads `low-resolution`, as any config that was read does. A root with neither file
+  runs on the defaults, as in 0.13.4: one of five measured resolves that way, so nothing is
+  skipped for the missing file. Plain JavaScript beside a `tsconfig.base.json` is checked, as it
+  is beside a `tsconfig.json`.
 - A repository that commits its map sees "What lives where" change once, on its first scan with
-  this version: the map's own files are no longer counted in it (see Fixed). Measured against
-  0.13.4 on six repositories that turn no target on, each plain, with hand-written Cursor and
-  Copilot files untracked, and with the same committed, 13 commands per run: 8 of the 18 runs were
-  identical apart from the stamp in `refresh.json`, and the other 10 differed only by Vue files
-  being read, the scope clause above, and the two roster changes under Fixed.
+  this version: the map's own files are left out of it, which is the Fixed entry that opens `The
+  layout counted the map`.
 
 ### Fixed
 
@@ -185,10 +197,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the directory that armed it folded. On backstage and vscode that directory
   (`docs-ui/src/app/components`, `src/vscode-dts`) had a line in that release and is folded in
   this version, so the sentence goes with it. A repository that prints an untested directory
-  keeps it.
-- A name that opens with a number and a dot prints whole. `check --base 13.x` printed `base x`,
-  and a version `2.0` or a file `404.vue` lost its head the same way: the encoder took the number
-  for the marker of a numbered list, which it is only before a space or at the end of the value.
+  keeps it, and fastlane gains it for `screengrab`, whose Java this version reads: `1 of 19 has a
+  namesake test`.
+- A name that opens with a number and a dot prints whole. `check --base 13.x` printed `base x`.
+  In a map, a path whose first directory opens that way lost its head: on a repository that
+  keeps code under `3.2/app`, "What lives where" printed `2/app: 5 .js`, and the directory got no
+  area file, counted instead under `a name no glob can spell`. This version prints `3.2/app` and
+  writes its area. The encoder took the number for the marker of a numbered list, which it is
+  only before a space or at the end of the value. A path that opens with anything else was never
+  cut: `src/pages/404.vue` printed whole.
 
 ## [0.13.4] - 2026-10-07
 

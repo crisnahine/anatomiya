@@ -9,6 +9,11 @@ tracked source, counts conventions per directory, and writes the result into `.c
 overview that loads on every turn, and one file per directory that loads when the agent opens a
 file there. `anatomiya check` then tells a branch which of those counted conventions it broke.
 
+It reads JavaScript, TypeScript and Ruby in depth, the script blocks of Vue and Svelte files, and
+Python, PHP, Go, Java, C#, Rust and Kotlin for one to three dimensions each.
+[What it measures](#what-it-measures) counts the dimensions per language, and [Limits](#limits)
+says what each language gets and what is not read.
+
 It does not write opinions. Every line it emits is a count with a denominator, taken from your own
 code, and it only states a rule when the count clears every gate. When a count fails a gate, the
 count still prints and the rule does not.
@@ -64,7 +69,8 @@ directory when it finds a lockfile there, and this plugin ships one. There is no
 ordinary case.
 
 `web-tree-sitter` is the WebAssembly runtime for the seven grammars the plugin carries as `.wasm`
-files under `plugins/anatomiya/grammars/`: Python, PHP, Go, Java, C#, Rust and Kotlin. Nothing is downloaded for them.
+files under `plugins/anatomiya/grammars/`: Python, PHP, Go, Java, C#, Rust and Kotlin. Nothing is downloaded for them, and none of the seven
+needs its own toolchain on your machine: Node runs all of them.
 Each file is a copy of the one in its grammar's npm package, and `plugins/anatomiya/grammars/grammars.json` records
 the package, the version and the SHA-256 of each. `/anatomiya:doctor` loads them and prints how
 many answered on its `tree-sitter` line, `grammars: 7 of 7`; one that does not load is named
@@ -544,12 +550,12 @@ preventable by a conventions map. Any claim that this finds bugs earlier is fals
 writes blocks a commit, a push, or a merge, and `check` reports rather than fails. If your linter
 already enforces a rule, the map restating it is waste, not defence in depth.
 
-**JavaScript, TypeScript and Ruby are read in depth, and seven more languages for a few rows
-each.** Python, PHP, Go, Java, C#, Rust and Kotlin are read through the seven grammars the plugin
+**JavaScript, TypeScript and Ruby are read in depth, and seven more languages for one to three
+dimensions each.** Python, PHP, Go, Java, C#, Rust and Kotlin are read through the seven grammars the plugin
 carries. Each gets the layout section, its test files and namesake tests by the language's own
 naming, and the rows counted under [What it measures](#what-it-measures). A map of one of them
 mostly prints counts and states a claim only where a directory is consistent: a scan of fastapi
-states 1 of 86 claims, hugo 0 of 102, ktor 0 of 290 and tokio 14 of 33. None of the seven gets the
+states 1 of 86 claims, hugo 0 of 102, ktor 0 of 133 and tokio 14 of 33. None of the seven gets the
 type checker, the "most imported from here" lines, the end-of-turn reuse check or the notice before
 a test file is written. A file of any other language is not read: "What lives where" counts it, and
 "Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
