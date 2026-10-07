@@ -1136,6 +1136,17 @@ test("--help and -h still print the usage with no command word", () => {
   }
 });
 
+test("the usage says what --targets writes, that a target stays on, and how to turn one off", () => {
+  const out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "--help"], { stdio: "pipe", encoding: "utf8" });
+  // Joined, so where a line wraps is not what is held.
+  const usage = out.replace(/\s+/g, " ");
+
+  assert.match(usage, /--targets is a scan option: a comma-separated list of cursor and copilot\./);
+  assert.match(usage, /also written under \.cursor\/rules for Cursor and under \.github\/instructions for GitHub Copilot\./);
+  assert.match(usage, /A target stays on for every later scan while its anatomiya-overview file is there, until --targets names a set without it\./);
+  assert.match(usage, /--targets claude turns the others off and removes what this tool wrote there\./);
+});
+
 test("a mistyped --base exits non-zero and names the argument, not the repository", (t) => {
   // The command file's contract: a non-zero exit means the check could not run,
   // show its output and stop. The old answer was a whole-branch review at exit

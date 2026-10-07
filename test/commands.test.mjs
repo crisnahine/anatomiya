@@ -965,6 +965,15 @@ test("a doctor counts the names a scan gives a file, and says when the directory
   }
 });
 
+test("a doctor counts a target's files where the clone holds them and no record", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  rmSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, 2 files"]);
+});
+
 test("a doctor run outside any repository answers about the installation alone", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-none-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
