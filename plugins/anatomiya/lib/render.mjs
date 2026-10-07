@@ -206,7 +206,8 @@ const MACHINE_DEPENDENT = new Set(["crashed"]);
 /**
  * The four ways a file goes unexamined, named apart because the reader's next
  * move differs: a crash is this tool's problem, rejected syntax is the file's,
- * and the cap is a generated file nobody writes by hand.
+ * and the cap is a generated file nobody writes by hand. A rejection is counted
+ * once per meaning (`ENGINES[id].rejects`): a grammar's is not the file's fault.
  *
  * Shared for the same reason `splitUncovered` is. Copied, they drifted: the cap
  * read "over the size cap" in the summary and "exceeded" in the overview.
@@ -219,10 +220,14 @@ export function unexaminedLines(parse, { stable = false } = {}) {
   // A count of one reads as one. Seven repositories in a thirty-five
   // repository corpus printed "1 files hold syntax the parser rejected", on the
   // summary and in the file that loads on every turn.
-  const line = (n, kind) => `${plural(n, "file")} ${unexaminedPhrase(kind, n)}`;
+  const line = (n, kind, means) => `${plural(n, "file")} ${unexaminedPhrase(kind, n, means)}`;
   for (const kind of ["crashed", "failed", "syntaxErrors", "skipped"]) {
     if (stable && MACHINE_DEPENDENT.has(kind)) continue;
-    if (parse[kind]) lines.push(line(parse[kind], kind));
+    if (!parse[kind]) continue;
+    if (kind !== "syntaxErrors") lines.push(line(parse[kind], kind));
+    // In the table's order, never the order the engines answered in. A record
+    // with no split was written where every rejection was the file's syntax.
+    else for (const [means, n] of rejectionsOf(parse)) lines.push(`${line(n, kind, means)}${REJECTED_NOTE[means] ?? ""}`);
   }
   // Without the stripper every Flow file lands in the count above, and the two
   // facts are otherwise unconnected on screen. The dependency arrived after the
@@ -271,16 +276,29 @@ export function unreadLanguageFiles(result) {
 // The phrase per cause, so the check can name one file with the sentence the
 // summary and the overview use for a count of them. Only one of the four
 // carries a present-tense verb, and only that one changes with the number.
+// A rejection has a second key, what the engine's rejection means, which the
+// engine's own declaration states (`ENGINES[id].rejects`).
 const UNEXAMINED = {
   crashed: "crashed the parser",
   failed: "could not be parsed",
-  syntaxErrors: "hold syntax the parser rejected",
+  syntaxErrors: { syntax: "hold syntax the parser rejected", grammar: "could not be read by this tool's grammar" },
   skipped: "exceeded the size cap",
 };
 
 const UNEXAMINED_ONE = {
   ...UNEXAMINED,
-  syntaxErrors: "holds syntax the parser rejected",
+  syntaxErrors: { ...UNEXAMINED.syntaxErrors, syntax: "holds syntax the parser rejected" },
+};
+
+// Said after a count, where there is room: a reader told only that files went
+// unread goes looking for what is wrong with them.
+const REJECTED_NOTE = {
+  grammar: ". That is a syntax error or syntax the grammar does not cover; the files may be fine.",
+};
+
+const rejectionsOf = (parse) => {
+  const by = parse.rejections ?? { syntax: parse.syntaxErrors };
+  return Object.keys(UNEXAMINED.syntaxErrors).filter((means) => by[means]).map((means) => [means, by[means]]);
 };
 
 /**
@@ -291,7 +309,10 @@ const UNEXAMINED_ONE = {
  * replace at one call site, since the two surfaces have already drifted once
  * over the wording of the cap.
  */
-export const unexaminedPhrase = (kind, n) => (n === 1 ? UNEXAMINED_ONE : UNEXAMINED)[kind];
+export const unexaminedPhrase = (kind, n, means = "syntax") => {
+  const phrase = (n === 1 ? UNEXAMINED_ONE : UNEXAMINED)[kind];
+  return typeof phrase === "string" ? phrase : phrase[means];
+};
 
 /**
  * What this area's files reach for, and what the rest of the repository reaches

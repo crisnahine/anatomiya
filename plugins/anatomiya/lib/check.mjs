@@ -1113,7 +1113,8 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
  * causes kept apart, because the reader's next move differs for each: a crash
  * is this tool's problem, rejected syntax is the branch's own code, the cap is
  * a generated file nobody writes by hand, and the rest is this tool or the
- * filesystem.
+ * filesystem. A rejected record says what its engine's rejection means, and a
+ * grammar's is worded as this tool's limit under the same code.
  *
  * The sentence and the code sit in one table, so the split a human reads and
  * the split anything else branches on can never name different causes.
@@ -1132,7 +1133,7 @@ const unreadOf = (parse) => UNREAD[parse && parse.kind] ?? UNREAD_ELSE;
 
 /** The cause as a sentence. This surface names one file, so it is singular. */
 export function unreadReason(parse) {
-  return unexaminedPhrase(unreadOf(parse).phrase, 1);
+  return unexaminedPhrase(unreadOf(parse).phrase, 1, parse?.rejects);
 }
 
 /** The same cause as a code, for a reader that does not read the sentence. */

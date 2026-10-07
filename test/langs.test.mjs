@@ -42,7 +42,12 @@ test("a language tree-sitter reads declares its extensions, one grammar named af
     host: "node",
     module: "web-tree-sitter",
     remedy: "node bin/anatomiya.mjs setup in the plugin directory",
+    rejects: "grammar",
   });
+});
+
+test("an engine says what its rejecting a file means: the language's own parser, or a grammar that covers less", () => {
+  assert.deepEqual(Object.fromEntries(Object.values(ENGINES).map((e) => [e.id, e.rejects])), { oxc: "syntax", prism: "syntax", "tree-sitter": "grammar" });
 });
 
 test("the Flow retry covers every JavaScript extension the corpus accepts", () => {
