@@ -129,6 +129,28 @@ test("a batch of one Python, one TypeScript and one Ruby file comes back read, a
   assert.deepEqual(out.missingGrammars, []);
 });
 
+// Correct C#: the directive sits inside a call chain, which the grammar has no rule for.
+const UNREAD_CS = 'class A\n{\n    bool F(string s)\n    {\n        return s\n#if SPAN\n            .Trim()\n#endif\n            .StartsWith("a");\n    }\n}\n';
+
+test("a rejected file says what its engine's rejection means, and the run counts each meaning apart", async () => {
+  const out = await parseAll([
+    { rel: "A.cs", source: UNREAD_CS, lang: "csharp" },
+    { rel: "b.ts", source: "export const b = 5\nfoo(\n", lang: "js" },
+    { rel: "c.ts", source: "export const c = 1\n", lang: "js" },
+    { rel: "D.kt", source: "class D { fun f() {} }\n", lang: "kotlin" },
+  ]);
+
+  assert.deepEqual([...out.records.values()].map((r) => [r.rel, r.kind, r.rejects]), [
+    ["b.ts", "rejected", "syntax"],
+    ["c.ts", "ok", undefined],
+    ["A.cs", "rejected", "grammar"],
+    ["D.kt", "rejected", "grammar"],
+  ]);
+  assert.equal(out.tallies.rejected, 3);
+  assert.deepEqual(out.rejections, { syntax: 1, grammar: 2 });
+  assert.deepEqual((await parseAll([{ rel: "c.ts", source: "export const c = 1\n", lang: "js" }])).rejections, {});
+});
+
 test("a file the Kotlin grammar cannot finish inside the clock is charged once, and the files beside it are read", async () => {
   // The grammar is quadratic in a file's `<` comparisons: 4,000 of them is 190 KB
   // and seconds of parsing, on any machine, where the same file written with `>` takes 50ms.

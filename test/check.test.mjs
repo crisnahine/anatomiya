@@ -2285,6 +2285,17 @@ test("a file the check could not read names its own cause, in the singular", () 
   assert.equal(unreadReason(null), "could not be parsed", "no record at all is the same as unreadable");
 });
 
+test("a file a grammar could not read is not blamed on the branch's syntax", () => {
+  // The record says what its engine's rejection means, so a `.cs` and a `.ts`
+  // file in one diff each get their own sentence under the one code.
+  const cs = { kind: "rejected", rejects: "grammar" };
+  const ts = { kind: "rejected", rejects: "syntax" };
+  assert.equal(unreadReason(cs), "could not be read by this tool's grammar");
+  assert.equal(unreadReason(ts), "holds syntax the parser rejected");
+  assert.equal(unreadCode(cs), unreadCode(ts));
+  assert.equal(unreadReason({ kind: "crashed", rejects: "grammar" }), "crashed the parser", "only a rejection has two meanings");
+});
+
 test("the four causes carry four codes, so nothing has to read the sentence", () => {
   // The sentence above keeps them apart for a human. One code for all four put
   // every other reader back to matching that prose, which is the substring

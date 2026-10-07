@@ -615,6 +615,23 @@ test("the parse tallies reach the summary as the sentences the overview uses", (
   assert.deepEqual(s.unexamined, ["2 files crashed the parser", "1 file holds syntax the parser rejected"]);
 });
 
+test("a grammar's unread files reach the summary and its JSON under the grammar's own sentence", () => {
+  const note = "That is a syntax error or syntax the grammar does not cover; the files may be fine.";
+  const of = (parse) => scanSummary(result({ parse: { crashed: 0, failed: 0, skipped: 0, ...parse } }), plan());
+
+  const serilog = of({ syntaxErrors: 18, rejections: { grammar: 18 } });
+  assert.deepEqual(serilog.unexamined, [`18 files could not be read by this tool's grammar. ${note}`]);
+  assert.ok(scanLines(serilog).includes(`18 files could not be read by this tool's grammar. ${note}`));
+  assert.deepEqual(JSON.parse(scanJson(serilog)).unexamined, serilog.unexamined);
+
+  const older = of({ syntaxErrors: 2 });
+  assert.deepEqual(older.unexamined, ["2 files hold syntax the parser rejected"]);
+  assert.ok(!scanLines(older).some((line) => /grammar/.test(line)));
+
+  const mixed = of({ syntaxErrors: 3, rejections: { grammar: 2, syntax: 1 } });
+  assert.deepEqual(mixed.unexamined, ["1 file holds syntax the parser rejected", `2 files could not be read by this tool's grammar. ${note}`]);
+});
+
 test("the summary and its lines agree on a whole scan", () => {
   const s = scanSummary(
     result({

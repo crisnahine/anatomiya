@@ -21,7 +21,7 @@ import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
-import { LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
+import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const dim = (o = {}) => ({
@@ -1421,6 +1421,47 @@ test("plural leaves a count of zero plural", () => {
   assert.equal(plural(0, "area"), "0 areas");
   assert.equal(plural(1, "area"), "1 area");
   assert.equal(plural(2, "area"), "2 areas");
+});
+
+test("a file a grammar could not read is not said to hold bad syntax, and a file oxc or prism rejected still is", () => {
+  // A grammar this tool vendors also rejects code its language accepts, so its
+  // count says whose limit it is. The older engines' sentence is unchanged.
+  const note = "That is a syntax error or syntax the grammar does not cover; the files may be fine.";
+  const grammar = (n) => `${n} file${n === 1 ? "" : "s"} could not be read by this tool's grammar. ${note}`;
+
+  assert.deepEqual(unexaminedLines({ syntaxErrors: 18, rejections: { grammar: 18 } }), [grammar(18)]);
+  assert.deepEqual(unexaminedLines({ syntaxErrors: 1, rejections: { grammar: 1 } }), [grammar(1)]);
+  assert.deepEqual(unexaminedLines({ syntaxErrors: 9 }), ["9 files hold syntax the parser rejected"]);
+  assert.deepEqual(unexaminedLines({ syntaxErrors: 1 }), ["1 file holds syntax the parser rejected"]);
+  // Two counts, each with its own sentence, in one order whichever engine answered first.
+  const mixed = ["1 file holds syntax the parser rejected", grammar(2)];
+  assert.deepEqual(unexaminedLines({ syntaxErrors: 3, rejections: { grammar: 2, syntax: 1 } }), mixed);
+  assert.deepEqual(unexaminedLines({ syntaxErrors: 3, rejections: { syntax: 1, grammar: 2 } }), mixed);
+});
+
+test("the overview says the same of a grammar's unread files, on the line that counts them", () => {
+  const tail = (parse) => renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0, failed: 0, ...parse } }), { uncovered: 0 });
+  const note = "That is a syntax error or syntax the grammar does not cover; the files may be fine.";
+
+  const serilog = tail({ syntaxErrors: 18, rejections: { grammar: 18 } });
+  assert.match(serilog, new RegExp(`^- 18 files could not be read by this tool's grammar\\. ${note}$`, "m"));
+  assert.doesNotMatch(serilog, /syntax the parser rejected/);
+
+  const older = tail({ syntaxErrors: 9 });
+  assert.match(older, /^- 9 files hold syntax the parser rejected$/m);
+  assert.doesNotMatch(older, /grammar/);
+
+  const mixed = tail({ syntaxErrors: 3, rejections: { grammar: 2, syntax: 1 } });
+  assert.match(mixed, new RegExp(`^- 1 file holds syntax the parser rejected\\n- 2 files could not be read by this tool's grammar\\. ${note}$`, "m"));
+});
+
+test("every engine's rejection has a sentence, so no count prints without one", () => {
+  for (const engine of Object.values(ENGINES)) {
+    for (const n of [1, 2]) assert.equal(typeof unexaminedPhrase("syntaxErrors", n, engine.rejects), "string", `${engine.id} at ${n}`);
+  }
+  assert.equal(unexaminedPhrase("syntaxErrors", 1, "grammar"), "could not be read by this tool's grammar");
+  assert.equal(unexaminedPhrase("syntaxErrors", 2, "grammar"), "could not be read by this tool's grammar");
+  assert.equal(unexaminedPhrase("syntaxErrors", 1, "syntax"), "holds syntax the parser rejected");
 });
 
 test("each unexamined cause keeps its own sentence at one and at many", () => {

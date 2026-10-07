@@ -26,6 +26,8 @@
  * actually missing rather than for whichever one it thought of first.
  * `missingGrammars` names the languages whose grammar file an engine that is
  * there could not load: one language's loss, with a remedy of its own.
+ * `rejections` counts the rejected files by what their engine's rejection
+ * means, and each rejected record carries that meaning as `rejects`.
  */
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import { createPool, defaultPoolSize } from "./pool.mjs";
 import { parseRuby } from "./ruby.mjs";
 import { dimensionsFor } from "./dimensions.mjs";
-import { declOf, LANGUAGES } from "./langs.mjs";
+import { declOf, ENGINES, LANGUAGES } from "./langs.mjs";
 
 /**
  * The four ways a file goes unexamined, plus the one way it does not.
@@ -224,6 +226,7 @@ async function run(files, { withProgram, guards, frameworks }) {
   const engines = {};
   const missingEngines = [];
   const missingGrammars = [];
+  const rejections = {};
   let missingParser = null;
   let missingStripper = false;
   let truncated = false;
@@ -244,7 +247,11 @@ async function run(files, { withProgram, guards, frameworks }) {
     // One rejected file that could have been retried is enough: the dependency
     // is absent for the whole run, not for that file.
     if (r.noStripper) missingStripper = true;
-    records.set(r.rel, { ...r, kind });
+    if (kind !== "rejected") return records.set(r.rel, { ...r, kind });
+    // Whether a rejection is the file's fault is the engine's to say, so no printer names an engine.
+    const { rejects } = ENGINES[engine];
+    rejections[rejects] = (rejections[rejects] ?? 0) + 1;
+    records.set(r.rel, { ...r, kind, rejects });
   };
 
   const groups = new Map();
@@ -274,5 +281,5 @@ async function run(files, { withProgram, guards, frameworks }) {
     truncated = truncated || out.truncated;
   }
 
-  return { records, tallies, truncated, engines, missingEngines, missingGrammars, missingParser, missingStripper };
+  return { records, tallies, truncated, engines, missingEngines, missingGrammars, rejections, missingParser, missingStripper };
 }

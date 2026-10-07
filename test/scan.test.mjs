@@ -241,6 +241,31 @@ test("a file that kills the parser costs that one file", async (t) => {
   assert.ok(!dim.files.includes("src/bomb.ts"));
 });
 
+test("the scan counts a grammar's unread files apart, and a record of the older languages is the one it was", async (t) => {
+  const older = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/broken.ts", "export const broken = 5\nfoo(\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const before = (await scan(older)).parse;
+  assert.equal(before.syntaxErrors, 1);
+  assert.equal("rejections" in before, false, "nothing new on a record no grammar touched");
+
+  const mixed = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/broken.ts", "export const broken = 5\nfoo(\n");
+    // Correct Kotlin the grammar has no rule for: a member on the line that closes its class.
+    write("app/A.kt", "class A { fun f() {} }\n");
+    write("app/B.kt", "class B { val x = 1 }\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const after = (await scan(mixed)).parse;
+  assert.equal(after.syntaxErrors, 3, "the count of files rejected, whoever rejected them");
+  assert.deepEqual(after.rejections, { syntax: 1, grammar: 2 });
+});
+
 test("a file the parser could not read costs that one file", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));

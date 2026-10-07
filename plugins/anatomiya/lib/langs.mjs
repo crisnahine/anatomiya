@@ -23,11 +23,16 @@
  * `parse.mjs`. The remedy lives here rather than at the printer that needed
  * one, because there were three printers and two of them said npm, which
  * cannot install an interpreter.
+ *
+ * `rejects` is what it means when the engine answers that a file is broken.
+ * oxc and prism are their languages' own parsers, so it is the file's syntax.
+ * A tree-sitter grammar covers less than its language: measured, it rejects a
+ * correct C# file with `#if` inside an expression, so it is the grammar's reach.
  */
 export const ENGINES = Object.freeze({
-  oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory" },
-  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH" },
-  "tree-sitter": { id: "tree-sitter", host: "node", module: "web-tree-sitter", remedy: "node bin/anatomiya.mjs setup in the plugin directory" },
+  oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "syntax" },
+  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH", rejects: "syntax" },
+  "tree-sitter": { id: "tree-sitter", host: "node", module: "web-tree-sitter", remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "grammar" },
 });
 
 const STRIPPER = ENGINES.oxc.extras.find((e) => e.role === "stripper");
