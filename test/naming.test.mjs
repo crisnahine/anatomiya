@@ -1652,3 +1652,17 @@ test("a component with markup and no script still votes with its name", async ()
   assert.equal(slot.conforming, 3);
   assert.equal(slot.learnedKind, "component");
 });
+
+test("the filename row asks none of the seven tree-sitter languages", async () => {
+  // Measured over three repositories per language and refused on the bar every
+  // row has to clear. The commonest class is 99.9% or more of a repository's
+  // names in Python, Java and C#, and the widest a language spreads on files
+  // somebody wrote is 0.13: Go 0.88 to 1.00, Rust 0.83 to 0.97, PHP 0.90 to
+  // 1.00. Kotlin reaches 0.79 only through 128 example files a tool generated.
+  // A language joins here with the numbers that reverse one of those.
+  const { rowByKey } = await import("../plugins/anatomiya/lib/registry.mjs");
+  const { LANGUAGES } = await import("../plugins/anatomiya/lib/langs.mjs");
+  const row = rowByKey("file_naming_case");
+  assert.deepEqual(row.langs, ["js", "jsx", "ruby", "vue", "svelte"]);
+  for (const { id } of LANGUAGES.filter((l) => l.engine === "tree-sitter")) assert.equal(row.langs.includes(id), false, id);
+});
