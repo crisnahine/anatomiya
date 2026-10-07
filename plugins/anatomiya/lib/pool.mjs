@@ -54,7 +54,7 @@ const STDERR_BYTES = 2048;
  * across a whole repository is what held pool throughput to 2.8x on eleven
  * cores no matter how many workers ran.
  */
-export function createPool({ size, withProgram = false, execArgv = [], guards = null, worker = OXC_WORKER, engine = "oxc" } = {}) {
+export function createPool({ size, withProgram = false, execArgv = [], guards = null, worker = OXC_WORKER, engine = "oxc", retryTimeouts = true } = {}) {
   const limits = guardsOver(GUARDS, guards, engine);
   const workers = [];
   const idle = [];
@@ -124,7 +124,9 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // takes is a property of the machine, not of the file, and a file charged
     // as crashed in one scan and parsed in the next moves the unexamined count
     // in the always-loaded overview (A5). A worker over the RSS ceiling, or one that died by itself,
-    // is a poison file and gets the one attempt.
+    // is a poison file and gets the one attempt. So does every kill where
+    // `retryTimeouts` is off, which is for a parser whose time is the file's:
+    // alone it takes as long again.
     child.on("exit", (code, signal) => died(code, signal));
 
     // A fork that never started emits this and never 'exit': a cwd that is
@@ -141,7 +143,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
 
     function died(code, signal, cause = null) {
       const timedOut = w.sup.killedBy() === "timeout";
-      if (w.job && timedOut && !closed && w.job.crowded && retryOnce(w.job)) {
+      if (w.job && timedOut && !closed && retryTimeouts && w.job.crowded && retryOnce(w.job)) {
         const job = w.job;
         w.job = null;
         if (w.timer) clearTimeout(w.timer);
