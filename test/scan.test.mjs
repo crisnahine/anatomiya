@@ -1079,6 +1079,43 @@ test("a repository whose every area was dropped takes no rate from it", async (t
   assert.equal(r.semantic.typedResolutionRate, null);
 });
 
+/** A workspace whose packages import each other through an alias only the base config declares. */
+function aliasedWorkspace(t, { base }) {
+  return repo(t, (d, { git, write }) => {
+    if (base) {
+      write("tsconfig.base.json", `{"compilerOptions":{"strict":true,"baseUrl":".","paths":{"@acme/util":["libs/util/src/index.ts"]}}}`);
+    }
+    write(".gitignore", "node_modules\n");
+    write(
+      "libs/util/src/index.ts",
+      `export class Leaf { label = "x"; }\nexport class Mid { beta = new Leaf(); }\nexport class Top { alpha = new Mid(); }\nexport function make(): Top { return new Top(); }\n`
+    );
+    for (let i = 0; i < 8; i++) {
+      write(`apps/web/src/m${i}.ts`, `import { make } from "@acme/util";\nexport const v${i} = make().alpha.beta.label.length;\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+test("a workspace root with only a base config resolves through it", async (t) => {
+  // Measured on six Nx-style roots: three read degraded on the compiler's
+  // defaults and ok once the aliases in tsconfig.base.json were read.
+  const r = await scan(withDeps(aliasedWorkspace(t, { base: true })));
+
+  assert.equal(r.semantic.ran, true);
+  assert.equal(r.semantic.status, "ok", `degraded for ${r.semantic.reason} at ${r.semantic.typedResolutionRate}`);
+  assert.equal(r.semantic.reason, null);
+  assert.ok(r.semantic.typedResolutionRate >= 0.8, `resolved ${r.semantic.typedResolutionRate}`);
+});
+
+test("the same workspace with no config at its root reads its aliases as any", async (t) => {
+  const r = await scan(withDeps(aliasedWorkspace(t, { base: false })));
+
+  assert.equal(r.semantic.status, "degraded");
+  assert.equal(r.semantic.reason, "no-tsconfig");
+});
+
 test("root code below the area floor keeps its rate beside a dropped bundle directory", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     for (let i = 1; i <= 3; i++) write(`f${i}.ts`, `import { make } from "foo";\nexport const v${i} = make().alpha.beta.gamma;\n`);

@@ -49,7 +49,7 @@ export function unusableReason(ts) {
  * and every claim the checker could make reads degraded; a directory holding
  * only tool caches such as `.vite` is no install. A typescript of another major
  * reads `not-installed` too, and doctor names which. Plain JavaScript with no
- * `tsconfig.json` is skipped before any of that: run on the compiler's defaults
+ * config at its root is skipped before any of that: run on the compiler's defaults
  * it resolved 25% to 39% on three installed repositories and closed every
  * type-checked slot, and no install changes that.
  */
@@ -73,11 +73,11 @@ export function checkerStamp(root, { specifier = "typescript" } = {}) {
   } catch {
     // Absent is a state the stamp records, not a failure.
   }
-  return `${hasInstall(root)}\0${hasConfig(root)}\0${resolved}`;
+  return `${hasInstall(root)}\0${configNameIn(root) ?? ""}\0${resolved}`;
 }
 
 function hasConfig(root) {
-  return existsSync(join(root, CONFIG_NAME));
+  return configNameIn(root) !== null;
 }
 
 // A hand-written `.d.ts` beside JavaScript types nothing that JavaScript imports.
@@ -106,10 +106,10 @@ import { guardedChild } from "./child.mjs";
 import { guardsOver } from "./limits.mjs";
 import { holdsTypeSyntax } from "./langs.mjs";
 import { extOf } from "./paths.mjs";
-import { CONFIG_NAME } from "./tsconfig.mjs";
+import { configNameIn } from "./tsconfig.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const WORKER = fileURLToPath(new URL("./semantic-worker.mjs", import.meta.url));
