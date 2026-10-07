@@ -1654,6 +1654,34 @@ test("a namesake root named by a majority prints how many sit there", () => {
   assert.equal(namesakeClause({ ...companions, root: null }), "4 of 8 have a namesake test", "no place, no count");
 });
 
+test("a Rust file that tests itself is its own clause on every line that counts namesakes", () => {
+  assert.equal(
+    namesakeClause({ with: 0, of: 58, root: null, inline: 34 }),
+    "0 of 58 have a namesake test; 34 hold their own tests"
+  );
+  assert.equal(namesakeClause({ with: 2, of: 5, root: null, inline: 1 }), "2 of 5 have a namesake test; 1 holds its own tests");
+  assert.equal(
+    namesakeClause({ with: 0, of: 58, root: null, inline: 34 }, ".rs file", "crates"),
+    "0 of 58 .rs files under crates have a namesake test; 34 hold their own tests"
+  );
+  // Every file there tests itself, so there is nothing to ask a namesake of.
+  assert.equal(namesakeClause({ with: 0, of: 0, root: null, inline: 4 }), "4 hold their own tests");
+  assert.equal(namesakeClause({ with: 0, of: 0, root: null, inline: 4 }, ".rs file", "src"), "4 .rs files under src hold their own tests");
+  const kinds = root("crates/cli/src", { exts: [[".rs", 8]], companions: { with: 0, of: 4, root: null, inline: 4 } });
+  assert.equal(kindsLine(kinds), "kinds: 8 .rs; 0 test files; 0 of 4 have a namesake test; 4 hold their own tests");
+  const lines = renderLayout({
+    size: 120,
+    minFiles: 3,
+    roots: [root("crates", { files: 95, exts: [[".rs", 95]], tests: [{ runner: "cargo test", files: 3, sub: "tests" }], companions: { with: 0, of: 58, root: null, inline: 34, ext: ".rs" } })],
+    more: { roots: 0, files: 0 },
+    tests: [{ runner: "cargo test", root: null, files: 13 }],
+    principles: [],
+    truncated: false,
+  });
+  assert.equal(lines[2], "- crates: 95 .rs; 3 cargo test specs under tests; 0 of 58 have a namesake test; 34 hold their own tests");
+  assert.equal(lines[3], "- tests: 13 cargo test specs; 0 of 58 .rs files under crates have a namesake test; 34 hold their own tests");
+});
+
 test("the tests line nouns its namesake count with the extension it was counted over", () => {
   // A root holding more screenshots than components counts its components, and
   // the line named the screenshots.

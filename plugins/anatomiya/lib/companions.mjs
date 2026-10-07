@@ -408,7 +408,14 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
 export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem = namesakeIndex(testFiles)) {
   const votes = new Map();
   let answered = 0;
+  // A file holding its own tests has no other file to carry its stem, so it is
+  // neither credited nor owed one, and is counted apart.
+  let inline = 0;
   for (const f of sourceFiles) {
+    if (f.facets?.inlineTests === true) {
+      inline++;
+      continue;
+    }
     const fDir = dirOf(f.rel);
     const family = familyAt(f.rel);
     const tail = tailOf(f.rel, rootPath);
@@ -529,8 +536,6 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
         }
       } else if (kept === null || (!inside(kept, rootPath) && inside(t.dir, rootPath))) kept = t.dir;
     }
-    // A file holding its own tests has one, kept nowhere a line could name.
-    if (!matched && f.facets?.inlineTests === true) answered++;
     if (!matched) continue;
     // One vote per answered source file, so the top vote and the count it is
     // halved against below are counts of the same thing. A repository holding
@@ -555,5 +560,5 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
   // Half the matches name the place, so the count there travels with it the
   // way a runner group's `under` does. Absent where every match sits there.
   const under = root !== null && top[1] !== answered ? { under: top[1] } : {};
-  return { with: answered, of: sourceFiles.length, root, ...under };
+  return { with: answered, of: sourceFiles.length - inline, root, ...under, ...(inline > 0 ? { inline } : {}) };
 }

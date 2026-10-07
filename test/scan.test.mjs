@@ -1570,7 +1570,7 @@ for (const [lang, { runner, source, test: spec }] of Object.entries(SEVEN)) {
   });
 }
 
-test("rust: a scan counts a file that holds its own tests as tested, and only what cargo collects as test files", async (t) => {
+test("rust: a scan counts a file that holds its own tests apart, and only what cargo collects as test files", async (t) => {
   const inline = (s) => `pub fn ${s}() -> i64 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn runs() {\n        assert_eq!(${s}(), 1);\n    }\n}\n`;
   const dir = repo(t, (d, { git, write }) => {
     for (const s of ["cart", "order"]) write(`src/${s}.rs`, inline(s));
@@ -1586,7 +1586,7 @@ test("rust: a scan counts a file that holds its own tests as tested, and only wh
   const result = await scan(dir);
   assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [["cargo test", 3]]);
   const overview = renderOverview(result, { uncovered: 0 });
-  assert.match(overview, /^- tests: 3 cargo test.*; 2 of 3 /m, overview);
+  assert.match(overview, /^- tests: 3 cargo test.*; 0 of 1 .*; 2 hold their own tests$/m, overview);
 });
 
 test("a Go test beside a Python file of its stem is no test of the Python file", async (t) => {

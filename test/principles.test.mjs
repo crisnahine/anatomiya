@@ -113,3 +113,14 @@ test("a repository whose only pairing is one or two namesakes is not told about 
   };
   assert.ok(!principleKeys(layout).includes("test_precedent"));
 });
+
+test("a directory whose files hold their own tests has a precedent, whatever its namesake count", () => {
+  // ripgrep's `crates` reads 0 of 58 with 34 more files carrying a `#[cfg(test)]` module.
+  const layout = {
+    tests: [{ runner: "cargo test", root: null, files: 13 }],
+    roots: [{ companions: { with: 4, of: 60 } }, { companions: { with: 0, of: 58, inline: 3 } }],
+  };
+  assert.ok(!principleKeys(layout).includes("test_precedent"));
+  layout.roots[1].companions.inline = 2;
+  assert.ok(principleKeys(layout).includes("test_precedent"));
+});

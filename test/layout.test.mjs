@@ -1301,17 +1301,21 @@ test("a root inside a family's own test tree is not asked whether its files have
   assert.deepEqual(at("core/commonMain/src/k").companions, { with: 2, of: 3, root: "core/commonTest/src/k", ext: ".kt" });
 });
 
-test("a Rust file holding its own tests has its test, and one holding none does not", () => {
+test("a Rust file holding its own tests is counted apart, neither a test file nor one with a namesake", () => {
   const plain = { testRunner: null, testCalls: false };
   const inline = { ...plain, inlineTests: true };
   const corpus = [
     file("crates/cli/src/escape.rs", "rust", inline),
     file("crates/cli/src/human.rs", "rust", inline),
     file("crates/cli/src/lib.rs", "rust", plain),
+    file("crates/cli/src/wtr.rs", "rust", plain),
     file("tests/feature.rs", "rust", { testRunner: "cargo test", testCalls: true }),
+    file("crates/cli/tests/wtr.rs", "rust", { testRunner: "cargo test", testCalls: true }),
+    // A file of its stem beside a file that tests itself: still in neither number.
+    file("crates/cli/tests/escape.rs", "rust", { testRunner: "cargo test", testCalls: true }),
   ];
   const facts = layoutFacts(corpus, { minFiles: 3 });
-  // The file is its own test, so it is counted as tested and never as a test file.
-  assert.deepEqual(facts.tests, [{ runner: "cargo test", root: "tests", files: 1, under: 1 }]);
-  assert.deepEqual(facts.roots[0].companions, { with: 2, of: 3, root: null, ext: ".rs" });
+  assert.deepEqual(facts.tests.map((g) => [g.runner, g.files]), [["cargo test", 3]]);
+  // A namesake is another file carrying the stem; a module inside the file is not one.
+  assert.deepEqual(facts.roots[0].companions, { with: 1, of: 2, root: null, inline: 2, ext: ".rs" });
 });

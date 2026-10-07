@@ -1443,7 +1443,8 @@ test only where its own `#[test]` says so: serde keeps 118 compile-fail sources 
 Under any other `tests` directory, and in a `tests.rs`, a `#[test]` makes a test file wherever in
 the file it is. Anywhere else the same attribute is the file's own unit tests, in a `mod tests` or
 beside the code, and the file stays a source file carrying `inlineTests`: ripgrep holds 34 such
-files.
+files. Such a file is not asked for a namesake test, and its root's line counts it in a clause of
+its own.
 
 A file is a test by its facets, its name or its position, and by nothing else. The facets first: a
 known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
@@ -1486,6 +1487,7 @@ Every clause is dropped when it counts nothing.
 - <root>: <n1> <ext1>[ (JSX)][, <n2> <ext2>][ and <k> other]
         [; <t> <Runner> specs[ under <sub>]]
         [; <c> of <n>[ <ext> files] has|have a namesake test[, <v>][ under <test root>]]
+        [; <i> holds its|hold their own tests]
         [; <c2> of <n2> <ext2> files has|have a namesake test[, <v>][ under <test root>]]
         [; <m> sibling modules[ named <up to three stems>]; <f> of <j> JSX files inline a helper]
 ```
@@ -1558,9 +1560,14 @@ Every clause is dropped when it counts nothing.
   `tests/Composer/Test/Util` mirrors `src/Composer/Util`. A Python package directly under `src` is
   read as the top of the tree, which is where every import puts it, so a flat `tests/test_cli.py`
   answers `src/flask/cli.py`: flask read 0 of 24 before that and 9 of 24 after, the nine a reader
-  counts by hand. A Rust file holding its own tests is counted as having one and votes for no
-  place, since the test is in the file: read as untested, ripgrep's `crates` said 0 of 92 over 34
-  files that test themselves, and left out of the count it said 0 of 58 and hid them.
+  counts by hand. A Rust file holding its own tests has no other file carrying its stem, so it is
+  in neither number of the namesake count and the clause after it says how many there are:
+  ripgrep's `crates` reads `0 of 56 have a namesake test; 34 hold their own tests`, and tokio's
+  `tokio` reads `2 of 306` with 47 more that hold theirs. Counted as having a namesake, 80 of the
+  101 Rust files credited in three repositories were credited for a module inside themselves under
+  words that name another file. Where every file a root would ask holds its own tests the namesake
+  count is dropped and the clause stands alone, `4 hold their own tests`. The tests line and an
+  area's kinds line carry the same clause.
 - The helper facet, JavaScript and JSX roots only: how many non-test `.ts` and `.js` modules sit
   beside the JSX files, the three commonest stems among them that appear more than once, and how
   many of the JSX files define a module-level function they do not export, out of how many JSX
@@ -1598,7 +1605,7 @@ than a rule.
 |---|---|
 | Match sibling test shape; skip tests where siblings have none. | the tests line printed |
 | Match directory granularity; don't extract into a sibling module what the directory's files inline. | at least one root printed a helper facet |
-| An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed. | one root has 3 or more files with a namesake test, and another has fewer than 3 of at least 3 |
+| An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed. | one root has 3 or more files with a namesake test, and another has fewer than 3 of at least 3, counting a file that holds its own tests as tested |
 
 The third settles the disagreement between a count and an imperative in the same voice: a
 directory with producers and no tests beside a user instruction to always write one. Both halves of
