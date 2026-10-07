@@ -50,7 +50,7 @@ Rust and Kotlin). Those files are committed to this repository and nothing fetch
 or at run time. Each is a byte-for-byte copy of the file in its grammar's npm package, and
 `plugins/anatomiya/grammars/grammars.json` records the package, the version and the SHA-256. `npm run validate` and
 the test suite refuse a copy that does not hash to its entry, or to the installed package's file.
-The seven grammar packages are dev dependencies of this repository at exact versions and no
+The packages of the seven grammars are dev dependencies of this repository at exact versions and no
 dependency of the plugin, so installing the plugin never fetches one:
 `tree-sitter-python@0.25.0`, `tree-sitter-php@0.24.2`, `tree-sitter-go@0.25.0`,
 `tree-sitter-java@0.23.5`, `tree-sitter-c-sharp@0.23.5`, `tree-sitter-rust@0.24.0` and
@@ -288,10 +288,10 @@ The tree-sitter engine runs in the same pool under the same guards, for a differ
 input measured crashed its process outright. What a parse can do is fill the WebAssembly heap,
 and after that every parse in the process throws: with trees never freed, the 44th parse of a 990
 KB Python file threw `RuntimeError: Aborted()`, and so did a one-line file after it. The worker
-frees each tree before it answers, which held its resident size at 432 to 433 MB over 300 such
-parses, and a worker that traps anyway is replaced before it is handed another file. A grammar can
-also be slow on input built for it: a 195 KB Kotlin file of 4,000 `<` comparisons took 6.4
-seconds to parse. The 5s clock kills that parse and charges that one file.
+frees each tree before it answers, which held its resident size under 435 MB over 300 such
+parses in each of two runs, and a worker that traps anyway is replaced before it is handed another file. A grammar can
+also be slow on input built for it: a 195 KB Kotlin file of 4,000 `<` comparisons, each `a < 0`, took
+6.4 seconds to parse. The 5s clock kills that parse and charges that one file.
 
 This is availability, not confidentiality. A repository can still make a scan slow.
 
@@ -410,7 +410,7 @@ Say the quiet part plainly.
   is no seccomp, no container, no dropped privileges. If a parser has a memory-safety bug that gets
   past the child process boundary, it runs as you.
 - **Dependencies are trusted.** `oxc-parser`, `flow-remove-types` and `web-tree-sitter` from npm,
-  the seven grammar `.wasm` files copied from their npm packages, `prism` from your Ruby install,
+  the `.wasm` files of the seven grammars, copied from their npm packages, `prism` from your Ruby install,
   `git`, and `ps`. Their supply chain is not something this tool checks. The hash in
   `plugins/anatomiya/grammars/grammars.json` says a grammar file is the one its package published, and nothing more.
 - **The type checker reads the repository's `tsconfig.json`, or its `tsconfig.base.json` where the
