@@ -4,8 +4,9 @@ import { whyUnread } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { globText } from "./areas.mjs";
-import { GENERATOR, listSome, LISTED, PREFIX, RULES_DIR } from "./rules.mjs";
+import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
+import { frontmatter, spelledGlobs, TARGETS } from "./targets.mjs";
 
 /**
  * The line bound every generated file is held to.
@@ -36,8 +37,8 @@ const KINDS_LINES = 2;
 
 /**
  * The glob is built from a directory name, so it is repository-controlled and
- * goes through the encoder like every other such value (F4). It is emitted
- * JSON-quoted, which is also a valid YAML double-quoted scalar, so a newline in
+ * goes through the encoder like every other such value (F4). Its escapes are
+ * JSON's, which a YAML double-quoted scalar reads the same way, so a newline in
  * the directory name cannot open a second frontmatter fence.
  *
  * Only the directory half is encoded, and the area record carries the two
@@ -49,9 +50,35 @@ const KINDS_LINES = 2;
  * A leading `!` is the matcher's negation marker rather than part of any
  * directory name, so `globText` puts it back outside the encoded half.
  */
-function encodeGlob(g) {
-  return `"${globText(g, (dir) => encodePath(dir).slice(1, -1))}"`;
+const spellGlob = (g) => globText(g, (dir) => encodePath(dir).slice(1, -1));
+
+// A JS area on Copilot widens one pattern per extension, so six is one glob's worth.
+const PATTERNS_NAMED = 6;
+
+/**
+ * What a target's reading of the cover gets wrong, in the file that is misdelivered.
+ *
+ * A widened pattern is printed as the target reads it. The sentence is encoded
+ * whole: a pattern's tail can hold a directory name, and encoding a pattern
+ * alone would strip its leading `*`.
+ */
+function attachLines(target, { dropped, widened, unspellable }) {
+  const some = (patterns) => {
+    const { shown, rest } = listSome(patterns, PATTERNS_NAMED);
+    return shown.join(", ") + (rest ? ` and ${rest} more` : "");
+  };
+  const extra = [...dropped, ...widened.map((p) => `**/${p}`)];
+  const lines = [];
+  if (extra.length) lines.push(`This file also attaches for ${some(extra)}, which the area leaves out.`);
+  if (unspellable.length) {
+    lines.push(`This file does not attach for ${some(unspellable)}, which ${target.reader} cannot be given.`);
+  }
+  return lines.map((line) => encode(line, { max: Infinity }));
 }
+
+// A target that can be given none of an area's patterns gets no file for it.
+const hasFile = (area, target) =>
+  !area.globs?.length || spelledGlobs(target, area.globs, spellGlob).patterns.length > 0;
 
 /**
  * One area file. Kept short on purpose: a rewritten context file does not
@@ -324,7 +351,7 @@ function rosterLines(area) {
  * and none of them is the claim text: a directive block's height is its counts
  * line, its exceptions and its blank.
  */
-function areaBlocks(area) {
+function areaBlocks(area, target = TARGETS.claude) {
   // Measured: a `paths` key with no pattern under it loads on every turn, which
   // is what the overview is for and what an area file must never do. There is
   // no glob-less area to render, so this is a bug in the caller either way.
@@ -332,12 +359,11 @@ function areaBlocks(area) {
     throw new Error(`area has no paths glob, so its file would load on every turn: ${area.path}`);
   }
 
+  const spelled = spelledGlobs(target, area.globs, spellGlob);
+  if (spelled.patterns.length === 0) return null;
+
   const head = [
-    "---",
-    `generator: ${GENERATOR}`,
-    "paths:",
-    ...area.globs.map((g) => `  - ${encodeGlob(g)}`),
-    "---",
+    ...frontmatter(target, { kind: "area", patterns: spelled.patterns }),
     "",
     `# ${encode(area.path)}  ${area.fileCount} files`,
     "",
@@ -450,8 +476,14 @@ function areaBlocks(area) {
   // Six body lines still hold one directive block, an exception and the notice,
   // and a reader who has to give up two of those for the line naming what the
   // siblings do is better off by it.
-  const budget = Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0);
-  return { head, blocks, keys, claims, stated, descriptions, kinds, budget };
+  //
+  // The closing lines and their blank come out the same way, so `settle` drops
+  // a block for them and never them: a file that attaches for more than its
+  // area and does not say so is worse than one directive short.
+  const closing = attachLines(target, spelled);
+  const budget =
+    Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0) - (closing.length ? closing.length + 1 : 0);
+  return { head, blocks, keys, claims, stated, descriptions, kinds, budget, closing };
 }
 
 /**
@@ -546,6 +578,7 @@ export function droppedDirectives(area) {
  * sentence without counts, and `unnamed` where the file says nothing of it.
  */
 export function droppedSlots(area) {
+  // The Claude file's layout, whichever targets are on.
   const { blocks, keys, claims, budget } = areaBlocks(area);
   const { kept, names } = settle(blocks, keys, claims, budget);
   // By position, never by prose: `names` runs over the hidden stated keys in
@@ -554,8 +587,11 @@ export function droppedSlots(area) {
   return new Map(keys.slice(kept).filter(Boolean).map((key, i) => [key, i < names.length ? "named" : "unnamed"]));
 }
 
-export function renderArea(area) {
-  const { head, blocks, keys, claims, stated, descriptions, kinds, budget } = areaBlocks(area);
+/** Null where the target can be given none of the area's patterns. */
+export function renderArea(area, target = TARGETS.claude) {
+  const laid = areaBlocks(area, target);
+  if (laid === null) return null;
+  const { head, blocks, keys, claims, stated, descriptions, kinds, budget, closing } = laid;
   const { kept, names, unnamed } = settle(blocks, keys, claims, budget);
 
   // The frontmatter is delivery rather than content: the globs are what route
@@ -583,7 +619,8 @@ export function renderArea(area) {
 
   // Read under the heading: what the area holds is what a reader wants before
   // what it asks of them.
-  return [...head, ...(kinds ? [kinds, ""] : []), ...body].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+  const tail = closing.length ? ["", ...closing] : [];
+  return [...head, ...(kinds ? [kinds, ""] : []), ...body, ...tail].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
 /**
@@ -632,11 +669,9 @@ function companionAudit(d) {
  * work on a cached read, and anything that moves per commit destroys that. So
  * no timestamp, no duration, no counts that drift.
  */
-export function renderOverview(result, files) {
+export function renderOverview(result, files, target = TARGETS.claude) {
   const head = [
-    "---",
-    `generator: ${GENERATOR}`,
-    "---",
+    ...frontmatter(target, { kind: "overview" }),
     "",
     "# Repository map",
     "",
@@ -645,7 +680,7 @@ export function renderOverview(result, files) {
     // roster nothing on a repository whose overview sits at its bound.
     'A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.',
     "",
-    "Read a file before editing it: these notes load when you read, not when you grep.",
+    target.reads,
     // Names the tools the agent already has, and permits saying
     // "unverified", which is the half that keeps a guess from being written down
     // as a fact (docs/research/one-line-that-stops-guessing.md).
@@ -698,7 +733,7 @@ export function renderOverview(result, files) {
 
   // What the scan could not cover, and how many files this tool generated.
   // Neither grows with the repository, so both are paid before anything else.
-  const fixed = overviewTail(result, files);
+  const fixed = overviewTail(result, files, target);
 
   // The roster is paid next and shrinks into what is left of the bound, minus
   // the `## Areas` heading and its blank and the lines the two listings below
@@ -723,7 +758,7 @@ export function renderOverview(result, files) {
   // cleared the floor and kept a count. Why is not said here: the causes are the
   // Not covered lines, and an empty repository has none of them.
   const listing = result.areas.length
-    ? areaListing(result, Math.max(1, room - others.length))
+    ? areaListing(result, Math.max(1, room - others.length), target)
     : ["No directory became an area, so nothing here states a claim."];
 
   return [...head, ...listing, ...fixed, ...others].join("\n") + "\n";
@@ -738,7 +773,7 @@ export function renderOverview(result, files) {
  * 5,489-file Rails repository, 143 of 151 areas stated nothing and 89% of an
  * always-loaded file went on their names.
  */
-function areaListing(result, budget) {
+function areaListing(result, budget, target) {
   // The same partition the area file makes: a slot the model writes by default
   // is a counts line there, so it must not earn the area a name here.
   const stated = (a) =>
@@ -763,8 +798,8 @@ function areaListing(result, budget) {
   const unnamed = result.areas.length - lines.length;
   if (unnamed > 0) {
     const what = unnamed === 1
-      ? "area in its own file, loaded when you read one of its files"
-      : "areas, each in its own file, loaded when you read one of its files";
+      ? `area in its own file, ${target.listed}`
+      : `areas, each in its own file, ${target.listed}`;
     lines.push(lines.length ? `- and ${unnamed} more ${what}` : `- ${unnamed} ${what}`);
   }
   return lines;
@@ -773,7 +808,7 @@ function areaListing(result, budget) {
 /**
  * What the scan could not cover, and who wrote the files in `.claude/rules/`.
  */
-function overviewTail(result, files) {
+function overviewTail(result, files, target) {
   const lines = ["", "## Not covered", ""];
 
   // Two different facts, and only the first was ever what the sentence said.
@@ -818,8 +853,8 @@ function overviewTail(result, files) {
   const degraded = degradedSemanticSentence(result.semantic);
   if (degraded) lines.push(`- ${degraded}`);
 
-  const generatedCount = result.areas.filter((a) => a.dimensions.length > 0).length + 1;
-  lines.push("", `Generated files: ${generatedCount} under ${RULES_DIR}/${PREFIX}*.md`);
+  const generatedCount = result.areas.filter((a) => a.dimensions.length > 0 && hasFile(a, target)).length + 1;
+  lines.push("", `Generated files: ${generatedCount} under ${target.dir}/${PREFIX}*${target.ext}`);
   return lines;
 }
 
