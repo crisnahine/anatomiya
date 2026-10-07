@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -302,8 +302,57 @@ test("every fold line the roster can print reconciles through the recount", () =
   assert.equal(shapes, 74, "and the loop above is the whole series, not a sample of it");
 });
 
+const script = fileURLToPath(new URL("../scripts/measure-layout.mjs", import.meta.url));
+
+/** The script run over a corpus of one committed repository holding these files. */
+function recountOf(t, files) {
+  const tmp = mkdtempSync(join(tmpdir(), "anatomiya-recount-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const corpus = join(tmp, "corpus");
+  const dir = join(corpus, "one");
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), body);
+  }
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init");
+  const run = spawnSync(process.execPath, [script, corpus, "--md", join(tmp, "out.md")], { encoding: "utf8" });
+  return { ...run, section: run.status === 0 ? readFileSync(join(tmp, "out.md"), "utf8") : "" };
+}
+
+test("the recount reads a root line whose files hold their own tests", (t) => {
+  // The namesake clause is two clauses there, joined by the separator the line is split on.
+  const inline = "pub fn f() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn runs() {}\n}\n";
+  const run = recountOf(t, {
+    "Cargo.toml": '[package]\nname = "one"\n',
+    "src/a.rs": inline,
+    "src/b.rs": inline,
+    "src/c.rs": "pub fn c() {}\n",
+    "src/d.rs": "pub fn d() {}\n",
+    "tests/it.rs": "#[test]\nfn runs() {}\n",
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- src: 4 \.rs; 0 of 2 have a namesake test; 2 hold their own tests$/m);
+  assert.match(run.section, /^- tests: 1 cargo test spec under tests; 0 of 2 \.rs files under src have a namesake test; 2 hold their own tests$/m);
+});
+
+test("the recount counts a root named tests, which prints the tests line's own prefix", (t) => {
+  // ripgrep's 22 files under `tests` were read as the tests line and left out of the sum.
+  const run = recountOf(t, {
+    ...Object.fromEntries([0, 1, 2, 3].map((i) => [`src/m${i}.js`, `export const m${i} = ${i};\n`])),
+    ...Object.fromEntries([0, 1].map((i) => [`tests/m${i}.test.js`, `import { test } from "node:test";\ntest("m${i}", () => {});\n`])),
+    ...Object.fromEntries([0, 1, 2].map((i) => [`tests/data/d${i}.txt`, "x\n"])),
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- tests: 3 \.txt, 2 \.js; 2 node:test specs$/m);
+  assert.match(run.section, /^- tests: 2 node:test specs under tests; /m);
+});
+
 test("a corpus directory that cannot be listed is refused by name, not with a stack", () => {
-  const script = fileURLToPath(new URL("../scripts/measure-layout.mjs", import.meta.url));
   const run = spawnSync(process.execPath, [script, join(tmpdir(), "anatomiya-no-such-corpus")], { encoding: "utf8" });
 
   assert.equal(run.status, 2, run.stderr);
