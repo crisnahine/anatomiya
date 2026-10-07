@@ -192,7 +192,9 @@ tracked files, the pin, this plugin's version, whether the repository holds pack
 `typescript` resolves. It watches the reflog, or, where there is none, the reftable backend's table
 list or the index, so a repository created without a reflog or on reftable refreshes on every move
 too. The hook returns at once and the scan runs detached, so nothing waits on it. Each rescan
-decides on its own whether to run the type checker, the same way `/anatomiya:scan` does. It leaves
+decides on its own whether to run the type checker, the same way `/anatomiya:scan` does, with one
+exception: where the last scan measured the checker as degraded and nothing it reads has changed
+since, the rescan keeps that verdict and does not run it. It leaves
 alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
@@ -609,7 +611,11 @@ otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
 `jsconfig.json` does not count. It costs: a scan with it measured about 5x a plain one on a
 3,800-file repository and about 10x on a 2,600-file one, and the checker is whole-program, so it
-cannot be narrowed to the files you changed. The map says when the checker answered badly.
+cannot be narrowed to the files you changed. The map says when the checker answered badly. While
+that answer stands and the plugin version, the repository's packages and its root config are
+unchanged, a background refresh keeps the answer without running the checker, and prints no count
+for this claim; `/anatomiya:scan` always runs it. On four repositories that read degraded, that
+took a refresh from 4.3s to 21.1s down to 1.2s to 3.8s.
 
 **A Vue or Svelte file is read for its script block, never its template.** The `<script>` blocks
 of a `.vue` or `.svelte` file go through the same parser as a `.ts` file, and the lines `check`

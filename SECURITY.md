@@ -450,7 +450,10 @@ Say the quiet part plainly.
   the path the system opens, so a `..` after a link is taken from where the link leads, and a path
   that steps out of the repository that way is refused. Decisions B7 to B9 and B51 in
   `DECISIONS.md` carry the measurements. A scan that leaves the checker off reads neither
-  file.
+  file. A background refresh runs the checker like any scan, except where the last run measured it
+  as degraded and nothing it reads has changed: to compare, the refresh hashes up to the first
+  megabyte of the root config through a bounded read and parses nothing, and a scan that runs the
+  checker hashes the same bytes before it starts.
 - **No guarantee the map is correct.** The gates in `plugins/anatomiya/lib/reduce.mjs`, with their numbers in `gates.mjs`, are thresholds, not proofs. A
   wrong directive is a correctness problem, not a security one, but it is worth knowing that a
   repository can shape its own numbers if it wants to.

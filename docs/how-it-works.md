@@ -441,7 +441,14 @@ repositories, which closes every type-checked slot. A `jsconfig.json` does not c
 checker reads only those two names. Where any of these is missing the checker stays off and the
 facts record says why in `semantic.reason`: `no-checked-files`, `plain-javascript`,
 `no-dependencies` or `not-installed`, which also covers a `typescript` of another major that doctor
-names. A pin does not switch it off: a pinned file unchanged since the pin reuses its working-tree
+names. A background refresh leaves it off in one more case: the record's tier reads `degraded`,
+a run measured it, and the stamp it was measured under still holds, which is this build's version,
+whether the root holds packages, where `typescript` resolves, and the name and bytes of the config
+the root is read through. The refresh then writes the recorded status, reason and rate with
+`semantic.carried` true and the run's `semantic.measuredAt`, counts no type-checked row, and the
+overview says `type-checked claims are not counted` with the rate and the day it was measured. A
+scan run by hand always measures, and so does a refresh after any of those moved; an `ok` tier is
+measured on every refresh (B8). A pin does not switch it off: a pinned file unchanged since the pin reuses its working-tree
 record, type-checked hits included, so an area whose checked pinned files are all unchanged is
 baselined over them. An area holding one that changed or was renamed since the pin is closed as
 `semantic-unbaselined`, because that file read back from the pin has no type-checked hits and
@@ -1453,7 +1460,9 @@ the holder's last look at HEAD is not lost. It stamps what a scan depends on (HE
 `typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
 map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
 merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run the type checker
-to the rescan, which decides it the way any scan does. Where the repository tracks the overview of
+to the rescan, which decides it the way any scan does, except that the refresh hands it a degraded
+verdict measured under the same build, packages and root config, and the rescan then does not run
+the checker (B8). Where the repository tracks the overview of
 a Cursor or Copilot copy of the map, the rescan holds that directory as it is and writes the rest:
 nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
 by hand rewrites it. A copy git could not be asked about is held too. A scan that throws writes nothing, so the
