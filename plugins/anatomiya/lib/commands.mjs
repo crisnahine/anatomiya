@@ -321,8 +321,10 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   for (const r of after ?? []) if (!r.ok && !lostGrammar(r)) still.push(`${probeName(r)} (${r.reason})`);
   if (error) lines.push(`npm finished, and whether the engines load now could not be asked: ${error}`);
   else if (still.length) lines.push(`npm finished, and still not loading: ${still.join(", ")}`);
-  lines.push(...lost);
-  return answer(root, needed, { ran: true, ok: !error && still.length === 0 && lost.length === 0, output: lines.join("\n") });
+  // A missing runtime hides a lost grammar file until the install brings the runtime back, so the rows read after it are the ones asked.
+  const lostNow = after ? readinessLines(after.filter(lostGrammar)) : lost;
+  lines.push(...lostNow);
+  return answer(root, needed, { ran: true, ok: !error && still.length === 0 && lostNow.length === 0, output: lines.join("\n") });
 }
 
 /**

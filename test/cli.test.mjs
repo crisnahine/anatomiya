@@ -1054,6 +1054,24 @@ test("a setup that installs a package on an install that also lost a grammar fil
   assert.doesNotMatch(stderr, /still not loading/, stderr);
 });
 
+test("a setup that installs the grammars' own runtime names the grammar file that still does not load, and exits 2", needsShebang, (t) => {
+  // Without the runtime no grammar is tried, so the lost file shows only in the rows read after the install.
+  const install = installLacking(t, { modules: ["web-tree-sitter"], grammars: ["kotlin"] });
+  const packages = join(ROOT, "node_modules", "web-tree-sitter");
+  const bin = stubNpm(t, `#!/bin/sh\n/bin/ln -s ${JSON.stringify(packages)} node_modules/web-tree-sitter\necho 'added 1 package'\n`);
+
+  const { code, stdout, stderr } = runFrom(install, ["setup"], `${bin}${delimiter}${process.env.PATH}`);
+  const doctor = runFrom(install, ["doctor"], process.env.PATH).stdout.split("\n").find((line) => line.startsWith("tree-sitter "));
+
+  assert.match(doctor, /^tree-sitter \d[\d.]*: grammars: 6 of 7, kotlin\.wasm did not load, reinstall this plugin, /);
+  assert.equal(code, 2, stdout);
+  assert.match(stderr, /^not installed: tree-sitter$/m, stderr);
+  assert.match(stderr, /added 1 package/, stderr);
+  assert.ok(stderr.split("\n").includes(doctor), stderr);
+  assert.equal(stderr.split("kotlin.wasm did not load").length - 1, 1, stderr);
+  assert.doesNotMatch(stderr, /still not loading/, stderr);
+});
+
 test("doctor and setup refuse the arguments they have no use for", () => {
   // Refused with the usage, rather than accepted and quietly not used.
   const refused = (...args) => {
