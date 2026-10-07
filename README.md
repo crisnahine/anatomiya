@@ -92,7 +92,8 @@ Then, in the repository you want mapped:
 
 It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
 `.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan
-without writing anything.
+without writing anything. It writes nowhere else unless you ask for the map in Cursor or GitHub
+Copilot as well, which is [Other tools](#other-tools).
 
 To keep the map out of git:
 
@@ -104,7 +105,8 @@ echo '.cursor/rules/anatomiya-*.mdc' >> "$exclude"
 echo '.github/instructions/anatomiya-*.instructions.md' >> "$exclude"
 ```
 
-The last two lines match files that exist only when the Cursor and Copilot targets are turned on.
+The last two lines match files that exist only when the Cursor and Copilot targets are turned on,
+and do nothing otherwise.
 
 Where `.claude/rules` is a link to a shared directory, such as `.claude/rules -> ../agents/rules`, the
 map is written through it, and git sees those files only under the link's target. Name the target in
@@ -126,6 +128,14 @@ a `.worktreeinclude` at the repository root copies the map and the pin in when t
 The layout file saves time only where the copy keeps `facts.json`'s modification time. Elsewhere the
 hooks read the record, as they would with no layout file.
 
+A Cursor or Copilot target is on per checkout, so a worktree that arrives without that target's
+overview file starts with it off. To carry one in, add its line:
+
+```
+**/.cursor/rules/anatomiya-*.mdc
+**/.github/instructions/anatomiya-*.instructions.md
+```
+
 The pin is the last line because the exclude above hides it along with the map, so the copied map
 arrives with the pin it was checked against. A linked worktree with no pin of its own reads its main
 checkout's, but only where that checkout can be named: a repository whose git directory is not the
@@ -134,8 +144,9 @@ its worktree checks as if nothing had been pinned. That copy is a snapshot
 of the main checkout taken at that moment, with nothing saying so, where the hooks' borrowed map
 carries its source. `docs/research/why-a-worktree-got-no-map.md` has the sources for both.
 
-The two exclude lines, with the first naming a linked rules directory's target, are everything a scan
-leaves behind. Four hooks are declared by the plugin, in its own
+Those exclude lines, with the first naming a linked rules directory's target, cover everything a scan
+leaves behind: the first two on every scan, the last two only where a target is on. Four hooks are
+declared by the plugin, in its own
 `hooks/hooks.json`, so nothing is written into your settings. The refresh keeps the map current, and
 is described under [Staying current](#staying-current). The echo re-delivers the map after a turn or
 a tool call when the context window does not already hold that same map. The notice runs before a
@@ -377,7 +388,7 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 
 | Command | What it does |
 |---|---|
-| `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. |
+| `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. With `--targets cursor,copilot` it writes the same map for those tools too ([Other tools](#other-tools)). |
 | `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
 | `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Exits 0 either way. |
@@ -392,6 +403,71 @@ so this branch is the first. Severity caps at FIX whenever the map is stale, the
 partial, there was no merge base, or the area file never delivered the claim to that file in full,
 so a clean run under a cap is a weaker signal rather than a clean bill. Each finding says which cap
 applied.
+
+## Other tools
+
+The same map can be written for Cursor and for GitHub Copilot. It is off until you ask for it:
+
+```
+node plugins/anatomiya/bin/anatomiya.mjs scan . --targets cursor,copilot
+```
+
+Inside Claude Code, ask `/anatomiya:scan` for the Cursor or Copilot map and it passes the flag. The
+scan then writes two more copies, an overview and one file per area in each, with the frontmatter
+that tool reads: `.cursor/rules/anatomiya-*.mdc` for Cursor and
+`.github/instructions/anatomiya-*.instructions.md` for Copilot. Name one of the two to get one.
+
+```
+wrote 4 files
+wrote 4 files under .cursor/rules for Cursor
+wrote 4 files under .github/instructions for GitHub Copilot
+```
+
+You pass the flag once. A target stays on while its `anatomiya-overview` file is in its directory,
+so every later scan, and the background refresh, keeps writing it. Nothing else remembers the
+choice. The flag names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns
+both off and removes the files this tool wrote there. Deleting a target's overview file by hand
+turns it off as well, and the next scan removes the area files beside it. `/anatomiya:doctor`, run
+inside the repository, prints a line for each target that is on.
+
+Both directories are ones people write rules in, so a scan is strict there. It never writes over a
+file it did not write: where one sits at a name the map needs, a scan that names the target refuses,
+writes nothing anywhere, and says which file to move. It writes through no link: `.cursor`,
+`.cursor/rules`, `.github` and `.github/instructions` each have to be a real directory of the
+repository, or not exist yet. Your own rule files there are not opened and not reported. Only
+entries named `anatomiya-*` are looked at.
+
+The last two exclude lines under [Quick start](#quick-start) keep both copies out of git. To commit
+one instead, which is how Copilot on GitHub.com gets to read it, commit its files. The background
+refresh then leaves the committed copy as it is and keeps the rest current, and a scan you run by
+hand rewrites it.
+
+What a Cursor or Copilot user gets is the map's files, and not the rest of this tool.
+
+**No hooks.** The four hooks are Claude Code's. In Cursor and Copilot nothing hands the overview
+back during a long run, nothing speaks before a test is written where none belongs, nothing asks
+about reuse when a turn ends, and nothing rescans. Those copies change when a Claude Code session's
+refresh, or a scan by hand, rewrites them. Each overview there says under its heading that the code
+is right where the two disagree.
+
+**The patterns are looser.** Neither tool can be told to leave a subtree out, so an area file can
+attach for files the area excluded, such as a `fixtures` directory under `test`, and its last lines
+say which. VS Code also matches a pattern under any parent directory. A directory name one of the
+tools cannot be given, one holding a comma for instance, gets no file there, and the scan says how
+many areas that left out.
+
+**VS Code gets each area twice with the Copilot target on.** VS Code already reads `.claude/rules/`,
+so its agent is offered the `.claude/rules` file and the `.github/instructions` file for the same
+area. The Copilot target is for the Copilot surfaces that read only `.github/instructions`.
+
+**Delivery is not measured.** For Cursor it was read from the code of the 3.20.21 app, where an
+area's rule goes to the agent the first time it reads a matching file, and it was not watched in a
+running Cursor. For Copilot the generated files were run through the parser and matcher of VS Code
+1.140.0, and no other Copilot surface was read or run. Both copies are files in the right place and
+the right shape. Only the channel into Claude Code is measured.
+
+**Codex is not written for.** It reads one `AGENTS.md` per directory, with no path scoping and
+32 KiB for all of them, so an area file has no place there.
 
 ## How it is tested
 
@@ -488,7 +564,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 270 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 275 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

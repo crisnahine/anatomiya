@@ -258,6 +258,12 @@ _Avoid_: index, summary, README
 A map file scoped to one area's glob, so it loads when a file in that area is read.
 _Avoid_: rule file, doc, context file
 
+**Target**:
+One of the three places a scan can write the map, each for one reader: `claude` for Claude Code,
+`cursor` for Cursor and `copilot` for GitHub Copilot. The first is always written. Each of the other
+two is written only once a scan is asked for it, and stays on while its own overview is there.
+_Avoid_: destination, backend, integration, export, format
+
 **Refresh**:
 The rescan a detached worker runs on its own when HEAD, the tracked files, the pin or the plugin's
 version has moved since the last scan, in a checkout that already holds a map of its own. It follows the pin where it
