@@ -38,10 +38,17 @@ them that configuration is code:
 - An `sgconfig.yml` `customLanguages` entry is a `dlopen` of a shared object the repository supplies.
 
 This is why anatomiya ships no third-party analysis CLI and calls parsers as libraries instead.
-There are two runtime dependencies, `oxc-parser` and `flow-remove-types`. Neither runs a binary of
-its own: the second is pure JavaScript, is loaded only inside the parser child, and is reached only
-after `oxc-parser` has already rejected a `.js`, `.jsx`, `.mjs` or `.cjs` file. It rewrites that
-file's text in memory and nothing is written back to disk. Ruby files go through `prism`, which is
+There are three runtime dependencies, `oxc-parser`, `flow-remove-types` and `web-tree-sitter`. None
+runs a binary of its own: the second is pure JavaScript, is loaded only inside the parser child, and
+is reached only after `oxc-parser` has already rejected a `.js`, `.jsx`, `.mjs` or `.cjs` file. It
+rewrites that file's text in memory and nothing is written back to disk. The third is JavaScript and
+one WebAssembly module, with no dependency and no install script of its own. It is the runtime for
+the seven grammars the plugin carries as `.wasm` files under `plugins/anatomiya/grammars/` (Python, PHP, Go, Java, C#,
+Rust and Kotlin). Those files are committed to this repository and nothing fetches one at install
+or at run time. Each is a byte-for-byte copy of the file in its grammar's npm package, and
+`plugins/anatomiya/grammars/grammars.json` records the package, the version and the SHA-256. `npm run validate` and
+the test suite refuse a copy that does not hash to its entry, or to the installed package's file.
+Ruby files go through `prism`, which is
 a default gem, in children (up to four on a large repository) each started as
 `ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and `GEM_HOME` dropped from its
 environment, because each of those can inject a `-r` into a process about to be pointed at
@@ -282,8 +289,10 @@ Say the quiet part plainly.
 - **No sandbox.** The scan runs with your user's permissions, your filesystem and your network. There
   is no seccomp, no container, no dropped privileges. If a parser has a memory-safety bug that gets
   past the child process boundary, it runs as you.
-- **Dependencies are trusted.** `oxc-parser` and `flow-remove-types` from npm, `prism` from your
-  Ruby install, `git`, and `ps`. Their supply chain is not something this tool checks.
+- **Dependencies are trusted.** `oxc-parser`, `flow-remove-types` and `web-tree-sitter` from npm,
+  the seven grammar `.wasm` files copied from their npm packages, `prism` from your Ruby install,
+  `git`, and `ps`. Their supply chain is not something this tool checks. The hash in
+  `plugins/anatomiya/grammars/grammars.json` says a grammar file is the one its package published, and nothing more.
 - **The type checker reads the repository's `tsconfig.json`, or its `tsconfig.base.json` where the
   root has no `tsconfig.json`.** It is the one tier that reads
   repository configuration. A scan runs it on its own when the optional `typescript` dependency is

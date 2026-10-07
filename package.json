@@ -32,8 +32,9 @@
     "test": "node --test \"test/**/*.test.mjs\"",
     "test:watch": "node --test --watch \"test/**/*.test.mjs\"",
     "scan": "node plugins/anatomiya/bin/anatomiya.mjs scan .",
-    "validate": "node scripts/validate.mjs && node scripts/shipped.mjs && node scripts/plugin-lock.mjs --check",
+    "validate": "node scripts/validate.mjs && node scripts/shipped.mjs && node scripts/plugin-lock.mjs --check && node scripts/grammars.mjs --check",
     "lock:plugin": "node scripts/plugin-lock.mjs",
+    "grammars": "node scripts/grammars.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "defaults:seed": "node scripts/seed-defaults.mjs",
     "audit:applicability": "node scripts/audit-applicability.mjs",
@@ -45,6 +46,13 @@
     "plugins/*"
   ],
   "devDependencies": {
-    "ignore": "7.0.5"
+    "@tree-sitter-grammars/tree-sitter-kotlin": "1.1.0",
+    "ignore": "7.0.5",
+    "tree-sitter-c-sharp": "0.23.5",
+    "tree-sitter-go": "0.25.0",
+    "tree-sitter-java": "0.23.5",
+    "tree-sitter-php": "0.24.2",
+    "tree-sitter-python": "0.25.0",
+    "tree-sitter-rust": "0.24.0"
   }
 }
