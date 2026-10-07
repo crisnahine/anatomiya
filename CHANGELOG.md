@@ -7,6 +7,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- The type checker reads a root `tsconfig.base.json` where a repository has no root
+  `tsconfig.json`, which is how a workspace with one config per package keeps its path aliases.
+  Read on the compiler's defaults, every import through an alias resolved to nothing: of eight such
+  repositories measured, three read `degraded` and now read `ok` (79.9% to 84.9%, 68.9% to 91.7%
+  and 76.7% to 85.5% of type lookups resolved). A base that resolves under the floor reads
+  `low-resolution`, as any config that was read does. A root with neither file runs on the
+  defaults as before: one of five measured resolves that way, so nothing is skipped for the
+  missing file. Plain JavaScript beside a `tsconfig.base.json` is now checked, as it is beside a
+  `tsconfig.json`.
+
 ## [0.13.4] - 2026-10-07
 
 Hooks, scans and checks take less time and give the same answers, byte for byte, with two

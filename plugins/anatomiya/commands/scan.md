@@ -69,7 +69,8 @@ cannot install an interpreter. Then run the scan again.
 
 The scan runs the TypeScript checker on its own when the optional `typescript` 5.x dependency is
 installed, the repository's own dependencies are on disk inside it, and it has a root
-`tsconfig.json` or a TypeScript source file that is not a declaration file. A `node_modules` linked
+`tsconfig.json`, a root `tsconfig.base.json` where there is none, or a TypeScript source file that
+is not a declaration file. A `node_modules` linked
 in from outside the repository is not read, so it counts as no dependencies, and a `jsconfig.json`
 does not count as a config. Missing any of these, the scan leaves the checker off and records why in
 `semantic.reason`; plain JavaScript reads `plain-javascript`. With it, a scan measured about 5x a

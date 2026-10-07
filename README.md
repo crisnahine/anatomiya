@@ -442,8 +442,9 @@ with a layout section and no claims in it. One of the 58 needs the type checker 
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
-as no dependencies), and the repository has a root `tsconfig.json` or a TypeScript source file that
-is not a declaration file, and leaves it off otherwise. Plain JavaScript run on the compiler's
+as no dependencies), and the repository has a root `tsconfig.json`, a root `tsconfig.base.json`
+where there is none, or a TypeScript source file that is not a declaration file, and leaves it off
+otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
 `jsconfig.json` does not count. It costs: a scan with it measured about 5x a plain one on a
 3,800-file repository and about 10x on a 2,600-file one, and the checker is whole-program, so it
