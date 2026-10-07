@@ -469,4 +469,19 @@ test("the principle and the finding read the same namesake floor", () => {
 
   assert.deepEqual(precedentFindings([spec], at(PRECEDENT_FLOOR)), []);
   assert.ok(!principleKeys({ tests: [], roots: at(PRECEDENT_FLOOR) }).includes("test_precedent"));
+
+  // A file that holds its own tests is precedent in the directory it sits in, to both.
+  const holding = (inline) => [
+    root("app/mailers", { files: 9, companions: { with: 1, of: 9 - inline, root: null, inline } }),
+    at(0)[1],
+  ];
+  assert.equal(precedentFindings([spec], holding(PRECEDENT_FLOOR - 2)).length, 1);
+  assert.ok(principleKeys({ tests: [], roots: holding(PRECEDENT_FLOOR - 2) }).includes("test_precedent"));
+  assert.deepEqual(precedentFindings([spec], holding(PRECEDENT_FLOOR - 1)), []);
+  assert.ok(!principleKeys({ tests: [], roots: holding(PRECEDENT_FLOOR - 1) }).includes("test_precedent"));
+
+  // And it is no pairing: a repository whose files only test themselves has matched no test by name.
+  const unmatched = [at(0)[0], root("app/services", { files: 9, companions: { with: 0, of: 3, root: null, inline: 6 } })];
+  assert.deepEqual(precedentFindings([spec], unmatched), []);
+  assert.ok(!principleKeys({ tests: [], roots: unmatched }).includes("test_precedent"));
 });
