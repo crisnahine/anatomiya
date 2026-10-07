@@ -1037,6 +1037,13 @@ test("a test in a paired project covers the one source of its stem there, at any
   const seeder = [file("src/Illuminate/Database/Console/Seeds/SeederMakeCommand.php")];
   assert.equal(count(seeder, [file("tests/Integration/Generators/SeederMakeCommandTest.php")], "src/Illuminate"), 1);
   assert.equal(count([file("app/Models/User.php")], [file("tests/Unit/UserTest.php")], "app"), 1);
+  // A test named `<Directory><Class>` covers a class of that directory, never one of the joined name elsewhere.
+  const cacheStore = [file("src/Illuminate/Cache/SessionStore.php")];
+  assert.equal(count(cacheStore, [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 0);
+  assert.equal(count([file("src/Illuminate/Session/Stores/SessionStore.php")], [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 1);
+  // Two of the stem, one in the directory the test is named for: that one.
+  const both = [...cacheStore, file("src/Illuminate/Session/Stores/SessionStore.php")];
+  assert.equal(count(both, [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 1);
   // Slim keeps its classes in `Slim`, which is no half of a pair.
   assert.equal(count([file("Slim/Routing/Route.php")], [file("tests/Deep/RouteTest.php")], "Slim"), 0);
 

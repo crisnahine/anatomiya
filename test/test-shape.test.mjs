@@ -224,6 +224,25 @@ test("a test project or tree is paired with the project it is named for or sits 
   assert.equal(pairedWith("src/Illuminate/Testing", "php"), null);
 });
 
+test("PHP: a test named for its directory and a class is paired with that directory's sources and no other", () => {
+  // Laravel: `tests/Session/SessionStoreTest.php` tests `Illuminate\\Session\\Store`, not `Cache/SessionStore.php`.
+  const session = pairedWith("tests/Session", "php", "SessionStore");
+  assert.ok(session("src/Illuminate/Session"));
+  assert.ok(session("src/Illuminate/Session/Middleware"));
+  assert.ok(!session("src/Illuminate/Cache"));
+  const database = pairedWith("tests/Integration/Database", "php", "DatabaseConnector");
+  assert.ok(database("src/Illuminate/Database/Connectors"));
+  assert.ok(!database("src/Illuminate/Queue/Connectors"));
+  // Any other name keeps the whole tree: one that does not begin with the directory's,
+  // one that is the directory's and no more, and one that only shares its letters.
+  assert.ok(pairedWith("tests/Integration/Generators", "php", "SeederMakeCommand")("src/Illuminate/Database/Console/Seeds"));
+  assert.ok(pairedWith("tests/Cookie", "php", "Cookie")("src/Illuminate/Support/Facades"));
+  assert.ok(pairedWith("tests/Auth", "php", "Authorize")("src/Illuminate/Foundation"));
+  // PHP only. Held the same way serilog and gson lose none of 28 and 37 credits, and okhttp one of 69, a right one.
+  assert.ok(pairedWith("test/Serilog.Tests/Core", "csharp", "CoreSink")("src/Serilog/Events"));
+  assert.ok(pairedWith("gson/src/test/java/functional", "java", "functionalJson")("gson/src/main/java/internal"));
+});
+
 test("Java and Kotlin: a Main source set and the package root are the words a mirror reads out of a path", () => {
   for (const family of ["java", "kotlin"]) {
     const trees = FAMILY_TREES[family];

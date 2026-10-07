@@ -240,6 +240,12 @@ const below = (dir, above) => {
  * Gradle `src/test`, or a `<set>Test` source set, with what sits beside it;
  * a PHP `tests` with the `src` or `app` beside it. A `test` directory under no
  * `src` is ktor's flat `<module>/test` and pairs with nothing.
+ *
+ * A PHP test whose name is its directory's and a word more is named
+ * `<Directory><Class>` and is held to sources under a directory of that name:
+ * Laravel's `tests/Session/SessionStoreTest.php` tests `Session\Store`, not
+ * `Cache/SessionStore.php`. Of the 61 Laravel credits that cross a component 7
+ * are so named, 5 of them wrong.
  */
 const jvmPairing = (segments) => {
   const at = segments.findIndex((segment, i) => JVM_TREES.test.test(segment) || (segment === "test" && segments[i - 1] === "src"));
@@ -259,12 +265,14 @@ const PAIRINGS = {
   },
   java: jvmPairing,
   kotlin: jvmPairing,
-  php: (segments) => {
+  php: (segments, covered) => {
     const at = segments.indexOf("tests");
     if (at === -1) return null;
+    const own = segments.at(-1);
+    const named = covered.startsWith(own) && /^\p{Lu}/u.test(covered.slice(own.length)) ? own : null;
     return (dir) => {
-      const own = below(dir, segments.slice(0, at));
-      return own !== null && (own[0] === "src" || own[0] === "app");
+      const source = below(dir, segments.slice(0, at));
+      return source !== null && (source[0] === "src" || source[0] === "app") && (named === null || source.includes(named));
     };
   },
   python: (segments) => {
@@ -280,4 +288,5 @@ const PAIRINGS = {
   },
 };
 
-export const pairedWith = (testDir, family) => PAIRINGS[family]?.(testDir.split("/")) ?? null;
+/** `covered` is the stem the test's name says it covers, which only PHP's pairing reads. */
+export const pairedWith = (testDir, family, covered = "") => PAIRINGS[family]?.(testDir.split("/"), covered) ?? null;

@@ -345,7 +345,7 @@ function assignPairs(byStem, sourceFiles) {
   for (const [stem, candidates] of byStem) {
     for (const t of candidates) {
       const family = familyAt(t.rel);
-      const inProject = pairedWith(t.dir, family);
+      const inProject = pairedWith(t.dir, family, stem);
       if (inProject === null) continue;
       const held = (sourcesByStem.get(`${family}\u0000${stem}`) ?? []).filter((f) => inProject(dirOf(f.rel)));
       if (held.length === 1) t.paired = held[0].rel;
