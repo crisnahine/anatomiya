@@ -166,5 +166,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 263 numbered decisions with the finding
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 270 numbered decisions with the finding
 behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

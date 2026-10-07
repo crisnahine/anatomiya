@@ -342,10 +342,15 @@ spends no directive line; `check` still enforces it at full severity. A partial 
 its `(partial: ...)` warning on either kind of line. A claim reading `files here are named kebab-case` learned its class from the area's own
 files, so the same row states a different sentence in a different repository.
 
+A claim ending `, in .ts files` was counted over those files alone. The area also holds files the
+dimension is never asked of, a `.vue` component or a Ruby file, and the area file loads for them
+too, so the line says which files it speaks for.
+
 ## What it measures
 
-58 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. Each is one claim about
-one area, with a precision marker where the predicate cannot see every site. Among them:
+58 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. The script block of a Vue
+or Svelte file is asked a part of the JavaScript ones: 24 for Vue, 24 for Svelte. Each is one claim
+about one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
   translation calls, Rails migrations and callbacks, and the rest of the registry in
@@ -437,8 +442,9 @@ preventable by a conventions map. Any claim that this finds bugs earlier is fals
 writes blocks a commit, a push, or a merge, and `check` reports rather than fails. If your linter
 already enforces a rule, the map restating it is waste, not defence in depth.
 
-**JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
-with a layout section and no claims in it. One of the 58 needs the type checker and is the only
+**JavaScript, TypeScript and Ruby, plus the script blocks of Vue and Svelte files.** A Python, Go
+or Rust repository gets an overview with a layout section and no claims in it, and its "Not
+covered" section counts the files it did not read. One of the 58 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
@@ -449,6 +455,16 @@ defaults resolved 25% to 39% on three installed repositories, too little to stat
 `jsconfig.json` does not count. It costs: a scan with it measured about 5x a plain one on a
 3,800-file repository and about 10x on a 2,600-file one, and the checker is whole-program, so it
 cannot be narrowed to the files you changed. The map says when the checker answered badly.
+
+**A Vue or Svelte file is read for its script block, never its template.** The `<script>` blocks
+of a `.vue` or `.svelte` file go through the same parser as a `.ts` file, and the lines `check`
+reports are the file's own. Three dimensions whose answer is in the template are left out for both:
+`module-level bindings are const`, `optional values are read with ?.` and `imports used only as
+types are marked import type`. `failure is returned, not thrown` is left out for Vue, and `a module
+that exports a hook exports one` for Svelte. The five JSX dimensions and the type-checked one are
+never asked of a component. Nothing is counted about markup: its directives, its event bindings, or
+which components it renders. The overview says so on every scan of a repository that holds one:
+`17 .vue and .svelte files are read for their script block; the template is not read`.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
 files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 205 of 2,468
@@ -468,7 +484,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 263 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 270 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
