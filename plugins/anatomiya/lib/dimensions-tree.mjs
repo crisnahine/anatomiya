@@ -283,7 +283,6 @@ export const TREE_DIMENSIONS = [
     precision: "precise",
     applicabilityPredicate: {
       sites: "a Python or PHP file outside the tests declaring a named function or method, at any depth; a lambda, a closure and an arrow function carry no name and are not sites, and neither is a Python method named with double underscores on both sides or a PHP __construct or __destruct",
-      notCounted: "a constructor, a destructor, and a method named with two underscores on both sides, like __eq__",
       blind: null,
     },
     langs: ["python", "php"],

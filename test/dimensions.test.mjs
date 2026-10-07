@@ -912,7 +912,7 @@ test("the rows that name a declined form are the rows one true clause can name",
   const declared = REGISTRY.filter((d) => d.applicabilityPredicate?.notCounted).map((d) => d.key);
 
   assert.deepEqual(declared.slice().sort(), [
-    "column_null_declared", "controller_spec", "declared_return_type", "extends_base", "import_extension",
+    "column_null_declared", "controller_spec", "extends_base", "import_extension",
     "job_spec", "job_test", "model_spec", "model_test", "non_null_assertion", "nullish_default",
     "optional_chaining", "rake_task_spec", "reference_foreign_key", "route_env", "route_logging",
     "route_network", "serializer_spec", "service_spec", "spread_on_component", "worker_spec",
