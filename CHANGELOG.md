@@ -80,7 +80,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A directory whose components sit beside modules counts their namesake tests apart: `85 of 745
   .ts files have a namesake test; 81 of 164 .vue files have a namesake test`, on the root line,
   the tests line and an area's kinds line, whichever of the two the directory holds more of. The
-  count over the first extension does not move. A test answers one component of its stem where
+  smaller of the two is counted on the line where the directory holds three or more of it, so
+  ten components beside one `index.ts` print one count. The count over the first extension does
+  not move. A test answers one component of its stem where
   the repository holds several: the one under the test's own directory, or the one it imports. A
   docs example named like a packaged component is not credited with that package's test.
 - The "Not covered" line that names unread languages knows 24 more extensions, among them `.erb`,

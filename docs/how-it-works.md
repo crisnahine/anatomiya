@@ -1710,7 +1710,10 @@ Every clause is dropped when it counts nothing.
   name their extension: `85 of 745 .ts files have a namesake test; 81 of 164 .vue files have a
   namesake test` on element-plus's `packages/components`, and `1 of 66 .vue files has a namesake
   test; 6 of 20 .ts files have a namesake test under __tests__/unit/client/theme-default` on
-  vitepress's `src/client/theme-default`. The two are never summed. Where several components carry one stem a test answers one of them: the one
+  vitepress's `src/client/theme-default`. The two are never summed. The smaller of the two
+  populations gets its clause from three files up, the floor the precedent rule reads a directory
+  at, so ten components beside one `index.ts` print one count, bare, and no `0 of 1 .ts file have
+  a namesake test`. Where several components carry one stem a test answers one of them: the one
   under the test's own directory, less the test tree words that directory ends in, or failing that
   the closest mirror, and an import that names another leaves it with none. That is asked apart
   from which module the test answers, so one test covers `button.vue` and the `button.ts` beside
@@ -1833,7 +1836,7 @@ An area file gets the same counts over its own files, on one line under the head
 kinds: 40 .mjs; 0 test files; 28 of 40 have a namesake test
 ```
 
-Where the area holds components beside modules, the line carries both clauses:
+Where the area holds components beside modules, three or more of each, the line carries both clauses:
 
 ```
 kinds: 10 .ts, 4 .vue; 0 test files; 4 of 10 .ts files have a namesake test; 4 of 4 .vue files have a namesake test
