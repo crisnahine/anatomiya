@@ -329,10 +329,10 @@ test("another spelling holds a name only where the listing does not also hold th
   const name = overviewName(cursor);
   const theirs = "Anatomiya-Overview.mdc";
   assert.equal(spelledOtherwise([theirs, "team.mdc"], name), theirs, "alone, it may be what a write to the name lands on");
-  assert.equal(spelledOtherwise([theirs, name], name), undefined, "beside the name, the volume tells the two apart");
-  assert.equal(spelledOtherwise([name, theirs, "ANATOMIYA-OVERVIEW.MDC"], name), undefined, "however many spellings there are");
-  assert.equal(spelledOtherwise([name], name), undefined);
-  assert.equal(spelledOtherwise([], name), undefined);
+  assert.equal(spelledOtherwise([theirs, name], name), null, "beside the name, the volume tells the two apart");
+  assert.equal(spelledOtherwise([name, theirs, "ANATOMIYA-OVERVIEW.MDC"], name), null, "however many spellings there are");
+  assert.equal(spelledOtherwise([name], name), null);
+  assert.equal(spelledOtherwise([], name), null);
 });
 
 test("on: our overview beside somebody's file spelled in another case", (t) => {

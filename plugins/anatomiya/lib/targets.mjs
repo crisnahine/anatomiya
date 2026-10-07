@@ -45,6 +45,7 @@ export const TARGET_IDS = Object.freeze(Object.keys(TARGETS));
 const STEM = "anatomiya-";
 const HEAD = ["---", "generator: anatomiya"];
 
+/** The target ids a `--targets` value names, in the table's order and Claude Code's with them. An empty list or an unknown name throws. */
 export function parseTargets(text) {
   const names = String(text ?? "").split(",").map((n) => n.trim().toLowerCase()).filter(Boolean);
   if (names.length === 0) throw new Error("--targets needs at least one name");
@@ -53,7 +54,10 @@ export function parseTargets(text) {
   return TARGET_IDS.filter((id) => TARGETS[id].always || names.includes(id));
 }
 
+/** The filename a target's overview is written under. */
 export const overviewName = (target) => `${STEM}overview${target.ext}`;
+
+/** The filename one area's file is written under for a target. */
 export const areaName = (target, areaId) => `${STEM}area-${areaId}${target.ext}`;
 
 // A comma separates patterns in both tools and a brace left after expansion

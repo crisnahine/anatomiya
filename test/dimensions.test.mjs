@@ -1080,8 +1080,8 @@ test("a nested binding of the same name does not use the caught error", () => {
 });
 
 test("a row is walked by its own engine's walk, and one whose engine has none refuses to load", () => {
-  // A miss used to fall through to the oxc walk, which finds no child it knows
-  // in another engine's tree: the row counted nothing and nothing said so.
+  // A miss that fell through to the oxc walk would find no child it knows in
+  // another engine's tree: the row would count nothing and nothing would say so.
   assert.equal(walkFor({ key: "a", langs: ["js", "jsx"] }), walk);
   assert.equal(walkFor({ key: "b", langs: ["ruby"] }), walkRuby);
   for (const lang of ["python", "php", "go", "java", "csharp", "rust", "kotlin"]) {

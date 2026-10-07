@@ -120,7 +120,10 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
     if (tree.rootNode.hasError && mayHoldDirectives(rel)) {
       const retry = (text) => {
         const retried = parser.parse(text);
-        if (retried.rootNode.hasError) return retried.delete();
+        if (retried.rootNode.hasError) {
+          retried.delete();
+          return false;
+        }
         tree.delete();
         tree = retried;
         return true;

@@ -25,7 +25,7 @@ export function installedVersion(module) {
   try {
     return require(`${module}/package.json`).version ?? null;
   } catch {
-    // Below.
+    // Kept out of the package's exports: looked for beside the module below.
   }
   let dir;
   try {

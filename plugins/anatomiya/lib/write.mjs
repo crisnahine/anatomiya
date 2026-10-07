@@ -213,7 +213,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // itself, may be that name on this volume, so writing ours may write over it.
   // Somebody's, whatever it says.
   const alias = (n) => spelledOtherwise(audit.entries, n);
-  const taken = target.always ? [] : all.filter((n) => alias(n) !== undefined || theirs.some((list) => list.includes(n)));
+  const taken = target.always ? [] : all.filter((n) => alias(n) !== null || theirs.some((list) => list.includes(n)));
   if (taken.length && (explicit || taken.includes(overviewName(target)))) {
     const at = alias(taken[0]) ?? taken[0];
     const what = at !== taken[0]
@@ -227,7 +227,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
       `${target.dir}/${at} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`
     );
   }
-  const aliases = taken.map(alias).filter((e) => e !== undefined);
+  const aliases = taken.map(alias).filter((e) => e !== null);
   const names = all.filter((n) => !taken.includes(n));
   const filed = wanted.filter((a) => !taken.includes(nameOf(a)));
   const planned = new Set(names);

@@ -171,7 +171,7 @@ function tailIndex(corpusRels) {
 
   const index = new Map();
   // A component answers only a tail that spells its extension, as a bundler
-  // resolves it; by its stem it made the module of its name beside it ambiguous.
+  // resolves it; answering by its stem makes the module of its name beside it ambiguous.
   const spelled = new Map();
   for (const rel of corpusRels) {
     if (embeddedIn(language(rel)) !== null) {
