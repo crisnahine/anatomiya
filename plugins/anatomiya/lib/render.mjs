@@ -76,7 +76,7 @@ function attachLines(target, { dropped, widened, unspellable }) {
 }
 
 // A target that can be given none of an area's patterns gets no file for it.
-const hasFile = (area, target) =>
+export const hasFile = (area, target) =>
   !area.globs?.length || spelledGlobs(target, area.globs, spellGlob).patterns.length > 0;
 
 /**

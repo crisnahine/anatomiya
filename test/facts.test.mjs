@@ -7,7 +7,9 @@ import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { atomic, factsJson, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { knownNames } from "../plugins/anatomiya/lib/rules.mjs";
+import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 
 /**
  * One owner for the machine record, so one round trip through it.
@@ -58,6 +60,51 @@ test("what the writer emits is what the reader reads back", (t) => {
   assert.equal(facts.schema, FACTS_SCHEMA);
   assert.equal(facts.areas[0].dimensions[0].key, "k");
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
+});
+
+test("the names written for each target survive the round trip, and a target that wrote none has no key", (t) => {
+  const dir = root(t);
+  const cursor = ["anatomiya-area-aaaaaaaa.mdc", "anatomiya-overview.mdc"];
+  mkdirSync(join(dir, dirname(FACTS_PATH)), { recursive: true });
+
+  writeFileSync(join(dir, FACTS_PATH), factsJson(result([dim()]), { cursor, copilot: [] }));
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null);
+  assert.equal(facts.schema, 20);
+  assert.equal(FACTS_SCHEMA, 20);
+  assert.deepEqual(facts.targets, { cursor });
+  assert.deepEqual(knownNames(facts, TARGETS.cursor), new Set(cursor));
+  assert.equal(knownNames(facts, TARGETS.copilot), null, "no key is a target that scan did not write, so nothing there is known");
+  assert.deepEqual(knownNames(facts), new Set(["anatomiya-overview.md", "anatomiya-area-aaaaaaaa.md"]));
+  assert.equal("targets" in JSON.parse(factsJson(result([dim()]))), false);
+  assert.equal("targets" in JSON.parse(factsJson(result([dim()]), { cursor: [], copilot: [] })), false);
+});
+
+test("a record written before the targets were stored reads with none", (t) => {
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const raw = JSON.parse(readFileSync(join(dir, FACTS_PATH), "utf8"));
+  assert.equal("targets" in raw, false, "a plain write names no target");
+  writeFileSync(join(dir, FACTS_PATH), JSON.stringify({ ...raw, schema: 19 }));
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null);
+  assert.equal(facts.schema, 19);
+  assert.equal(facts.targets, undefined);
+  assert.equal(knownNames(facts, TARGETS.cursor), null);
+  assert.equal(knownNames(facts, TARGETS.copilot), null);
+  assert.equal(knownNames(facts).has("anatomiya-area-aaaaaaaa.md"), true, "and Claude Code's names are read as before");
+});
+
+test("a target's names in a record somebody edited are held to that target's own names", () => {
+  const names = (targets) => knownNames({ areas: [], targets }, TARGETS.cursor);
+  assert.deepEqual(names({ cursor: ["anatomiya-overview.mdc", "team.mdc", "../anatomiya-x.mdc", "anatomiya-overview.md", 7, null] }), new Set(["anatomiya-overview.mdc"]));
+  for (const bad of [null, [], "cursor", { cursor: "anatomiya-overview.mdc" }, { cursor: null }, { cursor: {} }]) {
+    assert.equal(names(bad), null, JSON.stringify(bad));
+  }
+  assert.equal(knownNames(null, TARGETS.cursor), null);
 });
 
 test("a map on disk that does not parse is unreadable, not absent", (t) => {
