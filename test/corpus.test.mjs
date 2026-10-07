@@ -101,6 +101,26 @@ test("collect leaves the map's own files out of others, by the names a scan give
   assert.deepEqual(others.map((f) => f.rel).sort(), [...theirs].sort());
 });
 
+test("collect leaves the map's own files out under a target directory spelled in another case, where the repository folds case", needsFoldingFilesystem, async (t) => {
+  const own = [".Cursor/Rules/anatomiya-overview.mdc", ".GitHub/Instructions/anatomiya-area-0123abcd.instructions.md"];
+  // A name in another case is somebody's file on any volume: the writer never puts one there.
+  const theirs = [".Cursor/Rules/team.mdc", ".Cursor/Rules/Anatomiya-Area-0123abcd.mdc"];
+  let git;
+  const dir = repo(t, (d, made) => {
+    git = made.git;
+    made.write("src/a.ts");
+    for (const rel of [...own, ...theirs]) made.write(rel, "x\n");
+    git("add", "-A"); git("commit", "-qm", "init");
+  });
+  assert.equal(String(git("config", "core.ignorecase")).trim(), "true", "the control: git saw this volume fold");
+
+  assert.deepEqual((await collect(dir)).others.map((f) => f.rel).sort(), [...theirs].sort());
+
+  // Told the volume keeps case, `.Cursor/Rules` is a directory this tool does not write.
+  git("config", "core.ignorecase", "false");
+  assert.deepEqual((await collect(dir)).others.map((f) => f.rel).sort(), [...own, ...theirs].sort());
+});
+
 test("collect follows a .claude/rules link to where git tracks the map, and nowhere else", needsSymlinks, async (t) => {
   const named = ["agents/rules/anatomiya-overview.md", "agents/rules/anatomiya-area-0123abcd.md"];
   const build = (link) => repo(t, (d, { write, mkdir, git }) => {
