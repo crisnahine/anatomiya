@@ -12,7 +12,7 @@
  * data the child can load.
  */
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -125,6 +125,15 @@ const PLUGIN_DIRECTORY = "the plugin directory";
  */
 export function pluginRoot() {
   return dirname(dirname(fileURLToPath(import.meta.url)));
+}
+
+/** The version this build's own manifest states, or `""` where it cannot be read: what a stamp means by "this build". */
+export function buildVersion() {
+  try {
+    return JSON.parse(readFileSync(join(pluginRoot(), "package.json"), "utf8")).version ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /** The declaration behind an engine name. An unknown name is a bug, so it says so. */

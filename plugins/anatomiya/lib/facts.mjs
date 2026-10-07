@@ -115,6 +115,11 @@ export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 // number of its own would have every build already installed refuse the record
 // and enforce nothing from it. An older record owns nothing there, as does one
 // with no key.
+// `semantic.carried`, `measuredAt` and `measuredUnder` share 19 for the same
+// reason: when the tier's verdict was measured, under which stamp of what the
+// checker reads, and whether this scan carried it in place of a run. No older
+// reader looks at them, and a record without them was measured under no stamp,
+// so the next refresh measures.
 export const FACTS_SCHEMA = 19;
 
 /**

@@ -1040,12 +1040,16 @@ export const truncatedHistoryLine = (shallow, gated = 0) =>
  * and the reason are what the record already holds; the cause is deliberately
  * not named, because a repository whose own types are loose reads the same as
  * one whose checker could not be set up.
+ *
+ * A carried verdict counts nothing, since the checker did not run, and quotes
+ * the rate of the run that measured it, by that run's day.
  */
 export function degradedSemanticSentence(semantic) {
-  if (!semantic || semantic.ran !== true || semantic.status !== "degraded") return null;
+  if (!semantic || semantic.status !== "degraded" || (semantic.ran !== true && semantic.carried !== true)) return null;
   const rate = semantic.typedResolutionRate;
   const pct = rate === null || rate === undefined ? "no" : `${Math.round(rate * 100)}% of`;
-  return `type-checked claims are counts only: ${pct} type lookups resolved (${semantic.reason})`;
+  if (semantic.carried !== true) return `type-checked claims are counts only: ${pct} type lookups resolved (${semantic.reason})`;
+  return `type-checked claims are not counted: ${pct} type lookups resolved when measured ${String(semantic.measuredAt).slice(0, 10)} (${semantic.reason})`;
 }
 
 const count = (xs, noun) => plural(xs.length, noun);

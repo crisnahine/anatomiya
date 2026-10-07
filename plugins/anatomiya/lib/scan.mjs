@@ -4,7 +4,8 @@ import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
 import { defaultPoolSize } from "./pool.mjs";
-import { checkerBlocked, runSemantic, semanticOver } from "./semantic.mjs";
+import { buildVersion } from "./readiness.mjs";
+import { checkerBlocked, runSemantic, semanticOver, verdictStamp } from "./semantic.mjs";
 import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
@@ -42,10 +43,14 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * this is one test and not the way that branch is covered. `runChecker` is the
  * seam that shows a failed scan stops the checker running beside it, and
  * `resolveState` and `parseFiles` the two that show the baseline and the parse
- * run side by side.
+ * run side by side. `carried` is a degraded verdict measured by an earlier run
+ * (`carriedVerdict`): where the checker could run it is not run, and the verdict
+ * is recorded as carried. No type-checked row is counted then, since the counts
+ * are the checker's.
  */
-export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll } = {}) {
+export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null } = {}) {
   const started = Date.now();
+  const scannedAt = new Date().toISOString();
   const root = await gitRoot(cwd);
 
   const { files, others, uncounted, truncated: corpusTruncated, dropped } = await collect(root);
@@ -62,8 +67,12 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   const stopChecker = new AbortController();
   const startChecker = async () => {
     const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checkedRels: checked.map((f) => f.rel) });
-    if (offReason || stopChecker.signal.aborted) return { offReason, whole: null };
-    return { offReason, whole: await runChecker(root, checked, { signal: stopChecker.signal }) };
+    if (offReason || carried !== null || stopChecker.signal.aborted) return { offReason, whole: null, measuredUnder: null };
+    // Read before the checker starts, so a config edited under a long run is
+    // not recorded as the one it measured, and only where it runs: a scan that
+    // leaves the checker off reads no config.
+    const measuredUnder = verdictStamp(root, buildVersion());
+    return { offReason, whole: await runChecker(root, checked, { signal: stopChecker.signal }), measuredUnder };
   };
   // Neither needs the parse, so both start first; the checker only with a core
   // to spare, or it slows the parse's one worker. The catches are for a throw below.
@@ -108,7 +117,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     await headRun?.catch(() => {});
     throw err;
   }
-  const { offReason, whole } = await (semanticRun ?? startChecker());
+  const { offReason, whole, measuredUnder } = await (semanticRun ?? startChecker());
   // Which routing claims this repository can be asked at all: at least three
   // files already routing through a wrapper is what makes the habit real (C14).
   const capabilities = adoptedCapabilities(head.records);
@@ -307,9 +316,14 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
           status: semantic.status,
           reason: semantic.reason,
           typedResolutionRate: semantic.typedResolutionRate,
+          carried: false,
+          measuredAt: scannedAt,
+          measuredUnder,
         }
-      : { ran: false, status: null, reason: offReason, typedResolutionRate: null },
-    scannedAt: new Date().toISOString(),
+      : carried !== null && offReason === null
+        ? { ran: false, ...carried, carried: true }
+        : { ran: false, status: null, reason: offReason, typedResolutionRate: null, carried: false, measuredAt: null, measuredUnder: null },
+    scannedAt,
     durationMs: Date.now() - started,
     // `orphaned` is the files discovery found nowhere to put. The rest of the
     // uncovered count is files whose area was discovered and then dropped for

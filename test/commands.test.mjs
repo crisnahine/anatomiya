@@ -275,7 +275,7 @@ test("a scan that leaves the checker off says why in the facts it writes", async
   await runScan(dir);
 
   const facts = JSON.parse(readFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "utf8"));
-  assert.deepEqual(facts.semantic, { ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null });
+  assert.deepEqual(facts.semantic, { ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null, carried: false, measuredAt: null, measuredUnder: null });
 });
 
 test("a checked scan measures resolution over area files, so a bundle in no area does not degrade it", needsTs, async (t) => {

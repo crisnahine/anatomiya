@@ -35,9 +35,11 @@ import { removeStaleHook } from "./hook.mjs";
  *
  * `targets` is the whole set of places it goes, or null for the ones already on.
  * `leaveAlone` is the other targets whose files this scan leaves as they are.
+ * `carried` is the checker's last measured verdict, which only a refresh hands
+ * in: the scan then does not run the checker, and a scan a person runs always does.
  */
-export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone = [] } = {}) {
-  const result = await scan(cwd);
+export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone = [], carried = null } = {}) {
+  const result = await (carried !== null ? scan(cwd, { carried }) : scan(cwd));
   // Only where it left nothing to read (B13). An engine missing for one
   // language costs that language's files and the scan goes on for the rest:
   // refusing here gave a TypeScript repository with one Gemfile no map at all
