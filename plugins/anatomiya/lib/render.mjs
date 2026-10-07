@@ -1049,13 +1049,14 @@ export const truncatedHistoryLine = (shallow, gated = 0) =>
  *
  * A degraded tier prints no count, measured or carried. A carried verdict
  * quotes the rate of the run that measured it, by that run's day, and those
- * words are all that tell the two overviews apart.
+ * words are all that tell the two overviews apart. The day is the UTC one and
+ * says so: a local day would print another map on another machine.
  */
 export function degradedSemanticSentence(semantic) {
   if (!semantic || semantic.status !== "degraded" || (semantic.ran !== true && semantic.carried !== true)) return null;
   const rate = semantic.typedResolutionRate;
   const pct = rate === null || rate === undefined ? "no" : `${Math.round(rate * 100)}% of`;
-  const measured = semantic.carried === true ? ` when measured ${String(semantic.measuredAt).slice(0, 10)}` : "";
+  const measured = semantic.carried === true ? ` when measured ${String(semantic.measuredAt).slice(0, 10)} UTC` : "";
   return `type-checked claims are not counted: ${pct} type lookups resolved${measured} (${semantic.reason})`;
 }
 

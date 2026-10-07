@@ -102,7 +102,7 @@ plain one on a 3,800-file repository and about 10x on a 2,600-file one, and it c
 the files that changed. A scan you run always runs it. A background refresh does not where the
 last run measured the checker as degraded and the plugin version, the root config, and the size and
 modification time of `node_modules` and of the install record in it are unchanged: it carries that verdict, the record says so in `semantic.carried` with
-`semantic.measuredAt`, and the overview adds the day it was measured. A degraded checker's claims
+`semantic.measuredAt`, and the overview adds the UTC day it was measured. A degraded checker's claims
 are not counted either way, so the area files are the ones your scan wrote. On a pinned repository a type-checked claim is measured against its area's
 pinned files, and stays closed in an area where a checked file changed since the pin. The share of
 type lookups that resolved is taken over files in the areas the map describes, so a vendored bundle

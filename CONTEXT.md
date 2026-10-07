@@ -337,7 +337,7 @@ A type checker verdict of `degraded` that a refresh writes again without running
 scan measured it, and nothing its stamp holds has moved since: this version, where `typescript`
 resolves, the size and modification time of `node_modules` and of the install record in it, and the
 name and bytes of the root config. The record marks
-it `carried` with the moment it was measured, and the overview says the day. Only `degraded` is
+it `carried` with the moment it was measured, and the overview says the UTC day. Only `degraded` is
 carried: an `ok` verdict is measured on every refresh, and a scan run by hand always measures.
 _Avoid_: cached verdict, stale verdict, skipped check
 

@@ -453,7 +453,12 @@ Say the quiet part plainly.
   file. A background refresh runs the checker like any scan, except where the last run measured it
   as degraded and nothing it reads has changed: to compare, the refresh hashes up to the first
   megabyte of the root config through a bounded read and parses nothing, and a scan that runs the
-  checker hashes the same bytes before it starts.
+  checker hashes the same bytes before it starts. A root config that leaves the repository through
+  a link is not opened for this either: its refusal is hashed in place of its bytes. `node_modules`
+  and the install record in it are read with a stat of the entry itself, never through a link. The
+  refresh carries a recorded verdict only where a scan could have written it: a reason from the
+  checker's own list, a rate that reason allows, and a moment not after now. A record edited into
+  anything else is measured over, so no text from the record reaches the overview.
 - **No guarantee the map is correct.** The gates in `plugins/anatomiya/lib/reduce.mjs`, with their numbers in `gates.mjs`, are thresholds, not proofs. A
   wrong directive is a correctness problem, not a security one, but it is worth knowing that a
   repository can shape its own numbers if it wants to.

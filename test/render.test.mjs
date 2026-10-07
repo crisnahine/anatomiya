@@ -2669,7 +2669,7 @@ test("the summary and the overview word a degraded tier with one sentence", () =
   const carried = { ran: false, carried: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.1495, measuredAt: "2026-10-08T01:02:03.000Z" };
   assert.equal(
     degradedSemanticSentence(carried),
-    "type-checked claims are not counted: 15% of type lookups resolved when measured 2026-10-08 (low-resolution)"
+    "type-checked claims are not counted: 15% of type lookups resolved when measured 2026-10-08 UTC (low-resolution)"
   );
   assert.equal(degradedSemanticSentence({ ...carried, carried: false }), null, "a tier that neither ran nor was carried says nothing");
 
@@ -2691,8 +2691,8 @@ test("the overview says a carried verdict in the same one line", () => {
   const measured = renderOverview(result({ semantic: { ...semantic, ran: true, carried: false } }), { uncovered: 0 });
   const out = renderOverview(result({ semantic }), { uncovered: 0 });
 
-  assert.match(out, /^- type-checked claims are not counted: 15% of type lookups resolved when measured 2026-10-08 \(low-resolution\)$/m, out);
-  assert.equal(out.replace(" when measured 2026-10-08", ""), measured, "a carried verdict and a measured one differ by more than the mark");
+  assert.match(out, /^- type-checked claims are not counted: 15% of type lookups resolved when measured 2026-10-08 UTC \(low-resolution\)$/m, out);
+  assert.equal(out.replace(" when measured 2026-10-08 UTC", ""), measured, "a carried verdict and a measured one differ by more than the mark");
 });
 
 /* --- which directives a file had no room to state (#70) --- */
