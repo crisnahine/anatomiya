@@ -569,6 +569,9 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file whose static import or re-export names a file through a relative specifier, once directory and asset specifiers are dropped. A directory specifier is . or .. or one ending in /, /. or /..; an asset is a stylesheet, image, font or other format a bundler is handed whole. A dynamic import() is not a static one",
       notCounted:
         "a specifier naming a directory, an asset, or a .coffee or .es6 source, and a dynamic import()",
+      // A component is one of those assets, and the one an agent told to drop
+      // extensions would drop: `./Card` resolves to nothing.
+      componentNotCounted: "an import of a <ext> file, which is written with its extension",
       blind: null,
     },
     // A type-only import is one of these sites, and the stripper deletes the

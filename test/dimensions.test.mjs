@@ -949,6 +949,27 @@ test("the clause contract is refused at the registry gate, not only in this file
   assert.doesNotThrow(() => assertApplicability(row("Net::HTTP called through a constant receiver, which is the client itself")));
 });
 
+test("a clause for an area holding components names their extension and is run on both", () => {
+  const row = (componentNotCounted, clause = { notCounted: "a specifier naming a directory" }) => [{
+    key: "k", kind: "syntactic", tier: "syntactic", claim: "c", precision: "precise", langs: ["js"],
+    applicabilityPredicate: { sites: "a file holding the construct", ...clause, componentNotCounted, blind: null },
+    run() {},
+  }];
+
+  assert.throws(() => assertApplicability(row("an import of a component")), /componentNotCounted/);
+  assert.throws(() => assertApplicability(row("an import of a <ext>\nfile")), /componentNotCounted/);
+  assert.throws(() => assertApplicability(row("an import of a <ext> file", {})), /componentNotCounted/);
+  assert.doesNotThrow(() => assertApplicability(row("an import of a <ext> file")));
+
+  const carrying = REGISTRY.filter((d) => d.applicabilityPredicate?.componentNotCounted).map((d) => d.key);
+  assert.deepEqual(carrying, ["import_extension"]);
+  for (const key of carrying) {
+    for (const ext of ["vue", "svelte"]) {
+      assert.ok(JS_DECLINED[key].declined.some((f) => source(f).src.includes(`.${ext}"`)), `${key} runs no .${ext} import`);
+    }
+  }
+});
+
 /* --- every clause is pinned to what its own predicate actually declines (#97) --- */
 
 // One row, one source, one optional path: enough to run any of the rows oxc
