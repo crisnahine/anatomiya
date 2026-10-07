@@ -1076,3 +1076,27 @@ test("a component is not a module the JSX roster could have inlined", () => {
 
   assert.equal(layoutFacts(corpus, { minFiles: 3 }).roots[0].helpers.siblingModules, 2);
 });
+
+test("a component with markup and no script still owes a test and is still counted as one", () => {
+  const markup = { empty: true, embedded: "vue" };
+  const corpus = [
+    ...files(4, (i) => file(`src/components/C${i}.vue`, "vue", i < 2 ? markup : { embedded: "vue" })),
+    file("src/components/C0.spec.ts", "js", { testRunner: "vitest" }),
+    file("src/components/C2.spec.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src/components", dir: "src/components", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.companions, { with: 2, of: 4, root: "src/components", ext: ".vue" });
+  assert.equal(isTestFile(file("src/__tests__/Fixture.svelte", "svelte", { empty: true, embedded: "svelte" })), true);
+});
+
+test("a module the parse found empty stays out of both sides, beside a component that does not", () => {
+  const corpus = [
+    ...files(3, (i) => file(`src/lib/m${i}.ts`, "js", i === 0 ? { empty: true } : {})),
+    file("src/lib/m0.test.ts", "js", { testRunner: "vitest" }),
+    file("src/lib/m1.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src/lib", dir: "src/lib", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual([record.companions.with, record.companions.of], [1, 2]);
+});

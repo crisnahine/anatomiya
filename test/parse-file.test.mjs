@@ -502,10 +502,10 @@ test("a row asked of a component is handed the file's own text", async (t) => {
 
 test("a component's rows are chosen for its own language and no other", async () => {
   // No blanket mapping onto the JavaScript rows: a row answers a component
-  // only once it lists the language.
-  const r = await parseFile("<script>\ntry { f(); } catch (e) {}\n</script>\n", "src/A.vue", "vue");
+  // only once it lists the language, and the const row lists neither.
+  const r = await parseFile("<script>\nlet a = 1;\ntry { f(); } catch (e) {}\n</script>\n", "src/A.vue", "vue");
   assert.equal(r.ok, true);
-  assert.deepEqual(r.hits, {});
+  assert.deepEqual(Object.keys(r.hits), ["swallowed_error"]);
 });
 
 test("a .svelte.ts module is plain TypeScript, read whole", async () => {

@@ -235,6 +235,9 @@ export function namesASite(rel, facets = null) {
  */
 const splitByJsx = (record) => (record?.facets?.jsx === true ? "jsx" : "module");
 
+// A component file is named by its framework's habit, not by the modules beside it.
+const splitByComponent = (record) => (record?.facets?.embedded ? "component" : splitByJsx(record));
+
 export const NAMING_CORPUS = [
   {
     key: "file_naming_case",
@@ -245,6 +248,7 @@ export const NAMING_CORPUS = [
     splitClaim: {
       jsx: "files here that hold JSX are named <style>",
       module: "files here that hold no JSX are named <style>",
+      component: "component files here are named <style>",
     },
     counterClaim: null, // the other side is another class, which the learning already picks
     // A directory of components and a directory of helpers can sit in one area,
@@ -253,13 +257,13 @@ export const NAMING_CORPUS = [
     // helper a violation of a convention nobody holds. Counted rather than
     // declared: the file either holds JSX or it does not, which is the same
     // facet the roster already splits a root by.
-    splitBy: splitByJsx,
+    splitBy: splitByComponent,
     precision: "precise",
     applicabilityPredicate: {
       sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`), and neither is a stem of capitals alone in a file that holds JSX, which React reads as a component (`SBA.jsx`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
       blind: null,
     },
-    langs: ["js", "jsx", "ruby"],
+    langs: ["js", "jsx", "ruby", "vue", "svelte"],
     classify: classifyBasename,
     // Which names answer the claim at all. Separate from `classify` because
     // the scan votes with the class and the check enforces over the site, and
@@ -364,7 +368,7 @@ export const NAMING_AST = [
       sites: "a file declaring a module-level function, or binding one to a module-level variable, under a name that spells a naming class; a function whose body yields JSX, one bound to a name annotated as a React component type (FC, FunctionComponent, ComponentType), or one whose name this file renders as an element, is a component whose name JSX decides and is not a site, and one this file calls with new or reads a prototype off is a constructor and is not a site either",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       const constructed = new Set();
       const named = [];
@@ -429,7 +433,7 @@ export const NAMING_AST = [
       sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or the name of one this file binds, to a lazy or dynamic import, or to a styled template, a name annotated as a React component type (FC, FunctionComponent, ComponentType), and a name this file renders as an element, are components whose name JSX decides and are not sites, and a name this file calls with new or reads a prototype off is a constructor and is not a site either",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue"],
     visitor(program, add) {
       const constructed = new Set();
       return {
@@ -467,7 +471,7 @@ export const NAMING_AST = [
       sites: "an export statement declaring a class, or a variable bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     run(program, add) {
       for (const s of exportedSites(program)) {
         if (s.population !== "class") continue;
@@ -491,7 +495,7 @@ export const NAMING_AST = [
       sites: "an export statement declaring an interface, a type alias, or an enum, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     run(program, add) {
       for (const s of exportedSites(program)) {
         if (s.population !== "type") continue;
@@ -516,7 +520,7 @@ export const NAMING_AST = [
         "a class naming no superclass, and one whose superclass is anything but a name or a dotted name",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -546,7 +550,7 @@ export const NAMING_AST = [
         "a TypeScript interface declaration outside any ambient module or namespace, and not at the top level of a declaration file with no import or export, whose name votes for its prefix letter or for carrying none. A name of two capitals, one opening on three or more, one whose prefix-shaped capital is not I, T or E, or one opening on a known acronym (IDs, IPv4, ETag), votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add, { rel } = {}) {
       const globalScript = DECLARATION_FILE.test(rel ?? "") && !(program.body || []).some(isModuleSyntax);
       return {
@@ -584,7 +588,7 @@ export const NAMING_AST = [
         "a TypeScript type alias declaration, whose name votes for its prefix letter or for carrying none. A name of two capitals, one opening on three or more, one whose prefix-shaped capital is not I, T or E, or one opening on a known acronym (IDs, IPv4, ETag), votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {

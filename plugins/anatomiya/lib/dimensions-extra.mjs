@@ -406,7 +406,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file exporting at least one declaration whose name starts with use and a capital, by name or as its default, counted by name so an overload set is one hook; the module is one site, whatever the count",
       blind: "a hook re-exported through a specifier or a barrel is declared elsewhere and is not resolved to it, so a file that only re-exports several reads as exporting none",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue"],
     run(program, add) {
       const names = exportedHooks(program);
       if (!names.length) return;
@@ -434,7 +434,7 @@ export const EXTRA_DIMENSIONS = [
     // Measured 0.01 to 1.00 across six repositories, the widest of any
     // structural claim: one repository writes every module function as an
     // arrow const and another writes none of them that way.
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue"],
     visitor(program, add) {
       const overloads = new Map();
       return {
@@ -478,7 +478,7 @@ export const EXTRA_DIMENSIONS = [
     // file leaves this row's denominator rather than counting a zero nobody
     // could move, which is the same trade `blindWhenStripped` makes.
     needsTypeSyntax: true,
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue"],
     visitor(program, add) {
       const overloads = new Map();
       return {
@@ -574,7 +574,7 @@ export const EXTRA_DIMENSIONS = [
     // one carries an extension, so a stripped file would report the imports
     // that survived and read as more conformant than the file is.
     blindWhenStripped: true,
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -611,7 +611,7 @@ export const EXTRA_DIMENSIONS = [
         "a || whose left or parent is an unbracketed || or &&, which the grammar refuses ?? beside",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -651,7 +651,7 @@ export const EXTRA_DIMENSIONS = [
     // lib stated the row at 190 of 190 without a line of TypeScript in it. Such
     // a file leaves the denominator, the trade `explicit_return_type` makes.
     needsTypeSyntax: true,
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -681,7 +681,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file holding a function that returns an explicit null or undefined, from a return statement or an expression body; a React effect callback is not one, because React refuses null there",
       blind: "falling off the end of a function returns undefined with no site to count, and a function annotated `: void` still counts although `return null` there is TS2322, because the annotation is what the Flow retry blanks and reading it would make the row answer differently on a stripped tree",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -737,7 +737,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file holding a for...of statement or a .forEach called on something, other than a library's forEach that takes the collection as an argument",
       blind: "an indexed for loop is a third form the claim does not name and neither count reaches, and whether a receiver can be iterated at all is a tsconfig question (target, downlevelIteration, whether lib includes DOM.Iterable) this tier cannot see: a NodeList under an ES5 target answers TS2495 to the for...of the claim asks for",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -763,7 +763,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file calling it or test, through any chain of runner modifiers such as each, only or skip",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -789,7 +789,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file calling expect, expect.soft, expect.poll or assert, including a member chain rooted at assert",
       blind: "an assertion behind a helper, or from a third library, carries neither name",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -833,7 +833,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file exporting a top-level function or class, by name, as a default, or as a function-valued const; a comment opening with a tool directive or a TODO, FIXME, XXX or HACK note, and a license or copyright header, is not a doc comment on either side",
       blind: "a doc comment on a re-export, or attached through a wrapper, is not seen",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue"],
     visitor(program, add, extra = {}) {
       // Nearest-first once per file rather than once per export: the walk above
       // steps upward through the directives it skips, so the run has to arrive
