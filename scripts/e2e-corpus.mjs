@@ -249,17 +249,71 @@ const langsOf = (key) => rowByKey(key)?.langs ?? [];
 // the wrong base, each one its own grammar reads whole: a JavaScript comment in
 // a `.py` file is a rejected file, and the check reads that as nothing to say.
 // Null where the language has no class to give a base.
+//
+// The seven languages tree-sitter reads state neither of those rows, so each
+// also holds one function per side of the rows it is asked: `undocumented` and
+// `documented` a public one without and with its doc comment, `untyped` and
+// `typed` one without and with a return type, `swallowed` a handler that binds
+// the error and reads nothing of it. Absent where no such row lists the language.
 const JS_PROBE = { comment: "// e2e probe\n", subclass: "class ZzProbe extends NotTheBase {}\n" };
 const PROBES = {
   js: JS_PROBE,
   ruby: { comment: "# e2e probe\n", subclass: "class ZzProbe < NotTheBase\nend\n" },
-  python: { comment: "# e2e probe\n", subclass: "class ZzProbe(NotTheBase):\n    pass\n" },
-  php: { comment: "<?php\n// e2e probe\n", subclass: "<?php\n\nclass ZzProbe extends NotTheBase\n{\n}\n" },
-  go: { comment: "// e2e probe\npackage zzprobe\n", subclass: null },
-  java: { comment: "// e2e probe\n", subclass: "class ZzProbe extends NotTheBase {}\n" },
-  csharp: { comment: "// e2e probe\n", subclass: "class ZzProbe : NotTheBase {}\n" },
-  rust: { comment: "// e2e probe\n", subclass: null },
-  kotlin: { comment: "// e2e probe\n", subclass: "class ZzProbe : NotTheBase()\n" },
+  python: {
+    comment: "# e2e probe\n",
+    subclass: "class ZzProbe(NotTheBase):\n    pass\n",
+    undocumented: "def zz_probe() -> int:\n    return 1\n",
+    documented: 'def zz_probe() -> int:\n    """Probe."""\n    return 1\n',
+    untyped: 'def zz_probe():\n    """Probe."""\n    return 1\n',
+    typed: 'def zz_probe() -> int:\n    """Probe."""\n    return 1\n',
+  },
+  php: {
+    comment: "<?php\n// e2e probe\n",
+    subclass: "<?php\n\nclass ZzProbe extends NotTheBase\n{\n}\n",
+    undocumented: "<?php\n\nfunction zz_probe(): int\n{\n    return 1;\n}\n",
+    documented: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    return 1;\n}\n",
+    untyped: "<?php\n\n/** Probes. */\nfunction zz_probe()\n{\n    return 1;\n}\n",
+    typed: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    return 1;\n}\n",
+    swallowed: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    try {\n        return 1;\n    } catch (\\Exception $e) {\n        return 2;\n    }\n}\n",
+  },
+  go: {
+    comment: "// e2e probe\npackage zzprobe\n",
+    subclass: null,
+    undocumented: "package zzprobe\n\nfunc ZzProbe() {}\n",
+    documented: "package zzprobe\n\n// ZzProbe probes.\nfunc ZzProbe() {}\n",
+  },
+  java: {
+    comment: "// e2e probe\n",
+    subclass: "class ZzProbe extends NotTheBase {}\n",
+    undocumented: "public class ZzProbe {\n    public void probe() {}\n}\n",
+    documented: "public class ZzProbe {\n    /** Probes. */\n    public void probe() {}\n}\n",
+    swallowed: "class ZzProbe {\n    void probe() {\n        try {\n            run();\n        } catch (Exception e) {\n            return;\n        }\n    }\n}\n",
+  },
+  csharp: {
+    comment: "// e2e probe\n",
+    subclass: "class ZzProbe : NotTheBase {}\n",
+    undocumented: "public class ZzProbe\n{\n    public void Probe() { }\n}\n",
+    documented: "public class ZzProbe\n{\n    /// <summary>Probes.</summary>\n    public void Probe() { }\n}\n",
+  },
+  rust: {
+    comment: "// e2e probe\n",
+    subclass: null,
+    undocumented: "pub fn zz_probe() {}\n",
+    documented: "/// Probes.\npub fn zz_probe() {}\n",
+  },
+  kotlin: {
+    comment: "// e2e probe\n",
+    subclass: "class ZzProbe : NotTheBase()\n",
+    undocumented: "fun zzProbe() {}\n",
+    documented: "/** Probes. */\nfun zzProbe() {}\n",
+  },
+};
+
+// The rows a function breaks, in the order they are tried, each with the body that breaks its claim and the one that breaks its inverse.
+const SITE_PROBES = {
+  public_doc_comment: { claim: "undocumented", counter: "documented" },
+  declared_return_type: { claim: "untyped", counter: "typed" },
+  caught_error_used: { claim: "swallowed" },
 };
 
 assertKeyed("PROBES", PROBES, [...new Set(LANGUAGES.map((l) => l.family))]);
@@ -307,7 +361,38 @@ export function probePlan(facts) {
       return { area: area.path, dimension: key, learned: d.learned, path: `${area.path}/${stem}${ext}`, body };
     }
   }
+  return siteProbePlan(facts);
+}
+
+/**
+ * One function that breaks a row of the seven languages where an area states
+ * one, on the side it states: where functions carry a doc comment an
+ * undocumented one, and where they carry none a documented one.
+ */
+function siteProbePlan(facts) {
+  for (const area of facts.areas) {
+    for (const [key, bodies] of Object.entries(SITE_PROBES)) {
+      const d = (area.dimensions || []).find((x) => x.key === key);
+      if (!d || d.matchesDefault === true) continue;
+      const { side, states } = statedSide(d);
+      if (states === null) continue;
+      const ext = extFor(area, key);
+      if (ext === null) continue;
+      const body = PROBES[familyOf(language(`f${ext}`))][bodies[side]];
+      if (typeof body !== "string") continue;
+      const { claim, counterClaim } = rowByKey(key);
+      return { area: area.path, dimension: key, learned: side === "counter" ? counterClaim : claim, path: `${area.path}/zzprobe${ext}`, body };
+    }
+  }
   return null;
+}
+
+/** What the probe column says: the row a finding named the probe for, that none did, or why there was nothing to probe. */
+export function probeCell(plan, facts, named = false) {
+  if (plan) return named ? `yes ${plan.dimension}` : "no";
+  if (facts.areas.length === 0) return "n.a. (no area)";
+  const stated = facts.areas.some((area) => (area.dimensions || []).some((d) => statedSide(d).states !== null && d.matchesDefault !== true));
+  return stated ? "n.a. (no stated row one file breaks)" : "n.a. (no claim stated)";
 }
 
 /** The paths the report's findings name, and nothing off the rest of it. */
@@ -685,7 +770,8 @@ async function runRepo(name, source, scratchDir, targets) {
     const head = cleanReport ? formatReport(cleanReport).split("\n")[0] : null;
 
     /* 6: one file built to break a row the map stated. */
-    const plan = probePlan(JSON.parse(readFileSync(factsFile, "utf8")));
+    const mapped = JSON.parse(readFileSync(factsFile, "utf8"));
+    const plan = probePlan(mapped);
     const probePath = plan ? plan.path : "e2e-probe.md";
     if (git(["checkout", "-q", "-b", "e2e/probe"], clone).status !== 0) fail("could not branch the clone");
     // The clone is a copy, but the probe body is not this repository's code and
@@ -705,13 +791,10 @@ async function runRepo(name, source, scratchDir, targets) {
     const probeReport = readJson(probed.out);
     if (probeReport === null) fail("the check printed no record on the probe branch");
     const named = probeReport ? findingPaths(probeReport) : [];
+    row.probe = probeCell(plan, mapped, named.includes(probePath));
     if (plan) {
-      row.probe = named.includes(probePath) ? `yes ${plan.dimension}` : "no";
       if (row.probe === "no") fail(`no finding names ${probePath}, and ${plan.dimension} states ${plan.learned} in ${plan.area}`);
-    } else {
-      row.probe = "n.a.";
-      if (named.length !== 0) fail(`a markdown file drew ${named.length} finding(s)`);
-    }
+    } else if (named.length !== 0) fail(`a markdown file drew ${named.length} finding(s)`);
     return { row, problems, head, summary };
   } catch (err) {
     fail(err && err.stack ? err.stack : String(err));
