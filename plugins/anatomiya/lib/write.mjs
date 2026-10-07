@@ -52,9 +52,13 @@ export function planMap(result, { targets = null } = {}) {
       throw new Error(`${leaf} is not a file, so the map could not be written: remove it and scan again`);
     }
   }
+  // The facts on disk are the third fact ownership needs, and the record a held
+  // area's file was derived from. Read before the new record replaces them, and
+  // `null` when there is no record to read, which makes nothing removable.
+  const previous = readFacts(result.root).facts;
   // After Claude Code's own directories: theirs is the refusal a scan has always
   // given, and the other targets can read as on or off while it does not resolve.
-  const others = otherTargets(result.root, targets);
+  const others = otherTargets(result.root, targets, previous);
 
   const withDirectives = result.areas.filter((a) => a.dimensions.length > 0);
 
@@ -79,10 +83,6 @@ export function planMap(result, { targets = null } = {}) {
   const held = blind ? [] : result.held ?? [];
   const heldNames = new Set(held.map(areaFilename));
 
-  // The facts on disk are the third fact ownership needs, and the record a held
-  // area's file was derived from. Read before the new record replaces them, and
-  // `null` when there is no record to read, which makes nothing removable.
-  const previous = readFacts(result.root).facts;
   // A held area keeps the record its file was rendered from, or the check reads
   // a map without it and the file loads with nothing on disk deriving it. Only
   // from a record of this build's own shape: an older one read into this one
@@ -146,12 +146,13 @@ export function planMap(result, { targets = null } = {}) {
  * The Cursor and Copilot targets: what each one's own overview says, and
  * whether this scan writes it.
  *
- * One that could not be read is neither written nor cleared, whatever was asked
- * for: off is what removes a map, and nobody saw that it is off. Asking for it
- * by name refuses the scan instead, since writing the others and not that one
- * is not what was asked.
+ * One that could not be read is neither written nor cleared: off is what
+ * removes a map, and nobody saw that it is off. Asking for it by name refuses
+ * the scan instead, since writing the others and not that one is not what was
+ * asked. So does leaving it out by name while the record names files of ours
+ * there, which asks for a removal that cannot happen.
  */
-function otherTargets(root, asked) {
+function otherTargets(root, asked, previous) {
   if (asked !== null) {
     if (!Array.isArray(asked)) throw new Error("targets is a list of names, or null for the ones already on");
     const stranger = asked.find((id) => !TARGET_IDS.includes(id));
@@ -165,6 +166,9 @@ function otherTargets(root, asked) {
       if (state !== "unknown") return { target, state, reason, explicit, on: explicit ? asked.includes(target.id) : state === "on" };
       if (asked?.includes(target.id)) {
         throw new Error(`${reason}, so ${target.dir} could not be written and nothing was written anywhere: ${remedy} and scan again`);
+      }
+      if (explicit && knownNames(previous, target)?.size) {
+        throw new Error(`${reason}, so ${target.dir} could not be turned off and nothing was written anywhere: ${remedy} and scan again`);
       }
       return { target, state, reason, explicit, on: false };
     });

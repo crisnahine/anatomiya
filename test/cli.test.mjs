@@ -603,6 +603,28 @@ test("a named target that cannot be written refuses the scan in the writer's own
   assert.deepEqual(readdirSync(elsewhere), []);
 });
 
+test("turning off a target that cannot be read refuses the scan and says why", needsSymlinks, (t) => {
+  const repo = repoWithSource(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan", "--targets", "copilot");
+  // The record names two files there, and now nobody can look.
+  rmSync(join(repo, ".github"), { recursive: true });
+  symlinkSync(elsewhere, join(repo, ".github"));
+  const rules = ruleFiles(repo);
+
+  const { code, stderr, stdout } = ran("scan", repo, "--targets", "claude");
+
+  assert.equal(code, 1);
+  assert.equal(
+    stderr,
+    "anatomiya: .github is a link, so .github/instructions could not be turned off and nothing was written anywhere: replace the link with a directory and scan again\n"
+  );
+  assert.equal(stdout, "");
+  assert.deepEqual(ruleFiles(repo), rules);
+  assert.deepEqual(readdirSync(elsewhere), []);
+});
+
 test("doctor names each other target that is on in the repository it is run in", (t) => {
   const repo = repoWithSource(t);
   const doctor = () => execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "doctor"], { cwd: repo, encoding: "utf8" });

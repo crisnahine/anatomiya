@@ -2273,20 +2273,32 @@ test("a target in an unknown state is left exactly as it was, and the plan says 
   const overview = join(dir, cursor.dir, overviewName(cursor));
   const areaBefore = readFileSync(join(dir, cursor.dir, areaName(cursor, b.id)), "utf8");
   chmodSync(overview, 0o000);
-  let plan;
   try {
-    for (const targets of [null, ["claude"], ["claude", "copilot"]]) {
-      plan = writeMap(result(dir, [a]), { targets });
-      assert.deepEqual(
-        { state: plan.targets.cursor.state, reason: plan.targets.cursor.reason, on: plan.targets.cursor.on, write: plan.targets.cursor.write, remove: plan.targets.cursor.remove },
-        { state: "unknown", reason: `.cursor/rules/${overviewName(cursor)} could not be read`, on: false, write: [], remove: [] },
-        JSON.stringify(targets)
-      );
-      assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, b), "the area that went away is still there");
-      assert.equal(readFileSync(join(dir, cursor.dir, areaName(cursor, b.id)), "utf8"), areaBefore);
-      // The record keeps naming them, or they could never be removed once the file is readable again.
-      assert.deepEqual(readFacts(dir).targets.cursor, mapOf(cursor, a, b));
+    // Left out by name, with files of ours the record names: that asks for a removal nobody can check.
+    const held = () => [readFileSync(join(dir, STORE, "facts.json"), "utf8"), listRules(dir), namesIn(dir, cursor), namesIn(dir, copilot)];
+    const before = held();
+    for (const targets of [["claude"], ["claude", "copilot"]]) {
+      for (const dryRun of [true, false]) {
+        assert.throws(
+          () => writeMap(result(dir, [a]), { dryRun, targets }),
+          (err) =>
+            err.message ===
+            `.cursor/rules/${overviewName(cursor)} could not be read, so .cursor/rules could not be turned off and nothing was written anywhere: fix its permissions and scan again`,
+          JSON.stringify(targets)
+        );
+      }
     }
+    assert.deepEqual(held(), before, "refused, and the disk is what it was");
+
+    const plan = writeMap(result(dir, [a]));
+    assert.deepEqual(
+      { state: plan.targets.cursor.state, reason: plan.targets.cursor.reason, on: plan.targets.cursor.on, write: plan.targets.cursor.write, remove: plan.targets.cursor.remove },
+      { state: "unknown", reason: `.cursor/rules/${overviewName(cursor)} could not be read`, on: false, write: [], remove: [] }
+    );
+    assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, b), "the area that went away is still there");
+    assert.equal(readFileSync(join(dir, cursor.dir, areaName(cursor, b.id)), "utf8"), areaBefore);
+    // The record keeps naming them, or they could never be removed once the file is readable again.
+    assert.deepEqual(readFacts(dir).targets.cursor, mapOf(cursor, a, b));
   } finally {
     chmodSync(overview, 0o644);
   }
@@ -2295,7 +2307,8 @@ test("a target in an unknown state is left exactly as it was, and the plan says 
   assert.deepEqual(healed.targets.cursor.remove, [areaName(cursor, b.id)]);
   assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a));
 
-  // A link at `.cursor`: where it leads is not this repository's to write.
+  // A link at `.cursor`, and no record of a file there: where it leads is not
+  // this repository's to write, and leaving it out by name asks for nothing.
   const linked = workspace(t);
   const outside = elsewhere(t);
   mkdirSync(join(outside, "rules"));
