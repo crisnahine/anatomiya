@@ -236,6 +236,10 @@ export function unexaminedLines(parse, { stable = false } = {}) {
   if (parse.syntaxErrors && parse.missingStripper) {
     lines.push(MISSING_STRIPPER);
   }
+  // Read, and not whole: a count over these files is a count over the branch that was kept.
+  if (parse.oneBranch) {
+    lines.push(`${plural(parse.oneBranch, "file")} ${parse.oneBranch === 1 ? "was" : "were"} read with one branch of each #if; the other branches were not read`);
+  }
   return lines;
 }
 

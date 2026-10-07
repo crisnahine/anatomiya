@@ -15,7 +15,8 @@ import { fileURLToPath } from "node:url";
 
 import { dimensionsFor } from "./dimensions.mjs";
 import { collectHits } from "./walk.mjs";
-import { ENGINES, LANGUAGES, grammarFor } from "./langs.mjs";
+import { withOneBranch } from "./csharp-directives.mjs";
+import { ENGINES, LANGUAGES, grammarFor, mayHoldDirectives } from "./langs.mjs";
 import { treeFacets } from "./tree-facets.mjs";
 import { copyTree, walkTree } from "./tree-walk.mjs";
 import { installedVersion } from "./version.mjs";
@@ -102,8 +103,23 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
   const parser = await parserFor(grammarFor(lang, rel), grammars, lang);
 
   let program;
-  const tree = parser.parse(source);
+  let tree = parser.parse(source);
+  // The string the tree describes: a retried tree is read off the blanked copy, as a Flow file's is.
+  let parsed = source;
+  let oneBranch = false;
   try {
+    // Only after a rejection, so a file the grammar reads as written is read whole.
+    if (tree.rootNode.hasError && mayHoldDirectives(rel)) {
+      const kept = withOneBranch(source);
+      const retried = kept && parser.parse(kept.text);
+      if (retried && retried.rootNode.hasError) retried.delete();
+      else if (retried) {
+        tree.delete();
+        tree = retried;
+        parsed = kept.text;
+        oneBranch = kept.dropped;
+      }
+    }
     // A recovered tree is not the file, for this parser as for oxc: what it
     // salvaged around an error is less than was written, and counting it moves
     // the denominator.
@@ -111,7 +127,7 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
       const errors = errorsIn(tree);
       return { rel, ok: false, error: `${errors} syntax error(s)`, errors };
     }
-    program = copyTree(tree, source, lang);
+    program = copyTree(tree, parsed, lang);
   } finally {
     // A node read after this answers wrongly and does not throw, so nothing below touches the tree.
     tree.delete();
@@ -120,12 +136,14 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
   const payload = {
     rel,
     ok: true,
-    hits: collectHits(program, dimensionsFor([lang], rows ? { rows } : {}), { comments: [], source, rel }, { walker: walkTree }),
+    hits: collectHits(program, dimensionsFor([lang], rows ? { rows } : {}), { comments: [], source: parsed, rel }, { walker: walkTree }),
     facets: treeFacets(program, lang),
     errors: 0,
     // The source's, never the root's span: a file that opens with blank lines has a root that starts past them.
     length: source.length,
   };
+  // Absent unless true: the other branches of this file's conditionals are text nothing here read.
+  if (oneBranch) payload.oneBranch = true;
   if (withProgram) {
     payload.program = program;
     // Comments are nodes of this tree. The channel is the oxc side's, kept so one caller reads both.

@@ -7,6 +7,7 @@ import {
   MISSING_STRIPPER,
   mayHoldFlow,
   mayBeCommonJS,
+  mayHoldDirectives,
   LANGUAGES,
   declOf,
   engineOf,
@@ -48,6 +49,24 @@ test("a language tree-sitter reads declares its extensions, one grammar named af
 
 test("an engine says what its rejecting a file means: the language's own parser, or a grammar that covers less", () => {
   assert.deepEqual(Object.fromEntries(Object.values(ENGINES).map((e) => [e.id, e.rejects])), { oxc: "syntax", prism: "syntax", "tree-sitter": "grammar" });
+});
+
+test("only C# is retried with one branch of its conditionals, and the retry is asked of the path", () => {
+  for (const decl of LANGUAGES) assert.deepEqual(decl.directives, decl.id === "csharp" ? { exts: ["cs"] } : null, decl.id);
+  assert.equal(Object.isFrozen(declOf("csharp").directives) && Object.isFrozen(declOf("csharp").directives.exts), true);
+  assert.equal(mayHoldDirectives("src/A.cs"), true);
+  for (const decl of LANGUAGES.filter((l) => l.id !== "csharp")) {
+    for (const ext of decl.exts) assert.equal(mayHoldDirectives(`src/a.${ext}`), false, `.${ext}`);
+  }
+  assert.equal(mayHoldDirectives("src/A.cs.orig"), false);
+  assert.equal(mayHoldFlow("src/A.cs"), false, "one dialect's extensions are not another's");
+});
+
+test("a declaration retrying directives for an extension it does not own, or on an engine with no such retry, refuses to load", () => {
+  const unowned = LANGUAGES.map((l) => (l.id === "csharp" ? { ...l, directives: { exts: ["rs"] } } : l));
+  assert.throws(() => assertRegistry(unowned), /csharp retries directives for \.rs, which it does not own/);
+  const elsewhere = LANGUAGES.map((l) => (l.id === "ruby" ? { ...l, directives: { exts: ["rb"] } } : l));
+  assert.throws(() => assertRegistry(elsewhere), /ruby retries directives, which only tree-sitter does, and routes to prism/);
 });
 
 test("the Flow retry covers every JavaScript extension the corpus accepts", () => {

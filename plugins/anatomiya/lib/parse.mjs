@@ -28,6 +28,8 @@
  * there could not load: one language's loss, with a remedy of its own.
  * `rejections` counts the rejected files by what their engine's rejection
  * means, and each rejected record carries that meaning as `rejects`.
+ * `oneBranch` counts the files read with one branch of each conditional, each
+ * marked the same way on its record: read, and not all of it.
  */
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -229,6 +231,7 @@ async function run(files, { withProgram, guards, frameworks }) {
   const rejections = {};
   let missingParser = null;
   let missingStripper = false;
+  let oneBranch = 0;
   let truncated = false;
 
   const take = (engine, r) => {
@@ -247,6 +250,7 @@ async function run(files, { withProgram, guards, frameworks }) {
     // One rejected file that could have been retried is enough: the dependency
     // is absent for the whole run, not for that file.
     if (r.noStripper) missingStripper = true;
+    if (r.oneBranch) oneBranch++;
     if (kind !== "rejected") return records.set(r.rel, { ...r, kind });
     // Whether a rejection is the file's fault is the engine's to say, so no printer names an engine.
     const { rejects } = ENGINES[engine];
@@ -281,5 +285,5 @@ async function run(files, { withProgram, guards, frameworks }) {
     truncated = truncated || out.truncated;
   }
 
-  return { records, tallies, truncated, engines, missingEngines, missingGrammars, rejections, missingParser, missingStripper };
+  return { records, tallies, truncated, engines, missingEngines, missingGrammars, rejections, missingParser, missingStripper, oneBranch };
 }

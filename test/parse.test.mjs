@@ -129,8 +129,8 @@ test("a batch of one Python, one TypeScript and one Ruby file comes back read, a
   assert.deepEqual(out.missingGrammars, []);
 });
 
-// Correct C#: the directive sits inside a call chain, which the grammar has no rule for.
-const UNREAD_CS = 'class A\n{\n    bool F(string s)\n    {\n        return s\n#if SPAN\n            .Trim()\n#endif\n            .StartsWith("a");\n    }\n}\n';
+// Correct C# 13 the grammar has no rule for.
+const UNREAD_CS = "class A<T> where T : allows ref struct { }\n";
 
 test("a rejected file says what its engine's rejection means, and the run counts each meaning apart", async () => {
   const out = await parseAll([
@@ -149,6 +149,25 @@ test("a rejected file says what its engine's rejection means, and the run counts
   assert.equal(out.tallies.rejected, 3);
   assert.deepEqual(out.rejections, { syntax: 1, grammar: 2 });
   assert.deepEqual((await parseAll([{ rel: "c.ts", source: "export const c = 1\n", lang: "js" }])).rejections, {});
+});
+
+test("the run counts the files read with one branch of their conditionals, and a file read whole is not one", async () => {
+  const chain = 'class A\n{\n    bool F(string s)\n    {\n        return s\n#if SPAN\n            .Trim()\n#else\n            .TrimEnd()\n#endif\n            .StartsWith("a");\n    }\n}\n';
+  const out = await parseAll([
+    { rel: "A.cs", source: chain, lang: "csharp" },
+    { rel: "B.cs", source: chain.replace("#else\n            .TrimEnd()\n", ""), lang: "csharp" },
+    { rel: "C.cs", source: "class C { }\n", lang: "csharp" },
+    { rel: "D.cs", source: UNREAD_CS, lang: "csharp" },
+  ]);
+
+  assert.deepEqual([...out.records.values()].map((r) => [r.rel, r.kind, r.oneBranch]), [
+    ["A.cs", "ok", true],
+    ["B.cs", "ok", undefined],
+    ["C.cs", "ok", undefined],
+    ["D.cs", "rejected", undefined],
+  ]);
+  assert.equal(out.oneBranch, 1);
+  assert.equal((await parseAll([{ rel: "c.ts", source: "export const c = 1\n", lang: "js" }])).oneBranch, 0);
 });
 
 test("a file the Kotlin grammar cannot finish inside the clock is charged once, and the files beside it are read", async () => {

@@ -266,6 +266,29 @@ test("the scan counts a grammar's unread files apart, and a record of the older 
   assert.deepEqual(after.rejections, { syntax: 1, grammar: 2 });
 });
 
+test("the scan counts the files it read with one branch of their conditionals, and says so under Not covered", async (t) => {
+  const member = (i) => `namespace App;\n\npublic class M${i}\n{\n    public int F(int x)\n    {\n        return x + ${i};\n    }\n}\n`;
+  const older = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/M${i}.cs`, member(i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const before = await scan(older);
+  assert.equal("oneBranch" in before.parse, false, "nothing new on the record of a run that read every file whole");
+  assert.doesNotMatch(renderOverview(before, { uncovered: 0 }), /one branch/);
+
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/M${i}.cs`, member(i));
+    write("src/Chain.cs", 'namespace App;\n\npublic class Chain\n{\n    public bool F(string s)\n    {\n        return s\n#if SPAN\n            .Trim()\n#else\n            .TrimEnd()\n#endif\n            .StartsWith("a");\n    }\n}\n');
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const after = await scan(dir);
+  assert.equal(after.parse.syntaxErrors, 0);
+  assert.equal(after.parse.oneBranch, 1);
+  assert.match(renderOverview(after, { uncovered: 0 }), /^- 1 file was read with one branch of each #if; the other branches were not read$/m);
+});
+
 test("a file the parser could not read costs that one file", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
