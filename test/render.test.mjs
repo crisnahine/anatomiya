@@ -4045,7 +4045,8 @@ test("the precedent sentence prints only where a root the section prints arms it
   assert.match(whole, SENTENCE);
 
   const squeezed = renderLayout(layout, 9).join("\n");
-  assert.match(squeezed, /^- and 2 more directories holding 59 files$/m);
+  assert.match(squeezed, /^- and 1 more directory holding 19 files$/m);
+  assert.match(squeezed, /^- spaceship: /m, "in the line the sentence does not take");
   assert.doesNotMatch(squeezed, /screengrab/);
   assert.doesNotMatch(squeezed, SENTENCE);
   assert.match(squeezed, /Match sibling test shape/, "a sentence the roots do not arm stays");
@@ -4056,4 +4057,43 @@ test("the precedent sentence prints only where a root the section prints arms it
   assert.match(babel, /^- screengrab: /m);
   assert.doesNotMatch(babel, /fastlane|spaceship/);
   assert.match(babel, SENTENCE);
+});
+
+test("a sentence the page drops holds no line, so a root prints in it", () => {
+  // vscode, prisma and next.js: the root that arms the sentence is folded, and the next root in line is not it.
+  const counted = (path, n) => root(path, { files: 100, exts: [[".ts", 100]], companions: { with: n, of: 100, root: null, ext: ".ts" } });
+  const layout = {
+    size: 400,
+    minFiles: 3,
+    roots: [counted("a", 40), counted("b", 30), counted("c", 20), counted("d", 0)],
+    more: { roots: 0, files: 0 },
+    tests: [{ runner: "vitest", root: null, files: 90 }],
+    principles: ["test_shape", "test_precedent"],
+    truncated: false,
+  };
+  const SENTENCE = /does not override a directory with no test precedent/;
+  const printed = (lines) => lines.filter((l) => /^- [abcd]:/.test(l)).map((l) => l[2]).join("");
+
+  const nine = renderLayout(layout, 9);
+  assert.equal(nine.length, 9);
+  assert.equal(printed(nine), "ab");
+  assert.ok(nine.includes("- and 2 more directories holding 200 files"));
+  assert.doesNotMatch(nine.join("\n"), SENTENCE);
+  assert.deepEqual(nine, renderLayout({ ...layout, principles: ["test_shape"] }, 9), "as if the key were not stored");
+
+  // One line more buys `c`. Two would show `d`, which arms the sentence, and then both do not fit.
+  const ten = renderLayout(layout, 10);
+  assert.equal(ten.length, 10);
+  assert.equal(printed(ten), "abc");
+  assert.doesNotMatch(ten.join("\n"), SENTENCE);
+  const eleven = renderLayout(layout, 11);
+  assert.equal(eleven.length, 11);
+  assert.equal(printed(eleven), "abcd");
+  assert.match(eleven.join("\n"), SENTENCE);
+
+  // backstage and jellyfin: the root the line would buy is the one that arms the sentence, so the line stays empty.
+  const next = renderLayout({ ...layout, roots: [layout.roots[0], layout.roots[3], layout.roots[1], layout.roots[2]] }, 9);
+  assert.equal(next.length, 8);
+  assert.equal(printed(next), "a");
+  assert.doesNotMatch(next.join("\n"), SENTENCE);
 });
