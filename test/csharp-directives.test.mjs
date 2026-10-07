@@ -149,6 +149,42 @@ test("a quote in a character literal, a comment or an ordinary string opens no s
   assert.equal(withOneBranch("F('\\'', '\"', @\"\n#if X\n#endif\n\");\n"), null);
 });
 
+test("an escaped character literal ends at its quote on the same line, twelve units at most from where it opened", () => {
+  // Read short of its quote, the longest escape leaves that quote to open a literal, and the verbatim string is closed early.
+  assert.equal(withOneBranch("F('\\U0001F600','\"', @\"\n#if X\n#endif\n\");\n"), null);
+  // And `'\''` read as closed by its second quote leaves the third to do the same.
+  assert.equal(withOneBranch("F('\\'','\"', @\"\n#if X\n#endif\n\");\n"), null);
+  for (const eol of ["\n", "\r\n"]) {
+    assert.deepEqual(kept(`var a = '\\${eol}#if X'${eol}a();${eol}#endif${eol}`), ["var a = '\\", "a();"], JSON.stringify(eol));
+  }
+  assert.equal(withOneBranch("#if X\n#endif\nvar a = '\\").text, "     \n      \nvar a = '\\");
+});
+
+test("a byte order mark before a first-line directive is leading white space, and stays where it was", () => {
+  const source = "\uFEFF#if X\na();\n#else\nb();\n#endif\n";
+  const out = withOneBranch(source);
+
+  assert.equal(out.text, "\uFEFF     \na();\n     \n    \n      \n");
+  assert.equal(out.dropped, true);
+  assert.equal(withOneBranch("a();\n\uFEFF#if X\n#endif\n"), null);
+});
+
+// One line of about 1 MB each. A scan to the line's end per literal took 19 s on 400 KB of the first.
+for (const token of ["'\\u0041'", "'\\n'", '"a"', '@"a"', "/* */"]) {
+  test(`a long line of ${token} is blanked in time that grows with its length`, () => {
+    const tail = "\n#if X\na();\n#else\nb();\n#endif\n";
+    const source = token.repeat(Math.ceil(1_000_000 / token.length)) + tail;
+    // Three runs, each bounded: a slow path has shown only once the engine had optimised the function.
+    for (let run = 0; run < 3; run++) {
+      const from = performance.now();
+      const out = withOneBranch(source);
+      const took = performance.now() - from;
+      assert.equal(out.text, source.slice(0, -tail.length) + "\n     \na();\n     \n    \n      \n");
+      assert.ok(took < 2000, `run ${run + 1}: ${Math.round(took)} ms`);
+    }
+  });
+}
+
 test("conditionals that do not balance are not guessed at", () => {
   assert.equal(withOneBranch("#if X\na();\n"), null);
   assert.equal(withOneBranch("a();\n#endif\n"), null);

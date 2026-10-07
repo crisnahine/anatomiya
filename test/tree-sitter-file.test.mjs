@@ -168,6 +168,13 @@ test("csharp: a directive on a last line with no line break after it is read, wi
   assert.equal("oneBranch" in r, false);
 });
 
+test("csharp: a byte order mark before a first-line conditional does not switch the retry off", async () => {
+  const r = await parseTreeFile("\uFEFF#if X\nclass A : I\n#else\nclass A : J\n#endif\n{ }\n", "src/A.cs", "csharp");
+
+  assert.equal(r.ok, true);
+  assert.equal(r.oneBranch, true);
+});
+
 test("csharp: a file that parsed as written is not retried, so both branches of its conditional are in the tree", async () => {
   const source = "class A\n{\n#if X\n    void F() { }\n#else\n    void G() { }\n#endif\n}\n";
   const r = await parseTreeFile(source, "src/A.cs", "csharp", { withProgram: true });

@@ -54,8 +54,13 @@ function stringEnd(source, quote) {
 /** The offset just past a character literal at `at`, or past its quote alone where it is none. */
 function charEnd(source, at) {
   if (source[at + 1] === "\\") {
-    const close = source.indexOf("'", at + 3);
-    return close !== -1 && close < lineEnd(source, at) ? close + 1 : at + 1;
+    // The longest is `'\U0010FFFF'`, 12 units: a search with no bound walks the line once per literal.
+    for (let i = at + 2; i < at + 12; i++) {
+      const ch = source[i];
+      if (ch === undefined || ch === "\n" || ch === "\r") break;
+      if (ch === "'" && i > at + 2) return i + 1;
+    }
+    return at + 1;
   }
   return source[at + 2] === "'" ? at + 3 : at + 1;
 }
@@ -80,7 +85,7 @@ function directives(source) {
       if (word) found.push({ start: i, end, word });
       i = end;
       continue;
-    } else if (ch !== " " && ch !== "\t") {
+    } else if (ch !== " " && ch !== "\t" && !(ch === "\uFEFF" && i === 0)) {
       opensLine = false;
       const next = source[i + 1];
       let past = i + 1;
