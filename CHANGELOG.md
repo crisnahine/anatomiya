@@ -49,8 +49,9 @@ scanned by 0.13.4 and by this version.
 - One claim lost with no file changed. On storybook, `scripts/ci` (34 of 36 sites),
   `code/addons/a11y/src` (11 of 12) and `code/frameworks/nextjs/src` (32 of 34) stated `exported
   names are camelCase` in 0.13.4 and print it as `no convention` here. Each had the claim on the
-  strength of the rest of the repository, whose bound for that row rose from 0.9725 to 0.9811
-  with the 180 components this version reads, and the area's own counts stop short of it.
+  strength of the rest of the repository, whose bound for that row rose with the 180 components
+  this version reads (0.9725 to 0.9811 as `scripts/ci` sees it), and the area's own counts stop
+  short of it.
 
 ### Added
 
@@ -89,11 +90,16 @@ scanned by 0.13.4 and by this version.
   of: `Error`, `Read`, `ServeHTTP`, `String`, `Write`, `Unwrap`, and `Len`, `Less` and `Swap` on
   a type that has all three. The handler row reads a Java clause that names what it caught
   `ignored` as binding nothing, as `_` binds nothing. A finding of these rows names the class
-  beside the method, `Views.run`. Not shipped: the handler row in Python, where all
-  three repositories read 1.0000, a language default; the handler row in Kotlin and C#, whose
-  repositories did not differ by 0.15; how functions are named, which read over 0.94 in all
-  fifteen repositories; and whether an import names what it takes, a default in Python and Java,
-  short of the spread in Rust, and in Kotlin a rule ktlint already enforces by default.
+  beside the method, `Views.run`. Of naming, imports, tests and layout, each of the seven gets its
+  tests and the layout section, and none gets a naming or an imports row. Not shipped: the handler
+  row in Python, where all three repositories read 1.0000, a language default; the handler row in
+  Kotlin and C#, whose repositories did not differ by 0.15; how functions are named, which read
+  over 0.94 in all fifteen repositories of Python, PHP, Java, Kotlin and C#, and was not asked of
+  Go, where a name's case is its visibility, or of Rust, where the compiler lints it; and whether
+  an import names what it takes, a default in Python and Java, short of the spread in Rust, in
+  Kotlin a rule ktlint already enforces by default, and not asked of PHP or C#, which have no
+  wildcard form, or of Go, where a dot import is 1 of 9,863 import lines measured. The README's
+  table under Limits says the same per language.
 - What is not read in those seven. A grammar reads less than its language, and a file one cannot
   read is left out of every count and counted on a line of its own: `82 files could not be read by
   this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may

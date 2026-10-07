@@ -201,6 +201,21 @@ tries again after half an hour or once the checkout moves, and the delivered map
 failed until one succeeds. A committed map's `.claude/anatomiya/layout.json` comes along but does
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
 
+A map written by 0.13.4 does not come out the same from this version, and the first scan or refresh
+rewrites it. On the 35 corpus repositories every overview differs and 6,120 of 6,834 area files are
+byte-identical. What you will see:
+
+- one more "Not covered" line, or a longer one, for files in a language the map does not read
+  (`.erb`, `.haml`, `.scss`), and on 19 of the 35 one or two root lines fewer to make room;
+- `, in .rb files` or the like on a claim line, where the area holds three or more files the claim
+  is never asked of;
+- areas, test counts and claims for Python, PHP, Go, Java, C#, Rust and Kotlin, and for the script
+  blocks of `.vue` and `.svelte` files, where the repository holds any;
+- no count line for the type-checked claim where the checker reads `degraded`;
+- at the 500-area ceiling, small areas giving their place to larger ones of a newly read language.
+
+[CHANGELOG.md](CHANGELOG.md) has the counts per repository.
+
 A session started in the directory that holds your checkouts, which has no map of its own, refreshes
 and watches each mapped checkout directly below it, and the reuse check reads each one's change,
 naming files from where the session started. A directory holding more than eight mapped checkouts
@@ -593,6 +608,23 @@ a test file is written, and the finding `check` reports for one, read a test by 
 name in six of them: a Rust test has no name, since cargo collects by place, so no `.rs` file is
 asked. A file of any other language is not read: "What lives where" counts it, and
 "Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
+
+Of naming, imports, tests and layout, each of the seven gets its tests and the layout section, and
+none gets a naming or an imports row. A row is asked of a language only where three measured
+repositories of it differ:
+
+| Language | A test file is | Rows asked | Measured or weighed, and not asked |
+|---|---|---|---|
+| Python | `test_*.py`, `*_test.py`, `conftest.py` | doc comments, return types | handlers (1.0000 in all three); naming (0.99 to 1.00); imports (a default) |
+| PHP | `*Test.php` under a test tree | doc comments, return types, handlers | naming (1.00); imports (the language has no wildcard form) |
+| Go | `_test.go` | doc comments | naming (a name's case is its visibility); imports (a dot import is 1 of 9,863 lines) |
+| Java | `*Test`, `*Tests`, `*IT` under a test tree | doc comments, handlers | naming (1.0000 in all three); imports (a default) |
+| C# | `*Tests`, `*Test` under a test tree | doc comments | handlers (repositories differ by 0.10); naming (1.0000); imports (no wildcard form) |
+| Rust | a `.rs` file directly under a crate's `tests` | doc comments | naming (the compiler lints it); imports (repositories differ by 0.10) |
+| Kotlin | `*Test`, `*Tests`, `*IT` under a test tree | doc comments | handlers (repositories differ by 0.12); naming (0.95 to 1.00); imports (ktlint's default rule) |
+
+The bar is one repository under 0.90 and a spread of 0.15. No filename claim is asked of any of the
+seven, for the same reason. `DECISIONS.md` rows C50 to C54 and H52 hold the numbers.
 
 **A grammar reads less than its language.** A file a grammar cannot read is left out of every
 count, and the scan and the overview say how many there were: `82 files could not be read by this
