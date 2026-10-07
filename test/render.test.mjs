@@ -3554,3 +3554,34 @@ test("the forms a row declines name component imports where the area holds compo
   assert.ok(renderArea(modules).includes(`\n  not counted: ${clause}\n`), "an area of modules reads as it did");
   assert.equal(beside.split("\n").length, renderArea(modules).split("\n").length, "and it costs no line");
 });
+
+test("the precedent sentence prints only where a root the section prints arms it", () => {
+  // fastlane: five Ruby roots at 15 to 86 namesakes, and a Java root at 1 of 19 the budget folds away.
+  const tested = (path, n) => root(path, { files: 40, exts: [[".rb", 40]], companions: { with: n, of: 40, root: null, ext: ".rb" } });
+  const layout = {
+    size: 140,
+    minFiles: 3,
+    roots: [tested("fastlane", 28), tested("spaceship", 15), root("screengrab", { files: 19, exts: [[".java", 19]], companions: { with: 1, of: 19, root: null, ext: ".java" } })],
+    more: { roots: 0, files: 0 },
+    tests: [{ runner: "rspec", root: null, files: 43 }],
+    principles: ["test_shape", "test_precedent"],
+    truncated: false,
+  };
+  const SENTENCE = /does not override a directory with no test precedent/;
+  const whole = renderLayout(layout).join("\n");
+  assert.match(whole, /^- screengrab: .*1 of 19 has a namesake test$/m);
+  assert.match(whole, SENTENCE);
+
+  const squeezed = renderLayout(layout, 9).join("\n");
+  assert.match(squeezed, /^- and 2 more directories holding 59 files$/m);
+  assert.doesNotMatch(squeezed, /screengrab/);
+  assert.doesNotMatch(squeezed, SENTENCE);
+  assert.match(squeezed, /Match sibling test shape/, "a sentence the roots do not arm stays");
+  // babel: the untested directories are on the page and the one root that pairs its tests is folded.
+  // That half says the matcher pairs anything here at all, which needs no line.
+  const pairedFolded = { ...layout, roots: [layout.roots[2], layout.roots[0], layout.roots[1]] };
+  const babel = renderLayout(pairedFolded, 9).join("\n");
+  assert.match(babel, /^- screengrab: /m);
+  assert.doesNotMatch(babel, /fastlane|spaceship/);
+  assert.match(babel, SENTENCE);
+});
