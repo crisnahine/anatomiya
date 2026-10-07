@@ -5563,6 +5563,29 @@ test("a test file pytest collects by its directory is a test file to the check o
   assert.deepEqual(report.findings, []);
 });
 
+test("a Rust file cargo builds as a test by where it sits is a test file to the check, a case in it or none", async (t) => {
+  const helper = "pub fn setup() {}\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("Cargo.toml", '[package]\nname = "shop"\n');
+    write("tests/util.rs", helper);
+    // The same file where no crate holds the directory, which is source.
+    write("notes/tests/util.rs", helper);
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    for (const at of ["tests", "notes/tests"]) write(`${at}/util.rs`, `${helper}\npub fn teardown() {}\n`);
+    commit("one more helper");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  const area = (id, path) => ({ id, path, globs: [{ negated: false, dir: path, tail: "**/*.rs" }], fileCount: 8, dimensions: [documented] });
+  facts(dir, { sha: sha(dir, "main"), areas: [area("aaaaaaaa", "tests"), area("bbbbbbbb", "notes/tests")] });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.examined.map((e) => e.path).sort(), ["notes/tests/util.rs", "tests/util.rs"]);
+  assert.deepEqual(report.caveats, []);
+  assert.deepEqual(forKey(report, "public_doc_comment").map((f) => [f.path, f.line]), [["notes/tests/util.rs", 3]]);
+});
+
 for (const [side, facts_, reported] of [
   ["no return type", () => counterDim({ key: "declared_return_type", claim: "functions declare what they return", counterClaim: "functions declare no return type" }), "typed"],
   ["a return type", () => dim({ key: "declared_return_type" }), "untyped"],

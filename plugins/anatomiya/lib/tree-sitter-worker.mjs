@@ -11,12 +11,12 @@ import { readFileSync } from "node:fs";
 
 import { ENGINE, ENGINE_VERSION, ensureRuntime, failure, parseTreeFile } from "./tree-sitter-file.mjs";
 
-process.on("message", async ({ rel, path = rel, abs, lang, withProgram = false }) => {
+process.on("message", async ({ rel, path = rel, abs, lang, withProgram = false, placed = false }) => {
   let payload;
   try {
     // One string for the parser and for every offset it reports, as in the oxc shell.
     // Read at the file's own path, which is what says whether a runner collects it, and answered under the caller's key.
-    payload = { ...(await parseTreeFile(readFileSync(abs, "utf8"), path, lang, { withProgram })), rel };
+    payload = { ...(await parseTreeFile(readFileSync(abs, "utf8"), path, lang, { withProgram, placed })), rel };
   } catch (err) {
     payload = failure(rel, err);
   }

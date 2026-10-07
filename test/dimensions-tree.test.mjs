@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { TREE_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-tree.mjs";
 import { declOf, engineOf } from "../plugins/anatomiya/lib/langs.mjs";
+import { isTestFile, mirroredTests } from "../plugins/anatomiya/lib/layout.mjs";
 import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 import { TREE_DECLINED } from "./declined-fixtures.mjs";
 
@@ -258,6 +259,40 @@ for (const key of TESTLESS) {
     }
   });
 }
+
+// One file per way the layout knows a test file, none of them holding a case: by a name its tool collects alone, by a name under a
+// test tree, by the place its tool builds from, and by a name its runner reads. `beside` is what else the repository tracks.
+const TESTS_BY_PATH = [
+  ["python", "shop/test_helpers.py", "def build():\n    return 1\n"],
+  ["python", "shop/helpers_test.py", "def build():\n    return 1\n"],
+  ["python", "tests/conftest.py", "def build():\n    return 1\n"],
+  ["php", "tests/Unit/HelpersTest.php", "<?php\nfunction build() {}\n"],
+  ["go", "shop/helpers_test.go", "package shop\n\nfunc Build() {}\n"],
+  ["java", "src/test/java/shop/HelpersTest.java", "public class HelpersTest {\n    public void build() {}\n}\n"],
+  ["java", "src/test/java/shop/HelpersIT.java", "public class HelpersIT {\n    public void build() {}\n}\n"],
+  ["csharp", "test/Shop.Tests/HelpersTests.cs", "public class HelpersTests\n{\n    public void Build() { }\n}\n"],
+  ["rust", "tests/helpers.rs", "pub fn build() {}\n", ["Cargo.toml"]],
+  ["rust", "shop/tests/helpers.rs", "pub fn build() {}\n", ["shop/src/lib.rs"]],
+  ["kotlin", "shop/commonTest/src/HelpersTest.kt", "class HelpersTest {\n    fun build() {}\n}\n"],
+];
+
+test("a file the layout calls a test file holds no site of a row that leaves test files out, in each of the seven languages", async () => {
+  const seen = new Set();
+  for (const [lang, rel, source, beside = []] of TESTS_BY_PATH) {
+    const mirrored = mirroredTests([{ rel, lang }, ...beside.map((other) => ({ rel: other, lang: null }))]);
+    const r = await parseTreeFile(source, rel, lang, { placed: mirrored.has(rel) });
+    assert.equal(r.facets.testCalls, false, `${rel} holds no case, so only its path says what it is`);
+    assert.equal(isTestFile({ rel, lang, facets: r.facets }, mirrored), true, `the layout counts ${rel} as a test file`);
+    for (const key of TESTLESS.filter((k) => TREE_DIMENSIONS.find((d) => d.key === k).langs.includes(lang))) {
+      assert.deepEqual(r.hits[key] ?? [], [], `${key} at ${rel}`);
+    }
+    // The same source where nothing collects it is counted, so the path is what took it out.
+    const elsewhere = await parseTreeFile(source, `shop/helpers.${declOf(lang).exts[0]}`, lang);
+    assert.equal(elsewhere.hits.public_doc_comment.length, 1, `${lang} source at a source path`);
+    seen.add(lang);
+  }
+  assert.deepEqual([...seen].sort(), [...TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment").langs].sort());
+});
 
 test("the row that judges every file does count a test file", async () => {
   const [rel, source] = ["src/test/java/ATest.java", "import org.junit.Test;\n\nclass ATest {\n    @Test\n    public void a() {\n        try { b(); } catch (E e) { }\n    }\n}\n"];

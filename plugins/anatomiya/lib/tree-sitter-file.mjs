@@ -103,10 +103,12 @@ function errorsIn(tree) {
 /**
  * Parse one source string and answer the per-file record, pre-classify.
  *
- * `grammars` and `rows` are defined-only test overrides: a directory to load
- * grammar files from, and the rows to ask in place of the registry's.
+ * `placed` is the caller's word that the language's tool collects this file by
+ * where it sits. `grammars` and `rows` are defined-only test overrides: a
+ * directory to load grammar files from, and the rows to ask in place of the
+ * registry's.
  */
-export async function parseTreeFile(source, rel, lang, { withProgram = false, grammars = GRAMMARS, rows } = {}) {
+export async function parseTreeFile(source, rel, lang, { withProgram = false, placed = false, grammars = GRAMMARS, rows } = {}) {
   const parser = await parserFor(grammarFor(lang, rel), grammars, lang);
 
   let program;
@@ -152,7 +154,7 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
   }
 
   // Read once and handed to the rows, which ask what kind of file this is.
-  const facets = treeFacets(program, lang, rel);
+  const facets = treeFacets(program, lang, rel, { placed });
   const payload = {
     rel,
     ok: true,

@@ -236,8 +236,9 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
 
     startRssPoll();
 
-    // `path` is the file's own where `rel` is a caller's label for one of two revisions of it.
-    w.child.send({ rel: job.file.rel, path: job.file.path, abs: job.file.abs, lang: job.file.lang, withProgram }, (err) => {
+    // `path` is the file's own where `rel` is a caller's label for one of two revisions of it,
+    // and `placed` the caller's word that a tool collects the file by where it sits.
+    w.child.send({ rel: job.file.rel, path: job.file.path, abs: job.file.abs, lang: job.file.lang, withProgram, placed: job.file.placed === true }, (err) => {
       if (!err || w.job !== job) return;
       w.sup.kill("channel closed");
       finish(w, { rel: job.file.rel, ok: false, error: "worker channel closed" }, true);

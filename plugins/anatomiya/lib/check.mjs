@@ -16,7 +16,8 @@ import {
   safeResolve,
   lsFiles,
 } from "./corpus.mjs";
-import { language, MISSING_STRIPPER } from "./langs.mjs";
+import { language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
+import { placedTests } from "./layout.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase } from "./render.mjs";
 import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
@@ -235,6 +236,7 @@ export async function check(cwd, { baseRef = null } = {}) {
 
   const { findings, missingEngines, missingGrammars, missingParser } = await collect(root, {
     examined,
+    placed: await placedAmong(root, examined),
     areas,
     base,
     mode,
@@ -670,8 +672,26 @@ async function trackedTests(root) {
   return found;
 }
 
+/**
+ * The examined files a language's tool collects as tests by where they sit,
+ * asked of everything git tracks beside them, the way a scan asks it.
+ *
+ * Empty where no examined language has such a tool, which costs no listing,
+ * and where the listing failed: the file is then read by what it holds alone.
+ */
+async function placedAmong(root, examined) {
+  if (!examined.some((c) => placeTestsOf(language(c.path)) !== null)) return new Set();
+  const listed = examined.map((c) => ({ rel: c.path, lang: language(c.path) }));
+  try {
+    await lsFiles(root, (rel) => listed.push({ rel, lang: language(rel) }));
+  } catch {
+    return new Set();
+  }
+  return placedTests(listed);
+}
+
 async function collect(root, run) {
-  const { examined, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending } = run;
+  const { examined, placed, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending } = run;
   const areaFor = areaIndex(areas);
   const ancestorsOf = ancestorsIndex(areas);
   // Which directives each area's file had no room to state, recomputed from the
@@ -777,7 +797,8 @@ async function collect(root, run) {
       // A file read from the working tree is the one side that arrives as bytes.
       // The parser gets a copy rather than the live path, because the text every
       // offset here is resolved against is the copy this run read.
-      entries.push({ rel: `head:${job.file.path}`, path: job.file.path, lang: job.lang, ...(job.abs ? { abs: job.abs } : { source: job.source }) });
+      // The head's facets say what kind of file both revisions are, so only the head is told where it sits.
+      entries.push({ rel: `head:${job.file.path}`, path: job.file.path, lang: job.lang, placed: placed.has(job.file.path), ...(job.abs ? { abs: job.abs } : { source: job.source }) });
       // Under the path it had at the base, which is what picks the grammar: a
       // `.ts` renamed to `.tsx` was parsed as TSX, where a generic arrow that
       // is valid TypeScript is a syntax error, and the whole file was skipped.

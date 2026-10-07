@@ -52,7 +52,7 @@ for (const [label, lang, source] of RUNNERS) {
 }
 
 test("a runner's import with no case in the file is not a test", async () => {
-  // A conftest and a benchmark helper both import the runner and declare nothing it collects.
+  // A module of fixtures and a benchmark helper both import the runner and declare nothing it collects.
   const quiet = { testRunner: null, testCalls: false };
   assert.deepEqual(await facetsOf("python", "import pytest\n\n\n@pytest.fixture\ndef order():\n    return 1\n"), quiet);
   assert.deepEqual(await facetsOf("go", 'package a\n\nimport "testing"\n\nfunc helper(t *testing.T) {}\n'), quiet);
@@ -231,13 +231,33 @@ test("a pytest file imports nothing from pytest, and its path is what says so", 
 
 test("a name that starts with test is not a case where pytest would not collect it", async () => {
   const fixture = "import pytest\n\n\n@pytest.fixture\ndef test_client():\n    return 1\n";
-  assert.deepEqual(await facetsOf("python", fixture, "tests/conftest.py"), QUIET);
+  assert.deepEqual(await facetsOf("python", fixture, "tests/fixtures.py"), QUIET);
   const scoped = "import pytest\n\n\n@pytest.fixture(scope=\"session\")\ndef test_client():\n    return 1\n";
-  assert.deepEqual(await facetsOf("python", scoped, "tests/conftest.py"), QUIET);
+  assert.deepEqual(await facetsOf("python", scoped, "tests/fixtures.py"), QUIET);
   const nested = "def make():\n    def test_inner():\n        return 1\n    return test_inner\n";
   assert.deepEqual(await facetsOf("python", nested, "tests/factories.py"), QUIET);
   const marked = "import pytest\n\n\n@pytest.mark.slow\ndef test_total():\n    assert 1\n";
   assert.equal((await facetsOf("python", marked, "tests/test_total.py")).testRunner, "pytest");
+});
+
+test("pytest reads a conftest by its name, wherever it sits and whatever it holds", async () => {
+  const fixtures = "import pytest\n\n\n@pytest.fixture\ndef client():\n    return 1\n";
+  const read = { testRunner: "pytest", testCalls: false };
+  assert.deepEqual(await facetsOf("python", fixtures, "tests/conftest.py"), read);
+  assert.deepEqual(await facetsOf("python", fixtures, "conftest.py"), read);
+  assert.deepEqual(await facetsOf("python", "def pytest_configure(config):\n    pass\n", "src/app/conftest.py"), read);
+  assert.deepEqual(await facetsOf("python", fixtures, "tests/conftest_helpers.py"), QUIET);
+  assert.deepEqual(await facetsOf("python", "# nothing yet\n", "tests/conftest.py"), { testRunner: null, testCalls: false, empty: true });
+});
+
+test("a Rust file cargo collects by its place is cargo's with no case in it, and only where the caller says it is placed", async () => {
+  const helper = "pub fn setup() {}\n";
+  const at = async (rel, placed) => (await parseTreeFile(helper, rel, "rust", { placed })).facets;
+  assert.deepEqual(await at("tests/util.rs", true), { testRunner: "cargo test", testCalls: false });
+  assert.deepEqual(await at("tests/util.rs", false), { testRunner: null, testCalls: false });
+  assert.deepEqual((await parseTreeFile("// later\n", "tests/util.rs", "rust", { placed: true })).facets, { testRunner: null, testCalls: false, empty: true });
+  // No tool collects a Go file by its place, so the word changes nothing there.
+  assert.deepEqual((await parseTreeFile("package a\n\nfunc Setup() {}\n", "tests/util.go", "go", { placed: true })).facets, { testRunner: null, testCalls: false });
 });
 
 test("Go: the compiler decides by the file's name, and a case outside a _test file is none", async () => {

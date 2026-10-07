@@ -1684,6 +1684,29 @@ test("rust: a scan counts a file that holds its own tests apart, and only what c
   assert.match(overview, /^- tests: 3 cargo test.*; 0 of 1 .*; 2 hold their own tests$/m, overview);
 });
 
+test("a row that leaves test files out leaves out every file the kinds line of its area calls a test", async (t) => {
+  const undocumented = (n) => Array.from({ length: n }, (_, i) => `pub fn helper${i}() {}\n`).join("\n");
+  const dir = repo(t, (d, { git, write }) => {
+    write("Cargo.toml", '[package]\nname = "shop"\n');
+    for (let i = 0; i < 6; i++) write(`src/m${i}.rs`, `/// Runs.\npub fn run${i}() {}\n`);
+    // cargo builds each of these as a test target, a case in it or none.
+    for (let i = 0; i < 3; i++) write(`tests/cased${i}.rs`, `#[test]\nfn works() {}\n\n${undocumented(2)}`);
+    for (let i = 0; i < 3; i++) write(`tests/bare${i}.rs`, undocumented(2));
+    // A `tests` directory in no crate is a directory, and what it holds is source.
+    for (let i = 0; i < 6; i++) write(`notes/tests/n${i}.rs`, undocumented(1));
+    for (let i = 0; i < 5; i++) write(`py/tests/test_m${i}.py`, `def test_m${i}():\n    pass\n`);
+    write("py/tests/conftest.py", "import pytest\n\n\n@pytest.fixture\ndef client():\n    return 1\n\n\ndef make_app():\n    return 1\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  assert.deepEqual(Object.fromEntries(result.layout.tests.map((g) => [g.runner, g.files])), { "cargo test": 6, pytest: 6 });
+  // An area none of whose files holds a site of any row is not written.
+  const counted = Object.fromEntries(result.areas.map((a) => [a.path, a.dimensions.map((d) => [d.key, d.candidates])]));
+  assert.deepEqual(counted, { "notes/tests": [["public_doc_comment", 6]], src: [["public_doc_comment", 6]] });
+});
+
 test("a Go test beside a Python file of its stem is no test of the Python file", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     for (const s of ["cart", "order", "price"]) write(`shop/${s}.py`, `def ${s}():\n    return 1\n`);
