@@ -16,7 +16,7 @@ USAGE = (
 )
 
 
-class Order:
+class Order(Record):
     """One order and its lines."""
 
     def __init__(self, lines):
@@ -53,7 +53,7 @@ use App\\Models\\Order;
  * Adds up what an order costs.
  */
 #[Service]
-class Totals implements Summable
+class Totals extends Money implements Summable
 {
     use Rounds;
 
@@ -144,7 +144,7 @@ import java.util.*;
 
 /** Adds up what an order costs. */
 @SuppressWarnings("unchecked")
-public class Totals implements Summable {
+public class Totals extends Money implements Summable {
     private static final String USAGE = """
         usage: totals FILE
         """;

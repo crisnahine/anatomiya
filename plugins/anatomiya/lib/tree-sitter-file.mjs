@@ -137,7 +137,7 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
     rel,
     ok: true,
     hits: collectHits(program, dimensionsFor([lang], rows ? { rows } : {}), { comments: [], source: parsed, rel }, { walker: walkTree }),
-    facets: treeFacets(program, lang),
+    facets: treeFacets(program, lang, rel),
     errors: 0,
     // The source's, never the root's span: a file that opens with blank lines has a root that starts past them.
     length: source.length,

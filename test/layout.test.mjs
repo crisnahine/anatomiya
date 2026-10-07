@@ -1168,3 +1168,119 @@ test("components inside a test tree are what the tests run on, and are not asked
   assert.equal("companions" in record, false);
   assert.equal("componentCompanions" in record, false);
 });
+
+test("Go and Python: the name alone makes a test file, in its own family only", () => {
+  assert.equal(isTestFile(file("pkg/auth_test.go", "go")), true);
+  assert.equal(isTestFile(file("pkg/auth.go", "go")), false);
+  assert.equal(isTestFile(file("docs_src/app/test_main.py", "python")), true);
+  assert.equal(isTestFile(file("pkg/auth_test.py", "python")), true);
+  assert.equal(isTestFile(file("pkg/testing.py", "python")), false);
+  // The other family's spelling is an ordinary name here.
+  assert.equal(isTestFile(file("pkg/test_auth.go", "go")), false);
+  assert.equal(isTestFile(file("tests/AuthTest.py", "python")), false);
+  assert.equal(isTestFile(file("pkg/auth_test.rs", "rust")), false);
+});
+
+test("PHP, Java, Kotlin and C#: a CamelCase test name counts under a test tree and not outside one", () => {
+  for (const [rel, lang] of [
+    ["tests/Routing/RouteTest.php", "php"],
+    ["tests/Composer/Test/Util/GitTest.php", "php"],
+    ["src/test/java/org/a/StringUtilsTest.java", "java"],
+    ["m/src/test/java/org/a/OrFilterTests.java", "java"],
+    ["m/src/test/java/org/a/GraalIT.java", "java"],
+    ["okhttp/src/jvmTest/kotlin/okhttp3/CacheTest.kt", "kotlin"],
+    ["core/commonTest/src/kotlinx/TuplesTest.kt", "kotlin"],
+    ["test/Serilog.Tests/Core/LoggerTests.cs", "csharp"],
+    ["Src/Newtonsoft.Json.Tests/Bson/BsonReaderTests.cs", "csharp"],
+  ]) {
+    assert.equal(isTestFile(file(rel, lang)), true, rel);
+  }
+  for (const [rel, lang] of [
+    // junit's own annotation, Laravel's attribute: source files that wear the word.
+    ["api/src/main/java/org/junit/jupiter/api/RepeatedTest.java", "java"],
+    ["src/Illuminate/Foundation/Testing/Attributes/UnitTest.php", "php"],
+    ["src/main/kotlin/a/SpeedTest.kt", "kotlin"],
+    ["src/Serilog/Core/SelfTest.cs", "csharp"],
+    ["src/test/java/org/a/Contest.java", "java"],
+    ["src/test/java/org/a/Audit.java", "java"],
+    ["src/test/java/org/a/FooSpec.java", "java"],
+    ["tests/Mocks/MockAction.php", "php"],
+    // A Gradle source set is a test tree for the JVM and a directory name for anything else.
+    ["app/commonTest/RouteTest.php", "php"],
+  ]) {
+    assert.equal(isTestFile(file(rel, lang)), false, rel);
+  }
+});
+
+test("Rust: a directory does not make a test file, and neither does a name", () => {
+  // serde keeps 118 compile-fail sources under `tests/ui` and no runner collects one of them.
+  assert.equal(isTestFile(file("test_suite/tests/ui/remote/missing_field.rs", "rust")), false);
+  assert.equal(isTestFile(file("tests/util.rs", "rust")), false);
+  assert.equal(isTestFile(file("tests/feature.rs", "rust", { testRunner: "cargo test", testCalls: true })), true);
+  // A file holding its own unit tests is still the source file it is.
+  assert.equal(isTestFile(file("src/escape.rs", "rust", { testRunner: null, testCalls: false, inlineTests: true })), false);
+});
+
+test("the seven languages take no test name from JavaScript or Ruby, and no mirror", () => {
+  const corpus = [file("lib/rules/no_var.py", "python"), file("tests/lib/rules/no_var.py", "python")];
+  assert.equal(isTestFile(corpus[1], mirroredTests(corpus)), false);
+  assert.equal(isTestFile(file("pkg/a.test.go", "go")), false);
+  assert.equal(isTestFile(file("src/__tests__/a.py", "python")), false);
+  assert.equal(isTestFile(file("spec/a_spec.py", "python")), false);
+});
+
+test("an empty file in one of the seven is no test, whatever it is called", () => {
+  assert.equal(isTestFile(file("pkg/auth_test.go", "go", { testRunner: null, testCalls: false, empty: true })), false);
+  assert.equal(isTestFile(file("tests/test_auth.py", "python", { testRunner: null, testCalls: false, empty: true })), false);
+});
+
+test("a family's own test tree is a test tree for that family's roots only", () => {
+  assert.equal(underTestTree("core/commonTest/src/kotlinx", "kotlin"), true);
+  assert.equal(underTestTree("core/commonTest/src/kotlinx", "js"), false);
+  assert.equal(underTestTree("core/commonTest/src/kotlinx"), false);
+  assert.equal(underTestTree("Src/Newtonsoft.Json.Tests/TestObjects", "csharp"), true);
+  assert.equal(underTestTree("Src/Newtonsoft.Json/Linq", "csharp"), false);
+  assert.equal(underTestTree("src/test/java/a", "java"), true);
+});
+
+test("a nine-file Go package counts its tests by runner and its namesakes beside the source", () => {
+  const goTest = { testRunner: "go test", testCalls: true };
+  const plain = { testRunner: null, testCalls: false };
+  const corpus = [
+    ...["auth", "route", "tree", "util", "mode"].map((s) => file(`pkg/${s}.go`, "go", plain)),
+    ...["auth", "route", "tree"].map((s) => file(`pkg/${s}_test.go`, "go", goTest)),
+    file("pkg/bench_test.go", "go", goTest),
+  ];
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  assert.deepEqual(facts.tests, [{ runner: "go test", root: "pkg", files: 4, under: 4 }]);
+  assert.deepEqual(facts.roots[0].companions, { with: 3, of: 5, root: "pkg", ext: ".go" });
+});
+
+test("a root inside a family's own test tree is not asked whether its files have tests", () => {
+  const junit = { testRunner: "junit", testCalls: true };
+  const plain = { testRunner: null, testCalls: false };
+  const corpus = [
+    ...["A", "B", "C"].map((s) => file(`core/commonMain/src/k/${s}.kt`, "kotlin", plain)),
+    ...["A", "B"].map((s) => file(`core/commonTest/src/k/${s}Test.kt`, "kotlin", junit)),
+    ...["Fake", "Stub", "Data"].map((s) => file(`core/commonTest/src/k/${s}.kt`, "kotlin", plain)),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const at = (dir) => rootFacts({ path: dir, files: corpus.filter((f) => f.rel.startsWith(`${dir}/`)) }, indexes);
+  assert.equal(at("core/commonTest/src/k").companions, undefined);
+  assert.deepEqual(at("core/commonMain/src/k").companions, { with: 2, of: 3, root: "core/commonTest/src/k", ext: ".kt" });
+});
+
+test("a Rust file holding its own tests has its test, and one holding none does not", () => {
+  const plain = { testRunner: null, testCalls: false };
+  const inline = { ...plain, inlineTests: true };
+  const corpus = [
+    file("crates/cli/src/escape.rs", "rust", inline),
+    file("crates/cli/src/human.rs", "rust", inline),
+    file("crates/cli/src/lib.rs", "rust", plain),
+    file("tests/feature.rs", "rust", { testRunner: "cargo test", testCalls: true }),
+  ];
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  // The file is its own test, so it is counted as tested and never as a test file.
+  assert.deepEqual(facts.tests, [{ runner: "cargo test", root: "tests", files: 1, under: 1 }]);
+  assert.deepEqual(facts.roots[0].companions, { with: 2, of: 3, root: null, ext: ".rs" });
+});

@@ -112,3 +112,99 @@ export const RUNNER_LABELS = { cypress: "Cypress", rspec: "RSpec" };
 // The runner nothing named. "4 test files specs" is not a phrase, so this one
 // carries its own noun and never the word specs.
 export const UNNAMED_RUNNER = "test files";
+
+// Maven's failsafe suffix is capitals alone, so the word before it has to end
+// in lower case for it to be a suffix at all: `FooIT`, never `EXIT`.
+const JVM_NAMES = { camel: ["Tests", "Test", "IT"] };
+
+/**
+ * How each language tree-sitter reads names a test file, and what the name
+ * says it covers. One entry per family and read inside it only: a Go test is
+ * no test of a Python file that shares its stem.
+ *
+ * Measured over three repositories per language. `alone` is a name the
+ * language's own tool collects by. Go builds a `_test.go` file under `go test`
+ * and nowhere else: 578 files, 566 holding a case and the other 12 helpers no
+ * build ships. pytest collects `test_*.py`: 1,180 files, 1,172 holding a case.
+ * `_test.py` is the other half of pytest's default and no measured repository
+ * writes one, so it is here on pytest's word.
+ *
+ * A CamelCase suffix is a word a source file wears in earnest, junit's own
+ * `RepeatedTest.java` and Laravel's `UnitTest.php` among them, so it names a
+ * test only under a test tree, the way `_spec.rb` does: of 3,691 files so
+ * named, 17 sit outside every test tree and 9 of those are no test. `Spec` is
+ * absent: two files in the 21 repositories end in it and neither is a test.
+ * `TestCase` is what a base class is called, 69 files and 24 with no case.
+ *
+ * Rust has no name. cargo collects by directory, and a file's own unit tests
+ * sit inside it.
+ */
+export const FAMILY_TEST_NAMES = {
+  python: { prefixes: ["test_"], suffixes: ["_test"], alone: true },
+  php: { camel: ["Test"] },
+  go: { suffixes: ["_test"], alone: true },
+  java: JVM_NAMES,
+  csharp: { camel: ["Tests", "Test"] },
+  rust: {},
+  kotlin: JVM_NAMES,
+};
+
+// A suffix holding a lower-case letter starts a word with its own capital.
+const endsAWord = (before, suffix) => before !== "" && (/\p{Ll}/u.test(suffix) || /[\p{Ll}\d]$/u.test(before));
+
+/**
+ * The stem a test file's name says it covers, or null where the name is not a
+ * test's in this family: `FooTest` covers `Foo` in Java and nothing in Python.
+ */
+export function coveredStem(stem, family) {
+  const names = FAMILY_TEST_NAMES[family];
+  if (!names) return null;
+  for (const prefix of names.prefixes ?? []) {
+    if (stem.length > prefix.length && stem.startsWith(prefix)) return stem.slice(prefix.length);
+  }
+  for (const suffix of names.suffixes ?? []) {
+    if (stem.length > suffix.length && stem.endsWith(suffix)) return stem.slice(0, -suffix.length);
+  }
+  for (const suffix of names.camel ?? []) {
+    if (stem.endsWith(suffix) && endsAWord(stem.slice(0, -suffix.length), suffix)) return stem.slice(0, -suffix.length);
+  }
+  return null;
+}
+
+// A Gradle source set, `commonTest` beside `commonMain`, and the directory Maven and Gradle root a package at.
+const JVM_TREES = { test: /^[a-z][A-Za-z]*Test$/, source: /^[a-z][A-Za-z]*Main$/, packagesUnder: new Set(["java", "kotlin"]) };
+
+/**
+ * What a family calls the two halves of its own split, beside the names every
+ * family shares. `test` marks the test half and `source` the other; a whole
+ * segment either matches drops out of a mirror, and a suffix is cut off it.
+ * `packagesUnder` names the directory a package path starts below: what
+ * follows `src/main/java` is the same on both halves and in every module, so
+ * a mirror compares that and nothing above it.
+ *
+ * Measured. okhttp and kotlinx.serialization keep 500 files under a
+ * `<set>Test` directory, 402 of them holding cases. All 23 .NET test projects in three repositories are named for
+ * the project they cover with a dotted word ending in `Tests`, `Serilog.Tests`
+ * beside `Serilog`. composer files its tests under the `Test` namespace its
+ * classes declare, `tests/Composer/Test/Util` for `src/Composer/Util`.
+ */
+export const FAMILY_TREES = {
+  java: JVM_TREES,
+  kotlin: JVM_TREES,
+  csharp: { test: /\.[A-Za-z]*Tests$/ },
+  php: { test: /^Test$/ },
+};
+
+/** Whether a directory name puts what is under it in a test tree, for a file of this family. */
+export const isTestTree = (segment, family = null) =>
+  TEST_TREES.has(segment) || FAMILY_TREES[family]?.test.test(segment) === true;
+
+/**
+ * The directory a family's packaging puts its top-level package under, which
+ * no import spells: `src/flask/cli.py` is `flask.cli`. Read where a flat test
+ * directory answers a package at the top of the tree, and nowhere else.
+ *
+ * Python only, on one repository of the three measured: flask keeps its
+ * package there and read 0 of 24 with 9 of its files answered by name.
+ */
+export const PACKAGE_SHELL = { python: "src" };

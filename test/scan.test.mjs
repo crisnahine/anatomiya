@@ -1506,3 +1506,98 @@ test("a claim names only the extensions its row was asked of, and a row asked of
   assert.match(text("src/panel"), /^an event handler prop is given [^,]+, [^,]+, in \.tsx files: /m);
   assert.doesNotMatch(text("src/hooks"), /event handler prop|^\s*, in /m);
 });
+
+// One small repository per language, in the layout that language's own
+// repositories were measured to use: three sources, two of them tested.
+const SEVEN = {
+  python: {
+    runner: "pytest",
+    source: (s) => [`src/shop/${s}.py`, `def ${s}():\n    return 1\n`],
+    test: (s) => [`tests/test_${s}.py`, `from shop.${s} import ${s}\n\n\ndef test_${s}():\n    assert ${s}() == 1\n`],
+  },
+  php: {
+    runner: "phpunit",
+    source: (s) => [`src/Shop/${cap(s)}.php`, `<?php\n\nnamespace Shop;\n\nclass ${cap(s)}\n{\n}\n`],
+    test: (s) => [
+      `tests/Shop/${cap(s)}Test.php`,
+      `<?php\n\nnamespace Shop\\Tests;\n\nclass ${cap(s)}Test extends TestCase\n{\n    public function testRuns(): void\n    {\n    }\n}\n`,
+    ],
+  },
+  go: {
+    runner: "go test",
+    source: (s) => [`shop/${s}.go`, `package shop\n\nfunc ${cap(s)}() int {\n\treturn 1\n}\n`],
+    test: (s) => [`shop/${s}_test.go`, `package shop\n\nimport "testing"\n\nfunc Test${cap(s)}(t *testing.T) {\n}\n`],
+  },
+  java: {
+    runner: "junit",
+    source: (s) => [`src/main/java/shop/${cap(s)}.java`, `package shop;\n\nclass ${cap(s)} {\n}\n`],
+    test: (s) => [
+      `src/test/java/shop/${cap(s)}Test.java`,
+      `package shop;\n\nimport org.junit.jupiter.api.Test;\n\nclass ${cap(s)}Test {\n    @Test\n    void runs() {}\n}\n`,
+    ],
+  },
+  csharp: {
+    runner: "xunit",
+    source: (s) => [`src/Shop/${cap(s)}.cs`, `namespace Shop;\n\npublic class ${cap(s)}\n{\n}\n`],
+    test: (s) => [`test/Shop.Tests/${cap(s)}Tests.cs`, `namespace Shop.Tests;\n\npublic class ${cap(s)}Tests\n{\n    [Fact]\n    public void Runs() {}\n}\n`],
+  },
+  kotlin: {
+    runner: "kotlin.test",
+    source: (s) => [`shop/commonMain/src/shop/${cap(s)}.kt`, `package shop\n\nclass ${cap(s)}\n`],
+    test: (s) => [
+      `shop/commonTest/src/shop/${cap(s)}Test.kt`,
+      `package shop\n\nimport kotlin.test.Test\n\nclass ${cap(s)}Test {\n    @Test\n    fun runs() {\n    }\n}\n`,
+    ],
+  },
+};
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+
+for (const [lang, { runner, source, test: spec }] of Object.entries(SEVEN)) {
+  test(`${lang}: a scan counts the tests by their runner and the sources that have one of their name`, async (t) => {
+    const dir = repo(t, (d, { git, write }) => {
+      for (const s of ["cart", "order", "price"]) write(...source(s));
+      for (const s of ["cart", "order"]) write(...spec(s));
+      git("add", "-A");
+      git("commit", "-q", "-m", "init");
+    });
+
+    const result = await scan(dir);
+    assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [[runner, 2]]);
+    const companions = result.layout.roots.map((r) => r.companions).filter(Boolean);
+    assert.deepEqual(companions.map((c) => [c.with, c.of]), [[2, 3]], JSON.stringify(result.layout.roots));
+    const overview = renderOverview(result, { uncovered: 0 });
+    assert.match(overview, new RegExp(`^- tests: 2 ${runner}.*; 2 of 3 `, "m"), overview);
+  });
+}
+
+test("rust: a scan counts a file that holds its own tests as tested, and only cargo's directory as test files", async (t) => {
+  const inline = (s) => `pub fn ${s}() -> i64 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn runs() {\n        assert_eq!(${s}(), 1);\n    }\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["cart", "order"]) write(`src/${s}.rs`, inline(s));
+    write("src/price.rs", "pub fn price() -> i64 {\n    1\n}\n");
+    write("tests/checkout.rs", "#[test]\nfn pays() {}\n");
+    write("tests/refund.rs", "#[test]\nfn refunds() {}\n");
+    write("tests/util.rs", "pub fn setup() {}\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [["cargo test", 2]]);
+  const overview = renderOverview(result, { uncovered: 0 });
+  assert.match(overview, /^- tests: 2 cargo test.*; 2 of 3 /m, overview);
+});
+
+test("a Go test beside a Python file of its stem is no test of the Python file", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["cart", "order", "price"]) write(`shop/${s}.py`, `def ${s}():\n    return 1\n`);
+    write("shop/cart_test.go", 'package shop\n\nimport "testing"\n\nfunc TestCart(t *testing.T) {\n}\n');
+    write("shop/order_test.go", 'package shop\n\nimport "testing"\n\nfunc TestOrder(t *testing.T) {\n}\n');
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const [shop] = result.layout.roots;
+  assert.deepEqual([shop.companions.with, shop.companions.of, shop.companions.ext], [0, 3, ".py"]);
+});

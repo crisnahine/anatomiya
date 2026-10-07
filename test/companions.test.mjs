@@ -872,3 +872,109 @@ test("a component with a same-stem test in an unrelated directory reads as a .ts
   assert.deepEqual(apart("tsx"), { with: 0, of: 1, root: null });
   assert.deepEqual(apart("vue"), apart("tsx"));
 });
+
+test("each of the seven languages pairs a test with the file its own spelling names", () => {
+  const pairs = [
+    ["pkg/auth.go", "pkg/auth_test.go", "pkg"],
+    ["fastapi/routing.py", "tests/test_routing.py", "fastapi"],
+    ["app/models/user.py", "tests/models/test_user.py", "app/models"],
+    ["Slim/Routing/Route.php", "tests/Routing/RouteTest.php", "Slim/Routing"],
+    ["src/Composer/Util/Git.php", "tests/Composer/Test/Util/GitTest.php", "src/Composer/Util"],
+    ["src/main/java/org/a/StringUtils.java", "src/test/java/org/a/StringUtilsTest.java", "src/main/java/org/a"],
+    ["m/src/main/java/org/a/OrFilter.java", "m/src/test/java/org/a/OrFilterTests.java", "m/src/main/java/org/a"],
+    ["m/src/main/java/org/a/Graal.java", "m/src/test/java/org/a/GraalIT.java", "m/src/main/java/org/a"],
+    ["core/commonMain/src/k/Tuples.kt", "core/commonTest/src/k/TuplesTest.kt", "core/commonMain/src/k"],
+    ["core/commonMain/src/k/Tuples.kt", "core/jvmTest/src/k/TuplesTest.kt", "core/commonMain/src/k"],
+    ["okcurl/src/main/kotlin/okhttp3/curl/Main.kt", "okcurl/src/test/kotlin/okhttp3/curl/MainTest.kt", "okcurl/src/main/kotlin/okhttp3/curl"],
+    ["src/Serilog/Core/Logger.cs", "test/Serilog.Tests/Core/LoggerTests.cs", "src/Serilog/Core"],
+    ["Src/Newtonsoft.Json/Bson/BsonReader.cs", "Src/Newtonsoft.Json.Tests/Bson/BsonReaderTests.cs", "Src/Newtonsoft.Json/Bson"],
+    ["Jellyfin.Api/Auth/Handler.cs", "tests/Jellyfin.Api.Tests/Auth/HandlerTest.cs", "Jellyfin.Api/Auth"],
+    ["tokio-util/src/codec/framed.rs", "tokio-util/tests/codec/framed.rs", "tokio-util/src/codec"],
+  ];
+  for (const [source, spec, root] of pairs) {
+    assert.equal(namesakeCompanions([file(source)], [file(spec)], root).with, 1, `${spec} covers ${source}`);
+  }
+});
+
+test("a test in another directory shape, or wearing another family's spelling, covers nothing", () => {
+  const strangers = [
+    // The same stem in a package the test does not sit in.
+    ["src/main/java/org/a/StringUtils.java", "src/test/java/org/b/StringUtilsTest.java", "src/main/java/org/a"],
+    ["src/Serilog/Core/Logger.cs", "test/Serilog.Tests/Events/LoggerTests.cs", "src/Serilog/Core"],
+    ["src/Composer/Util/Git.php", "tests/Composer/Test/Json/GitTest.php", "src/Composer/Util"],
+    // A spelling the family does not have.
+    ["pkg/auth.go", "pkg/test_auth.go", "pkg"],
+    ["pkg/auth.go", "pkg/AuthTest.go", "pkg"],
+    ["src/main/java/org/a/Foo.java", "src/test/java/org/a/FooSpec.java", "src/main/java/org/a"],
+    ["src/main/java/org/a/Foo.java", "src/test/java/org/a/Foo_test.java", "src/main/java/org/a"],
+    ["src/main/java/org/a/Con.java", "src/test/java/org/a/Contest.java", "src/main/java/org/a"],
+    ["src/main/java/org/a/Aud.java", "src/test/java/org/a/Audit.java", "src/main/java/org/a"],
+    ["src/Serilog/Core/Logger.cs", "test/Serilog.Tests/Core/LoggerIT.cs", "src/Serilog/Core"],
+    ["fastapi/routing.py", "tests/RoutingTest.py", "fastapi"],
+    // A Gradle source set is only a tree word for the JVM.
+    ["core/commonMain/src/k/tuples.py", "core/commonTest/src/k/test_tuples.py", "core/commonMain/src/k"],
+  ];
+  for (const [source, spec, root] of strangers) {
+    assert.equal(namesakeCompanions([file(source)], [file(spec)], root).with, 0, `${spec} does not cover ${source}`);
+  }
+});
+
+test("a test of one of the seven languages is no namesake of a file in another", () => {
+  const crossed = [
+    ["pkg/auth.py", "pkg/auth_test.go"],
+    ["pkg/auth.go", "pkg/test_auth.py"],
+    ["pkg/auth.go", "pkg/auth_test.py"],
+    ["pkg/Auth.java", "pkg/AuthTest.kt"],
+    ["pkg/Auth.kt", "pkg/AuthTest.java"],
+    ["pkg/Auth.cs", "pkg/AuthTest.java"],
+    ["pkg/auth.rb", "pkg/auth_test.go"],
+    ["pkg/auth.ts", "pkg/auth_test.go"],
+    ["pkg/auth.go", "pkg/auth_test.rb"],
+    ["pkg/auth.rs", "pkg/auth_test.go"],
+  ];
+  for (const [source, spec] of crossed) {
+    assert.equal(namesakeCompanions([file(source)], [file(spec)], "pkg").with, 0, `${spec} and ${source}`);
+  }
+});
+
+test("a family's own test tree names the tree a mirror crossed", () => {
+  const sources = ["BsonReader", "BsonWriter"].map((s) => file(`Src/Newtonsoft.Json/Bson/${s}.cs`));
+  const tests = ["BsonReader", "BsonWriter"].map((s) => file(`Src/Newtonsoft.Json.Tests/Bson/${s}Tests.cs`));
+  assert.deepEqual(namesakeCompanions(sources, tests, "Src"), { with: 2, of: 2, root: "Src/Newtonsoft.Json.Tests" });
+  // And a Gradle source set does, for the JVM.
+  const common = ["Tuples", "Tagged"].map((s) => file(`core/commonMain/src/k/${s}.kt`));
+  const jvm = ["Tuples", "Tagged"].map((s) => file(`core/jvmTest/src/k/${s}Test.kt`));
+  assert.deepEqual(namesakeCompanions(common, jvm, "core"), { with: 2, of: 2, root: "core/jvmTest" });
+});
+
+test("a Python package under src is at the top of the tree its tests are at the top of", () => {
+  // flask: `src/flask/cli.py` is `flask.cli` to every import, and `tests/test_cli.py` covers it.
+  const sources = ["cli", "config", "helpers"].map((s) => file(`src/flask/${s}.py`));
+  const tests = ["cli", "config"].map((s) => file(`tests/test_${s}.py`));
+  assert.deepEqual(namesakeCompanions(sources, tests, "src/flask"), { with: 2, of: 3, root: "tests" });
+  // One directory deeper is a subpackage, and a flat test of the same stem says nothing about it.
+  assert.equal(namesakeCompanions([file("src/flask/json/cli.py")], tests, "src/flask/json").with, 0);
+  // The shell is Python packaging's, and no other family's.
+  assert.equal(namesakeCompanions([file("src/flask/cli.rb")], [file("tests/cli_test.rb")], "src/flask").with, 0);
+  assert.equal(namesakeCompanions([file("src/flask/cli.ts")], [file("tests/cli.test.ts")], "src/flask").with, 0);
+});
+
+test("a Java or Kotlin test covers the class of its package, whatever the source set or module is called", () => {
+  // okhttp names a source set `commonJvmAndroid`, and junit keeps a module's tests in the module beside it.
+  const pairs = [
+    ["okhttp/src/commonJvmAndroid/kotlin/okhttp3/Cache.kt", "okhttp/src/jvmTest/kotlin/okhttp3/CacheTest.kt", "okhttp/src/commonJvmAndroid/kotlin/okhttp3"],
+    ["junit-jupiter-api/src/main/java/org/junit/jupiter/api/Assumptions.java", "jupiter-tests/src/test/java/org/junit/jupiter/api/AssumptionsTests.java", "junit-jupiter-api/src/main/java/org/junit/jupiter/api"],
+    ["gson/src/main/java/com/google/gson/Gson.java", "gson/src/test/java/com/google/gson/GsonTest.java", "gson/src/main"],
+    ["gson/src/main/java/com/google/gson/Gson.java", "gson/src/test/java/com/google/gson/GsonTest.java", "gson"],
+    // fastlane writes a package as one dotted directory on one side and a directory per name on the other.
+    ["lib/src/main/java/tools.fastlane.screengrab/locale/LocaleUtil.java", "lib/src/test/java/tools/fastlane/screengrab/locale/LocaleUtilTest.java", "lib"],
+  ];
+  for (const [source, spec, root] of pairs) {
+    assert.equal(namesakeCompanions([file(source)], [file(spec)], root).with, 1, `${spec} covers ${source} at ${root}`);
+  }
+  // Another package is another class, in the same module or out of it.
+  const other = file("jupiter-tests/src/test/java/org/junit/jupiter/engine/AssumptionsTests.java");
+  assert.equal(namesakeCompanions([file(pairs[1][0])], [other], pairs[1][2]).with, 0);
+  // The source root is the JVM's, and a Python file under a `java` directory is not in a package.
+  assert.equal(namesakeCompanions([file("a/src/x/java/p/cart.py")], [file("b/src/y/java/p/test_cart.py")], "a/src/x/java/p").with, 0);
+});
