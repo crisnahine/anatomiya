@@ -15,6 +15,7 @@ import {
   FAMILY_TEST_NAMES,
   FAMILY_TREES,
   FEATURE_TREES,
+  PACKAGE_SHELL,
   coveredStem,
   isTestTree,
   pairedWith,
@@ -165,6 +166,8 @@ test("a test tree has the names every family shares, and the ones its own family
   assert.ok(!isTestTree("Serilog", "csharp"));
   assert.ok(!isTestTree("Serilog.Testing", "csharp"));
   assert.ok(isTestTree("Test", "php"));
+  // The namespace directory is singular: composer's is `tests/Composer/Test`, and no measured repository writes `Tests`.
+  assert.ok(!isTestTree("Tests", "php"));
   assert.ok(!isTestTree("Test", "csharp"));
   assert.deepEqual(Object.keys(FAMILY_TREES).sort(), ["csharp", "java", "kotlin", "php"]);
 });
@@ -219,4 +222,21 @@ test("a test project or tree is paired with the project it is named for or sits 
   assert.ok(pairedWith("packages/mail/tests/Unit", "php")("packages/mail/src"));
   assert.ok(!pairedWith("packages/mail/tests/Unit", "php")("packages/queue/src"));
   assert.equal(pairedWith("src/Illuminate/Testing", "php"), null);
+});
+
+test("Java and Kotlin: a Main source set and the package root are the words a mirror reads out of a path", () => {
+  for (const family of ["java", "kotlin"]) {
+    const trees = FAMILY_TREES[family];
+    for (const set of ["commonMain", "jvmMain", "androidMain"]) assert.ok(trees.source.test(set), `${family} ${set}`);
+    for (const not of ["main", "Main", "commonTest", "domain", "commonJvmAndroid"]) assert.ok(!trees.source.test(not), `${family} ${not}`);
+    assert.deepEqual([...trees.packagesUnder].sort(), ["java", "kotlin"], family);
+  }
+  for (const family of ["csharp", "php"]) {
+    assert.equal(FAMILY_TREES[family].source, undefined, family);
+    assert.equal(FAMILY_TREES[family].packagesUnder, undefined, family);
+  }
+});
+
+test("Python's packaging shell is src, and no other family has one", () => {
+  assert.deepEqual(PACKAGE_SHELL, { python: "src" });
 });

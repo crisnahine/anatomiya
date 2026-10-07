@@ -1420,7 +1420,7 @@ tool collects by, which is the only place a path is read:
 
 | Language | The path that makes a named function a case | Measured |
 |---|---|---|
-| Go | the file is `_test.go`, and nothing else is asked | 11 files in caddy and hugo declare `func Test` or `func Fuzz` outside one and `go test` runs none |
+| Go | the file is `_test.go`, and nothing else is asked | 10 files in caddy and hugo declare `func Test` or `func Fuzz` outside one and `go test` runs none |
 | Python | the file is `test_*.py` or `*_test.py`, or sits under a test tree | the ordinary pytest file imports nothing from pytest: fastapi went from 289 files read as tests to 519, django from 179 to 854 |
 | PHP | the file is `*Test.php` under a test tree | a class under `tests` that is not so named is a fixture PHPUnit never loads |
 | Rust | the file is under a `tests` directory, or is a `tests.rs` | see below |
@@ -1436,10 +1436,12 @@ and `test(...)` at file level count under a test tree only.
 Rust is the one language whose tests mostly sit in the file they test. cargo builds every `.rs`
 directly in a crate's `tests` directory as an integration test, whatever it holds, so such a file is
 a test by place: a crate is a directory holding a `Cargo.toml` or a `src`. ripgrep declares 349 of
-its 365 cases with a macro of its own, `rgtest!`, in ten files directly under `tests`, and reading
-them by their attributes alone printed `3 cargo test specs under crates`. A file deeper down,
-`tests/common/mod.rs` or `tests/ui/*.rs`, is a module those targets include or a fixture, and is a
-test only where its own `#[test]` says so: serde keeps 118 compile-fail sources under `tests/ui`.
+its 365 cases with a macro of its own, `rgtest!`, 333 of them in six of the ten files directly
+under `tests`, and reading those by their attributes alone printed `3 cargo test specs under
+crates` where the line is `15 cargo test specs`. A file deeper down, `tests/common/mod.rs` or
+`tests/ui/*.rs`, is a module those targets include or a fixture, and is a test only where its own
+`#[test]` says so: serde keeps 118 compile-fail sources under `tests/ui`, and ripgrep's two
+`tests/index` files, 16 `rgtest!` cases, read as no test.
 Under any other `tests` directory, and in a `tests.rs`, a `#[test]` makes a test file wherever in
 the file it is. Anywhere else the same attribute is the file's own unit tests, in a `mod tests` or
 beside the code, and the file stays a source file carrying `inlineTests`: ripgrep holds 34 such
@@ -1454,8 +1456,8 @@ non-test file wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` 
 own `software_spec_spec.rb` under `test/`.
 The seven languages above each have a name of their own and answer by it alone, never by the forms
 here or the two rules below: a Go `_test.go` and a Python `test_*.py` or `*_test.py` on the name,
-because the compiler and pytest collect by it (578 Go files, 566 holding a case; 1,180 Python
-files, 1,172 holding one); a PHP `*Test.php`, a Java or Kotlin `*Test`, `*Tests` or `*IT`, and a C#
+because the compiler and pytest collect by it (578 Go files, 567 holding a case; 1,180 Python
+files, 1,168 holding one); a PHP `*Test.php`, a Java or Kotlin `*Test`, `*Tests` or `*IT`, and a C#
 `*Tests` or `*Test` where a test tree above it agrees, because a source file wears those words too
 (junit's own `RepeatedTest.java`, Laravel's `UnitTest.php`). Of 3,691 files so named in twelve
 repositories, 17 sit outside every test tree and 9 of those are not tests; 141 sit inside one with
