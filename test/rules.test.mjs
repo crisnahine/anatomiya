@@ -19,6 +19,7 @@ import {
   resolveTargetDir,
   spelledOtherwise,
   targetState,
+  targetStatus,
 } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
@@ -346,6 +347,66 @@ test("on: our overview beside somebody's file spelled in another case", (t) => {
       assert.equal(readdirSync(at).length, 2, "the control: two entries");
       assert.equal(targetState(join(volume.dir, target.id), target), "on", target.id);
     }
+  }
+});
+
+/* --- what a person does about a target that could not be read --- */
+
+const said = (root, target) => {
+  const { state, reason, remedy } = targetStatus(root, target);
+  return { state, reason, remedy };
+};
+const unknown = (reason, remedy) => ({ state: "unknown", reason, remedy });
+
+test("an unknown target says what is in the way and what to do about it", (t) => {
+  const dir = workspace(t);
+  assert.deepEqual(said(join(dir, "gone"), cursor), unknown("the repository root could not be read", "make it readable"));
+  put(dir, ".cursor", "a file");
+  assert.deepEqual(said(dir, cursor), unknown(".cursor is not a directory", "make .cursor a directory of this repository"));
+  put(dir, ".github/instructions", "a file");
+  assert.deepEqual(said(dir, copilot), unknown(".github/instructions is not a directory", "make .github/instructions a directory of this repository"));
+  rmSync(join(dir, ".cursor"));
+  mkdirSync(join(dir, ".cursor/rules", overviewName(cursor)), { recursive: true });
+  const overview = `.cursor/rules/${overviewName(cursor)}`;
+  assert.deepEqual(said(dir, cursor), unknown(`${overview} is not a file`, `move or delete ${overview}`));
+  assert.deepEqual(said(join(dir, "gone"), claude), { state: "on", reason: undefined, remedy: undefined }, "and one that is known says neither");
+});
+
+test("an unknown target behind a link says what to do about the link", needsSymlinks, (t) => {
+  const dir = workspace(t);
+  mkdirSync(join(dir, "shared/rules"), { recursive: true });
+  symlinkSync(join(dir, "shared"), join(dir, ".cursor"));
+  assert.deepEqual(said(dir, cursor), unknown(".cursor is a link", "make .cursor a directory of this repository"));
+  rmSync(join(dir, ".cursor"));
+  mkdirSync(join(dir, ".cursor"));
+  symlinkSync(join(dir, "shared/rules"), join(dir, ".cursor/rules"));
+  assert.deepEqual(said(dir, cursor), unknown(".cursor/rules is a link", "make .cursor/rules a directory of this repository"));
+  rmSync(join(dir, ".cursor/rules"));
+  put(dir, ".cursor/rules/team.mdc", HAND);
+  const overview = `.cursor/rules/${overviewName(cursor)}`;
+  symlinkSync("team.mdc", join(dir, overview));
+  assert.deepEqual(said(dir, cursor), unknown(`${overview} is a link`, `move or delete ${overview}`));
+  mkdirSync(join(dir, ".github/instructions"), { recursive: true });
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync(join(dir, ".github/instructions"), join(dir, ".claude/rules"));
+  assert.deepEqual(
+    said(dir, copilot),
+    unknown(".claude/rules is a link into the same place as .github/instructions", "point .claude/rules somewhere else")
+  );
+});
+
+test("an unknown target nobody may read says to make it readable", needsUnreadableDirs, (t) => {
+  const dir = workspace(t);
+  const overview = `.cursor/rules/${overviewName(cursor)}`;
+  put(dir, overview, OWNED);
+  chmodSync(join(dir, overview), 0o000);
+  assert.deepEqual(said(dir, cursor), unknown(`${overview} could not be read`, "make it readable"));
+  chmodSync(join(dir, overview), 0o644);
+  chmodSync(join(dir, ".cursor"), 0o000);
+  try {
+    assert.deepEqual(said(dir, cursor), unknown(".cursor/rules could not be read", "make it readable"));
+  } finally {
+    chmodSync(join(dir, ".cursor"), 0o755);
   }
 });
 

@@ -2352,7 +2352,7 @@ test("a link at .github refuses the scan before any directory is touched", needs
   for (const dryRun of [true, false]) {
     assert.throws(
       () => writeMap(result(dir, [area("src/services")]), { dryRun, targets: ALL }),
-      (err) => err.message === ".github is a link, so .github/instructions could not be written and nothing was written anywhere: replace the link with a directory and scan again",
+      (err) => err.message === ".github is a link, so .github/instructions could not be written and nothing was written anywhere: make .github a directory of this repository and scan again",
       dryRun ? "dry run" : "real write"
     );
   }
@@ -2422,7 +2422,7 @@ test("a target in an unknown state is left exactly as it was, and the plan says 
           () => writeMap(result(dir, [a]), { dryRun, targets }),
           (err) =>
             err.message ===
-            `.cursor/rules/${overviewName(cursor)} could not be read, so .cursor/rules could not be turned off and nothing was written anywhere: fix its permissions and scan again`,
+            `.cursor/rules/${overviewName(cursor)} could not be read, so .cursor/rules could not be turned off and nothing was written anywhere: make it readable and scan again`,
           JSON.stringify(targets)
         );
       }

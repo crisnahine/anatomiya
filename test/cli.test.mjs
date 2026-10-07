@@ -596,7 +596,7 @@ test("a named target that cannot be written refuses the scan in the writer's own
   assert.equal(code, 1);
   assert.equal(
     stderr,
-    "anatomiya: .cursor is a link, so .cursor/rules could not be written and nothing was written anywhere: replace the link with a directory and scan again\n"
+    "anatomiya: .cursor is a link, so .cursor/rules could not be written and nothing was written anywhere: make .cursor a directory of this repository and scan again\n"
   );
   assert.equal(stdout, "");
   assert.equal(existsSync(join(repo, ".claude")), false, "the Claude files included");
@@ -618,11 +618,36 @@ test("turning off a target that cannot be read refuses the scan and says why", n
   assert.equal(code, 1);
   assert.equal(
     stderr,
-    "anatomiya: .github is a link, so .github/instructions could not be turned off and nothing was written anywhere: replace the link with a directory and scan again\n"
+    "anatomiya: .github is a link, so .github/instructions could not be turned off and nothing was written anywhere: make .github a directory of this repository and scan again\n"
   );
   assert.equal(stdout, "");
   assert.deepEqual(ruleFiles(repo), rules);
   assert.deepEqual(readdirSync(elsewhere), []);
+});
+
+test("a target that cannot be read is given one remedy, refused or summarised, and the record does not carry it", needsSymlinks, (t) => {
+  const repo = repoWithSource(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan", "--targets", "copilot");
+  rmSync(join(repo, ".github"), { recursive: true });
+  symlinkSync(elsewhere, join(repo, ".github"));
+  const remedy = "make .github a directory of this repository";
+  const why = ".github is a link";
+
+  const plain = ran("scan", repo);
+  assert.equal(plain.code, 0);
+  assert.ok(
+    plain.stdout.split("\n").includes(`.github/instructions could not be read (${why}), so nothing there was written or removed: ${remedy}, then scan again`),
+    plain.stdout
+  );
+  for (const [targets, verb] of [["claude,copilot", "written"], ["claude", "turned off"]]) {
+    const { code, stderr } = ran("scan", repo, "--targets", targets);
+    assert.equal(code, 1, targets);
+    assert.equal(stderr, `anatomiya: ${why}, so .github/instructions could not be ${verb} and nothing was written anywhere: ${remedy} and scan again\n`);
+  }
+  const record = JSON.parse(ran("scan", repo, "--format", "json").stdout);
+  assert.deepEqual(record.targets.copilot, { state: "unknown", dir: ".github/instructions", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: why });
 });
 
 test("a repository that never turned a target on reads the same whatever sits in the other tools' directories", needsSymlinks, (t) => {

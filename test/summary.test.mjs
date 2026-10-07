@@ -772,10 +772,14 @@ test("a file that could not be read in a target this scan wrote is named under t
 });
 
 test("a target that was on and could not be read says why, and one never written says nothing", () => {
-  const was = scanSummary(result(), plan(others({ state: "unknown", reason: ".cursor is a link", listed: false, names: ["anatomiya-overview.mdc"] })));
-  const never = scanSummary(result(), plan(others({ state: "unknown", reason: ".cursor is a link", listed: false })));
+  const unread = { state: "unknown", reason: ".cursor is a link", remedy: "make .cursor a directory of this repository", listed: false };
+  const was = scanSummary(result(), plan(others({ ...unread, names: ["anatomiya-overview.mdc"] })));
+  const never = scanSummary(result(), plan(others(unread)));
 
   assert.deepEqual(was.targets, {
+    cursor: { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: ".cursor is a link", remedy: unread.remedy },
+  });
+  assert.deepEqual(JSON.parse(scanJson(was)).targets, {
     cursor: { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: ".cursor is a link" },
   });
   assert.deepEqual(scanLines(was).slice(-3), [
@@ -786,36 +790,19 @@ test("a target that was on and could not be read says why, and one never written
   assert.deepEqual(scanLines(never), BEFORE_LINES);
 });
 
-test("a target that could not be read says what to do about each thing that can be in the way", () => {
-  // Every reason `targetStatus` gives, for both directories where the path differs.
-  const cases = [
-    [".cursor is a link", "make .cursor a directory of this repository"],
-    [".cursor/rules is a link", "make .cursor/rules a directory of this repository"],
-    [".cursor is not a directory", "make .cursor a directory of this repository"],
-    [".cursor/rules is not a directory", "make .cursor/rules a directory of this repository"],
-    [".cursor could not be read", "make it readable"],
-    ["the repository root could not be read", "make it readable"],
-    [".cursor/rules/anatomiya-overview.mdc could not be read", "make it readable"],
-    [".cursor/rules/anatomiya-overview.mdc is a link", "move or delete .cursor/rules/anatomiya-overview.mdc"],
-    [".cursor/rules/anatomiya-overview.mdc is not a file", "move or delete .cursor/rules/anatomiya-overview.mdc"],
-    [".claude/rules is a link into the same place as .cursor/rules", "point .claude/rules somewhere else"],
-  ];
-  for (const [reason, remedy] of cases) {
-    const s = scanSummary(result(), plan(others({ state: "unknown", reason, listed: false, names: ["anatomiya-overview.mdc"] })));
-    assert.ok(
-      scanLines(s).includes(`.cursor/rules could not be read (${reason}), so nothing there was written or removed: ${remedy}, then scan again`),
-      scanLines(s).join("\n")
-    );
-  }
-  const copilot = { state: "unknown", listed: false, names: ["anatomiya-overview.instructions.md"] };
-  for (const [reason, remedy] of [
-    [".github is a link", "make .github a directory of this repository"],
-    [".github/instructions/anatomiya-overview.instructions.md is not a file", "move or delete .github/instructions/anatomiya-overview.instructions.md"],
-    [".claude/rules is a link into the same place as .github/instructions", "point .claude/rules somewhere else"],
-  ]) {
-    const s = scanSummary(result(), plan(others({}, { ...copilot, reason })));
-    assert.ok(scanLines(s).includes(`${COPILOT_DIR} could not be read (${reason}), so nothing there was written or removed: ${remedy}, then scan again`), scanLines(s).join("\n"));
-  }
+test("a target that could not be read says the remedy its reason came with, and no other", () => {
+  const unread = { state: "unknown", reason: ".cursor could not be read", listed: false, names: ["anatomiya-overview.mdc"] };
+  const line = ".cursor/rules could not be read (.cursor could not be read), so nothing there was written or removed";
+  // Not one this module could have worked out from the reason.
+  const given = scanSummary(result(), plan(others({ ...unread, remedy: "ask whoever owns it" }, { ...unread, remedy: "make it readable", unreadableRules: ["anatomiya-area-0badf00d.instructions.md"] })));
+  assert.ok(scanLines(given).includes(`${line}: ask whoever owns it, then scan again`), scanLines(given).join("\n"));
+  assert.ok(scanLines(given).includes(`${COPILOT_DIR} could not be read (.cursor could not be read), so nothing there was written or removed: make it readable, then scan again`));
+
+  // A record read back carries the reason alone, so its line is the reason alone.
+  const bare = scanSummary(result(), plan(others(unread, { ...unread, unreadableRules: ["anatomiya-area-0badf00d.instructions.md"] })));
+  assert.ok(scanLines(bare).includes(line), scanLines(bare).join("\n"));
+  assert.equal(scanJson(given), scanJson(bare), "the remedy is words, and the record is not");
+  assert.ok(scanLines(JSON.parse(scanJson(given))).includes(line));
 });
 
 test("a target the scan was told to hold says nothing, whatever the record names there", () => {

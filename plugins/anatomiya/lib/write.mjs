@@ -165,7 +165,7 @@ function otherTargets(root, asked, previous, hold) {
     .map((target) => {
       const { state, reason = null, remedy } = targetStatus(root, target);
       const explicit = asked !== null;
-      if (hold.includes(target.id)) return { target, state, reason, explicit, on: false, held: true };
+      if (hold.includes(target.id)) return { target, state, reason, remedy, explicit, on: false, held: true };
       if (state !== "unknown") return { target, state, reason, explicit, on: explicit ? asked.includes(target.id) : state === "on" };
       if (asked?.includes(target.id)) {
         throw new Error(`${reason}, so ${target.dir} could not be written and nothing was written anywhere: ${remedy} and scan again`);
@@ -173,7 +173,7 @@ function otherTargets(root, asked, previous, hold) {
       if (explicit && knownNames(previous, target)?.size) {
         throw new Error(`${reason}, so ${target.dir} could not be turned off and nothing was written anywhere: ${remedy} and scan again`);
       }
-      return { target, state, reason, explicit, on: false };
+      return { target, state, reason, remedy, explicit, on: false };
     });
 }
 
@@ -331,9 +331,9 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
 }
 
 // The record goes on naming what it named, or none of it could be removed once the directory reads again.
-function leftAlone({ target, state, reason, on, held }, previous) {
+function leftAlone({ target, state, reason, remedy, on, held }, previous) {
   const none = { write: [], remove: [], foreign: [], unknown: [], replaced: [], unreadableRules: [], listed: false, unfiled: [] };
-  return { dir: target.dir, state, reason, on, ...(held ? { held } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
+  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(held ? { held } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
 }
 
 // Nobody read it, or the caller said to hold it: neither is written, cleared or turned off.

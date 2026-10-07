@@ -6,7 +6,7 @@ import { engineOf } from "./langs.mjs";
 import { whyUnread } from "./readiness.mjs";
 import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
-import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
+import { TARGETS, TARGET_IDS } from "./targets.mjs";
 
 /**
  * What a command answered, and the lines that say it.
@@ -153,7 +153,8 @@ function targetSummaries(result, plan) {
       unfiled: t.unfiled.filter((path) => stated.has(path)).length,
       foreign,
       ...(t.unreadableRules.length ? { unreadable: t.unreadableRules } : {}),
-      ...(unread ? { reason: t.reason } : {}),
+      // The remedy is for the line below, and `encodeScan` keeps it out of the record.
+      ...(unread ? { reason: t.reason, remedy: t.remedy } : {}),
     };
   }
   return out;
@@ -188,24 +189,10 @@ function targetLines(s) {
     }
     lines.push(...ruleFileLines(t.unreadable ?? [], UNREAD_ONE, UNREAD_MANY, t.dir));
     if (t.state === "unknown") {
-      const remedy = unreadRemedy(id, t);
-      lines.push(`${t.dir} could not be read (${t.reason}), so nothing there was written or removed${remedy ? `: ${remedy}, then scan again` : ""}`);
+      lines.push(`${t.dir} could not be read (${t.reason}), so nothing there was written or removed${t.remedy ? `: ${t.remedy}, then scan again` : ""}`);
     }
   }
   return lines;
-}
-
-/**
- * What a person does about a target that could not be read, from the reason
- * `targetStatus` gave. Null for a reason not known here, which then prints alone.
- */
-function unreadRemedy(id, t) {
-  const reason = String(t.reason ?? "");
-  if (reason.includes(" is a link into the same place as ")) return `point ${RULES_DIR} somewhere else`;
-  if (reason.endsWith(" could not be read")) return "make it readable";
-  const at = /^(.+) is (?:a link|not a directory|not a file)$/.exec(reason)?.[1];
-  if (at === undefined) return null;
-  return at === `${t.dir}/${overviewName(TARGETS[id])}` ? `move or delete ${at}` : `make ${at} a directory of this repository`;
 }
 
 /** The scan summary as the lines the CLI prints, in the order it prints them. */
@@ -348,7 +335,7 @@ function encodeScan(s) {
       replaced: s.rules.replaced.map(locator),
     },
     ...(s.targets
-      ? { targets: Object.fromEntries(Object.entries(s.targets).map(([id, t]) => [id, t.unreadable ? { ...t, unreadable: t.unreadable.map(locator) } : t])) }
+      ? { targets: Object.fromEntries(Object.entries(s.targets).map(([id, { remedy, ...t }]) => [id, t.unreadable ? { ...t, unreadable: t.unreadable.map(locator) } : t])) }
       : {}),
   };
 }
