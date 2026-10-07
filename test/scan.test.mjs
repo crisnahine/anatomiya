@@ -1397,3 +1397,23 @@ test("a directory of components becomes an area that counts its scripts and its 
   const lines = [...scanLines(scanSummary(result, planMap(result))), renderOverview(result, { uncovered: 0 })].join("\n");
   assert.doesNotMatch(lines, /nothing was counted in/);
 });
+
+test("a claim learned from the modules of a directory says so beside the components it was not asked of", async (t) => {
+  const caught = "try {\n  run();\n} catch (err) {\n  console.error(err);\n}\n";
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["load", "save", "list", "drop"]) {
+      write(`src/routes/${name}.ts`, `export const ${name} = 1;\n${caught}`);
+      write(`src/routes/${name}.svelte`, `<script>\n  let { data } = $props();\n${caught}</script>\n\n<p>{data}</p>\n`);
+    }
+    write("src/routes/old.js", "const old = 1;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+
+  assert.match(text, /^module-level bindings are const, in \.js and \.ts files: /m);
+  assert.match(text, /^catch blocks use the error they caught: /m, "a row asked of every file here names none");
+  assert.equal(dimension(result, "src/routes", "module_state_const").extsByLang, undefined, "the slot's shape did not move");
+});

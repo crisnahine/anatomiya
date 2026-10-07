@@ -1,11 +1,12 @@
 import { encode, encodePath } from "./encode.mjs";
-import { engineOf, MISSING_STRIPPER } from "./langs.mjs";
+import { engineOf, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
 import { whyUnread } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { globText } from "./areas.mjs";
 import { GENERATOR, listSome, LISTED, PREFIX, RULES_DIR } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
+import { byCode } from "./paths.mjs";
 
 /**
  * The line bound every generated file is held to.
@@ -94,6 +95,34 @@ const why = (d, s) =>
  * that need nothing more than this.
  */
 const claimLine = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+
+const ROW_LANGS = new Map(REGISTRY.map((d) => [d.key, d.langs]));
+
+const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]);
+
+/**
+ * The extensions a claim was counted over, where the area holds others.
+ *
+ * An area delivers on one glob for every language in it, so a claim learned
+ * from the `.ts` files of a directory reaches an agent editing the `.svelte`
+ * file beside them, where the row was never asked and the opposite may be the
+ * rule. A clause on the sentence rather than a line under it, because the
+ * sentence is what survives the budget and a line is one of forty.
+ *
+ * Widened the way `spokenIn` widens: a row asked of JSX alone is asked of a
+ * `.js` file that holds some. Read off the scan's own file list, which no
+ * record carries, so a record prints the sentence bare and takes the same
+ * number of lines.
+ */
+function scopeClause(area, key) {
+  const held = Object.entries(area.extsByLang ?? {});
+  const langs = ROW_LANGS.get(key);
+  if (!langs || held.length === 0) return "";
+  const asked = held.filter(([lang]) => spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
+  if (asked.length === 0 || asked.length === held.length) return "";
+  const exts = [...new Set(asked.flatMap(([, exts]) => exts))].sort(byCode).map((e) => encode(e));
+  return `, in ${series(exts)} files`;
+}
 
 // Keyed off the registry rather than off the record, because both readers of
 // the layout have a key and only one of them has the prose. Storing the clause
@@ -370,9 +399,10 @@ function areaBlocks(area) {
   // The clauses this file has already printed, so a sentence shared by several
   // rows costs one line rather than one per row.
   const said = new Set();
+  const sentence = (d, s) => claimLine(s.claim) + scopeClause(area, d.key);
   for (const [d, s] of directives) {
     const block = [
-      claimLine(s.claim),
+      sentence(d, s),
       // The files this dimension could have spoken about, which is what the
       // gate divided by. The area's own count is a different number wherever
       // the area holds more than one language or a file nothing was read from,
@@ -393,7 +423,7 @@ function areaBlocks(area) {
     block.push("");
     blocks.push(block);
     keys.push(d.key);
-    claims.push(claimLine(s.claim));
+    claims.push(sentence(d, s));
   }
   const stated = blocks.length;
 
@@ -436,13 +466,13 @@ function areaBlocks(area) {
   for (const [d, s] of counts) {
     blocks.push([
       (d.matchesDefault === true && s.states !== null
-        ? `${claimLine(s.claim)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
-        : `${claimLine(s.claim)}: no convention. ` +
+        ? `${sentence(d, s)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
+        : `${sentence(d, s)}: no convention. ` +
           `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s)})`) +
         partialNote(d),
     ]);
     keys.push(s.states === null ? null : d.key);
-    claims.push(s.states === null ? null : claimLine(s.claim));
+    claims.push(s.states === null ? null : sentence(d, s));
   }
 
   // Taken out of the floor as well as out of the bound, so `head + kinds + body`
