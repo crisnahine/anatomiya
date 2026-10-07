@@ -435,6 +435,8 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
   // A file holding its own tests has no other file to carry its stem, so it is
   // neither credited nor owed one, and is counted apart.
   let inline = 0;
+  // A paired match shares no path with its source, so where it votes is settled once the mirrors have voted.
+  const pairedAt = [];
   for (const f of sourceFiles) {
     if (f.facets?.inlineTests === true) {
       inline++;
@@ -490,6 +492,7 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // one inside the root. The corpus holds no case, so this changes no line it
     // prints and settles a shape it does not contain.
     let kept = null;
+    let pair = null;
     for (const t of byStem.get(stemOf(f.rel)) ?? []) {
       // Another source in the corpus is the one this test was written for, so
       // it is not evidence about this file however the two paths line up.
@@ -555,7 +558,7 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // The first candidate that names a place, not the first that matches: a
       // mirror parting on an ordinary name names none, and stopping there threw
       // away a vote the next candidate was going to cast.
-      if (whole || mirrored || paired) {
+      if (whole || mirrored) {
         const named = whole ? wholeRoot(t.dir, tail) : mirrorRoot(fDir, t.dir, family);
         if (named !== null) {
           structural = true;
@@ -564,7 +567,8 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
             break;
           }
         }
-      } else if (kept === null || (!inside(kept, rootPath) && inside(t.dir, rootPath))) kept = t.dir;
+      } else if (paired) pair = { dir: t.dir, crossed: mirrorRoot(fDir, t.dir, family) };
+      else if (kept === null || (!inside(kept, rootPath) && inside(t.dir, rootPath))) kept = t.dir;
     }
     if (!matched) continue;
     // One vote per answered source file, so the top vote and the count it is
@@ -573,7 +577,16 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     answered++;
     // Structure that named nothing has still answered, so the edge does not get
     // to name a place in its stead.
+    if (prefix === null && !structural && pair !== null) pairedAt.push(pair);
     const vote = prefix ?? (structural ? null : kept);
+    if (vote !== null) votes.set(vote, (votes.get(vote) ?? 0) + 1);
+  }
+
+  // The place the mirrored tests named, where the paired test sits inside one, and the tree it crossed otherwise:
+  // serilog's 10 paired tests are all under the `test/Serilog.Tests` its 18 mirrored ones name.
+  const named = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  for (const { dir, crossed } of pairedAt) {
+    const vote = named.find(([place]) => dir === place || dir.startsWith(`${place}/`))?.[0] ?? crossed;
     if (vote !== null) votes.set(vote, (votes.get(vote) ?? 0) + 1);
   }
 

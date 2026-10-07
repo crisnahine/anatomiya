@@ -234,8 +234,39 @@ const below = (dir, above) => {
  * `tutorial/tests/api` is paired with `tutorial/flaskr/api` and with
  * `tutorial/src/flaskr/api`. flask's `examples` read 0 of 12 with three such
  * pairs in it.
+ *
+ * The other four pair a whole project, at any depth: a .NET test project with
+ * the project its name carries, `Serilog.Tests` with `Serilog`; a Maven or
+ * Gradle `src/test`, or a `<set>Test` source set, with what sits beside it;
+ * a PHP `tests` with the `src` or `app` beside it. A `test` directory under no
+ * `src` is ktor's flat `<module>/test` and pairs with nothing.
  */
+const jvmPairing = (segments) => {
+  const at = segments.findIndex((segment, i) => JVM_TREES.test.test(segment) || (segment === "test" && segments[i - 1] === "src"));
+  if (at === -1) return null;
+  return (dir) => {
+    const own = below(dir, segments.slice(0, at));
+    return own !== null && own.length > 0 && !isTestTree(own[0], "java");
+  };
+};
+
 const PAIRINGS = {
+  csharp: (segments) => {
+    const project = segments.find((segment) => FAMILY_TREES.csharp.test.test(segment));
+    if (project === undefined) return null;
+    const covered = project.replace(FAMILY_TREES.csharp.test, "");
+    return (dir) => dir.split("/").includes(covered);
+  },
+  java: jvmPairing,
+  kotlin: jvmPairing,
+  php: (segments) => {
+    const at = segments.indexOf("tests");
+    if (at === -1) return null;
+    return (dir) => {
+      const own = below(dir, segments.slice(0, at));
+      return own !== null && (own[0] === "src" || own[0] === "app");
+    };
+  },
   python: (segments) => {
     const at = segments.findIndex((segment) => TEST_ROOTS.has(segment));
     if (at === -1) return null;

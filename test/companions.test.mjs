@@ -1010,3 +1010,38 @@ test("a Python tests directory beside a package mirrors that package", () => {
   // Python's layout, and no other family's.
   assert.equal(count([file("examples/tutorial/flaskr/auth.go")], [file("examples/tutorial/tests/auth_test.go")], "examples").with, 0);
 });
+
+test("a test in a paired project covers the one source of its stem there, at any depth", () => {
+  const count = (src, specs, root) => namesakeCompanions(src, specs, root, namesakeIndex(specs, src)).with;
+  // serilog: `test/Serilog.Tests/Core/SafeAggregateSinkTests.cs` for a class two directories further down.
+  const sink = file("src/Serilog/Core/Sinks/SafeAggregateSink.cs");
+  const sinkTests = [file("test/Serilog.Tests/Core/SafeAggregateSinkTests.cs")];
+  assert.equal(count([sink], sinkTests, "src/Serilog"), 1);
+  // Another project is not the one `Serilog.Tests` is named for.
+  assert.equal(count([file("src/Serilog.Sinks.File/Core/Sinks/SafeAggregateSink.cs")], sinkTests, "src"), 0);
+  // Two classes of one stem in the project, and the stem cannot say which: only the mirrored one is answered.
+  const two = [file("src/Serilog/Core/Logger.cs"), file("src/Serilog/Events/Logger.cs")];
+  assert.equal(count(two, [file("test/Serilog.Tests/LoggerTests.cs")], "src/Serilog"), 0);
+  assert.equal(count(two, [file("test/Serilog.Tests/Core/LoggerTests.cs")], "src/Serilog"), 1);
+
+  // gson keeps the tests of `com.google.gson.JsonArray` in the `functional` package of the same module.
+  const array = [file("gson/src/main/java/com/google/gson/JsonArray.java")];
+  assert.equal(count(array, [file("gson/src/test/java/com/google/gson/functional/JsonArrayTest.java")], "gson/src/main/java/com/google/gson"), 1);
+  assert.equal(count(array, [file("extras/src/test/java/com/google/gson/functional/JsonArrayTest.java")], "gson/src/main/java/com/google/gson"), 0);
+  // A Gradle source set pairs with the sets beside it.
+  assert.equal(count([file("core/commonMain/src/k/Json.kt")], [file("core/jvmTest/src/k/features/JsonTest.kt")], "core/commonMain/src/k"), 1);
+  // ktor's flat `<module>/test` is no pairing, and about half its stem matches are another class's.
+  assert.equal(count([file("ktor-utils/jvm/src/io/ktor/util/Pipeline.kt")], [file("ktor-utils/jvm/test/io/ktor/tests/PipelineTest.kt")], "ktor-utils"), 0);
+
+  // Laravel's `tests` beside `src`, and an application's beside `app`.
+  const seeder = [file("src/Illuminate/Database/Console/Seeds/SeederMakeCommand.php")];
+  assert.equal(count(seeder, [file("tests/Integration/Generators/SeederMakeCommandTest.php")], "src/Illuminate"), 1);
+  assert.equal(count([file("app/Models/User.php")], [file("tests/Unit/UserTest.php")], "app"), 1);
+  // Slim keeps its classes in `Slim`, which is no half of a pair.
+  assert.equal(count([file("Slim/Routing/Route.php")], [file("tests/Deep/RouteTest.php")], "Slim"), 0);
+
+  // The place is the one the mirrored tests name, where the paired test sits inside it.
+  const sources = [file("src/Serilog/Core/Pipeline.cs"), file("src/Serilog/Events/LogEvent.cs"), sink];
+  const specs = [file("test/Serilog.Tests/Core/PipelineTests.cs"), file("test/Serilog.Tests/Events/LogEventTests.cs"), ...sinkTests];
+  assert.deepEqual(namesakeCompanions(sources, specs, "src/Serilog", namesakeIndex(specs, sources)), { with: 3, of: 3, root: "test/Serilog.Tests" });
+});

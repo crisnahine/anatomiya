@@ -185,3 +185,38 @@ test("Python: a tests directory is paired with the package beside it, directory 
   assert.equal(pairedWith("examples/tutorial/flaskr", "python"), null);
   for (const family of ["js", "ruby", "go", "rust"]) assert.equal(pairedWith("examples/tutorial/tests", family), null, family);
 });
+
+test("a test project or tree is paired with the project it is named for or sits beside", () => {
+  // .NET: `Serilog.Tests` is named for `Serilog`, wherever either sits.
+  const serilog = pairedWith("test/Serilog.Tests/Core", "csharp");
+  assert.ok(serilog("src/Serilog/Core/Sinks"));
+  assert.ok(!serilog("src/Serilog.Sinks.File"));
+  assert.ok(!serilog("test/Serilog.Tests/Support"));
+  assert.ok(pairedWith("tests/Jellyfin.Api.Tests/Auth", "csharp")("Jellyfin.Api/Controllers"));
+  assert.equal(pairedWith("test/Serilog/Core", "csharp"), null);
+
+  // Maven and Gradle: `src/test` beside `src/main`, and a source set beside the others.
+  for (const family of ["java", "kotlin"]) {
+    const module = pairedWith("gson/src/test/java/com/google/gson/functional", family);
+    assert.ok(module("gson/src/main/java/com/google/gson"), family);
+    assert.ok(!module("extras/src/main/java/com/google/gson"), family);
+    assert.ok(!module("gson/src/test/java/com/google/gson"), family);
+    assert.ok(!module("gson"), family);
+    const set = pairedWith("core/jvmTest/src/k", family);
+    assert.ok(set("core/commonMain/src/k"), family);
+    assert.ok(!set("core/commonTest/src/k"), family);
+    assert.ok(!set("formats/commonMain/src/k"), family);
+    // A `test` directory under no `src` is a flat test directory.
+    assert.equal(pairedWith("ktor-utils/jvm/test/io/ktor", family), null, family);
+  }
+
+  // PHP: `tests` beside `src` or `app`.
+  const laravel = pairedWith("tests/Integration/Generators", "php");
+  assert.ok(laravel("src/Illuminate/Database/Console"));
+  assert.ok(laravel("app/Models"));
+  assert.ok(!laravel("Slim/Routing"));
+  assert.ok(!laravel("types/Cache"));
+  assert.ok(pairedWith("packages/mail/tests/Unit", "php")("packages/mail/src"));
+  assert.ok(!pairedWith("packages/mail/tests/Unit", "php")("packages/queue/src"));
+  assert.equal(pairedWith("src/Illuminate/Testing", "php"), null);
+});
