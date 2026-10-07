@@ -11,7 +11,7 @@ import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
 import { resolve as resolveBaseline, measure as measureBaseline } from "./baseline.mjs";
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
-import { baseOf, extOf } from "./paths.mjs";
+import { extOf, extOrName } from "./paths.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 
 /**
@@ -277,9 +277,9 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       baseline: measuredArea.population,
       // The same counts a root line carries, over this area's own files.
       kinds: kinds(area),
-      // For the renderer alone, which names the extensions a claim was counted
-      // over where the area holds others. Not in the record: the map is written
-      // from this object, and nothing reads the scope back.
+      // For the renderer alone, which says where an area holds files a claim's
+      // row is never asked of. Not in the record: the map is written from this
+      // object, and nothing reads the scope back.
       extsByLang: extsByLang(area.files),
       // What a new file in here would import, and what to check for before
       // writing one. Read at HEAD like the roster: both are counts, and neither
@@ -368,7 +368,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
 /** Each language's extensions among these files, and the whole name of a file that has none. */
 function extsByLang(files) {
   const out = {};
-  for (const f of files) (out[f.lang] ??= new Set()).add(extOf(f.rel).startsWith(".") ? extOf(f.rel) : baseOf(f.rel));
+  for (const f of files) (out[f.lang] ??= new Set()).add(extOrName(f.rel));
   return Object.fromEntries(Object.entries(out).map(([lang, exts]) => [lang, [...exts]]));
 }
 

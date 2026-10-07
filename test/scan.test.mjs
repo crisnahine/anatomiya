@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { renderArea, renderOverview } from "../plugins/anatomiya/lib/render.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
+import { factsJson } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
 import { globsReach } from "../plugins/anatomiya/lib/areas.mjs";
 import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
@@ -1433,5 +1434,24 @@ test("a claim learned from the modules of a directory says so beside the compone
 
   assert.match(text, /^module-level bindings are const, in \.js and \.ts files: /m);
   assert.match(text, /^catch blocks use the error they caught: /m, "a row asked of every file here names none");
-  assert.equal(dimension(result, "src/routes", "module_state_const").extsByLang, undefined, "the slot's shape did not move");
+  assert.doesNotMatch(factsJson(result), /extsByLang|askedExts/, "the record holds neither");
+});
+
+test("a claim names only the extensions its row was asked of, and a row asked of no file prints nothing", async (t) => {
+  const handler = (name) => `export const ${name} = () => {\n  const onPick = () => {};\n  return <List onPick={onPick} />;\n};\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["Load", "Save", "List", "Drop"]) write(`src/panel/${name}.tsx`, handler(name));
+    for (const name of ["load", "save", "list", "drop"]) write(`src/panel/use-${name}.ts`, `export const ${name} = 1;\n`);
+    write("src/panel/Panel.vue", "<template><p /></template>\n");
+    for (const name of ["load", "save", "list", "drop"]) write(`src/hooks/use-${name}.ts`, `export const ${name} = 1;\n`);
+    write("src/hooks/Hook.vue", "<template><p /></template>\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const bodies = planMap(await scan(dir)).bodies;
+  const text = (dirName) => [...bodies.values()].find((body) => body.includes(`# ${dirName}`));
+
+  assert.match(text("src/panel"), /^an event handler prop is given [^,]+, [^,]+, in \.tsx files: /m);
+  assert.doesNotMatch(text("src/hooks"), /event handler prop|^\s*, in /m);
 });
