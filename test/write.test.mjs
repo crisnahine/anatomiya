@@ -881,7 +881,9 @@ function scanSequences(t, seed, runs) {
     { dir: t.dir, name: `house${t.ext}`, body: "# house rules\n" },
     { dir: t.dir, name: `${PREFIX}notes${t.ext}`, body: "# our name, nobody's key\n" },
     { dir: t.dir, name: `${PREFIX}area-deadbeef${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nan older build\n", says: t },
-    { dir: t.dir, name: `${PREFIX}overview${t.ext}.bak${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n", says: t },
+    // Our key under our prefix, at names no scan gives a file: a copy somebody kept.
+    { dir: t.dir, name: `${PREFIX}overview${t.ext}.bak${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
+    { dir: t.dir, name: `${PREFIX}my-notes${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
     // A person's own file at a name a scan plans, where another tool reads it.
     ...(t.always ? [] : [overviewName(t), areaName(t, areaId(pool[0])), areaName(t, areaId(pool[3]))].map((name) => ({ dir: t.dir, name, body: "# mine, at a name of yours\n" }))),
   ]);
@@ -1885,6 +1887,39 @@ test("a file with our generator key that the record does not list is removed onl
     assert.deepEqual(off.targets[target.id].remove, [areaName(target, "99999999"), ...mapOf(target, a)].sort());
     assert.deepEqual(off.targets[target.id].unknown, []);
     assert.deepEqual(namesIn(dir, target), []);
+  }
+});
+
+test("turning a target off removes only the names a scan gives a file, whatever else carries the key", (t) => {
+  const a = area("src/services");
+  const kept = (target) => [
+    `${PREFIX}my-notes${target.ext}`,
+    `${PREFIX}overview copy${target.ext}`,
+    `${PREFIX}overview${target.ext}.bak${target.ext}`,
+    `${PREFIX}area-DEADBEEF${target.ext}`,
+    `${PREFIX}area-deadbee${target.ext}`,
+    `${PREFIX}area-deadbeef0${target.ext}`,
+  ].sort();
+
+  // With the record, and as a clone holds it: without. A record naming them makes no difference either.
+  for (const record of ["kept", "gone", "names them"]) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    for (const target of OTHERS) for (const name of kept(target)) writeFileSync(join(dir, target.dir, name), OURS);
+    if (record === "gone") rmSync(join(dir, STORE), { recursive: true, force: true });
+    if (record === "names them") {
+      const facts = readFacts(dir);
+      for (const target of OTHERS) facts.targets[target.id].push(...kept(target));
+      writeFileSync(join(dir, STORE, "facts.json"), JSON.stringify(facts));
+    }
+
+    const plan = writeMap(result(dir, [a]), { targets: ["claude"] });
+
+    for (const target of OTHERS) {
+      assert.deepEqual(plan.targets[target.id].remove, mapOf(target, a), `${target.id}, record ${record}`);
+      assert.deepEqual(namesIn(dir, target), kept(target), `${target.id}, record ${record}`);
+      for (const name of kept(target)) assert.equal(readFileSync(join(dir, target.dir, name), "utf8"), OURS, name);
+    }
   }
 });
 
