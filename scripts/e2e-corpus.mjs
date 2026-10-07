@@ -493,7 +493,7 @@ function removeTree(path) {
 function ruleFiles(clone) {
   const dir = join(clone, RULES_DIR);
   if (!existsSync(dir)) return new Map();
-  const names = readdirSync(dir).filter(isGeneratedName).sort();
+  const names = readdirSync(dir).filter((n) => isGeneratedName(n)).sort();
   return new Map(names.map((n) => [n, readFileSync(join(dir, n), "utf8")]));
 }
 

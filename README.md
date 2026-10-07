@@ -100,7 +100,11 @@ To keep the map out of git:
 exclude="$(git rev-parse --git-common-dir)/info/exclude"
 echo '.claude/rules/anatomiya-*.md' >> "$exclude"
 echo '.claude/anatomiya/' >> "$exclude"
+echo '.cursor/rules/anatomiya-*.mdc' >> "$exclude"
+echo '.github/instructions/anatomiya-*.instructions.md' >> "$exclude"
 ```
+
+The last two lines match files that exist only when the Cursor and Copilot targets are turned on.
 
 Where `.claude/rules` is a link to a shared directory, such as `.claude/rules -> ../agents/rules`, the
 map is written through it, and git sees those files only under the link's target. Name the target in

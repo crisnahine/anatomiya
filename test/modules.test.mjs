@@ -122,6 +122,7 @@ test("the writers do not reach the pipeline that produced the record", () => {
     "check-report.mjs",
     "encode.mjs",
     "rules.mjs",
+    "targets.mjs",
   ]);
 });
 
@@ -599,6 +600,7 @@ const ECHO_LOADS = [
   "langs.mjs",
   "readiness.mjs",
   "rules.mjs",
+  "targets.mjs",
   "version.mjs",
   "worktree.mjs",
 ];
