@@ -12,7 +12,8 @@ import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
 import { noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
-import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
+import { loadTypeScript, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
+import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
 import { needsSymlinks } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
@@ -554,6 +555,110 @@ test("a refresh leaves the type checker to the scan's own decision", async (t) =
 
   assert.equal((await refreshRepository(dir, { scan: async (...args) => calls.push(args) })).reason, "scanned");
   assert.deepEqual(calls, [[dir]], "the scan is handed the root and no options");
+});
+
+/* --- a degraded checker is measured once, and its verdict carried until what it reads moves --- */
+
+const FACTS = join(".claude", "anatomiya", "facts.json");
+const BROKEN = "{ this is not json";
+
+/** A committed TypeScript repository with its packages on disk and one root config, scanned by hand. */
+async function typed(t, { name = "tsconfig.json", config = BROKEN } = {}) {
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-typed-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  init(dir);
+  writeFileSync(join(dir, ".gitignore"), "node_modules\n");
+  writeFileSync(join(dir, name), config);
+  mkdirSync(join(dir, "src"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(s: string) {\n  return s.trim().toLowerCase()\n}\n`);
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+  commit(dir, "init");
+  const { result } = await runScan(dir);
+  await noteScan(dir);
+  return { dir, first: result.semantic };
+}
+
+/** A refresh after one more commit: the tier its scan answered with, and the options the scan was handed. */
+async function refreshed(dir) {
+  git(dir, "commit", "-q", "--allow-empty", "-m", "move");
+  const seen = [];
+  const scan = async (root, options = null) => {
+    const ran = await runScan(root, options ?? {});
+    seen.push({ options, semantic: ran.result.semantic, summary: ran.summary });
+    return ran;
+  };
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+  assert.equal(seen.length, 1);
+  return seen[0];
+}
+
+const recorded = (dir) => JSON.parse(readFileSync(join(dir, FACTS), "utf8")).semantic;
+
+test("a refresh after a degraded scan carries the verdict and does not run the checker, until a person scans", needsTs, async (t) => {
+  const { dir, first } = await typed(t);
+  assert.deepEqual([first.ran, first.status, first.carried], [true, "degraded", false]);
+  const carried = { ...first, ran: false, carried: true };
+
+  const once = await refreshed(dir);
+
+  assert.deepEqual(once.semantic, carried, "the checker ran, or the verdict moved");
+  assert.deepEqual(recorded(dir), carried);
+  assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), new RegExp(`^- type-checked claims are not counted: .* when measured ${first.measuredAt.slice(0, 10)} `, "m"));
+  assert.match(JSON.parse(scanJson(once.summary)).semantic, /^type-checked claims are not counted: /, "the JSON summary lost the mark");
+
+  assert.deepEqual((await refreshed(dir)).semantic, carried, "a carried verdict is carried again");
+
+  assert.equal((await runScan(dir, { dryRun: true })).result.semantic.ran, true, "a dry run by hand measures");
+  const byHand = (await runScan(dir)).result.semantic;
+  assert.deepEqual([byHand.ran, byHand.status, byHand.carried], [true, "degraded", false], "a scan run by hand measures");
+  assert.notEqual(byHand.measuredAt, first.measuredAt);
+});
+
+test("a refresh measures again once the config the root is read through changes", needsTs, async (t) => {
+  const { dir, first } = await typed(t, { name: "tsconfig.base.json" });
+  assert.equal(first.status, "degraded");
+  assert.equal((await refreshed(dir)).semantic.ran, false);
+
+  // A tsconfig.json beside the base is the config the root is read through.
+  writeFileSync(join(dir, "tsconfig.json"), BROKEN);
+  const named = await refreshed(dir);
+  assert.deepEqual([named.semantic.ran, named.semantic.carried], [true, false], "another config name was not measured");
+  assert.equal(named.options, null, "a refresh that measures hands the scan no options");
+  assert.equal((await refreshed(dir)).semantic.ran, false);
+
+  writeFileSync(join(dir, "tsconfig.json"), `{"compilerOptions":{"strict":true}}`);
+  const edited = await refreshed(dir);
+  assert.deepEqual([edited.semantic.ran, edited.semantic.status], [true, "ok"], "an edited config was not measured");
+});
+
+test("a verdict measured by another build, or stamped by none, is measured once and carried after", needsTs, async (t) => {
+  const { dir } = await typed(t);
+  const rewrite = (change) => {
+    const facts = JSON.parse(readFileSync(join(dir, FACTS), "utf8"));
+    facts.semantic = change(facts.semantic);
+    writeFileSync(join(dir, FACTS), JSON.stringify(facts));
+  };
+
+  rewrite((semantic) => ({ ...semantic, measuredUnder: verdictStamp(dir, "0.0.0-another-build") }));
+  assert.equal((await refreshed(dir)).semantic.ran, true, "another build's verdict was carried");
+  assert.equal((await refreshed(dir)).semantic.ran, false);
+
+  // What the last release wrote: the tier with no stamp beside it.
+  rewrite(({ ran, status, reason, typedResolutionRate }) => ({ ran: true, status, reason, typedResolutionRate }));
+  assert.equal((await refreshed(dir)).semantic.ran, true, "a verdict stamped by no run was carried");
+  assert.equal(typeof recorded(dir).measuredUnder, "string");
+  assert.equal((await refreshed(dir)).semantic.ran, false);
+});
+
+test("an ok tier is measured on every refresh", needsTs, async (t) => {
+  const { dir, first } = await typed(t, { config: `{"compilerOptions":{"strict":true}}` });
+  assert.equal(first.status, "ok");
+
+  for (let i = 0; i < 2; i++) {
+    const again = await refreshed(dir);
+    assert.deepEqual([again.semantic.ran, again.semantic.status, again.semantic.carried], [true, "ok", false]);
+    assert.equal(again.options, null);
+  }
 });
 
 test("a rescan that fails keeps the previous map, and the same state is not tried again", async (t) => {

@@ -12,6 +12,8 @@ import {
   loadTypeScript,
   checkerBlocked,
   checkerStamp,
+  carriedVerdict,
+  verdictStamp,
   unusableReason,
   classifySemantic,
   RESOLUTION_FLOOR,
@@ -454,4 +456,49 @@ test("a checker that cannot be spawned degrades the tier instead of crashing the
   assert.equal(r.status, "degraded");
   assert.match(String(r.error ?? ""), /could not run/);
   assert.equal(r.records.size, 0);
+});
+
+/* --- a degraded verdict a refresh carries instead of measuring --- */
+
+const measured = (over = {}) => ({
+  ran: true,
+  status: "degraded",
+  reason: "low-resolution",
+  typedResolutionRate: 0.61,
+  carried: false,
+  measuredAt: "2026-10-08T01:02:03.000Z",
+  measuredUnder: "s1",
+  ...over,
+});
+
+test("a degraded verdict is carried under the stamp it was measured under, and under no other", () => {
+  const verdict = { status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61, measuredAt: "2026-10-08T01:02:03.000Z", measuredUnder: "s1" };
+
+  assert.deepEqual(carriedVerdict(measured(), "s1"), verdict);
+  assert.deepEqual(carriedVerdict(measured({ ran: false, carried: true }), "s1"), verdict, "a carried verdict is carried again");
+  assert.equal(carriedVerdict(measured(), "s2"), null, "what the checker reads moved");
+});
+
+test("only a measured degraded verdict is carried", () => {
+  assert.equal(carriedVerdict(measured({ status: "ok", reason: null, typedResolutionRate: 0.9 }), "s1"), null, "an ok tier's numbers are the claims");
+  assert.equal(carriedVerdict(measured({ reason: "tier-failed", typedResolutionRate: null }), "s1"), null, "a run that failed measured nothing");
+  assert.equal(carriedVerdict({ ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null }, "s1"), null);
+  // The record the last release wrote: no stamp beside the tier.
+  assert.equal(carriedVerdict({ ran: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61 }, "s1"), null);
+  assert.equal(carriedVerdict(measured({ measuredAt: null }), "s1"), null, "a verdict with no moment was measured by nothing");
+  assert.equal(carriedVerdict(null, "s1"), null);
+});
+
+test("the stamp a verdict is measured under moves with the build, the root config's name and its bytes", (t) => {
+  const dir = scratch(t, "anatomiya-verdict-stamp-");
+  const none = verdictStamp(dir, "1.0.0");
+  writeFileSync(join(dir, "tsconfig.base.json"), "{}");
+  const base = verdictStamp(dir, "1.0.0");
+  writeFileSync(join(dir, "tsconfig.base.json"), `{"compilerOptions":{"paths":{}}}`);
+  const edited = verdictStamp(dir, "1.0.0");
+  const built = verdictStamp(dir, "1.0.1");
+
+  assert.equal(new Set([none, base, edited, built]).size, 4);
+  assert.equal(verdictStamp(dir, "1.0.1"), built, "and holds still while they do");
+  assert.match(built, /^[0-9a-f]{64}$/);
 });

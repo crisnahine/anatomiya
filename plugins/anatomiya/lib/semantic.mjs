@@ -76,6 +76,35 @@ export function checkerStamp(root, { specifier = "typescript" } = {}) {
   return `${hasInstall(root)}\0${configNameIn(root) ?? ""}\0${resolved}`;
 }
 
+// More than any config a person writes; past it an edit is not seen.
+const CONFIG_STAMP_BYTES = 1024 * 1024;
+
+/**
+ * What a verdict is measured under: this build, `checkerStamp`, and the bytes of
+ * the config the root is read through, since an edit there is the likeliest
+ * thing to lift a rate and moves neither of the other two.
+ */
+export function verdictStamp(root, build) {
+  const name = configNameIn(root);
+  // Bounded and typed: the file comes with the repository, and one linked to an endless device read whole never returns.
+  const entry = name === null ? null : readHead(join(root, name), CONFIG_STAMP_BYTES);
+  const config = entry?.kind === "file" ? entry.head : (entry?.kind ?? "");
+  return createHash("sha256").update(`${build}\0${checkerStamp(root)}\0${config}`).digest("hex");
+}
+
+/**
+ * The verdict a refresh carries in place of a run, or null where the checker
+ * has to measure: `recorded` is the last record's tier, `under` the stamp now.
+ * Only a degraded verdict a run measured under the same stamp: an ok tier's
+ * numbers are the claims, and a failed run measured nothing.
+ */
+export function carriedVerdict(recorded, under) {
+  if (recorded?.status !== "degraded" || recorded.reason === "tier-failed") return null;
+  if (typeof recorded.measuredAt !== "string" || recorded.measuredUnder !== under) return null;
+  const { status, reason, typedResolutionRate, measuredAt, measuredUnder } = recorded;
+  return { status, reason: reason ?? null, typedResolutionRate: typedResolutionRate ?? null, measuredAt, measuredUnder };
+}
+
 function hasConfig(root) {
   return configNameIn(root) !== null;
 }
@@ -106,9 +135,11 @@ import { guardedChild } from "./child.mjs";
 import { guardsOver } from "./limits.mjs";
 import { holdsTypeSyntax } from "./langs.mjs";
 import { extOf } from "./paths.mjs";
+import { readHead } from "./rules.mjs";
 import { configNameIn } from "./tsconfig.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 

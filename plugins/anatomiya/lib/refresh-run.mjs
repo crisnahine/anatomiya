@@ -4,16 +4,16 @@
  * the scan to answer with a watch list.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, linkSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, linkSync, lstatSync, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
 import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
-import { pluginRoot } from "./readiness.mjs";
+import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
-import { checkerStamp } from "./semantic.mjs";
+import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
 import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
 import { isClaude, overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
@@ -115,7 +115,14 @@ async function passes(root, store, { scan, pin }) {
     }
     try {
       const leaveAlone = await committedTargets(root);
-      await (leaveAlone.length > 0 ? scan(root, { leaveAlone }) : scan(root));
+      // A checker the last run measured as degraded, with nothing it reads
+      // moved since, comes out the same and costs most of the scan. A scan run
+      // by hand is handed no verdict and measures. The stamp reads the root
+      // config, so it is taken only where there is a verdict to compare.
+      const recorded = readFacts(root).facts?.semantic ?? null;
+      const carried = recorded?.status === "degraded" ? carriedVerdict(recorded, verdictStamp(root, buildVersion())) : null;
+      const options = { ...(leaveAlone.length > 0 ? { leaveAlone } : {}), ...(carried !== null ? { carried } : {}) };
+      await (Object.keys(options).length > 0 ? scan(root, options) : scan(root));
     } catch (err) {
       // The previous map stays: a scan that throws has written nothing or
       // put back what it replaced, and one that would not run now will not
@@ -184,14 +191,6 @@ async function stampOf(root) {
     .update("\0")
     .update(checkerStamp(root))
     .digest("hex");
-}
-
-function buildVersion() {
-  try {
-    return JSON.parse(readFileSync(join(pluginRoot(), "package.json"), "utf8")).version ?? "";
-  } catch {
-    return "";
-  }
 }
 
 /**

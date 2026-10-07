@@ -17,7 +17,8 @@ import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/ana
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { defaultPoolSize } from "../plugins/anatomiya/lib/pool.mjs";
-import { checkerBlocked, loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
+import { checkerBlocked, loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
+import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 
 // The directory is removed through the test context, so a failing assertion
@@ -945,6 +946,44 @@ function typedRepo(t, { deps = "dir", pinned = false, areas = ["src/models"], br
   });
 }
 
+// What a tier no run measured says of its measurement.
+const UNMEASURED = { carried: false, measuredAt: null, measuredUnder: null };
+
+const CARRIED = { status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61, measuredAt: "2026-10-08T01:02:03.000Z", measuredUnder: "s1" };
+
+test("a measured tier says when it was measured and under what", async (t) => {
+  const dir = typedRepo(t);
+  const r = await scan(dir);
+
+  assert.equal(r.semantic.ran, true);
+  assert.equal(r.semantic.carried, false);
+  assert.equal(r.semantic.measuredAt, r.scannedAt);
+  assert.equal(r.semantic.measuredUnder, verdictStamp(dir, buildVersion()));
+});
+
+test("a carried verdict stands in for the checker's run, and is marked", async (t) => {
+  const dir = typedRepo(t);
+  let runs = 0;
+  const runChecker = (...args) => {
+    runs++;
+    return runSemantic(...args);
+  };
+
+  const r = await scan(dir, { runChecker, carried: CARRIED });
+
+  assert.equal(runs, 0, "the checker ran though its verdict was handed in");
+  assert.deepEqual(r.semantic, { ran: false, ...CARRIED, carried: true });
+  assert.ok(!r.areas.some((a) => a.dimensions.some((d) => d.tier === "semantic")), "a type-checked row was counted with no checker");
+  assert.equal((await scan(dir, { runChecker })).semantic.ran, true, "and with none handed in the checker measures");
+  assert.equal(runs, 1);
+});
+
+test("a carried verdict does not stand in where the checker could not run at all", async (t) => {
+  const r = await scan(typedRepo(t, { deps: null }), { carried: CARRIED });
+
+  assert.deepEqual(r.semantic, { ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null, ...UNMEASURED });
+});
+
 test("the checker runs on its own where the repository can use it", async (t) => {
   const r = await scan(typedRepo(t));
   assert.equal(r.semantic.ran, true);
@@ -967,7 +1006,7 @@ for (const [name, opts, reason] of [
 ]) {
   test(`the checker stays off ${name}`, { skip: opts.deps === "link" && process.platform === "win32" }, async (t) => {
     const r = await scan(typedRepo(t, opts));
-    assert.deepEqual(r.semantic, { ran: false, status: null, reason, typedResolutionRate: null });
+    assert.deepEqual(r.semantic, { ran: false, status: null, reason, typedResolutionRate: null, ...UNMEASURED });
     assert.ok(!r.areas.some((a) => a.dimensions.some((d) => d.key === "law_of_demeter")));
   });
 }
@@ -983,7 +1022,7 @@ test("the checker stays off in plain JavaScript, with its dependencies installed
     git("commit", "-qm", "init");
   });
   const r = await scan(withDeps(dir));
-  assert.deepEqual(r.semantic, { ran: false, status: null, reason: "plain-javascript", typedResolutionRate: null });
+  assert.deepEqual(r.semantic, { ran: false, status: null, reason: "plain-javascript", typedResolutionRate: null, ...UNMEASURED });
 });
 
 const demeterRow = async (dir, path = "src/models") => dimension(await scan(dir), path, "law_of_demeter");

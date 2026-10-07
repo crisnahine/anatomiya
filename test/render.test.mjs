@@ -2663,6 +2663,14 @@ test("the summary and the overview word a degraded tier with one sentence", () =
     "type-checked claims are counts only: no type lookups resolved (no-checker)"
   );
 
+  // Carried by a refresh: nothing was counted, and the rate is the last run's.
+  const carried = { ran: false, carried: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.1495, measuredAt: "2026-10-08T01:02:03.000Z" };
+  assert.equal(
+    degradedSemanticSentence(carried),
+    "type-checked claims are not counted: 15% of type lookups resolved when measured 2026-10-08 (low-resolution)"
+  );
+  assert.equal(degradedSemanticSentence({ ...carried, carried: false }), null, "a tier that neither ran nor was carried says nothing");
+
   assert.equal(degradedSemanticSentence({ ran: true, status: "ok", typedResolutionRate: 0.9 }), null, "a clean tier says nothing");
   assert.equal(degradedSemanticSentence(null), null, "and a tier nobody asked for says nothing");
 });
@@ -2674,6 +2682,15 @@ test("the overview says a degraded tier through the shared sentence", () => {
   );
 
   assert.match(out, /^- type-checked claims are counts only: 15% of type lookups resolved \(low-resolution\)$/m, out);
+});
+
+test("the overview says a carried verdict in the same one line", () => {
+  const semantic = { ran: false, carried: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.1495, measuredAt: "2026-10-08T01:02:03.000Z" };
+  const measured = renderOverview(result({ semantic: { ...semantic, ran: true, carried: false } }), { uncovered: 0 });
+  const out = renderOverview(result({ semantic }), { uncovered: 0 });
+
+  assert.match(out, /^- type-checked claims are not counted: 15% of type lookups resolved when measured 2026-10-08 \(low-resolution\)$/m, out);
+  assert.equal(out.split("\n").length, measured.split("\n").length, "a carried verdict took another line");
 });
 
 /* --- which directives a file had no room to state (#70) --- */
