@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,11 +17,11 @@ import {
   isOwned,
   resolveRulesDir,
   resolveTargetDir,
-  targetOn,
+  targetState,
 } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
-import { needsSymlinks } from "./platform.mjs";
+import { needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
 
 const { claude, cursor, copilot } = TARGETS;
 const OWNED = `---\ngenerator: ${GENERATOR}\nalwaysApply: true\n---\n# Repository map\n`;
@@ -144,7 +145,7 @@ test("a link at any component of a Cursor or Copilot directory is refused, insid
     assert.equal(resolveTargetDir(dir, target), null, `${link} linked ${where}`);
     // The same link shape under `.claude/rules` is the exception, and it stays one.
     assert.equal(auditRules(dir, null, target).escaped, true, `${link} linked ${where}`);
-    assert.equal(targetOn(dir, target), false, `${link} linked ${where}`);
+    assert.equal(targetState(dir, target), "unknown", `${link} linked ${where}`);
   }
 });
 
@@ -162,54 +163,151 @@ test("a root that does not resolve gives no target directory", (t) => {
   assert.equal(resolveTargetDir(join(dir, "gone"), cursor), null);
 });
 
-test("claude is always on, and the others are off until their own overview is there", (t) => {
+test("a directory that cannot be looked into does not resolve", needsUnreadableDirs, (t) => {
+  for (const [target, top] of [[cursor, ".cursor"], [copilot, ".github"]]) {
+    const dir = workspace(t);
+    mkdirSync(join(dir, target.dir), { recursive: true });
+    chmodSync(join(dir, top), 0o000);
+    try {
+      assert.equal(resolveTargetDir(dir, target), null, top);
+      assert.equal(targetState(dir, target), "unknown", top);
+    } finally {
+      chmodSync(join(dir, top), 0o755);
+    }
+  }
+});
+
+test("a target directory that is Claude Code's own, holds it or sits in it does not resolve", needsSymlinks, (t) => {
+  const cases = [
+    [copilot, "../.github/instructions", "is it"],
+    [cursor, "../.cursor/rules", "is it"],
+    [copilot, "../.github", "sits in it"],
+    [cursor, "../.cursor", "sits in it"],
+    [copilot, "../.github/instructions/claude", "holds it"],
+    [cursor, "../.cursor/rules/claude", "holds it"],
+  ];
+  for (const [target, to, how] of cases) {
+    const dir = workspace(t);
+    put(dir, `${target.dir}/${overviewName(target)}`, OWNED);
+    mkdirSync(join(dir, ".claude"));
+    mkdirSync(join(dir, ".claude", to), { recursive: true });
+    symlinkSync(to, join(dir, RULES_DIR));
+    assert.equal(resolveRulesDir(dir), join(dir, ".claude", to), `${to}: the link Claude Code reads through still resolves`);
+    assert.equal(resolveTargetDir(dir, target), null, `${target.dir} ${how}`);
+    assert.equal(targetState(dir, target), "unknown", `${target.dir} ${how}`);
+    assert.equal(auditRules(dir, null, target).escaped, true, `${target.dir} ${how}`);
+  }
+  // A shared directory that is neither leaves both targets where they were.
   const dir = workspace(t);
-  assert.equal(targetOn(dir, claude), true);
-  assert.equal(targetOn(dir, cursor), false);
-  assert.equal(targetOn(dir, copilot), false);
-  // An area file alone, and the other target's overview, turn nothing on.
+  mkdirSync(join(dir, "agents", "rules"), { recursive: true });
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync("../agents/rules", join(dir, RULES_DIR));
+  put(dir, `.cursor/rules/${overviewName(cursor)}`, OWNED);
+  assert.equal(resolveTargetDir(dir, cursor), join(dir, ".cursor", "rules"));
+  assert.equal(targetState(dir, cursor), "on");
+  assert.equal(resolveTargetDir(dir, copilot), join(dir, ".github", "instructions"));
+});
+
+test("claude is always on", (t) => {
+  const dir = workspace(t);
+  assert.equal(targetState(dir, claude), "on");
+  assert.equal(targetState(join(dir, "gone"), claude), "on");
+});
+
+test("on: the overview is a file carrying our key, and it turns on only its own target", (t) => {
+  const dir = workspace(t);
+  put(dir, `.cursor/rules/${overviewName(cursor)}`, OWNED);
+  assert.equal(targetState(dir, cursor), "on");
+  assert.equal(targetState(dir, copilot), "off");
+  put(dir, `.github/instructions/${overviewName(copilot)}`, `---\ngenerator: ${GENERATOR}\napplyTo: "**"\n---\n`);
+  assert.equal(targetState(dir, copilot), "on");
+});
+
+test("off: nothing is at the overview's name", (t) => {
+  const dir = workspace(t);
+  assert.equal(targetState(dir, cursor), "off", "no directory");
+  assert.equal(targetState(dir, copilot), "off", "no directory");
+  mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+  assert.equal(targetState(dir, copilot), "off", "the parent alone");
+  // An area file alone, and the other targets' overviews, are not this target's overview.
   put(dir, `.cursor/rules/${areaName(cursor, "1a2b3c4d")}`, OWNED);
   put(dir, `.cursor/rules/${overviewName(copilot)}`, OWNED);
   put(dir, `.cursor/rules/${overviewName(claude)}`, OWNED);
-  assert.equal(targetOn(dir, cursor), false);
+  assert.equal(targetState(dir, cursor), "off", "a directory holding other names");
 });
 
-test("an owned overview turns its target on, and only that target", (t) => {
-  const dir = workspace(t);
-  put(dir, `.cursor/rules/${overviewName(cursor)}`, OWNED);
-  assert.equal(targetOn(dir, cursor), true);
-  assert.equal(targetOn(dir, copilot), false);
-  put(dir, `.github/instructions/${overviewName(copilot)}`, `---\ngenerator: ${GENERATOR}\napplyTo: "**"\n---\n`);
-  assert.equal(targetOn(dir, copilot), true);
-});
-
-test("an overview that does not carry our key does not turn its target on, and is left as written", (t) => {
+test("off: the overview is a readable file that does not carry our key, and it is left as written", (t) => {
   for (const text of [HAND, "", "# Repository map\n", `generator: ${GENERATOR}\n`, `---\ndescription: x\n---\n---\ngenerator: ${GENERATOR}\n---\n`]) {
     const dir = workspace(t);
     const rel = `.cursor/rules/${overviewName(cursor)}`;
     put(dir, rel, text);
-    assert.equal(targetOn(dir, cursor), false, JSON.stringify(text));
+    assert.equal(targetState(dir, cursor), "off", JSON.stringify(text));
     assert.equal(readFileSync(join(dir, rel), "utf8"), text);
   }
 });
 
-test("a directory at the overview's name does not turn its target on", (t) => {
-  const dir = workspace(t);
-  mkdirSync(join(dir, ".github", "instructions", overviewName(copilot)), { recursive: true });
-  assert.equal(targetOn(dir, copilot), false);
+test("unknown: a file where the target's directory belongs", (t) => {
+  for (const [target, rel] of [[copilot, ".github"], [copilot, ".github/instructions"], [cursor, ".cursor"], [cursor, ".cursor/rules"]]) {
+    const dir = workspace(t);
+    put(dir, rel, "not a directory\n");
+    assert.equal(targetState(dir, target), "unknown", rel);
+  }
 });
 
-test("a link at the overview's name does not turn its target on, dangling or not", needsSymlinks, (t) => {
+test("unknown: a root that does not resolve", (t) => {
+  const dir = workspace(t);
+  assert.equal(targetState(join(dir, "gone"), cursor), "unknown");
+});
+
+test("unknown: a directory at the overview's name", (t) => {
+  const dir = workspace(t);
+  mkdirSync(join(dir, ".github", "instructions", overviewName(copilot)), { recursive: true });
+  assert.equal(targetState(dir, copilot), "unknown");
+});
+
+test("unknown: a link at the overview's name, dangling or to a file of ours", needsSymlinks, (t) => {
   const dir = workspace(t);
   const at = join(dir, ".cursor", "rules", overviewName(cursor));
   mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
   symlinkSync(join(dir, "nothing-here"), at);
-  assert.equal(targetOn(dir, cursor), false);
+  assert.equal(targetState(dir, cursor), "unknown");
   rmSync(at);
-  // Claude Code's own overview is an owned file, and a link to it is still not a file here.
   put(dir, `${RULES_DIR}/${OVERVIEW_FILE}`, OWNED);
   symlinkSync(join(dir, RULES_DIR, OVERVIEW_FILE), at);
-  assert.equal(targetOn(dir, cursor), false);
+  assert.equal(targetState(dir, cursor), "unknown");
+  rmSync(at);
+  put(dir, "notes.md", HAND);
+  symlinkSync(join(dir, "notes.md"), at);
+  assert.equal(targetState(dir, cursor), "unknown");
+});
+
+test("unknown: a fifo at the overview's name, answered without waiting on it", needsPosixSpecialFiles, (t) => {
+  const dir = workspace(t);
+  mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+  execFileSync("mkfifo", [join(dir, ".cursor", "rules", overviewName(cursor))]);
+  assert.equal(targetState(dir, cursor), "unknown");
+});
+
+test("unknown: an overview that cannot be opened, ours or not", needsPosixPermissions, (t) => {
+  for (const text of [OWNED, HAND]) {
+    const dir = workspace(t);
+    const rel = `.cursor/rules/${overviewName(cursor)}`;
+    put(dir, rel, text);
+    chmodSync(join(dir, rel), 0o000);
+    assert.equal(targetState(dir, cursor), "unknown");
+  }
+});
+
+test("unknown: a directory whose entries cannot be looked at", needsUnreadableDirs, (t) => {
+  const dir = workspace(t);
+  put(dir, `.cursor/rules/${overviewName(cursor)}`, OWNED);
+  chmodSync(join(dir, ".cursor", "rules"), 0o000);
+  try {
+    assert.equal(resolveTargetDir(dir, cursor), join(dir, ".cursor", "rules"));
+    assert.equal(targetState(dir, cursor), "unknown");
+  } finally {
+    chmodSync(join(dir, ".cursor", "rules"), 0o755);
+  }
 });
 
 test("a generated name carries its own target's extension", () => {

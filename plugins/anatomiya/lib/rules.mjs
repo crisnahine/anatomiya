@@ -254,21 +254,29 @@ export function resolveRulesDir(root) {
  */
 export function resolveTargetDir(root, target) {
   if (target.id === TARGETS.claude.id) return resolveRulesDir(root);
+  const dir = ownDirectory(root, target.dir);
+  if (dir === null) return null;
+  // A `.claude/rules` link can lead here, and Claude Code would then load this target's files as its own.
+  const rules = resolveRulesDir(root);
+  if (rules !== null && (contains(rules, dir) || contains(dir, rules))) return null;
+  return dir;
+}
+
+function ownDirectory(root, relPath) {
   let at;
   try {
     at = realpathSync(root);
   } catch {
     return null;
   }
-  const parts = target.dir.split("/");
+  const parts = relPath.split("/");
   for (let i = 0; i < parts.length; i++) {
     const next = join(at, parts[i]);
     let entry;
     try {
       entry = lstatSync(next);
     } catch (err) {
-      // Only a name with nothing at it is ours to create. One that could not
-      // be looked at is not known to be a directory.
+      // Only a name with nothing at it is ours to create.
       return err.code === "ENOENT" ? join(at, ...parts.slice(i)) : null;
     }
     // Asked of the entry itself, so a link to a directory is a link.
@@ -279,18 +287,28 @@ export function resolveTargetDir(root, target) {
 }
 
 /**
- * Whether a scan keeps writing this target. Claude Code's always; another one
- * while its own overview is a file this tool wrote, so nothing is remembered
- * anywhere else and removing that file turns the target off.
+ * Whether a scan keeps writing this target: `on`, `off` or `unknown`.
+ *
+ * Claude Code's is always on. Another is on while its own overview is a file
+ * this tool wrote, so nothing is remembered anywhere else. It is off only where
+ * that was seen: nothing at the name, or a file somebody else wrote. Anything
+ * that could not be read is unknown, because off is what removes a map.
  */
-export function targetOn(root, target) {
-  if (target.always) return true;
+export function targetState(root, target) {
+  if (target.always) return "on";
   const dir = resolveTargetDir(root, target);
-  if (dir === null) return false;
+  if (dir === null) return "unknown";
   const path = join(dir, overviewName(target));
-  if (isLink(path)) return false;
-  const entry = readHead(path);
-  return entry.kind === "file" && isOwned(entry.head);
+  let entry;
+  try {
+    entry = lstatSync(path);
+  } catch (err) {
+    return err.code === "ENOENT" ? "off" : "unknown";
+  }
+  if (!entry.isFile()) return "unknown";
+  const read = readHead(path);
+  if (read.kind !== "file") return "unknown";
+  return isOwned(read.head) ? "on" : "off";
 }
 
 /**
