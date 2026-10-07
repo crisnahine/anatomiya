@@ -1149,7 +1149,10 @@ the holder's last look at HEAD is not lost. It stamps what a scan depends on (HE
 `typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
 map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
 merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run the type checker
-to the rescan, which decides it the way any scan does. A scan that throws writes nothing, so the
+to the rescan, which decides it the way any scan does. Where the repository tracks the overview of
+a Cursor or Copilot copy of the map, the rescan holds that directory as it is and writes the rest:
+nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
+by hand rewrites it. A scan that throws writes nothing, so the
 previous map stays; the same stamp is tried again only after half an hour, and the echo says the
 refresh failed until a refresh or a scan run by hand succeeds. A scan run by hand records its stamp
 too, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
