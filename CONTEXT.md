@@ -261,12 +261,24 @@ The machine record of every slot, gated or not, including which side was stated.
 it, and the check reads it rather than reading the map.
 _Avoid_: cache, state, database, store
 
+**Layout file**:
+The facts' layout written again on its own beside them, stamped with the size and mtime of the facts
+file it was taken from, so a hook can read the layout without parsing every count. A stamp that does
+not match the facts on disk means it describes some other record, and the facts are read instead.
+_Avoid_: index, cache, summary
+
 ### The check
 
 **Finding**:
 One site a branch introduced that the check reports, whether or not a directive was stated over it. The
 severity says which. One rule answers for a path rather than for a site.
 _Avoid_: violation, error, issue, offence
+
+**Change set**:
+What a branch changed: the committed diff from the merge base, the edits still pending in the working
+tree, the renames, and the lines each file gained. The check and the end-of-turn hook read the same
+one.
+_Avoid_: diff, changes, delta
 
 **Newly introduced**:
 Present at the branch tip and absent at the merge base, matched by content rather than by position, so a

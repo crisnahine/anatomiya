@@ -17,6 +17,8 @@ import {
   toTsPath,
   within,
   contains,
+  walkingRealpath,
+  opened,
 } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
 import { needsSymlinks } from "./platform.mjs";
@@ -418,10 +420,11 @@ function compiler(files = {}) {
         fileExists: (p) => { reached.push(`exists ${p}`); return p in files; },
         readFile: (p) => { reached.push(`read ${p}`); return files[p]; },
         getSourceFile: (p) => { reached.push(`source ${p}`); return files[p] === undefined ? undefined : { fileName: p }; },
+        directoryExists: (p) => { reached.push(`isdir ${p}`); return true; },
         getDirectories: (p) => { reached.push(`dirs ${p}`); return ["sub"]; },
         readDirectory: (p) => { reached.push(`list ${p}`); return [join(p, "a.ts")]; },
         writeFile: (p) => { reached.push(`WROTE ${p}`); },
-        realpath: (p) => p,
+        realpath: (p) => { reached.push(`real ${p}`); return p; },
         getCurrentDirectory: () => "/nowhere",
       }),
     },
@@ -486,6 +489,149 @@ test("the compiler host answers for the root it was given, and writes nothing", 
   assert.equal(host.getCurrentDirectory(), dir, "the checker resolves against the tree being scanned");
   assert.equal(host.writeFile(join(dir, "out.js"), "anything"), undefined);
   assert.deepEqual(reached.filter((r) => r.startsWith("WROTE")), [], "a write reached the wrapped host");
+});
+
+test("the compiler host asks the disk once per path and question for one build", (t) => {
+  // Module resolution probes the same candidates from every importing file:
+  // on empire-flippers client 107,928 stats landed on 24,737 paths.
+  const dir = tree(t);
+  const inside = join(dir, "a.ts");
+  const missing = join(dir, "gone.ts");
+  const { ts, reached } = compiler({ [inside]: "export const a = 1;" });
+
+  const host = confinedCompilerHost(ts, dir, {});
+  for (let ask = 0; ask < 3; ask++) {
+    assert.equal(host.fileExists(inside), true);
+    assert.equal(host.fileExists(missing), false);
+    assert.equal(host.directoryExists(dir), true);
+    assert.equal(host.realpath(inside), inside);
+    assert.deepEqual(host.getDirectories(dir), ["sub"]);
+  }
+
+  assert.deepEqual(reached.sort(), [
+    `dirs ${dir}`,
+    `exists ${missing}`,
+    `exists ${inside}`,
+    `isdir ${dir}`,
+    `real ${inside}`,
+  ].sort());
+});
+
+test("the containment walk resolves each directory once, not once per path under it", async (t) => {
+  // `realpathSync` lstats every directory above its argument again, and the
+  // walk asks it of every directory it enters: 20,816 calls on ef-client.
+  const dir = tree(t);
+  const deep = join(dir, "a", "b", "c");
+  mkdirSync(deep, { recursive: true });
+  const names = ["one.ts", "two.ts", "three.ts"];
+  for (const name of names) writeFileSync(join(deep, name), "export {};\n");
+  const { ts } = compiler(Object.fromEntries(names.map((n) => [join(deep, n), "export {};"])));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.realpathSync;
+  const asked = [];
+  fs.realpathSync = Object.assign((p, ...rest) => {
+    asked.push(String(p));
+    return real(p, ...rest);
+  }, { native: real.native });
+  syncBuiltinESMExports();
+  try {
+    const host = confinedCompilerHost(ts, dir, {});
+    for (const name of names) assert.equal(host.readFile(join(deep, name)), "export {};");
+  } finally {
+    fs.realpathSync = real;
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(asked.filter((p) => p.startsWith(dir)), [], "a directory inside the tree was walked again");
+});
+
+test("the walking realpath answers what realpathSync answers for a step back through a link", needsSymlinks, (t) => {
+  // realpathSync drops `link/..` as text before it reads a link; resolving the
+  // link first lands in the parent of wherever it points.
+  const dir = tree(t);
+  mkdirSync(join(dir, "away", "deep"), { recursive: true });
+  symlinkSync(join(dir, "away", "deep"), join(dir, "link"));
+  const asked = `${dir}/link/../away`;
+
+  assert.equal(walkingRealpath()(asked), realpathSync(asked));
+});
+
+test("the compiler host refuses a step back through a link that leaves the root", needsSymlinks, (t) => {
+  // The host opens the path as written and the OS takes `..` from where `up`
+  // leads, while the string reads as `src/outside` inside the root.
+  const parent = tree(t);
+  const dir = join(parent, "repo");
+  mkdirSync(join(dir, "src"), { recursive: true });
+  mkdirSync(join(parent, "outside"));
+  writeFileSync(join(parent, "outside", "secret.ts"), "export const secret = 1;\n");
+  symlinkSync("..", join(dir, "src", "up"));
+  const via = `${dir}/src/up/../outside/secret.ts`;
+  const inside = `${dir}/src/up/src/..`;
+  const { ts, reached } = compiler({ [via]: "export const secret = 1;" });
+
+  const host = confinedCompilerHost(ts, dir, {});
+
+  assert.equal(host.readFile(via), undefined);
+  assert.equal(host.fileExists(via), false);
+  assert.equal(host.getSourceFile(via), undefined);
+  assert.deepEqual(reached.filter((r) => r.includes("secret")), [], "the far side saw a path the host had refused");
+  assert.deepEqual(host.getDirectories(inside), ["sub"], "a step back that stays inside is still read");
+});
+
+test("a step back is taken where each platform's open takes it", () => {
+  // POSIX steps up from where the link leads; Windows collapses `..` as text
+  // before it opens anything, so a link resolved first checks a path it never opens.
+  const links = { "/repo/src/in": "/repo/deep/a/b/c", "C:\\repo\\src\\in": "C:\\repo\\deep\\a\\b\\c" };
+  const realpath = (p) => links[p] ?? p;
+
+  assert.equal(opened("/repo/src/in/../../../y", realpath, "linux"), "/repo/deep/y");
+  assert.equal(opened("C:\\repo\\src\\in\\..\\..\\..\\y", realpath, "win32"), "C:\\y");
+  assert.equal(opened("C:/repo/src/in/../../../y", realpath, "win32"), "C:\\y");
+});
+
+test("a backslash in a POSIX name is a character, not a step back", { skip: process.platform === "win32" ? "the name cannot exist on Windows" : needsSymlinks.skip }, (t) => {
+  // Split on both separators, a link named `x\..\y` read as `src/y`, a file
+  // that is not there, and the host opened the link to the file beside the root.
+  const parent = tree(t);
+  const dir = join(parent, "repo");
+  mkdirSync(join(dir, "src"), { recursive: true });
+  mkdirSync(join(parent, "outside"));
+  writeFileSync(join(parent, "outside", "secret.ts"), "export const secret = 1;\n");
+  const via = `${dir}/src/x\\..\\y`;
+  symlinkSync(join(parent, "outside", "secret.ts"), via);
+  const named = `${dir}/src/a\\..\\b.ts`;
+  writeFileSync(named, "export const b = 1;\n");
+  const { ts, reached } = compiler({ [via]: "export const secret = 1;", [named]: "export const b = 1;" });
+
+  assert.equal(insideRoot(dir, via), false);
+  const host = confinedCompilerHost(ts, dir, {});
+  assert.equal(host.readFile(via), undefined);
+  assert.equal(host.fileExists(via), false);
+  assert.deepEqual(reached.filter((r) => r.includes("x\\")), [], "the far side saw a path the host had refused");
+  assert.equal(host.readFile(named), "export const b = 1;", "a file inside with that name is still read");
+});
+
+test("a list of directories the host remembers cannot be changed by the caller", (t) => {
+  const dir = tree(t);
+  const { ts } = compiler();
+  const host = confinedCompilerHost(ts, dir, {});
+
+  host.getDirectories(dir).push("planted");
+  assert.deepEqual(host.getDirectories(dir), ["sub"]);
+});
+
+test("two builds never share what the disk said", (t) => {
+  // The tree is fixed for one build, not for the process: a second scan in the
+  // same process has to see a file the first one did not.
+  const dir = tree(t);
+  const later = join(dir, "later.ts");
+  const files = {};
+  const { ts, reached } = compiler(files);
+
+  assert.equal(confinedCompilerHost(ts, dir, {}).fileExists(later), false);
+  files[later] = "export const later = 1;";
+  assert.equal(confinedCompilerHost(ts, dir, {}).fileExists(later), true);
+  assert.deepEqual(reached, [`exists ${later}`, `exists ${later}`]);
 });
 
 test("the compiler host reads its own type library, which does not live in the tree", (t) => {

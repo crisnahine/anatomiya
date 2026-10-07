@@ -11,7 +11,7 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
-import { addedRanges, pendingPaths } from "./check.mjs";
+import { addedRanges, pendingPaths } from "./changeset.mjs";
 import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
 import { gitBuffered, operationUnfinished } from "./git.mjs";

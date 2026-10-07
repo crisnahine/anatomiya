@@ -90,8 +90,9 @@ Then, in the repository you want mapped:
 /anatomiya:scan
 ```
 
-It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it, and
-`.claude/anatomiya/facts.json`. Pass `--dry-run` to see the plan without writing anything.
+It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
+`.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan
+without writing anything.
 
 To keep the map out of git:
 
@@ -114,10 +115,14 @@ a `.worktreeinclude` at the repository root copies the map and the pin in when t
 ```
 **/.claude/rules/anatomiya-*.md
 **/.claude/anatomiya/facts.json
+**/.claude/anatomiya/layout.json
 **/.claude/anatomiya/baseline.json
 ```
 
-The pin is the third line because the exclude above hides it along with the map, so the copied map
+The layout file saves time only where the copy keeps `facts.json`'s modification time. Elsewhere the
+hooks read the record, as they would with no layout file.
+
+The pin is the last line because the exclude above hides it along with the map, so the copied map
 arrives with the pin it was checked against. A linked worktree with no pin of its own reads its main
 checkout's, but only where that checkout can be named: a repository whose git directory is not the
 checkout's own `.git` (moved out with `--separate-git-dir`) names none, and without the copied pin
@@ -159,7 +164,8 @@ decides on its own whether to run the type checker, the same way `/anatomiya:sca
 alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
-failed until one succeeds.
+failed until one succeeds. A committed map's `.claude/anatomiya/layout.json` comes along but does
+nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
 
 A session started in the directory that holds your checkouts, which has no map of its own, refreshes
 and watches each mapped checkout directly below it, and the reuse check reads each one's change,
@@ -439,8 +445,8 @@ dependencies are on disk inside it (a `node_modules` linked in from elsewhere is
 as no dependencies), and the repository has a root `tsconfig.json` or a TypeScript source file that
 is not a declaration file, and leaves it off otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
-`jsconfig.json` does not count. It costs: a scan with it measured about 3x a plain one on a
-3,800-file repository and about 6x on a 2,600-file one, and the checker is whole-program, so it
+`jsconfig.json` does not count. It costs: a scan with it measured about 5x a plain one on a
+3,800-file repository and about 10x on a 2,600-file one, and the checker is whole-program, so it
 cannot be narrowed to the files you changed. The map says when the checker answered badly.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
@@ -461,7 +467,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 256 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 263 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import * as reduce from "../plugins/anatomiya/lib/reduce.mjs";
+import { GATES, wilsonLower, wilsonUpper } from "../plugins/anatomiya/lib/gates.mjs";
 import { assertRegistryRows } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { ELIGIBLE, REFUSED } from "./fixtures/counter-pins.mjs";
 
-const { applyGates, verdictFor, blockedFor, GATES } = reduce;
+const { applyGates, verdictFor, blockedFor } = reduce;
 
 /**
  * A dimension's per-file shape as the reducer leaves it, built from per-file
@@ -56,10 +58,17 @@ test("a perfect record needs thirty-five sites before it may be stated", () => {
   // The whole behavioural claim of the bound: 34 of 34 is below 0.90 and 35 of
   // 35 is above it. Moving z moves this floor (1.645 puts it at 25 sites,
   // 2.576 at 60), and re-adding a candidate floor hides it.
-  assert.equal(Number(reduce.wilsonLower(34, 34).toFixed(4)), 0.8985);
-  assert.equal(Number(reduce.wilsonLower(35, 35).toFixed(4)), 0.9011);
-  assert.ok(reduce.wilsonLower(34, 34) < GATES.minRatio);
-  assert.ok(reduce.wilsonLower(35, 35) >= GATES.minRatio);
+  //
+  // By hand, not from the module: with every site conforming the Wilson lower
+  // bound is n / (n + z^2), and z^2 = 1.96^2 = 3.8416, so 34 / 37.8416 = 0.8985
+  // and 35 / 38.8416 = 0.9011, either side of 0.90.
+  assert.equal(Number(wilsonLower(34, 34).toFixed(4)), 0.8985);
+  assert.equal(Number(wilsonLower(35, 35).toFixed(4)), 0.9011);
+  assert.ok(wilsonLower(34, 34) < 0.9);
+  assert.ok(wilsonLower(35, 35) >= 0.9);
+  // And the gate itself, which reads the table's own ratio and z.
+  assert.equal(applyGates(dim(spread([7, 7, 7, 7, 6])), ctx()).gate, "evidence", "34 of 34");
+  assert.equal(applyGates(dim(spread([7, 7, 7, 7, 7])), ctx()).directive, true, "35 of 35");
   assert.equal(GATES.z, 1.96);
   assert.equal(GATES.minCandidates, undefined, "no floor below 35 can ever fire");
 });
@@ -72,16 +81,16 @@ test("no dimension clears the evidence gate while failing the ninety percent def
   let lowestStated = 1;
   for (let n = 1; n <= 300; n++) {
     for (let k = 0; k <= n; k++) {
-      const bound = reduce.wilsonLower(k, n);
+      const bound = wilsonLower(k, n);
       assert.ok(bound <= k / n, `${k}/${n} bound ${bound} above its own ratio`);
-      if (bound >= GATES.minRatio) {
-        assert.ok(k / n >= GATES.minRatio, `${k}/${n} cleared the bound below 0.90`);
+      if (bound >= 0.9) {
+        assert.ok(k / n >= 0.9, `${k}/${n} cleared the bound below 0.90`);
         lowestStated = Math.min(lowestStated, k / n);
       }
     }
   }
-  assert.ok(lowestStated > GATES.minRatio, "the boundary itself is never reachable");
-  assert.equal(reduce.wilsonLower(0, 11), 0);
+  assert.ok(lowestStated > 0.9, "the boundary itself is never reachable");
+  assert.equal(wilsonLower(0, 11), 0);
 });
 
 test("a repository at exactly ninety percent conformance never states a convention, at any size", () => {
@@ -150,8 +159,8 @@ test("the ratio gate reports the repository's habit and the evidence gate report
 test("no candidates at all states nothing, and divides by nothing", () => {
   // Reachable through a baseline that measured no sites. A NaN bound would
   // still suppress the directive, but it serialises to null in facts.json.
-  assert.equal(reduce.wilsonLower(0, 0), 0);
-  assert.equal(Number.isFinite(reduce.wilsonLower(0, 0)), true);
+  assert.equal(wilsonLower(0, 0), 0);
+  assert.equal(Number.isFinite(wilsonLower(0, 0)), true);
 
   const r = applyGates(dim({ candidates: 0, conforming: 0 }), ctx());
   assert.equal(r.ratio, 0);
@@ -164,7 +173,7 @@ test("one site is not a convention", () => {
   // Several smoothing alternatives special-case small n toward optimism. A
   // single conforming site reading as a repository-wide convention is the most
   // embarrassing output available.
-  assert.equal(Number(reduce.wilsonLower(1, 1).toFixed(4)), 0.2065);
+  assert.equal(Number(wilsonLower(1, 1).toFixed(4)), 0.2065);
 
   const r = applyGates(dim({ ...spread([1]) }), ctx());
   assert.equal(r.directive, false);
@@ -175,8 +184,8 @@ test("a conforming count above the candidate count fails closed with a finite nu
   // Without the clamp on p, the variance term goes negative, sqrt returns NaN
   // and facts.json stores null for a field the check reads. The directive still
   // fails closed, which is why the bug would survive review.
-  assert.equal(Number(reduce.wilsonLower(21, 20).toFixed(4)), 0.8389);
-  assert.equal(Number.isFinite(reduce.wilsonLower(21, 20)), true);
+  assert.equal(Number(wilsonLower(21, 20).toFixed(4)), 0.8389);
+  assert.equal(Number.isFinite(wilsonLower(21, 20)), true);
 
   const r = applyGates(dim({ candidates: 20, conforming: 21 }), ctx());
   assert.equal(Number.isFinite(r.bound), true);
@@ -1422,8 +1431,6 @@ test("wilsonUpper is the mirror of wilsonLower on the same counts", () => {
   // The interval is symmetric, which is what makes "this area's upper bound
   // reaches the rate it borrows" the same question as "the counter's lower
   // bound beats the claim's upper bound".
-  const { wilsonUpper, wilsonLower } = reduce;
-
   for (const [k, n] of [[3, 3], [9, 9], [900, 1000], [2, 61], [0, 5]]) {
     assert.equal(
       Number(wilsonUpper(k, n).toFixed(10)),
@@ -1594,11 +1601,21 @@ test("the upper bound of a perfect sample is exactly one", () => {
   // It is a probability, so it is never above one, and it is an upper bound on
   // the sample's own rate, so it is never below it.
   for (let n = 1; n <= 500; n++) {
-    assert.equal(reduce.wilsonUpper(n, n), 1, `wilsonUpper(${n}, ${n})`);
+    assert.equal(wilsonUpper(n, n), 1, `wilsonUpper(${n}, ${n})`);
     for (const k of [0, Math.floor(n / 2), n]) {
-      const upper = reduce.wilsonUpper(k, n);
+      const upper = wilsonUpper(k, n);
       assert.ok(upper <= 1, `wilsonUpper(${k}, ${n}) = ${upper} is above one`);
       assert.ok(upper >= k / n, `wilsonUpper(${k}, ${n}) = ${upper} is below its own rate`);
     }
   }
+});
+
+test("the bounds live in a leaf a hook can import without the reducer", () => {
+  // The facts reader needs one bound, and reaching it through the reducer
+  // loaded the registry, the walker and the parser into every hook process.
+  const src = readFileSync(new URL("../plugins/anatomiya/lib/gates.mjs", import.meta.url), "utf8");
+  assert.deepEqual([...src.matchAll(/(?:from\s*|import\s*\(\s*|import\s+)["']\.{1,2}\//g)], []);
+  assert.equal(wilsonLower(6, 6), 0.6096569663469354);
+  assert.equal(wilsonUpper(12, 12), 1);
+  assert.equal(wilsonUpper(9, 12), 0.9110599603710388);
 });

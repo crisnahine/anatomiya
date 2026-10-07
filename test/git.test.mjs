@@ -10,7 +10,10 @@ import { promisify } from "node:util";
 import { needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
-import { caseMagic, changedSinceWorktree, gitBuffered, gitStreamed, headSha, isSha, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
+import {
+  caseMagic, changedSinceWorktree, commitAt, diffRange, filesAt, gitBuffered, gitStreamed, headSha, isSha, mergeBase,
+  nameStatusReader, parsePorcelainRows, shaReachable, showBlob,
+} from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -1098,4 +1101,221 @@ test("a pathspec folds case exactly where the repository's git does", async (t) 
   assert.equal(await caseMagic(dir), "");
   execFileSync("git", ["config", "--unset", "core.ignorecase"], { cwd: dir });
   assert.equal(await caseMagic(dir), "");
+});
+
+/* --- an answer about a full commit sha is asked once per process --- */
+
+/**
+ * Every git this process starts while `run` is awaited, as its argument lists.
+ * The readers under test take no environment, so the shim goes on this
+ * process's own PATH and comes off it whatever `run` does.
+ */
+async function gitCalls(t, run) {
+  const bin = scratch(t, "anatomiya-git-log-");
+  const log = join(bin, "calls");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    await run();
+  } finally {
+    process.env.PATH = path;
+  }
+  return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter((c) => !c.startsWith("config ")) : [];
+}
+
+function twoCommits(t) {
+  const { dir, git } = repo(t);
+  const first = git("rev-parse", "HEAD").toString().trim();
+  writeFileSync(join(dir, "b.ts"), "export const b = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "second");
+  return { dir, git, first, second: git("rev-parse", "HEAD").toString().trim() };
+}
+
+test("a question about full commit shas spawns git once however often it is asked", needsShebang, async (t) => {
+  // An object named by its full hash cannot change, and the check asked the
+  // same merge base three times and the same diff twice in one run. Whether
+  // the commit still exists is the one question asked every time.
+  const { dir, first, second } = twoCommits(t);
+  const answers = [];
+  const calls = await gitCalls(t, async () => {
+    for (let i = 0; i < 2; i++) {
+      answers.push(await mergeBase(dir, first, second));
+      answers.push(await commitAt(dir, second));
+      answers.push(await shaReachable(dir, second));
+      answers.push([...(await filesAt(dir, second))]);
+      answers.push([...(await diffRange(dir, first, second)).changed]);
+    }
+  });
+
+  assert.deepEqual(answers.slice(0, 5), [{ found: true, failed: false, sha: first }, second, true, ["a.ts", "b.ts"], ["b.ts"]]);
+  assert.deepEqual(answers.slice(5), answers.slice(0, 5), "the second asking answers the same");
+  const spawned = (sub) => calls.filter((c) => c.startsWith(`${sub} `)).length;
+  assert.deepEqual(
+    ["merge-base", "rev-parse", "cat-file", "ls-tree", "diff"].map((sub) => [sub, spawned(sub)]),
+    [["merge-base", 1], ["rev-parse", 1], ["cat-file", 2], ["ls-tree", 1], ["diff", 1]],
+    calls.join("\n")
+  );
+});
+
+test("a ref name or a short sha is asked again every time, because what it names moves", needsShebang, async (t) => {
+  const { dir, git, first } = twoCommits(t);
+  const short = first.slice(0, 7);
+  let before = null;
+  let after = null;
+  const calls = await gitCalls(t, async () => {
+    before = await commitAt(dir, "HEAD");
+    await mergeBase(dir, "HEAD", first);
+    await filesAt(dir, "HEAD");
+    await commitAt(dir, short);
+    writeFileSync(join(dir, "c.ts"), "export const c = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "third");
+    after = await commitAt(dir, "HEAD");
+    await mergeBase(dir, "HEAD", first);
+    await filesAt(dir, "HEAD");
+    await commitAt(dir, short);
+  });
+
+  assert.notEqual(after, before, "HEAD moved, and the answer moved with it");
+  const spawned = (prefix) => calls.filter((c) => c.startsWith(prefix)).length;
+  assert.equal(spawned("rev-parse --verify --quiet HEAD^{commit}"), 2);
+  assert.equal(spawned("merge-base HEAD"), 2);
+  assert.equal(spawned("ls-tree -r --name-only -z HEAD"), 2);
+  assert.equal(spawned(`rev-parse --verify --quiet ${short}^{commit}`), 2);
+});
+
+test("a question git could not answer is asked again, never remembered as the answer", needsShebang, async (t) => {
+  // F15: a failure kept would read as a fact about the commit for the rest of
+  // the process, and a later read that would have worked never runs.
+  const { dir, git, first } = twoCommits(t);
+  const absent = "f".repeat(40);
+  // No common ancestor is an answer git gave, but a fetch can give the two one.
+  const orphan = git("commit-tree", `${first}^{tree}`, "-m", "orphan").toString().trim();
+  const answers = [];
+  const calls = await gitCalls(t, async () => {
+    for (let i = 0; i < 2; i++) {
+      answers.push(await filesAt(dir, absent));
+      answers.push(await diffRange(dir, first, absent));
+      answers.push((await mergeBase(dir, first, absent)).failed);
+      answers.push(await commitAt(dir, absent));
+      answers.push(await mergeBase(dir, first, orphan));
+    }
+  });
+
+  const unrelated = { found: false, failed: false, sha: null };
+  assert.deepEqual(answers, [null, null, true, null, unrelated, null, null, true, null, unrelated]);
+  const spawned = (sub) => calls.filter((c) => c.startsWith(`${sub} `)).length;
+  assert.deepEqual(
+    ["ls-tree", "diff", "merge-base"].map((sub) => [sub, spawned(sub)]),
+    [["ls-tree", 2], ["diff", 2], ["merge-base", 4]],
+    calls.join("\n")
+  );
+});
+
+test("a read that threw is asked again, never kept as the answer", { skip: process.platform === "win32" }, async (t) => {
+  // An environment too large to start git with throws from the spawn itself,
+  // and a kept rejection would refuse that commit for the life of the process.
+  const { dir, second } = twoCommits(t);
+  process.env.GIT_ANATOMIYA_PAD = "x".repeat(4_000_000);
+  try {
+    await assert.rejects(commitAt(dir, second), { code: "E2BIG" });
+  } finally {
+    delete process.env.GIT_ANATOMIYA_PAD;
+  }
+  assert.equal(await commitAt(dir, second), second);
+});
+
+test("the merge base of a commit with itself is the commit, with no merge-base spawned", needsShebang, async (t) => {
+  const { dir, second } = twoCommits(t);
+  const answers = [];
+  const calls = await gitCalls(t, async () => {
+    answers.push(await mergeBase(dir, second, second));
+    answers.push(await mergeBase(dir, second, second));
+  });
+
+  assert.deepEqual(answers, [{ found: true, failed: false, sha: second }, { found: true, failed: false, sha: second }]);
+  assert.deepEqual(calls, [`rev-parse --verify --quiet ${second}^{commit}`], "only the commit itself was verified");
+});
+
+test("past its bound the memory drops the oldest answer first, and a dropped sha is asked again", needsShebang, async (t) => {
+  // A stand-in git that names whatever full sha it is asked about, so filling
+  // the memory costs a shell per question rather than a commit each. What
+  // earlier tests left is older still and goes first, so of this test's shas
+  // only the first is dropped.
+  const bin = scratch(t, "anatomiya-git-fill-");
+  const log = join(bin, "asked");
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh\ncase "$1" in config) exit 1 ;; esac\nsha="\${4%^\\{commit\\}}"\necho "$sha" >> '${log}'\necho "$sha"\n`,
+    { mode: 0o755 }
+  );
+  const sha = (i) => (i + 1).toString(16).padStart(40, "0");
+  const asked = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  let filled;
+  let after;
+  try {
+    for (let i = 0; i <= 256; i++) assert.equal(await commitAt(bin, sha(i)), sha(i));
+    filled = asked().length;
+    rmSync(log);
+    for (const i of [256, 0, 2, 1]) assert.equal(await commitAt(bin, sha(i)), sha(i));
+    after = asked();
+  } finally {
+    process.env.PATH = path;
+  }
+
+  assert.equal(filled, 257);
+  assert.deepEqual(after, [sha(0), sha(1)], "the first sha fell out, and asking it again pushed out the next oldest");
+});
+
+test("a commit pruned while the process runs reads as unreachable at once", async (t) => {
+  // E3: reachability exists to notice a commit that went away, so it is never
+  // answered from memory.
+  const { dir, git, first, second } = twoCommits(t);
+  git("checkout", "-q", "-b", "keep", first);
+  assert.equal(await shaReachable(dir, second), true);
+
+  for (const branch of git("branch", "--format=%(refname:short)").toString().trim().split("\n")) {
+    if (branch !== "keep") git("branch", "-q", "-D", branch);
+  }
+  git("reflog", "expire", "--expire=now", "--all");
+  git("gc", "-q", "--prune=now");
+
+  assert.equal(await shaReachable(dir, second), false);
+});
+
+test("a listing read under one caller's bounds does not answer a caller with tighter ones", needsShebang, async (t) => {
+  // A real git can answer inside a millisecond on a fast runner, so a stand-in
+  // waits first: the unbounded caller always gets the listing, the 1 ms one never.
+  const { dir, second } = twoCommits(t);
+  const bin = scratch(t, "anatomiya-git-slow-");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nsleep 0.3\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"]);
+    assert.equal(await filesAt(dir, second, { timeout: 1 }), null, "the tighter bound is asked, and git outlasts it");
+  } finally {
+    process.env.PATH = path;
+  }
+});
+
+test("an answer one caller edits is not the answer the next caller of the same sha gets", async (t) => {
+  const { dir, first, second } = twoCommits(t);
+
+  const listing = await filesAt(dir, second);
+  listing.delete("a.ts");
+  listing.add("edited.ts");
+  const range = await diffRange(dir, first, second);
+  range.changed.clear();
+  range.renames.set("edited.ts", "a.ts");
+
+  assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"]);
+  const again = await diffRange(dir, first, second);
+  assert.deepEqual([[...again.changed], [...again.renames]], [["b.ts"], []]);
 });

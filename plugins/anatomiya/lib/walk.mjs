@@ -258,29 +258,89 @@ export function crossing(hit) {
  * One copy, because both parser bridges ran this loop and its one guarantee has
  * to hold in both: a dimension that throws on one odd tree costs that
  * dimension's count for this file, not the file and not the other twenty.
+ *
+ * A row declaring `visitor` is handed each node of one shared walk instead of
+ * walking for itself: about fifty walks a file became one (B49). A throw while
+ * making it, on any node, or in its `done` drops that row's sites, the same
+ * guarantee a throwing `run` has, and so does a throw from the walk itself: a
+ * recursive walker overflows on a deep tree. `walker` is the bridge's own walk.
+ *
+ * `also` rides the same walk without being a row: a bridge's facets, which it
+ * needs whether or not any row was asked for. Each is fed until it throws, or
+ * the walk does, and is then left holding that error in `error`, which its own
+ * `done` answers with, so it never costs a row its sites.
  */
-export function collectHits(program, dimensions, extra = {}) {
-  const hits = {};
-  for (const dim of dimensions) {
+export function collectHits(program, dimensions, extra = {}, { walker = walk, also = [] } = {}) {
+  const found = new Array(dimensions.length);
+  const visiting = [];
+  for (let i = 0; i < dimensions.length; i++) {
+    const dim = dimensions[i];
     const sites = [];
+    const add = (hit) => sites.push(crossing(hit));
     try {
-      dim.run(
-        program,
-        (hit) => sites.push(crossing(hit)),
-        // The tree's own side channel: the comments the parser reported, the
-        // exact string it parsed, and the path it was read from, for the rows
-        // whose question the tree alone cannot answer. Same string, never the
-        // disk buffer (B5). The path is what a row asking whether this file is
-        // the module it is about has to read, and it is the one field neither
-        // bridge could derive from the tree.
-        extra
-      );
+      // The tree's own side channel: the comments the parser reported, the
+      // exact string it parsed, and the path it was read from, for the rows
+      // whose question the tree alone cannot answer. Same string, never the
+      // disk buffer (B5). The path is what a row asking whether this file is
+      // the module it is about has to read, and it is the one field neither
+      // bridge could derive from the tree.
+      if (dim.visitor) visiting.push({ i, sites, v: dim.visitor(program, add, extra) });
+      else {
+        dim.run(program, add, extra);
+        found[i] = sites;
+      }
     } catch {
       continue;
     }
-    if (sites.length) hits[dim.key] = sites;
+  }
+  for (const v of also) visiting.push({ v, riding: true });
+  if (visiting.length) {
+    let live = visiting;
+    try {
+      walker(program, (node, ctx) => {
+        for (let k = 0; k < live.length; k++) {
+          try {
+            live[k].v.node(node, ctx);
+          } catch (err) {
+            const row = live[k];
+            if (row.riding) row.v.error = err;
+            live = live.filter((other) => other !== row);
+            k--;
+          }
+        }
+      });
+    } catch (err) {
+      for (const row of live) if (row.riding) row.v.error = err;
+      live = [];
+    }
+    for (const row of live) {
+      if (row.riding) continue;
+      try {
+        row.v.done?.();
+        found[row.i] = row.sites;
+      } catch {
+        continue;
+      }
+    }
+  }
+  const hits = {};
+  for (let i = 0; i < dimensions.length; i++) {
+    if (found[i]?.length) hits[dimensions[i].key] = found[i];
   }
   return hits;
+}
+
+/**
+ * A visitor row's `run`: its own walk, for the callers that ask one row at a
+ * time, such as the check and the tests. `walker` is its bridge's walk, as in
+ * `collectHits`.
+ */
+export function fromVisitor(visitor, walker = walk) {
+  return (program, add, extra = {}) => {
+    const v = visitor(program, add, extra);
+    walker(program, (node, ctx) => v.node(node, ctx));
+    v.done?.();
+  };
 }
 
 /**

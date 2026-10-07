@@ -198,7 +198,7 @@ test("a file over the size cap is named apart from one that failed", async (t) =
 
 test("no more parser processes are forked than there are files to parse", () => {
   // A check examines the files one diff touched, which is usually one or two.
-  // The pool's default is min(8, cpus-1), so a one-file check forked eight
+  // The pool's default is min(8, cores - 1), so a one-file check forked eight
   // child processes to parse one file. The old check capped at four and the
   // cap was lost in the move; B10's measurement says throughput stops
   // improving past four workers on eleven cores anyway.

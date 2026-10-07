@@ -21,7 +21,8 @@ import { tmpdir } from "node:os";
  * trips a liveness check. `idleMs` is the silence clock, and it runs only once
  * `touch()` has started it. `touch(ms)` takes a window because a checker's
  * first silence is its whole program build and every silence after it is a
- * stall.
+ * stall. `spawner` stands in for `spawn` where the process is started on
+ * another thread; the guards here hold whatever answers like a child.
  */
 export function guardedChild({
   kind,
@@ -43,6 +44,7 @@ export function guardedChild({
   wallMs = null,
   idleMs = null,
   onTimeout,
+  spawner = spawn,
 }) {
   // `text.length < undefined` is false, so an omitted cap keeps no stderr at
   // all and every death before the first answer loses the only copy of why.
@@ -54,7 +56,7 @@ export function guardedChild({
   const child =
     kind === "fork"
       ? fork(modulePath, args, { cwd, env, execArgv, stdio })
-      : spawn(command, args, { cwd, env, stdio });
+      : spawner(command, args, { cwd, env, stdio });
 
   let text = "";
   let killedBy = null;

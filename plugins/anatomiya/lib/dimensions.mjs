@@ -1,11 +1,14 @@
-import { walk, isFunctionLike, declName, value, boundNames, optionalChain } from "./walk.mjs";
+import { walk, fromVisitor, isFunctionLike, declName, value, boundNames, optionalChain } from "./walk.mjs";
+import { walkRuby } from "./ruby-walk.mjs";
+import { engineOf } from "./langs.mjs";
 import { EXTRA_DIMENSIONS } from "./dimensions-extra.mjs";
 import { RUBY_DIMENSIONS } from "./dimensions-ruby.mjs";
 import { JSX_DIMENSIONS } from "./dimensions-jsx.mjs";
 import { RAILS_DIMENSIONS } from "./dimensions-rails.mjs";
 import { SEMANTIC_DIMENSIONS } from "./dimensions-semantic.mjs";
 import { NAMING_AST } from "./dimensions-naming.mjs";
-import { CAPABILITY_DIMENSIONS, CAPABILITY_WORDS } from "./dimensions-capability.mjs";
+import { CAPABILITY_DIMENSIONS } from "./dimensions-capability.mjs";
+import { CAPABILITY_WORDS } from "./stems.mjs";
 // The framework field is held to the declared profiles, so a row naming a
 // framework nobody detects cannot ship as a slot that can only read zero (C8).
 import { FRAMEWORK_NAMES } from "./frameworks.mjs";
@@ -90,29 +93,25 @@ function scopeBinds(node, name) {
 const declared = (decl, name) => (decl.declarations || []).some((d) => boundNames(d.id).includes(name));
 
 /**
- * Every name this program assigns to, anywhere in it.
+ * The names this node assigns to, gathered over every node of the program.
  *
  * A member assignment binds nothing: `obj.x = 1` writes a property, which is the
  * distinction `usesParam` already draws for a catch parameter, and `boundNames`
  * has no member case so it falls out. A for-of or for-in head with no
  * declaration writes its target on every turn without declaring it.
  */
-function assignedNames(program) {
-  const names = new Set();
-  walk(program, (n) => {
-    if (n.type === "AssignmentExpression") {
-      for (const name of boundNames(n.left)) names.add(name);
-      return;
-    }
-    if (n.type === "UpdateExpression") {
-      if (n.argument && n.argument.type === "Identifier") names.add(n.argument.name);
-      return;
-    }
-    if (n.type === "ForOfStatement" || n.type === "ForInStatement") {
-      if (n.left && n.left.type !== "VariableDeclaration") for (const name of boundNames(n.left)) names.add(name);
-    }
-  });
-  return names;
+function noteAssigned(n, names) {
+  if (n.type === "AssignmentExpression") {
+    for (const name of boundNames(n.left)) names.add(name);
+    return;
+  }
+  if (n.type === "UpdateExpression") {
+    if (n.argument && n.argument.type === "Identifier") names.add(n.argument.name);
+    return;
+  }
+  if (n.type === "ForOfStatement" || n.type === "ForInStatement") {
+    if (n.left && n.left.type !== "VariableDeclaration") for (const name of boundNames(n.left)) names.add(name);
+  }
 }
 
 /**
@@ -152,13 +151,15 @@ export const DIMENSIONS = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (!isCatch(n)) return;
-        const names = boundNames(n.param);
-        const handled = !bodyIsEmpty(n.body) && (usesParam(n.body, names) || hasRethrow(n.body));
-        add({ node: n, conforming: handled, where: declName(ctx.enclosing) });
-      });
+    visitor(program, add) {
+      return {
+        node(n, ctx) {
+          if (!isCatch(n)) return;
+          const names = boundNames(n.param);
+          const handled = !bodyIsEmpty(n.body) && (usesParam(n.body, names) || hasRethrow(n.body));
+          add({ node: n, conforming: handled, where: declName(ctx.enclosing) });
+        },
+      };
     },
   },
 
@@ -176,21 +177,27 @@ export const DIMENSIONS = [
       blind: "a throw inside a helper the caller wraps is invisible from the file that throws",
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (!isThrow(n)) return;
-        // A rethrow inside a catch is deliberate, not a policy violation.
-        const inCatch = ctx.within(CATCH);
-        if (inCatch) return;
-        add({ node: n, conforming: false, where: declName(ctx.fn) });
-      });
-      walk(program, (n, ctx) => {
-        if (n.type !== "ReturnStatement" || !n.argument) return;
-        // React merges what this returns into component state, `{ error }` included.
-        if (declName(ctx.fn) === "getDerivedStateFromError") return;
-        if (!isResultShaped(value(n.argument))) return;
-        add({ node: n, conforming: true, where: declName(ctx.fn) });
-      });
+    visitor(program, add) {
+      // Every throw before every result, the order two walks gave.
+      const results = [];
+      return {
+        node(n, ctx) {
+          if (isThrow(n)) {
+            // A rethrow inside a catch is deliberate, not a policy violation.
+            const inCatch = ctx.within(CATCH);
+            if (inCatch) return;
+            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+          }
+          if (n.type !== "ReturnStatement" || !n.argument) return;
+          // React merges what this returns into component state, `{ error }` included.
+          if (declName(ctx.fn) === "getDerivedStateFromError") return;
+          if (!isResultShaped(value(n.argument))) return;
+          results.push({ node: n, conforming: true, where: declName(ctx.fn) });
+        },
+        done() {
+          for (const hit of results) add(hit);
+        },
+      };
     },
   },
 
@@ -205,45 +212,51 @@ export const DIMENSIONS = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      const assigned = assignedNames(program);
+    visitor(program, add) {
+      const assigned = new Set();
       const bindings = new Map();
       const sites = [];
-      walk(program, (n, ctx) => {
-        if (n.type !== "VariableDeclaration") return;
-        // Module level is exactly "no enclosing declaration". A top-level for
-        // loop binding sits at module level by position and is not module
-        // state, so it is excluded by its enclosing statement.
-        if (ctx.enclosing !== null) return;
-        if (ctx.within(LOOPS)) return;
-        // `declare const x: number` binds nothing at run time, so it is not
-        // state this claim is about either way, and a binding inside a
-        // namespace or an ambient module is scoped to that block rather than to
-        // the module.
-        if (n.declare) return;
-        if (ctx.within(NAMESPACE)) return;
-        // `using r = open()` and `await using` dispose r when the module's
-        // evaluation ends. The binding is already immutable, and the `const`
-        // the violation asked for keeps it while dropping the disposal.
-        if (n.kind === "using" || n.kind === "await using") return;
-        sites.push(n);
-        for (const d of n.declarations || []) {
-          for (const name of boundNames(d.id)) bindings.set(name, (bindings.get(name) ?? 0) + 1);
-        }
-      });
-      // Two passes, because whether `const` was available needs the whole file:
-      // the name may be assigned below the declaration, or declared twice.
-      for (const n of sites) {
-        // A const answered the claim whatever else the file does with the name,
-        // so the conforming count cannot move and the ratio can only rise by
-        // losing violations nobody could act on.
-        if (n.kind === "const") {
-          add({ node: n, conforming: true, where: null });
-          continue;
-        }
-        if (!constWasAvailable(n, assigned, bindings)) continue;
-        add({ node: n, conforming: false, where: null });
-      }
+      return {
+        node(n, ctx) {
+          noteAssigned(n, assigned);
+          if (n.type !== "VariableDeclaration") return;
+          // Module level is exactly "no enclosing declaration". A top-level for
+          // loop binding sits at module level by position and is not module
+          // state, so it is excluded by its enclosing statement.
+          if (ctx.enclosing !== null) return;
+          if (ctx.within(LOOPS)) return;
+          // `declare const x: number` binds nothing at run time, so it is not
+          // state this claim is about either way, and a binding inside a
+          // namespace or an ambient module is scoped to that block rather than to
+          // the module.
+          if (n.declare) return;
+          if (ctx.within(NAMESPACE)) return;
+          // `using r = open()` and `await using` dispose r when the module's
+          // evaluation ends. The binding is already immutable, and the `const`
+          // the violation asked for keeps it while dropping the disposal.
+          if (n.kind === "using" || n.kind === "await using") return;
+          sites.push(n);
+          for (const d of n.declarations || []) {
+            for (const name of boundNames(d.id)) bindings.set(name, (bindings.get(name) ?? 0) + 1);
+          }
+        },
+        // Judged after the walk, because whether `const` was available needs the
+        // whole file: the name may be assigned below the declaration, or declared
+        // twice.
+        done() {
+          for (const n of sites) {
+            // A const answered the claim whatever else the file does with the name,
+            // so the conforming count cannot move and the ratio can only rise by
+            // losing violations nobody could act on.
+            if (n.kind === "const") {
+              add({ node: n, conforming: true, where: null });
+              continue;
+            }
+            if (!constWasAvailable(n, assigned, bindings)) continue;
+            add({ node: n, conforming: false, where: null });
+          }
+        },
+      };
     },
   },
 
@@ -262,23 +275,25 @@ export const DIMENSIONS = [
       blind: "a caller-level wrapper handling the failure is invisible from the function that fails",
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (!isFunctionLike(n) || !n.async) return;
-        let handled = false;
-        walk(n.body, (m, mctx) => {
-          // Only a catch handles anything. A try with just a finally re-throws
-          // once the cleanup runs, and lock, transaction and cleanup helpers
-          // are written that way everywhere: counted, they stated this claim
-          // at 80 of 80 over code that caught nothing.
-          if (m.type !== "TryStatement" || !m.handler) return;
-          // The handler must belong to THIS function, not to an inner arrow or
-          // a nested method that happens to sit inside its byte range.
-          if (mctx.enclosing !== null) return;
-          handled = true;
-        });
-        add({ node: n, conforming: handled, where: declName(n) });
-      });
+    visitor(program, add) {
+      return {
+        node(n) {
+          if (!isFunctionLike(n) || !n.async) return;
+          let handled = false;
+          walk(n.body, (m, mctx) => {
+            // Only a catch handles anything. A try with just a finally re-throws
+            // once the cleanup runs, and lock, transaction and cleanup helpers
+            // are written that way everywhere: counted, they stated this claim
+            // at 80 of 80 over code that caught nothing.
+            if (m.type !== "TryStatement" || !m.handler) return;
+            // The handler must belong to THIS function, not to an inner arrow or
+            // a nested method that happens to sit inside its byte range.
+            if (mctx.enclosing !== null) return;
+            handled = true;
+          });
+          add({ node: n, conforming: handled, where: declName(n) });
+        },
+      };
     },
   },
 
@@ -298,18 +313,20 @@ export const DIMENSIONS = [
       blind: "the receiver's name is the only signal of optionality this tier has, and it is a poor one: a measured 2,485-file repository writes ?. 2,627 times across 672 files, while this row sees 538 sites in 202 of them. A destructured or interface-declared optional carries none of the six names, and a read off a name that does carries one whether or not the value is optional. Answering it properly needs the checker, which knows whether a receiver's type includes null or undefined",
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (n.type !== "MemberExpression") return;
-        if (n.computed) return;
-        const obj = n.object;
-        if (!obj || obj.type !== "Identifier") return;
-        if (!/^(opts|options|params|props|config|input)$/.test(obj.name)) return;
-        // A read in a write position, a `new` callee or a tagged template's tag
-        // cannot carry `?.` at all, so the conforming form does not exist there.
-        if (!optionalChain(n, ctx.ancestors).allowed) return;
-        add({ node: n, conforming: n.optional === true, where: declName(ctx.fn) });
-      });
+    visitor(program, add) {
+      return {
+        node(n, ctx) {
+          if (n.type !== "MemberExpression") return;
+          if (n.computed) return;
+          const obj = n.object;
+          if (!obj || obj.type !== "Identifier") return;
+          if (!/^(opts|options|params|props|config|input)$/.test(obj.name)) return;
+          // A read in a write position, a `new` callee or a tagged template's tag
+          // cannot carry `?.` at all, so the conforming form does not exist there.
+          if (!optionalChain(n, ctx.ancestors).allowed) return;
+          add({ node: n, conforming: n.optional === true, where: declName(ctx.fn) });
+        },
+      };
     },
   },
 ];
@@ -354,6 +371,13 @@ export const ALL_DIMENSIONS = [
   ...NAMING_AST,
   ...CAPABILITY_DIMENSIONS,
 ];
+
+// A visitor row's `run` walks the tree alone, on its engine's walk, for the
+// callers that ask one row at a time: the check, and the tests. Here, where the
+// tree rows meet, because the parse worker and the Ruby shard read this list
+// and must not reach `registry.mjs`.
+const WALKS = { oxc: walk, prism: walkRuby };
+for (const d of ALL_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, WALKS[engineOf(d.langs[0])]);
 
 export const PRECISIONS = ["precise", "partial"];
 

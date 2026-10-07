@@ -523,6 +523,17 @@ export function writtenProblems(repo, wrote) {
   return { problems, written, facts };
 }
 
+/**
+ * The ref the probe's check is based on: the branch, or the commit itself on a
+ * detached checkout, which is how a frozen copy at a sha arrives. `null` with
+ * no commit at all.
+ */
+export function baseOf(clone) {
+  if (git(["rev-parse", "--verify", "-q", "HEAD"], clone).status !== 0) return null;
+  const branch = git(["symbolic-ref", "--short", "HEAD"], clone);
+  return (branch.status === 0 ? branch.out : git(["rev-parse", "HEAD"], clone).out).trim();
+}
+
 /** The whole flow for one repository, on a clone that is removed either way. */
 async function runRepo(name, source, scratchDir) {
   const clone = join(scratchDir, name);
@@ -540,12 +551,11 @@ async function runRepo(name, source, scratchDir) {
     }
     git(["config", "gc.auto", "0"], clone);
     git(["config", "maintenance.auto", "false"], clone);
-    const branch = git(["symbolic-ref", "--short", "HEAD"], clone);
-    if (branch.status !== 0 || git(["rev-parse", "HEAD"], clone).status !== 0) {
+    const base = baseOf(clone);
+    if (base === null) {
       row.probe = "no commits";
       return { row, problems };
     }
-    const base = branch.out.trim();
     const deps = await copyDependencies(source, clone);
     if (deps.error) fail(deps.error);
 

@@ -217,8 +217,10 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs without holding the parent, and not enforced on Windows, where the wall clock is what stops a runaway parse. A worker that moved on to another file while the read ran is not charged for the new one |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
-Pool size is `min(8, cpus - 1)`. The memory grace period exists so a normal parse never pays for the
-polling.
+Pool size is `min(8, cores - 1)`, counting the cores this process may run on
+(`availableParallelism`: the CPU affinity, and from Node 22.12 a cgroup CPU quota, rounded down): in
+a container held to two cores, `cpus()` still lists every core of the host. The memory grace period
+exists so a normal parse never pays for the polling.
 
 The dimensions run in the worker, not in the parent. They are 85% of the scan's CPU (1.57ms per file
 against 0.27ms to parse), and running them in the parent left that 85% on one core: throughput
@@ -227,10 +229,31 @@ channel, where an AST serialises to about 16x the source it came from and the pa
 all of it. What crosses is a conforming flag and a scope name per site. The check asks for the tree
 as well, since it reports line numbers, and it only ever parses the files one diff touched.
 
-The facets are a second walk over the same tree, and they stay one because the cost was measured
-rather than assumed: stubbed to a constant, eslint's 1,489 files parse 40ms faster out of 1.45s.
-That is 0.03ms a file and under 3% of the run, against a shared visitor hook every dimension and
-every reader of them would have to be written around.
+The dimensions share one walk of each tree (B49), `walk` for JavaScript and `walkRuby` for Ruby. A
+row is a visitor: `collectHits` makes every row's visitor, walks the tree once handing each node to
+each row still live, then calls each row's `done` for the work that needs the whole file. A throw
+while a visitor is made, on any node, or in `done` drops that row's sites for the file and no other
+row's. A throw from the walk itself, which a deep tree can raise from a recursive walker, drops
+every visitor row's sites for the file, and a row with its own `run` keeps its own. When every row
+walked for itself, a file on empire-flippers/client took 50.8 walks and 18,518 visitor calls,
+counting every walk of the file's tree or of a subtree in it, and `collectHits` was 87% of each
+parse worker's time; one shared walk took that to 9.2 walks and 2,047 calls. The check and the tests
+still ask one row at a time, through a `run` that `dimensions.mjs` builds from the same visitor on
+its engine's walk. A row that reads only `program.body` never walked, and keeps its `run`.
+
+A JavaScript file's facets take a walk of their own first, because they choose its rows: JSX and
+type syntax decide which rows the file gets, and only those rows go on the shared walk. The facets'
+own walk costs 502ms of `parseFile` beside 4,269ms of rows, summed over empire-flippers/client's
+2,486 files. A build that rode the rows' walk instead had every row the file could get walk before
+the facets ruled any out, all 32 a JavaScript file can get where a file on this repository walks 25,
+and its parse workers' CPU rose 9% on this repository with the scan's wall flat, so it was taken
+back. A Ruby batch's rows are chosen from its languages and the repository's frameworks before any
+file is read, so the Ruby facets choose nothing and ride the rows' walk, as a visitor `collectHits`
+takes beside the rows in its `also` list. They are not a row: they run when no row was asked for, as
+on the check's Ruby path, and a throw in them is held until their `done`, which throws it for the
+bridge to answer with no test runner, so it never stops a row's walk. Riding the rows' walk takes
+the facets' own walk off every Ruby file, and the rows sharing one walk (B49) take the rest: a file
+on empire-flippers/api takes 5.5 walks, where 0.13.3 took 22.5.
 
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
@@ -239,11 +262,12 @@ it is asked for through `rawTransferSupported()` rather than assumed, because th
 experimental upstream. Its deserializer recurses in JavaScript and runs out of stack near 3,000
 operands in one expression, which a generated string table reaches, so a file that overflows it is
 parsed again with the plain transfer, that file only. A process refused the raw transfer's 6 GiB
-reservation drops it for every later file. And it publishes, for all 165 node types it emits, which properties hold
-children. The walk used to enumerate each node instead, which pushed every string and number onto
-its work stack too: 63% of a measured corpus was scalars pushed and discarded one iteration later.
-Reading the published table visits the same 630,000 nodes 2.5x faster, with `Object.keys` left as
-the fallback for a type the table does not know, which no measured file produced.
+reservation drops it for every later file. And it publishes, for all 165 node types it emits, which
+properties hold children. The walk used to enumerate each node instead, which pushed every string
+and number onto its work stack too: 63% of a measured corpus was scalars pushed and discarded one
+iteration later. Reading the published table visits the same 630,000 nodes 2.5x faster, with
+`Object.keys` left as the fallback for a type the table does not know, which no measured file
+produced.
 
 Two rules apply to every parser result. First, offsets are never used to index a buffer read from
 disk: `oxc` reports offsets in UTF-16 code units and `prism` reports them in UTF-8 bytes, 5.4% of
@@ -268,20 +292,50 @@ for minutes and what a hung parse looks like is silence; behind it sits a wall c
 number of files handed over, since a child that answers one file every fourteen seconds keeps the
 idle timer happy and never ends.
 
-A corpus of 1,000 Ruby files or more is split into contiguous batches, one child each, up to four
-and never more than the machine's cores less one, and the answers are joined in the order the files
-were handed over. One child left the parent idle for most of a Ruby-heavy scan; past four, the
-parent's own walk of the trees is what the scan waits on (measured on discourse: 22.1s with one
-child, 13.5s with four, 12.8s with six). Each child keeps its own clocks and its own retry, so a
-child that dies charges the files left in its batch and no others.
+A corpus of 1,000 Ruby files or more is split into batches, one child each: one per 500 files, up to
+four and never more than the machine's cores less one. Six cut empire-flippers/api's scan by 4% to
+16% but put its peak memory 22% to 30% over 0.13.3's, since each batch's thread holds a heap of its
+own. The batches are balanced by bytes, the largest file first into the lightest batch, and a file
+over the size cap weighs nothing, since the child skips it unread. The answers are put back in the
+order the files were handed over before anything reads them. One child left the parent idle for
+most of a Ruby-heavy scan (measured on discourse: 22.1s with one child, 13.5s with four, 12.8s with
+six while the parent still walked every tree). Each batch runs in a worker thread that keeps its
+child's clocks, decodes and parses the stream, and walks each tree once for the rows and the facets.
+A scan asks for counts, so only counts reach the parent, the way a JavaScript parse worker answers;
+the check asks for trees for the files a diff touched, and only those trees cross from the thread to
+the parent, as JSON text the parent parses: decoding a deeply nested object off a message overflowed
+the parent's stack, and the file was lost. When a thread answers, any file in its batch with no
+record is charged as crashed. The child itself is started by the parent at the thread's request and
+its bytes relayed undecoded, the child paused while four chunks wait on the thread, because only the
+thread that spawns a child can reap it: a thread that dies leaves its child to the parent, which
+closes the child's pipes, then kills and reaps it before anything else. A closed pipe matters when
+the `ruby` on `PATH` is a wrapper that forks: the forked process blocks writing to a stdout nobody
+reads, and the parent's open end kept the whole process alive. Every chunk passes through the
+parent's event loop on its way, so the thread's idle clock also measures how busy the parent is.
+Each thread's heap is held to what its largest file needs, because V8 grows a heap toward its limit
+rather than its live set and four threads at the default limit doubled the scan's peak memory. Past
+256 KB the hold covers the densest code measured (nested calls or hashes, 90 MB of heap for a
+megabyte); below it the hold stays small, since covering dense code on every thread took
+empire-flippers/api's peak from 221 MB to about 340 MB. It starts at 16 MB, twice what a thread
+uses once its modules are loaded: at 8 MB, half the threads on Linux ran out before reading any
+Ruby. Held, api's peak is 207 MB against 0.13.3's 178 MB. A thread that runs out of its hold keeps the
+records it already sent, and the files it left unanswered are read again on a thread with the
+default heap, which costs time and never a file. Each child keeps its own clocks and its own retry,
+so a child that dies charges the files left in its batch and no others. Which files those are
+follows the byte balance: a broken Ruby charges the same number of files, with the same text, as
+contiguous batches did, and may name different ones. On a large corpus the map moves with them:
+2,100 files under a `ruby` that hangs after five records gave 3 areas against 1, and 900 barren
+files against 1,500. A worker thread that ends any other way without answering charges its whole
+batch, the records it had already sent included.
 
 A child either of those timers killed is spawned once more, for the files that never answered and no
 others, and only what is still unanswered after that is charged. Both timers measure the machine
 rather than the files, and a file charged as crashed in one scan and parsed in the next moves the
 always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed is
-tried once more, alone, after the queue drains, when it died beside other parses. A child that exited on its own, a missing interpreter and a fatal from the
-script are charged on the first attempt: a second child answers those the same way at twice the
-cost. Every record says which attempt answered it.
+tried once more, alone, after the queue drains, when it died beside other parses. A child that
+exited on its own, a missing interpreter and a fatal from the script are charged on the first
+attempt: a second child answers those the same way at twice the cost. Every record says which
+attempt answered it.
 
 Every child this tool runs, the pool's parse workers, the Ruby stream and the type checker, goes
 through one supervisor that owns the spawn, the bounded stderr, the two clocks and the kill. The
@@ -308,12 +362,16 @@ unchanged lends the hits the working tree gives it even when its imported types 
 area, the `tsconfig.json` changed or a dependency was upgraded: the checker is whole-program, and
 there is no program at the pin to ask.
 
-The checker and the history read start beside the parse rather than after it, since neither needs
-anything the parse answers. On a machine with no spare core (a one-worker pool) the checker still
+The checker, the history read and the baseline's git reads start beside the parse rather than
+after it, since none of them needs anything the parse answers. On a machine with no spare core (a one-worker pool) the checker still
 waits for the parse, because beside it, it would take the time of the parse's only worker. A scan
-that fails while the checker runs stops it rather than waiting on it. The compiler host asks each
-path's containment once per build: module resolution asks about the same paths thousands of times,
-and walking `realpath` up from the root on every ask was 45% of building the program.
+that fails while the checker runs stops it rather than waiting on it. The compiler host answers
+each path once per build, its containment and whether it exists, where it resolves and what it
+lists: module resolution asks about the same paths thousands of times, 107,928 stats of 24,737
+paths on one front end, and walking `realpath` up from the root on every ask was 45% of building the
+program. The containment walk resolves each directory off its parent's answer with one `lstat`,
+unless the directory is itself a link. The answers live in the host rather than the module, so a
+second scan in one process sees the tree as it is then.
 
 The checker builds one program over every JavaScript and TypeScript file, then measures the share
 of property accesses whose receiver resolved to a real type. Under 0.80 the tier is degraded and its
@@ -328,7 +386,11 @@ is then still measured, and a machine with no Ruby, which holds the Ruby areas b
 same as one that reads them. With no checked file there either (a Ruby app beside a directory of
 bundles, or a repository holding nothing but dropped bundles) there is no rate and the tier stays
 ok. Files outside the areas are still in the program and still lend their types. A `node_modules` whose real path leaves the repository
-is not read (B9), so dependencies linked in from elsewhere resolve as absent ones do.
+is not read (B9), so dependencies linked in from elsewhere resolve as absent ones do. Containment
+is decided on the path the system will open: a `..` after a link (`src/up/../x` with `up -> ..`) is
+taken from where the link leads, so a path that steps out of the root that way is refused. Windows
+collapses `..` as text before it opens a path, so there the text is what is checked, and elsewhere
+a backslash is a character in a name rather than a separator.
 
 ## 4. Dimensions and the three numbers
 
@@ -772,9 +834,21 @@ file, one shipped beside a forged registration, a submodule, and a git directory
 answers with its own map.
 
 Both reads are bounded and typed rather than plain, for the reason the map's is: a named pipe at
-either path never returns, and the record is the whole count of a repository, measured at 9,957,450
-bytes on microsoft/vscode, so the bound the rendered map is held to would have silenced the notice on
-exactly the repositories where a directory nobody read is easiest to miss.
+either path never returns, and the record is the whole count of a repository, measured at 10,217,406
+bytes on microsoft/vscode, so the bound the rendered map is held to would have silenced the notice
+on exactly the repositories where a directory nobody read is easiest to miss.
+
+The notice, the end-of-turn check and the refresh want only the record's `layout`, 2,037 bytes of
+that record, so a scan writes it a second time on its own, as
+`.claude/anatomiya/layout.json`, stamped with the size and mtime of the record file it was taken
+from. A hook reads it only where its schema is one this build reads and the record on disk has
+exactly that size and that mtime, and reads the record otherwise. A length alone passed a record
+holding a conflict marker, and length and age together passed a checkout or a restore that keeps old
+mtimes, so the stamp names the one file. A map written before the layout file existed has none and
+is read as before. A `.claude/` the repository commits carries `layout.json` too, and it is inert
+after a clone or a checkout that rewrites the record: its stamp names an mtime the record no longer
+has, so the record is read. On that record the notice went from 90ms to 41ms (A100 and A101
+together).
 
 The payload itself is read to a megabyte and no further, because a hook runs on every tool call and
 the writer decides the size. What that megabyte holds is then read twice over. `JSON.parse` first,
@@ -836,7 +910,14 @@ the hook's own job: it walks up from the working directory for a map, and a sess
 `{}`. The refresh and the end-of-turn check also look one level down when the walk up finds nothing,
 since their payloads name no file (below and above). That answer costs one node process and almost nothing else: three runs on one laptop put the median
 at 73ms, 104ms and 237ms, and which `node` is on `PATH` moves it more than anything the tool does. It is
-paid per turn and per tool call.
+paid per turn and per tool call, so a hook loads only what its verb uses. The binary imports the
+payload reader and the readiness check and nothing else, each verb imports its own module when it
+runs (`hook-verbs.mjs` for the echo, the notice and the end-of-turn check, `refresh.mjs` for the
+refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check.
+Every hook process used to load 65 modules; the echo now loads 12, the notice 12 until it reads its
+rules and 24 after, the end-of-turn check 20 and the refresh 27. The echo went from 65ms to 39ms
+against 26ms for bare node (A100). A module that will not
+load throws inside the same boundary as everything else, so the hook still answers `{}`.
 
 The map it echoes has to be one this tool wrote, which is A3's rule arriving on the read side. The file is
 read through the same bounded reader the audit uses, so a named pipe at that path does not hang the session
@@ -922,14 +1003,15 @@ site follows, and the gates' meanings lived only in this file and the README. It
 rather than taking its own, so it costs the roster nothing on an overview at its bound.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
-context file. `.claude/anatomiya/facts.json` holds every count, gated or not, and the facts and
-the rendered files are replaced as one: every one is written to its temp file before any rename,
-the facts are renamed first and stale area files removed last, and a rename or removal that fails
-puts back what it had replaced. So no rendered file exists that is not derivable from facts on
-disk, and a scan that fails part way does not leave new facts beside the old map for `check` to
-call fresh. A process killed between two renames is the one window left. It carries a schema version,
-and the check refuses a version past the one it knows rather than reading the fields positionally:
-an older record is readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
+context file. `.claude/anatomiya/facts.json` holds every count, gated or not, `layout.json` beside
+it holds the record's layout on its own, and the record, its layout file and the rendered files are
+replaced as one: every one is written to its temp file before any rename, the facts are renamed
+first and stale area files removed last, and a rename or removal that fails puts back what it had
+replaced. So no rendered file exists that is not derivable from facts on disk, and a scan that fails
+part way does not leave new facts beside the old map for `check` to call fresh. A process killed
+between two renames is the one window left. It carries a schema version, and the check refuses a
+version past the one it knows rather than reading the fields positionally: an older record is
+readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
 language writes neither, for the same reason: keeping the rendered files while replacing the facts
 they came from breaks exactly that invariant.
 
@@ -998,13 +1080,14 @@ spelled as `.claude/rules/...`, a map committed through the link read as untrack
 HEAD rewrote it. Where core.ignorecase is set, both pathspecs carry `icase`, since git keeps the
 index spelling and a directory renamed in case outside git is found under neither spelling otherwise.
 A link within `.claude` is still followed.
-`facts.json` and `baseline.json` are read through the same resolution, their own names included, so
-a link at either is not followed out; a write replaces it as an entry. A refusal names the path the
-repository spells and says when it is a link, since the resolved name once read "README.md is not a
-directory ... remove it" for `.claude/rules -> ../README.md`. The planning half also refuses a
-directory at `facts.json` or `baseline.json`, which the rename cannot replace, and a nearest existing
-directory on the way that this process cannot write, so a dry run of `scan` or `pin` refuses what the
-real run would die on, by the directory's name rather than a raw `EACCES` on a temp file.
+`facts.json`, `layout.json` and `baseline.json` are read through the same resolution, their own
+names included, so a link at any of them is not followed out; a write replaces it as an entry. A
+refusal names the path the repository spells and says when it is a link, since the resolved name
+once read "README.md is not a directory ... remove it" for `.claude/rules -> ../README.md`. The
+planning half also refuses a directory at `facts.json`, `layout.json` or `baseline.json`, which the
+rename cannot replace, and a nearest existing directory on the way that this process cannot write,
+so a dry run of `scan` or `pin` refuses what the real run would die on, by the directory's name
+rather than a raw `EACCES` on a temp file.
 
 Files in there are read by their head, one megabyte at most, and only when the opened handle is a
 regular file. The ownership test reads the frontmatter from byte zero a line at a time, and stops at
@@ -1054,19 +1137,21 @@ so its own `reftable/tables.list` is watched beside the shared one. `FileChanged
 exactly those basenames (`^(HEAD|index|tables\.list)$`), and a change to any file this hook did not
 ask for answers nothing, since answering it would replace somebody else's watch.
 
-The worker keeps its state beside `facts.json`. It takes an exclusive lock, read bounded and typed
-since the directory can come with the repository, and a worker that finds it taken leaves word for
-the holder to run once more after letting go, so a move landing after the holder's last look at HEAD
-is not lost. It stamps what a scan depends on (HEAD, the index as `ls-files -s`, the pin's bytes,
-the plugin version, whether the repository holds packages and where `typescript` resolves), and
-rescans only when the stamp moved. It leaves alone a checkout with no map of its own (A24), a map, a
-pin or any other file of the store the repository tracks, and a merge, rebase, cherry-pick, revert
-or bisect in progress, and leaves whether to run the type checker to the rescan, which decides it
-the way any scan does. A scan that throws writes nothing, so the previous map stays; the same stamp
-is tried again only after half an hour, and the echo says the refresh failed until a refresh or a
-scan run by hand succeeds. A scan run by hand records its stamp too, so the next refresh has nothing
-to redo. It has its own clock. A changed overview reaches a running session through the echo's
-digest, and an area file is read from disk the first time its directory is.
+The worker keeps its state beside `facts.json`. It is its own module, `refresh-run.mjs`, the one
+refresh module that loads the scan; the hook, `refresh.mjs`, only starts it. It takes an exclusive
+lock, read bounded and typed since the directory can come with the repository, and a worker that
+finds it taken leaves word for the holder to run once more after letting go, so a move landing after
+the holder's last look at HEAD is not lost. It stamps what a scan depends on (HEAD, the index as
+`ls-files -s`, the pin's bytes, the plugin version, whether the repository holds packages and where
+`typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
+map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
+merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run the type checker
+to the rescan, which decides it the way any scan does. A scan that throws writes nothing, so the
+previous map stays; the same stamp is tried again only after half an hour, and the echo says the
+refresh failed until a refresh or a scan run by hand succeeds. A scan run by hand records its stamp
+too, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
+running session through the echo's digest, and an area file is read from disk the first time its
+directory is.
 
 A session started above its checkouts, the way a project split into sibling repositories is opened,
 has no map at its own directory, and neither `SessionStart` nor `FileChanged` names a path the walk
@@ -1491,6 +1576,15 @@ The diff and the pending listing set their own rename limit, 7,000, where git's 
 1,000: past the limit git lists each move as a deletion and an addition, and every site that came
 with a moved file was charged to whoever moved it. A branch past even that is said, as
 `renames-skipped`. A submodule is left out of both, since a gitlink is a commit rather than a file.
+
+What the branch changed, the committed diff from the fork point, the work still pending in the tree,
+the renames and the lines each file gained, is read by one module, `changeset.mjs`, and the
+end-of-turn hook reads the same one, so that hook loads no parser and no dimension (E15). The check
+resolves HEAD once and hands its sha to every read after it, runs the reads that need no other's
+answer side by side, and asks git once per process about a commit named by its full sha. A ref name
+is never remembered, since a commit can land between two calls in one process, and neither is a
+failed answer. A two-file branch of this repository went from 25 git calls to 20, and its check
+from 422ms to 285ms (E14).
 
 One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether a
 test the change added has any precedent in the source root it covers, rather than whether its contents

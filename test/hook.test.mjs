@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,7 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
 import { aboutDir, echoContext, echoEvent, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
-import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
@@ -249,6 +249,79 @@ test("a record this cannot read leaves the walk to keep going rather than throwi
   writeFileSync(join(dir, FACTS_PATH), "{ not json");
 
   assert.equal(ownLayout(dir), null);
+});
+
+test("the layout file answers the walk, and a map without one answers the same from the record", (t) => {
+  // The notice and the end-of-turn check parsed the whole record, 10 MB on
+  // microsoft/vscode, to read its layout. A map written before the layout file
+  // existed has to keep answering, and the same.
+  const layout = { tests: [], roots: [{ dir: "app", path: "app" }] };
+  const dir = recorded(t, layout);
+  const fromRecord = ownLayout(dir);
+  const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
+  const record = { size, mtimeMs };
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record, layout }));
+
+  assert.deepEqual(ownLayout(dir), fromRecord);
+
+  // Read rather than passed over: a layout file saying something else is what answers.
+  const other = { tests: [], roots: [{ dir: "lib", path: "lib" }] };
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record, layout: other }));
+  assert.deepEqual(ownLayout(dir).layout, other);
+
+  // Its null is an answer too. The record holds a layout here, so reading it
+  // after a null would show as one.
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record, layout: null }));
+  assert.equal(ownLayout(dir), null, "a layout file saying null is not passed over for the record");
+
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA + 1, record, layout: other }));
+  assert.deepEqual(ownLayout(dir), fromRecord, "a layout file from a build ahead of this one leaves the record to answer");
+});
+
+test("the walk resolves the record and the layout file once each in a directory it reads", async (t) => {
+  // Every link on the way is a stat, and this runs before every write.
+  const layout = { tests: [], roots: [{ dir: "app", path: "app" }] };
+  const dir = recorded(t, layout);
+  const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout }));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.realpathSync;
+  const resolved = [];
+  fs.realpathSync = Object.assign((path, ...rest) => (resolved.push(String(path)), real(path, ...rest)), { native: real.native });
+  syncBuiltinESMExports();
+  let found;
+  try {
+    found = ownLayout(dir);
+  } finally {
+    fs.realpathSync = real;
+    syncBuiltinESMExports();
+  }
+
+  assert.deepEqual(found.layout, layout, "answered from the layout file");
+  assert.equal(resolved.filter((p) => p.endsWith("facts.json")).length, 1);
+  assert.equal(resolved.filter((p) => p.endsWith("layout.json")).length, 1);
+});
+
+test("a record the reader refuses is not answered for by the layout file", (t) => {
+  // A merge conflict in a committed record: the record reads as nothing and the
+  // walk goes on, so the layout file written with it must not answer either.
+  const layout = { tests: [], roots: [{ dir: "app", path: "app" }] };
+  const dir = recorded(t, layout);
+  const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout }));
+  writeFileSync(join(dir, FACTS_PATH), `<<<<<<< HEAD\n${readFileSync(join(dir, FACTS_PATH), "utf8")}`);
+  const later = new Date(Date.now() + 60_000);
+  utimesSync(join(dir, LAYOUT_PATH), later, later);
+
+  assert.equal(ownLayout(dir), null);
+
+  // Past the size the reader takes, the record reads as nothing too, even with
+  // the layout file stamped from it exactly.
+  truncateSync(join(dir, FACTS_PATH), 64 * 1024 * 1024 + 1);
+  const over = statSync(join(dir, FACTS_PATH));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record: { size: over.size, mtimeMs: over.mtimeMs }, layout }));
+  assert.equal(ownLayout(dir), null, "a record past the cap");
 });
 
 test("a record with no layout in it is not a record", (t) => {

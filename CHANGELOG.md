@@ -7,6 +7,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.13.4] - 2026-10-07
+
+Hooks, scans and checks take less time and give the same answers, byte for byte, with two
+exceptions listed below: the map a scan leaves when a `ruby` child dies mid-run can differ, and the
+type checker refuses a path that leaves the repository through a link. The numbers below are medians
+measured against 0.13.3 on one machine, under the same load for both.
+
+### Added
+
+- `.claude/anatomiya/layout.json`, written beside `facts.json` by every scan, holds the record's
+  layout on its own, stamped with the size and mtime of the record it was taken from. The notice,
+  the end-of-turn check and the refresh read it instead of parsing the whole record, and read the
+  record wherever the stamp does not match. The README's `.worktreeinclude` list names it too,
+  which saves time only where the copy keeps the record's mtime.
+
+### Changed
+
+- A hook loads only the modules its verb uses: 12 for the echo, 24 at most for the notice, 20 for
+  the end-of-turn check and 27 for the refresh, where every hook loaded 65. The echo went from 65ms
+  to 39ms, the notice from 68ms to 43ms, the end-of-turn check from 108ms to 90ms and the refresh
+  from 69ms to 45ms, against 26ms for bare node. On microsoft/vscode, whose record is 10 MB, the
+  notice went from 90ms to 41ms with the layout file.
+- `scan` walks each JavaScript and TypeScript tree once for every dimension instead of once per
+  dimension: 9.2 walks a file where it was 50.8 on a large front end, counting every walk of a
+  file's tree or a subtree in it. The baseline's git reads now run beside the parse. This
+  repository's scan went from 697ms to 490ms.
+- `scan` reads Ruby in worker threads, one per `ruby` child, that parse and walk the trees and send
+  back counts, so the parent no longer reads or walks a Ruby tree; `check` still gets the trees of
+  the files a diff touched. The Ruby dimensions and facets share one walk of each tree: 5.5 walks a
+  file where it was 22.5. A large Ruby corpus is still read by up to four children, never more than
+  the machine's cores less one. On a large Rails API the parse phase went from 3,378ms to 1,820ms.
+  Its scan, timed on the command line, went from 3,900ms to 2,260ms, and its peak memory rose 16%,
+  from 178 MB to 207 MB, for the threads' heaps; discourse's scan went from 13.8s to 7.6s. When a
+  `ruby` child dies mid-run, which files it charges follows the byte balance of the batches, so the
+  degraded map can differ from 0.13.3's.
+- `check` resolves HEAD once, runs its independent git reads side by side and asks git once per
+  commit sha: 25 git calls to 20 on a two-file branch here, and that check went from 422ms to
+  285ms.
+- The type checker's compiler host answers each path once per build: 24,781 stats where it was
+  107,928 on a large front end, and the checker there went from 12.2s to 11.8s.
+
+### Fixed
+
+- The type checker decides whether a path stays inside the repository on the path the system will
+  open. A `..` after a link (`src/up/../x` with `up -> ..`) was checked as text and could read a
+  file outside the repository; it is now taken from where the link leads and refused.
+- Off Windows a backslash is an ordinary filename character, but the type checker's containment
+  check split on it, so a link named `src/x\..\y` was checked as `src/y` and could read a file outside the
+  repository. It now splits on `/` alone there, and on Windows it checks the path as text, the way
+  Windows opens it.
+
 ## [0.13.3] - 2026-10-06
 
 The docs catch up with Claude Code 2.1.288, which loads an area file after a Write or Edit as well as
@@ -3578,7 +3629,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.3...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.4...HEAD
+[0.13.4]: https://github.com/crisnahine/anatomiya/compare/v0.13.3...v0.13.4
 [0.13.3]: https://github.com/crisnahine/anatomiya/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/crisnahine/anatomiya/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/crisnahine/anatomiya/compare/v0.13.0...v0.13.1

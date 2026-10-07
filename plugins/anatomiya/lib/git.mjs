@@ -705,6 +705,49 @@ export function isSha(sha) {
   return typeof sha === "string" && /^[0-9a-f]{7,64}$/.test(sha);
 }
 
+/**
+ * What git answered about commits named by their full hash, per repository,
+ * for the life of the process.
+ *
+ * An object named by its full hash cannot change, and one check asked the same
+ * merge base three times and the same diff twice. A ref name or a short sha
+ * can name another commit a moment later, so neither is ever a key. Only an
+ * answer is kept: a read git could not perform is asked again next time, or
+ * one failure would read as a fact about the commit for the rest of the run
+ * (F15). Bounded, because a long-lived process can be handed any number of
+ * commits.
+ *
+ * `shas` are the commits the question names, and anything else is asked fresh.
+ * `copy` hands each caller its own answer, so one caller's edit never reaches
+ * another's.
+ */
+const ANSWERS_MOST = 256;
+const answers = new Map();
+const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const isFullSha = (s) => typeof s === "string" && FULL_SHA.test(s);
+
+async function remembered(root, shas, args, ask, kept, copy = (answer) => answer) {
+  if (!shas.every(isFullSha)) return ask();
+  const key = `${resolve(root)}\0${args.join("\0")}`;
+  let asked = answers.get(key);
+  if (!asked) {
+    asked = ask().then(
+      (answer) => {
+        if (!kept(answer) && answers.get(key) === asked) answers.delete(key);
+        return answer;
+      },
+      (err) => {
+        if (answers.get(key) === asked) answers.delete(key);
+        throw err;
+      }
+    );
+    answers.set(key, asked);
+    if (answers.size > ANSWERS_MOST) answers.delete(answers.keys().next().value);
+  }
+  const answer = await asked;
+  return answer && copy(answer);
+}
+
 // A ref name cannot begin with a dash. `rev-parse` takes revisions before any
 // `--`, so a ref of `--upload-pack=...` would be read as an option; a tracked
 // file with that name already exfiltrated a secret through the same class of
@@ -723,6 +766,7 @@ function safeRef(ref) {
  */
 export async function shaReachable(root, sha) {
   if (!isSha(sha)) return false;
+  // Never from memory: this exists to notice a commit that has gone away.
   const r = await gitBuffered(root, ["cat-file", "-e", `${sha}^{commit}`]);
   return r.ok;
 }
@@ -737,9 +781,13 @@ export async function headSha(root) {
 
 /** The commit `ref` names, or null where it names none. */
 export async function commitAt(root, ref) {
-  const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
-  const sha = r.ok ? r.stdout.trim() : "";
-  return isSha(sha) ? sha : null;
+  const args = ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`];
+  const ask = async () => {
+    const r = await gitBuffered(root, args);
+    const sha = r.ok ? r.stdout.trim() : "";
+    return isSha(sha) ? sha : null;
+  };
+  return remembered(root, [ref], args, ask, (sha) => sha !== null);
 }
 
 /**
@@ -782,12 +830,21 @@ export async function showBlob(root, sha, path, { timeout, env, lazyFetch = fals
  */
 export async function mergeBase(root, a, b) {
   if (!safeRef(a) || !safeRef(b)) return { found: false, failed: true, sha: null };
-  const r = await gitBuffered(root, ["merge-base", a, b]);
-  if (r.ok) {
-    const sha = r.stdout.trim();
-    return { found: sha.length > 0, failed: false, sha: sha || null };
+  const ask = async () => {
+    const r = await gitBuffered(root, ["merge-base", a, b]);
+    if (r.ok) {
+      const sha = r.stdout.trim();
+      return { found: sha.length > 0, failed: false, sha: sha || null };
+    }
+    return { found: false, failed: r.code !== 1, sha: null };
+  };
+  // A commit is its own merge base, so verifying it answers the whole question.
+  if (a === b && isFullSha(a)) {
+    const sha = await commitAt(root, a);
+    if (sha !== null) return { found: true, failed: false, sha };
   }
-  return { found: false, failed: r.code !== 1, sha: null };
+  // "No common ancestor" is not kept either: a fetch can give the two one.
+  return remembered(root, [a, b], ["merge-base", a, b], ask, (answer) => answer.found);
 }
 
 const UNFINISHED_OPERATIONS = Object.freeze([
@@ -825,7 +882,7 @@ export const BASE_REFS = ["origin/HEAD", "origin/main", "origin/master", "main",
  * This is the only base resolver: scan and check measuring drift against
  * different refs is two different answers to one question.
  */
-export async function resolveBaseRef(root, ref = null) {
+export async function resolveBaseRef(root, ref = null, { head = "HEAD" } = {}) {
   if (ref === "HEAD" || ref === "@") {
     return { ok: false, reason: "base ref must not be HEAD" };
   }
@@ -840,8 +897,10 @@ export async function resolveBaseRef(root, ref = null) {
 
     // The fork point, where one exists, so the branch's own commits sit outside
     // the range. Unrelated histories fall back to the ref tip rather than to "".
-    const base = await mergeBase(root, "HEAD", sha);
-    return { ok: true, ref: candidate, sha: base.found ? base.sha : sha, forkPoint: base.found };
+    // `head` is HEAD's own sha where the caller resolved it, so the question
+    // is about two commits and asked once per process.
+    const base = await mergeBase(root, head, sha);
+    return { ok: true, ref: candidate, sha: base.found ? base.sha : sha, tip: sha, forkPoint: base.found };
   }
   return { ok: false, reason: ref ? `cannot resolve ${ref}` : "no base branch found" };
 }
@@ -910,7 +969,12 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes } = {}) {
   // from inside Node's own exit handler.
   //
   // The rev goes before the separator: git reads anything past `--` as a path.
-  return pathSet(root, ["ls-tree", "-r", "--name-only", "-z", sha, "--"], { timeout, maxFieldBytes });
+  const args = ["ls-tree", "-r", "--name-only", "-z", sha, "--"];
+  const ask = () => pathSet(root, args, { timeout, maxFieldBytes });
+  // The bounds are part of the question: a listing read under one caller's
+  // must not answer a caller that set tighter ones.
+  const key = [...args, `${timeout}`, `${maxFieldBytes}`];
+  return remembered(root, [sha], key, ask, (answer) => answer !== null, (paths) => new Set(paths));
 }
 
 /**
@@ -924,31 +988,34 @@ export async function diffRange(root, from, to) {
   // `${from}..` puts a leading dash at the head of the argument, where git
   // reads it as an option.
   if (!safeRef(from) || !safeRef(to)) return null;
+  const args = ["diff", "--find-renames", "--name-status", "-z", `${from}..${to}`, "--"];
+  const ask = async () => {
+    const renames = new Map();
+    const changed = new Set();
 
-  const renames = new Map();
-  const changed = new Set();
-
-  // Streamed for the same reason the two listings above are: the range between
-  // a pin and a distant base names every path in the repository.
-  try {
-    await gitStreamed(
-      root,
-      ["diff", "--find-renames", "--name-status", "-z", `${from}..${to}`, "--"],
-      nameStatusReader((row) => {
-        changed.add(row.to);
-        // Both names count as changed: at the pinned commit only the old one
-        // exists, and the map is what lets a renamed file find its own baseline
-        // instead of reading as greenfield.
-        if (row.from) {
-          renames.set(row.to, row.from);
-          changed.add(row.from);
-        }
-        return true;
-      })
-    );
-  } catch {
-    return null;
-  }
-
-  return { renames, changed };
+    // Streamed for the same reason the two listings above are: the range between
+    // a pin and a distant base names every path in the repository.
+    try {
+      await gitStreamed(
+        root,
+        args,
+        nameStatusReader((row) => {
+          changed.add(row.to);
+          // Both names count as changed: at the pinned commit only the old one
+          // exists, and the map is what lets a renamed file find its own baseline
+          // instead of reading as greenfield.
+          if (row.from) {
+            renames.set(row.to, row.from);
+            changed.add(row.from);
+          }
+          return true;
+        })
+      );
+    } catch {
+      return null;
+    }
+    return { renames, changed };
+  };
+  return remembered(root, [from, to], args, ask, (answer) => answer !== null,
+    (range) => ({ renames: new Map(range.renames), changed: new Set(range.changed) }));
 }

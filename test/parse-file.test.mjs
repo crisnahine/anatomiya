@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 
 import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 
 // Linux is where a child's address space can be capped from a shell: macOS
 // refuses `ulimit -v` outright, and Windows never asks for the raw transfer.
@@ -213,4 +214,16 @@ test("a React component in a .js file is asked the JSX rows, and a .js module ho
   const module = await parseFile(hook, "src/useCount.js", "js");
   assert.equal(module.facets.jsx, false);
   assert.equal(module.hits.hook_call_style, undefined, "a file holding no JSX stays out of the row, as a .ts one does");
+});
+
+test("a file's own facets choose its rows before any row walks", async (t) => {
+  // Riding the rows' walk, the facets were known only after it, so every row
+  // a file could get walked and the ones its facets ruled out were dropped
+  // after: 25 rows a file became 32 on this repository, for the same map.
+  const row = ALL_DIMENSIONS.find((d) => d.key === "hook_call_style");
+  const asked = t.mock.method(row, "visitor");
+  const r = await parseFile("export const n: number = 1;\n", "src/n.ts", "js");
+  assert.equal(r.ok, true);
+  assert.equal(r.facets.jsx, false);
+  assert.equal(asked.mock.callCount(), 0, "a JSX row was never made for a file holding no JSX");
 });

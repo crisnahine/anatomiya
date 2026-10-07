@@ -11,8 +11,8 @@
  * counted, and half a dozen options make the checker write to disk in a tree
  * somebody is working in.
  */
-import { existsSync, realpathSync } from "node:fs";
-import { dirname, join, resolve, relative, isAbsolute, posix, win32 } from "node:path";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { basename, dirname, join, resolve, relative, isAbsolute, posix, win32 } from "node:path";
 
 import { realpathOf, resolveInside } from "./rules.mjs";
 
@@ -45,8 +45,14 @@ export function insideRoot(root, abs, { realpath } = {}) {
   if (climbs(rel) || isAbsolute(rel)) return false;
   // Lexical containment costs nothing and is not containment: resolve()
   // normalises ".." and follows no link, and the checker's own reads do.
-  return resolveInside(root, rel.split(/[\\/]/).join("/"), { realpath }) !== null;
+  return resolveInside(root, rel.split(separator()).join("/"), { realpath }) !== null;
 }
+
+/**
+ * What splits a path into segments on `platform`. A backslash is an ordinary
+ * filename character on POSIX: split on it, a link named `x\..\y` read as `y`.
+ */
+const separator = (platform = process.platform) => (platform === "win32" ? /[\\/]/ : "/");
 
 /**
  * A parse host that reads only inside the repository and lists no directory.
@@ -233,32 +239,83 @@ export function confinedCompilerHost(ts, root, options) {
   // chain read as one type, and the tier reported 0% resolution everywhere.
   const realRoot = realpathOf(root);
   const realLibDir = realpathOf(libDir);
-  const realpath = remembered(realpathSync);
-  const permitted = (p) => {
+  const realpath = walkingRealpath();
+  const permitted = (asked) => {
+    let p;
+    try {
+      p = opened(asked, realpath);
+    } catch {
+      return false;
+    }
     if (insideRoot(root, p, { realpath }) || contains(libDir, p)) return true;
     return contains(realRoot, realpathOf(p)) || contains(realLibDir, realpathOf(p));
   };
   // Module resolution asks about thousands of paths, each a walk of realpath
   // calls up from the root, and the uncached walk was 45% of building the program.
-  const allowed = remembered(permitted);
+  const allowed = perBuild(permitted);
+  const directories = perBuild((p) => (allowed(p) ? base.getDirectories(p) : []));
 
+  // Module resolution probes the same candidates from every importing file,
+  // measured at 107,928 stats on 24,737 paths in one build.
   return {
     ...base,
-    fileExists: (p) => allowed(p) && base.fileExists(p),
+    fileExists: perBuild((p) => allowed(p) && base.fileExists(p)),
+    directoryExists: base.directoryExists && perBuild(base.directoryExists),
     readFile: (p) => (allowed(p) ? base.readFile(p) : undefined),
     getSourceFile: (p, ...rest) => (allowed(p) ? base.getSourceFile(p, ...rest) : undefined),
     // Nothing this tier does may leave a file behind in a repository somebody
     // is working in. `noEmit` already says so; this is the second lock.
     writeFile: () => {},
-    getDirectories: (p) => (allowed(p) ? base.getDirectories(p) : []),
+    getDirectories: (p) => directories(p).slice(),
     readDirectory: (p, ...rest) => (allowed(p) ? base.readDirectory(p, ...rest) : []),
-    realpath: base.realpath,
+    realpath: base.realpath && perBuild(base.realpath),
     getCurrentDirectory: () => root,
   };
 }
 
+/**
+ * `realpathSync` for one build, each directory resolved once.
+ *
+ * Each `realpathSync` lstats every directory above the path again, and the
+ * containment walk asks it of every directory it enters: one lstat per path
+ * per build, off the parent's answer, unless the path is itself a link.
+ */
+export function walkingRealpath() {
+  const realpath = perBuild((asked) => {
+    // `..` as text first, the way `realpathSync` takes it.
+    const p = resolve(asked);
+    const up = dirname(p);
+    if (up === p) return realpathSync(p);
+    const at = join(realpath(up), basename(p));
+    return lstatSync(at).isSymbolicLink() ? realpathSync(p) : at;
+  });
+  return realpath;
+}
+
+/**
+ * The path the OS reaches for `p` as written.
+ *
+ * The base host opens the raw string. POSIX takes each `..` from where the
+ * links before it lead: `src/up/../x` with `up -> ..` is a sibling of the root,
+ * while the string reads as `src/x`. Windows collapses `..` as text before it
+ * opens anything, so there the text is the answer. A path with no `..` is its
+ * own answer.
+ */
+export function opened(p, realpath, platform = process.platform) {
+  if (platform === "win32") return win32.resolve(p);
+  const { root } = posix.parse(p);
+  const segments = p.slice(root.length).split("/");
+  if (!segments.includes("..")) return p;
+  let at = root;
+  for (const segment of segments) {
+    if (segment === "" || segment === ".") continue;
+    at = segment === ".." ? posix.dirname(realpath(at)) : posix.join(at, segment);
+  }
+  return at;
+}
+
 /** `fn` answering each argument once, a throw included, for a build that sees a fixed tree. */
-function remembered(fn) {
+function perBuild(fn) {
   const seen = new Map();
   return (p) => {
     let r = seen.get(p);
