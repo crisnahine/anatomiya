@@ -1707,6 +1707,71 @@ test("a row that leaves test files out leaves out every file the kinds line of i
   assert.deepEqual(counted, { "notes/tests": [["public_doc_comment", 6]], src: [["public_doc_comment", 6]] });
 });
 
+test("python: a package is asked for a test of its directory's name, since its __init__ is the package", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["cart", "order", "price"]) write(`src/shop/${s}.py`, `def ${s}():\n    return 1\n`);
+    for (const s of ["__init__", "tag", "provider"]) write(`src/shop/json/${s}.py`, `def ${s.replace(/_/g, "") || "x"}():\n    return 1\n`);
+    for (const s of ["cart", "order", "json"]) write(`tests/test_${s}.py`, `def test_${s}():\n    assert True\n`);
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const [shop] = result.layout.roots.filter((r) => r.companions);
+  assert.deepEqual([shop.path, shop.companions.with, shop.companions.of, shop.companions.root], ["src/shop", 3, 6, "tests"]);
+  // The package's own directory, counted as an area, credits the same file and no other.
+  const json = result.areas.find((a) => a.path === "src/shop/json");
+  assert.deepEqual([json.kinds.companions.with, json.kinds.companions.of], [1, 3]);
+});
+
+test("java: a test paired with the class of its own module answers no class of that name in another", async (t) => {
+  const cls = (name) => `package com.x;\n\npublic class ${name} {\n}\n`;
+  const spec = (name) => `package com.x;\n\nimport org.junit.jupiter.api.Test;\n\nclass ${name}Test {\n    @Test\n    void runs() {}\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["Foo", "A", "B"]) write(`mod-a/src/main/java/com/x/${s}.java`, cls(s));
+    for (const s of ["Foo", "C", "D"]) write(`mod-b/src/main/java/com/x/${s}.java`, cls(s));
+    for (const s of ["Foo", "A", "B"]) write(`mod-a/src/test/java/com/x/${s}Test.java`, spec(s));
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const counted = Object.fromEntries(result.layout.roots.filter((r) => r.companions).map((r) => [r.path, [r.companions.with, r.companions.of]]));
+  assert.deepEqual(counted, { "mod-a/src/main/java/com/x": [3, 3], "mod-b/src/main/java/com/x": [0, 3] });
+});
+
+test("php: a component that keeps a Tests directory beside its classes is counted as tested by it", async (t) => {
+  const cls = (ns, name) => `<?php\n\nnamespace ${ns};\n\nclass ${name}\n{\n}\n`;
+  const spec = (ns, name) => `<?php\n\nnamespace ${ns}\\Tests;\n\nuse PHPUnit\\Framework\\TestCase;\n\nclass ${name}Test extends TestCase\n{\n    public function testRuns(): void\n    {\n    }\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["Item", "Pool", "Lock"]) write(`src/Component/Cache/${s}.php`, cls("S\\Cache", s));
+    for (const s of ["Item", "Pool"]) write(`src/Component/Cache/Tests/${s}Test.php`, spec("S\\Cache", s));
+    // The same class name in another component, with no test of its own.
+    for (const s of ["Item", "Queue", "Worker"]) write(`src/Component/Messenger/${s}.php`, cls("S\\Messenger", s));
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [["phpunit", 2]]);
+  // Two of the six, and not three: `Messenger/Item.php` is not credited with the test of `Cache/Item.php`.
+  const [component] = result.layout.roots;
+  assert.deepEqual([component.path, component.companions.with, component.companions.of, component.companions.root], ["src/Component", 2, 6, "src/Component/Cache/Tests"]);
+});
+
+test("csharp: a test project named in the singular is paired with the project its name carries", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["Cart", "Order", "Price"]) write(`src/Shop/${s}.cs`, `namespace Shop;\n\npublic class ${s}\n{\n}\n`);
+    for (const s of ["Cart", "Order"]) write(`test/Shop.Test/Sub/${s}Tests.cs`, `namespace Shop.Test;\n\npublic class ${s}Tests\n{\n    [Fact]\n    public void Runs() {}\n}\n`);
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const companions = result.layout.roots.map((r) => r.companions).filter(Boolean);
+  assert.deepEqual(companions.map((c) => [c.with, c.of]), [[2, 3]], JSON.stringify(result.layout.roots));
+});
+
 test("a Go test beside a Python file of its stem is no test of the Python file", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     for (const s of ["cart", "order", "price"]) write(`shop/${s}.py`, `def ${s}():\n    return 1\n`);

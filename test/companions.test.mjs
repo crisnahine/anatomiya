@@ -1105,3 +1105,31 @@ test("a component under the test's own directory owns it where nothing is import
     assert.equal(namesakeCompanions([docs[0]], tests, "docs/src/lib/registry/ui", byStem).with, 0, dir);
   }
 });
+
+test("a Python package's own file answers as the module its directory is", () => {
+  const count = (src, specs, root) => namesakeCompanions(src, specs, root, namesakeIndex(specs, src)).with;
+  // flask: `src/flask/json/__init__.py` is `flask.json`, and `tests/test_json.py` covers it.
+  const json = [file("src/flask/json/__init__.py"), file("src/flask/json/tag.py"), file("src/flask/json/provider.py")];
+  const tests = [file("tests/test_json.py"), file("tests/test_cli.py")];
+  assert.equal(count(json, tests, "src/flask"), 1);
+  // Counted as its own root, the package is still the one file a flat test names.
+  assert.equal(count(json, tests, "src/flask/json"), 1);
+  // Nobody writes `test___init__.py`, and a file of that name credits nothing it did not before.
+  assert.equal(count([file("src/flask/__init__.py")], [file("tests/test___init__.py")], "src/flask"), 0);
+  // A package at the top of the tree has no directory above it to be a module of.
+  assert.equal(count([file("__init__.py")], [file("tests/test___init__.py")], ""), 1);
+  // The name is Python's: a JavaScript `__init__.js` is a file like any other.
+  assert.equal(count([file("src/app/json/__init__.js")], [file("tests/json.test.js")], "src/app"), 0);
+});
+
+test("a test its build pairs with one source answers no other source of that name", () => {
+  const count = (src, specs, root) => namesakeCompanions(src, specs, root, namesakeIndex(specs, [...a, ...b])).with;
+  // Two Maven modules keep one package and each a `Foo`: the test in the first was written for the first.
+  const a = ["Foo", "A"].map((s) => file(`mod-a/src/main/java/com/x/${s}.java`));
+  const b = ["Foo", "C"].map((s) => file(`mod-b/src/main/java/com/x/${s}.java`));
+  const tests = [file("mod-a/src/test/java/com/x/FooTest.java")];
+  assert.equal(count(a, tests, "mod-a/src/main/java/com/x"), 1);
+  assert.equal(count(b, tests, "mod-b/src/main/java/com/x"), 0);
+  // With no source list the build pairs nothing, and the mirror answers as it always did.
+  assert.equal(namesakeCompanions(b, tests, "mod-b/src/main/java/com/x").with, 1);
+});
