@@ -39,11 +39,39 @@ test("vue: only a top-level script is a block, not one in a template or a commen
   assert.deepEqual(read("<Script>a</Script><docs><script>x</script></docs>", "vue"), []);
 });
 
+test("vue: a template is passed over to its own end tag, whatever it holds", () => {
+  const afterTemplate = (inside, attrs = "") =>
+    read(`<template${attrs}>${inside}</template><script>y</script>`, "vue");
+  const y = [js("y")];
+  assert.deepEqual(afterTemplate('{{ "</template><script>x</script>" }}'), y);
+  // An interpolation that never closes takes the rest of the file with it.
+  assert.deepEqual(afterTemplate("{{ a"), []);
+  for (const raw of ["script", "style", "textarea", "title"]) {
+    assert.deepEqual(afterTemplate(`<${raw}></template><script>x</script></${raw}>`), y, raw);
+  }
+  assert.deepEqual(afterTemplate("<template />"), y);
+  assert.deepEqual(afterTemplate("<TEMPLATE></template><script>x</script></TEMPLATE>"), y);
+  assert.deepEqual(afterTemplate("<template></TEMPLATE>"), y);
+  for (const attrs of [' lang="html"', " lang"]) {
+    assert.deepEqual(afterTemplate("<template></template><script>x</script>", attrs), y, attrs);
+  }
+  // A `<` that opens no tag is text, in a template and outside one.
+  assert.deepEqual(afterTemplate("a < b "), y);
+  assert.deepEqual(read("a < b\n<script>y</script>", "vue"), y);
+  assert.deepEqual(read("<docs/><script>y</script>", "vue"), y);
+  // A tag or a raw element in it that never ends takes the rest of the file too.
+  assert.deepEqual(afterTemplate('<p class="a'), []);
+  assert.deepEqual(afterTemplate("<textarea>"), []);
+});
+
 test("vue: the open tag is read with its quotes, so it ends at the last >", () => {
   const source =
     '<script setup lang="ts" generic="T extends Record<string, unknown>">\nconst a = 1\n</script>';
   assert.deepEqual(read(source, "vue"), [ts("\nconst a = 1\n", "setup")]);
   assert.deepEqual(read("<script generic='A extends B<C>' lang=ts>a</script>", "vue"), [ts("a")]);
+  assert.deepEqual(read('<script lang = "ts">a</script>', "vue"), [ts("a")]);
+  // The compiler keeps the last of two.
+  assert.deepEqual(read('<script lang="ts" lang="js">a</script>', "vue"), [js("a")]);
 });
 
 test("vue: a newline may follow <script before the attributes", () => {
@@ -51,6 +79,7 @@ test("vue: a newline may follow <script before the attributes", () => {
     ts("\nconst a = 1\n", "setup"),
   ]);
   assert.deepEqual(read("<script\r\n>a</script>", "vue"), [js("a")]);
+  assert.deepEqual(read("<script\fsetup>a</script>", "vue"), [js("a", "setup")]);
 });
 
 test("vue: the body ends at the first </script in any case, strings unread", () => {
@@ -59,6 +88,8 @@ test("vue: the body ends at the first </script in any case, strings unread", () 
   assert.deepEqual(read("<script>a</script\n>", "vue"), [js("a")]);
   assert.deepEqual(read("<script>a</script/>b</script>", "vue"), [js("a</script/>b")]);
   assert.deepEqual(read("<script>a</scripts>b</script>", "vue"), [js("a</scripts>b")]);
+  assert.deepEqual(read("<script>a</scr>b</script>", "vue"), [js("a</scr>b")]);
+  assert.deepEqual(read("<script>a</script ", "vue"), [js("a")]);
   // An open tag written in a string opens nothing: the body is raw text.
   assert.deepEqual(read('<script>const s = "<script setup>"</script>', "vue"), [
     js('const s = "<script setup>"'),
@@ -126,6 +157,7 @@ test("svelte: comments and style bodies are skipped", () => {
     [js("y")]
   );
   assert.deepEqual(read("<style>\n<script>x</script>\n</style>", "svelte"), []);
+  assert.deepEqual(read("<!-- a\n<script>y</script>", "svelte"), []);
   assert.deepEqual(read("<script-view>\n</script-view>\n<styles>\n<script>y</script>", "svelte"), [
     js("y"),
   ]);
@@ -150,6 +182,7 @@ test("svelte: the first module script and the first instance script are kept", (
 test("svelte: the end tag is lower-case </script, optional whitespace, then >", () => {
   assert.deepEqual(read("<script>a</script >", "svelte"), [js("a")]);
   assert.deepEqual(read("<script>a</script\n>", "svelte"), [js("a")]);
+  assert.deepEqual(read("<script>a</script\u00a0>", "svelte"), [js("a")]);
   assert.deepEqual(read("<script>a</SCRIPT>b</script foo>c</script>", "svelte"), [
     js("a</SCRIPT>b</script foo>c"),
   ]);
@@ -180,28 +213,51 @@ test("svelte: the first script tag that states a lang decides for every block", 
     );
   }
   assert.deepEqual(read('<!-- <script lang="ts"> -->\n<script>a</script>', "svelte"), [js("a")]);
+  // The compiler's flag does not know where a tag sits, or count an empty value.
+  assert.deepEqual(
+    read('<div><script lang="ts">x</script></div>\n<script>y</script>', "svelte"),
+    [ts("y")]
+  );
+  assert.deepEqual(
+    read('<script lang="">a</script>\n<script module lang="ts">b</script>', "svelte"),
+    [ts("a"), ts("b", "module")]
+  );
 });
 
-test("svelte: a script after other markup on its line is not a block, and an empty one is", () => {
+test("svelte: only a script at the start of its line is a block, and an empty one is", () => {
   assert.deepEqual(read("<p>hi</p><script>let a = 1</script>", "svelte"), []);
   assert.deepEqual(read("{@html `<script>x</script>`}\n<script>y</script>", "svelte"), [js("y")]);
   assert.deepEqual(read("<svelte:head><script>x</script></svelte:head>", "svelte"), []);
-  // The one refused is still read to its end, so nothing in its body opens a block.
+  // Indented is how a formatter leaves a script nested in an element.
+  assert.deepEqual(read("<p>hi</p>\n  \t<script>a</script>", "svelte"), []);
+  assert.deepEqual(read(" <script>a</script>", "svelte"), []);
+  assert.deepEqual(read("<div>\n\t<script>x</script>\n</div>", "svelte"), []);
+  // The one refused is read to its own end tag and no further.
+  assert.deepEqual(
+    read("<svelte:head>\n  <script>x</script>\n</svelte:head>\n<script>y</script>", "svelte"),
+    [js("y")]
+  );
   assert.deepEqual(read("<p>a</p><script>\n<script>x</script>", "svelte"), []);
-  assert.deepEqual(read("<p>hi</p>\n  \t<script>a</script>", "svelte"), [js("a")]);
+  assert.deepEqual(read("<p>hi</p>\r\n<script>a</script>", "svelte"), [js("a")]);
+  // A comment, a style block and the other script cannot hold a nested one.
+  assert.deepEqual(read("<!-- note --><script>a</script>", "svelte"), [js("a")]);
+  assert.deepEqual(read("<style>a{}</style><script>a</script>", "svelte"), [js("a")]);
   assert.deepEqual(read("<script module>a</script><script>b</script>", "svelte"), [
     js("a", "module"),
     js("b"),
   ]);
-  assert.deepEqual(read("<!-- note --><script>a</script>", "svelte"), [js("a")]);
-  // A BOM is not markup, and the offsets stay the caller's own.
+  assert.deepEqual(read("<!-- note --> <script>a</script>", "svelte"), []);
+  // A BOM opening the file is not markup, and the offsets stay the caller's own.
   assert.deepEqual(scriptBlocks("\uFEFF<script>a</script>", "svelte").blocks, [
     { start: 9, end: 10, lang: "js", role: "instance" },
   ]);
+  assert.deepEqual(read("<p>a</p>\n\uFEFF<script>a</script>", "svelte"), []);
 
   const { blocks } = scriptBlocks("<script></script><p>hi</p>", "svelte");
   assert.deepEqual(blocks, [{ start: 8, end: 8, lang: "js", role: "instance" }]);
   assert.deepEqual(read("<script>\n</script>", "svelte"), [js("\n")]);
+  // A self-closing script has no body, so the next end tag is not its own.
+  assert.deepEqual(read("<script />\n<script>y</script>", "svelte"), [js("y")]);
 });
 
 test("blanking keeps the length and every line break", () => {
@@ -233,8 +289,11 @@ test("an open script with no end is reported, not guessed", () => {
   assert.equal(scriptBlocks("<!-- <script>a", "vue").unterminated, false);
   assert.equal(scriptBlocks("<!-- <script>a", "svelte").unterminated, false);
   assert.equal(scriptBlocks("<p>a</p><script>a", "svelte").unterminated, false);
+  assert.equal(scriptBlocks('<div class="a', "vue").unterminated, false);
 });
 
+// The clock bounds are sized against the quadratic scans they guard, which take
+// over 6,000 ms on these inputs; a linear one takes under 150 ms on a busy machine.
 test("a megabyte of markup is scanned in linear time", () => {
   const markup = "<div>".repeat(200_000);
   assert.equal(markup.length, 1_000_000);
@@ -247,8 +306,17 @@ test("a megabyte of markup is scanned in linear time", () => {
     const found = read(source, kind);
     const took = performance.now() - before;
     assert.deepEqual(found, [js("const a = 1;")], kind);
-    assert.ok(took < 500, `${kind} took ${Math.round(took)} ms`);
+    assert.ok(took < 5000, `${kind} took ${Math.round(took)} ms`);
   }
+});
+
+test("a long tag name costs no more for each end tag it is held against", () => {
+  const source = `<${"a".repeat(249_999)}>${"</>".repeat(250_000)}</${"A".repeat(249_999)}>`;
+  const before = performance.now();
+  const found = read(`${source}\n<script>const a = 1;</script>`, "vue");
+  const took = performance.now() - before;
+  assert.deepEqual(found, [js("const a = 1;")]);
+  assert.ok(took < 5000, `took ${Math.round(took)} ms`);
 });
 
 test("the scanner never throws", () => {
