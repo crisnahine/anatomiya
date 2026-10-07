@@ -289,8 +289,8 @@ function replaceAll(staged, removals, pair) {
   } catch (err) {
     for (const [path, previous] of undo.reverse()) {
       try {
-        // The record put back is a new file, so the layout file that answered
-        // for it is stamped again or no hook reads it until the next scan.
+        // The layout file is stamped from the record alone, so only the
+        // record's put-back writes it again.
         putBack(path, previous, path === pair.record ? pair.was : null);
       } catch {}
     }
