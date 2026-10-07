@@ -27,11 +27,13 @@ import { byCode, dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
 import {
   FAMILY_TEST_NAMES,
   FAMILY_TREES,
+  FEATURE_TREES,
   LEARNED_SUFFIX_FLOOR,
   LEARNED_SUFFIX_SHARE,
   NAMESAKE_SUFFIXES,
   PACKAGE_SHELL,
   coveredStem,
+  pairedWith,
   startsAtSeparator,
   TEST_TREES,
   TREE,
@@ -331,6 +333,27 @@ function assignOwners(byStem, sourceFiles) {
 }
 
 /**
+ * The one source file each test file's own project holds under the stem the
+ * test names, where the family's layout pairs the test's directory with a
+ * project at all.
+ *
+ * Two sources of one stem in the project decide nothing: the stem alone
+ * cannot say which the test was written for.
+ */
+function assignPairs(byStem, sourceFiles) {
+  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${familyAt(f.rel)}\u0000${stemOf(f.rel)}`);
+  for (const [stem, candidates] of byStem) {
+    for (const t of candidates) {
+      const family = familyAt(t.rel);
+      const inProject = pairedWith(t.dir, family);
+      if (inProject === null) continue;
+      const held = (sourcesByStem.get(`${family}\u0000${stem}`) ?? []).filter((f) => inProject(dirOf(f.rel)));
+      if (held.length === 1) t.paired = held[0].rel;
+    }
+  }
+}
+
+/**
  * Register each candidate under the name it covers as well as under its own, so
  * a directory writing `address_model_spec.rb` answers `address.rb` without any
  * other reading having to know about it.
@@ -384,12 +407,13 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
     const dir = dirOf(t.rel);
     // `owner` is null until the corpus decides one, never absent: an absent key
     // would make "nobody asked" and "nobody owns it" the same reading.
-    byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir, familyAt(t.rel)), covers: coversOf(t), owner: null });
+    byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir, familyAt(t.rel)), covers: coversOf(t), owner: null, paired: null });
   }
   if (sourceFiles !== null) registerLearnedSpellings(byStem, sourceFiles);
   // This order picks the root that gets rendered.
   for (const candidates of byStem.values()) candidates.sort((a, b) => byCode(a.rel, b.rel));
   if (sourceFiles !== null) assignOwners(byStem, sourceFiles);
+  if (sourceFiles !== null) assignPairs(byStem, sourceFiles);
   return byStem;
 }
 
@@ -490,7 +514,12 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // keeps asking `language`, because a bare basename at the top of two
       // trees is the one match with no structure behind it at all.
       if (familyAt(t.rel) !== family) continue;
-      const topLevel = flatPair && TREE.has(t.dir.split("/")[0]) && language(t.rel) === language(f.rel);
+      const topLevel =
+        flatPair &&
+        TREE.has(t.dir.split("/")[0]) &&
+        language(t.rel) === language(f.rel) &&
+        // A tree that files by feature answers a flat package from its own top level only.
+        (!FEATURE_TREES.has(family) || !t.dir.includes("/"));
       // The same mirror, asked the other way round. `mirrors` is one-directional
       // and the empty-tail arm only ever asked whether the candidate ends in the
       // root, so a root whose tree-less form is longer than the test tree's
@@ -520,12 +549,13 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
         !whole &&
         (t.covers.has(f.rel) || (RESOLVABLE.has(extOf(f.rel)) && t.covers.has(noExtension)));
       const mirrored = !whole && bare !== "" && mirrors(t.bare, bare);
-      if (!whole && !mirrored && !covered) continue;
+      const paired = t.paired === f.rel;
+      if (!whole && !mirrored && !covered && !paired) continue;
       matched = true;
       // The first candidate that names a place, not the first that matches: a
       // mirror parting on an ordinary name names none, and stopping there threw
       // away a vote the next candidate was going to cast.
-      if (whole || mirrored) {
+      if (whole || mirrored || paired) {
         const named = whole ? wholeRoot(t.dir, tail) : mirrorRoot(fDir, t.dir, family);
         if (named !== null) {
           structural = true;

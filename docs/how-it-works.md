@@ -1560,7 +1560,15 @@ Every clause is dropped when it counts nothing.
   `tests/Composer/Test/Util` mirrors `src/Composer/Util`. A Python package directly under `src` is
   read as the top of the tree, which is where every import puts it, so a flat `tests/test_cli.py`
   answers `src/flask/cli.py`: flask read 0 of 24 before that and 9 of 24 after, the nine a reader
-  counts by hand. A Rust file holding its own tests has no other file carrying its stem, so it is
+  counts by hand. A Python test tree files its tests by feature below its top level, so a test
+  there answers a package at the top of the tree from the tree's own top level or from the path
+  that mirrors the source's, and from nowhere deeper: fastapi's
+  `tests/test_telemetry/test_exceptions.py` tests OpenTelemetry spans, and it answered
+  `fastapi/exceptions.py` with two more of the 6 files credited under `fastapi`. A `tests`
+  directory beside a package mirrors that package directory for directory, where one source file
+  beside it carries the stem: `examples/tutorial/tests/test_auth.py` covers
+  `examples/tutorial/flaskr/auth.py`, and flask's `examples` read 0 of 12 before that and 3 of 12
+  after. A Rust file holding its own tests has no other file carrying its stem, so it is
   in neither number of the namesake count and the clause after it says how many there are:
   ripgrep's `crates` reads `0 of 56 have a namesake test; 34 hold their own tests`, and tokio's
   `tokio` reads `2 of 306` with 47 more that hold theirs. Counted as having a namesake, 80 of the

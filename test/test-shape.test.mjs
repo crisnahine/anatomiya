@@ -14,8 +14,10 @@ import {
   UNNAMED_RUNNER,
   FAMILY_TEST_NAMES,
   FAMILY_TREES,
+  FEATURE_TREES,
   coveredStem,
   isTestTree,
+  pairedWith,
 } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { PAIRINGS } from "../plugins/anatomiya/lib/pairing.mjs";
 
@@ -165,4 +167,21 @@ test("a test tree has the names every family shares, and the ones its own family
   assert.ok(isTestTree("Test", "php"));
   assert.ok(!isTestTree("Test", "csharp"));
   assert.deepEqual(Object.keys(FAMILY_TREES).sort(), ["csharp", "java", "kotlin", "php"]);
+});
+
+test("Python files its tests by feature below the top of the tree, and no other family is held to that", () => {
+  assert.deepEqual([...FEATURE_TREES], ["python"]);
+});
+
+test("Python: a tests directory is paired with the package beside it, directory for directory", () => {
+  const paired = pairedWith("examples/tutorial/tests", "python");
+  assert.ok(paired("examples/tutorial/flaskr"));
+  assert.ok(paired("examples/tutorial/src/flaskr"));
+  for (const not of ["examples/tutorial", "examples/tutorial/flaskr/api", "examples/javascript/js_example", "flaskr", "examples/tutorial/src"]) {
+    assert.ok(!paired(not), not);
+  }
+  assert.ok(pairedWith("examples/tutorial/tests/api", "python")("examples/tutorial/flaskr/api"));
+  assert.ok(pairedWith("tests", "python")("flaskr"));
+  assert.equal(pairedWith("examples/tutorial/flaskr", "python"), null);
+  for (const family of ["js", "ruby", "go", "rust"]) assert.equal(pairedWith("examples/tutorial/tests", family), null, family);
 });

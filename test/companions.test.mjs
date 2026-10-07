@@ -303,7 +303,7 @@ test("namesakeIndex builds the stem map namesakeCompanions is handed", () => {
   const index = namesakeIndex([file("spec/models/foo_spec.rb")]);
 
   assert.deepEqual(index.get("foo"), [
-    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set(), owner: null },
+    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set(), owner: null, paired: null },
   ]);
 });
 
@@ -977,4 +977,36 @@ test("a Java or Kotlin test covers the class of its package, whatever the source
   assert.equal(namesakeCompanions([file(pairs[1][0])], [other], pairs[1][2]).with, 0);
   // The source root is the JVM's, and a Python file under a `java` directory is not in a package.
   assert.equal(namesakeCompanions([file("a/src/x/java/p/cart.py")], [file("b/src/y/java/p/test_cart.py")], "a/src/x/java/p").with, 0);
+});
+
+test("a Python test below the top of its test tree answers only the path it mirrors", () => {
+  // fastapi: `tests/test_telemetry/test_exceptions.py` tests OpenTelemetry spans, not `fastapi/exceptions.py`.
+  const source = [file("fastapi/exceptions.py")];
+  const count = (spec) => namesakeCompanions(source, [file(spec)], "fastapi").with;
+  assert.equal(count("tests/test_exceptions.py"), 1);
+  assert.equal(count("tests/fastapi/test_exceptions.py"), 1);
+  assert.equal(count("tests/test_telemetry/test_exceptions.py"), 0);
+  // A JavaScript test root that files by type still answers a flat script.
+  assert.equal(namesakeCompanions([file("scripts/seed.mjs")], [file("test/unit/seed.test.mjs")], "scripts").with, 1);
+});
+
+test("a Python tests directory beside a package mirrors that package", () => {
+  // flask: `examples/tutorial/tests/test_auth.py` covers `examples/tutorial/flaskr/auth.py`.
+  const sources = ["__init__", "auth", "blog", "db"].map((s) => file(`examples/tutorial/flaskr/${s}.py`));
+  const tests = ["auth", "blog", "db", "factory"].map((s) => file(`examples/tutorial/tests/test_${s}.py`));
+  const count = (src, specs, root) => namesakeCompanions(src, specs, root, namesakeIndex(specs, src));
+  assert.deepEqual(count(sources, tests, "examples"), { with: 3, of: 4, root: "examples/tutorial/tests" });
+  // A subpackage is mirrored under the tests directory, and a flat test says nothing about it.
+  const nested = [file("examples/tutorial/flaskr/api/tokens.py")];
+  assert.equal(count(nested, [file("examples/tutorial/tests/api/test_tokens.py")], "examples").with, 1);
+  assert.equal(count(nested, [file("examples/tutorial/tests/test_tokens.py")], "examples").with, 0);
+  // The packaging shell is no package: `src/task_app` is the package beside `tests`.
+  assert.equal(count([file("examples/celery/src/task_app/tasks.py")], [file("examples/celery/tests/test_tasks.py")], "examples").with, 1);
+  // Another project's tests are not beside this package.
+  assert.equal(count(sources, [file("examples/javascript/tests/test_auth.py")], "examples").with, 0);
+  // Two packages beside one tests directory share the stem, and the stem cannot say which.
+  const two = [file("site/shop/models.py"), file("site/blog/models.py")];
+  assert.equal(count(two, [file("site/tests/test_models.py")], "site").with, 0);
+  // Python's layout, and no other family's.
+  assert.equal(count([file("examples/tutorial/flaskr/auth.go")], [file("examples/tutorial/tests/auth_test.go")], "examples").with, 0);
 });
