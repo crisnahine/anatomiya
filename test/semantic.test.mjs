@@ -251,6 +251,30 @@ test("the refresh stamp moves when a tsconfig.json appears, tracked or not", (t)
   assert.notEqual(checkerStamp(dir), before);
 });
 
+test("JavaScript beside a base config is checked, as it is beside a tsconfig.json", async (t) => {
+  const dir = scratch(t, "anatomiya-tsbase-");
+  const specifier = typescriptStub(dir);
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+  const plain = ["app/a.js"];
+
+  assert.equal(await checkerBlocked(dir, { specifier, checkedRels: plain }), "plain-javascript");
+  writeFileSync(join(dir, "tsconfig.base.json"), "{}");
+  assert.equal(await checkerBlocked(dir, { specifier, checkedRels: plain }), null);
+});
+
+test("the refresh stamp says which config a root is read through", (t) => {
+  // A tsconfig.json landing beside the base changes whose options the checker
+  // takes, with no tracked file moving.
+  const dir = scratch(t, "anatomiya-tsstamp-base-");
+  const none = checkerStamp(dir);
+  writeFileSync(join(dir, "tsconfig.base.json"), "{}");
+  const base = checkerStamp(dir);
+  writeFileSync(join(dir, "tsconfig.json"), "{}");
+  const both = checkerStamp(dir);
+
+  assert.equal(new Set([none, base, both]).size, 3);
+});
+
 test("a node_modules this cannot read is no install, not a crash", needsPosixPermissions, async (t) => {
   // The refresh stamps this answer, so a throw here would fail every refresh.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-tslocked-"));
