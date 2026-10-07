@@ -248,8 +248,8 @@ jobs:
           fi
           grep -qE "^oxc [0-9]" "$RUNNER_TEMP/doctor.out" \
             || { echo "::error::the parser did not load after a marketplace install"; exit 1; }
-          # The grammars are files of the plugin's own, so this is the copy as much
-          # as the install. The line reads ok only where every grammar loaded.
+          # The grammars are the plugin's own files, so this checks the marketplace
+          # copy as well as the install. The line reads ok only where every grammar loaded.
           grep -qE "^tree-sitter [0-9][^ ]* ok \(grammars: [0-9]+ of [0-9]+\)" "$RUNNER_TEMP/doctor.out" \
             || { echo "::error::tree-sitter or one of its grammars did not load after a marketplace install"; exit 1; }
 
@@ -453,13 +453,16 @@ jobs:
             && { echo "::error::prism failed on files in a real Ruby repository"; exit 1; }
           test -f .claude/rules/anatomiya-overview.md
 
-      # The third engine has no smoke coverage otherwise: none of the repositories
-      # above holds a file tree-sitter reads, so outside the unit suite no runner
-      # would load the wasm runtime or a vendored grammar through the binary.
-      # Pinned to a tag, small and all Python: 83 .py files in 12 areas, and at
-      # this ref on a clone this deep one claim is stated, `functions declare what
-      # they return`, 174 of 174 sites under src/flask. A scan that reads the
-      # files and states nothing is the failure a summary line alone would pass.
+      # tree-sitter has no smoke coverage otherwise: none of the repositories
+      # above holds a file it reads, so outside the unit suite no runner would
+      # parse a file with the wasm runtime and a vendored grammar. The plugin
+      # job's doctor check loads both and parses nothing.
+      # Pinned to a tag, small and all Python: 83 .py files in 12 areas. At this
+      # ref, on a clone this deep, the scan states 1 of 24 claims: `functions
+      # declare what they return`, 174 of 174 sites under src/flask. A scan that
+      # reads the files and states nothing is the failure a summary line alone
+      # would pass, and the step asks for that sentence by name, so a claim of
+      # another row cannot pass it.
       - name: Scan a Python repository
         shell: bash
         env:
@@ -480,6 +483,8 @@ jobs:
           # lines in an area file, the second its sites and its files.
           grep -qE "^  [0-9]+ of [0-9]+ sites across [0-9]+ of [0-9]+ files" .claude/rules/anatomiya-area-*.md \
             || { echo "::error::no area file of the Python repository states a claim"; exit 1; }
+          grep -qx "functions declare what they return" .claude/rules/anatomiya-area-*.md \
+            || { echo "::error::no area file of the Python repository states that functions declare what they return"; exit 1; }
           if grep -q "could not be read by this tool's grammar" "$RUNNER_TEMP/python-scan.out"; then
             echo "::error::the Python grammar could not read a file of a repository it read whole when this was pinned"
             exit 1
