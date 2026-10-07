@@ -607,8 +607,8 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     if (vote !== null) votes.set(vote, (votes.get(vote) ?? 0) + 1);
   }
 
-  // The place the mirrored tests named, where the paired test sits inside one, and the tree it crossed otherwise:
-  // serilog's 10 paired tests are all under the `test/Serilog.Tests` its 18 mirrored ones name.
+  // The place the mirrored tests named, where a test of a paired test project sits inside one, and the tree it crossed
+  // otherwise: serilog's 10 such tests are all under the `test/Serilog.Tests` its 18 mirrored ones name.
   const named = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
   for (const { dir, crossed } of pairedAt) {
     const vote = named.find(([place]) => dir === place || dir.startsWith(`${place}/`))?.[0] ?? crossed;

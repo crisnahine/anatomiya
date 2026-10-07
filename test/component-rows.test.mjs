@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
 import { holdsTypeSyntax } from "../plugins/anatomiya/lib/langs.mjs";
 import { REGISTRY, rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
-import { EXCLUDED, HOLDS, SFC_FIXTURES } from "./sfc-fixtures.mjs";
+import { EXCLUDED, HOLDS, COMPONENT_FIXTURES } from "./component-fixtures.mjs";
 
 /**
  * What a person reading each component would answer for each JavaScript row,
@@ -119,7 +119,7 @@ async function answers(fixture) {
 }
 
 const ANSWERS = new Map();
-for (const fixture of SFC_FIXTURES) ANSWERS.set(fixture.id, await answers(fixture));
+for (const fixture of COMPONENT_FIXTURES) ANSWERS.set(fixture.id, await answers(fixture));
 
 const listing = (lang) => REGISTRY.filter((row) => row.langs.includes(lang)).map((row) => row.key).sort();
 
@@ -129,18 +129,18 @@ test("the table asks every syntactic tree row JavaScript has", () => {
 });
 
 test("every fixture is a real script of thirty lines or more", () => {
-  for (const f of SFC_FIXTURES) {
+  for (const f of COMPONENT_FIXTURES) {
     const lines = [...f.source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
       .reduce((n, m) => n + m[1].trim().split("\n").length, 0);
     assert.ok(lines >= 30, `${f.id} holds ${lines} script lines`);
   }
-  for (const lang of FRAMEWORKS) assert.equal(SFC_FIXTURES.filter((f) => f.lang === lang).length, 6);
+  for (const lang of FRAMEWORKS) assert.equal(COMPONENT_FIXTURES.filter((f) => f.lang === lang).length, 6);
 });
 
 for (const lang of FRAMEWORKS) {
   test(`every row listed for ${lang} answers each ${lang} component as a person would`, () => {
     for (const key of treeKeys.filter((k) => rowByKey(k).langs.includes(lang))) {
-      for (const f of SFC_FIXTURES.filter((x) => x.lang === lang)) {
+      for (const f of COMPONENT_FIXTURES.filter((x) => x.lang === lang)) {
         assert.equal(ANSWERS.get(f.id)[key], EXPECTED[key][f.id], `${key} on ${f.id}`);
       }
     }
@@ -156,7 +156,7 @@ test("every excluded row misreads the fixture its sentence names", () => {
     assert.ok(entry.why.length > 40, `${entry.key} says which construct it misreads`);
     for (const lang of entry.langs) {
       const id = entry.decidedBy[lang];
-      assert.equal(SFC_FIXTURES.find((f) => f.id === id)?.lang, lang, `${entry.key} names a ${lang} fixture`);
+      assert.equal(COMPONENT_FIXTURES.find((f) => f.id === id)?.lang, lang, `${entry.key} names a ${lang} fixture`);
       assert.notEqual(ANSWERS.get(id)[entry.key], EXPECTED[entry.key][id], `${entry.key} now reads ${id} as a person would: list it`);
     }
   }

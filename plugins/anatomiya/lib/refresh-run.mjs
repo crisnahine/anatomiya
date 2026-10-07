@@ -114,8 +114,8 @@ async function passes(root, store, { scan, pin }) {
       return { reason: state.ok ? "current" : "failed-before", pinned, held };
     }
     try {
-      const hold = await committedTargets(root);
-      await (hold.length > 0 ? scan(root, { hold }) : scan(root));
+      const leaveAlone = await committedTargets(root);
+      await (leaveAlone.length > 0 ? scan(root, { leaveAlone }) : scan(root));
     } catch (err) {
       // The previous map stays: a scan that throws has written nothing or
       // put back what it replaced, and one that would not run now will not
@@ -422,17 +422,17 @@ async function mapTracked(root) {
  * id. A scan here leaves those files as the commit has them, for the reason
  * above, and still writes the map nobody commits: a repository that commits
  * only the copy another tool reads from the remote has no other way to keep
- * the local one current. A question git could not answer holds the target.
+ * the local one current. A question git could not answer leaves the target alone.
  */
 async function committedTargets(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
-  const held = [];
+  const committed = [];
   for (const t of Object.values(TARGETS)) {
     if (t.always || targetState(root, t) !== "on") continue;
     const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${t.dir}/${overviewName(t)}`]);
-    if (!r.ok || r.stdout.length > 0) held.push(t.id);
+    if (!r.ok || r.stdout.length > 0) committed.push(t.id);
   }
-  return held;
+  return committed;
 }
 
 async function gitBusy(root) {

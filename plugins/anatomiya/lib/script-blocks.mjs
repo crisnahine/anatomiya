@@ -247,7 +247,7 @@ function svelte(source) {
       break;
     }
     if (isScript) {
-      // One flag for the file, set by the first script tag that states a lang.
+      // One flag for the file, set by the first `<script>` that states a lang.
       const lang = tag.attrs.get("lang");
       if (ts === undefined && typeof lang === "string" && lang) ts = lang === "ts";
       if (!dirty) {

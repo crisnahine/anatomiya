@@ -1058,7 +1058,7 @@ test("a test in a paired project covers the one source of its stem there, at any
   // Slim keeps its classes in `Slim`, which is no half of a pair.
   assert.equal(count([file("Slim/Routing/Route.php")], [file("tests/Deep/RouteTest.php")], "Slim"), 0);
 
-  // The place is the one the mirrored tests name, where the paired test sits inside it.
+  // The place is the one the mirrored tests name, where the test of a paired test project sits inside it.
   const sources = [file("src/Serilog/Core/Pipeline.cs"), file("src/Serilog/Events/LogEvent.cs"), sink];
   const specs = [file("test/Serilog.Tests/Core/PipelineTests.cs"), file("test/Serilog.Tests/Events/LogEventTests.cs"), ...sinkTests];
   assert.deepEqual(namesakeCompanions(sources, specs, "src/Serilog", namesakeIndex(specs, sources)), { with: 3, of: 3, root: "test/Serilog.Tests" });

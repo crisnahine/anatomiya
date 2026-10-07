@@ -2536,7 +2536,7 @@ test("a target in an unknown state is left exactly as it was, and the plan says 
   assert.deepEqual(listRules(linked), mapOf(TARGETS.claude, a));
 });
 
-test("a held target is neither written nor cleared, and the record goes on naming its files", (t) => {
+test("a target left alone is neither written nor cleared, and the record goes on naming its files", (t) => {
   const dir = workspace(t);
   const a = area("src/services");
   const b = area("src/api");
@@ -2544,12 +2544,12 @@ test("a held target is neither written nor cleared, and the record goes on namin
   writeMap(result(dir, [a, b]), { targets: ALL });
   const before = tree(join(dir, cursor.dir));
 
-  const plan = writeMap(result(dir, [a, c]), { hold: ["cursor"] });
+  const plan = writeMap(result(dir, [a, c]), { leaveAlone: ["cursor"] });
 
   const mine = plan.targets.cursor;
   assert.deepEqual(
-    { held: mine.held, state: mine.state, write: mine.write, remove: mine.remove, names: mine.names },
-    { held: true, state: "on", write: [], remove: [], names: mapOf(cursor, a, b) }
+    { leftAlone: mine.leftAlone, state: mine.state, write: mine.write, remove: mine.remove, names: mine.names },
+    { leftAlone: true, state: "on", write: [], remove: [], names: mapOf(cursor, a, b) }
   );
   assert.deepEqual(tree(join(dir, cursor.dir)), before, "every byte there is what it was");
   assert.equal(targetState(dir, cursor), "on", "and it is not turned off");

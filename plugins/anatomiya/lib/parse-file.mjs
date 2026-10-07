@@ -13,7 +13,7 @@ import { collectHits } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
 import { ENGINES, embeddedIn, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
-import { blankOutside, scriptBlocks } from "./sfc.mjs";
+import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
 import { installedVersion } from "./version.mjs";
 
 let parseSync = null;

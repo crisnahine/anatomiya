@@ -303,7 +303,7 @@ test("a per-language table that loses a language refuses to load, and names the 
   await assert.rejects(import(copyOf("dimensions-tree.mjs", "  java: { doc: (text) => BLOCK_DOC.test(text) },\n")), /^Error: DOC has no entry for java$/);
   await assert.rejects(import(copyOf("dimensions-tree.mjs", ", php: /^__(?:construct|destruct)$/i")), /^Error: UNTYPED has no entry for php$/);
   await assert.rejects(import(copyOf("dimensions-tree.mjs", 'rust: ["@test"] }', 'ruby: ["@test"] }')), /^Error: NOT_OFFERED holds ruby, which nothing asks it about$/);
-  await assert.rejects(import(copyOf("sfc.mjs", "{ vue, svelte }", "{ vue }")), /^Error: SCANNERS and the registry's extractors disagree on svelte$/);
+  await assert.rejects(import(copyOf("script-blocks.mjs", "{ vue, svelte }", "{ vue }")), /^Error: SCANNERS and the registry's extractors disagree on svelte$/);
   // `nameOf` reads one field for all seven, so a grammar that moved its own is refused where the walk loads.
   const shapes = copyOf("tree-shapes.mjs", '    renames: { token: "as" },\n    name: "name",', '    renames: { token: "as" },\n    name: "simple_name",');
   await assert.rejects(import(copyOf("tree-walk.mjs", "const TEXT_CAP", "const TEXT_CAP", { "tree-shapes.mjs": shapes })), /^Error: SHAPES names a definition's name field name and simple_name: nameOf reads one$/);

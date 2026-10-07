@@ -879,11 +879,11 @@ test("a target that could not be read says the remedy its reason came with, and 
   assert.ok(scanLines(JSON.parse(scanJson(given))).includes(line));
 });
 
-test("a target the scan was told to hold says nothing, whatever the record names there", () => {
-  const held = scanSummary(result(), plan(others({ state: "on", held: true, names: ["anatomiya-overview.mdc"] })));
+test("a target the scan was told to leave alone says nothing, whatever the record names there", () => {
+  const left = scanSummary(result(), plan(others({ state: "on", leftAlone: true, names: ["anatomiya-overview.mdc"] })));
 
-  assert.deepEqual(scanLines(held), BEFORE_LINES);
-  assert.equal(scanJson(held), BEFORE_JSON);
+  assert.deepEqual(scanLines(left), BEFORE_LINES);
+  assert.equal(scanJson(left), BEFORE_JSON);
 });
 
 test("a run that wrote nothing leaves a target as it found it", () => {
