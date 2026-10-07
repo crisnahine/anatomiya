@@ -139,19 +139,11 @@ export const RUBY_DECLINED = {
   },
 };
 
-/** Rows a tree-sitter grammar answers for. A source is its entry's own language unless it names another. */
-export const TREE_DECLINED = {
-  declared_return_type: {
-    lang: "python",
-    declined: [
-      "class A:\n    def __init__(self):\n        pass\n",
-      "class A:\n    def __eq__(self, other):\n        return True\n",
-      { lang: "php", src: "<?php\nclass A\n{\n    public function __construct() {}\n}\n" },
-      { lang: "php", src: "<?php\nclass A\n{\n    public function __destruct() {}\n}\n" },
-    ],
-    counted: [
-      "class A:\n    def _init(self):\n        pass\n",
-      { lang: "php", src: "<?php\nclass A\n{\n    public function __clone() {}\n}\n" },
-    ],
-  },
-};
+/**
+ * Rows a tree-sitter grammar answers for. A source is its entry's own language unless it names another.
+ *
+ * None states a clause: a clause is one line printed under every language its
+ * row lists, and what such a row declines differs by language, so it is said
+ * in `sites` and held by the row's own tests.
+ */
+export const TREE_DECLINED = {};

@@ -321,6 +321,22 @@ test("what the doc comment row cannot see in Rust, and what it leaves out, is sa
   assert.match(sites, /`#\[doc\(hidden\)\]`/);
 });
 
+test("declared_return_type counts no constructor, no destructor and no Python dunder, and prints no clause about them", async () => {
+  const count = async (lang, src) => (await hits("declared_return_type", lang, src)).length;
+  assert.equal(await count("python", "class A:\n    def __init__(self):\n        pass\n"), 0);
+  assert.equal(await count("python", "class A:\n    def __eq__(self, other):\n        return True\n"), 0);
+  assert.equal(await count("php", "<?php\nclass A\n{\n    public function __construct() {}\n}\n"), 0);
+  assert.equal(await count("php", "<?php\nclass A\n{\n    public function __destruct() {}\n}\n"), 0);
+  assert.equal(await count("python", "class A:\n    def _init(self):\n        pass\n"), 1);
+  // PHP counts its other magic methods, which is why one line cannot say the rule for both languages.
+  assert.equal(await count("php", "<?php\nclass A\n{\n    public function __clone() {}\n}\n"), 1);
+  assert.equal(await count("php", "<?php\nclass A\n{\n    public function __toString() {}\n}\n"), 1);
+
+  const { sites, notCounted } = TREE_DIMENSIONS.find((d) => d.key === "declared_return_type").applicabilityPredicate;
+  assert.equal(notCounted, undefined, "a clause prints under every language the row lists, and Python's rule is false of PHP");
+  assert.match(sites, /neither is a Python method named with double underscores on both sides or a PHP __construct or __destruct/);
+});
+
 test("every tree-sitter row that states a clause has a fixture that runs it", () => {
   const claused = TREE_DIMENSIONS.filter((d) => d.applicabilityPredicate.notCounted).map((d) => d.key);
   assert.deepEqual(claused.sort(), Object.keys(TREE_DECLINED).sort());
