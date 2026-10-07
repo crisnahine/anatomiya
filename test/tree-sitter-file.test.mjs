@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ENGINE, ENGINE_VERSION, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { ENGINE, ENGINE_VERSION, ensureRuntime, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 import { createPool } from "../plugins/anatomiya/lib/pool.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
@@ -166,6 +166,70 @@ test("csharp: a directive on a last line with no line break after it is read, wi
 
   assert.equal(r.ok, true);
   assert.equal("oneBranch" in r, false);
+});
+
+// The grammar rejects a directive on a last line with no line break after it, wherever the file's conditionals sit.
+const UNENDED = "\n#pragma warning restore 618";
+const WHOLE_MEMBERS = "class A\n{\n#if X\n    void F() { }\n#else\n    void G() { }\n#endif\n}";
+
+test("csharp: a file rejected only for its last line's missing line break is read whole, with no branch dropped", async () => {
+  const source = WHOLE_MEMBERS + UNENDED;
+  const r = await parseTreeFile(source, "src/A.cs", "csharp", { withProgram: true });
+
+  assert.equal(r.ok, true);
+  assert.equal("oneBranch" in r, false);
+  assert.equal(r.length, source.length);
+  const methods = [];
+  walkTree(r.program, (node) => {
+    assert.ok(node.end <= source.length, `${node.type} ends at ${node.end} of ${source.length}`);
+    if (!node.children.length) assert.equal(node.text, source.slice(node.start, node.end), node.type);
+    if (node.type === "method_declaration") methods.push(source.slice(node.start, node.end));
+  });
+  assert.deepEqual(methods, ["void F() { }", "void G() { }"]);
+  // The grammar ends these two on the line break it was given, which the file does not hold.
+  assert.equal(r.program.end, source.length);
+  assert.equal(source.slice(r.program.children.at(-1).start, r.program.children.at(-1).end), UNENDED.slice(1));
+});
+
+test("csharp: a row is handed a file read that way as it was written", async () => {
+  const source = WHOLE_MEMBERS + UNENDED;
+  let handed;
+  const row = { key: "probe", langs: ["csharp"], tier: "syntactic", visitor: (program, add, extra) => ((handed = extra.source), {}) };
+
+  await parseTreeFile(source, "src/A.cs", "csharp", { rows: [row] });
+
+  assert.equal(handed, source);
+});
+
+test("csharp: a file with no line break at its end that still needs a branch dropped is marked", async () => {
+  const r = await parseTreeFile(CONDITIONAL["alternative method signatures"].trimEnd() + UNENDED, "src/A.cs", "csharp");
+
+  assert.equal(r.ok, true);
+  assert.equal(r.oneBranch, true);
+});
+
+test("csharp: a file is parsed once where it reads as written, and again only for what the last parse left wrong", async (t) => {
+  const { Parser } = await ensureRuntime();
+  const parse = Parser.prototype.parse;
+  const texts = [];
+  Parser.prototype.parse = function (text, ...rest) {
+    texts.push(text);
+    return parse.call(this, text, ...rest);
+  };
+  t.after(() => (Parser.prototype.parse = parse));
+  const parsesOf = async (source) => {
+    texts.length = 0;
+    await parseTreeFile(source, "src/A.cs", "csharp");
+    return texts.map((text) => (text === source ? "written" : text === `${source}\n` ? "ended" : "blanked"));
+  };
+  const needsABranchDropped = CONDITIONAL["a parameter list"];
+
+  assert.deepEqual(await parsesOf(WHOLE_MEMBERS), ["written"]);
+  assert.deepEqual(await parsesOf(`${WHOLE_MEMBERS}\n`), ["written"]);
+  assert.deepEqual(await parsesOf(WHOLE_MEMBERS + UNENDED), ["written", "ended"]);
+  assert.deepEqual(await parsesOf(needsABranchDropped), ["written", "blanked"]);
+  assert.deepEqual(await parsesOf(needsABranchDropped.replace(/\n/g, "\r")), ["written", "blanked"]);
+  assert.deepEqual(await parsesOf(needsABranchDropped.trimEnd() + UNENDED), ["written", "ended", "blanked"]);
 });
 
 test("csharp: a byte order mark before a first-line conditional does not switch the retry off", async () => {

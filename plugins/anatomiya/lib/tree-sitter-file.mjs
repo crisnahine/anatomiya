@@ -107,15 +107,21 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
   // The string the tree describes: a retried tree is read off the blanked copy, as a Flow file's is.
   let parsed = source;
   let oneBranch = false;
+  let ended = false;
   try {
     // Only after a rejection, so a file the grammar reads as written is read whole.
     if (tree.rootNode.hasError && mayHoldDirectives(rel)) {
-      const kept = withOneBranch(source);
-      const retried = kept && parser.parse(kept.text);
-      if (retried && retried.rootNode.hasError) retried.delete();
-      else if (retried) {
+      const retry = (text) => {
+        const retried = parser.parse(text);
+        if (retried.rootNode.hasError) return retried.delete();
         tree.delete();
         tree = retried;
+        return true;
+      };
+      // The grammar wants a line break after a last-line directive. Tried first: it drops nothing and moves no offset.
+      ended = !/[\n\r]$/.test(source) && retry(`${source}\n`);
+      const kept = ended ? null : withOneBranch(source);
+      if (kept && retry(kept.text)) {
         parsed = kept.text;
         oneBranch = kept.dropped;
       }
@@ -128,6 +134,8 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
       return { rel, ok: false, error: `${errors} syntax error(s)`, errors };
     }
     program = copyTree(tree, parsed, lang);
+    // The line break that was added is no part of the file, and a node that spans it would end past the source.
+    if (ended) walkTree(program, (node) => void (node.end = Math.min(node.end, source.length)));
   } finally {
     // A node read after this answers wrongly and does not throw, so nothing below touches the tree.
     tree.delete();
