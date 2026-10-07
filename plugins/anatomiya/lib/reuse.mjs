@@ -16,10 +16,11 @@ import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
 import { gitBuffered, operationUnfinished } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
-import { engineOf, language } from "./langs.mjs";
+import { embeddedIn, engineOf, language } from "./langs.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
+import { blankOutside, scriptBlocks } from "./sfc.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -210,6 +211,30 @@ function inertLines(engine, lines) {
   return inert;
 }
 
+/**
+ * The script a component file holds: the lines its blocks cover, and which of
+ * all its lines define nothing callable. No lines where a script never ends.
+ *
+ * Each block is read with the file blanked around it, since markup that opens
+ * a comment would carry it into the script below.
+ */
+function componentScript(engine, source, kind) {
+  const { blocks, unterminated } = scriptBlocks(source, kind);
+  const lineAt = (offset) => source.slice(0, offset).split("\n").length;
+  const spans = (unterminated ? [] : blocks).flatMap((b) => {
+    const body = source.slice(b.start, b.end);
+    if (body.trim() === "") return [];
+    return [{ from: lineAt(b.end - body.trimStart().length), to: lineAt(b.start + body.trimEnd().length) }];
+  });
+  const views = blocks.map((b) => inertLines(engine, blankOutside(source, b.start, b.end).split("\n")));
+  return { spans, inert: views[0]?.map((_, i) => views.every((view) => view[i])) ?? [] };
+}
+
+const clipped = (hunks, spans) =>
+  hunks.flatMap((h) =>
+    spans.flatMap((s) => (h.from > s.to || h.to < s.from ? [] : [{ ...h, from: Math.max(h.from, s.from), to: Math.min(h.to, s.to) }]))
+  );
+
 // A name a repository chose is shown as it is only where it cannot carry a
 // line break or a quote into the reason the model reads.
 const PLAIN_PATH = /^[\w./@+-]+$/;
@@ -294,12 +319,16 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
     if (since !== null && entry.mtimeMs < since) continue;
-    const hunks =
+    const added =
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
-    const engine = engineOf(language(path));
-    const inert = engine in INERT ? inertLines(engine, entry.head.split("\n")) : null;
+    const lang = language(path);
+    const engine = engineOf(lang);
+    const kind = embeddedIn(lang);
+    const script = kind === null ? null : componentScript(engine, entry.head, kind);
+    const hunks = script === null ? added : clipped(added, script.spans);
+    const inert = script !== null ? script.inert : engine in INERT ? inertLines(engine, entry.head.split("\n")) : null;
     const defining = inert === null ? hunks : hunks.filter((h) => !inert.slice(h.from - 1, h.to).every(Boolean));
     if (defining.length === 0) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
