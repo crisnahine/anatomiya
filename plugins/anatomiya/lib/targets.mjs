@@ -10,8 +10,10 @@
  * generator key are spelled here, and `test/targets.test.mjs` holds them equal
  * to the ones `rules.mjs` carries.
  */
-// The sentences are the ones whose truth depends on the reader: when a file
-// reaches it, and what it has to be told that Claude Code's hook says on its own.
+// The sentences are the ones whose truth depends on the reader. Claude Code's
+// say when a file reaches it, which is measured. The others say what each file
+// is and nothing about delivery, which nobody measured there, and carry what
+// Claude Code's hook says on its own.
 const describe = (id, dir, ext, reader, said) =>
   Object.freeze({ id, dir, ext, always: id === "claude", reader, wrote: null, widens: null, ...said });
 
@@ -24,15 +26,15 @@ export const TARGETS = Object.freeze({
     listed: "loaded when you read one of its files",
   }),
   cursor: describe("cursor", ".cursor/rules", ".mdc", "Cursor", {
-    reads: "Read a file before editing it: an area's notes attach when you read one of its files.",
-    listed: "attached when you read one of its files",
+    reads: "Each area has its own file under .cursor/rules whose `globs:` names that area's files: before editing a file, read the one that names it.",
+    listed: "whose `globs:` names its files",
     wrote: WROTE,
   }),
   copilot: describe("copilot", ".github/instructions", ".instructions.md", "GitHub Copilot", {
     // In VS Code's agent mode nothing attaches for a file the agent opens: the model reads the match itself.
     reads:
-      "Before editing a file, read the anatomiya file under .github/instructions whose applyTo matches it: an area's notes apply to the files its patterns name.",
-    listed: "applied to the files its pattern names",
+      "Each area has its own file under .github/instructions whose `applyTo:` names that area's files: before editing a file, read the one that names it.",
+    listed: "whose `applyTo:` names its files",
     wrote: WROTE,
     widens: "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.",
   }),

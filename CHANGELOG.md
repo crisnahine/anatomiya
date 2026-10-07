@@ -115,13 +115,18 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns both off and
   removes the files this tool wrote there. The scan prints one group of lines per directory
   (`wrote 4 files under .cursor/rules for Cursor`), `doctor` prints a line for a target that is on,
-  `check` audits its directory, and `pin` leaves its generated files out of the clean-tree test.
+  `check` audits its directory, and `pin` leaves its generated files out of the clean-tree test. In
+  a clone that brings a committed overview, the first plain scan says on that line which file
+  switched the target on and that `scan --targets claude` switches it off, and `--format json`
+  carries the file as `switchedOnBy`.
 - In those two directories a scan never writes over a file it did not write, and writes through no
   link: `.cursor`, `.cursor/rules`, `.github` and `.github/instructions` each have to be a real
   directory of the repository, or not exist yet. A scan that names a target it cannot write as asked
   refuses, says which file or link is in the way, and writes nothing anywhere. A target that is
   merely on leaves such an entry where it is and says how many it left. A name that differs from one
-  of the map's only in letter case counts as taken, unless the directory lists both spellings.
+  of the map's only in letter case counts as taken, unless the directory lists both spellings. A map
+  file that is locked or read-only stops the scan with a sentence that names it, and every file
+  already replaced is put back.
 - Cursor and Copilot read looser patterns than Claude Code, and the files say so. A brace set is
   written as one pattern per extension and a negation is left out, since neither reader that was
   run takes one and the other Copilot surfaces document none, so an area file can attach for files
@@ -130,7 +135,10 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   no file there, and the scan says how many.
 - What those two copies are not. Delivery is not measured in either tool: for Cursor it was read
   from the code of the 3.20.21 app and not seen in a running one, and for Copilot the files were run
-  through VS Code 1.140.0's parser and nothing else. The hooks are Claude Code's, so neither tool
+  through VS Code 1.140.0's parser and nothing else. So their overviews say what each area's file
+  is and not when it arrives. Both overviews load on every turn in tools none of this plugin's
+  hooks runs in, and a directory's name reaches them as its words: SECURITY.md says what to read
+  before committing one. The hooks are Claude Code's, so neither tool
   gets the echo, the notice before a write, the reuse check or a refresh of its own. VS Code already
   reads `.claude/rules/`, so with the Copilot target on it is offered each area twice. Codex is not
   written for.
@@ -190,8 +198,9 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   `- .claude/rules: 58 .md` and dropped an area from the Areas list to make room. The map's own
   files are left out by name: the overview and area files in `.claude/rules`, `.cursor/rules` and
   `.github/instructions`, and every file under `.claude/anatomiya/` that is not source. A map
-  committed through a linked `.claude/rules` is left out where git tracks it. A hand-written file
-  under one of those exact names is left out with it.
+  committed through a linked `.claude/rules` is left out where git tracks it, and one under a
+  directory spelled in another case, `.Cursor/Rules` for instance, where git reports that the
+  volume folds case. A hand-written file under one of those exact names is left out with it.
 - The overview's sentence about a directory with no test precedent prints only where such a
   directory has a line in the same section. A root the line budget folded away could put it there
   alone, so it read as being about the directories that were printed. Against 0.13.4 it is gone

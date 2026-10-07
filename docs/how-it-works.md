@@ -1299,13 +1299,15 @@ so its cover names each of its directories. Each list stops at six patterns and 
 Besides the frontmatter, the overview differs in four lines. Under the heading the Cursor and
 Copilot files carry `Written by anatomiya, a scanner run on this repository; where this and the code
 disagree, the code is right and this map is stale.`, which the echo says to a Claude Code session
-and no hook says to these readers. The read-before-editing sentence is the reader's own: `Read a
-file before editing it: an area's notes attach when you read one of its files.` for Cursor, and for
-Copilot `Before editing a file, read the anatomiya file under .github/instructions whose applyTo
-matches it: an area's notes apply to the files its patterns name.` The Areas listing says how an
-area's file arrives: `loaded when you read one of its files` for Claude Code, `attached when you
-read one of its files` for Cursor and `applied to the files its pattern names` for Copilot. The
-count at the foot names that directory's own files, `Generated files: 4 under
+and no hook says to these readers. The sentence under the legend is the reader's own. Claude
+Code's says when its notes load, which is measured. The other two say what each area's file is and
+nothing about when it arrives, which is measured in neither tool: ``Each area has its own file under
+.cursor/rules whose `globs:` names that area's files: before editing a file, read the one that names
+it.`` for Cursor, and the same sentence with `.github/instructions` and `applyTo:` for Copilot. The
+Areas listing follows suit: `loaded when you read one of its files` for Claude Code, ``whose
+`globs:` names its files`` for Cursor and ``whose `applyTo:` names its files`` for Copilot. An area
+held from an earlier scan is listed and counted for a target only where that directory holds its
+file. The count at the foot names that directory's own files, `Generated files: 4 under
 .cursor/rules/anatomiya-*.mdc`. Two cases change more lines. Where the extra head lines would take a
 Cursor or Copilot overview past 40 lines, the sentences about other files in the directory share one
 line. Where an area has no file there, the `## Areas` count is lower and one more line says how many
@@ -1345,15 +1347,18 @@ while the map was being written`).
 
 A failure at any rename or removal puts back every file already replaced, in every directory, takes
 out the temporary files, and removes a Cursor or Copilot directory this run made if it is empty. Nothing is put back
-through a directory that moved.
+through a directory that moved. Where the failure is a file that is locked or read-only (`EPERM`,
+`EACCES` or `EBUSY` from the rename or the removal), the scan names it:
+`<dir>/<name> could not be replaced (EPERM), so the scan stopped and put back what it had replaced: the file is locked or read-only, so close what holds it or change its mode, then scan again`.
 
 Turning a target off removes its files, and which ones depends on how. A scan that leaves a target
 out of `--targets` removes every file there that has one of the two names a scan gives, the
 overview's or `anatomiya-area-` and eight hex digits, is a regular file and carries the key, whether
 or not the record lists it: a clone can hold the committed files and no record. Any other scan
 keeps the three facts, so it removes only what the record names. A keyed copy somebody kept under
-another name stays either way, and the directory itself is left in place. The summary says what was
-done, one group of lines per directory, after the `wrote N files` line that counts `.claude/rules`:
+another name stays either way, and the directory itself is left in place. A target that is off
+keeps none of this tool's files, so the file of an area this run holds goes with the rest. The
+summary says what was done, one group of lines per directory, after the `wrote N files` line that counts `.claude/rules`:
 
 ```
 wrote 4 files under .cursor/rules for Cursor
@@ -1364,6 +1369,15 @@ wrote 4 files under .github/instructions for GitHub Copilot
 removed 4 files under .cursor/rules
 .cursor/rules is off now
 ```
+
+A plain scan that writes a target while the record names no file of ours there says on that line
+what turned it on, once. That is a clone that brought a committed overview:
+
+```
+wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-overview.mdc switched on: `scan --targets claude` switches it off
+```
+
+`--format json` carries the file as `switchedOnBy` in that target's entry, on that scan alone.
 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
@@ -1525,7 +1539,9 @@ next scan: every file under `.claude/anatomiya/` that is not source, and in `.cl
 `.cursor/rules` and `.github/instructions` a file named `anatomiya-overview` or
 `anatomiya-area-<8 hex digits>` with that directory's extension. Where `.claude/rules` is a link to
 another directory in the repository, git tracks the map under that directory, so the rule asks
-there instead, once per scan. It is decided by the name alone, whether or not that target is on, and
+there instead, once per scan. Where git says the volume folds case (`core.ignorecase`), each of
+those directories is matched in any case, since a scan writes into `.Cursor/Rules` where that is the
+spelling on disk; the file's name is held to its own spelling. It is decided by the name alone, whether or not that target is on, and
 no file is opened for it, so a hand-written file under one of those exact names is left out too.
 Every other file in those directories is a team's own and is counted, and so is a source file under
 `.claude/anatomiya/`, which is read like any other.
