@@ -1625,13 +1625,18 @@ than a rule.
 |---|---|
 | Match sibling test shape; skip tests where siblings have none. | the tests line printed |
 | Match directory granularity; don't extract into a sibling module what the directory's files inline. | at least one root printed a helper facet |
-| An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed. | one root has 3 or more files with a namesake test, and another has fewer than 3 of at least 3, counting a file that holds its own tests as tested |
+| An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed. | one root has 3 or more files with a namesake test, and a root the section prints has fewer than 3 of at least 3, counting a file that holds its own tests as tested |
 
 The third settles the disagreement between a count and an imperative in the same voice: a
 directory with producers and no tests beside a user instruction to always write one. Both halves of
 its gate matter. A zero means no namesake was matched, never that the directory is untested, so the
 repository has to be seen pairing tests with sources somewhere before the sentence can say it does
-not here.
+not here. That half is asked of every root the roster counted, printed or folded, since it is a fact
+about the repository. The other is asked of the printed roots only: the directory with no precedent
+has to have a line, or the sentence reads as being about the directories that do. fastlane printed
+it over five Ruby roots at 15 to 86 namesakes each, armed by a Java directory of 19 files folded
+into `and 8 more directories`. Of 56 repositories measured, six printed it on a folded root alone
+and no longer do.
 
 ### In an area file
 

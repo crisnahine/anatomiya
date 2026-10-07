@@ -124,3 +124,12 @@ test("a directory whose files hold their own tests has a precedent, whatever its
   layout.roots[1].companions.inline = 2;
   assert.ok(principleKeys(layout).includes("test_precedent"));
 });
+
+test("ripgrep's shape: a root reading 0 of N whose files hold their own tests does not arm the precedent sentence", () => {
+  const crates = { companions: { with: 0, of: 56, inline: 34, ext: ".rs" } };
+  const layout = { tests: [{ runner: "cargo test", root: null, files: 15 }], roots: [{ companions: { with: 4, of: 60 } }, crates] };
+  assert.ok(!principleKeys(layout).includes("test_precedent"));
+  const onPage = PRINCIPLES.find((p) => p.key === "test_precedent").onPage;
+  assert.equal(onPage([crates]), false);
+  assert.equal(onPage([{ companions: { with: 0, of: 56 } }]), true);
+});

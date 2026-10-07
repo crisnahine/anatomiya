@@ -60,6 +60,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   missing file. Plain JavaScript beside a `tsconfig.base.json` is now checked, as it is beside a
   `tsconfig.json`.
 
+### Fixed
+
+- The overview's sentence about a directory with no test precedent prints only where such a
+  directory has a line in the same section. A root the line budget folded away could put it there
+  alone, so it read as being about the directories that were printed: on backstage, fastlane,
+  vscode, prisma and next.js it was armed only by a folded root and is gone. A repository that
+  prints an untested directory keeps it.
+
 ## [0.13.4] - 2026-10-07
 
 Hooks, scans and checks take less time and give the same answers, byte for byte, with two

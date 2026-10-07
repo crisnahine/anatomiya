@@ -329,8 +329,8 @@ export function renderLayout(layout, budget = Infinity) {
   if (layout.roots.length === 0 && layout.tests.length === 0) return [];
 
   // The record stores the keys; the sentences live where their gates do.
-  const sentence = new Map(PRINCIPLES.map((p) => [p.key, p.sentence]));
-  let said = (layout.principles ?? []).map((k) => sentence.get(k)).filter(Boolean);
+  const principle = new Map(PRINCIPLES.map((p) => [p.key, p]));
+  let said = (layout.principles ?? []).map((k) => principle.get(k)).filter(Boolean);
   let tests = testsLineText(layout);
 
   const owed = () => LAYOUT_FRAME + (tests ? 1 : 0) + (said.length > 0 ? 1 + said.length : 0);
@@ -363,6 +363,7 @@ export function renderLayout(layout, budget = Infinity) {
   if (fold && shown.length < room) lines.push(fold);
 
   if (tests) lines.push(tests);
+  said = said.filter((p) => !p.onPage || p.onPage(shown)).map((p) => p.sentence);
   if (said.length > 0) lines.push("", ...said);
 
   lines.push("");
