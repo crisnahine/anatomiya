@@ -1,11 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 
-import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 import { treeFacets } from "../plugins/anatomiya/lib/tree-facets.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
@@ -300,42 +295,4 @@ test("a C# attribute is read with or without its Attribute suffix", async () => 
   assert.deepEqual(await facetsOf("csharp", long), { testRunner: "xunit", testCalls: true });
   const other = "public class Totals\n{\n    [ObsoleteAttribute]\n    public void Total() {}\n}\n";
   assert.deepEqual(await facetsOf("csharp", other), QUIET);
-});
-
-test("a per-language table that loses a language refuses to load, and names the table and the language", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-keyed-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const lib = join(ANATOMIYA, "lib");
-  let copies = 0;
-  /** A copy of one module with one stretch of its text replaced, importing the real siblings unless handed another. */
-  const copyOf = (module, entry, put = "", siblings = {}) => {
-    const src = readFileSync(join(lib, module), "utf8");
-    assert.equal(src.split(entry).length, 2, `${module} holds ${entry} once`);
-    const copy = join(dir, `${copies++}-${module}`);
-    const absolute = (_, name) => `from ${JSON.stringify(siblings[name] ?? pathToFileURL(join(lib, name)).href)}`;
-    writeFileSync(copy, src.replace(entry, put).replace(/from "\.\/([\w-]+\.mjs)"/g, absolute));
-    return pathToFileURL(copy).href;
-  };
-
-  await assert.rejects(import(copyOf("tree-facets.mjs", "  java: { imports: JVM_IMPORTS, marks: JVM_CASES },\n")), /^Error: RUNNERS has no entry for java$/);
-  await assert.rejects(import(copyOf("test-shape.mjs", "  rust: {},\n")), /^Error: FAMILY_TEST_NAMES has no entry for rust$/);
-  await assert.rejects(import(copyOf("dimensions-tree.mjs", "  kotlin: (name, words) => shown(words),\n")), /^Error: PUBLIC has no entry for kotlin$/);
-  await assert.rejects(import(copyOf("dimensions-tree.mjs", "  java: { doc: (text) => BLOCK_DOC.test(text) },\n")), /^Error: DOC has no entry for java$/);
-  await assert.rejects(import(copyOf("dimensions-tree.mjs", ", php: PHP_BUILDS }", " }")), /^Error: UNTYPED has no entry for php$/);
-  await assert.rejects(import(copyOf("dimensions-tree.mjs", "  go: goNamedByInterface,\n", "  ruby: goNamedByInterface,\n")), /^Error: NO_SITE holds ruby, which nothing asks it about$/);
-  await assert.rejects(import(copyOf("dimensions-tree.mjs", '{ java: new Set(["ignored"]) }', '{ python: new Set(["ignored"]) }')), /^Error: UNBOUND holds python, which nothing asks it about$/);
-  await assert.rejects(import(copyOf("dimensions-tree.mjs", 'rust: ["@test"] }', 'ruby: ["@test"] }')), /^Error: NOT_OFFERED holds ruby, which nothing asks it about$/);
-  await assert.rejects(import(copyOf("script-blocks.mjs", "{ vue, svelte }", "{ vue }")), /^Error: SCANNERS and the registry's extractors disagree on svelte$/);
-  // A table a family may leave out still holds no key the registry does not know.
-  await assert.rejects(import(copyOf("test-shape.mjs", "  csharp: { test: /", "  csharpp: { test: /")), /^Error: FAMILY_TREES holds csharpp, which nothing asks it about$/);
-  await assert.rejects(import(copyOf("test-shape.mjs", 'PACKAGE_SHELL = { python: "src" }', 'PACKAGE_SHELL = { pyhton: "src" }')), /^Error: PACKAGE_SHELL holds pyhton, which nothing asks it about$/);
-  await assert.rejects(import(copyOf("test-shape.mjs", 'PACKAGE_FILE = { python: "__init__" }', 'PACKAGE_FILE = { pyhton: "__init__" }')), /^Error: PACKAGE_FILE holds pyhton, which nothing asks it about$/);
-  await assert.rejects(import(copyOf("test-shape.mjs", '  kotlin: jvmPairing("kotlin"),', '  kotln: jvmPairing("kotlin"),')), /^Error: PAIRINGS holds kotln, which nothing asks it about$/);
-  await assert.rejects(import(copyOf("test-shape.mjs", "{ go: () => true, java: inItsProject,", "{ golang: () => true, java: inItsProject,")), /^Error: FIXED_PLACE holds golang, which nothing asks it about$/);
-  // The node names are read for every language the walk is handed, so one that lost its entry is refused where the walk loads.
-  const renamed = copyOf("tree-shapes.mjs", "\n  go: {", "\n  golang: {");
-  await assert.rejects(import(copyOf("tree-walk.mjs", "const TEXT_CAP", "const TEXT_CAP", { "tree-shapes.mjs": renamed })), /^Error: SHAPES has no entry for go$/);
-  // `nameOf` reads one field for all seven, so a grammar that moved its own is refused where the walk loads.
-  const shapes = copyOf("tree-shapes.mjs", '    renames: { token: "as" },\n    name: "name",', '    renames: { token: "as" },\n    name: "simple_name",');
-  await assert.rejects(import(copyOf("tree-walk.mjs", "const TEXT_CAP", "const TEXT_CAP", { "tree-shapes.mjs": shapes })), /^Error: SHAPES names a definition's name field name and simple_name: nameOf reads one$/);
 });

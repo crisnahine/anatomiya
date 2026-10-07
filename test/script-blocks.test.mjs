@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { scriptBlocks, blankOutside } from "../plugins/anatomiya/lib/script-blocks.mjs";
+import { assertScanners, scriptBlocks, blankOutside } from "../plugins/anatomiya/lib/script-blocks.mjs";
 
 // What the scanner kept, with each range read back out of the source.
 const read = (source, kind) => {
@@ -359,4 +359,13 @@ const label = '</' + "script>";
       for (const b of blocks) assert.ok(0 <= b.start && b.start <= b.end && b.end <= source.length);
     }
   }
+});
+
+test("a scanner table that lacks a declared extractor, or holds one nothing declares, is refused", () => {
+  const scan = () => ({ blocks: [], unterminated: false });
+  assert.doesNotThrow(() => assertScanners({ vue: scan, svelte: scan }, ["vue", "svelte"]));
+  assert.throws(() => assertScanners({ vue: scan }, ["vue", "svelte"]), /^Error: SCANNERS and the registry's extractors disagree on svelte$/);
+  assert.throws(() => assertScanners({ vue: scan, astro: scan }, ["vue"]), /^Error: SCANNERS and the registry's extractors disagree on astro$/);
+  // An inherited name is no scanner.
+  assert.throws(() => assertScanners({}, ["constructor"]), /disagree on constructor/);
 });
