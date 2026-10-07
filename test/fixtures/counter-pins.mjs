@@ -22,6 +22,9 @@ export const ELIGIBLE = [
   // A library documents its public surface and an application mostly does not: of 21 measured
   // repositories five sit under 0.40 and five over 0.90, so the inverse is a habit and not a lapse.
   "public_doc_comment",
+  // The annotation is optional in Python and PHP, and leaving it off is a project's rule where it is
+  // one: django types 0 of 8,744 functions and laravel 1,409 of 13,711, against Slim's 312 of 329.
+  "declared_return_type",
 ];
 
 /** Rows whose other side is a defect rather than a style anyone picked. */
@@ -61,6 +64,4 @@ export const REFUSED = [
   "controller_spec", "serializer_spec", "model_test", "job_test",
   // The JavaScript and Ruby rows' reason: a handler that drops its error is an absence.
   "caught_error_used",
-  // An unannotated function is an absence, and the inverse would tell an agent to delete types.
-  "declared_return_type",
 ];

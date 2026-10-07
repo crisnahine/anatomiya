@@ -5563,6 +5563,28 @@ test("a test file pytest collects by its directory is a test file to the check o
   assert.deepEqual(report.findings, []);
 });
 
+for (const [side, facts_, reported] of [
+  ["no return type", () => counterDim({ key: "declared_return_type", claim: "functions declare what they return", counterClaim: "functions declare no return type" }), "typed"],
+  ["a return type", () => dim({ key: "declared_return_type" }), "untyped"],
+]) {
+  test(`where an area's functions declare ${side}, a new function written the other way is the finding and one written that way is none`, async (t) => {
+    const dir = repo(t, ({ git, write, commit }) => {
+      write("src/py/a.py", "def a():\n    return 1\n");
+      commit("base");
+      git("checkout", "-q", "-b", "work");
+      write("src/py/a.py", "def a():\n    return 1\n\n\ndef typed() -> int:\n    return 1\n\n\ndef untyped():\n    return 1\n");
+      commit("two functions");
+    });
+    facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "src/py", globs: [{ negated: false, dir: "src/py", tail: "**/*.py" }], fileCount: 8, dimensions: [facts_()] }] });
+
+    const report = await check(dir, { baseRef: "main" });
+
+    assert.deepEqual(forKey(report, "declared_return_type").map((f) => [f.line, f.claim]), [
+      reported === "typed" ? [5, "functions declare no return type"] : [9, "functions declare what they return"],
+    ]);
+  });
+}
+
 test("a file renamed out of a test tree is not charged the sites it already held", async (t) => {
   // Under tests/ pytest collects it and the row counts nothing in it; under src/ it is source. Nothing in it changed.
   const source = "def test_data():\n    assert 1 == 1\n\n\ndef load_tools(path):\n    return path\n\n\ndef save_tools(path):\n    return path\n";

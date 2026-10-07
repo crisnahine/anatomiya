@@ -112,9 +112,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   grammar file, and a scan names that one language as unread and reads the rest.
 - Three dimensions over the languages a tree-sitter grammar reads, each asked only of the languages
   whose measured repositories differ on it (three repositories per language):
-  `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin, which may
-  also state its inverse; `functions declare what they return` in Python and PHP; `exception
-  handlers use the error they caught` in PHP and Java. A function row passes over test files. Two
+  `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin and
+  `functions declare what they return` in Python and PHP, each of which may state its inverse
+  where an area writes the other way; `exception handlers use the error they caught` in PHP and
+  Java. A function row passes over test files. Two
   more candidates are not shipped: how functions are named read over 0.94 in all fifteen
   repositories, and whether a Kotlin import names what it takes is what ktlint refuses by default.
   Neither is a language where a claim read as a default: handlers in Python, Kotlin and C#.
