@@ -11,9 +11,18 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
-import { embeddedIn } from "./langs.mjs";
+import { embeddedIn, familyOf } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
-import { TEST_DIRS, TEST_NAME, RUBY_TEST_NAME, TEST_ROOTS, TEST_TREES, UNNAMED_RUNNER } from "./test-shape.mjs";
+import {
+  FAMILY_TEST_NAMES,
+  TEST_DIRS,
+  TEST_NAME,
+  RUBY_TEST_NAME,
+  TEST_ROOTS,
+  UNNAMED_RUNNER,
+  coveredStem,
+  isTestTree,
+} from "./test-shape.mjs";
 
 /**
  * The floor rises with the corpus, so a directory earns a line by holding a
@@ -39,10 +48,15 @@ const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel
  * `decidim-dev/lib/decidim/dev/test` scanned 46 files of shared RSpec tooling
  * as application code, both by this exact route.
  *
+ * `family` adds the names one language's own build gives a test tree, for a
+ * file or a root of that language and no other: `commonTest` is a Gradle
+ * source set and an ordinary directory name in a JavaScript repository.
+ *
  * Exported because `scripts/measure-layout.mjs` recounts the printed line and
  * a second copy of this rule there would measure the disagreement.
  */
-export const underTestTree = (dir) => dir !== "" && dir.split("/").some((seg) => TEST_TREES.has(seg));
+export const underTestTree = (dir, family = null) =>
+  dir !== "" && dir.split("/").some((seg) => isTestTree(seg, family));
 
 /**
  * What a root's label carries when its record covers one level and not the
@@ -125,8 +139,13 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // (`test` nested inside `suite`) and this client's whole Cypress suite.
   if (facets?.empty === true) return false;
   const base = baseOf(rel);
-  if (TEST_NAME.test(base)) return true;
   const dir = dirOf(rel);
+  // A language with a test name of its own answers by it and by nothing
+  // written for another: no dotted form, no mirror, no `__tests__`.
+  const family = familyOf(lang);
+  const names = FAMILY_TEST_NAMES[family];
+  if (names) return coveredStem(stemOf(rel), family) !== null && (names.alone === true || underTestTree(dir, family));
+  if (TEST_NAME.test(base)) return true;
   // The Ruby form is the one a non-test file wears in earnest, so it is the one
   // that has to be corroborated by where the file sits. `software_spec.rb` is
   // Homebrew's `SoftwareSpec` class and has its own `software_spec_spec.rb`
@@ -492,11 +511,11 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
     testRoot: tests.length * 2 > own.length,
   };
   if (stories.length > 0) record.stories = stories.length;
-  if (producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)) {
+  if (producers.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(producers[0].lang))) {
     // The extension the count is over, which is not always the root's first.
     record.companions = { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt };
   }
-  if (components.length > 0 && testFiles.length > 0 && !underTestTree(dir)) {
+  if (components.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(components[0].lang))) {
     record.componentCompanions = { ...namesakeCompanions(components, testFiles, dir, byStem), ext: componentExt };
   }
   const helpers = helperFacet(own, jsxFiles, mirrored);

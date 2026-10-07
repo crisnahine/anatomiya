@@ -19,6 +19,7 @@ export const SHAPES = {
     tokensOf: [],
     name: "name",
     returnType: "return_type",
+    bases: "superclasses",
   },
   php: {
     fn: ["function_definition", "method_declaration"],
@@ -32,6 +33,7 @@ export const SHAPES = {
     block: ["compound_statement"],
     args: ["arguments"],
     call: ["function_call_expression"],
+    base: ["base_clause"],
     // What a file holds outside any code: the tags, and the markup around them.
     header: ["php_tag", "text", "text_interpolation"],
     tokensOf: [],
@@ -91,7 +93,6 @@ export const SHAPES = {
     visibility: ["visibility_modifier"],
     doc: ["outer_doc_comment_marker"],
     args: ["token_tree"],
-    mod: ["mod_item"],
     tokensOf: [],
     name: "name",
   },
