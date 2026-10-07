@@ -44,6 +44,9 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    - what it could not cover: files in no area, files that crashed the parser, files that failed to
      parse, files over the per-file size cap, and history git could not read, which fails the author
      gate on every claim
+   - files this tool's grammar could not read, in Python, PHP, Go, Java, C#, Rust or Kotlin. The
+     line says that is a syntax error or syntax the grammar does not cover, so do not tell the user
+     those files are broken. And C# files read with one branch of each `#if`
    - a language it read no file of, with the reason and the remedy on the line after it. The rest
      of the map is still written, and the areas holding that language keep what the last scan that
      could read it wrote
@@ -79,10 +82,12 @@ If it says a parser engine is not installed, run the readiness probe:
 node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" doctor
 ```
 
-For the node-hosted engine, `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" setup` installs it.
+For a node-hosted engine (`oxc`, or `tree-sitter` reported absent),
+`node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" setup` installs it.
 Tell the user first that setup runs npm in the plugin's own directory, which is the only command
 here that installs anything. Any other engine carries its own remedy on its doctor line, and npm
-cannot install an interpreter. Then run the scan again.
+cannot install an interpreter. A grammar file that did not load is the plugin's own file, so its
+remedy is to reinstall the plugin and setup does not help. Then run the scan again.
 
 ### The type checker
 

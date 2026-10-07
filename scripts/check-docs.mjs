@@ -31,6 +31,8 @@ import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules
 import { FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { GATES } from "../plugins/anatomiya/lib/gates.mjs";
+import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
+import { PROBE_IDS } from "../plugins/anatomiya/lib/readiness.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
 
@@ -399,6 +401,8 @@ export const READS = [
   "SECURITY.md",
   "package.json",
   `${REL.anatomiya}/package.json`,
+  `${REL.anatomiya}/README.md`,
+  `${REL.anatomiya}/grammars/grammars.json`,
   `${REL.anatomiya}/bin/anatomiya.mjs`,
   `${REL.anatomiya}/commands`,
   `${REL.anatomiya}/lib/check.mjs`,
@@ -451,8 +455,9 @@ export function checkDocs() {
 
   // Prose spells a count of one as a word, and a phrasing nothing parses is a
   // number that drifts in silence, which is what this file is for.
-  const NUMERALS = new Map([["one", 1], ["two", 2], ["three", 3]]);
-  const counted = (word) => NUMERALS.get(word) ?? Number(word);
+  const WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen"];
+  const NUMERALS = new Map(WORDS.map((word, i) => [word, i + 1]));
+  const counted = (word) => NUMERALS.get(word.toLowerCase()) ?? Number(word);
 
   // A released entry states the number that shipped in it and stays true forever.
   // Reading the whole changelog made every past release a claim about today, so
@@ -779,6 +784,51 @@ export function checkDocs() {
     const text = read(doc);
     for (const dep of deps) claim(doc, text.includes(dep), `does not name the runtime dependency ${dep}`);
     claim(doc, !/only runtime dependency/.test(text), `says "only runtime dependency" with ${deps.length} of them`);
+  }
+
+  // --- the engines and the grammars --------------------------------------------
+
+  // Each of these is a count a third engine moved, and none was read: "two
+  // runtime dependencies" stood in four documents beside a manifest declaring
+  // three. A number or a number word, so the phrasing a sentence reads best in
+  // is still a phrasing this parses.
+  const N = `\\d+|${WORDS.join("|")}`;
+  const hosted = LANGUAGES.filter((l) => l.engine === "tree-sitter").length;
+  const COUNTS = [
+    [`(${N})\\s+runtime\\s+dependencies`, deps.length, (n) => `the plugin's manifest declares ${n}`],
+    [`(${N})\\s+parser\\s+engines`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`],
+    [`(${N})\\s+node-hosted\\s+engines`, Object.values(ENGINES).filter((e) => e.host === "node").length, (n) => `the registry declares ${n} hosted by node`],
+    [`(${N})\\s+(?:vendored\\s+)?grammars\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
+    [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
+  ];
+  const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
+  for (const rel of stating) {
+    const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
+    for (const [phrasing, held, source] of COUNTS) {
+      for (const m of text.matchAll(new RegExp(phrasing, "gi"))) {
+        claim(rel, counted(m[1]) === held, `says "${m[0]}", ${source(held)}`);
+      }
+    }
+  }
+
+  // The table section 10 prints, held to what doctor asks: an engine added to
+  // the registry prints a line the day it lands, and a reader looking its row
+  // up found four where doctor printed five.
+  const readiness = read("docs/how-it-works.md");
+  const from = readiness.indexOf("## 10. Readiness and setup");
+  claim("docs/how-it-works.md", from !== -1, "has no ## 10. Readiness and setup section to read the readiness table from");
+  const tabled = new Set([...readiness.slice(Math.max(from, 0)).matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]));
+  const printed = [...PROBE_IDS, ...Object.values(ENGINES).flatMap((e) => (e.extras ?? []).map((extra) => extra.module))];
+  for (const id of printed) claim("docs/how-it-works.md", tabled.has(id), `the readiness table has no row for ${id}, which doctor prints a line for`);
+  for (const id of tabled) claim("docs/how-it-works.md", printed.includes(id), `the readiness table has a row for ${id}, which doctor prints no line for`);
+
+  // The grammars are the one dependency a user runs that no manifest of theirs
+  // lists, so the document a reader vets this tool by names each at its version.
+  const vendored = readJson(`${REL.anatomiya}/grammars/grammars.json`);
+  claim(`${REL.anatomiya}/grammars/grammars.json`, Array.isArray(vendored.value), vendored.problem ?? "is not a list of grammars");
+  for (const grammar of Array.isArray(vendored.value) ? vendored.value : []) {
+    const named = `${grammar.package}@${grammar.version}`;
+    claim("SECURITY.md", read("SECURITY.md").includes(`\`${named}\``), `does not name the grammar package ${named}`);
   }
 
   // --- committed documents carry no local path --------------------------------

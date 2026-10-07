@@ -260,6 +260,73 @@ test("the rows asked of each tree-sitter language are read against the registry"
   }
 });
 
+/** One count a document spells as a word, changed to another word, in a copy that then has to fail. */
+function miscount(t, rel, from, to) {
+  const dir = repoCopy(t);
+  edit(join(dir, ...rel.split("/")), (text) => text.replace(from, to));
+  return check(dir);
+}
+
+test("the count of runtime dependencies is read against the plugin's manifest, in every document that states it", (t) => {
+  // "Two runtime dependencies" stood in four documents while the manifest gained a third: the gate read the names and never the count.
+  for (const rel of ["README.md", "SECURITY.md", "CONTRIBUTING.md", `${REL.anatomiya}/README.md`]) {
+    const { status, output } = miscount(t, rel, /three runtime dependencies/i, "four runtime dependencies");
+
+    assert.equal(status, 1, `${rel} states four runtime dependencies and passed`);
+    assert.ok(output.includes(`${rel}: says "four runtime dependencies", the plugin's manifest declares 3`), output);
+  }
+});
+
+test("the count of parser engines is read against the registry", (t) => {
+  for (const rel of ["docs/how-it-works.md", "CONTEXT.md"]) {
+    const { status, output } = miscount(t, rel, /three parser engines/, "four parser engines");
+
+    assert.equal(status, 1, `${rel} states four parser engines and passed`);
+    assert.ok(output.includes(`${rel}: says "four parser engines", the registry declares 3`), output);
+  }
+});
+
+test("the count of engines node hosts is read against the registry", (t) => {
+  const { status, output } = miscount(t, "README.md", /two node-hosted engines/, "three node-hosted engines");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`README.md: says "three node-hosted engines", the registry declares 2 hosted by node`), output);
+});
+
+test("the count of grammars is read against the languages the registry routes to tree-sitter", (t) => {
+  for (const rel of ["README.md", "SECURITY.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`]) {
+    const { status, output } = miscount(t, rel, /seven(\s+)grammars/, "eight$1grammars");
+
+    assert.equal(status, 1, `${rel} states eight grammars and passed`);
+    assert.match(output, new RegExp(`${rel.replace(/[.]/g, "\\.")}: says "eight\\s+grammars", the registry routes 7 languages to tree-sitter`));
+  }
+});
+
+test("the count of declarations the build contract states is read against the registry", (t) => {
+  const { status, output } = miscount(t, "DECISIONS.md", "The registry holds twelve declarations", "The registry holds thirteen declarations");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`DECISIONS.md: says "The registry holds thirteen declarations", the registry holds 12`), output);
+});
+
+test("the readiness table has a row for every line doctor prints, and for nothing else", (t) => {
+  // The table listed four rows for a release after doctor printed a fifth engine's line.
+  const lost = miscount(t, "docs/how-it-works.md", /^\| `tree-sitter` \| node \|.*\n/m, "");
+  assert.equal(lost.status, 1);
+  assert.ok(lost.output.includes("docs/how-it-works.md: the readiness table has no row for tree-sitter, which doctor prints a line for"), lost.output);
+
+  const stale = miscount(t, "docs/how-it-works.md", "| `tree-sitter` | node |", "| `acorn` | node | it imports | the same install |\n| `tree-sitter` | node |");
+  assert.equal(stale.status, 1);
+  assert.ok(stale.output.includes("docs/how-it-works.md: the readiness table has a row for acorn, which doctor prints no line for"), stale.output);
+});
+
+test("the grammar packages the security notes name are the ones the manifest records, at its versions", (t) => {
+  const { status, output } = miscount(t, "SECURITY.md", "tree-sitter-go@0.25.0", "tree-sitter-go@0.24.0");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes("SECURITY.md: does not name the grammar package tree-sitter-go@0.25.0"), output);
+});
+
 test("the README's share of the dimension total is read against the registry", (t) => {
   // "One of the 57 needs the type checker" survived a 58th row: the gate read
   // "N dimensions" and nothing else, so a count spelled any other way drifted.

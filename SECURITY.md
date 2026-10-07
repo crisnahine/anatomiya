@@ -50,6 +50,14 @@ Rust and Kotlin). Those files are committed to this repository and nothing fetch
 or at run time. Each is a byte-for-byte copy of the file in its grammar's npm package, and
 `plugins/anatomiya/grammars/grammars.json` records the package, the version and the SHA-256. `npm run validate` and
 the test suite refuse a copy that does not hash to its entry, or to the installed package's file.
+The seven grammar packages are dev dependencies of this repository at exact versions and no
+dependency of the plugin, so installing the plugin never fetches one:
+`tree-sitter-python@0.25.0`, `tree-sitter-php@0.24.2`, `tree-sitter-go@0.25.0`,
+`tree-sitter-java@0.23.5`, `tree-sitter-c-sharp@0.23.5`, `tree-sitter-rust@0.24.0` and
+`@tree-sitter-grammars/tree-sitter-kotlin@1.1.0`. Each of them declares an install script, which
+is one reason every install in this repository, in CI and in the release runs with
+`--ignore-scripts`. A scanned repository cannot supply a grammar or choose one: the seven load from
+the plugin's own directory by language id, and nothing in the repository is read to pick a file.
 Ruby files go through `prism`, which is
 a default gem, in children (up to four on a large repository) each started as
 `ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and `GEM_HOME` dropped from its
@@ -275,6 +283,15 @@ child processes, one file per message. Per file guards: 1 MB size cap, 5s timeou
 after a 250ms grace. A poison file costs one file and about a millisecond of respawn, not the run.
 The Ruby side streams instead of buffering, with a 15s idle timeout, because silence is what a hung
 parse looks like.
+
+The tree-sitter engine runs in the same pool under the same guards, for a different failure. No
+input measured crashed its process outright. What a parse can do is fill the WebAssembly heap,
+and after that every parse in the process throws: with trees never freed, the 44th parse of a 990
+KB Python file threw `RuntimeError: Aborted()`, and so did a one-line file after it. The worker
+frees each tree before it answers, which held its resident size at 432 to 433 MB over 300 such
+parses, and a worker that traps anyway is replaced before it is handed another file. A grammar can
+also be slow on input built for it: a 195 KB Kotlin file of 4,000 `<` comparisons took 6.4
+seconds to parse. The 5s clock kills that parse and charges that one file.
 
 This is availability, not confidentiality. A repository can still make a scan slow.
 

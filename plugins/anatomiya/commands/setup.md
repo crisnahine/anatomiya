@@ -2,7 +2,9 @@
 description: Install what this plugin's own parser needs, in the plugin's own directory
 ---
 
-Install the node-hosted engine's dependencies, and nothing else.
+Install the packages the node-hosted engines load, and nothing else: `oxc-parser` and
+`flow-remove-types` for JavaScript and TypeScript, `web-tree-sitter` for Python, PHP, Go, Java, C#,
+Rust and Kotlin, and the optional `typescript`.
 
 Claude Code already does this on `/plugin install`, from the lockfile this plugin ships. Reach for
 this command where that install did not run or did not finish, which `/anatomiya:doctor` reports two
@@ -25,7 +27,9 @@ ways: a first line where nothing was installed at all, and an engine line where 
 
 4. Then run `/anatomiya:doctor` to see what answers now. A zero exit says npm succeeded and every
    engine npm provides loads afterwards, not that every engine is ready: npm cannot install Ruby, so
-   an interpreter line stays whatever it was.
+   an interpreter line stays whatever it was. Nor can it put back a grammar file: those ship in the
+   plugin's own directory, so a `tree-sitter` line that names a `.wasm` file that did not load is
+   fixed by reinstalling the plugin, and setup run for it ends non-zero naming the same file.
 
 5. **Do not open the generated files with the Read tool.** Reading a context file permanently
    suppresses its automatic injection for the rest of the session. Use `cat` or `head` through

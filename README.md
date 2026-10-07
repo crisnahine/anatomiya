@@ -66,7 +66,9 @@ ordinary case.
 `web-tree-sitter` is the WebAssembly runtime for the seven grammars the plugin carries as `.wasm`
 files under `plugins/anatomiya/grammars/`: Python, PHP, Go, Java, C#, Rust and Kotlin. Nothing is downloaded for them.
 Each file is a copy of the one in its grammar's npm package, and `plugins/anatomiya/grammars/grammars.json` records
-the package, the version and the SHA-256 of each.
+the package, the version and the SHA-256 of each. `/anatomiya:doctor` loads them and prints how
+many answered on its `tree-sitter` line, `grammars: 7 of 7`; one that does not load is named
+there, and the fix is to reinstall the plugin, since no package install writes a grammar file.
 
 When nothing was installed, `/anatomiya:doctor` says so in its first line. When an install ran and
 stopped short, its engine lines say which one did not load. One command answers both:
@@ -403,7 +405,7 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 | `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
 | `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Exits 0 either way. |
-| `/anatomiya:setup` | Installs the node-hosted engine's dependencies in the plugin's own directory. The only command that installs anything or reaches a package registry, and no other one runs it. On Windows it prints the command to run by hand. |
+| `/anatomiya:setup` | Installs the packages the two node-hosted engines load, in the plugin's own directory. The grammar files are not packages: they ship in the plugin, and a damaged one is fixed by reinstalling the plugin. The only command that installs anything or reaches a package registry, and no other one runs it. On Windows it prints the command to run by hand. |
 
 The three that read a repository take `--format json`, which prints the same answer as a record
 rather than as lines, for a CI job or another tool to read. `check` also takes `--format github`,
@@ -542,9 +544,25 @@ preventable by a conventions map. Any claim that this finds bugs earlier is fals
 writes blocks a commit, a push, or a merge, and `check` reports rather than fails. If your linter
 already enforces a rule, the map restating it is waste, not defence in depth.
 
-**JavaScript, TypeScript and Ruby, plus the script blocks of Vue and Svelte files.** A Python, Go
-or Rust repository gets an overview with a layout section and no claims in it, and its "Not
-covered" section counts the files it did not read. One of the 62 needs the type checker and is the only
+**JavaScript, TypeScript and Ruby are read in depth, and seven more languages for a few rows
+each.** Python, PHP, Go, Java, C#, Rust and Kotlin are read through the seven grammars the plugin
+carries. Each gets the layout section, its test files and namesake tests by the language's own
+naming, and the rows counted under [What it measures](#what-it-measures). A map of one of them
+mostly prints counts and states a claim only where a directory is consistent: a scan of fastapi
+states 1 of 86 claims, hugo 0 of 102, ktor 0 of 290 and tokio 14 of 33. None of the seven gets the
+type checker, the "most imported from here" lines, the end-of-turn reuse check or the notice before
+a test file is written. A file of any other language is not read: "What lives where" counts it, and
+"Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
+
+**A grammar reads less than its language.** A file a grammar cannot read is left out of every
+count, and the scan and the overview say how many there were: `82 files could not be read by this
+tool's grammar` on ktor. Measured on three repositories per language, that is under 1% of the
+lines of every Python, PHP, Go, Java and Rust one, 4.35% of serilog's C#, and 1.32% to 7.88% of the
+three Kotlin ones, which use syntax newer than the grammar. A C# file with `#if` inside an
+expression is read with the first branch of each conditional kept, and the scan counts those files
+too. A Python stub (`.pyi`) is not read.
+
+One of the 62 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
@@ -584,7 +602,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 286 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 295 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
