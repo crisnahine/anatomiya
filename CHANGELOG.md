@@ -181,6 +181,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (`docs-ui/src/app/components`, `src/vscode-dts`) had a line in that release and is folded in
   this version, so the sentence goes with it. A repository that prints an untested directory
   keeps it.
+- A name that opens with a number and a dot prints whole. `check --base 13.x` printed `base x`,
+  and a version `2.0` or a file `404.vue` lost its head the same way: the encoder took the number
+  for the marker of a numbered list, which it is only before a space or at the end of the value.
 
 ## [0.13.4] - 2026-10-07
 
