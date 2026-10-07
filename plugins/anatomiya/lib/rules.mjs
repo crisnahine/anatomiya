@@ -145,8 +145,8 @@ export function isMapName(name, target = TARGETS.claude) {
 
 const AREA_STEM = /^anatomiya-area-[0-9a-f]{8}$/;
 
-// What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`.
-const folded = (name) => name.toUpperCase().toLowerCase();
+/** What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`. */
+export const folded = (name) => name.toUpperCase().toLowerCase();
 
 /**
  * The entry a write to `name` may land on: one spelled otherwise that a volume
