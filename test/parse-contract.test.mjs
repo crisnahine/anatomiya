@@ -23,6 +23,15 @@ const FIXTURES = {
     // declaration's grammar is this declaration's rejected fixture (B14).
     rejected: "const x = <string>window.name;\nexport const y = x;\n",
   },
+  vue: {
+    ok: "<template>\n  <p>{{ a }}</p>\n</template>\n<script setup>\nconst a = 1;\n</script>\n",
+    rejected: "<template><p/></template>\n<script>\nfunction f( {\n</script>\n",
+  },
+  svelte: {
+    ok: "<script>\n  let a = 1;\n</script>\n\n<p>{a}</p>\n",
+    // A script opened and never closed: the scanner's own rejection.
+    rejected: "<script>\n  let a = 1;\n",
+  },
   ruby: {
     ok: "class A\n  def b\n    1\n  end\nend\n",
     rejected: "def broken(\n",

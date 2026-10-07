@@ -14,6 +14,8 @@ import {
   grammarFor,
   langHas,
   assertRegistry,
+  familyOf,
+  embeddedIn,
 } from "../plugins/anatomiya/lib/langs.mjs";
 
 test("the Flow retry covers every JavaScript extension the corpus accepts", () => {
@@ -48,10 +50,10 @@ test("only .js and .cjs may run under Node's own CommonJS wrapper", () => {
   for (const ext of EXT_BY_LANG.ruby) assert.equal(mayBeCommonJS(`app/a.${ext}`), false, `.${ext}`);
 });
 
-test("the registry declares three languages, frozen, in engine-group order", () => {
+test("the registry declares five languages, frozen, in engine-group order", () => {
   assert.deepEqual(
     LANGUAGES.map((l) => l.id),
-    ["js", "jsx", "ruby"]
+    ["js", "jsx", "vue", "svelte", "ruby"]
   );
   for (const decl of LANGUAGES) assert.ok(Object.isFrozen(decl), decl.id);
 });
@@ -79,6 +81,63 @@ test("language answers by extension, then whole filename, then the fallback", ()
     LANGUAGES.filter((l) => l.fallback).map((l) => l.id),
     ["js"]
   );
+});
+
+test("a component file is its own language, and a module named after the framework is not", () => {
+  assert.equal(language("src/App.vue"), "vue");
+  assert.equal(language("src/routes/+page.svelte"), "svelte");
+  // A rune module is plain TypeScript the compiler reads whole: no block to cut.
+  assert.equal(language("src/state.svelte.ts"), "js");
+  assert.equal(language("src/state.svelte.js"), "js");
+});
+
+test("every language names the family a test of it may be written in", () => {
+  // The engine was the proxy, and it is one family only while each engine
+  // hosts one: a component is tested by a plain `.ts` file, a script is not
+  // tested by a Ruby spec.
+  for (const id of ["js", "jsx", "vue", "svelte"]) assert.equal(familyOf(id), "js", id);
+  assert.equal(familyOf("ruby"), "ruby");
+  assert.throws(() => familyOf("python"), /python/);
+});
+
+test("only the two component languages name a script extractor", () => {
+  assert.equal(embeddedIn("vue"), "vue");
+  assert.equal(embeddedIn("svelte"), "svelte");
+  for (const id of ["js", "jsx", "ruby"]) assert.equal(embeddedIn(id), null, id);
+});
+
+test("a component language retries no dialect and claims no checker", () => {
+  for (const id of ["vue", "svelte"]) {
+    const decl = declOf(id);
+    assert.deepEqual(decl.exts, [id]);
+    assert.equal(decl.scratchExt, id);
+    assert.equal(decl.fallback, false);
+    assert.equal(decl.dialect, null);
+    assert.equal(decl.commonjs, null);
+    assert.equal(decl.typed, null);
+    // The checker is handed paths, and it cannot open one of these.
+    assert.equal(langHas(id, "semantic"), false);
+    assert.equal(langHas(id, "importGraph"), true);
+    assert.equal(mayHoldFlow(`src/A.${id}`), false);
+    assert.equal(mayBeCommonJS(`src/A.${id}`), false);
+  }
+});
+
+test("a declaration with no family refuses to load", () => {
+  const bad = LANGUAGES.map((l) => (l.id === "ruby" ? { ...l, family: undefined } : l));
+  assert.throws(() => assertRegistry(bad), /ruby names no family/);
+});
+
+test("a declaration naming an extractor nothing implements refuses to load", () => {
+  const bad = LANGUAGES.map((l) => (l.id === "vue" ? { ...l, embedded: "astro" } : l));
+  assert.throws(() => assertRegistry(bad), /vue names no script extractor: astro/);
+  const absent = LANGUAGES.map((l) => (l.id === "js" ? { ...l, embedded: undefined } : l));
+  assert.throws(() => assertRegistry(absent), /js names no script extractor: undefined/);
+});
+
+test("an embedded language on an engine that cannot read its blocks refuses to load", () => {
+  const bad = LANGUAGES.map((l) => (l.id === "svelte" ? { ...l, engine: "prism" } : l));
+  assert.throws(() => assertRegistry(bad), /svelte embeds its script, which only oxc reads, and routes to prism/);
 });
 
 test("the grammar follows the real extension, never the language", () => {
@@ -146,6 +205,8 @@ test("a declaration naming an engine the table does not hold refuses to load", (
 test("the engine a language routes to is read off its declaration", () => {
   assert.equal(engineOf("js"), "oxc");
   assert.equal(engineOf("jsx"), "oxc");
+  assert.equal(engineOf("vue"), "oxc");
+  assert.equal(engineOf("svelte"), "oxc");
   assert.equal(engineOf("ruby"), "prism");
   assert.throws(() => engineOf("python"), /python/);
 });
