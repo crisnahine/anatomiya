@@ -2,8 +2,7 @@ import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexamin
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
-import { engineOf } from "./langs.mjs";
-import { whyUnread } from "./readiness.mjs";
+import { unreadReasons } from "./readiness.mjs";
 import { listSome, LISTED, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
 
@@ -58,6 +57,8 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // Which engines ran and what they are, so a map that moved under unchanged
     // source has somewhere to look before anyone reads the counts.
     engines: result.parse.engines ?? null,
+    // Only where one did not load, so a summary of a healthy run is the record it was.
+    ...(result.parse.missingGrammars?.length ? { missingGrammars: result.parse.missingGrammars } : {}),
     layoutLine: layoutSummary(result.layout, result.areas),
     baseline: {
       status: result.baseline.status,
@@ -215,7 +216,7 @@ export function scanLines(s) {
     lines.push(
       `read no ${s.blind.join(" or ")} file at all, so nothing was written and the previous map was left alone`
     );
-    lines.push(...blindLines(s.blind, s.engines));
+    lines.push(...blindLines(s.blind, s));
     return lines;
   }
   // A language this run read none of, where it read another: the rest of the
@@ -226,7 +227,7 @@ export function scanLines(s) {
       ? ` and ${plural(s.held, "area")} holding one ${s.held === 1 ? "was" : "were"} left as the last scan wrote ${s.held === 1 ? "it" : "them"}`
       : "";
     lines.push(`read no ${s.uncounted.join(" or ")} file at all, so none was counted${held}`);
-    lines.push(...blindLines(s.uncounted, s.engines));
+    lines.push(...blindLines(s.uncounted, s));
   }
   lines.push(s.dryRun ? `would write ${plural(s.wrote, "file")}` : `wrote ${plural(s.wrote, "file")}`);
   if (s.hookRemoved) lines.push(hookRemoved(s.dryRun));
@@ -280,13 +281,13 @@ function enginesLine(engines) {
 }
 
 /**
- * Why a run read no file of these languages, in each engine's own terms
- * (`whyUnread`). A summary carrying no probe at all keeps the old sentence,
+ * Why a run read no file of these languages, one line per cause
+ * (`unreadReasons`). A summary carrying no probe at all keeps the old sentence,
  * which is all it can honestly say.
  */
-function blindLines(langs, engines) {
+function blindLines(langs, { engines, missingGrammars }) {
   if (!engines) return ["this is usually a missing interpreter rather than a repository that changed"];
-  return [...new Set(langs.map(engineOf))].map((id) => whyUnread(id, engines));
+  return unreadReasons(langs, { engines, missingGrammars }).map((r) => r.why);
 }
 
 /**

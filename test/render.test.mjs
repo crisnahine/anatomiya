@@ -21,6 +21,7 @@ import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
+import { LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const dim = (o = {}) => ({
@@ -671,34 +672,44 @@ test("the overview reports what the parser could not read", () => {
   assert.match(out, /^- 3 files exceeded the size cap$/m);
 });
 
+test("no extension a declared language owns is counted as a language this map does not read", () => {
+  // The list is closed and hand-written, so a language that gains a
+  // declaration has to leave it: its files are source now, and are never in
+  // the tally this reads.
+  const declared = LANGUAGES.flatMap((l) => l.exts.map((ext) => [`.${ext}`, 1]));
+
+  assert.deepEqual(unreadLanguageFiles({ corpus: { otherExts: declared } }), []);
+  assert.deepEqual(unreadLanguageFiles({ corpus: { otherExts: [...declared, [".swift", 3]] } }), [[".swift", 3]]);
+});
+
 test("unread language files sum per extension, ranked by count then name", () => {
   // Two roots both hold some of a language's files, the way appsmith's Java
   // backend and next.js's Rust workspace each spread across more than one
   // directory.
   const layout = {
     roots: [
-      { exts: [[".java", 50], [".kt", 10]] },
-      { exts: [[".kt", 5], [".md", 900], [".go", 15]] },
+      { exts: [[".swift", 50], [".scala", 10]] },
+      { exts: [[".scala", 5], [".md", 900], [".c", 15]] },
     ],
   };
 
-  assert.deepEqual(unreadLanguageFiles({ layout }), [[".java", 50], [".go", 15], [".kt", 15]]);
+  assert.deepEqual(unreadLanguageFiles({ layout }), [[".swift", 50], [".c", 15], [".scala", 15]]);
   assert.deepEqual(unreadLanguageFiles({ layout: { roots: [] } }), []);
   assert.deepEqual(unreadLanguageFiles({}), [], "an older record carries no layout");
 });
 
 test("the unread count comes from the whole corpus, not from what the roster printed", () => {
   // The layout shows a root's top two extensions and folds the rest away, so
-  // reading the tally back off it undercounts: next.js has 1,016 .rs files and
-  // the printed roots hold 781 of them. A row about what this map could not
+  // reading the tally back off it undercounts: next.js had 1,016 files of a
+  // language this did not read and the printed roots held 781 of them. A row about what this map could not
   // read is the last place to state a number it cannot stand behind.
-  const layout = { roots: [{ exts: [[".rs", 781], [".js", 2194]] }] };
-  const corpus = { otherExts: [[".rs", 1016], [".md", 502], [".json", 1306]] };
+  const layout = { roots: [{ exts: [[".swift", 781], [".js", 2194]] }] };
+  const corpus = { otherExts: [[".swift", 1016], [".md", 502], [".json", 1306]] };
 
-  assert.deepEqual(unreadLanguageFiles({ layout, corpus }), [[".rs", 1016]]);
+  assert.deepEqual(unreadLanguageFiles({ layout, corpus }), [[".swift", 1016]]);
   assert.deepEqual(
     unreadLanguageFiles({ layout }),
-    [[".rs", 781]],
+    [[".swift", 781]],
     "a record written before the corpus carried the tally still answers from the roster"
   );
 });
@@ -1896,32 +1907,32 @@ test("the roster is byte-stable across two scans of unchanged source", () => {
 });
 
 test("the overview names a language it has no dimension for", () => {
-  // appsmith's app/server is 2,374 files, 2,077 of them .java, with a real
-  // JUnit suite, and the current map named none of it.
+  // appsmith's app/server was 2,374 files, 2,077 of them in a language this
+  // did not read, with a real test suite, and the map named none of it.
   const layout = clientLayout({
-    roots: [root("app/server", { files: 2374, exts: [[".java", 2077], [".xml", 200]], other: 97 })],
+    roots: [root("app/server", { files: 2374, exts: [[".swift", 2077], [".xml", 200]], other: 97 })],
     more: { roots: 0, files: 0 },
   });
 
   const out = renderOverview(result({ layout }), { uncovered: 30 });
 
-  assert.match(out, /^- 2077 files hold a language this map does not read \(2077 \.java\)$/m);
+  assert.match(out, /^- 2077 files hold a language this map does not read \(2077 \.swift\)$/m);
 });
 
 test("an unread language sums across every directory that holds it", () => {
-  // next.js's Rust workspace is 1,016 .rs files split across crates/ and
+  // next.js's second language was 1,016 files split across crates/ and
   // turbopack/crates/, and only the second directory's count ever printed.
   const layout = clientLayout({
     roots: [
-      root("crates", { files: 500, exts: [[".rs", 235], [".toml", 40]] }),
-      root("turbopack/crates", { files: 4447, exts: [[".js", 2194], [".rs", 781]], other: 1472 }),
+      root("crates", { files: 500, exts: [[".swift", 235], [".toml", 40]] }),
+      root("turbopack/crates", { files: 4447, exts: [[".js", 2194], [".swift", 781]], other: 1472 }),
     ],
     more: { roots: 0, files: 0 },
   });
 
   const out = renderOverview(result({ layout }), { uncovered: 30 });
 
-  assert.match(out, /^- 1016 files hold a language this map does not read \(1016 \.rs\)$/m);
+  assert.match(out, /^- 1016 files hold a language this map does not read \(1016 \.swift\)$/m);
 });
 
 test("a repository read in full carries no unread-language row", () => {
@@ -3186,11 +3197,11 @@ test("the tests line counts a level-only root over the level it counted", () => 
 
 test("a count of one agrees with its verb on every Not covered line", () => {
   const out = renderOverview(
-    result({ corpus: { files: 90, truncated: false, dropped: { generated: 1 }, otherExts: [[".java", 1]] } }),
+    result({ corpus: { files: 90, truncated: false, dropped: { generated: 1 }, otherExts: [[".swift", 1]] } }),
     { uncovered: 0 }
   );
 
-  assert.match(out, /^- 1 file holds a language this map does not read \(1 \.java\)$/m);
+  assert.match(out, /^- 1 file holds a language this map does not read \(1 \.swift\)$/m);
   assert.match(out, /^- 1 file says a generator wrote it, so nothing here is counted from it$/m);
 });
 

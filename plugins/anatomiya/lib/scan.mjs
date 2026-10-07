@@ -334,6 +334,8 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // somewhere to look first.
       engines: head.engines,
       missingEngines: head.missingEngines,
+      // Only where one did not load, so the record of a healthy run is unchanged.
+      ...(head.missingGrammars.length ? { missingGrammars: head.missingGrammars } : {}),
       missingParser: head.missingParser,
       missingStripper: head.missingStripper,
       unreadable,

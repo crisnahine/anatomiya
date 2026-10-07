@@ -6,6 +6,45 @@
  * load. The bridge is imported by the probe, so the comparison cannot live in
  * either one without a cycle.
  */
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+const require = createRequire(import.meta.url);
+
+/**
+ * The version an installed module's own manifest states, or null where it is
+ * not installed.
+ *
+ * Off the manifest because a parser is loaded on the first file that needs it,
+ * and `oxc-parser` exports no version either way. A package may keep its
+ * manifest out of its `exports`, as `web-tree-sitter` does, so a manifest that
+ * will not resolve by name is looked for above the file the module loads from.
+ */
+export function installedVersion(module) {
+  try {
+    return require(`${module}/package.json`).version ?? null;
+  } catch {
+    // Below.
+  }
+  let dir;
+  try {
+    dir = dirname(require.resolve(module));
+  } catch {
+    return null;
+  }
+  for (;;) {
+    try {
+      const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+      if (manifest.name === module) return manifest.version ?? null;
+    } catch {
+      // No manifest at this level, or one that is not this package's.
+    }
+    const up = dirname(dir);
+    if (up === dir) return null;
+    dir = up;
+  }
+}
 
 /**
  * Whether a version is below a floor, by its numbers.

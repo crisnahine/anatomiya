@@ -5,6 +5,8 @@ import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { needsRuby } from "./ruby-available.mjs";
+import * as SAMPLES from "./tree-samples.mjs";
+import { BROKEN } from "./tree-broken.mjs";
 
 /**
  * The record contract, held against every declared language through `parseAll`
@@ -36,6 +38,9 @@ const FIXTURES = {
     ok: "class A\n  def b\n    1\n  end\nend\n",
     rejected: "def broken(\n",
   },
+  ...Object.fromEntries(
+    ["python", "php", "go", "java", "csharp", "rust", "kotlin"].map((id) => [id, { ok: SAMPLES[id], rejected: BROKEN[id].error }])
+  ),
 };
 
 const optsFor = (decl) => (decl.engine === "prism" ? needsRuby : {});
@@ -94,7 +99,12 @@ for (const decl of LANGUAGES) {
     const r = records.get(rel);
     assert.equal(r.kind, "ok");
     assert.ok(r.program, "tree mode promises the program");
-    if (decl.positions.offsets === "utf16") {
+    if (decl.engine === "tree-sitter") {
+      assert.ok(Array.isArray(r.program.children), "a plain tree holds its nodes as children");
+      assert.equal(typeof r.program.children[0].start, "number", "an offsets language addresses by code units");
+      assert.equal(typeof r.program.children[0].line, "number", "and its nodes carry the line beside the offset");
+      assert.deepEqual(r.comments, [], "comments are nodes of this tree, so the channel is empty");
+    } else if (decl.positions.offsets === "utf16") {
       const first = r.program.body?.[0];
       assert.equal(typeof first?.start, "number", "an offsets language addresses by code units");
       assert.ok(Array.isArray(r.comments), "the oxc side carries its comment channel");
@@ -125,7 +135,7 @@ test("one call answers a mixed batch, every rel exactly once", needsRuby, async 
 });
 
 test("an undeclared language refuses before any engine starts", async () => {
-  await assert.rejects(parseAll([{ rel: "a.py", source: "x = 1\n", lang: "python" }]), /python/);
+  await assert.rejects(parseAll([{ rel: "a.swift", source: "let x = 1\n", lang: "swift" }]), /swift/);
 });
 
 test("a guards key naming no declared language refuses the call", async () => {

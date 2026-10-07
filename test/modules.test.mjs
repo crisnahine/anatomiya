@@ -87,16 +87,21 @@ function reachedFrom(entry, edges = graph()) {
   return reached;
 }
 
+// The two shells the pool forks, each with the body it hosts behind it.
+const WORKERS = ["parse-worker.mjs", "tree-sitter-worker.mjs"];
+
 test("no module the parse worker reaches imports node:child_process", () => {
   // Every JS parse child loads `dimensions.mjs` for the registry, and the two
   // Ruby dimension files took their walkers from `ruby.mjs`, the module that
   // spawns Ruby. That put the spawn machinery and the inline prism script into
   // all eight forked workers, which is the exact cost `langs.mjs` and
   // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
-  const offenders = [...reachedFrom("parse-worker.mjs")].filter((file) =>
-    /from\s*["']node:child_process["']/.test(readFileSync(join(LIB, file), "utf8"))
-  );
-  assert.deepEqual(offenders, []);
+  for (const worker of WORKERS) {
+    const offenders = [...reachedFrom(worker)].filter((file) =>
+      /from\s*["']node:child_process["']/.test(readFileSync(join(LIB, file), "utf8"))
+    );
+    assert.deepEqual(offenders, [], worker);
+  }
 });
 
 test("every bridge that runs a child takes the guards from the one supervisor", () => {
@@ -213,7 +218,15 @@ test("the parse worker does not reach the registry", () => {
   // The worker runs the tree rows off `dimensionsFor` and nothing else: an
   // obligation has no program to run against and a filename row answers off
   // the corpus, so composing all three in eight forked children buys nothing.
-  assert.equal(reachedFrom("parse-worker.mjs").has("registry.mjs"), false);
+  for (const worker of WORKERS) assert.equal(reachedFrom(worker).has("registry.mjs"), false, worker);
+});
+
+test("a parser is loaded by the body that parses with it, and by no other module", () => {
+  // Statically imported anywhere, a runtime that is not installed is a module
+  // that will not load: the worker would not start, and no file could say why.
+  const loads = (file) => /import\(\s*["']web-tree-sitter["']\s*\)|from\s*["']web-tree-sitter["']/.test(readFileSync(join(LIB, file), "utf8"));
+  assert.deepEqual(readdirSync(LIB).filter((f) => f.endsWith(".mjs") && loads(f)), ["tree-sitter-file.mjs"]);
+  assert.doesNotMatch(readFileSync(join(LIB, "tree-sitter-file.mjs"), "utf8"), /from\s*["']web-tree-sitter["']/);
 });
 
 test("a module that branches on a row's kind loads the registry that stamps it", () => {
