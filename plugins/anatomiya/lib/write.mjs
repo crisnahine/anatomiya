@@ -368,13 +368,14 @@ export function commitMap(root, plan) {
 
   const { rulesDir, storeDir } = resolveDirs(root);
   // Asked again here for the same reason, and only of a directory this touches.
+  const own = (id, t) => {
+    const dir = resolveTargetDir(root, TARGETS[id]);
+    if (dir === null) throw new Error(`${t.dir} is no longer a directory of this repository's own, so nothing was written`);
+    return dir;
+  };
   const others = Object.entries(plan.targets)
     .filter(([, t]) => t.write.length > 0 || t.remove.length > 0)
-    .map(([id, t]) => {
-      const dir = resolveTargetDir(root, TARGETS[id]);
-      if (dir === null) throw new Error(`${t.dir} is no longer a directory of this repository's own, so nothing was written`);
-      return { ...t, at: dir };
-    });
+    .map(([id, t]) => ({ ...t, id, at: own(id, t) }));
 
   // Facts too, and with the rest: `check` reads facts.json, so new facts beside
   // the old files call a map fresh that the session holds an older scan of.
@@ -400,6 +401,9 @@ export function commitMap(root, plan) {
       ...plan.remove.map((f) => join(rulesDir, f)),
       ...others.flatMap((t) => t.remove.map((f) => join(t.at, f))),
     ];
+    // And once more with everything staged: writing the bodies is the long part,
+    // and a link put at a directory meanwhile is where the renames would land.
+    for (const t of others) own(t.id, t);
     replaceAll(staged, removals, { record: factsPath, was: readLayout(root) });
   } catch (err) {
     for (const [tmp] of staged) quietUnlink(tmp);
