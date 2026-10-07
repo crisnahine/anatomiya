@@ -1747,13 +1747,18 @@ Every clause is dropped when it counts nothing.
   sits beside it, a PHP `tests` and the `src` or `app` beside it. serilog keeps
   `test/Serilog.Tests/Core/BatchingSinkTests.cs` for `src/Serilog/Core/Sinks/Batching/BatchingSink.cs`
   and read 18 of 113 where 28 have a test named for them; gson went from 27 of 80 to 34, and
-  Laravel from 166 of 1,630 to 270. Two source files of one stem in the project are credited with
+  Laravel from 166 of 1,630 to 267. Two source files of one stem in the project are credited with
   nothing by it, since the stem cannot say which the test was written for. A PHP test whose name
-  is its directory's name and a class after it covers, by the pairing, only a source under a
-  directory of that name: Laravel's `tests/Session/SessionStoreTest.php` tests
-  `Illuminate\Session\Store` and does not answer `Cache/SessionStore.php`. Seven Laravel files
-  and one of composer's lose a credit to that, five of them credited to a test of another class
-  and three rightly (`Cache/DatabaseLock.php`, tested from `tests/Integration/Database`, is one).
+  is its directory's name, alone or with a class after it, covers, by the pairing, only a source
+  under a directory of that name: Laravel's `tests/Session/SessionStoreTest.php` tests
+  `Illuminate\Session\Store` and does not answer `Cache/SessionStore.php`, and
+  `tests/Cookie/CookieTest.php` tests `CookieJar` and does not answer the `Cookie` facade. Ten
+  Laravel files and one of composer's lose a credit to that, seven of them credited to a test of
+  another class and four rightly (`Cache/DatabaseLock.php`, tested from
+  `tests/Integration/Database`, is one). The hold applies only where a source directory of the
+  paired tree carries the test directory's name: `tests/Unit` and `tests/Feature` mirror no
+  directory under `app`, so `tests/Unit/UnitConverterTest.php` covers
+  `app/Services/UnitConverter.php`.
   A flat test directory
   is no pairing: ktor keeps `<module>/jvm/test`, and about half of the stem matches there are
   another class's. Such a match votes for the place the mirrored tests name, where it sits inside

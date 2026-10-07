@@ -224,20 +224,39 @@ test("a test project or tree is paired with the project it is named for or sits 
   assert.equal(pairedWith("src/Illuminate/Testing", "php"), null);
 });
 
-test("PHP: a test named for its directory and a class is paired with that directory's sources and no other", () => {
+test("PHP: a test named for its directory is paired with that directory's sources and no other", () => {
+  const illuminate = ["Session/Middleware", "Cache", "Database/Connectors", "Queue/Connectors", "Cookie", "Support/Facades", "Auth", "Foundation"].map((d) => `src/Illuminate/${d}`);
   // Laravel: `tests/Session/SessionStoreTest.php` tests `Illuminate\\Session\\Store`, not `Cache/SessionStore.php`.
-  const session = pairedWith("tests/Session", "php", "SessionStore");
+  const session = pairedWith("tests/Session", "php", "SessionStore", illuminate);
   assert.ok(session("src/Illuminate/Session"));
   assert.ok(session("src/Illuminate/Session/Middleware"));
   assert.ok(!session("src/Illuminate/Cache"));
-  const database = pairedWith("tests/Integration/Database", "php", "DatabaseConnector");
+  const database = pairedWith("tests/Integration/Database", "php", "DatabaseConnector", illuminate);
   assert.ok(database("src/Illuminate/Database/Connectors"));
   assert.ok(!database("src/Illuminate/Queue/Connectors"));
-  // Any other name keeps the whole tree: one that does not begin with the directory's,
-  // one that is the directory's and no more, and one that only shares its letters.
-  assert.ok(pairedWith("tests/Integration/Generators", "php", "SeederMakeCommand")("src/Illuminate/Database/Console/Seeds"));
-  assert.ok(pairedWith("tests/Cookie", "php", "Cookie")("src/Illuminate/Support/Facades"));
-  assert.ok(pairedWith("tests/Auth", "php", "Authorize")("src/Illuminate/Foundation"));
+  // The directory's name and no more: `tests/Cookie/CookieTest.php` tests `CookieJar`, not the `Cookie` facade.
+  const cookie = pairedWith("tests/Cookie", "php", "Cookie", illuminate);
+  assert.ok(cookie("src/Illuminate/Cookie"));
+  assert.ok(!cookie("src/Illuminate/Support/Facades"));
+  // Any other name keeps the whole tree: one that does not begin with the directory's, and one that only shares its letters.
+  assert.ok(pairedWith("tests/Integration/Generators", "php", "SeederMakeCommand", illuminate)("src/Illuminate/Database/Console/Seeds"));
+  assert.ok(pairedWith("tests/Auth", "php", "Authorize", illuminate)("src/Illuminate/Foundation"));
+});
+
+test("PHP: a test directory no source directory is named for holds a test to nothing", () => {
+  const app = ["app/Models", "app/Services", "app/Http/Controllers"];
+  // `tests/Unit` and `tests/Feature` mirror no directory of a standard application.
+  assert.ok(pairedWith("tests/Unit", "php", "UnitConverter", app)("app/Services"));
+  assert.ok(pairedWith("tests/Feature", "php", "FeatureFlag", app)("app/Models"));
+  assert.ok(pairedWith("tests/Integration", "php", "IntegrationManager", ["src/Acme"])("src/Acme"));
+  // A directory of that name outside the paired tree is no mirror.
+  assert.ok(pairedWith("tests/Unit", "php", "UnitConverter", [...app, "lib/Unit", "packages/x/src/Unit"])("app/Services"));
+  // One inside it is, at any depth.
+  assert.ok(!pairedWith("tests/Unit", "php", "UnitConverter", [...app, "app/Domain/Unit/Rules"])("app/Services"));
+  assert.ok(pairedWith("tests/Unit", "php", "UnitConverter", [...app, "app/Domain/Unit/Rules"])("app/Domain/Unit"));
+});
+
+test("the hold on a test named for its directory is PHP's alone", () => {
   // PHP only. Held the same way serilog and gson lose none of 28 and 37 credits, and okhttp one of 69, a right one.
   assert.ok(pairedWith("test/Serilog.Tests/Core", "csharp", "CoreSink")("src/Serilog/Events"));
   assert.ok(pairedWith("gson/src/test/java/functional", "java", "functionalJson")("gson/src/main/java/internal"));
