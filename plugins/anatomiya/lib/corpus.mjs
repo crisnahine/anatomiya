@@ -3,6 +3,7 @@ import { dirname, join, resolve, sep } from "node:path";
 
 import { caseMagic, gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
+import { placedTests } from "./layout.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
 import { folded, isLink, isMapName, readHead, STORE_DIR, trackedRulesDir } from "./rules.mjs";
@@ -504,6 +505,11 @@ export async function collect(root) {
     if (at === undefined) byFold.set(fold, files.length);
     files.push(file);
   });
+
+  // Whether a tool collects a file by where it sits is a fact about the whole
+  // listing, a manifest among the files nobody parses, so it rides on the file.
+  const placed = placedTests([...files, ...others.map(({ rel }) => ({ rel, lang: null }))]);
+  for (const f of files) if (placed.has(f.rel)) f.placed = true;
 
   // Kept in the shape callers already read: listing the files never truncates
   // the corpus. A parse that hits the Ruby per-line guard sets its own flag.

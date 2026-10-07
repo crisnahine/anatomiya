@@ -35,7 +35,8 @@ const inTestTree = (lang) => (rel) => dirsAt(rel).some((segment) => isTestTree(s
  * function name that is a case only beside its runner's import, a base class
  * matching `base`, or a path the runner collects by, which `claims` answers:
  * `def test_connection` is ordinary code anywhere else. `unimported` is the
- * runner such a case has when nothing in the file imports one.
+ * runner such a case has when nothing in the file imports one. `reads` is a
+ * path the runner loads with no case in it.
  */
 const RUNNERS = {
   python: {
@@ -52,6 +53,8 @@ const RUNNERS = {
     claims: (rel) => namedTest("python")(rel) || inTestTree("python")(rel),
     // A function at file level, or a class nothing made, is only pytest's to collect.
     unimported: (plain) => (plain ? "pytest" : "unittest"),
+    // pytest reads a `conftest.py` by its name wherever it sits, for the fixtures and hooks it holds.
+    reads: (rel) => stemAt(rel) === "conftest",
   },
   php: {
     imports: [[/^PHPUnit\./, "phpunit"]],
@@ -153,8 +156,11 @@ function importPaths(node, { imported, renamed: field = null }, alias) {
  * `{ testRunner, testCalls }` for one plain tree at one path, `inlineTests: true`
  * where a source file holds its own cases, and `empty: true` where it holds no
  * statement or declaration.
+ *
+ * `placed` is the caller's word that the language's tool collects this file by
+ * where it sits, which no path says alone: a crate is known by the files around it.
  */
-export function treeFacets(program, lang, rel = "") {
+export function treeFacets(program, lang, rel = "", { placed = false } = {}) {
   const shapes = SHAPES[lang];
   const rules = RUNNERS[lang];
   const of = (key) => new Set(shapes[key] ?? []);
@@ -214,11 +220,14 @@ export function treeFacets(program, lang, rel = "") {
   if (inline) marked = false;
   // Where the name is the collector's whole rule, what the name collects is the runner's with or without a case in it.
   const collected = rules.collectedByName === true && claimed && !empty;
+  const read = rules.reads?.(rel) === true && !empty;
   const cases = marked || (named && (runner !== null || based || claimed));
   const pest = called && rules.calls?.(rel) === true;
-  const unimported = cases || collected ? (rules.unimported?.(plain) ?? null) : null;
+  const unimported = cases || collected || read ? (rules.unimported?.(plain || read) ?? null) : null;
+  // By place as by name: what the tool collects is the runner's with or without a case in it.
+  const byPlace = placed && !empty ? (placeTestsOf(lang)?.runner ?? null) : null;
   return {
-    testRunner: (marked ? markedBy : null) ?? (cases ? runner : null) ?? unimported ?? (pest ? "pest" : null),
+    testRunner: (marked ? markedBy : null) ?? (cases ? runner : null) ?? unimported ?? byPlace ?? (pest ? "pest" : null),
     testCalls: cases || pest,
     // Absent unless true, as the other two engines send `empty`.
     ...(inline ? { inlineTests: true } : {}),

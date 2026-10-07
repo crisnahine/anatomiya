@@ -115,8 +115,12 @@ export function mirroredTests(files) {
  * No manifest is read, so a crate that sets `autotests = false` is counted by
  * cargo's default too: ripgrep builds one target, and the 10 files counted
  * under its `tests` are that target and its 9 modules.
+ *
+ * Asked of paths and languages alone, so it is answered before any file is
+ * parsed and handed to the parse: a row that leaves test files out leaves
+ * these out.
  */
-function placedTests(files) {
+export function placedTests(files) {
   const out = new Set();
   const places = new Set(files.map((f) => (f.lang ? placeTestsOf(f.lang) : null)).filter(Boolean));
   for (const place of places) {
