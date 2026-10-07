@@ -4,7 +4,7 @@ Counts what your code already does, directory by directory, and writes those cou
 `.claude/rules/` where a coding agent picks them up when it reads a file there.
 
 This directory is the plugin. It is what a marketplace install copies: the manifest, the binary, the
-library it runs, the command files and the hook declaration, plus the `package.json` and
+library it runs, the command files, the hook declaration and the grammars, plus the `package.json` and
 `package-lock.json` its dependencies are installed from, the license and this file. The repository
 around it is the marketplace, the test suite and the gates, and none of
 that ships.
@@ -16,9 +16,11 @@ that ships.
 /plugin install anatomiya@crisnahine
 ```
 
-The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`, and `/plugin
+The scanner has three runtime dependencies, `oxc-parser`, `flow-remove-types` and
+`web-tree-sitter`, and `/plugin
 install` installs them: Claude Code runs `npm ci --ignore-scripts` in a plugin's own directory when
-it finds a lockfile there, and this plugin ships one.
+it finds a lockfile there, and this plugin ships one. `web-tree-sitter` is the WebAssembly runtime
+for the seven grammars under `grammars/`, which ship as `.wasm` files and are not downloaded.
 
 Where nothing was installed, `/anatomiya:doctor` says so in its first line; where an install ran and
 stopped short, its engine lines say which one did not load. `/anatomiya:setup` answers both, and it

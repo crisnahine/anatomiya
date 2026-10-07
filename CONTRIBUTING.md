@@ -6,12 +6,14 @@ about why something is shaped the way it is are answered there in one line.
 
 ## Setup and tests
 
-Node 22 or newer. ES modules, `.mjs` throughout. Two runtime dependencies, `oxc-parser` and
-`flow-remove-types`, the second loaded the first time a `.js`-family file is rejected. Ruby
+Node 22 or newer. ES modules, `.mjs` throughout. Three runtime dependencies: `oxc-parser`,
+`flow-remove-types`, loaded the first time a `.js`-family file is rejected, and `web-tree-sitter`,
+the runtime for the grammars under `plugins/anatomiya/grammars/`. Ruby
 dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
-The one dev dependency, `ignore`, is the package Claude Code matches a rule's `paths` with, so the
-tests read a rendered `paths` list through it.
+The dev dependency `ignore` is the package Claude Code matches a rule's `paths` with, so the
+tests read a rendered `paths` list through it. The other seven dev dependencies are the grammar
+packages the vendored `.wasm` files are copied from.
 
 ```sh
 npm install
@@ -36,6 +38,17 @@ one beside its manifest, and the marketplace's is a directory up where the loade
 seeded from the marketplace's resolutions rather than resolved afresh, so the two cannot answer
 different versions for one range. `npm run validate` refuses a plugin whose lockfile is missing,
 stale, or disagreeing.
+
+Moving a grammar package to another version takes one more step too:
+
+```sh
+npm install --save-dev --save-exact --ignore-scripts tree-sitter-go@<version>
+npm run grammars            # copies each .wasm into the plugin and rewrites grammars.json
+```
+
+The plugin ships each grammar's `.wasm` and not its package, which is mostly native prebuilds and C
+source. `grammars.json` records the package, version and SHA-256 each copy came from, and
+`npm run validate` refuses a copy that is not its installed package's file at the locked version.
 
 No test framework, no mocks, no fixtures generated at runtime. `node:test` and `node:assert` only.
 Tests that need a repository build one in a temp directory with real `git init` and real commits,

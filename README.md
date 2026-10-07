@@ -57,10 +57,16 @@ error in the PowerShell Claude Code falls back to on Windows without Git Bash, w
 /plugin install anatomiya@crisnahine
 ```
 
-The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`, and `/plugin
+The scanner has three runtime dependencies, `oxc-parser`, `flow-remove-types` and
+`web-tree-sitter`, and `/plugin
 install` installs them for you: Claude Code runs `npm ci --ignore-scripts` in a plugin's own
 directory when it finds a lockfile there, and this plugin ships one. There is no setup step in the
 ordinary case.
+
+`web-tree-sitter` is the WebAssembly runtime for the seven grammars the plugin carries as `.wasm`
+files under `plugins/anatomiya/grammars/`: Python, PHP, Go, Java, C#, Rust and Kotlin. Nothing is downloaded for them.
+Each file is a copy of the one in its grammar's npm package, and `plugins/anatomiya/grammars/grammars.json` records
+the package, the version and the SHA-256 of each.
 
 When nothing was installed, `/anatomiya:doctor` says so in its first line. When an install ran and
 stopped short, its engine lines say which one did not load. One command answers both:
@@ -482,4 +488,4 @@ npm install
 node --test 'test/**/*.test.mjs'
 ```
 
-ES modules, `.mjs`, Node 22 or newer, two runtime dependencies.
+ES modules, `.mjs`, Node 22 or newer, three runtime dependencies.
