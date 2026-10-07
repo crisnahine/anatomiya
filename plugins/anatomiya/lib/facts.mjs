@@ -110,6 +110,10 @@ export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 // 19 stores `counterAuthors`. A slot shown on its counter side printed the
 // claim side's author count, because the record carried no other, and a held
 // area re-renders from the record. An older record prints what it printed.
+// `targets` came with no new number: the filenames a scan left in the Cursor and
+// Copilot directories, under a key no older reader looks at. No field moved, and
+// a bump would have every build already installed refuse the record and enforce
+// nothing from it. An older record owns nothing there, as does one with no key.
 export const FACTS_SCHEMA = 19;
 
 /**
@@ -452,9 +456,13 @@ function writePair(dir, recordBytes, layout, schema) {
   }
 }
 
-/** The record's bytes, for a writer that puts them on disk together with the map. */
-export function factsJson(result) {
-  return JSON.stringify(factsRecord(result), null, 2) + "\n";
+/**
+ * The record's bytes, for a writer that puts them on disk together with the map.
+ * `targets` is the filenames that writer leaves in each directory besides
+ * Claude Code's.
+ */
+export function factsJson(result, targets = {}) {
+  return JSON.stringify(factsRecord(result, targets), null, 2) + "\n";
 }
 
 /**
@@ -502,7 +510,8 @@ function statOf(path) {
   }
 }
 
-function factsRecord(result) {
+function factsRecord(result, targets = {}) {
+  const named = Object.entries(targets).filter(([, names]) => names.length > 0);
   return {
     schema: FACTS_SCHEMA,
     root: result.root,
@@ -533,6 +542,8 @@ function factsRecord(result) {
       reused: a.reused ?? null,
       dimensions: a.dimensions.map(dimensionRecord),
     })),
+    // No key at all where nothing was written, which is every scan that names no other target.
+    ...(named.length ? { targets: Object.fromEntries(named) } : {}),
   };
 }
 

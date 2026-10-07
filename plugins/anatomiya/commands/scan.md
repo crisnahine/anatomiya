@@ -16,6 +16,20 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    Add `--dry-run` if the user wants to see what would change before anything is written. Nothing
    is written under that flag, so the map on disk is still the previous one.
 
+   If the user asks for the map in Cursor or GitHub Copilot as well, name them once:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" scan . --targets cursor,copilot
+   ```
+
+   The same map is then also written under `.cursor/rules/` and `.github/instructions/`, and every
+   later scan keeps writing a target that is on, which it is while its `anatomiya-overview` file
+   is there, so do not pass the flag again. `--targets` names
+   the whole set: `--targets cursor` leaves Copilot out, and `--targets claude` turns both off and
+   removes the files this tool wrote there. Pass it only when the user asks for a target to be
+   added or dropped. If the scan refuses over a file or a link in one of those directories, show
+   the sentence and stop: it wrote nothing anywhere.
+
 2. Report what came back, in this order:
    - how many files and areas, and how long it took
    - how many claims were stated, and how many printed as counts only
@@ -34,6 +48,11 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
      of the map is still written, and the areas holding that language keep what the last scan that
      could read it wrote
    - how many files it wrote, or would write, and how many area files it removed
+   - one group of lines per other directory, where one is involved: how many files it wrote under
+     `.cursor/rules` or `.github/instructions`, how many it removed there, that the directory is
+     off now, how many areas have no file there because no pattern of theirs can be given to that
+     tool, how many entries named `anatomiya-*` there it neither wrote nor removed, and a
+     directory it could not read, with the reason and what to do about it
    - every file in `.claude/rules/` this tool did not write, since those also reach the agent on
      every turn. The scanner names them one per line, and names separately any file carrying our
      frontmatter that no map lists, which it leaves alone rather than removing

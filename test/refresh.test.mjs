@@ -340,6 +340,95 @@ test("a map the repository tracks is never rewritten behind its back", async (t)
   assert.equal((await refreshRepository(dir)).reason, "tracked");
 });
 
+test("a refresh rewrites every target that is on, and turns none on or off", async (t) => {
+  // It hands the scan no set of its own, so what is on stays on and nothing else starts.
+  const dir = await scanned(t);
+  const cursor = join(dir, ".cursor", "rules", "anatomiya-overview.mdc");
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  await noteScan(dir);
+  const before = readFileSync(cursor, "utf8");
+
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.reason, "scanned");
+  assert.notEqual(readFileSync(cursor, "utf8"), before);
+  assert.match(readFileSync(cursor, "utf8"), /lib\/services/);
+  assert.equal(existsSync(join(dir, ".github")), false, "Copilot was never on, and still is not");
+});
+
+test("a refresh of a map with no other target on creates no other directory", async (t) => {
+  const dir = await scanned(t);
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+  assert.equal(existsSync(join(dir, ".cursor")), false);
+  assert.equal(existsSync(join(dir, ".github")), false);
+});
+
+test("a committed Cursor or Copilot copy is held while the refresh rewrites the map that is not committed", async (t) => {
+  // Copilot's cloud agent and its code review read what is committed, so that copy is the one a repository commits.
+  for (const [id, at, overview] of [
+    ["cursor", ".cursor", join(".cursor", "rules", "anatomiya-overview.mdc")],
+    ["copilot", ".github", join(".github", "instructions", "anatomiya-overview.instructions.md")],
+  ]) {
+    const dir = await scanned(t);
+    await runScan(dir, { targets: ["claude", id] });
+    git(dir, "add", "-f", at);
+    git(dir, "commit", "-qm", "commit that copy of the map");
+    const committed = readFileSync(join(dir, overview), "utf8");
+    const named = JSON.parse(readFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "utf8")).targets[id];
+    source(dir, "lib/services", 8);
+    commit(dir, "a second area");
+    const summaries = [];
+    const scan = async (root, options) => {
+      const answer = await runScan(root, options);
+      summaries.push(answer.summary);
+      return answer;
+    };
+
+    assert.equal((await refreshRepository(dir, { scan })).reason, "scanned", id);
+
+    assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), /lib\/services/, `${id}: the map nobody commits is the new one`);
+    assert.equal(readFileSync(join(dir, overview), "utf8"), committed, `${id}: the committed copy is the commit's`);
+    assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "", `${id}: and git sees no change`);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "utf8")).targets[id], named, `${id}: the record still names its files`);
+    assert.equal(summaries.length, 1);
+    assert.equal("targets" in summaries[0], false, `${id}: nothing is said about a held target`);
+
+    // A person's own scan holds nothing.
+    await runScan(dir);
+    assert.match(readFileSync(join(dir, overview), "utf8"), /lib\/services/, `${id}: the next scan by hand rewrites it`);
+  }
+});
+
+test("a committed Claude map still stops the refresh whole, whatever else is on", async (t) => {
+  const dir = await scanned(t);
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  git(dir, "add", "-f", ".claude/rules");
+  git(dir, "commit", "-qm", "commit the map");
+  const cursor = readFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "utf8");
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "");
+  assert.equal(readFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "utf8"), cursor, "nothing is rewritten anywhere");
+});
+
+test("a tracked file at a target's overview name that this tool did not write holds nothing back", async (t) => {
+  // The target is off, so that file is a rule somebody wrote and no map of ours.
+  const dir = await scanned(t);
+  mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "# the team's own\n");
+  git(dir, "add", "-f", ".cursor");
+  commit(dir, "a hand-written rule");
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+});
+
 test("a map committed through a linked rules directory is tracked too", needsSymlinks, async (t) => {
   // calcom/cal.diy shares `.claude/rules -> ../agents/rules` between agents.
   // Git matches no pathspec past a symlink, so the map it stores under

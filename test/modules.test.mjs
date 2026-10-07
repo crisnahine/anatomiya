@@ -122,6 +122,7 @@ test("the writers do not reach the pipeline that produced the record", () => {
     "check-report.mjs",
     "encode.mjs",
     "rules.mjs",
+    "targets.mjs",
   ]);
 });
 
@@ -555,10 +556,11 @@ test("every verb the binary declares carries its own arm in the one table", () =
   // A command is imported inside the arm that runs it, so no arm can exist
   // outside the table for a verb to fall through to, and a hook loads only its
   // own. The binary itself imports what reading argv and the never-fail
-  // boundary need. The offsets are asserted first: compared against undefined,
+  // boundary need: the targets leaf is the names `--targets` takes, and it
+  // imports nothing. The offsets are asserted first: compared against undefined,
   // every import would read as inside.
   const own = program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value);
-  assert.deepEqual(own.sort(), ["../lib/hook.mjs", "../lib/readiness.mjs"]);
+  assert.deepEqual(own.sort(), ["../lib/hook.mjs", "../lib/readiness.mjs", "../lib/targets.mjs"]);
   assert.ok(Number.isInteger(table.init.start) && Number.isInteger(table.init.end), "the table carries offsets");
   const loads = [...scan(src).matchAll(/\bimport\(/g)];
   assert.ok(loads.length >= verbs.length, `read ${loads.length} arm imports`);
@@ -599,6 +601,7 @@ const ECHO_LOADS = [
   "langs.mjs",
   "readiness.mjs",
   "rules.mjs",
+  "targets.mjs",
   "version.mjs",
   "worktree.mjs",
 ];

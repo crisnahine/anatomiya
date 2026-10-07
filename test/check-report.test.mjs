@@ -161,10 +161,10 @@ test("no caveat reaches the report without a code", () => {
   // Any first argument, not the literal `caveats`: a helper that spells the
   // list some other way would otherwise be invisible to this count.
   const named = [...src.matchAll(/(?<!function )\bcaveat\(\s*\w+,\s*([^,]+),/g)].map((m) => m[1].trim());
-  // A count rather than a floor. 28 codes over 26 sites: one site takes two
-  // from its caller, one reads four off the parse, and `no-merge-base` and
-  // `head-oversize` are each reached from two of them.
-  assert.equal(named.length, 26, `${named.length} coded caveat sites, so the count moved`);
+  // A count rather than a floor. 28 codes over 27 sites: one site takes two
+  // from its caller, one reads four off the parse, and `no-merge-base`,
+  // `head-oversize` and `rules-unlisted` are each reached from two of them.
+  assert.equal(named.length, 27, `${named.length} coded caveat sites, so the count moved`);
   for (const name of named) {
     // Never a literal. Beside `CAVEATS.X` two sites read the table through
     // something else: `code`, which an unread corpus takes from its caller
@@ -183,7 +183,7 @@ test("no caveat reaches the report without a code", () => {
   }
 });
 
-test("a code no case names is one of the four nobody could force cheaply", () => {
+test("a code no case names is one of the three nobody could force cheaply", () => {
   // The two checks above catch a code nothing spells and a code nothing
   // declares. Neither catches a code spelled at the wrong site: exchanging
   // `frameworks-unknown` and `capabilities-unknown` was green across every
@@ -191,10 +191,10 @@ test("a code no case names is one of the four nobody could force cheaply", () =>
   // the code back, and this is the list of the ones no case does.
   //
   // Each needs a state a temporary repository cannot cheaply be put in: a
-  // degraded-mode run whose added-line ranges fail while its diff succeeds; a
-  // `ls-tree` of HEAD that fails while every other read works; and a rule file
-  // the filesystem refuses to open, which is a permission bit a run as root
-  // does not have. `SHALLOW_UNFETCHED` left this list when the refusal a typed
+  // degraded-mode run whose added-line ranges fail while its diff succeeds, and
+  // a `ls-tree` of HEAD that fails while every other read works. A rule file
+  // the filesystem refuses to open has a case in `check.test.mjs`, which a run
+  // as root skips. `SHALLOW_UNFETCHED` left this list when the refusal a typed
   // `--base` now gets made the shallow arm worth reaching: a depth-1 clone of a
   // `file://` origin is one `git clone` away, and `SHALLOW_NO_HISTORY` left it
   // on the same clone once that caveat named the fetch that fixes it.
@@ -213,7 +213,6 @@ test("a code no case names is one of the four nobody could force cheaply", () =>
     "RENAMES_SKIPPED",
     "ADDED_RANGES_UNREADABLE",
     "OBLIGATIONS_UNCHECKED",
-    "RULES_UNREADABLE",
   ]);
 });
 
@@ -508,6 +507,42 @@ test("a capped run says which reason capped it", () => {
     "::notice::0 MUST-FIX, 0 FIX, 0 NIT",
     "",
   ]);
+});
+
+test("each other target's files are listed and counted under its own directory", () => {
+  const cursor = { dir: ".cursor/rules", state: "on", foreign: ["anatomiya-a.mdc"], unknown: [], rules: { escaped: false, listed: true, unreadable: [] } };
+  const r = bare({ foreign: ["house.md"], targets: { cursor } });
+
+  assert.equal(
+    formatReport(r),
+    "base main (aaaaaaa), 0 changed files, compare\n" +
+      "0 MUST-FIX, 0 FIX, 0 NIT\n" +
+      "\n" +
+      "1 file(s) in .claude/rules this tool did not write:\n" +
+      '  "house.md"\n' +
+      "\n" +
+      "1 file(s) in .cursor/rules this tool did not write:\n" +
+      '  "anatomiya-a.mdc"\n'
+  );
+  assert.deepEqual(formatReportGithub(r).split("\n"), [
+    "::warning title=rules::1 file(s) in .claude/rules this tool did not write, 0 the map on disk does not name",
+    "::warning title=rules::1 file(s) in .cursor/rules this tool did not write, 0 the map on disk does not name",
+    "::notice::0 MUST-FIX, 0 FIX, 0 NIT",
+    "",
+  ]);
+  assert.deepEqual(JSON.parse(formatReportJson(r)).targets, { cursor });
+  assert.equal("targets" in JSON.parse(formatReportJson(bare())), false);
+});
+
+test("a name in another target's directory reaches the record as a locator", () => {
+  // A filename is the repository's to choose, and the record is read by something that is not a terminal.
+  const crafted = ["anatomiya-ev\u202eli.mdc", "anatomiya-a\nb.mdc"];
+  const cursor = { dir: ".cursor/rules", state: "on", foreign: crafted, unknown: crafted, rules: { escaped: false, listed: true, unreadable: crafted } };
+
+  const out = JSON.parse(formatReportJson(bare({ targets: { cursor } }))).targets.cursor;
+
+  const located = ["anatomiya-ev li.mdc", "anatomiya-a b.mdc"];
+  assert.deepEqual({ foreign: out.foreign, unknown: out.unknown, unreadable: out.rules.unreadable }, { foreign: located, unknown: located, unreadable: located });
 });
 
 test("the rule files nobody here wrote are counted, since only the text writer lists them", () => {

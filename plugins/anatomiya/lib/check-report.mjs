@@ -99,8 +99,19 @@ export function encodeReport(report) {
     foreign: report.foreign.map(locator),
     unknown: report.unknown.map(locator),
     rules: { ...report.rules, unreadable: report.rules.unreadable.map(locator) },
+    ...(report.targets ? { targets: Object.fromEntries(Object.entries(report.targets).map(([id, t]) => [id, encodeTarget(t)])) } : {}),
   };
 }
+
+const encodeTarget = (t) => ({
+  ...t,
+  foreign: t.foreign.map(locator),
+  unknown: t.unknown.map(locator),
+  rules: { ...t.rules, unreadable: t.rules.unreadable.map(locator) },
+});
+
+// The Claude Code directory, whose lists sit at the top of the record, then each other one on it.
+const directories = (r) => [{ dir: RULES_DIR, foreign: r.foreign, unknown: r.unknown }, ...Object.values(r.targets ?? {})];
 
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -182,12 +193,13 @@ export function formatReportGithub(report) {
   for (const c of r.caveats) lines.push(annotation(c.code, c.message));
   // Counted rather than listed: the text writer names the files because a human
   // reads them one by one, and a bounded count is the whole signal to a job.
-  if (r.foreign.length || r.unknown.length) {
+  for (const d of directories(r)) {
+    if (d.foreign.length === 0 && d.unknown.length === 0) continue;
     lines.push(
       annotation(
         "rules",
-        `${r.foreign.length} file(s) in ${RULES_DIR} this tool did not write, ` +
-          `${r.unknown.length} the map on disk does not name`
+        `${d.foreign.length} file(s) in ${d.dir} this tool did not write, ` +
+          `${d.unknown.length} the map on disk does not name`
       )
     );
   }
@@ -262,11 +274,13 @@ function renderText(report) {
     if (f.snippet) lines.push(`  ${f.snippet}`);
   }
 
-  listRules(lines, report.foreign, "this tool did not write");
-  // Named apart from the above, because the reader's next move differs: one is
-  // somebody else's context to read, the other is this tool's own output from a
-  // scan whose record is gone, and re-scanning is what clears it.
-  listRules(lines, report.unknown, "the map on disk does not name");
+  for (const d of directories(report)) {
+    listRules(lines, d.dir, d.foreign, "this tool did not write");
+    // Named apart from the above, because the reader's next move differs: one is
+    // somebody else's context to read, the other is this tool's own output from a
+    // scan whose record is gone, and re-scanning is what clears it.
+    listRules(lines, d.dir, d.unknown, "the map on disk does not name");
+  }
 
   return lines.join("\n") + "\n";
 }
@@ -278,10 +292,10 @@ function renderText(report) {
  * agent: a repository holding ten thousand `.md` files in `.claude/rules/`
  * would otherwise spend ten thousand lines of its context saying so.
  */
-function listRules(lines, names, what) {
+function listRules(lines, dir, names, what) {
   if (names.length === 0) return;
   const { shown, rest } = listSome(names, LISTED.report);
-  lines.push("", `${names.length} file(s) in ${RULES_DIR} ${what}:`);
+  lines.push("", `${names.length} file(s) in ${dir} ${what}:`);
   for (const name of shown) lines.push(`  ${quotePath(name)}`);
   if (rest) lines.push(`  and ${rest} more`);
 }

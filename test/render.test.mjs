@@ -22,6 +22,7 @@ import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
+import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const dim = (o = {}) => ({
@@ -3465,4 +3466,472 @@ test("the forms a row declines name component imports where the area holds compo
   const modules = area({ extsByLang: { js: [".ts"], jsx: [".tsx"] }, dimensions: [extension()] });
   assert.ok(renderArea(modules).includes(`\n  not counted: ${clause}\n`), "an area of modules reads as it did");
   assert.equal(beside.split("\n").length, renderArea(modules).split("\n").length, "and it costs no line");
+});
+
+const { claude, cursor, copilot } = TARGETS;
+
+const SCOPED_GLOBS = [
+  { negated: false, dir: "test", tail: "**/*.{js,ts}" },
+  { negated: true, dir: "test", tail: "**/fixtures/**/*.{js,ts}" },
+];
+const scoped = (o = {}) =>
+  area({ path: "test", globs: SCOPED_GLOBS, dimensions: [dim({ exceptions: [{ path: "test/a.ts", count: 2 }] })], ...o });
+const overfull = () =>
+  area({
+    path: "test",
+    globs: SCOPED_GLOBS,
+    dimensions: Array.from({ length: 14 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })),
+  });
+const noted = () =>
+  result({
+    suppressAll: true,
+    authors: { files: 9, error: null, repo: 1 },
+    corpus: { files: 90, truncated: false, dropped: { generated: 2 }, otherExts: [[".java", 3]] },
+    parse: { parsed: 90, crashed: 0, skipped: 1, syntaxErrors: 2 },
+    areas: [area(), area({ id: "11223344", path: "src/api", fileCount: 20, dimensions: [dim({ directive: false, gate: "ratio" })] })],
+  });
+const NOTED_FILES = { uncovered: 30, orphaned: 12, others: { foreign: ["house.md"] } };
+
+// Captured from the renderer before it took a target, and kept as written.
+const CLAUDE_OVERVIEW = [
+  "---",
+  "generator: anatomiya",
+  "---",
+  "",
+  "# Repository map",
+  "",
+  "Facts counted from this repository's own code, per directory.",
+  'A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.',
+  "",
+  "Read a file before editing it: these notes load when you read, not when you grep.",
+  "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.",
+  "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.",
+  "",
+  "The scan was truncated, so no directive is stated. Counts only.",
+  "",
+  "This repository has one author, so every claim below is that author's practice.",
+  "",
+  "## Areas (2)",
+  "",
+  "- src/services — 40 files, 1 stated",
+  "- and 1 more area in its own file, loaded when you read one of its files",
+  "",
+  "## Not covered",
+  "",
+  "- 12 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)",
+  "- 18 source files sit in a directory nothing was counted in",
+  "- 3 files hold a language this map does not read (3 .java)",
+  "- 2 files say a generator wrote them, so nothing here is counted from them",
+  "- memory, GC and I/O behaviour: runtime only, nothing static to count",
+  "- 2 files hold syntax the parser rejected",
+  "- 1 file exceeded the size cap",
+  "",
+  "Generated files: 3 under .claude/rules/anatomiya-*.md",
+  "Any other file there was not written by this tool:",
+  '- "house.md"',
+  "",
+];
+
+const SCOPED_BODY = [
+  "",
+  "# test  40 files",
+  "",
+  "catch blocks use the error they caught",
+  "  21 of 22 sites across 8 of 40 files, 4 authors",
+  '  except "test/a.ts" (2 sites)',
+];
+const CLAUDE_SCOPED = [
+  "---",
+  "generator: anatomiya",
+  "paths:",
+  '  - "test/**/*.{js,ts}"',
+  '  - "!test/**/fixtures/**/*.{js,ts}"',
+  "---",
+  ...SCOPED_BODY,
+  "",
+];
+
+const shownClaims = (from, to) =>
+  Array.from({ length: to - from }, (_, i) => [`claim number ${from + i}`, "  21 of 22 sites across 8 of 40 files, 4 authors", ""]).flat();
+const namedClaims = (from, to) => Array.from({ length: to - from }, (_, i) => `  claim number ${from + i}`);
+const CLAUDE_CROWDED = [
+  ...CLAUDE_SCOPED.slice(0, 9),
+  ...shownClaims(0, 8),
+  "and 6 more not shown here, all of them stated. Also stated here, without counts:",
+  ...namedClaims(8, 14),
+  "",
+];
+
+const ALSO = "This file also attaches for test/**/fixtures/**/*.{js,ts}, which the area leaves out.";
+const WIDENS = "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.";
+const WROTE =
+  "Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code is right and this map is stale.";
+const notGiven = (pattern, reader) => `This file does not attach for ${pattern}, which ${reader} cannot be given.`;
+
+test("with no target named, the overview and an area file are the bytes they were", () => {
+  assert.deepEqual(renderOverview(noted(), NOTED_FILES).split("\n"), CLAUDE_OVERVIEW);
+  assert.deepEqual(renderArea(scoped()).split("\n"), CLAUDE_SCOPED);
+  assert.deepEqual(renderArea(overfull()).split("\n"), CLAUDE_CROWDED);
+  assert.equal(CLAUDE_CROWDED.length - 1, MAX_LINES);
+});
+
+test("naming the claude target changes nothing", () => {
+  assert.deepEqual(renderOverview(noted(), NOTED_FILES, claude).split("\n"), CLAUDE_OVERVIEW);
+  assert.deepEqual(renderArea(scoped(), claude).split("\n"), CLAUDE_SCOPED);
+  assert.deepEqual(renderArea(overfull(), claude).split("\n"), CLAUDE_CROWDED);
+});
+
+// The Claude literal with the lines a target owns put in: its frontmatter key,
+// who wrote the file, how an area's notes arrive, and where the files are.
+const overviewFor = (key, reads, listed, generated) => {
+  const expected = [...CLAUDE_OVERVIEW];
+  expected.splice(2, 0, key);
+  expected.splice(7, 0, WROTE);
+  expected[11] = reads;
+  expected[22] = `- and 1 more area in its own file, ${listed}`;
+  expected[34] = `Generated files: 3 under ${generated}`;
+  return expected;
+};
+
+test("the cursor overview always applies, names what wrote it and says how an area's notes arrive", () => {
+  assert.deepEqual(
+    renderOverview(noted(), NOTED_FILES, cursor).split("\n"),
+    overviewFor(
+      "alwaysApply: true",
+      "Read a file before editing it: an area's notes attach when you read one of its files.",
+      "attached when you read one of its files",
+      ".cursor/rules/anatomiya-*.mdc"
+    )
+  );
+});
+
+test("the copilot overview applies to every file and tells the reader to read the matching file itself", () => {
+  assert.deepEqual(
+    renderOverview(noted(), NOTED_FILES, copilot).split("\n"),
+    overviewFor(
+      'applyTo: "**"',
+      "Before editing a file, read the anatomiya file under .github/instructions whose applyTo matches it: an area's notes apply to the files its patterns name.",
+      "applied to the files its pattern names",
+      ".github/instructions/anatomiya-*.instructions.md"
+    )
+  );
+});
+
+test("only the claude overview goes without the line saying what wrote it", () => {
+  assert.equal(claude.wrote, null);
+  assert.ok(!renderOverview(noted(), NOTED_FILES).includes("Written by"));
+  for (const target of [cursor, copilot]) {
+    const lines = renderOverview(result(), { uncovered: 0 }, target).split("\n");
+    assert.deepEqual(lines.slice(lines.indexOf("# Repository map"), lines.indexOf("# Repository map") + 3), ["# Repository map", "", WROTE], target.id);
+  }
+});
+
+test("several unnamed areas are listed in each reader's own words", () => {
+  const silent = (id) => area({ id, path: `src/${id}`, dimensions: [dim({ directive: false, gate: "ratio" })] });
+  const many = result({ areas: [silent("a"), silent("b"), silent("c")] });
+  const tail = (target) => renderOverview(many, { uncovered: 0 }, target).split("\n").find((l) => l.startsWith("- 3 areas"));
+  assert.equal(tail(claude), "- 3 areas, each in its own file, loaded when you read one of its files");
+  assert.equal(tail(cursor), "- 3 areas, each in its own file, attached when you read one of its files");
+  assert.equal(tail(copilot), "- 3 areas, each in its own file, applied to the files its pattern names");
+});
+
+test("a cursor area file carries generator, globs and alwaysApply in that order, and the body claude gets", () => {
+  assert.deepEqual(renderArea(scoped(), cursor).split("\n"), [
+    "---",
+    "generator: anatomiya",
+    "globs: test/**/*.js,test/**/*.ts",
+    "alwaysApply: false",
+    "---",
+    ...SCOPED_BODY,
+    "",
+    ALSO,
+    "",
+  ]);
+});
+
+test("a copilot area file carries one quoted applyTo, the lost negation and the widening in words", () => {
+  assert.deepEqual(renderArea(scoped(), copilot).split("\n"), [
+    "---",
+    "generator: anatomiya",
+    'applyTo: "test/**/*.js,test/**/*.ts"',
+    "---",
+    ...SCOPED_BODY,
+    "",
+    ALSO,
+    WIDENS,
+    "",
+  ]);
+});
+
+test("an area file says nothing about attaching where the target reads the area exactly", () => {
+  const exact = scoped({ globs: [{ negated: false, dir: "", tail: "**/*.rb" }] });
+  for (const target of [cursor, copilot]) {
+    const lines = renderArea(exact, target).split("\n");
+    assert.deepEqual(lines.slice(lines.indexOf("---", 1) + 1), [...SCOPED_BODY, ""], target.id);
+  }
+});
+
+test("the widening is said once, in words, and only where a pattern is widened", () => {
+  const anchored = scoped({ globs: [{ negated: false, dir: "lib", tail: "*.{rb,rake}" }] });
+  assert.deepEqual(renderArea(anchored, copilot).split("\n").slice(-3), ["", WIDENS, ""]);
+  assert.doesNotMatch(renderArea(anchored, copilot), /This file|\*\*\/lib/);
+  assert.doesNotMatch(renderArea(anchored, cursor), /VS Code|This file/);
+  assert.doesNotMatch(renderArea(scoped(), claude), /VS Code|This file/);
+  assert.equal(cursor.widens, null);
+  assert.equal(claude.widens, null);
+});
+
+test("a pattern a target cannot be given is named, with the reader that cannot take it", () => {
+  const bad = { negated: false, dir: "a,b", tail: "**/*.{js,ts}" };
+  const globs = [{ negated: false, dir: "", tail: "**/*.rb" }, bad];
+  const last = (target, n, g = globs) => renderArea(scoped({ globs: g }), target).split("\n").slice(-n);
+  assert.deepEqual(last(cursor, 3), ["", notGiven("a,b/**/*.{js,ts}", "Cursor"), ""]);
+  assert.deepEqual(last(copilot, 3), ["", notGiven("a,b/**/*.{js,ts}", "GitHub Copilot"), ""]);
+  assert.doesNotMatch(renderArea(scoped({ globs }), claude), /This file/);
+
+  const all = [...SCOPED_GLOBS, bad];
+  assert.deepEqual(last(cursor, 4, all), ["", ALSO, notGiven("a,b/**/*.{js,ts}", "Cursor"), ""]);
+  assert.deepEqual(last(copilot, 5, all), ["", ALSO, WIDENS, notGiven("a,b/**/*.{js,ts}", "GitHub Copilot"), ""]);
+
+  // A negation under the pattern that was not written carves nothing out of this file.
+  const carved = [{ negated: false, dir: "ok", tail: "**/*.rb" }, bad, { negated: true, dir: "a,b", tail: "gen/*.js" }];
+  assert.deepEqual(last(cursor, 3, carved), ["", notGiven("a,b/**/*.{js,ts}", "Cursor"), ""]);
+  assert.deepEqual(last(copilot, 4, carved), ["", WIDENS, notGiven("a,b/**/*.{js,ts}", "GitHub Copilot"), ""]);
+});
+
+const unwritable = (path, o = {}) =>
+  scoped({ path, globs: [{ negated: false, dir: "a,b", tail: "**/*.js" }, { negated: true, dir: "a,b", tail: "x/*.js" }], ...o });
+
+test("an area no pattern of which can be written has no file outside claude", () => {
+  assert.equal(renderArea(unwritable("a,b"), cursor), null);
+  assert.equal(renderArea(unwritable("a,b"), copilot), null);
+  assert.match(renderArea(unwritable("a,b"), claude), /^ {2}- "a,b\/\*\*\/\*\.js"$/m);
+});
+
+test("an overview lists and counts only the areas its target has a file for, and names the rest", () => {
+  const areas = [area(), unwritable("lib/odd"), unwritable("lib/`odder`")];
+  const section = (target, list = areas) => {
+    const lines = renderOverview(result({ areas: list }), { uncovered: 0 }, target).split("\n");
+    return [...lines.slice(lines.findIndex((l) => l.startsWith("## Areas")), lines.indexOf("## Not covered") - 1), lines.at(-3)];
+  };
+  assert.deepEqual(section(claude), [
+    "## Areas (3)",
+    "",
+    "- src/services — 40 files, 1 stated",
+    "- lib/odd — 40 files, 1 stated",
+    "- lib/ odder — 40 files, 1 stated",
+    "Generated files: 4 under .claude/rules/anatomiya-*.md",
+  ]);
+  assert.deepEqual(section(cursor), [
+    "## Areas (1)",
+    "",
+    "- src/services — 40 files, 1 stated",
+    "- 2 areas have no pattern Cursor can be given, so no file here covers them: lib/odd, lib/ odder.",
+    "Generated files: 2 under .cursor/rules/anatomiya-*.mdc",
+  ]);
+  assert.deepEqual(section(copilot), [
+    "## Areas (1)",
+    "",
+    "- src/services — 40 files, 1 stated",
+    "- 2 areas have no pattern GitHub Copilot can be given, so no file here covers them: lib/odd, lib/ odder.",
+    "Generated files: 2 under .github/instructions/anatomiya-*.instructions.md",
+  ]);
+
+  // An unnamed area is counted among the ones that have a file, never among the ones that do not.
+  const silent = area({ id: "55667788", path: "src/api", dimensions: [dim({ directive: false, gate: "ratio" })] });
+  assert.deepEqual(section(cursor, [area(), silent, unwritable("lib/odd")]).slice(0, 5), [
+    "## Areas (2)",
+    "",
+    "- src/services — 40 files, 1 stated",
+    "- and 1 more area in its own file, attached when you read one of its files",
+    "- 1 area has no pattern Cursor can be given, so no file here covers it: lib/odd.",
+  ]);
+
+  const eight = Array.from({ length: 8 }, (_, i) => unwritable(`odd/${i}`));
+  assert.equal(
+    section(copilot, [area(), ...eight])[3],
+    "- 8 areas have no pattern GitHub Copilot can be given, so no file here covers them: odd/0, odd/1, odd/2, odd/3, odd/4, odd/5 and 2 more."
+  );
+});
+
+// Every line a scan can add to the overview on its own, each on or off. The
+// one-author sentence never prints beside the shallow one and is as tall, so
+// the shallow one stands for both.
+const TOGGLES = [
+  "suppressAll", "shallow", "orphaned", "barren", "otherExts", "generated",
+  "failed", "syntaxErrors", "skipped", "missingStripper", "unread", "degraded",
+];
+const EVERY = (1 << TOGGLES.length) - 1;
+const ALL_OTHERS = { foreign: ["a.md"], unknown: ["anatomiya-area-cafe.md"], unreadable: ["b.md"] };
+const toggled = (on, { unfiled = false, others = true, layout = false, n = 1, untracked = 0 } = {}) => {
+  const b = Object.fromEntries(TOGGLES.map((k, i) => [k, Boolean(on & (1 << i))]));
+  const scan = result({
+    suppressAll: b.suppressAll,
+    layout: layout ? clientLayout() : null,
+    corpus: { files: 90, untracked, dropped: { generated: b.generated ? 3 : 0 }, ...(b.otherExts ? { otherExts: [[".go", 4]] } : {}) },
+    parse: {
+      parsed: 90,
+      failed: b.failed ? 2 : 0,
+      syntaxErrors: b.syntaxErrors ? 2 : 0,
+      skipped: b.skipped ? 2 : 0,
+      missingStripper: b.missingStripper,
+      unreadable: b.unread ? ["ruby"] : [],
+      engines: {},
+    },
+    authors: { repo: 5, shallow: b.shallow ? { commits: 1 } : null },
+    semantic: b.degraded ? { ran: true, status: "degraded", reason: "no tsconfig", typedResolutionRate: null } : null,
+    areas: [...Array.from({ length: n }, (_, i) => area({ id: `a${i}`, path: `src/a${i}` })), ...(unfiled ? [unwritable("lib/odd")] : [])],
+  });
+  const files = { uncovered: (b.orphaned ? 3 : 0) + (b.barren ? 4 : 0), orphaned: b.orphaned ? 3 : 0, others: others ? ALL_OTHERS : {} };
+  return [scan, files];
+};
+const height = (out) => out.split("\n").length - 1;
+
+test("an overview that names areas with no file still holds its bound", () => {
+  const areas = [...Array.from({ length: 30 }, (_, i) => area({ id: `a${i}`, path: `src/a${i}` })), unwritable("lib/odd")];
+  const files = { uncovered: 30, orphaned: 12, others: ALL_OTHERS };
+  for (const target of [cursor, copilot]) {
+    const lines = renderOverview(result({ areas, layout: clientLayout() }), files, target).split("\n");
+    assert.ok(lines.length - 1 <= MAX_LINES, `${target.id}: ${lines.length - 1} lines`);
+    assert.ok(lines.some((l) => l.startsWith("- 1 area has no pattern")), lines.join("\n"));
+  }
+});
+
+test("with every optional line on, the lines a target adds come out of the listings", () => {
+  const SENTENCES = [
+    "1 file here was written by an earlier scan and not listed in this map; this tool leaves it, so delete it by hand if unwanted.",
+    "1 file here could not be read, so whose it is is unknown.",
+    "Any other file there was not written by this tool:",
+    '- "a.md"',
+  ];
+  // Claude's own lines fill the bound exactly here, so it has nothing to give a line it does not carry.
+  assert.deepEqual(renderOverview(...toggled(EVERY), claude).split("\n").slice(-5), [...SENTENCES, ""]);
+  assert.equal(height(renderOverview(...toggled(EVERY), claude)), MAX_LINES);
+  // Past the bound, on a shape no scan reaches, Claude's file still reads as it always did.
+  const past = renderOverview(...toggled(EVERY, { untracked: 4 }), claude).split("\n");
+  assert.equal(past.length - 1, MAX_LINES + 1);
+  assert.deepEqual(past.slice(-4), [SENTENCES[0], SENTENCES[1], "1 other file there was not written by this tool.", ""]);
+
+  for (const target of [cursor, copilot]) {
+    // 41 lines before the target's own were paid for.
+    const plain = renderOverview(...toggled(EVERY), target).split("\n");
+    assert.equal(plain.length - 1, MAX_LINES, target.id);
+    assert.deepEqual(plain.slice(-3), [SENTENCES[0], "2 other files there were not written by this scan.", ""], target.id);
+    assert.ok(plain.includes("- src/a0 — 40 files, 1 stated"), target.id);
+
+    // 42 lines: the area with no file costs one more.
+    const odd = renderOverview(...toggled(EVERY, { unfiled: true }), target).split("\n");
+    assert.equal(odd.length - 1, MAX_LINES, target.id);
+    assert.deepEqual(odd.slice(-3), [odd.at(-3), "3 other files there were not written by this scan.", ""], target.id);
+    assert.match(odd.at(-3), /^Generated files: 2 under /, target.id);
+    assert.ok(odd.includes("- src/a0 — 40 files, 1 stated"), target.id);
+    assert.ok(odd.some((l) => l.startsWith("- 1 area has no pattern")), target.id);
+
+    // More areas than fit are counted on the one line the areas keep.
+    const many = renderOverview(...toggled(EVERY, { unfiled: true, n: 30, layout: true }), target).split("\n");
+    assert.equal(many.length - 1, MAX_LINES, target.id);
+    assert.ok(many.includes(`- 30 areas, each in its own file, ${target.listed}`), target.id);
+  }
+});
+
+test("no target's overview passes the bound, whichever optional lines a scan turns on", () => {
+  for (const target of [claude, cursor, copilot]) {
+    let worst = 0;
+    let at = null;
+    for (let on = 0; on < 1 << TOGGLES.length; on++) {
+      for (const unfiled of [false, true]) {
+        for (const others of [false, true]) {
+          for (const [layout, n] of [[false, 0], [false, 1], [true, 3]]) {
+            const lines = height(renderOverview(...toggled(on, { unfiled, others, layout, n }), target));
+            if (lines > worst) {
+              worst = lines;
+              at = { on: TOGGLES.filter((_, i) => on & (1 << i)), unfiled, others, layout, n };
+            }
+          }
+        }
+      }
+    }
+    assert.ok(worst <= MAX_LINES, `${target.id}: ${worst} lines at ${JSON.stringify(at)}`);
+  }
+});
+
+test("an area with no glob at all is refused, by its path, as it was", () => {
+  const message = "area has no paths glob, so its file would load on every turn: src/services";
+  assert.throws(() => renderArea(area({ globs: [] })), { message });
+  assert.throws(() => renderArea(area({ globs: undefined }), claude), { message });
+});
+
+test("at the budget the lines about attaching stay and a directive gives way", () => {
+  const laid = (shown, closing) => [
+    "---",
+    "generator: anatomiya",
+    'applyTo: "test/**/*.js,test/**/*.ts"',
+    "---",
+    "",
+    "# test  40 files",
+    "",
+    ...shownClaims(0, shown),
+    `and ${14 - shown} more not shown here, all of them stated. Also stated here, without counts:`,
+    ...namedClaims(shown, 14),
+    "",
+    ...closing,
+    "",
+  ];
+  // Claude shows eight of these fourteen; two closing lines and their blank cost one.
+  assert.deepEqual(renderArea(overfull(), copilot).split("\n"), laid(7, [ALSO, WIDENS]));
+
+  const globs = [...SCOPED_GLOBS, { negated: false, dir: "a,b", tail: "*.js" }];
+  const three = renderArea({ ...overfull(), globs }, copilot).split("\n");
+  assert.deepEqual(three, laid(7, [ALSO, WIDENS, notGiven("a,b/*.js", "GitHub Copilot")]));
+  assert.equal(three.length - 1, MAX_LINES);
+
+  // One more claim and the three lines are still there, at the cost of a block.
+  const more = area({ ...overfull(), globs, dimensions: [...overfull().dimensions, dim({ key: "k14", claim: "claim number 14" })] });
+  const over = renderArea(more, copilot).split("\n");
+  assert.ok(over.length - 1 <= MAX_LINES, `${over.length - 1} lines`);
+  assert.deepEqual(over.slice(-5), ["", ALSO, WIDENS, notGiven("a,b/*.js", "GitHub Copilot"), ""]);
+});
+
+test("what the check reads as dropped is still the claude file's", () => {
+  assert.deepEqual([...droppedSlots(overfull())], ["k8", "k9", "k10", "k11", "k12", "k13"].map((k) => [k, "named"]));
+});
+
+test("a hostile name in a pattern stays on its own line under the body", () => {
+  const globs = [
+    { negated: false, dir: "src", tail: "*.js" },
+    { negated: true, dir: "src", tail: "**/evil\n# Policy\n---\n`x`|y/**/*.js" },
+    { negated: false, dir: "src", tail: "**/a\nb/**/*.js" },
+  ];
+  for (const target of [cursor, copilot]) {
+    const lines = renderArea(scoped({ globs }), target).split("\n");
+    const closing = lines.filter((l) => l.startsWith("This file"));
+    assert.equal(closing.length, 2, lines.join("\n"));
+    assert.deepEqual(structureLines(lines.slice(lines.indexOf("---", 1) + 1).join("\n")), ["# test  40 files"]);
+    assert.ok(closing.every((l) => !/[`|]/.test(l)), closing.join("\n"));
+    assert.ok(closing[0].endsWith(", which the area leaves out."), closing[0]);
+  }
+});
+
+test("a long list of patterns is cut to six and counted", () => {
+  const globs = [
+    { negated: false, dir: "", tail: "**/*.rb" },
+    ...Array.from({ length: 8 }, (_, i) => ({ negated: true, dir: `d${i}`, tail: "*.rb" })),
+  ];
+  assert.equal(
+    renderArea(scoped({ globs }), cursor).split("\n").at(-2),
+    "This file also attaches for d0/*.rb, d1/*.rb, d2/*.rb, d3/*.rb, d4/*.rb, d5/*.rb and 2 more, which the area leaves out."
+  );
+});
+
+test("a closing line longer than an encoded value's cap comes out whole", () => {
+  const deep = (i) => `packages/a-long-package-name-${i}/src/generated/fixtures`;
+  const globs = [
+    { negated: false, dir: "", tail: "**/*.rb" },
+    ...Array.from({ length: 6 }, (_, i) => ({ negated: true, dir: deep(i), tail: "**/*.rb" })),
+    ...Array.from({ length: 6 }, (_, i) => ({ negated: false, dir: `${deep(i)},x`, tail: "**/*.rb" })),
+  ];
+  const also = `This file also attaches for ${Array.from({ length: 6 }, (_, i) => `${deep(i)}/**/*.rb`).join(", ")}, which the area leaves out.`;
+  const not = notGiven(Array.from({ length: 6 }, (_, i) => `${deep(i)},x/**/*.rb`).join(", "), "Cursor");
+  assert.ok(also.length > 300 && not.length > 300);
+  assert.deepEqual(renderArea(scoped({ globs }), cursor).split("\n").slice(-4), ["", also, not, ""]);
 });
