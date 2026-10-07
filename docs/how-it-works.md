@@ -316,7 +316,9 @@ Each thread's heap is held to what its largest file needs, because V8 grows a he
 rather than its live set and four threads at the default limit doubled the scan's peak memory. Past
 256 KB the hold covers the densest code measured (nested calls or hashes, 90 MB of heap for a
 megabyte); below it the hold stays small, since covering dense code on every thread took
-empire-flippers/api's peak from 221 MB to about 340 MB. A thread that runs out of its hold keeps the
+empire-flippers/api's peak from 221 MB to about 340 MB. It starts at 16 MB, twice what a thread
+uses once its modules are loaded: at 8 MB, half the threads on Linux ran out before reading any
+Ruby. Held, api's peak is 207 MB against 0.13.3's 178 MB. A thread that runs out of its hold keeps the
 records it already sent, and the files it left unanswered are read again on a thread with the
 default heap, which costs time and never a file. Each child keeps its own clocks and its own retry,
 so a child that dies charges the files left in its batch and no others. Which files those are

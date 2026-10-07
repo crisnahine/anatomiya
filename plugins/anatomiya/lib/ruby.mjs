@@ -460,7 +460,7 @@ const STEEP_HOLD_BYTES = 256 * 1024;
  * A shard's heap is held to what its largest file needs, because V8 grows a
  * heap toward its limit rather than its live set: four threads at the default
  * limit took a scan of empire-flippers/api from 176 MB peak to 318 MB, and
- * held it is 197 MB against 183 MB. Measured, a 588 KB spec needs 20 MB of old
+ * held it is 207 MB against 178 MB. Measured, a 588 KB spec needs 20 MB of old
  * generation. A tree that outgrows its hold anyway is read again on a thread
  * with the default heap, with every file not yet answered, so the hold costs
  * time and never a file, and a record already answered is kept rather than
@@ -471,10 +471,15 @@ const STEEP_HOLD_BYTES = 256 * 1024;
  * from 221 MB to about 340 MB. So only a shard whose largest file is past
  * `STEEP_HOLD_BYTES` gets the hold that covers them, where a reread costs
  * seconds; below it, a dense file reads again and costs little.
+ *
+ * The smaller hold starts at 16 MB because it has to clear what the thread
+ * holds before it reads a file: its own modules, measured at 7 to 8 MB. A
+ * hold of 8 MB ran out on startup on Linux, half the time, and could abort
+ * the process rather than the thread.
  */
-function heldHeap(largestBytes) {
+export function heldHeap(largestBytes) {
   const mb = largestBytes / (1024 * 1024);
-  const old = largestBytes > STEEP_HOLD_BYTES ? 16 + Math.ceil(96 * mb) : 8 + Math.ceil(32 * mb);
+  const old = largestBytes > STEEP_HOLD_BYTES ? 16 + Math.ceil(96 * mb) : 16 + Math.ceil(32 * mb);
   return { maxYoungGenerationSizeMb: 1, maxOldGenerationSizeMb: old };
 }
 

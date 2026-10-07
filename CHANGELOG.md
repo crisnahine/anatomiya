@@ -38,8 +38,8 @@ measured against 0.13.3 on one machine, under the same load for both.
   the files a diff touched. The Ruby dimensions and facets share one walk of each tree: 5.5 walks a
   file where it was 22.5. A large Ruby corpus is still read by up to four children, never more than
   the machine's cores less one. On a large Rails API the parse phase went from 3,378ms to 1,820ms.
-  Its scan, timed on the command line, went from 4,507ms to 2,793ms, and its peak memory rose 10%,
-  from 178 MB to 196 MB, for the threads' heaps; discourse's scan went from 13.5s to 7.6s. When a
+  Its scan, timed on the command line, went from 3,900ms to 2,260ms, and its peak memory rose 16%,
+  from 178 MB to 207 MB, for the threads' heaps; discourse's scan went from 13.8s to 7.6s. When a
   `ruby` child dies mid-run, which files it charges follows the byte balance of the batches, so the
   degraded map can differ from 0.13.3's.
 - `check` resolves HEAD once, runs its independent git reads side by side and asks git once per
