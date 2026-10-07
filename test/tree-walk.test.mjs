@@ -6,6 +6,7 @@ import { Language, Parser } from "web-tree-sitter";
 
 import { copyTree, fieldOf, fieldsOf, nameOf, site, walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
+import * as SAMPLES from "./tree-samples.mjs";
 
 await Parser.init();
 const LANGUAGES = new Map();
@@ -58,32 +59,59 @@ test("a Python tree is copied with its types, its fields and offsets that slice 
   assert.equal("field" in fn, false, "a node that fills no field of its parent carries none");
 });
 
-test("every node's line is the one the parser reports, across CRLF, blank lines and a string that spans several", async () => {
-  const source = 'import os\r\n\r\n"""a\nb 😀\nc"""\n\n\nclass A:\n    def f(self):\n        x = [\n            1,\n            2,\n        ]\n        return x\n';
-  const parser = await parserFor("python");
+/** Each named node's line as the live tree reports it beside the line its copy carries, and the types that start on a line break. */
+async function linesOf(lang, source) {
+  const parser = await parserFor(lang);
   const tree = parser.parse(source);
   const reported = [];
-  let copied;
+  const onBreak = [];
   try {
     const cursor = tree.walk();
     walk: for (;;) {
       if (cursor.nodeIsNamed) {
         reported.push(cursor.startPosition.row + 1);
+        if (source[cursor.startIndex] === "\n" || source[cursor.startIndex] === "\r") onBreak.push(cursor.nodeType);
         if (cursor.gotoFirstChild()) continue;
       }
       while (!cursor.gotoNextSibling()) if (!cursor.gotoParent()) break walk;
     }
-    copied = copyTree(tree, source, "python");
+    return { reported, onBreak, lines: collect(copyTree(tree, source, lang)).map((node) => node.line) };
   } finally {
     tree.delete();
     parser.delete();
   }
+}
 
-  const lines = collect(copied).map((node) => node.line);
+test("every node's line is the one the parser reports, across CRLF, blank lines and a string that spans several", async () => {
+  const source = 'import os\r\n\r\n"""a\nb 😀\nc"""\n\n\nclass A:\n    def f(self):\n        x = [\n            1,\n            2,\n        ]\n        return x\n';
+  const { reported, lines } = await linesOf("python", source);
+
   assert.ok(lines.length > 20, `read ${lines.length} nodes`);
   assert.equal(Math.max(...lines), 14);
   assert.deepEqual(lines, reported);
 });
+
+// What each sample holds that starts on the line break ending the line before it.
+const ON_BREAK = {
+  python: "block",
+  php: "heredoc_body",
+  go: "raw_string_literal_content",
+  java: "multiline_string_fragment",
+  csharp: "raw_string_content",
+  rust: "string_content",
+  kotlin: "string_content",
+};
+
+for (const [lang, type] of Object.entries(ON_BREAK)) {
+  test(`a ${lang} node that starts on a line break is on the line that break ends, with LF and with CRLF`, async () => {
+    for (const source of [SAMPLES[lang], SAMPLES[lang].replaceAll("\n", "\r\n")]) {
+      const { reported, onBreak, lines } = await linesOf(lang, source);
+
+      assert.ok(onBreak.includes(type), `${lang} nodes on a line break: ${onBreak}`);
+      assert.deepEqual(lines, reported);
+    }
+  });
+}
 
 test("a file that opens with blank lines has a root that starts where its first node does, on that node's line", async () => {
   const program = await plain("php", "\n\n<p>\n<?php\necho 1;\n");

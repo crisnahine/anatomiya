@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { Language, Parser } from "web-tree-sitter";
 
 import { SHAPES } from "../plugins/anatomiya/lib/tree-shapes.mjs";
+import { copyTree, walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
+import * as SAMPLES from "./tree-samples.mjs";
 
 const IDS = ["python", "php", "go", "java", "csharp", "rust", "kotlin"];
 
@@ -60,6 +62,52 @@ test("Go and Rust have no catch clause, and a Go method has no body around it to
 
 test("every node type and field the table names is one the vendored grammar knows", () => {
   for (const id of IDS) assert.deepEqual(unknownNames(SHAPES[id], LANGUAGES.get(id)), [], id);
+});
+
+/** Every name in one language's entry that a copied tree does not hold: a node type no node has, a field no node fills. */
+function unproduced(shapes, program) {
+  const types = new Set();
+  const fields = new Set();
+  walkTree(program, (node) => {
+    types.add(node.type);
+    if (node.field) fields.add(node.field);
+  });
+  const missing = [];
+  for (const [key, value] of Object.entries(shapes)) {
+    if (typeof value === "string") {
+      if (!fields.has(value)) missing.push(`${key}: ${value}`);
+      continue;
+    }
+    for (const name of value) if (!types.has(name)) missing.push(`${key}: ${name}`);
+  }
+  return missing;
+}
+
+function copied(id, source) {
+  const parser = new Parser();
+  parser.setLanguage(LANGUAGES.get(id));
+  const tree = parser.parse(source);
+  try {
+    assert.equal(tree.rootNode.hasError, false, `${id} sample: ${tree.rootNode.toString()}`);
+    return copyTree(tree, source, id);
+  } finally {
+    tree.delete();
+    parser.delete();
+  }
+}
+
+for (const id of IDS) {
+  test(`every node type and field the table names for ${id} is in the tree of an ordinary ${id} file`, () => {
+    assert.deepEqual(unproduced(SHAPES[id], copied(id, SAMPLES[id])), []);
+  });
+}
+
+test("a name the grammar knows and never emits, or one listed as the wrong kind, is reported by name", () => {
+  const program = copied("python", SAMPLES.python);
+  assert.equal(LANGUAGES.get("python").idForNodeType("expression", true) !== null, true, "a supertype is a name the grammar knows");
+  assert.deepEqual(unproduced({ ...SHAPES.python, fn: ["function_definition", "expression"] }, program), ["fn: expression"]);
+  assert.deepEqual(unproduced({ ...SHAPES.python, returnType: "block" }, program), ["returnType: block"]);
+  assert.deepEqual(unproduced({ ...SHAPES.python, block: ["return_type"] }, program), ["block: return_type"]);
 });
 
 test("a misspelt node type or field is reported by name", () => {
