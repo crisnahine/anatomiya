@@ -3324,7 +3324,7 @@ const CLAUDE_CROWDED = [
 const ALSO = "This file also attaches for test/**/fixtures/**/*.{js,ts}, which the area leaves out.";
 const WIDENS = "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.";
 const WROTE =
-  "Written by anatomiya, a scanner that is run outside this editor; where this and the code disagree, the code is right and this map is stale.";
+  "Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code is right and this map is stale.";
 const notGiven = (pattern, reader) => `This file does not attach for ${pattern}, which ${reader} cannot be given.`;
 
 test("with no target named, the overview and an area file are the bytes they were", () => {
@@ -3513,13 +3513,104 @@ test("an overview lists and counts only the areas its target has a file for, and
   );
 });
 
+// Every line a scan can add to the overview on its own, each on or off. The
+// one-author sentence never prints beside the shallow one and is as tall, so
+// the shallow one stands for both.
+const TOGGLES = [
+  "suppressAll", "shallow", "orphaned", "barren", "otherExts", "generated",
+  "failed", "syntaxErrors", "skipped", "missingStripper", "unread", "degraded",
+];
+const EVERY = (1 << TOGGLES.length) - 1;
+const ALL_OTHERS = { foreign: ["a.md"], unknown: ["anatomiya-area-cafe.md"], unreadable: ["b.md"] };
+const toggled = (on, { unfiled = false, others = true, layout = false, n = 1, untracked = 0 } = {}) => {
+  const b = Object.fromEntries(TOGGLES.map((k, i) => [k, Boolean(on & (1 << i))]));
+  const scan = result({
+    suppressAll: b.suppressAll,
+    layout: layout ? clientLayout() : null,
+    corpus: { files: 90, untracked, dropped: { generated: b.generated ? 3 : 0 }, ...(b.otherExts ? { otherExts: [[".go", 4]] } : {}) },
+    parse: {
+      parsed: 90,
+      failed: b.failed ? 2 : 0,
+      syntaxErrors: b.syntaxErrors ? 2 : 0,
+      skipped: b.skipped ? 2 : 0,
+      missingStripper: b.missingStripper,
+      unreadable: b.unread ? ["ruby"] : [],
+      engines: {},
+    },
+    authors: { repo: 5, shallow: b.shallow ? { commits: 1 } : null },
+    semantic: b.degraded ? { ran: true, status: "degraded", reason: "no tsconfig", typedResolutionRate: null } : null,
+    areas: [...Array.from({ length: n }, (_, i) => area({ id: `a${i}`, path: `src/a${i}` })), ...(unfiled ? [unwritable("lib/odd")] : [])],
+  });
+  const files = { uncovered: (b.orphaned ? 3 : 0) + (b.barren ? 4 : 0), orphaned: b.orphaned ? 3 : 0, others: others ? ALL_OTHERS : {} };
+  return [scan, files];
+};
+const height = (out) => out.split("\n").length - 1;
+
 test("an overview that names areas with no file still holds its bound", () => {
   const areas = [...Array.from({ length: 30 }, (_, i) => area({ id: `a${i}`, path: `src/a${i}` })), unwritable("lib/odd")];
-  const files = { uncovered: 30, orphaned: 12, others: { foreign: ["a.md"], unknown: ["anatomiya-area-cafe.md"], unreadable: ["b.md"] } };
+  const files = { uncovered: 30, orphaned: 12, others: ALL_OTHERS };
   for (const target of [cursor, copilot]) {
     const lines = renderOverview(result({ areas, layout: clientLayout() }), files, target).split("\n");
     assert.ok(lines.length - 1 <= MAX_LINES, `${target.id}: ${lines.length - 1} lines`);
     assert.ok(lines.some((l) => l.startsWith("- 1 area has no pattern")), lines.join("\n"));
+  }
+});
+
+test("with every optional line on, the lines a target adds come out of the listings", () => {
+  const SENTENCES = [
+    "1 file here was written by an earlier scan and not listed in this map; this tool leaves it, so delete it by hand if unwanted.",
+    "1 file here could not be read, so whose it is is unknown.",
+    "Any other file there was not written by this tool:",
+    '- "a.md"',
+  ];
+  // Claude's own lines fill the bound exactly here, so it has nothing to give a line it does not carry.
+  assert.deepEqual(renderOverview(...toggled(EVERY), claude).split("\n").slice(-5), [...SENTENCES, ""]);
+  assert.equal(height(renderOverview(...toggled(EVERY), claude)), MAX_LINES);
+  // Past the bound, on a shape no scan reaches, Claude's file still reads as it always did.
+  const past = renderOverview(...toggled(EVERY, { untracked: 4 }), claude).split("\n");
+  assert.equal(past.length - 1, MAX_LINES + 1);
+  assert.deepEqual(past.slice(-4), [SENTENCES[0], SENTENCES[1], "1 other file there was not written by this tool.", ""]);
+
+  for (const target of [cursor, copilot]) {
+    // 41 lines before the target's own were paid for.
+    const plain = renderOverview(...toggled(EVERY), target).split("\n");
+    assert.equal(plain.length - 1, MAX_LINES, target.id);
+    assert.deepEqual(plain.slice(-3), [SENTENCES[0], "2 other files there were not written by this scan.", ""], target.id);
+    assert.ok(plain.includes("- src/a0 — 40 files, 1 stated"), target.id);
+
+    // 42 lines: the area with no file costs one more.
+    const odd = renderOverview(...toggled(EVERY, { unfiled: true }), target).split("\n");
+    assert.equal(odd.length - 1, MAX_LINES, target.id);
+    assert.deepEqual(odd.slice(-3), [odd.at(-3), "3 other files there were not written by this scan.", ""], target.id);
+    assert.match(odd.at(-3), /^Generated files: 2 under /, target.id);
+    assert.ok(odd.includes("- src/a0 — 40 files, 1 stated"), target.id);
+    assert.ok(odd.some((l) => l.startsWith("- 1 area has no pattern")), target.id);
+
+    // More areas than fit are counted on the one line the areas keep.
+    const many = renderOverview(...toggled(EVERY, { unfiled: true, n: 30, layout: true }), target).split("\n");
+    assert.equal(many.length - 1, MAX_LINES, target.id);
+    assert.ok(many.includes(`- 30 areas, each in its own file, ${target.listed}`), target.id);
+  }
+});
+
+test("no target's overview passes the bound, whichever optional lines a scan turns on", () => {
+  for (const target of [claude, cursor, copilot]) {
+    let worst = 0;
+    let at = null;
+    for (let on = 0; on < 1 << TOGGLES.length; on++) {
+      for (const unfiled of [false, true]) {
+        for (const others of [false, true]) {
+          for (const [layout, n] of [[false, 0], [false, 1], [true, 3]]) {
+            const lines = height(renderOverview(...toggled(on, { unfiled, others, layout, n }), target));
+            if (lines > worst) {
+              worst = lines;
+              at = { on: TOGGLES.filter((_, i) => on & (1 << i)), unfiled, others, layout, n };
+            }
+          }
+        }
+      }
+    }
+    assert.ok(worst <= MAX_LINES, `${target.id}: ${worst} lines at ${JSON.stringify(at)}`);
   }
 });
 

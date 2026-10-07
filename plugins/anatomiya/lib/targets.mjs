@@ -16,7 +16,7 @@ const describe = (id, dir, ext, reader, said) =>
   Object.freeze({ id, dir, ext, always: id === "claude", reader, wrote: null, widens: null, ...said });
 
 const WROTE =
-  "Written by anatomiya, a scanner that is run outside this editor; where this and the code disagree, the code is right and this map is stale.";
+  "Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code is right and this map is stale.";
 
 export const TARGETS = Object.freeze({
   claude: describe("claude", ".claude/rules", ".md", "Claude Code", {
@@ -60,7 +60,8 @@ const UNSPELLABLE = {
   // No YAML here: Cursor cuts the line at its first colon and keeps the rest raw.
   // It ends the frontmatter at any `---`, trims each pattern, unwraps a value
   // that opens and closes on one quote, and turns a backslash into a slash.
-  cursor: /---|[,{}\\\r\n]|^[\s"']|\s$/,
+  // Its matcher reads a leading `!` as every file but these and a leading `#` as a comment.
+  cursor: /---|[,{}\\\r\n]|^[\s"'!#]|\s$/,
   copilot: /[,{}"\\\r\n]/,
 };
 const EXT_BRACE = /\.\{([^{}]+)\}$/;
@@ -104,7 +105,8 @@ export function spelledGlobs(target, globs, text) {
     out.unspellable.push(text(written.pop()));
     out.patterns = [];
   }
-  const reached = (g) => written.some(({ dir }) => within(g.dir, dir) || within(dir, g.dir));
+  // Only a pattern that recurses matches below its own directory.
+  const reached = (g) => written.some(({ dir, tail }) => g.dir === dir || (tail.startsWith("**/") && within(g.dir, dir)));
   out.dropped = globs.filter((g) => g.negated && reached(g)).map((g) => text({ ...g, negated: false }));
   if (target.id === "copilot") out.widened = out.patterns.filter((p) => !p.startsWith("**/"));
   return out;

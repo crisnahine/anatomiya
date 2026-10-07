@@ -755,7 +755,9 @@ export function renderOverview(result, files, target = TARGETS.claude) {
   // and unbounded, and a repository with enough of both put the overview eight
   // lines past its bound.
   const room = Math.max(2, MAX_LINES - head.length - fixed.length - (unfiled.length ? 1 : 0));
-  const others = otherFiles(files.others, Math.max(1, room - 1));
+  // The floors are what Claude's overview fills the bound with, so the lines only
+  // another target carries are paid for by the one listing that can still fold.
+  const others = otherFiles(files.others, Math.max(1, room - 1), target !== TARGETS.claude);
   // No area at all left the heading over two blank lines, which reads as a
   // listing that failed to print rather than as a repository where no directory
   // cleared the floor and kept a count. Why is not said here: the causes are the
@@ -961,7 +963,7 @@ const was = (xs) => (xs.length === 1 ? "was" : "were");
 const they = (xs) => (xs.length === 1 ? "it is" : "they are");
 const them = (xs) => (xs.length === 1 ? "it" : "them");
 
-function otherFiles(others, budget) {
+function otherFiles(others, budget, folds = false) {
   const { foreign = [], unknown = [], unreadable = [] } = others || {};
   if (foreign.length === 0 && unknown.length === 0 && unreadable.length === 0) {
     return ["Any other file there was not written by this tool."];
@@ -995,6 +997,11 @@ function otherFiles(others, budget) {
     );
     for (const name of shown) lines.push(`- ${encodePath(name)}`);
     if (shown.length && rest) lines.push(`- and ${rest} more`);
+  }
+  // Past the budget no name was shown, so there is one sentence per kind and the last ones share a line.
+  if (folds && lines.length > budget) {
+    const rest = [unknown, unreadable, foreign].filter((kind) => kind.length).slice(budget - 1).flat();
+    return [...lines.slice(0, budget - 1), `${count(rest, "other file")} there ${was(rest)} not written by this scan.`];
   }
   return lines;
 }
