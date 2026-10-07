@@ -1455,6 +1455,18 @@ test("the overview says the same of a grammar's unread files, on the line that c
   assert.match(mixed, new RegExp(`^- 1 file holds syntax the parser rejected\\n- 2 files could not be read by this tool's grammar\\. ${note}$`, "m"));
 });
 
+test("files read with one branch of their conditionals are counted on a line of their own, on the summary and in the overview", () => {
+  const many = "17 files were read with one branch of each #if; the other branches were not read";
+  assert.deepEqual(unexaminedLines({ oneBranch: 17 }), [many]);
+  assert.deepEqual(unexaminedLines({ oneBranch: 17 }, { stable: true }), [many], "a fact about the tree, so the overview carries it");
+  assert.deepEqual(unexaminedLines({ oneBranch: 1 }), ["1 file was read with one branch of each #if; the other branches were not read"]);
+  assert.deepEqual(unexaminedLines({ oneBranch: 0 }), []);
+  assert.deepEqual(unexaminedLines({ syntaxErrors: 1, rejections: { grammar: 1 }, oneBranch: 2 }).length, 2);
+
+  const tail = renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0, failed: 0, syntaxErrors: 0, oneBranch: 17 } }), { uncovered: 0 });
+  assert.match(tail, new RegExp(`^- ${many}$`, "m"));
+});
+
 test("every engine's rejection has a sentence, so no count prints without one", () => {
   for (const engine of Object.values(ENGINES)) {
     for (const n of [1, 2]) assert.equal(typeof unexaminedPhrase("syntaxErrors", n, engine.rejects), "string", `${engine.id} at ${n}`);

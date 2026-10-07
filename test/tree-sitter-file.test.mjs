@@ -135,6 +135,112 @@ test("a Go file tagged for another system, a Rust file of macros and a Kotlin sc
   assert.equal((await parseTreeFile(kts, "build.gradle.kts", "kotlin")).ok, true);
 });
 
+// Correct C# the grammar has no rule for: a directive anywhere but around whole statements or members.
+const CONDITIONAL = {
+  "a member-access chain": 'class A\n{\n    bool F(string s)\n    {\n        return s\n#if SPAN\n            .Trim()\n#endif\n            .StartsWith("a");\n    }\n}\n',
+  "a parameter list": "class A\n{\n    void F(\n#if SPAN\n        System.ReadOnlySpan<char> context,\n#else\n        string context,\n#endif\n        out int level)\n    {\n        level = 0;\n    }\n}\n",
+  "a base list": "class A : System.IDisposable\n#if ASYNC\n    , System.IAsyncDisposable\n#endif\n{\n    public void Dispose() { }\n}\n",
+  "an enum body": "enum E\n{\n    A,\n#if X\n    B,\n#endif\n    C\n}\n",
+  "an array initializer": "class A\n{\n    static readonly System.Type[] T =\n    {\n        typeof(int),\n#if NET6\n        typeof(System.DateOnly),\n#endif\n        typeof(string)\n    };\n}\n",
+  "alternative method signatures": "class A\n{\n#if SPAN\n    public void F(System.ReadOnlySpan<char> s)\n#else\n    public void F(string s)\n#endif\n    {\n        G();\n    }\n    void G() { }\n}\n",
+};
+
+for (const [where, source] of Object.entries(CONDITIONAL)) {
+  test(`csharp: a conditional inside ${where} is read with its first branch, and the record says so where a branch went unread`, async () => {
+    const r = await parseTreeFile(source, "src/A.cs", "csharp");
+
+    assert.deepEqual(r, {
+      rel: "src/A.cs",
+      ok: true,
+      hits: {},
+      facets: { testRunner: null, testCalls: false },
+      errors: 0,
+      length: source.length,
+      ...(source.includes("#else") ? { oneBranch: true } : {}),
+    });
+  });
+}
+
+test("csharp: a directive on a last line with no line break after it is read, with nothing unread", async () => {
+  const r = await parseTreeFile("class A { }\n#pragma warning restore 618", "src/A.cs", "csharp");
+
+  assert.equal(r.ok, true);
+  assert.equal("oneBranch" in r, false);
+});
+
+test("csharp: a file that parsed as written is not retried, so both branches of its conditional are in the tree", async () => {
+  const source = "class A\n{\n#if X\n    void F() { }\n#else\n    void G() { }\n#endif\n}\n";
+  const r = await parseTreeFile(source, "src/A.cs", "csharp", { withProgram: true });
+
+  const methods = [];
+  walkTree(r.program, (node) => node.type === "method_declaration" && methods.push(source.slice(node.start, node.end)));
+  assert.deepEqual(methods, ["void F() { }", "void G() { }"]);
+  assert.equal("oneBranch" in r, false);
+});
+
+test("csharp: a file still broken with one branch of its conditionals stays rejected, counted as it was written", async () => {
+  const broken = CONDITIONAL["a member-access chain"].replace('("a")', '("a"');
+  const r = await parseTreeFile(broken, "src/A.cs", "csharp");
+  const unbalanced = await parseTreeFile(CONDITIONAL["a member-access chain"].replace("#endif\n", ""), "src/A.cs", "csharp");
+
+  for (const rejected of [r, unbalanced]) {
+    assert.equal(rejected.ok, false);
+    assert.deepEqual(Object.keys(rejected).sort(), ["error", "errors", "ok", "rel"]);
+  }
+  // The retried tree holds one error and the file as written holds more: the count is the file's.
+  assert.equal(r.errors, (await parseTreeFile(broken, "src/A.java", "csharp")).errors);
+  assert.ok(r.errors > 1, `errors: ${r.errors}`);
+});
+
+test("csharp: every offset and line in a retried tree is the file's own", async () => {
+  const source = `// \u{1F600}\r\n${CONDITIONAL["alternative method signatures"].replace(/\n/g, "\r\n")}`;
+  const r = await parseTreeFile(source, "src/A.cs", "csharp", { withProgram: true });
+
+  assert.equal(r.ok, true);
+  assert.equal(r.oneBranch, true);
+  assert.equal(r.length, source.length);
+  const seen = {};
+  walkTree(r.program, (node) => {
+    if (node.type === "parameter" || node.type === "invocation_expression") seen[node.type] = [source.slice(node.start, node.end), node.line];
+    if (node.type === "method_declaration") (seen.methods ??= []).push([source.slice(node.start, node.start + 12), node.line]);
+  });
+  assert.deepEqual(seen.parameter, ["System.ReadOnlySpan<char> s", 5]);
+  assert.deepEqual(seen.invocation_expression, ["G()", 10]);
+  assert.deepEqual(seen.methods, [["public void ", 5], ["void G() { }", 12]]);
+});
+
+test("csharp: a row counts a retried file over the text that was kept, never the branch that was not read", async () => {
+  const source = CONDITIONAL["alternative method signatures"];
+  const texts = [];
+  const row = {
+    key: "probe",
+    langs: ["csharp"],
+    tier: "syntactic",
+    visitor: (program, add, extra) => ({
+      node: (node) => {
+        if (node.type !== "method_declaration") return;
+        texts.push(extra.source.slice(node.start, node.end));
+        add({ conforming: true });
+      },
+    }),
+  };
+
+  const r = await parseTreeFile(source, "src/A.cs", "csharp", { rows: [row] });
+
+  assert.equal(r.hits.probe.length, 2);
+  assert.equal(texts[0].length, source.indexOf("    void G()") - 1 - source.indexOf("public void F(System"));
+  assert.match(texts[0], /^public void F\(System\.ReadOnlySpan<char> s\)\s+\{\s+G\(\);\s+\}$/);
+  assert.doesNotMatch(texts[0], /string s|#/);
+});
+
+test("the conditional retry is C#'s alone: a directive-looking line in another language's rejected file changes nothing", async () => {
+  // Blanked, this is a clean Java file: nothing blanks it.
+  const r = await parseTreeFile("#if X\nclass B { }\n#else\nclass A { }\n#endif\n", "src/A.java", "java");
+
+  assert.equal(r.ok, false);
+  assert.equal("oneBranch" in r, false);
+});
+
 test("a row is handed the walk, the source and the path, and its sites cross as counts", async () => {
   const source = "def one():\n    def inner():\n        pass\n\n\ndef two():\n    pass\n";
   const seen = [];

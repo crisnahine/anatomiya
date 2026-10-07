@@ -632,6 +632,15 @@ test("a grammar's unread files reach the summary and its JSON under the grammar'
   assert.deepEqual(mixed.unexamined, ["1 file holds syntax the parser rejected", `2 files could not be read by this tool's grammar. ${note}`]);
 });
 
+test("files read with one branch of their conditionals reach the summary and its JSON", () => {
+  const s = scanSummary(result({ parse: { crashed: 0, failed: 0, skipped: 0, syntaxErrors: 0, oneBranch: 7 } }), plan());
+  const line = "7 files were read with one branch of each #if; the other branches were not read";
+
+  assert.deepEqual(s.unexamined, [line]);
+  assert.ok(scanLines(s).includes(line));
+  assert.deepEqual(JSON.parse(scanJson(s)).unexamined, [line]);
+});
+
 test("the summary and its lines agree on a whole scan", () => {
   const s = scanSummary(
     result({

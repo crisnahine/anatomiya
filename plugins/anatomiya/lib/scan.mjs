@@ -341,6 +341,8 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       ...(head.missingGrammars.length ? { missingGrammars: head.missingGrammars } : {}),
       missingParser: head.missingParser,
       missingStripper: head.missingStripper,
+      // Only where a file was read that way, so the record of a run that read every file whole is unchanged.
+      ...(head.oneBranch ? { oneBranch: head.oneBranch } : {}),
       unreadable,
     },
     // The areas the writer leaves as they are, and whether this run read any

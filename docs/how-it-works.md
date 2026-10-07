@@ -189,6 +189,15 @@ What a rejection means is the engine's to say. oxc and prism are their languages
 file they reject holds a syntax error. A tree-sitter grammar covers less than its language, so a
 file it rejects is counted on a line of its own, as one that could not be read by this tool's
 grammar, and the line says the file may be fine.
+
+The C# grammar reads `#if` around whole statements and whole members and nowhere else, and real C#
+writes it inside base lists, parameter lists, call chains and initializers: 18 of serilog's 216
+files and 66 of Newtonsoft.Json's 951 were rejected for it, over a quarter of each repository's
+lines. A `.cs` file the grammar rejects is parsed once more with every directive line blanked and
+every branch of each `#if` but the first, in place, so no offset or line moves, and the second
+tree is taken only where it is clean. That reads 17 of the 18 and all 66. A file read this way
+is counted over the branch that was kept, and where another branch went unread the scan counts
+the file on a line of its own: read with one branch of each `#if`.
 prism is asked to parse as the interpreter it runs on (as 3.3, its oldest grammar, on an older
 one), because by default it parses as the newest Ruby it knows, and `a[0, k: 1] = 2`, valid until
 3.4, read as a syntax error on Ruby 3.3.
