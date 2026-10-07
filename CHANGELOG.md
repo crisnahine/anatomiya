@@ -199,6 +199,20 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   runs on the defaults, as in 0.13.4: one of five measured resolves that way, so nothing is
   skipped for the missing file. Plain JavaScript beside a `tsconfig.base.json` is checked, as it
   is beside a `tsconfig.json`.
+- A background refresh does not run the type checker where the last scan measured it as
+  `degraded` and nothing it reads has moved since: this version, the repository's packages, where
+  `typescript` resolves, and the name and bytes of the root config. The refresh carries the
+  measured verdict instead. A refresh after a commit measured 4.3s with the checker and 1.2s
+  without on eslint, 8.8s and 2.8s on react, 13.6s and 2.3s on prisma, and 21.1s and 3.8s on Ghost,
+  with peak memory of 808 MB to 2.7 GB against 160 to 242 MB. On those four the verdict was the
+  same 50 commits earlier, within 0.3 points. A map written that way says
+  `type-checked claims are not counted: 61% of type lookups resolved when measured 2026-10-07
+  (low-resolution)` in the overview and prints no count line for `a call chain stays inside one
+  type`, so those lines come and go between a scan you run and a refresh. `/anatomiya:scan` always
+  runs the checker, and a checker that reads `ok` runs on every refresh, as in 0.13.4. A
+  repository whose code changes lift it over the floor stays `degraded` until someone runs the
+  scan. The record's `semantic` gains `carried`, `measuredAt` and `measuredUnder`, and the schema
+  stays 19.
 - A repository that commits its map sees "What lives where" change once, on its first scan with
   this version: the map's own files are left out of it, which is the Fixed entry that opens `The
   layout counted the map`.
