@@ -80,16 +80,53 @@ export function checkerStamp(root, { specifier = "typescript" } = {}) {
 const CONFIG_STAMP_BYTES = 1024 * 1024;
 
 /**
- * What a verdict is measured under: this build, `checkerStamp`, and the bytes of
- * the config the root is read through, since an edit there is the likeliest
- * thing to lift a rate and moves neither of the other two.
+ * What a verdict is measured under: this build, `checkerStamp`, what an install
+ * leaves behind, and the bytes of the config the root is read through, since an
+ * edit there is the likeliest thing to lift a rate and moves none of the others.
  */
 export function verdictStamp(root, build) {
   const name = configNameIn(root);
   // Bounded and typed: the file comes with the repository, and one linked to an endless device read whole never returns.
   const entry = name === null ? null : readHead(join(root, name), CONFIG_STAMP_BYTES);
   const config = entry?.kind === "file" ? entry.head : (entry?.kind ?? "");
-  return createHash("sha256").update(`${build}\0${checkerStamp(root)}\0${config}`).digest("hex");
+  return createHash("sha256").update(`${build}\0${checkerStamp(root)}\0${installStamp(root)}\0${config}`).digest("hex");
+}
+
+/**
+ * The file each package manager rewrites when it installs, by name under
+ * `node_modules`: npm, pnpm, yarn 2 and later with the node-modules linker, yarn 1.
+ */
+const INSTALL_RECORDS = Object.freeze([".package-lock.json", ".modules.yaml", ".yarn-state.yml", ".yarn-integrity"]);
+
+/**
+ * What moves when an install changes the packages the checker resolves: the
+ * size and modification time of `node_modules` and of each install record in
+ * it. A verdict measured over a partial install is otherwise carried past the
+ * install that completes it. Stats only, of the entries themselves: a linked
+ * `node_modules` is no install of the repository's own, the same as for
+ * `hasInstall`, and nothing is read through it.
+ */
+function installStamp(root) {
+  const deps = join(root, "node_modules");
+  if (!isDirectory(deps)) return "";
+  return [deps, ...INSTALL_RECORDS.map((name) => join(deps, name))].map(sizeAndTime).join("\0");
+}
+
+function isDirectory(path) {
+  try {
+    return lstatSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function sizeAndTime(path) {
+  try {
+    const stat = lstatSync(path);
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -125,7 +162,7 @@ export function hasInstall(root) {
 
 function hasPackages(deps) {
   try {
-    return lstatSync(deps).isDirectory() && readdirSync(deps).some((name) => !name.startsWith("."));
+    return isDirectory(deps) && readdirSync(deps).some((name) => !name.startsWith("."));
   } catch {
     return false;
   }

@@ -443,8 +443,10 @@ facts record says why in `semantic.reason`: `no-checked-files`, `plain-javascrip
 `no-dependencies` or `not-installed`, which also covers a `typescript` of another major that doctor
 names. A background refresh leaves it off in one more case: the record's tier reads `degraded`,
 a run measured it, and the stamp it was measured under still holds, which is this build's version,
-whether the root holds packages, where `typescript` resolves, and the name and bytes of the config
-the root is read through. The refresh then writes the recorded status, reason and rate with
+whether the root holds packages, where `typescript` resolves, the size and modification time of
+`node_modules` and of the install record in it (`.package-lock.json`, `.modules.yaml`,
+`.yarn-state.yml` or `.yarn-integrity`), and the name and bytes of the config the root is read
+through. The refresh then writes the recorded status, reason and rate with
 `semantic.carried` true and the run's `semantic.measuredAt`, and the overview's sentence adds the
 day it was measured. Every other byte of the map is what the measuring scan wrote, since a degraded
 tier's rows are in neither. A
@@ -1464,7 +1466,7 @@ the holder's last look at HEAD is not lost. It stamps what a scan depends on (HE
 map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
 merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run the type checker
 to the rescan, which decides it the way any scan does, except that the refresh hands it a degraded
-verdict measured under the same build, packages and root config, and the rescan then does not run
+verdict measured under the same build, install and root config, and the rescan then does not run
 the checker (B8). Where the repository tracks the overview of
 a Cursor or Copilot copy of the map, the rescan holds that directory as it is and writes the rest:
 nothing there is written, removed or turned off, the record keeps the names it had, and a scan run

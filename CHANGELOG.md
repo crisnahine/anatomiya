@@ -248,8 +248,11 @@ scanned by 0.13.4 and by this version.
   repository whose checker degrades still pays for it once on each scan a person runs, and from
   this version does not pay on a background refresh, which is the entry below.
 - A background refresh does not run the type checker where the last scan measured it as
-  `degraded` and nothing it reads has moved since: this version, the repository's packages, where
-  `typescript` resolves, and the name and bytes of the root config. The refresh carries the
+  `degraded` and nothing its stamp holds has moved since: this version, where `typescript`
+  resolves, the size and modification time of `node_modules` and of the install record in it
+  (`.package-lock.json`, `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity`), and the name
+  and bytes of the root config. So an install that adds a missing package is measured on the
+  next refresh. The refresh carries the
   measured verdict instead. A refresh after a commit measured 4.4s with the checker and 1.2s
   without on eslint, 8.9s and 2.8s on react, 13.9s and 2.3s on prisma, and 21.2s and 3.8s on Ghost,
   with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four the verdict was the
