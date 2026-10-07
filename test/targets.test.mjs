@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   TARGETS,
@@ -10,7 +11,7 @@ import {
   spelledGlobs,
   frontmatter,
 } from "../plugins/anatomiya/lib/targets.mjs";
-import { globEntry } from "../plugins/anatomiya/lib/areas.mjs";
+import { globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { encodePath } from "../plugins/anatomiya/lib/encode.mjs";
 import { renderArea, renderOverview } from "../plugins/anatomiya/lib/render.mjs";
 import { GENERATOR, OVERVIEW_FILE, RULES_DIR, areaFilename } from "../plugins/anatomiya/lib/rules.mjs";
@@ -22,7 +23,9 @@ const TEST_GLOBS = [
   { negated: true, dir: "test", tail: "**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}" },
 ];
 const SIX = EXTS.map((e) => `test/**/*.${e}`);
-const NONE = { patterns: [], widened: [], dropped: [] };
+const NONE = { patterns: [], widened: [], dropped: [], unspellable: [] };
+const plain = (g) => globText(g);
+const encoded = (g) => globText(g, (dir) => encodePath(dir).slice(1, -1));
 
 // The fence the renderer writes, read back off its own output.
 const fenceOf = (text) => {
@@ -66,23 +69,32 @@ test("parseTargets refuses a name that is not a target, and an empty list", () =
   for (const empty of ["", ",", " , "]) assert.throws(() => parseTargets(empty), { message: "--targets needs at least one name" });
 });
 
-test("claude takes every glob as globText spells it, negations included", () => {
-  assert.deepEqual(spelledGlobs(claude, TEST_GLOBS), {
+test("the descriptors load none of our modules, so a hook verb can read them", () => {
+  const src = readFileSync(new URL("../plugins/anatomiya/lib/targets.mjs", import.meta.url), "utf8");
+  assert.deepEqual(src.match(/^\s*(?:import|export)\b[^;]*\bfrom\b.*$/gm) ?? [], []);
+  assert.ok(!/\bimport\s*\(/.test(src));
+});
+
+test("claude takes every glob as the caller spells it, negations included", () => {
+  assert.deepEqual(spelledGlobs(claude, TEST_GLOBS, plain), {
     ...NONE,
     patterns: ["test/**/*.{cjs,cts,js,mjs,mts,ts}", "!test/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}"],
   });
+  // Not even a name the other two cannot write is held back from Claude Code.
+  assert.deepEqual(spelledGlobs(claude, [{ negated: false, dir: "a,b", tail: "*.js" }], plain), { ...NONE, patterns: ["a,b/*.js"] });
 });
 
 test("cursor gets one pattern per extension and loses the negation", () => {
-  assert.deepEqual(spelledGlobs(cursor, TEST_GLOBS), {
+  assert.deepEqual(spelledGlobs(cursor, TEST_GLOBS, plain), {
+    ...NONE,
     patterns: SIX,
-    widened: [],
     dropped: ["test/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}"],
   });
 });
 
 test("copilot gets the same patterns, each one widened because none starts with **/", () => {
-  assert.deepEqual(spelledGlobs(copilot, TEST_GLOBS), {
+  assert.deepEqual(spelledGlobs(copilot, TEST_GLOBS, plain), {
+    ...NONE,
     patterns: SIX,
     widened: SIX,
     dropped: ["test/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}"],
@@ -91,48 +103,70 @@ test("copilot gets the same patterns, each one widened because none starts with 
 
 test("a pattern that already starts with **/ is not widened", () => {
   const root = [globEntry(".", ["ruby"]), { negated: false, dir: "", tail: "*.py" }];
-  const out = spelledGlobs(copilot, root);
+  const out = spelledGlobs(copilot, root, plain);
   assert.ok(out.patterns.includes("**/*.rb") && out.patterns.includes("*.py"), out.patterns.join(" "));
   assert.deepEqual(out.widened, ["*.py"]);
 });
 
 test("a bare filename pattern passes through", () => {
   const bare = [{ negated: false, dir: "", tail: "Rakefile" }, { negated: false, dir: "lib", tail: "**/Gemfile" }];
-  assert.deepEqual(spelledGlobs(cursor, bare), { ...NONE, patterns: ["Rakefile", "lib/**/Gemfile"] });
-  assert.deepEqual(spelledGlobs(copilot, bare), { ...NONE, patterns: ["Rakefile", "lib/**/Gemfile"], widened: ["Rakefile", "lib/**/Gemfile"] });
+  assert.deepEqual(spelledGlobs(cursor, bare, plain), { ...NONE, patterns: ["Rakefile", "lib/**/Gemfile"] });
+  assert.deepEqual(spelledGlobs(copilot, bare, plain), { ...NONE, patterns: ["Rakefile", "lib/**/Gemfile"], widened: ["Rakefile", "lib/**/Gemfile"] });
 });
 
 test("a single extension has no brace to expand", () => {
-  assert.deepEqual(spelledGlobs(cursor, [{ negated: false, dir: "app/models", tail: "*.py" }]).patterns, ["app/models/*.py"]);
+  assert.deepEqual(spelledGlobs(cursor, [{ negated: false, dir: "app/models", tail: "*.py" }], plain).patterns, ["app/models/*.py"]);
 });
 
-test("a directory holding a comma or a brace is dropped, not emitted", () => {
-  for (const dir of ["a,b", "a{b", "a}b"]) {
+test("a positive pattern a target cannot write is unspellable, and never a dropped negation", () => {
+  for (const dir of ["a,b", "a{b", "a}b", 'a"b', "a\\b", "a\nb", "a\rb"]) {
     for (const target of [cursor, copilot]) {
       const out = spelledGlobs(target, [
         { negated: false, dir, tail: "**/*.{js,ts}" },
         { negated: false, dir: "ok", tail: `**/${dir}/**/*.js` },
         { negated: false, dir: "ok", tail: "*.js" },
-      ]);
-      assert.deepEqual(out.patterns, ["ok/*.js"], dir);
-      assert.deepEqual(out.dropped, [`${dir}/**/*.{js,ts}`, `ok/**/${dir}/**/*.js`], dir);
-      assert.ok(out.patterns.every((p) => !/[,{}]/.test(p)));
+        { negated: true, dir, tail: "*.js" },
+      ], plain);
+      const at = JSON.stringify(dir);
+      assert.deepEqual(out.patterns, ["ok/*.js"], at);
+      assert.deepEqual(out.unspellable, [`${dir}/**/*.{js,ts}`, `ok/**/${dir}/**/*.js`], at);
+      assert.deepEqual(out.dropped, [`${dir}/*.js`], at);
     }
   }
 });
 
-test("a name that would end the frontmatter line or its quotes is dropped too", () => {
-  for (const dir of ['a"b', "a\\b", "a\nb", "a\rb"]) {
-    const out = spelledGlobs(copilot, [{ negated: false, dir, tail: "*.js" }]);
-    assert.deepEqual(out.patterns, [], JSON.stringify(dir));
-    assert.equal(out.dropped.length, 1);
-  }
+test("cursor's unquoted line also cannot carry a comment mark, a mapping colon or a closing colon", () => {
+  const globs = [
+    { negated: false, dir: "a #b", tail: "*.js" },
+    { negated: false, dir: "a: b", tail: "*.js" },
+    { negated: false, dir: "lib", tail: "x:" },
+    { negated: false, dir: "a:b", tail: "*.js" },
+    { negated: false, dir: "a#b", tail: "*.js" },
+  ];
+  const all = ["a #b/*.js", "a: b/*.js", "lib/x:", "a:b/*.js", "a#b/*.js"];
+  assert.deepEqual(spelledGlobs(cursor, globs, plain), { ...NONE, patterns: all.slice(3), unspellable: all.slice(0, 3) });
+  assert.deepEqual(spelledGlobs(copilot, globs, plain), { ...NONE, patterns: all, widened: all });
 });
 
-test("the caller's directory encoder reaches every pattern", () => {
-  const enc = (d) => `<${d}>`;
-  assert.deepEqual(spelledGlobs(claude, TEST_GLOBS, enc).patterns[1], "!<test>/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}");
-  assert.deepEqual(spelledGlobs(cursor, TEST_GLOBS, enc).patterns[0], "<test>/**/*.cjs");
+test("the check reads the string that is emitted, so a comma the encoder folds in is caught", () => {
+  const fullwidth = [{ negated: false, dir: "a，b", tail: "*.{js,ts}" }, { negated: false, dir: "ok", tail: "*.js" }];
+  assert.ok(encoded(fullwidth[0]).startsWith("a,b/"), encoded(fullwidth[0]));
+  for (const target of [cursor, copilot]) {
+    const out = spelledGlobs(target, fullwidth, encoded);
+    assert.deepEqual(out.patterns, ["ok/*.js"]);
+    assert.deepEqual(out.unspellable, ["a,b/*.{js,ts}"]);
+  }
+  // Read before the encoder, the same directory is one neither target objects to.
+  assert.deepEqual(spelledGlobs(cursor, fullwidth, plain).unspellable, []);
+});
+
+test("every list is in the caller's own spelling", () => {
+  const text = (g) => `${g.negated ? "!" : ""}<${g.dir}>/${g.tail}`;
+  assert.equal(spelledGlobs(claude, TEST_GLOBS, text).patterns[1], "!<test>/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}");
+  const out = spelledGlobs(copilot, TEST_GLOBS, text);
+  assert.equal(out.patterns[0], "<test>/**/*.cjs");
+  assert.deepEqual(out.dropped, ["<test>/**/fixtures/**/*.{cjs,cts,js,mjs,mts,ts}"]);
+  assert.throws(() => spelledGlobs(cursor, TEST_GLOBS), TypeError);
 });
 
 test("frontmatter: the exact lines for all six target and kind pairs", () => {
@@ -147,15 +181,15 @@ test("frontmatter: the exact lines for all six target and kind pairs", () => {
   assert.equal(lines(cursor, "overview")[1], `generator: ${GENERATOR}`);
 });
 
-test("frontmatter refuses an area with no pattern, which would load on every turn", () => {
-  for (const target of [claude, cursor, copilot]) {
-    assert.throws(() => frontmatter(target, { kind: "area", patterns: [] }), /no pattern/);
-    assert.throws(() => frontmatter(target, { kind: "area" }), /no pattern/);
+test("an area with no pattern: claude refuses it, cursor attaches nothing, copilot cannot say so", () => {
+  for (const given of [{ kind: "area", patterns: [] }, { kind: "area" }]) {
+    assert.throws(() => frontmatter(claude, given), { message: "an area file with no pattern would load on every turn" });
+    assert.deepEqual(frontmatter(cursor, given), ["---", "generator: anatomiya", "alwaysApply: false", "---"]);
+    assert.throws(() => frontmatter(copilot, given), { message: "no pattern of this area can be written for GitHub Copilot" });
   }
 });
 
 test("the claude frontmatter is byte-equal to what the renderer writes today", () => {
-  const encodeDir = (dir) => encodePath(dir).slice(1, -1);
   const cases = [
     TEST_GLOBS,
     [globEntry("scripts", ["js", "ts"], { recursive: false })],
@@ -163,7 +197,7 @@ test("the claude frontmatter is byte-equal to what the renderer writes today", (
   ];
   for (const globs of cases) {
     const rendered = renderArea({ id: "a1", path: "test", fileCount: 3, langs: ["js"], dimensions: [], globs });
-    const { patterns } = spelledGlobs(claude, globs, encodeDir);
+    const { patterns } = spelledGlobs(claude, globs, encoded);
     assert.deepEqual(frontmatter(claude, { kind: "area", patterns }), fenceOf(rendered));
   }
   const result = { root: "/repo", corpus: { files: 0, truncated: false, dropped: {} }, parse: { parsed: 0, crashed: 0, skipped: 0 }, suppressAll: true, areas: [] };
