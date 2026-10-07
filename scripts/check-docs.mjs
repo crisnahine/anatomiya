@@ -297,6 +297,47 @@ export function pathsThatMoved(text, docRel, tracked) {
   return [...moved.values()];
 }
 
+const DECISION_ROW = /^\| ([A-H]\d+) \|/;
+const OWN_CODE = /^(?:plugins|scripts|test)\//;
+const dirOf = (rel) => rel.slice(0, rel.lastIndexOf("/"));
+
+// A42 names a canary under `test/` that was deleted with the plugin it watched,
+// and what the row should say instead is a decision, not a typo.
+const DONE_UNHELD = new Set(["A42"]);
+
+/**
+ * Files a decision row's status cell names as done that this tree does not hold.
+ *
+ * `pathsThatMoved` answers only for a path found somewhere else, so a file
+ * renamed or deleted outright left its row pointing at nothing. The tree is the
+ * discriminator here too: a path whose own directory holds no file is another
+ * repository's (`test/models/user_test.rb`), and one whose directory does is ours.
+ */
+export function doneFilesGone(text, tracked) {
+  const dirs = new Set([...tracked].map(dirOf));
+  const gone = [];
+  for (const line of text.split(/\r?\n/)) {
+    const row = DECISION_ROW.exec(line)?.[1];
+    const done = line.indexOf("**done**");
+    if (!row || done < 0 || DONE_UNHELD.has(row)) continue;
+    for (const [, spelled] of line.slice(done).matchAll(DOC_PATH)) {
+      if (OWN_CODE.test(spelled) && !tracked.has(spelled) && dirs.has(dirOf(spelled))) gone.push({ row, spelled });
+    }
+  }
+  return gone;
+}
+
+/** Row numbers a decision row cites that no row carries. A code span is skipped: `B7` there is a key, not a row. */
+export function rowsCitedMissing(text) {
+  const rows = text.split(/\r?\n/).filter((line) => DECISION_ROW.test(line));
+  const ids = new Set(rows.map((line) => DECISION_ROW.exec(line)[1]));
+  return rows.flatMap((line) =>
+    [...line.replace(/`[^`]*`/g, "").matchAll(/\b[A-H]\d+\b/g)]
+      .filter(([cited]) => !ids.has(cited))
+      .map(([cited]) => ({ row: DECISION_ROW.exec(line)[1], cited }))
+  );
+}
+
 // A document that records a past state names the paths that state had, and
 // today's path in it would be a claim the measurement never made.
 const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
@@ -504,6 +545,12 @@ export function checkDocs() {
   // A row number appearing twice is a row nobody can cite.
   const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-H]\d+) \|/gm)].map((m) => m[1]);
   claim("DECISIONS.md", new Set(ids).size === ids.length, "two rows share a number");
+
+  // "(B13)" read as the source of a rule another row holds, and nothing read it.
+  // A number that names the wrong row still passes; one that names no row does not.
+  for (const { row, cited } of rowsCitedMissing(read("DECISIONS.md"))) {
+    claim("DECISIONS.md", false, `row ${row} cites ${cited}, and no row has that number`);
+  }
 
   // --- the gate table ---------------------------------------------------------
 
@@ -767,6 +814,9 @@ export function checkDocs() {
     for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
       claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
     }
+  }
+  for (const { row, spelled } of doneFilesGone(read("DECISIONS.md"), tracked)) {
+    claim("DECISIONS.md", false, `row ${row} names \`${spelled}\` as done, and no such file is here`);
   }
 
   // --- versions ---------------------------------------------------------------

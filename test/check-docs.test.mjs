@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { READS, checkDocs, pathsThatMoved, readGlossary, sitesOwed } from "../scripts/check-docs.mjs";
+import { READS, checkDocs, doneFilesGone, pathsThatMoved, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
 
@@ -726,6 +726,51 @@ test("a tracked copy with nothing wrong still passes, so the sweep is not failin
   const { status, output } = check(repoCopyTracked(t));
 
   assert.equal(status, 0, output);
+});
+
+const ROWS = [
+  "| B1 | one | why | **done** `scripts/check-docs.mjs`, pinned by `scripts/gone.mjs` |",
+  "| B2 | two, as B1 has it (B9, H3) | `scripts/never.mjs` was measured, and `B7` is a key | pending |",
+  "| B3 | three | a Rails app keeps `test/models/user_test.rb` | **done** `test/models/user_test.rb` `lib/hook.mjs` |",
+].join("\n");
+
+test("a file a decision row names as done and the tree does not hold is named with its row", () => {
+  // A row's status cell is the one place that says where a decision lives, and
+  // a renamed file left it pointing at nothing with every gate passing.
+  const tracked = new Set(["scripts/check-docs.mjs", "scripts/validate.mjs"]);
+
+  assert.deepEqual(doneFilesGone(ROWS, tracked), [{ row: "B1", spelled: "scripts/gone.mjs" }]);
+});
+
+test("a path outside the status cell, or in a directory this tree does not hold, is another repository's", () => {
+  const tracked = new Set(["scripts/check-docs.mjs", "test/fixtures/a.json"]);
+
+  assert.deepEqual(doneFilesGone(ROWS, tracked).map((g) => g.spelled), ["scripts/gone.mjs"]);
+  assert.deepEqual(doneFilesGone(ROWS, new Set()), [], "and a tree git cannot list answers nothing");
+});
+
+test("a row citing a number no row has is named, and a key in a code span is not a citation", () => {
+  assert.deepEqual(rowsCitedMissing(ROWS), [{ row: "B2", cited: "B9" }, { row: "B2", cited: "H3" }]);
+});
+
+test("a decision row naming a file that is gone fails the check", needsCheckout, (t) => {
+  const dir = repoCopyTracked(t);
+  edit(join(dir, "DECISIONS.md"), (text) => text.replace("**done** `scan.mjs` (`corpus.scriptOnly`)", "**done** `scripts/scan-gone.mjs` (`corpus.scriptOnly`)"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /DECISIONS\.md: row B55 names `scripts\/scan-gone\.mjs` as done, and no such file is here/);
+});
+
+test("a decision row citing a row that does not exist fails the check", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "DECISIONS.md"), (text) => text.replace("a recovered tree is not the file (B15)", "a recovered tree is not the file (B99)"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /DECISIONS\.md: row B53 cites B99, and no row has that number/);
 });
 
 // A tracked file removed from the working tree and not yet staged is still in
