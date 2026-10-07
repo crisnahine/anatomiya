@@ -968,7 +968,8 @@ function overviewTail(result, filed, files, target) {
  * Empty on a run that read every language it holds.
  */
 function unreadLines(parse) {
-  return unreadReasons(parse?.unreadable ?? [], parse ?? {}).map(({ langs, why }) => `no ${langs.join(" or ")} file was read: ${why}`);
+  // No directory named: the terminal says where this install is, and a committed file is read on other machines.
+  return unreadReasons(parse?.unreadable ?? [], parse ?? {}, null).map(({ langs, why }) => `no ${langs.join(" or ")} file was read: ${why}`);
 }
 
 /**

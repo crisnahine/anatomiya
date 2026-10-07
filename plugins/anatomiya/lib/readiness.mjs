@@ -141,11 +141,13 @@ function probeFor(id) {
  * installation's. It is an argument because a report about one directory may
  * not name another in the same sentence: a reader told nothing is installed in
  * one place and to install it in a second has been handed two paths and no way
- * to tell which is theirs.
+ * to tell which is theirs. `null` names no directory and leaves the table's
+ * own words: a file written into a repository is committed and read on other
+ * machines, where this one's path is nobody's.
  */
 export function remedyFor(engineId, root = pluginRoot()) {
   const engine = probeFor(engineId);
-  return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, root)}` : engine.remedy;
+  return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, root ?? PLUGIN_DIRECTORY)}` : engine.remedy;
 }
 
 /**

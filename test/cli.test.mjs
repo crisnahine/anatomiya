@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, dirname, resolve } from "node:path";
+import { basename, delimiter, join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
@@ -114,16 +114,25 @@ test("a TypeScript and Python repository on that install has its TypeScript mapp
   const install = installLacking(t, { modules: ["web-tree-sitter"] });
   const repo = repoOf(t, [PY, TS]);
 
-  const { code, stdout } = runFrom(install, ["scan", repo], process.env.PATH);
+  const { code, stdout } = runFrom(install, ["scan", repo, "--targets", "cursor,copilot"], process.env.PATH);
 
   assert.equal(code, 0, stdout);
   assert.match(stdout, /^read no python file at all, so none was counted/m, stdout);
-  assert.match(stdout, /^8 files: tree-sitter reported no version: run node bin\/anatomiya\.mjs setup in /m, stdout);
+  // The terminal speaks to the person at this machine, so it names the directory to run the command in.
+  const said = stdout.split("\n").find((line) => line.startsWith("8 files: tree-sitter reported no version: run node bin/anatomiya.mjs setup in "));
+  assert.ok(said?.endsWith(basename(install)), stdout);
   // Counted once, on the line that says why: an engine that was not there is not a parse that failed.
   assert.doesNotMatch(stdout, /could not be parsed|crashed the parser/, stdout);
   assert.match(stdout, /^engines: oxc \d[\d.]*$/m, "the engine that did not load is not listed as one that answered");
   const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
-  assert.match(overview, /^- no python file was read: tree-sitter reported no version: run node bin\/anatomiya\.mjs setup in /m, overview);
+  // A file a repository commits and other people read holds no path on one person's disk.
+  const unread = "- no python file was read: tree-sitter reported no version: run node bin/anatomiya.mjs setup in the plugin directory";
+  for (const [dir, ext] of [[".claude/rules", ".md"], [".cursor/rules", ".mdc"], [".github/instructions", ".instructions.md"]]) {
+    assert.ok(readFileSync(join(repo, dir, `anatomiya-overview${ext}`), "utf8").split("\n").includes(unread), dir);
+    for (const name of readdirSync(join(repo, dir))) {
+      assert.equal(readFileSync(join(repo, dir, name), "utf8").includes(basename(install)), false, `${dir}/${name} names this machine's install`);
+    }
+  }
   assert.doesNotMatch(overview, /could not be parsed|crashed the parser/, overview);
   assert.match(overview, /^## Areas \(1\)$/m, overview);
   const [area, ...others] = rulesIn(repo).filter((name) => name !== "anatomiya-overview.md");
