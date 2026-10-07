@@ -1221,6 +1221,37 @@ test("Rust: a directory does not make a test file, and neither does a name", () 
   assert.equal(isTestFile(file("src/escape.rs", "rust", { testRunner: null, testCalls: false, inlineTests: true })), false);
 });
 
+test("Rust: cargo collects every file directly under a crate's tests directory, cases or none", () => {
+  // ripgrep declares 349 of its 365 cases with `rgtest!`, in files directly under `tests`.
+  const plain = { testRunner: null, testCalls: false };
+  const cargo = { testRunner: "cargo test", testCalls: true };
+  const corpus = [
+    file("Cargo.toml"),
+    file("tests/feature.rs", "rust", plain),
+    file("tests/util.rs", "rust", plain),
+    file("tests/index/basic.rs", "rust", plain),
+    file("tests/common/mod.rs", "rust", plain),
+    file("tests/common/cases.rs", "rust", cargo),
+    file("crates/ignore/src/lib.rs", "rust", plain),
+    file("crates/ignore/tests/gitignore.rs", "rust", plain),
+    // A module's unit tests split into a directory of their own, inside `src` and beside no crate.
+    file("tokio/src/runtime/tests/queue.rs", "rust", plain),
+    file("tests/data/sherlock.txt"),
+  ];
+  const mirrored = mirroredTests(corpus);
+  const test = (rel) => isTestFile(corpus.find((f) => f.rel === rel), mirrored);
+  for (const rel of ["tests/feature.rs", "tests/util.rs", "crates/ignore/tests/gitignore.rs", "tests/common/cases.rs"]) {
+    assert.equal(test(rel), true, rel);
+  }
+  for (const rel of ["tests/index/basic.rs", "tests/common/mod.rs", "tokio/src/runtime/tests/queue.rs", "tests/data/sherlock.txt"]) {
+    assert.equal(test(rel), false, rel);
+  }
+  assert.equal(runnerOf("tests/util.rs", plain), "cargo test");
+  // A `tests` directory beside nothing that makes a crate is a directory name.
+  assert.equal(isTestFile(file("tests/util.rs", "rust", plain), mirroredTests([file("tests/util.rs", "rust", plain)])), false);
+  assert.deepEqual(layoutFacts(corpus, { minFiles: 3 }).tests.map((g) => [g.runner, g.files]), [["cargo test", 4]]);
+});
+
 test("the seven languages take no test name from JavaScript or Ruby, and no mirror", () => {
   const corpus = [file("lib/rules/no_var.py", "python"), file("tests/lib/rules/no_var.py", "python")];
   assert.equal(isTestFile(corpus[1], mirroredTests(corpus)), false);
