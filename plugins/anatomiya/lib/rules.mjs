@@ -200,26 +200,40 @@ export const spelledOtherwise = (entries, name) =>
 
 /**
  * The entries that are one of `names` on this volume: each spelled otherwise,
- * where the directory answers for the name and its listing does not hold it. A
- * volume that keeps case apart answers for no name its listing lacks.
+ * where the listing does not hold the name and the volume answers for it with
+ * that entry. A volume that keeps case apart answers for no name its listing lacks.
  *
  * One pass over the listing, which comes with the repository: asked a name at
  * a time, 500 names against 100,000 entries took 3.4 s.
  */
 export function foldedOnto(dir, entries, names) {
   const listed = new Set(entries);
-  const spelled = new Map(entries.map((e) => [folded(e), e]));
-  return names.filter((n) => !listed.has(n) && spelled.has(folded(n)) && answersFor(dir, n)).map((n) => spelled.get(folded(n)));
+  const spelled = new Map();
+  for (const e of entries) {
+    const key = folded(e);
+    if (!spelled.has(key)) spelled.set(key, []);
+    spelled.get(key).push(e);
+  }
+  return names.flatMap((n) => {
+    const it = listed.has(n) || !spelled.has(folded(n)) ? null : entryAt(dir, n);
+    return it === null ? [] : spelled.get(folded(n)).filter((e) => sameEntry(it, entryAt(dir, e))).slice(0, 1);
+  });
 }
 
-function answersFor(dir, name) {
+// `folded` is JavaScript's fold and a volume has its own: a dotless i goes onto
+// `i` here and stays apart on APFS. So which entry a name is gets asked of the
+// volume. A file under two links, or on a volume that numbers no file, is
+// nobody's to tell apart, and reads as no entry.
+function entryAt(dir, name) {
   try {
-    lstatSync(join(dir, name));
-    return true;
+    const { dev, ino, nlink } = lstatSync(join(dir, name), { bigint: true });
+    return nlink === 1n && ino !== 0n ? { dev, ino } : null;
   } catch {
-    return false;
+    return null;
   }
 }
+
+const sameEntry = (a, b) => a !== null && b !== null && a.dev === b.dev && a.ino === b.ino;
 /**
  * The filenames the map on disk says this build wrote, or `null` when there is
  * no map to ask.
@@ -320,7 +334,8 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
     // and on a volume that folds case an entry spelled as one in another case is
     // the file at that name: ours under the map's name where it carries the key.
     const lower = folded(name);
-    const mapped = isClaude(target) && isMapName(lower, target) && !listed.has(lower) && answersFor(dir, lower) ? lower : name;
+    const isMapped = isClaude(target) && isMapName(lower, target) && !listed.has(lower) && sameEntry(entryAt(dir, name), entryAt(dir, lower));
+    const mapped = isMapped ? lower : name;
     if (!mapped.startsWith(PREFIX) || !isOwned(entry.head) || theirLink) {
       out.foreign.push(name);
       continue;

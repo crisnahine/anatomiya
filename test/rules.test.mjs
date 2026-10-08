@@ -357,7 +357,36 @@ test("an entry is a name on this volume only where the listing lacks the name an
   assert.deepEqual(foldedOnto(dir, ["team.md"], [OVERVIEW_FILE]), []);
   assert.deepEqual(foldedOnto(dir, [OVERVIEW_FILE, theirs], [OVERVIEW_FILE]), [], "beside the name, the volume tells the two apart");
   assert.deepEqual(foldedOnto(dir, [theirs, OVERVIEW_FILE], [OVERVIEW_FILE]), []);
-  assert.deepEqual(foldedOnto(dir, [theirs, "team.md"], [OVERVIEW_FILE, `${PREFIX}area-00000000.md`]), [theirs], "the entry, as the listing spells it");
+});
+
+// JavaScript's fold sends a dotless i onto `i`. APFS keeps the two apart.
+const DOTLESS = "anatom\u0131ya-overv\u0131ew.md";
+
+test("where the volume folds case, the entry a name lands on is the one the volume answers with", needsFoldingFilesystem, (t) => {
+  const dir = workspace(t);
+  const theirs = "Anatomiya-Overview.md";
+  writeFileSync(join(dir, theirs), HAND);
+  writeFileSync(join(dir, DOTLESS), OWNED);
+  if (readdirSync(dir).length !== 2) return t.skip("this volume holds the two spellings as one entry");
+  assert.equal(readFileSync(join(dir, OVERVIEW_FILE), "utf8"), HAND, "the control: the volume answers for the name with the first");
+
+  for (const listing of [[theirs, DOTLESS], [DOTLESS, theirs]]) {
+    assert.deepEqual(foldedOnto(dir, [...listing, "team.md"], [OVERVIEW_FILE, `${PREFIX}area-00000000.md`]), [theirs], listing.join(" "));
+  }
+  assert.deepEqual(foldedOnto(dir, [DOTLESS], [OVERVIEW_FILE]), [], "an entry only JavaScript folds onto the name is not it");
+});
+
+test("a keyed file that only JavaScript folds onto a map name is somebody's, beside the file at that name", (t) => {
+  const dir = workspace(t);
+  const theirs = "Anatomiya-Overview.md";
+  put(dir, `${RULES_DIR}/${theirs}`, HAND);
+  put(dir, `${RULES_DIR}/${DOTLESS}`, OWNED);
+  if (readdirSync(join(dir, RULES_DIR)).length !== 2) return t.skip("this volume holds the two spellings as one entry");
+
+  for (const known of [new Set([OVERVIEW_FILE]), null]) {
+    const audit = auditRules(dir, known);
+    assert.deepEqual({ ours: audit.ours, unknown: audit.unknown, foreign: audit.foreign }, { ours: [], unknown: [], foreign: [theirs, DOTLESS] });
+  }
 });
 
 test("on: our overview beside somebody's file spelled in another case", (t) => {
