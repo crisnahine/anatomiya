@@ -906,6 +906,111 @@ test("files at the repository root never form an area", () => {
   assert.equal(areas.orphaned.length, 9, "a root glob would render every claim over every area");
 });
 
+const goFiles = (paths) => fakeFiles(paths, "go");
+const rootGo = (n) => goFiles(Array.from({ length: n }, (_, i) => `g${i}.go`));
+
+test("a package at the repository root is an area of the files directly there", () => {
+  const files = [...rootGo(5), ...goFiles(Array.from({ length: 5 }, (_, i) => `binding/b${i}.go`))];
+  const areas = discover(files, { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => [a.path, a.fileCount, a.langs]), [[".", 5, ["go"]], ["binding", 5, ["go"]]]);
+  assert.equal(areas[0].id, areaId("."));
+  assert.deepEqual(areas[0].files.map((f) => f.rel), ["g0.go", "g1.go", "g2.go", "g3.go", "g4.go"]);
+  assert.deepEqual(areas.orphaned, []);
+});
+
+test("a root package under the floor is uncovered like any directory under it", () => {
+  const areas = discover([...rootGo(4), ...goFiles(Array.from({ length: 5 }, (_, i) => `binding/b${i}.go`))], { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => a.path), ["binding"]);
+  assert.deepEqual(areas.orphaned.map((f) => f.rel), ["g0.go", "g1.go", "g2.go", "g3.go"]);
+});
+
+test("the floor a root package clears is counted over its own language's files alone", () => {
+  // Four of the nine root files are the package. The other five are whatever
+  // a root collects, and they neither make the area nor join it.
+  const others = fakeFiles(Array.from({ length: 5 }, (_, i) => `conf${i}.ts`));
+  const under = discover([...rootGo(4), ...others], { minFiles: 5 });
+  assert.deepEqual(under.map((a) => a.path), []);
+  assert.equal(under.orphaned.length, 9);
+
+  const over = discover([...rootGo(5), ...others], { minFiles: 5 });
+  assert.deepEqual(over.map((a) => [a.path, a.fileCount, a.langs]), [[".", 5, ["go"]]]);
+  assert.deepEqual(over.orphaned.map((f) => f.rel), others.map((f) => f.rel));
+});
+
+test("a root package takes no file from a directory below it", () => {
+  // `tiny` and `deep/er` are under the floor and fold toward the root, where
+  // they have nothing in common with the package and stay uncovered.
+  const folded = goFiles(["tiny/t0.go", "tiny/t1.go", "deep/er/d0.go"]);
+  const files = [...rootGo(6), ...folded, ...goFiles(Array.from({ length: 5 }, (_, i) => `render/r${i}.go`))];
+  const areas = discover(files, { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => [a.path, a.fileCount]), [[".", 6], ["render", 5]]);
+  assert.deepEqual(areas.orphaned.map((f) => f.rel).sort(), folded.map((f) => f.rel).sort());
+  const root = areas[0];
+  for (const f of files) assert.equal(matches(root.globs, f.rel), !f.rel.includes("/"), f.rel);
+  for (const f of files) assert.equal(areaLib.globsReach(root.globs, f.rel), !f.rel.includes("/"), f.rel);
+});
+
+test("a repository of nothing but a root package still gets a pattern that stops at the root", () => {
+  // One recursive pattern is the shorter cover of a subtree an area wholly
+  // owns, and here it would hand the package's claims to every directory added later.
+  const areas = discover(rootGo(8), { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => a.path), ["."]);
+  assert.deepEqual(areas[0].globs, [{ negated: false, dir: "", tail: "*.go" }]);
+  assert.deepEqual(areas[0].globs.map((g) => globText(g)), ["/*.go"]);
+  assert.equal(matches(areas[0].globs, "g0.go"), true);
+  assert.equal(matches(areas[0].globs, "later/x.go"), false);
+});
+
+test("the root package's pattern is anchored where Claude Code reads it", () => {
+  // The reader's own rule: a pattern with no slash matches at every depth, and
+  // one that starts with a slash matches from the root alone.
+  assert.equal(claudeCodeReaches(["*.go"], "binding/x.go"), true);
+  for (const [rel, reached] of [["gin.go", true], ["binding/x.go", false], ["a/b/c.go", false], ["gin.py", false]]) {
+    assert.equal(claudeCodeReaches(["/*.go"], rel), reached, rel);
+    assert.equal(matches([globEntry(".", ["go"], { recursive: false })], rel), reached, rel);
+  }
+  assert.equal(globText(globEntry(".", ["go"], { recursive: false })), "/*.go");
+  assert.equal(globText(globEntry(".", ["go"])), "**/*.go", "a recursive pattern from the root needs no anchor");
+  assert.equal(globText({ negated: true, dir: "", tail: "gen.go" }), "!/gen.go", "the negation marker stays in front");
+  assert.equal(globText(globEntry("lib", ["go"], { recursive: false })), "lib/*.go");
+});
+
+test("a root package's pattern leaves out the root files its counts left out", () => {
+  const uncounted = goFiles(["zz_generated.go", "binding/gen.go", "weird[1].go"]);
+  const areas = discover([...rootGo(5), ...goFiles(Array.from({ length: 5 }, (_, i) => `binding/b${i}.go`))], { minFiles: 5, uncounted });
+  const root = areas.find((a) => a.path === ".");
+
+  // A name that is glob syntax cannot be cut out, and one file reached is less than every directory reached.
+  assert.deepEqual(root.globs.map((g) => globText(g)), ["/*.go", "!/zz_generated.go"]);
+  assert.equal(matches(root.globs, "zz_generated.go"), false);
+  assert.equal(matches(root.globs, "g0.go"), true);
+  assert.equal(matches(root.globs, "binding/gen.go"), false);
+});
+
+test("the ceiling never folds an area into the root package", () => {
+  const files = [
+    ...rootGo(9),
+    ...["a", "b", "c"].flatMap((d) => goFiles(Array.from({ length: 5 }, (_, i) => `${d}/f${i}.go`))),
+  ];
+  const areas = discover(files, { minFiles: 5, maxAreas: 2 });
+
+  assert.equal(areas.length, 2);
+  assert.deepEqual(areas.find((a) => a.path === ".").files.map((f) => f.rel).filter((r) => r.includes("/")), []);
+  assert.equal(areas.reduce((n, a) => n + a.fileCount, 0) + areas.orphaned.length, files.length);
+});
+
+test("a root package is discovered the same whatever order the files arrived in", () => {
+  const files = [...rootGo(7), ...fakeFiles(["a.ts", "b.ts"]), ...goFiles(Array.from({ length: 6 }, (_, i) => `x/f${i}.go`))];
+  const shape = (areas) => JSON.stringify([areas.map((a) => [a.path, a.files.map((f) => f.rel).sort(), a.globs]), areas.orphaned.map((f) => f.rel).sort()]);
+
+  assert.equal(shape(discover([...files].reverse(), { minFiles: 5 })), shape(discover(files, { minFiles: 5 })));
+  assert.deepEqual(discover(files, { minFiles: 5 }).map((a) => a.path), [".", "x"]);
+});
+
 test("an empty corpus discovers nothing and still carries an orphan list", () => {
   const areas = discover([]);
 
@@ -1130,11 +1235,15 @@ test("a sibling sharing a name prefix does not own the path", () => {
   assert.equal(areaLib.areaOwner("app/models/user.rb", ["app/model"]), null);
 });
 
-test("the repository root owns a path only when nothing deeper does", () => {
-  // "." contains every path without being a prefix of any of them, and it is
-  // the least specific answer there is.
+test("the repository root owns the files directly in it and none below", () => {
+  // "." is a prefix of no path. It is the package at the root, so it holds what
+  // sits there, and a directory below it is another area's or nobody's.
   assert.equal(areaLib.areaOwner("lib/a.ts", [".", "lib"]), "lib");
   assert.equal(areaLib.areaOwner("a.ts", ["."]), ".");
+  assert.equal(areaLib.areaOwner("a.ts", ["lib", "."]), ".");
+  assert.equal(areaLib.areaOwner("tiny/a.go", [".", "lib"]), null, "an uncovered directory stays uncovered");
+  assert.equal(areaLib.areaOwner("lib/deep/a.go", [".", "lib"]), "lib");
+  assert.equal(areaLib.areaOwner("lib/a.go", ["."]), null);
 });
 
 test("an area carries its globs as structure, so nothing has to read the pattern back", () => {

@@ -23,6 +23,7 @@ import {
   familyOf,
   embeddedIn,
   placeTestsOf,
+  rootIsPackage,
   exportLetIsProp,
   templateMountsByName,
   EXTRACTORS,
@@ -93,6 +94,25 @@ test("only Rust has a tool that collects a file as a test by the directory it si
   const layout = readFileSync(new URL("../plugins/anatomiya/lib/layout.mjs", import.meta.url), "utf8");
   assert.deepEqual(layout.match(/["'`](?:python|php|go|java|csharp|rust|kotlin|vue|svelte|ruby|js|jsx)["'`]/g), null);
   assert.equal(layout.includes("Cargo.toml"), false);
+});
+
+test("only Go says the repository root is a package of its own, and discovery asks the declaration", () => {
+  for (const decl of LANGUAGES) {
+    assert.equal(decl.rootPackage, decl.id === "go", decl.id);
+    assert.equal(rootIsPackage(decl.id), decl.id === "go", decl.id);
+  }
+  assert.equal(rootIsPackage("cobol"), false, "an id nothing declares is no package at the root");
+  // B21: read off the declaration, so the module that makes the area spells no language id.
+  const areas = readFileSync(new URL("../plugins/anatomiya/lib/areas.mjs", import.meta.url), "utf8");
+  assert.deepEqual(areas.match(/["'`](?:python|php|go|java|csharp|rust|kotlin|vue|svelte|ruby|js|jsx)["'`]/g), null);
+});
+
+test("a declaration that does not say whether the root is a package refuses to load", () => {
+  const with_ = (rootPackage) => LANGUAGES.map((l) => (l.id === "go" ? { ...l, rootPackage } : l));
+  for (const bad of [undefined, null, "yes", 1]) {
+    assert.throws(() => assertRegistry(with_(bad)), /^Error: go does not say whether the repository root is a package of its own$/, String(bad));
+  }
+  assert.doesNotThrow(() => assertRegistry(with_(false)));
 });
 
 test("a declaration whose place tests name no directory or no runner refuses to load", () => {

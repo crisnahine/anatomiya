@@ -83,6 +83,7 @@ const js = {
   typed: { exts: ["ts", "mts", "cts"] },
   directives: null,
   placeTests: null,
+  rootPackage: false,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -105,6 +106,7 @@ const jsx = {
   typed: { exts: ["tsx"] },
   directives: null,
   placeTests: null,
+  rootPackage: false,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -132,6 +134,7 @@ const component = (id, markup) => ({
   typed: null,
   directives: null,
   placeTests: null,
+  rootPackage: false,
   capabilities: { semantic: false, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 });
@@ -159,6 +162,7 @@ const ruby = {
   typed: null,
   directives: null,
   placeTests: null,
+  rootPackage: false,
   capabilities: { semantic: false, importGraph: false },
   positions: { offsets: null, lines: true },
 };
@@ -181,6 +185,7 @@ const grammar = (id, exts) => ({
   typed: null,
   directives: null,
   placeTests: null,
+  rootPackage: false,
   capabilities: { semantic: false, importGraph: false },
   positions: { offsets: "utf16", lines: false },
 });
@@ -189,7 +194,9 @@ const grammar = (id, exts) => ({
 // than anything anyone wrote.
 const python = grammar("python", ["py"]);
 const php = grammar("php", ["php"]);
-const go = grammar("go", ["go"]);
+// The go tool builds every directory as one package and the module root as one like any other:
+// gin holds 40 of its 98 files there and caddy 39.
+const go = { ...grammar("go", ["go"]), rootPackage: true };
 const java = grammar("java", ["java"]);
 // The grammar reads `#if` around whole statements and members only, so a file
 // it rejects is read again with one branch of each conditional (`csharp-directives.mjs`).
@@ -260,6 +267,11 @@ export const embeddedIn = (id) => declOf(id).embedded;
  * directory that mark the directory holding it, or null where no tool collects by place.
  */
 export const placeTestsOf = (id) => declOf(id).placeTests;
+
+const ROOT_PACKAGES = new Set(LANGUAGES.filter((l) => l.rootPackage).map((l) => l.id));
+
+/** Whether a language's build makes a directory a package and the repository root one like any other. */
+export const rootIsPackage = (id) => ROOT_PACKAGES.has(id);
 
 /** The ids of the languages one engine hosts, in the registry's order. */
 export const hostedBy = (engineId) => LANGUAGES.filter((l) => l.engine === engineId).map((l) => l.id);
@@ -485,6 +497,8 @@ export function assertRegistry(langs) {
         if (typeof decl.placeTests[key] !== "string" || !decl.placeTests[key]) throw new Error(`${decl.id} collects tests by place and names no ${what}`);
       }
     }
+    // Anything but `true` reads as no, so `"yes"` would leave a root package in no area and say nothing.
+    if (typeof decl.rootPackage !== "boolean") throw new Error(`${decl.id} does not say whether the repository root is a package of its own`);
     if (decl.positions.offsets !== "utf16" && decl.positions.offsets !== null) {
       throw new Error(`${decl.id} declares offsets ${JSON.stringify(decl.positions.offsets)}, which no reader understands`);
     }

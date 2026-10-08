@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 // The registry's own table, or the glob delivers to less than the counts were
 // taken over. Listing an extension the repository does not use matches nothing
 // extra, so the list is the language's rather than the area's.
-import { EXT_BY_LANG, LANGUAGES } from "./langs.mjs";
+import { EXT_BY_LANG, LANGUAGES, rootIsPackage } from "./langs.mjs";
 import { byCode } from "./paths.mjs";
 import { sanitisePath } from "./encode.mjs";
 
@@ -48,9 +48,10 @@ export const areaCeiling = (n) => clamp(Math.ceil(n / AREA.filesPerArea), ...ARE
 export function areaOwner(path, areaPaths) {
   let owner = null;
   for (const areaPath of areaPaths) {
-    // "." is the repository root as an area path, and contains every path
-    // without being a prefix of any of them.
-    const inside = areaPath === "." || path === areaPath || path.startsWith(`${areaPath}/`);
+    // "." is the repository root as an area path and a prefix of no path. It is
+    // the package at the root, so it holds the files directly there: a
+    // directory below it is another area's or nobody's.
+    const inside = areaPath === "." ? !path.includes("/") : path === areaPath || path.startsWith(`${areaPath}/`);
     if (!inside) continue;
     if (owner === null || depth(areaPath) > depth(owner)) owner = areaPath;
   }
@@ -110,8 +111,14 @@ export function globText({ negated, dir, tail }, encodeDir) {
   const encode = typeof encodeDir === "function" ? encodeDir : (d) => d;
   // A tail with no `*` is a file's own name, repository-controlled like the directory.
   const name = tail.includes("*") ? tail : encode(tail);
-  return `${negated ? "!" : ""}${dir ? `${encode(dir)}/` : ""}${name}`;
+  return `${negated ? "!" : ""}${dir ? `${encode(dir)}/` : anchorFor(tail)}${name}`;
 }
+
+// What stands where the directory half would, for a pattern at the repository
+// root. Claude Code matches `paths` by gitignore's rules, where a pattern
+// holding no slash matches at every depth: `*.go` reaches `binding/json.go`.
+// A leading slash is what holds it to the root, and a recursive tail has one.
+const anchorFor = (tail) => (tail.startsWith("**/") ? "" : "/");
 
 // The names the extension brace cannot spell, from the registry so the corpus
 // filter and the cover cannot drift apart again.
@@ -355,6 +362,20 @@ function spellableCover(root, positive, negative) {
 }
 
 /**
+ * The root package's cover: its own files and never a directory below them.
+ *
+ * Neither general shape is taken. A recursive pattern from the root is the
+ * shorter cover of a repository holding nothing else, and the fallback where a
+ * name cannot be spelled, and either way it reaches every directory there is
+ * or will be. A left-out file whose name is glob syntax is reached instead,
+ * which is one file where the fallback is the whole tree.
+ */
+const rootCover = (corpus, mine) => [
+  { dir: ".", recursive: false, negated: false },
+  ...leftOut(corpus, mine, ".").filter((e) => spellable(e.name)),
+];
+
+/**
  * The tree the cover walks for one area: the counted files, plus the files the
  * counts left out that this area's patterns would otherwise reach. Those are in
  * no area, so they read as foreign, and a directory holding nothing else is cut
@@ -474,11 +495,11 @@ function assignGlobs(areas, files, uncounted) {
     const bare = BARE_NAMES.filter((n) => area.files.some((f) => baseName(f.rel) === n));
     const { byName, inTree } = byExcludedName(area, reachable(area, uncounted, bare));
     const corpus = withLeftOut(counted, inTree);
-    const positive = positiveCover(area.path, corpus, mine);
-    const negative = negativeCover(area.path, corpus, mine);
     // A tie goes to the shape with no negation: one pattern to read rather than
     // a pattern and a list of holes.
-    const cover = spellableCover(area.path, positive, negative);
+    const cover = area.path === "."
+      ? rootCover(corpus, mine)
+      : spellableCover(area.path, positiveCover(area.path, corpus, mine), negativeCover(area.path, corpus, mine));
     // The negations follow every pattern they cut into. Last match wins, so an
     // order that floated them to the front would exclude nothing, and the
     // matcher folds case, so `p/a/**` re-includes a file cut out of `p/A/`.
@@ -549,15 +570,23 @@ export function discover(files, {
   // common, and its glob is `**/*` over the whole repository, so a claim
   // computed over one part of it is rendered against every other area too.
   // Files with nowhere to go are reported as uncovered instead.
+  //
+  // The files directly at the root are the one exception, where their language
+  // builds the root as a package like any directory: they are one package's
+  // code, and a pattern anchored there reaches them and nothing below. Taken on
+  // their own count, so what folds up beside them neither makes the area nor joins it.
   const orphaned = [];
   const merged = new Map();
   const twins = caseTwins(files);
+  const rootPackage = (byDir.get(".") || []).filter((f) => rootIsPackage(f.lang));
+  const atRoot = rootPackage.length >= minFiles ? new Set(rootPackage) : new Set();
+  if (atRoot.size > 0) merged.set(".", rootPackage);
 
   for (const [d, fs] of byDir) {
     let cur = d;
     while (cur !== "." && ((cumulative.get(cur) || 0) < minFiles || !spellable(cur, twins))) cur = dirOf(cur);
     if (cur === ".") {
-      orphaned.push(...fs);
+      orphaned.push(...fs.filter((f) => !atRoot.has(f)));
       continue;
     }
     if (!merged.has(cur)) merged.set(cur, []);
