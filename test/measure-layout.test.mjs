@@ -339,6 +339,20 @@ test("the recount reads a root line whose files hold their own tests", (t) => {
   assert.match(run.section, /^- tests: 1 cargo test spec under tests; 0 of 2 \.rs files under src have a namesake test; 2 hold their own tests$/m);
 });
 
+test("the recount reads a root holding a test tree, whose files are in no namesake count", (t) => {
+  const fn = (name) => `export function ${name}() {\n  return 1;\n}\n`;
+  const run = recountOf(t, {
+    "pkg/a.js": fn("a"),
+    "pkg/b.js": fn("b"),
+    "pkg/c.js": fn("c"),
+    "pkg/a.test.js": 'import { test } from "vitest";\ntest("a", () => {});\n',
+    ...Object.fromEntries([0, 1, 2, 3].map((i) => [`pkg/test/apps/basic/r${i}.js`, fn(`r${i}`)])),
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- pkg: 8 \.js; 1 vitest spec; 1 of 3 has a namesake test$/m);
+});
+
 test("the recount reads a root of components then modules, which prints a namesake clause for each", (t) => {
   const vitest = (name) => `import { test } from "vitest";\ntest("${name}", () => {});\n`;
   const run = recountOf(t, {

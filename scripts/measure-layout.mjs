@@ -23,20 +23,20 @@ import { join, resolve } from "node:path";
 
 import { checkOutput, invokedAs, readArgv, selectRepos } from "./entry.mjs";
 import { corpusRepos, semanticCell } from "./e2e-corpus.mjs";
-import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
+import { namesakeCompanions } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
+  countedExtensions,
   isProducer,
   isStoryFile,
   isTestFile,
+  layoutIndexes,
   majorityDir,
   mirroredTests,
   MODULE_EXTS,
   runnerOf,
   tally,
-  underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
-import { embeddedIn, familyOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
@@ -128,16 +128,12 @@ function recountRoot(path, corpus, testFiles, byStem) {
   const tests = own.filter(isTest);
   const jsxFiles = own.filter((f) => f.facets?.jsx);
   const exts = tally(own.map((f) => extOf(f.rel))).slice(0, 2);
-  // The first shown extension any source file wears, not simply the first: a
-  // root whose bulk is screenshots or markdown has real producers under the
-  // second one, and reading only exts[0] counts every one of them as zero.
-  const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
-  const producerExt = exts.find(([ext]) => read(ext))?.[0];
+  // Which extensions are counted, and which files a test could be written for,
+  // are the layout's own answers: a second spelling of either here measures
+  // the two spellings against each other and not the count.
+  const [producerExt, otherExt] = countedExtensions(own, exts);
   const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
   const producers = producersOf(producerExt);
-  const component = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext && embeddedIn(f.lang) !== null);
-  const otherExt = exts.find(
-    ([ext]) => ext !== producerExt && read(ext) && (component(ext) || component(producerExt)))?.[0];
   const others = producersOf(otherExt);
   const stories = own.filter((f) => isStoryFile(f.rel));
 
@@ -154,11 +150,11 @@ function recountRoot(path, corpus, testFiles, byStem) {
     tests: testGroupsOf(own, dir),
     testRoot: tests.length * 2 > own.length,
     companions:
-      producers.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(producers[0].lang))
+      producers.length > 0 && testFiles.length > 0
         ? { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt }
         : null,
     otherCompanions:
-      others.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(others[0].lang))
+      others.length > 0 && testFiles.length > 0
         ? { ...namesakeCompanions(others, testFiles, dir, byStem), ext: otherExt }
         : null,
     helpers: null,
@@ -312,17 +308,15 @@ function checkSection(section, corpus, root, recordRoots) {
   if (section.includes(TRUNCATED_LAYOUT)) return { roots: 0, folded: 0, principles: 0, truncated: true };
 
   const bullets = section.filter((l) => l.startsWith("- "));
-  const testFiles = corpus.filter(isTest);
+  // The same indexes the scan hands its roots, over the same corpus: the
+  // sources are what decide ownership and what a second spelling is learned
+  // from, and an index built from the test files alone answers a narrower question.
+  const { testFiles, byStem } = layoutIndexes(corpus, mirrored);
   // The tests line is the last bullet of a repository that has tests. A root named `tests` prints `- tests/: `.
   const testsLine = testFiles.length > 0 && bullets.at(-1)?.startsWith("- tests: ") ? bullets.at(-1) : undefined;
   const rootLines = bullets.slice(0, testsLine ? -1 : undefined).filter((l) => !l.startsWith("- and "));
   if (rootLines.length === 0) fail(`${HEADING} printed no root line`);
 
-  // The same index the scan hands its roots, over the same corpus: the sources
-  // are what decide ownership and what a second spelling is learned from, and
-  // an index built from the test files alone answers a narrower question.
-  const sources = corpus.filter((f) => isProducer(f, mirrored));
-  const byStem = namesakeIndex(testFiles, sources);
   let printedFiles = 0;
 
   for (const line of rootLines) {

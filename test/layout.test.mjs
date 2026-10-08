@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import {
+  countedExtensions,
+  isProducer,
   isStoryFile,
   isTestFile,
   layoutFacts,
@@ -1365,4 +1367,74 @@ test("a Rust file holding its own tests is counted apart, neither a test file no
   assert.deepEqual(facts.tests.map((g) => [g.runner, g.files]), [["cargo test", 3]]);
   // A namesake is another file carrying the stem; a module inside the file is not one.
   assert.deepEqual(facts.roots[0].companions, { with: 1, of: 2, root: null, inline: 2, ext: ".rs" });
+});
+
+test("a file a test could be written for is source that holds something, outside every test tree of its family", () => {
+  const plain = { testRunner: null, testCalls: false };
+  for (const [rel, lang, facets, want] of [
+    ["src/cart.ts", "js", plain, true],
+    ["app/models/user.rb", "ruby", plain, true],
+    ["src/cart.ts", "js", null, true],
+    ["src/empty.ts", "js", { empty: true }, false],
+    ["src/cart.test.ts", "js", plain, false],
+    ["src/Cart.stories.tsx", "jsx", plain, false],
+    ["src/types.d.ts", "js", plain, false],
+    ["src/types.d.mts", "js", plain, false],
+    ["src/d.ts", "js", plain, true],
+    ["pkg/conftest.py", "python", { testRunner: "pytest", testCalls: false }, false],
+    ["pkg/test/apps/basic/src/hooks.js", "js", plain, false],
+    ["spec/support/helpers.rb", "ruby", plain, false],
+    ["Src/Lib.Tests/TestObjects/Person.cs", "csharp", plain, false],
+    ["core/commonTest/src/Fake.kt", "kotlin", plain, false],
+    ["core/commonTest/src/fake.js", "js", plain, true],
+    ["docs/logo.png", null, null, false],
+  ]) {
+    assert.equal(isProducer(file(rel, lang, facets)), want, rel);
+  }
+});
+
+test("a root's namesake count leaves out what sits under a test tree inside the root", () => {
+  // Newtonsoft.Json's `Src` read 63 of 631 with 388 of the 631 under `Src/Newtonsoft.Json.Tests`.
+  const xunit = { testRunner: "xunit", testCalls: true };
+  const corpus = [
+    ...["A", "B", "C"].map((s) => file(`Src/Lib/${s}.cs`, "csharp")),
+    file("Src/Lib.Tests/ATests.cs", "csharp", xunit),
+    ...files(4, (i) => file(`Src/Lib.Tests/TestObjects/Person${i}.cs`, "csharp")),
+  ];
+  const record = rootFacts({ path: "Src", dir: "Src", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".cs", 8]], "the extension clause still counts every file");
+  assert.deepEqual(record.companions, { with: 1, of: 3, root: null, ext: ".cs" });
+});
+
+test("a package whose only other files are its test apps is not a package of untested files", () => {
+  // kit's `packages/adapter-vercel` read 0 of 13 over its test apps, with `utils.js` and `utils.spec.js` beside them.
+  const corpus = [
+    file("pkg/utils.js", "js"),
+    file("pkg/utils.spec.js", "js", { testRunner: "vitest" }),
+    ...files(5, (i) => file(`pkg/test/apps/basic/src/routes/r${i}.js`, "js")),
+    ...files(3, (i) => file(`pkg/test/apps/basic/src/routes/P${i}.svelte`, "svelte", { embedded: "svelte" })),
+  ];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.companions, { with: 1, of: 1, root: null, ext: ".js" });
+  assert.equal("otherCompanions" in record, false, "and no count over the test apps' components");
+});
+
+test("a helper under a test tree keeps the test of its own name", () => {
+  const corpus = [
+    file("src/render.js", "js"),
+    file("test/helpers/render.js", "js"),
+    file("test/helpers/render.test.js", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src", dir: "src", files: corpus.slice(0, 1) }, layoutIndexes(corpus));
+
+  assert.equal(record.companions.with, 0, "the test is the helper's");
+});
+
+test("the counted extensions are the first the tool reads and the other where either is a component's", () => {
+  const own = [file("a/x.png"), file("a/y.png"), file("a/C.vue", "vue"), file("a/m.ts", "js")];
+  assert.deepEqual(countedExtensions(own, [[".png", 2], [".vue", 1]]), [".vue", null]);
+  assert.deepEqual(countedExtensions(own, [[".vue", 1], [".ts", 1]]), [".vue", ".ts"]);
+  assert.deepEqual(countedExtensions(own, [[".png", 2]]), [null, null]);
 });

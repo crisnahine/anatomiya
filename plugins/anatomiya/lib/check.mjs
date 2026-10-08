@@ -18,8 +18,7 @@ import {
   lsFiles,
 } from "./corpus.mjs";
 import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
-import { isTestTree } from "./test-shape.mjs";
-import { placedTests } from "./layout.mjs";
+import { isProducer, placedTests } from "./layout.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase } from "./render.mjs";
 import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
@@ -236,9 +235,10 @@ export async function check(cwd, { baseRef = null } = {}) {
       "the corpus could not be listed, so no routing claim was checked"))
     : new Set();
 
-  const { findings, missingEngines, missingGrammars, missingParser } = await collect(root, {
+  const placed = await placedAmong(root, examined);
+  const { findings, missingEngines, missingGrammars, missingParser, headFacets } = await collect(root, {
     examined,
-    placed: await placedAmong(root, examined),
+    placed,
     areas,
     base,
     mode,
@@ -287,10 +287,13 @@ export async function check(cwd, { baseRef = null } = {}) {
   // bear on that, and it caps at FIX anyway, which is this rule's ceiling.
   const asked = { fresh: mode === "compare", holdsTest };
   // A directory holding only the tests the change wrote is not one it made
-  // for source, and is the directory this rule asks about.
+  // for source, and is the directory this rule asks about. Neither is one
+  // holding a test and a file no test could be written for, which is the
+  // layout's own question: an empty index, a declaration file, a story, the
+  // file a runner loads. Read by its path where this run parsed no head of it.
   const broughtSource = (dir, family) =>
-    arrived.some((c) => c.path.startsWith(`${dir}/`) && familyOf(language(c.path)) === family && !isTestPath(c.path) &&
-      !dirname(c.path).slice(dir.length).split("/").some((segment) => isTestTree(segment, family)));
+    arrived.some((c) => c.path.startsWith(`${dir}/`) && familyOf(language(c.path)) === family &&
+      isProducer({ rel: c.path, lang: language(c.path), facets: headFacets.get(c.path) ?? null }, placed));
   // Asked once to learn which directories the answer turns on, then again with
   // what the merge base says of them: one listing, and none where no finding
   // was about to be stated or the change put no source under the directory.
@@ -990,7 +993,9 @@ async function collect(root, run) {
       caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyForMissing({ missingEngines, missingGrammars })}, then check again`);
     }
 
-    return { findings, missingParser, missingEngines, missingGrammars };
+    // The facets alone: a record holds its tree, which nothing past here reads.
+    const headFacets = new Map([...headRecords].map(([path, record]) => [path, record?.ok ? record.facets : null]));
+    return { findings, missingParser, missingEngines, missingGrammars, headFacets };
   } finally {
     // The sources the report quotes are held in the parent, so nothing past
     // here needs the files: leaving them until the run ends would keep two
