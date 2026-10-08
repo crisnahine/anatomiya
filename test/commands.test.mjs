@@ -957,7 +957,10 @@ test("a doctor counts the names a scan gives a file, and says when the directory
   // A copy somebody kept: this tool's key, under a name no scan gives a file.
   writeFileSync(join(rules, "anatomiya-my-notes.mdc"), readFileSync(join(rules, "anatomiya-overview.mdc")));
 
-  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, 2 files"]);
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes",
+  ]);
 
   // Entered and not listed: the overview still reads as this tool's.
   chmodSync(rules, 0o311);
@@ -966,6 +969,28 @@ test("a doctor counts the names a scan gives a file, and says when the directory
   } finally {
     chmodSync(rules, 0o755);
   }
+});
+
+test("a doctor counts as a target's files what a scan counts as written, and the rest as the scan does", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  const rules = join(dir, ".cursor", "rules");
+  // This tool's key at a name a scan gives a file, which the record never listed.
+  writeFileSync(join(rules, "anatomiya-area-deadbeef.mdc"), readFileSync(join(rules, "anatomiya-overview.mdc")));
+  mkdirSync(join(rules, "anatomiya-area-0badf00d.mdc"));
+  writeFileSync(join(rules, "anatomiya-notes.mdc"), "# by hand\n");
+
+  const { summary } = await runScan(dir);
+  const said = scanLines(summary).filter((l) => l.includes(".cursor/rules"));
+  assert.deepEqual(said, [
+    "wrote 2 files under .cursor/rules for Cursor",
+    ".cursor/rules holds 3 entries named anatomiya-* that this scan neither wrote nor removed; they were left as they are",
+  ]);
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".cursor/rules holds 3 entries named anatomiya-* that a scan neither writes nor removes",
+  ]);
 });
 
 test("a doctor counts a target's files where the clone holds them and no record", async (t) => {
