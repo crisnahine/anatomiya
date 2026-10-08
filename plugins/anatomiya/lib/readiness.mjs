@@ -438,12 +438,20 @@ const grammarsLine = ({ total, missing, foreign }) => `grammars: ${total - missi
 /**
  * What is wrong with the grammar files a probe could not count, each cause in
  * its own words: a file that loads and is another file is not one that "did
- * not load", and the reader of either is sent to the same reinstall.
+ * not load", and the reader of either is sent to the same reinstall. A file
+ * the runtime refuses by its language version is neither: the file is the
+ * plugin's own and the runtime beside it is not the one the plugin locks.
  */
-function grammarFaults({ missing, foreign, manifest }) {
+function grammarFaults({ missing, foreign, refused, manifest }) {
   const files = (ids) => ids.map((id) => `${id}.wasm`).join(" and ");
   const faults = [];
-  if (missing.length) faults.push(`${files(missing)} did not load`);
+  const turnedAway = new Set(refused.map((r) => r.grammar));
+  const unloaded = missing.filter((id) => !turnedAway.has(id));
+  if (unloaded.length) faults.push(`${files(unloaded)} did not load`);
+  // One fault for each version refused, since the grammars are not all built for one.
+  for (const [said, group] of Map.groupBy(refused, (r) => `language version ${r.version} and this runtime reads ${r.reads[0]} through ${r.reads[1]}`)) {
+    faults.push(`${files(group.map((r) => r.grammar))} ${group.length === 1 ? "is" : "are"} ${said}`);
+  }
   if (!manifest) faults.push("grammars.json is missing or is not the file this plugin shipped");
   else if (foreign.length) faults.push(`${files(foreign)} ${foreign.length === 1 ? "is not the file" : "are not the files"} this plugin shipped`);
   return faults;

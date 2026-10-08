@@ -40,6 +40,15 @@ let runtime = null;
 // 1,500 files, since nothing frees an instance.
 const parsers = new Map();
 
+/**
+ * How long a rejected file may have taken, one more parse as long as its first included, for a retry to be worth starting.
+ *
+ * The pool stops a parse at 5 seconds and charges it as a crash, where a rejected file is only unread. A megabyte of
+ * broken methods takes 1.2 seconds a parse on a quiet machine, so its three parses end at 3.7: a second under the
+ * pool's clock leaves room for the read and the reply, and every file that ends well inside it keeps all three.
+ */
+export const RETRY_BUDGET_MS = 4_000;
+
 const missing = (message, extra = {}) => Object.assign(new Error(message), { missingParser: true }, extra);
 
 /** The runtime, loaded and initialised on first use, or a throw marked as the missing install it is. */
@@ -106,14 +115,15 @@ function errorsIn(tree) {
  * Parse one source string and answer the per-file record, pre-classify.
  *
  * `placed` is the caller's word that the language's tool collects this file by
- * where it sits. `grammars` and `rows` are defined-only test overrides: a
- * directory to load grammar files from, and the rows to ask in place of the
- * registry's.
+ * where it sits. `grammars`, `rows` and `now` are defined-only test overrides: a
+ * directory to load grammar files from, the rows to ask in place of the
+ * registry's, and the clock a retry is weighed on.
  */
-export async function parseTreeFile(source, rel, lang, { withProgram = false, placed = false, grammars = GRAMMARS, rows } = {}) {
+export async function parseTreeFile(source, rel, lang, { withProgram = false, placed = false, grammars = GRAMMARS, rows, now = () => performance.now() } = {}) {
   const parser = await parserFor(grammarFor(lang, rel), grammars, lang);
 
   let program;
+  const began = now();
   let tree = parser.parse(source);
   // The string the tree describes: a retried tree is read off the blanked copy, as a Flow file's is.
   let parsed = source;
@@ -122,6 +132,8 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, pl
   try {
     // Only after a rejection, so a file the grammar reads as written is read whole.
     if (tree.rootNode.hasError && mayHoldDirectives(rel)) {
+      const first = now() - began;
+      const affordable = () => now() - began + first <= RETRY_BUDGET_MS;
       const retry = (text) => {
         const retried = parser.parse(text);
         if (retried.rootNode.hasError) {
@@ -133,8 +145,8 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, pl
         return true;
       };
       // The grammar wants a line break after a last-line directive. Tried first: it drops nothing and moves no offset.
-      ended = !/[\n\r]$/.test(source) && retry(`${source}\n`);
-      const kept = ended ? null : withOneBranch(source);
+      ended = !/[\n\r]$/.test(source) && affordable() && retry(`${source}\n`);
+      const kept = ended || !affordable() ? null : withOneBranch(source);
       if (kept && retry(kept.text)) {
         parsed = kept.text;
         oneBranch = kept.dropped;
@@ -221,10 +233,15 @@ function shippedHashes(dir, files) {
   }
 }
 
+// What the runtime says of a grammar built for a language version outside the range it reads.
+const REFUSED_VERSION = /Incompatible language version (\d{1,9})\. Compatibility range (\d{1,9}) through (\d{1,9})/;
+
 /**
  * Which of the grammars this engine's languages name can be read with here.
  *
- * `missing` did not load, asked the way a parse asks. `foreign` loads and is
+ * `missing` did not load, asked the way a parse asks, and `refused` is those
+ * of them the runtime turned away by language version, with the version and
+ * the range it reads: numbers only, so nothing a file says is carried. `foreign` loads and is
  * not shown to be the file the plugin shipped: its bytes do not hash to the
  * manifest's entry, or there is no manifest to hold it to, which `manifest`
  * says. A grammar file that loads reads another language's files as syntax
@@ -234,16 +251,19 @@ export async function probeGrammars({ grammars = GRAMMARS } = {}) {
   const fileOf = (id) => `${declOf(id).grammars.default}.wasm`;
   const shipped = shippedHashes(grammars, HOSTED.map(fileOf));
   const absent = [];
+  const refused = [];
   const foreign = [];
   for (const id of HOSTED) {
     const named = declOf(id).grammars.default;
     try {
       await parserFor(named, grammars, id);
-    } catch {
+    } catch (err) {
       absent.push(named);
+      const said = REFUSED_VERSION.exec(String(err?.message));
+      if (said) refused.push({ grammar: named, version: Number(said[1]), reads: [Number(said[2]), Number(said[3])] });
       continue;
     }
     if (!shipped || (await sha256Of(join(grammars, fileOf(id)))) !== shipped.get(fileOf(id))) foreign.push(named);
   }
-  return { total: HOSTED.length, missing: absent, foreign, manifest: shipped !== null };
+  return { total: HOSTED.length, missing: absent, foreign, refused, manifest: shipped !== null };
 }
