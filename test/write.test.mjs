@@ -5,13 +5,13 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, exist
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
-import { areaFilename, isOwned, realpathOf, realpathOrNull, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
-import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
+import { writeFacts, writeTemp, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 
 const RULES = ".claude/rules";
@@ -1631,6 +1631,7 @@ async function watched(t, name) {
 const BEFORE_PLAN = {
   write: ["anatomiya-overview.md", "anatomiya-area-5c06cdf8.md"],
   remove: [],
+  staged: [],
   foreign: [],
   unknown: [],
   replaced: [],
@@ -1642,7 +1643,8 @@ const BEFORE_PLAN = {
   held: [],
   blind: false,
 };
-const BEFORE_KEYS = ["write", "remove", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
+// `staged` came after: the temporary files an earlier scan left, none on a directory no scan stopped in.
+const BEFORE_KEYS = ["write", "remove", "staged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
 const BEFORE_AREA = `---
 generator: anatomiya
 paths:
@@ -3174,6 +3176,161 @@ test("nothing is removed until every file has been renamed into place", async (t
 
   const renames = 2 + 3 * 2;
   assert.deepEqual(events, [...Array(renames).fill("renameSync"), "unlinkSync", "unlinkSync", "unlinkSync"], "the record, its layout file and two files in each directory, then one orphan in each");
+});
+
+// The id of a process that has run and gone, and sixteen hex digits, as the stager spells them.
+const gone = () => spawnSync(process.execPath, ["-e", ""]).pid;
+const stagedName = (name, pid, hex = "0123456789abcdef") => `${name}.tmp-${pid}-${hex}`;
+const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
+
+test("the name a staged file is given is the name a later scan knows as one", (t) => {
+  const dir = workspace(t);
+  for (const target of EVERY_TARGET) {
+    for (const name of [overviewName(target), areaName(target, "0badf00d")]) {
+      const tmp = writeTemp(join(dir, name), "x");
+      assert.equal(stagedBy(tmp.slice(dir.length + 1), target), process.pid, tmp);
+    }
+    // Under another target's extension, a name no scan gives a file, no prefix, and a suffix cut short or run long.
+    const other = EVERY_TARGET.find((o) => o !== target && !overviewName(o).endsWith(target.ext));
+    for (const name of [
+      ...(other ? [stagedName(overviewName(other), 1)] : []),
+      stagedName(`anatomiya-my-notes${target.ext}`, 1),
+      stagedName(`area-0badf00d${target.ext}`, 1),
+      stagedName(overviewName(target), 1, "0123456789abcde"),
+      stagedName(overviewName(target), 1, "0123456789abcdef0"),
+      stagedName(overviewName(target), 1, "0123456789ABCDEF"),
+      stagedName(overviewName(target), "x"),
+      `${stagedName(overviewName(target), 1)}.bak`,
+      overviewName(target),
+    ]) {
+      assert.equal(stagedBy(name, target), null, `${target.id}: ${name}`);
+    }
+  }
+});
+
+test("a temporary file an earlier scan left is removed from every directory this scan writes, and counted", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  const pid = gone();
+  const left = (target) => [stagedName(areaName(target, a.id), pid), stagedName(overviewName(target), pid, "fedcba9876543210")].sort();
+  // Not this tool's by its name, so not this tool's to remove.
+  const kept = (target) => [stagedName(`anatomiya-my-notes${target.ext}`, pid), stagedName(overviewName(target), pid, "short"), `${overviewName(target)}.tmp`];
+  const plant = () => {
+    for (const target of EVERY_TARGET) for (const name of [...left(target), ...kept(target)]) writeFileSync(join(dir, target.dir, name), "half a map\n");
+  };
+  plant();
+
+  const dry = writeMap(result(dir, [a]), { dryRun: true });
+  assert.deepEqual(dry.staged, left(TARGETS.claude));
+  for (const target of OTHERS) assert.deepEqual(dry.targets[target.id].remove, left(target), target.id);
+  for (const target of EVERY_TARGET) assert.equal(namesIn(dir, target).length, 2 + 2 + 3, "a dry run removes nothing");
+
+  const plan = writeMap(result(dir, [a]));
+  assert.deepEqual(plan.staged, left(TARGETS.claude));
+  assert.deepEqual(plan.remove, [], "no area file went");
+  for (const target of EVERY_TARGET) assert.deepEqual(namesIn(dir, target), [...mapOf(target, a), ...kept(target)].sort(), target.id);
+  for (const target of OTHERS) assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a), "the record names the map and nothing else");
+
+  // Turned off by name, they go with the map; in a directory no scan was asked to write, they stay.
+  plant();
+  const off = writeMap(result(dir, [a]), { targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(off.targets[target.id].remove, [...mapOf(target, a), ...left(target)]);
+    assert.deepEqual(namesIn(dir, target), kept(target).sort(), target.id);
+  }
+  plant();
+  const plain = writeMap(result(dir, [a]));
+  for (const target of OTHERS) {
+    assert.deepEqual(plain.targets[target.id].remove, [], target.id);
+    assert.deepEqual(namesIn(dir, target), [...left(target), ...kept(target)].sort(), target.id);
+  }
+  // Left out by name again: nothing of the map's is there, and the temporary files still go.
+  const again = writeMap(result(dir, [a]), { targets: ["claude"] });
+  for (const target of OTHERS) {
+    assert.deepEqual(again.targets[target.id].remove, left(target), target.id);
+    assert.deepEqual(namesIn(dir, target), kept(target).sort(), target.id);
+  }
+});
+
+test("a run that read no file of a language removes no temporary file either", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  const pid = gone();
+  for (const target of EVERY_TARGET) writeFileSync(join(dir, target.dir, stagedName(overviewName(target), pid)), "half a map\n");
+  const blind = result(dir, []);
+  blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+
+  const plan = writeMap(blind);
+
+  assert.equal(plan.blind, true);
+  assert.deepEqual(plan.staged, []);
+  for (const target of OTHERS) assert.deepEqual(plan.targets[target.id].remove, [], target.id);
+  for (const target of EVERY_TARGET) assert.ok(namesIn(dir, target).includes(stagedName(overviewName(target), pid)), target.id);
+});
+
+test("a scan that clears a target whose overview was deleted takes the temporary files with the area files", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  const left = stagedName(areaName(cursor, a.id), gone());
+  writeFileSync(join(dir, cursor.dir, left), "half a map\n");
+  // Deleting the overview by hand is how a person turns the target off.
+  rmSync(join(dir, cursor.dir, overviewName(cursor)));
+
+  const plan = writeMap(result(dir, [a]));
+
+  assert.deepEqual(plan.targets.cursor.remove, [areaName(cursor, a.id), left]);
+  assert.deepEqual(namesIn(dir, cursor), []);
+});
+
+test("a temporary file a running scan staged is left for that scan to rename", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  for (const target of EVERY_TARGET) writeFileSync(join(dir, target.dir, stagedName(overviewName(target), process.pid)), "half a map\n");
+
+  const plan = writeMap(result(dir, [a]));
+
+  assert.deepEqual(plan.staged, []);
+  for (const target of EVERY_TARGET) assert.ok(namesIn(dir, target).includes(stagedName(overviewName(target), process.pid)), target.id);
+});
+
+function nonFileAtAStagedName(t, make) {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  const name = (target) => stagedName(areaName(target, a.id), gone());
+  const at = EVERY_TARGET.map((target) => join(dir, target.dir, name(target)));
+  for (const path of at) make(path);
+  const shapes = () => at.map((path) => lstatSync(path).mode);
+  const before = shapes();
+
+  for (const targets of [null, ALL, ["claude"]]) {
+    const plan = writeMap(result(dir, [a]), { targets });
+    assert.deepEqual(plan.staged, []);
+    for (const target of OTHERS) assert.deepEqual(plan.targets[target.id].remove.filter((n) => n.includes(".tmp-")), [], target.id);
+    assert.deepEqual(shapes(), before, "the entry is what it was");
+  }
+}
+
+test("a directory at a temporary file's name is never removed", (t) => {
+  nonFileAtAStagedName(t, (path) => {
+    mkdirSync(path);
+    writeFileSync(join(path, "inside.md"), "# somebody's\n");
+  });
+});
+
+test("a link at a temporary file's name is never removed, nor what it leads to", needsSymlinks, (t) => {
+  const outside = elsewhere(t);
+  writeFileSync(join(outside, "theirs.md"), "# somebody's\n");
+  nonFileAtAStagedName(t, (path) => symlinkSync(join(outside, "theirs.md"), path));
+  assert.equal(readFileSync(join(outside, "theirs.md"), "utf8"), "# somebody's\n");
+});
+
+test("a fifo at a temporary file's name is never removed", needsPosixSpecialFiles, (t) => {
+  nonFileAtAStagedName(t, (path) => execFileSync("mkfifo", [path]));
 });
 
 test("a target directory that cannot be written is refused by name before a dry run answers", needsPosixPermissions, (t) => {

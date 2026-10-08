@@ -312,6 +312,20 @@ test("the tail of every rule file listing agrees with its count", () => {
   );
 });
 
+test("temporary files an earlier scan left are counted apart from the area files that went", () => {
+  const one = scanSummary(result(), plan({ staged: ["anatomiya-overview.md.tmp-1-0123456789abcdef"] }));
+  assert.equal(one.stagedRemoved, 1);
+  assert.equal(one.removed, 0);
+  assert.ok(scanLines(one).includes("1 temporary file an earlier scan left in .claude/rules was removed"), scanLines(one).join("\n"));
+  const many = scanSummary(result(), plan({ staged: ["a", "b"], remove: ["anatomiya-area-1.md"] }), { dryRun: true });
+  assert.ok(scanLines(many).includes("2 temporary files an earlier scan left in .claude/rules would be removed"));
+  assert.ok(scanLines(many).includes("1 area file would be removed: its area is gone or states nothing"));
+  assert.ok(scanLines({ ...many, dryRun: false }).includes("2 temporary files an earlier scan left in .claude/rules were removed"));
+  // None left, none said, and the record has no key for it.
+  assert.equal("stagedRemoved" in scanSummary(result(), plan()), false);
+  assert.equal("stagedRemoved" in scanSummary(result(), plan({ staged: [] })), false);
+});
+
 test("one removed area file and one default-matching claim read at one", () => {
   const lines = scanLines(summary({ removed: 1, claims: { stated: 3, matchingDefault: 1, total: 9 } }));
 

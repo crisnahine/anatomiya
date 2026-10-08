@@ -144,6 +144,19 @@ export function isMapName(name, target = TARGETS.claude) {
 
 const AREA_STEM = new RegExp(`^${PREFIX}area-[0-9a-f]{8}$`);
 
+// What `writeTemp` puts after the path it stages a file for: its process id, then sixteen hex digits.
+const STAGED = /\.tmp-(\d+)-[0-9a-f]{16}$/;
+
+/**
+ * The process that staged a temporary file of the map's, read off the file's
+ * name, or null for any other name: a name a scan gives a file in this
+ * directory, then what the stager adds to it.
+ */
+export function stagedBy(name, target = TARGETS.claude) {
+  const added = STAGED.exec(name);
+  return added !== null && isMapName(name.slice(0, added.index), target) ? Number(added[1]) : null;
+}
+
 /** What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`. */
 export const folded = (name) => name.toUpperCase().toLowerCase();
 
@@ -200,6 +213,8 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
     occupied: [],
     // Every name the listing holds, as the directory spells it.
     entries: [],
+    // The regular files a scan staged here and neither renamed nor removed.
+    staged: [],
     dir: null,
     escaped: false,
     // Whether the directory could be listed at all. `false` beside four empty
@@ -225,6 +240,8 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
   }
   out.listed = true;
   out.entries = names;
+  // Asked of the entry itself: a link, a directory or a fifo under such a name is somebody's.
+  out.staged = names.filter((n) => stagedBy(n, target) !== null && isPlainFile(join(dir, n))).sort();
 
   const read = (n) => n.endsWith(target.ext) && (isClaude(target) || n.startsWith(PREFIX));
   for (const name of names.filter(read).sort()) {
@@ -534,6 +551,14 @@ export function leafReplaceable(path) {
     return !lstatSync(path).isDirectory();
   } catch {
     return true;
+  }
+}
+
+function isPlainFile(path) {
+  try {
+    return lstatSync(path).isFile();
+  } catch {
+    return false;
   }
 }
 
