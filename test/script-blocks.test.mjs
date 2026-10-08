@@ -72,6 +72,19 @@ test("vue: CDATA, a processing instruction and a declaration are passed over who
   }
 });
 
+test("vue: a comment ends at the first `-->`, and the two dashes that open it can be the two that close it", () => {
+  const block = "<script setup>\nconst a = 1\n</script>";
+  const kept = [js("\nconst a = 1\n")];
+  for (const short of ["<!-->", "<!--->"]) {
+    assert.deepEqual(read(`${short}\n${block}\n`, "vue"), kept, short);
+    assert.deepEqual(read(`<template>${short}</template>\n${block}\n`, "vue"), kept, `${short} in a template`);
+    assert.deepEqual(read(`${short}<script>one()</script>-->\n${block}\n`, "vue"), [js("one()"), ...kept], `${short} before a block`);
+  }
+  // One dash is no end: the comment runs on.
+  assert.deepEqual(read(`<!--->\n${block}\n`.replace("<!--->", "<!-- ->"), "vue"), []);
+  assert.deepEqual(read(`<!----><script>one()</script>\n${block}\n`, "vue"), [js("one()"), ...kept]);
+});
+
 test("vue: a top-level block ends at its name as written, so one named with an upper-case letter or an underscore never ends", () => {
   const good = "\n<script setup>good()</script>";
   // The compiler holds each character of an end tag, its case bit set, against the name as written.
@@ -359,9 +372,9 @@ test("a megabyte of markup is scanned in linear time", () => {
   scanFiveTimes(`${markup}\n${script}`, "svelte", [js("const a = 1;")]);
 });
 
-test("a megabyte of CDATA, processing instructions or declarations is scanned in linear time", () => {
+test("a megabyte of CDATA, processing instructions, declarations or short comments is scanned in linear time", () => {
   const script = "<script>const a = 1;</script>";
-  for (const [open, close] of [["<![CDATA[", "]]>"], ["<?x ", ">"], ["<!x ", ">"], ["<![CDAT", ">"]]) {
+  for (const [open, close] of [["<![CDATA[", "]]>"], ["<?x ", ">"], ["<!x ", ">"], ["<![CDAT", ">"], ["<!--", ">"], ["<!---", ">"]]) {
     const closed = (open + close).repeat(Math.ceil(1_000_000 / (open + close).length));
     scanFiveTimes(`${closed}\n${script}`, "vue", [js("const a = 1;")]);
     scanFiveTimes(`<template>${closed}</template>\n${script}`, "vue", [js("const a = 1;")]);

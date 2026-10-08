@@ -378,9 +378,14 @@ export const ALL_DIMENSIONS = [
 // A visitor row's `run` walks the tree alone, on its engine's walk, for the
 // callers that ask one row at a time: the check, and the tests. Here, where the
 // tree rows meet, because the parse workers read this list and must not reach
-// `registry.mjs`.
+// `registry.mjs`. Every row is asked its walk, one that brings a `run` of its
+// own too: it is handed one engine's trees like any other, and listing a
+// language of a second it loaded and crashed that engine's parser on each file.
 const WALKS = { oxc: walk, prism: walkRuby, "tree-sitter": walkTree };
-for (const d of ALL_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, walkFor(d));
+for (const d of ALL_DIMENSIONS) {
+  const walkOf = walkFor(d);
+  if (d.visitor) d.run = fromVisitor(d.visitor, walkOf);
+}
 
 /**
  * The walk a row's engine reads its tree with. Refused at import where there
