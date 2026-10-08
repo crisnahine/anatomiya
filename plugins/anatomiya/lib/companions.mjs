@@ -431,8 +431,8 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
   return byStem;
 }
 
-// Most votes first. Code units on a tie, not locale: the tie decides a rendered root, and ICU differs by machine.
-const byVotes = (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
+/** Orders `[name, votes]` pairs, most votes first. Code units on a tie, not locale: the tie decides a rendered root, and ICU differs by machine. */
+export const byVotes = (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
 
 /**
  * `{ with, of, root }`: how many of the root's source files have a namesake

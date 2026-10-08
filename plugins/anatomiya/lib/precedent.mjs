@@ -70,6 +70,13 @@ function testedTail(rel) {
   return (TEST_ROOTS.has(parts[0]) ? parts.slice(1) : parts).join("/");
 }
 
+const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
+
+// Every count the reason prints, as a number: a record is a file a repository can commit, and a count that is text prints as written.
+const countsAreNumbers = (r) =>
+  isCount(r.companions.with) && isCount(r.companions.of) && (r.companions.inline === undefined || isCount(r.companions.inline)) &&
+  Array.isArray(r.tests ?? []) && (r.tests ?? []).every((t) => isCount(t?.files) && (t.under === undefined || isCount(t.under)));
+
 /**
  * The source root this test's placement is judged against, or null.
  *
@@ -101,13 +108,6 @@ function testedTail(rel) {
  * one change was held to its parent's ratio, and one whose test sat in a
  * `tests` of its own still was, since that directory holds none of the source.
  */
-const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
-
-// Every count the reason prints, as a number: a record is a file a repository can commit, and a count that is text prints as written.
-const countsAreNumbers = (r) =>
-  isCount(r.companions.with) && isCount(r.companions.of) && (r.companions.inline === undefined || isCount(r.companions.inline)) &&
-  Array.isArray(r.tests ?? []) && (r.tests ?? []).every((t) => isCount(t?.files) && (t.under === undefined || isCount(t.under)));
-
 function coveredRoot(rel, roots) {
   const parts = testedTail(rel).split("/").filter(Boolean);
   const family = namedFamily(rel);

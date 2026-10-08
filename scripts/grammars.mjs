@@ -112,11 +112,11 @@ export function check(root) {
     else if (vendored !== entry.sha256) problems.push(`${at}/${file} does not hash to its manifest entry`);
     const installed = sha256Of(installedIn(root, grammar));
     const named = `node_modules/${grammar.package}/${grammar.source}`;
-    if (installed === null) problems.push(`${named} is not installed, so nothing holds ${file} to it; run npm ci`);
+    if (installed === null) problems.push(`${named} is not installed, so nothing holds ${file} to it; run npm ci --ignore-scripts`);
     else if (installed !== entry.sha256) problems.push(`${named} does not hash to the manifest entry for ${entry.id}`);
     // A lockfile moved with no install after it leaves the old package's file here under the new version.
     const has = installed === null ? version : manifestVersion(join(root, "node_modules", grammar.package), grammar.package);
-    if (has !== version) problems.push(`installed ${grammar.package} is ${has ?? "unreadable"}, the lockfile says ${version}: run npm ci`);
+    if (has !== version) problems.push(`installed ${grammar.package} is ${has ?? "unreadable"}, the lockfile says ${version}: run npm ci --ignore-scripts`);
   }
   for (const id of Object.keys(GRAMMARS)) {
     if (!listed.has(`${id}.wasm`)) problems.push(`${id} has no manifest entry in ${at}/${MANIFEST}`);
