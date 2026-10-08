@@ -287,38 +287,76 @@ const CASES = {
   },
 };
 
-// Each function asks where it sits among its siblings, and a Go method which methods its type has: a search for every
-// one makes twice the functions cost four times as long. The row is timed alone, on a tree already parsed, so its
-// walk is all the clock sees. Each shape as [language, the smaller count, the source of one function, what the file opens with].
-const MANY_FUNCTIONS = {
-  "an attribute that takes each out of the documented surface": ["rust", 40_000, (i) => `#[cfg(test)]\npub fn f${i}() {}\n`],
-  "a doc comment and an attribute above each": ["rust", 40_000, (i) => `/// Runs.\n#[inline]\npub fn f${i}() {}\n`],
-  // Smaller, since the search this one guards took 2,096 ms at 10,000 methods and 13,488 ms at 20,000.
-  "a method of one type named as a sorting interface names it": ["go", 5_000, () => "func (t T) Len() int { return 0 }\n", "package a\n\n"],
+// Each function asks where it sits among its siblings, and a search for every one reads every sibling ahead of it:
+// twice the functions, four times the reads. A clock does not tell the two apart at 40,000 functions (3.0 to 3.5
+// with the search, 1.7 to 2.4 without, on a loaded machine), so the reads are counted. Each shape as
+// [language, the sites one function makes, its source, what the file opens with, what it closes with].
+const MANY_SIBLINGS = {
+  "an attribute that takes each out of the documented surface": ["rust", 0, (i) => `#[cfg(test)]\npub fn f${i}() {}\n`],
+  "a doc comment and an attribute above each": ["rust", 1, (i) => `/// Runs.\n#[inline]\npub fn f${i}() {}\n`],
+  "a conditional that opens on each, under a doc comment": [
+    "csharp",
+    1,
+    (i) => `    /// <summary>Runs.</summary>\n#if DEBUG\n    public void Run${i}() { }\n#endif\n`,
+    "class A\n{\n",
+    "}\n",
+  ],
 };
+const FEW_SIBLINGS = 500;
 
-for (const [shape, [lang, few, item, head = ""]] of Object.entries(MANY_FUNCTIONS)) {
-  test(`public_doc_comment reads a file of many functions in time linear in them: ${shape}`, async () => {
-    const row = TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment");
-    const rel = `src/a.${declOf(lang).exts[0]}`;
-    const parsed = new Map();
-    for (const count of [few, 2 * few]) {
-      const source = head + Array.from({ length: count }, (_, i) => item(i)).join("");
-      // No row run by the parse: the tree is all that is wanted of it.
-      parsed.set(count, { source, program: (await parseTreeFile(source, rel, lang, { withProgram: true, rows: [] })).program });
-    }
-    const read = (count) => {
-      const { source } = parsed.get(count);
-      // A tree of its own for each timing, so none reads what another built.
-      const program = structuredClone(parsed.get(count).program);
-      return () => row.run(program, () => {}, { source, rel });
-    };
+const docRow = () => TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment");
 
-    const ratio = doublingRatio(read, few);
+/** How many times the row reads any node's list of children, over a file of this many functions. */
+async function childReads(lang, count, item, head = "", tail = "") {
+  const source = head + Array.from({ length: count }, (_, i) => item(i)).join("") + tail;
+  const rel = `src/a.${declOf(lang).exts[0]}`;
+  const { program } = await parseTreeFile(source, rel, lang, { withProgram: true, rows: [] });
+  let reads = 0;
+  const counted = { get: (list, key, self) => (reads++, Reflect.get(list, key, self)) };
+  const work = [program];
+  while (work.length) {
+    const node = work.pop();
+    for (const child of node.children) work.push(child);
+    node.children = new Proxy(node.children, counted);
+  }
+  let sites = 0;
+  docRow().run(program, () => sites++, { source, rel });
+  return { reads, sites };
+}
 
-assert.ok(ratio < LINEAR, `twice the functions took ${ratio.toFixed(2)} times as long`);
+for (const [shape, [lang, each, item, head, tail]] of Object.entries(MANY_SIBLINGS)) {
+  test(`public_doc_comment reads each function's siblings a number of times that does not grow with the file: ${shape}`, async () => {
+    const fewer = await childReads(lang, FEW_SIBLINGS, item, head, tail);
+    const more = await childReads(lang, 2 * FEW_SIBLINGS, item, head, tail);
+
+    assert.ok(more.reads <= 2 * fewer.reads, `twice the functions read their siblings ${more.reads} times against ${fewer.reads}`);
+    // The row read every function: a file it passed over would count as linear too.
+    assert.deepEqual([fewer.sites, more.sites], [each * FEW_SIBLINGS, each * 2 * FEW_SIBLINGS]);
   });
 }
+
+// A Go method asks which methods its type has, and a search for every one took 2,096 ms at 10,000 methods and 13,488 ms
+// at 20,000. The row is timed alone, on a tree already parsed, so its walk is all the clock sees.
+test("public_doc_comment reads a file of many functions in time linear in them: a method of one type named as a sorting interface names it", async () => {
+  const few = 5_000;
+  const rel = `src/a.${declOf("go").exts[0]}`;
+  const parsed = new Map();
+  for (const count of [few, 2 * few]) {
+    const source = `package a\n\n${"func (t T) Len() int { return 0 }\n".repeat(count)}`;
+    // No row run by the parse: the tree is all that is wanted of it.
+    parsed.set(count, { source, program: (await parseTreeFile(source, rel, "go", { withProgram: true, rows: [] })).program });
+  }
+  const read = (count) => {
+    const { source } = parsed.get(count);
+    // A tree of its own for each timing, so none reads what another built.
+    const program = structuredClone(parsed.get(count).program);
+    return () => docRow().run(program, () => {}, { source, rel });
+  };
+
+  const ratio = doublingRatio(read, few);
+
+  assert.ok(ratio < LINEAR, `twice the functions took ${ratio.toFixed(2)} times as long`);
+});
 
 const TESTLESS = ["public_doc_comment", "declared_return_type"];
 
