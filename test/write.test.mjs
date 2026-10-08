@@ -1644,7 +1644,7 @@ const BEFORE_PLAN = {
   held: [],
   blind: false,
 };
-// `staged` and `storeStaged` came after: the temporary files an earlier scan left, none where no scan stopped.
+// `staged` and `storeStaged` are the temporary files an earlier scan left: none where no scan stopped.
 const BEFORE_KEYS = ["write", "remove", "staged", "storeStaged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
 const BEFORE_AREA = `---
 generator: anatomiya
@@ -2163,7 +2163,7 @@ async function refusingToStage(t) {
 
 const PERMIT = "fix its permissions";
 
-test("a file that cannot be staged in a directory the scan did not name leaves that directory alone, and Claude Code's map is written", async (t) => {
+test("a file that cannot be staged in a directory the scan did not name stops that directory alone, and Claude Code's map is written", async (t) => {
   const lock = await refusingToStage(t);
   const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
   for (const target of OTHERS) {
