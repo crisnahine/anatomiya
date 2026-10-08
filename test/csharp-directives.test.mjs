@@ -213,6 +213,7 @@ test("conditionals that do not balance are not guessed at", () => {
 });
 
 test("the module is handed a string and loads nothing but the blanking both parser children share", () => {
-  const src = readFileSync(join(ANATOMIYA, "lib", "csharp-directives.mjs"), "utf8");
+  // One line ending whatever the checkout's: `^` also matches between a carriage return and its line feed.
+  const src = readFileSync(join(ANATOMIYA, "lib", "csharp-directives.mjs"), "utf8").replace(/\r\n/g, "\n");
   assert.deepEqual(src.match(/^\s*import[\s("'{*].*$|\brequire\s*\(/gm), ['import { blank } from "./blank.mjs";']);
 });

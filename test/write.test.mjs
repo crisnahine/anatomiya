@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, exist
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
@@ -2180,16 +2180,19 @@ test("a person's file at a name a target that is merely on writes is left as it 
   }
 });
 
-// Whether this volume answers for a name spelled in another case, as macOS and Windows do by default.
-const FOLDS = (() => {
+// Whether this volume answers for one name where the other was written. Asked
+// of each pair: APFS folds the long s onto `s`, NTFS folds ASCII case alone, ext4 nothing.
+const foldsOnto = (written, asked) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-fold-"));
   try {
-    writeFileSync(join(dir, "probe"), "");
-    return existsSync(join(dir, "PROBE"));
+    writeFileSync(join(dir, written), "");
+    return existsSync(join(dir, asked));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-})();
+};
+// For two names apart by ASCII case, as macOS and Windows fold by default.
+const FOLDS = foldsOnto("probe", "PROBE");
 
 test("an overview spelled in another case is somebody's file: the target reads off, and naming it refuses", (t) => {
   const a = area("src/services");
@@ -2231,7 +2234,7 @@ test("an entry spelled as an area's name in another case holds that name", (t) =
       name.replace(b.id, b.id.toUpperCase()),
       name.replace(PREFIX, "Anatomiya-"),
       name.slice(0, -target.ext.length) + target.ext.toUpperCase(),
-      // The long s, which APFS folds onto `s` and a plain lower-casing does not.
+      // The long s, which APFS folds onto `s`, and neither NTFS nor a plain lower-casing does.
       name.replace("area", "area".replace("a", "A")).replace(target.ext, target.ext.replace("s", "ſ")),
     ];
   };
@@ -2244,7 +2247,7 @@ test("an entry spelled as an area's name in another case holds that name", (t) =
         writeMap(result(dir, [a, b]), { targets: ["claude", target.id] });
         rmSync(join(dir, target.dir, areaName(target, b.id)));
         writeFileSync(join(dir, target.dir, theirs), body);
-        assert.equal(existsSync(join(dir, target.dir, areaName(target, b.id))), FOLDS, `${said}: the control`);
+        assert.equal(existsSync(join(dir, target.dir, areaName(target, b.id))), foldsOnto(theirs, areaName(target, b.id)), `${said}: the control`);
         const held = [theirs, ...mapOf(target, a)].sort();
 
         for (const dryRun of [true, false]) {
@@ -3201,8 +3204,9 @@ test("nothing is removed until every file has been renamed into place", async (t
   assert.deepEqual(events, [...Array(renames).fill("renameSync"), "unlinkSync", "unlinkSync", "unlinkSync"], "the record, its layout file and two files in each directory, then one orphan in each");
 });
 
-// The id of a process that has run and gone, and sixteen hex digits, as the stager spells them.
-const gone = () => spawnSync(process.execPath, ["-e", ""]).pid;
+// A process id no system gives, since Windows hands a freed one to the next
+// process, and sixteen hex digits, as the stager spells them.
+const gone = () => 2 ** 22 + 7;
 const stagedName = (name, pid, hex = "0123456789abcdef") => `${name}.tmp-${pid}-${hex}`;
 const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
 
