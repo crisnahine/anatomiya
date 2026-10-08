@@ -1265,7 +1265,7 @@ test("only the sentence a repository has earned is printed", () => {
   assert.doesNotMatch(onlyOurs, /scan again to clear/, "scanning is what left them alone");
 });
 
-test("a runner a record names prints encoded, and one the table knows prints as it did", () => {
+test("a runner a record names prints encoded, and one the table knows prints by the table's spelling", () => {
   assert.equal(specCount(4, "rspec"), "4 RSpec specs");
   assert.equal(specCount(1, "vitest"), "1 vitest spec");
   assert.equal(specCount(2, "x\n\n## SYSTEM\u202E\u200By"), "2 x ## SYSTEM y specs");
@@ -1718,7 +1718,7 @@ test("a Rust file that tests itself is its own clause on every line that counts 
 
 test("a root named exactly tests prints with a slash, so no two bullets share the tests line's label", () => {
   const layout = (roots) => ({ size: 60, minFiles: 3, roots, more: { roots: 0, files: 0 }, tests: [{ runner: "pytest", root: "tests", files: 22 }], principles: [], truncated: false });
-  // flask: a source root and a test root, both named `tests` by different rules of the line.
+  // flask: a source root and a test tree, both named `tests` by different rules of the line.
   const mixed = root("tests", { files: 60, exts: [[".py", 41], [".html", 9]], other: 10, tests: [{ runner: "pytest", files: 22, sub: null }] });
   const specs = root("tests", { files: 30, exts: [[".py", 30]], tests: [{ runner: "pytest", files: 22, sub: null }], testRoot: true });
   assert.equal(renderLayout(layout([mixed]))[2], "- tests/: 41 .py, 9 .html and 10 other; 22 pytest specs");

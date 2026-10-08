@@ -3463,6 +3463,20 @@ test("a temporary file a running scan staged is left for that scan to rename", (
   for (const target of EVERY_TARGET) assert.ok(namesIn(dir, target).includes(stagedName(overviewName(target), process.pid)), target.id);
 });
 
+test("a temporary file staged by a process this user may not signal is left, since that process is running", needsPosixPermissions, (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  // The first process of the system, which answers an ordinary user's signal with EPERM.
+  const at = [...EVERY_TARGET.map((target) => join(dir, target.dir, stagedName(overviewName(target), 1))), join(dir, STORE, stagedName("facts.json", 1))];
+  for (const path of at) writeFileSync(path, "half a map\n");
+
+  const plan = writeMap(result(dir, [a]), { targets: ALL });
+
+  assert.deepEqual([plan.staged, plan.storeStaged], [[], []]);
+  for (const path of at) assert.equal(existsSync(path), true, path);
+});
+
 function nonFileAtAStagedName(t, make) {
   const dir = workspace(t);
   const a = area("src/services");
@@ -3551,21 +3565,21 @@ test("a temporary file an earlier scan left in the store is removed, and nothing
   const plant = () => {
     for (const name of [...left, ...kept]) writeFileSync(join(dir, STORE, name), "{}\n");
   };
-  const held = () => readdirSync(join(dir, STORE)).filter((name) => name.includes(".tmp")).sort();
+  const temps = () => readdirSync(join(dir, STORE)).filter((name) => name.includes(".tmp")).sort();
   plant();
 
   const dry = writeMap(result(dir, [a]), { dryRun: true });
   assert.deepEqual(dry.storeStaged, left);
-  assert.deepEqual(held(), [...left, ...kept].sort(), "a dry run removes nothing");
+  assert.deepEqual(temps(), [...left, ...kept].sort(), "a dry run removes nothing");
 
   const blind = result(dir, []);
   blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
   assert.deepEqual(writeMap(blind).storeStaged, []);
-  assert.deepEqual(held(), [...left, ...kept].sort(), "nor does a run that read no file of a language");
+  assert.deepEqual(temps(), [...left, ...kept].sort(), "nor does a run that read no file of a language");
 
   const plan = writeMap(result(dir, [a]));
   assert.deepEqual(plan.storeStaged, left);
-  assert.deepEqual(held(), [...kept].sort());
+  assert.deepEqual(temps(), [...kept].sort());
   assert.deepEqual(writeMap(result(dir, [a])).storeStaged, []);
 });
 

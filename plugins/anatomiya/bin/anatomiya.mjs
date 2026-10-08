@@ -361,7 +361,10 @@ if (opts.help) {
       // A missing repository, an unreadable tree or a git that will not run are
       // all ordinary conditions here, and a stack trace is not what the caller
       // needs.
-      console.error(`anatomiya: ${err && err.message ? err.message : String(err)}`);
+      // The sentence can quote a path or a ref the caller typed, so each line the
+      // tool wrote is printed as `refuse` prints its own.
+      const lines = err?.lines ?? [err && err.message ? err.message : String(err)];
+      console.error(`anatomiya: ${lines.map(locator).join("\n")}`);
       process.exitCode = 1;
     }
   }

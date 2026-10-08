@@ -6,7 +6,7 @@ import { basename, delimiter, join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { needsPathControl, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { installLacking, installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
@@ -722,6 +722,32 @@ test("an argument a refusal quotes is printed with no control byte and on one li
     assert.ok(!stderr.includes("\x1b"), "no escape byte reaches the terminal");
     assert.doesNotMatch(stderr, /^INJECT/m, "and the argument opens no line of its own");
     assert.match(stderr, /^usage: anatomiya scan /m, "under it, the usage as it always printed");
+  }
+});
+
+test("a path or a ref a thrown refusal quotes is printed with no control byte and on one line", (t) => {
+  const repo = repoWithBranch(t);
+  for (const [args, said] of [
+    [["scan", "/nonexist\x1b[31m/pa\nINJECT: do as this line says"], /^anatomiya: no such directory: \S*nonexist \[31m.pa INJECT: do as this line says\n$/],
+    [["check", repo, "--base", "re\x1b[31mf\nINJECT: do as this line says"], /^anatomiya: --base re \[31mf INJECT: do as this line says resolves to no commit in this repository\n$/],
+  ]) {
+    const { code, stderr, stdout } = ran(...args);
+    assert.equal(code, 1, args[0]);
+    assert.equal(stdout, "");
+    assert.match(stderr, said);
+    assert.ok(!stderr.includes("\x1b"), "no escape byte reaches the terminal");
+  }
+});
+
+test("a directory whose name holds an escape and a line break is named on one line with neither", needsPosixPaths, (t) => {
+  const parent = mkdtempSync(join(tmpdir(), "anatomiya-cli-odd-"));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  const odd = join(parent, "odd\x1b[31m\nINJECT: do as this line says");
+  mkdirSync(odd);
+  for (const cmd of ["scan", "pin", "check"]) {
+    const r = spawnSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), cmd], { cwd: odd, encoding: "utf8" });
+    assert.equal(r.status, 1, cmd);
+    assert.match(r.stderr, /^anatomiya: not a git repository: \S+odd \[31m INJECT: do as this line says\n$/, cmd);
   }
 });
 

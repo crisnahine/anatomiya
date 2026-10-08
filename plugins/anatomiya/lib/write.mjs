@@ -511,14 +511,14 @@ export function commitMap(root, plan) {
       return t !== undefined && !t.named ? t : null;
     };
     // The record once more, naming in each such directory the files still on disk.
-    const settle = (left) => {
-      const kept = Object.fromEntries(Object.entries(names).map(([id, now]) => [id, left.has(id) ? plan.targets[id].was : now]));
+    const settle = (stopped) => {
+      const kept = Object.fromEntries(Object.entries(names).map(([id, now]) => [id, stopped.has(id) ? plan.targets[id].was : now]));
       writePair(storeDir, factsJson(plan.result, kept), plan.result.layout);
     };
-    const left = replaceAll(staged, removals, { record: factsPath, was: readLayout(root), leftover, spared, settle }, stillOwn, said);
-    if (left.size === 0) return plan;
-    const stopped = ([id, reason]) => [id, untouchedPlan({ target: TARGETS[id], state: "unknown", reason, remedy: UNLOCK, on: false, unwritable: true }, plan.targets[id].was)];
-    return { ...plan, targets: { ...plan.targets, ...Object.fromEntries([...left].map(stopped)) } };
+    const stopped = replaceAll(staged, removals, { record: factsPath, was: readLayout(root), leftover, spared, settle }, stillOwn, said);
+    if (stopped.size === 0) return plan;
+    const unwritten = ([id, reason]) => [id, untouchedPlan({ target: TARGETS[id], state: "unknown", reason, remedy: UNLOCK, on: false, unwritable: true }, plan.targets[id].was)];
+    return { ...plan, targets: { ...plan.targets, ...Object.fromEntries([...stopped].map(unwritten)) } };
   } catch (err) {
     for (const [tmp] of staged) quietUnlink(tmp);
     // Deepest first, and only while empty: `rmdir` refuses anything else.
@@ -585,8 +585,8 @@ function makeOwnDirectory(at, rel, made) {
  * path for the sentence that failure gets.
  *
  * Where `pair.spared` answers for the path with a target, that failure stops
- * the target's directory alone: what was replaced there is put back, the rest
- * of it is skipped, and `pair.settle` writes the record again to say so. A
+ * the target's directory alone: what was replaced there is put back, nothing
+ * more is done there, and `pair.settle` writes the record again to say so. A
  * permission in a directory another tool owns may not stop Claude Code's map.
  * Answers the targets stopped that way, each with what stopped it.
  */
@@ -596,8 +596,8 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
   const kept = removals.filter((path) => !pair.leftover.has(path));
   const before = new Map([...staged.map(([, path]) => path), ...kept].map((p) => [p, previousBytes(p)]));
   const undo = [];
-  const left = new Map();
-  const skipped = (path) => left.has(pair.spared(path)?.id);
+  const stopped = new Map();
+  const past = (path) => stopped.has(pair.spared(path)?.id);
   // Put one directory back and go on without it, or throw for the whole scan to be put back.
   const stop = (err, path) => {
     const t = pair.spared(path);
@@ -615,11 +615,11 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
       undo.splice(i, 1);
     }
     for (const [tmp, to] of staged) if (pair.spared(to) === t) quietUnlink(tmp);
-    left.set(t.id, err.locked);
+    stopped.set(t.id, err.locked);
   };
   try {
     for (const [tmp, path] of staged) {
-      if (skipped(path)) continue;
+      if (past(path)) continue;
       stillOwn(path);
       try {
         renameSync(tmp, path);
@@ -632,7 +632,7 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
       undo.push([path, before.get(path)]);
     }
     for (const path of removals) {
-      if (skipped(path)) continue;
+      if (past(path)) continue;
       stillOwn(path);
       try {
         unlinkSync(path);
@@ -644,14 +644,14 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
       // A leftover has no bytes here, which the put-back reads as one to leave gone.
       undo.push([path, before.get(path)]);
     }
-    if (left.size > 0) {
+    if (stopped.size > 0) {
       try {
-        pair.settle(left);
+        pair.settle(stopped);
       } catch (err) {
         throw lockedFile(err, said(pair.record), "replaced");
       }
     }
-    return left;
+    return stopped;
   } catch (err) {
     let lost = 0;
     for (const [path, previous] of undo.reverse()) {
