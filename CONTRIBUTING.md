@@ -372,8 +372,9 @@ A grammar is built for one language version, its ABI, and a runtime reads a rang
 each grammar's. Java, Rust and Kotlin are at 14 and Python, PHP, Go and C# at 15, so those three are
 the first a runtime that raises its floor turns away. The test that fails then is `every vendored
 grammar loads, reports the manifest's ABI and reads a sample clean` in `test/grammars.test.mjs`.
-On a user's machine `doctor` names the file with both numbers, `java.wasm is language version 14
-and this runtime reads 15 through 16`, and a scan reads no file of that language. Dependabot holds
+On a user's machine `doctor` names the files with both numbers, `java.wasm and rust.wasm and
+kotlin.wasm are language version 14 and this runtime reads 15 through 16`, and a scan reads no file
+of those languages. Dependabot holds
 back the grammar packages and not the runtime, so it offers a `web-tree-sitter` update like any
 other: run the suite on it, and move the grammars it turns away before it merges.
 
@@ -417,15 +418,22 @@ A language new to the engine is these sites, in order:
    seven names passes:
    - `README.md`: the opening paragraph, the paragraph on the grammars the plugin carries, the
      list under Staying current, the sentence that counts the rows for each, and under Limits
-     the paragraph and its table
+     the paragraph, its table and the share each language's grammar leaves unread
    - `CONTEXT.md`: Engine and Family
    - `SECURITY.md`: the names beside the grammar packages
-   - this file: `The other seven dev dependencies` and the line for `dimensions-tree.mjs`
+   - `DECISIONS.md`: B60, which names the seven
+   - this file: `The other seven dev dependencies`, the line for `dimensions-tree.mjs`, and the
+     sentence above on which grammars sit at which ABI
    - `plugins/anatomiya/README.md`, and `doctor.md`, `scan.md` and `setup.md` under
      `plugins/anatomiya/commands/`
    - the help text in `plugins/anatomiya/bin/anatomiya.mjs`
    - `docs/how-it-works.md`: the paragraph on the runtime in section 3, the sentence that counts
-     the rows for each, the paragraph under Facets and the Language bullet in section 9
+     the rows for each, the paragraph under Facets, the Language bullet in section 9, the share
+     each grammar leaves unread, the sentence on which languages the notice knows a test by, and
+     the table of test paths
+
+   The list is what `grep -n Kotlin` finds in those files today: run it again for the new name's
+   neighbours before trusting it.
 
 `test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids and fail until the
 new one is in it. Before anything ships, measure how much of three real repositories the grammar

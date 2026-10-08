@@ -103,8 +103,8 @@ scanned by 0.13.4 and by this version.
   language's own tool collects: `_test.go`; `test_*.py`, `*_test.py` and `conftest.py`; under a test
   tree, `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and `*Test.php`
   for PHP. In Rust a `.rs` file directly under a crate's `tests` is a test file with a case in it
-  or none, and so is one holding a `#[test]` that sits under any other `tests` directory or is
-  named `tests.rs`. A test tree is `test`, `tests` and what
+  or none, unless it holds only comments, and so is one holding a `#[test]` that has a `tests`
+  directory anywhere above it or is named `tests.rs`. A test tree is `test`, `tests` and what
   the language's build names one: a Gradle source set ending in `Test`, a .NET project named
   `X.Tests` or `X.Test`, a `Test` or `Tests` directory in PHP. The tests line names the runner: `389
   go test specs`, `505 of 522 pytest specs under tests`, `38 of 40 xunit specs under
