@@ -136,6 +136,9 @@ A test file that answers one source file by carrying its stem. It says that file
 about where its root keeps its tests. Always another file: a Rust source file with a `#[test]`
 function **holds its own tests**, has no namesake test, and is counted apart from the files asked for one.
 A Python package's `__init__.py` is asked for a test of its directory's name, since the file is the package.
+A root's count of them, `63 of 243 have a namesake test`, is taken over the files a test could be
+written for: source this tool reads that holds something and is no test, no story and no declaration
+file, outside every test tree of its family.
 _Avoid_: unit test, matching spec, paired test, sibling test
 
 **Holds its own tests**:

@@ -108,7 +108,11 @@ input like any other, and a ref is rejected if it starts with `-`.
 ### Everything rendered goes through one allowlist encoder
 
 `plugins/anatomiya/lib/encode.mjs` is the only way a repository-controlled value reaches a generated file, or a record
-this tool prints. It is an allowlist, not a denylist, and that distinction is the finding.
+this tool prints. It is an allowlist, not a denylist, and that distinction is the finding. The
+notice before a write goes through it too: the path being written, the directory and the root it
+names, and a runner a record names outside the label table, and a record whose counts are not
+whole numbers is not read. An argument a usage refusal quotes back is printed through it as well,
+on one line with no control byte.
 
 A denylist over control characters misses bidi overrides and zero-width joiners. Those are Unicode
 category Cf, not Cc, so an ASCII control filter passes them untouched, and `JSON.stringify` does not
@@ -258,11 +262,16 @@ leaves a target out of `--targets` removes every regular file there that has one
 names a scan gives (`anatomiya-overview`, or `anatomiya-area-` and eight hex digits), with that
 directory's extension, and carries the key, whether or not the record lists it. A link is never
 removed, and neither is a file under any other name, keyed or not. So the most a repository can have
-removed is a file it shipped under this tool's own name carrying this tool's own key.
+removed is a file it shipped under this tool's own name carrying this tool's own key, or a regular
+file it shipped under such a name plus the suffix a staged file carries, `.tmp-<pid>-<16 hex>`:
+that one is removed with no key asked, where no process of that id is running, by a scan that
+writes or removes in the directory.
 
 A scan that refuses leaves nothing behind. Every refusal above is decided while the plan is made,
 before a directory is created or a byte is written, and a dry run refuses the same way; the
-`.claude/rules` map is not written either. A failure after the writes began puts back every file
+`.claude/rules` map is not written either. A target directory that cannot be written refuses only a
+scan that names the target: a plain scan and a refresh write the `.claude/rules` map, leave that
+directory as it is and say `.cursor/rules could not be written`, with the remedy. A failure after the writes began puts back every file
 already replaced, in every directory, removes the temporary files, and removes a Cursor or Copilot
 directory this run made if it is empty. A map file that is locked or read-only is such a failure,
 and the scan names the file and says to close what holds it or change its mode. On a repository with no map yet, a failure at that stage can
@@ -275,7 +284,9 @@ through that link for each swap they win: a file named exactly as one of the map
 directory of their choosing that the scanning user can write, is removed, or is replaced by a
 generated map file. They do not choose the name and they do not choose the bytes beyond what the map
 already carries from the repository through the encoder. Temporary files staged through such a link
-are removed on the refusal, and stay if the process is killed first.
+can stay, after a refusal as after a kill: the unlink goes through the link and misses. The next
+scan that writes or removes in that directory, or leaves the target out by name, removes them, as
+the removal rules above say.
 
 Deciding whose a file is reads little. In those two directories only entries named `anatomiya-*`
 with that directory's extension are opened, and whose a file is gets decided from its first 1 MiB,

@@ -244,7 +244,9 @@ writes it inside base lists, parameter lists, call chains and initializers. It a
 whose last line is a `#pragma`, `#endregion` or `#nullable` with no line break after it. Read as
 written, 18 of serilog's 216 files and 66 of Newtonsoft.Json's 951 are rejected, 27.7% and 25.9% of
 each repository's lines. The engine parses a `.cs` file its grammar rejects at most twice more, and
-takes a retry only where its tree is clean. The first appends a line break where the file ends
+takes a retry only where its tree is clean. A later attempt starts only while the time spent on the
+file plus one more parse as long as the first stays inside 4 seconds, which is under the 5-second
+clock a file is stopped at, so a rejected file too large for that keeps a retry untried. The first appends a line break where the file ends
 without one, which drops nothing and moves no offset: it reads 23 of Newtonsoft.Json's 66, each
 ending in a `#pragma` line. The second blanks every directive line and every branch of each `#if`
 but the first, in place, so no offset or line moves: it reads 17 of serilog's 18 and the other 43
@@ -1194,7 +1196,9 @@ Three constraints shape the rendering:
 
 - **The overview must be byte-stable between scans with no source change.** The token economics only
   work on a cached read, so there is no timestamp, no duration, and no count that moves per commit.
-- **Each generated file stays under 40 lines.** A rewritten context file does not re-attach inside
+- **Each generated file's body stays under 40 lines.** The bound is the `.claude/rules` file's. A
+  Cursor or Copilot file holds the same body and adds its own lines, so an overview there runs to at
+  most 43 lines and an area file to at most 43. A rewritten context file does not re-attach inside
   one context window, and the change notice truncates head and tail, so a long file loses its middle
   in both copies. This is also why the scan prints a line saying what reaches a running session: the
   overview on its next prompt or tool call, through the echo's digest, and an area file it already
@@ -1302,7 +1306,10 @@ exact name. It is `off` only where that was seen: nothing at the name, or a file
 wrote. Anything that could not be read is `unknown`, because off is what removes a map: a link or
 a non-directory on the path, a path that will not open, an overview that is a link or not a file. A
 scan neither writes nor clears an unknown target, and says so only where the record names files
-there.
+there. One case is always said: a target that is on and whose directory cannot be written. A scan
+that did not name it writes the `.claude/rules` map, exits 0 and prints `.cursor/rules could not be
+written (.cursor/rules is not writable), so nothing there was written or removed: fix its
+permissions, then scan again`. A scan that names it refuses.
 
 The patterns change on the way. A brace set `test/**/*.{js,ts}` works in both readers that were run,
 and is still written as one pattern per extension: Cursor's documentation shows only comma-separated
@@ -1342,11 +1349,16 @@ Areas listing follows suit: `loaded when you read one of its files` for Claude C
 `globs:` names its files`` for Cursor and ``whose `applyTo:` names its files`` for Copilot. An area
 held from an earlier scan is listed and counted for a target only where that directory holds its
 file. The count at the foot names that directory's own files, `Generated files: 4 under
-.cursor/rules/anatomiya-*.mdc`. Two cases change more lines. Where the extra head lines would take a
-Cursor or Copilot overview past 40 lines, the sentences about other files in the directory share one
-line. Where an area has no file there, the `## Areas` count is lower and one more line says how many
-have none. Over 196,608 combinations of the optional lines, rendered for each target, no overview
-passed 40 (A103). An input outside those can pass 40, for Claude's overview too:
+.cursor/rules/anatomiya-*.mdc`. The body is the `.claude/rules` one in all three directories: every budget is taken off Claude
+Code's head and Claude Code's directory, so the roots, the sentences and the number of areas named
+are the same, and a target's own lines are paid on top. A Cursor or Copilot overview is two lines
+longer than Claude Code's, 42 where that one is 40, and three where an area has no file there: the
+`## Areas` count is then lower and one more line says how many have none. A directory's own sentences about other files in
+it get the lines Claude Code's listing takes and what its overview leaves under 40, and fold into
+those. In an area file the closing lines sit under the body and take no line from it, so one
+runs to at most 43. Over 196,608 renders of the three overviews with each of 12 optional lines on
+and off, none passed its bound, 40, 43 and 43, and each reached it (A103). An input outside those
+can pass the bound, for Claude's overview too:
 `test/render.test.mjs` renders one at 41, on a shape it says no scan reaches.
 
 The plan is made per target, and all of it before anything is created. The two `.claude`
@@ -1378,6 +1390,11 @@ again before anything is made, after everything is staged, before each rename an
 removal, and a directory that stopped being the repository's own stops the scan in a sentence that
 names it and says whether anything had been replaced yet (`<dir> was replaced by something else
 while the map was being written`).
+
+A temporary file a scan left behind, by a kill or through a directory swapped under it, is removed
+by the next scan that writes or removes in that directory: a regular file named as a map file plus
+`.tmp-<pid>-<16 hex>`, where no process of that id is running. The summary counts the ones under
+`.claude/rules`, `1 temporary file an earlier scan left in .claude/rules was removed`.
 
 A failure at any rename or removal puts back every file already replaced, in every directory, takes
 out the temporary files, and removes a Cursor or Copilot directory this run made if it is empty. Nothing is put back
@@ -1411,11 +1428,17 @@ what turned it on, once. That is a clone that brought a committed overview:
 wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-overview.mdc switched on: `scan --targets claude` switches it off
 ```
 
-`--format json` carries the file as `switchedOnBy` in that target's entry, on that scan alone.
+`--format json` carries the file as `switchedOnBy` in that target's entry, on that scan alone. A
+target's entry there also carries `reason` and `remedy` where it was left alone, the remedy being
+what the text line tells a person to do, and `unwritable` where its directory could not be written.
+`stagedRemoved` counts the temporary files an earlier scan left in `.claude/rules` that this one
+removed, and is absent at none.
 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
-that is on (`.cursor/rules: on, 4 files`), and `pin` leaves the generated names of all three
+that is on (`.cursor/rules: on, 4 files`, counting the files the record names), a second where that
+directory holds other entries under the prefix (`.cursor/rules holds 1 entry named anatomiya-* that a
+scan neither writes nor removes`), and `pin` leaves the generated names of all three
 directories out of its clean-tree test. The record names the files written for each target under an
 optional `targets` key, present only where one was written, with no change of schema (C10).
 
@@ -1576,7 +1599,9 @@ next scan: every file under `.claude/anatomiya/` that is not source, and in `.cl
 `anatomiya-area-<8 hex digits>` with that directory's extension. Where `.claude/rules` is a link to
 another directory in the repository, git tracks the map under that directory, so the rule asks
 there instead, once per scan. Where git says the volume folds case (`core.ignorecase`), each of
-those directories is matched in any case, since a scan writes into `.Cursor/Rules` where that is the
+those directories is matched in any case. Git is asked only when a tracked path is a map name under
+one of those directories in another letter case, so a repository with no such path starts no git
+process for it. The directories are matched that way since a scan writes into `.Cursor/Rules` where that is the
 spelling on disk; the file's name is held to its own spelling. It is decided by the name alone, whether or not that target is on, and
 no file is opened for it, so a hand-written file under one of those exact names is left out too.
 Every other file in those directories is a team's own and is counted, and so is a source file under
@@ -1770,7 +1795,10 @@ Every clause is dropped when it counts nothing.
         [; <m> sibling modules[ named <up to three stems>]; <f> of <j> JSX files inline a helper]
 ```
 
-- The top two extensions by count, then the rest as `and k other`. `(JSX)` marks the first of the
+- The top two extensions by count, then the rest as `and k other`. Where neither is one this tool
+  reads and the root holds three or more files of one it does read that a test could be written
+  for, the commonest such extension prints third with its count: `- django: 1226 .mo, 1226 .po, 907
+  .py and 257 other`. `(JSX)` marks the first of the
   two printed whose files are at least half JSX; an extension the line does not print has nothing
   to attach a mark to.
 - Tests inside a source root are counted per runner and named with the directory most of them share
@@ -1814,10 +1842,15 @@ Every clause is dropped when it counts nothing.
   non-test files are what the tests run on, and webpack's `test` read `1 of 7858 has a namesake
   test under test` over the fixture modules its 2,607 tests exercise. Any segment rather than the
   first, because a monorepo nests each package's own tree under the package name: fastlane's
-  `gym/spec` stated `1 of 1 has a namesake test` over one empty `spec_helper.rb`. The denominator is the top extension the line already printed,
-  or `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. That extension
-  has to be one this tool parses, so a root whose largest is `.png` or `.json` is never asked
-  whether its files have tests. Where one of the two printed extensions is a component's, `.vue` or
+  `gym/spec` stated `1 of 1 has a namesake test` over one empty `spec_helper.rb`. The denominator is over an extension the line already printed,
+  or `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see: the commonest
+  printed one that holds a file a test could be written for. Such a file is source this tool reads
+  that holds something and is no test, no story, no declaration file and under no test tree of its
+  own family below the root, so the helpers and fixtures of a `test` directory inside a root are in
+  neither number: Newtonsoft.Json's `Src` reads `63 of 243`, where its 388 files under
+  `Src/Newtonsoft.Json.Tests` would make it `63 of 631`. Real source under a directory named for
+  tests leaves with them: storybook's `code/core/src/test` (6 files), `django/test` (7) and puppet's
+  `lib/puppet/test` (1). Where one of the two printed extensions is a component's, `.vue` or
   `.svelte`, the other gets a count of its own, whichever of the two is first, and both clauses
   name their extension: `85 of 745 .ts files have a namesake test; 81 of 164 .vue files have a
   namesake test` on element-plus's `packages/components`, and `1 of 66 .vue files has a namesake
@@ -1884,7 +1917,7 @@ Every clause is dropped when it counts nothing.
   one. A Rust file holding its own tests has no other file carrying its stem, so it is
   in neither number of the namesake count and the clause after it says how many there are:
   ripgrep's `crates` reads `0 of 56 have a namesake test; 34 hold their own tests`, and tokio's
-  `tokio` reads `2 of 306` with 47 more that hold theirs. Counted as having a namesake, 80 of the
+  `tokio` reads `2 of 297` with 47 more that hold theirs. Counted as having a namesake, 80 of the
   101 Rust files credited in three repositories were credited for a module inside themselves under
   words that name another file. Where every file a root would ask holds its own tests the namesake
   count is dropped and the clause stands alone, `4 hold their own tests`. The tests line and an
@@ -2117,8 +2150,9 @@ do is H38, and the sentence the map states beside it is H39. A test that sits in
 language's tool reads it from is asked nothing: a Go `_test.go` in its package's directory, a Java
 or Kotlin test in its module's own `src/test` or `<set>Test`, a C# test in its test project. In
 PHP, whose layout pairs a `tests` tree with the `src` beside it, a test is held to a directory of
-that tree. A test for a directory the branch itself created and put a source file in is not held
-to the files of the directory above it; `check` asks the merge base for that, and the notice cannot. Its reason, which the `PreToolUse`
+that tree. A test for a directory the branch itself created and put a file a test could be written for in is
+not held to the files of the directory above it, and an empty file, a declaration file, a story or
+a `conftest.py` is no such file; `check` asks the merge base for that, and the notice cannot. Its reason, which the `PreToolUse`
 notice prints too, gives the root's count in the tests line's words, `src/hooks: 0 of 5 .tsx files
 have a namesake test`: the count is over one extension, and a bare `5 files` read as the whole of a
 directory holding nine. A map written before the root recorded that extension says `0 of 5 files`
@@ -2299,7 +2333,7 @@ object and exits 0, as it does on any failure.
 | `node` | the process itself | its version is 22.0.0 or newer, the floor both manifests declare in `engines` | install Node 22 or newer and put it first on `PATH` |
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
-| `tree-sitter` | node | `web-tree-sitter` imports, and the file of each of the seven grammars loads and hashes to the SHA-256 `grammars.json` records for it. The line carries the count, `grammars: 7 of 7`, and a file that fails either is named on it: `grammars: 6 of 7, kotlin.wasm did not load`, or `kotlin.wasm is not the file this plugin shipped`; with no manifest to hold them to, `grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
+| `tree-sitter` | node | `web-tree-sitter` imports, and the file of each of the seven grammars loads and hashes to the SHA-256 `grammars.json` records for it. The line carries the count, `grammars: 7 of 7`, and a file that fails either is named on it: `grammars: 6 of 7, kotlin.wasm did not load`, or `kotlin.wasm is not the file this plugin shipped`; one the runtime turns away by its language version reads `java.wasm is language version 14 and this runtime reads 15 through 16`; with no manifest to hold them to, `grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
 | `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version rather than called absent, and the scan leaves the checker off. Optional: only the type checker needs it | the same install |
 

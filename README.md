@@ -36,7 +36,9 @@ and out of how many.
 
 Needs Node 22 or newer: on an older one `/anatomiya:doctor` names the version it found, every
 other command refuses with the same sentence before it does any work, and the hooks answer with
-nothing, so the map is neither delivered nor refreshed but no session is interrupted. Ruby dimensions also want
+nothing, so the map is neither delivered nor refreshed but no session is interrupted.
+
+Ruby dimensions also want
 `ruby` on `PATH` with `prism` 1.x: Ruby 3.4 or newer ships it, and on an older Ruby (2.7 or newer)
 `gem install prism` adds it, which the parser then loads in place of the older default. That
 `ruby` is whichever answers first in `PATH`'s absolute directories (an empty or relative entry
@@ -74,8 +76,9 @@ needs its own toolchain on your machine: Node runs all of them.
 Each file is a copy of the one in its grammar's npm package, and `plugins/anatomiya/grammars/grammars.json` records
 the package, the version and the SHA-256 of each. `/anatomiya:doctor` loads them, hashes each
 against that record, and prints how many passed on its `tree-sitter` line, `grammars: 7 of 7`; one
-that does not load, or that is not the file the plugin shipped, is named there, and the fix is to
-reinstall the plugin, since no package install writes a grammar file.
+that does not load, that the runtime turns away by its language version, or that is not the file
+the plugin shipped, is named there, and the fix is to reinstall the plugin, since no package install
+writes a grammar file.
 
 When nothing was installed, `/anatomiya:doctor` says so in its first line. When an install ran and
 stopped short, its engine lines say which one did not load. One command answers both:
@@ -163,21 +166,26 @@ overview file starts with it off. To carry one in, add its line:
 
 The four exclude lines under [Quick start](#quick-start), with the first naming a linked rules
 directory's target, cover everything a scan leaves behind: the first two on every scan, the last two
-only where a target is on. Four hooks are declared by the plugin, in its own `hooks/hooks.json`, so
-a scan adds nothing to your settings. It can only take its own old entry out of
-`.claude/settings.local.json`. The refresh keeps the map current, and
-is described under [Staying current](#staying-current). The echo re-delivers the map after a turn or
-a tool call when the context window does not already hold that same map. The notice runs before a
-`Write`, an `Edit` or a `NotebookEdit`, and speaks only for a path where a test is going into a
-directory whose kind of file has no test of its own anywhere: silent on every other write, which is
-nearly all of them. It informs and never refuses. The reuse check runs when a turn ends, and only after a turn that added source
-code: it asks, once per change, for one subagent to look for an existing function the new code could
-call instead, and a session with no subagent tool to run that search itself. A migration, a schema
-dump such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function could be written with
-are not asked about. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
-through 0.2.6 did write one into `.claude/settings.local.json`, where the plugin path it names is never
-substituted and Claude Code refuses the hook by name on every prompt; a scan takes that entry out when
-it finds one, and leaves everything else in the file alone.
+only where a target is on.
+
+Four hooks are declared by the plugin, in its own `hooks/hooks.json`, so a scan adds nothing to your
+settings. Versions 0.2.4 through 0.2.6 did write a hook entry into `.claude/settings.local.json`,
+where the plugin path it names is never substituted and Claude Code refuses the hook by name on
+every prompt; a scan takes that entry out when it finds one, and leaves everything else in the file
+alone. What the four do:
+
+- **The refresh** keeps the map current, and is described under [Staying current](#staying-current).
+- **The echo** re-delivers the map after a turn or a tool call when the context window does not
+  already hold that same map.
+- **The notice** runs before a `Write`, an `Edit` or a `NotebookEdit`, and speaks only for a path
+  where a test is going into a directory whose kind of file has no test of its own anywhere: silent
+  on every other write, which is nearly all of them. It informs and never refuses. `check` asks the
+  same question of a whole branch, as `test_precedent`.
+- **The reuse check** runs when a turn ends, and only after a turn that added source code: it asks,
+  once per change, for one subagent to look for an existing function the new code could call
+  instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
+  such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
+  could be written with are not asked about.
 
 > [!NOTE]
 > A session that is already running holds the overview it started with, and gets a changed one
@@ -208,6 +216,8 @@ will differ. A committed map is not refreshed, so scan it by hand and commit the
 
 - one more "Not covered" line, or a longer one, for files in a language the map does not read
   (`.erb`, `.haml`, `.scss`), and often one or two root lines fewer to make room for it;
+- a smaller `N of M` in a root's namesake count, where the root holds a test directory of its own:
+  the helpers and fixtures under it are not files a test could be written for, so they left M;
 - `, in .rb files` or the like on a claim line, where the area holds three or more files the claim
   is never asked of;
 - areas, test counts and claims for Python, PHP, Go, Java, C#, Rust and Kotlin, and for the script
@@ -463,6 +473,11 @@ wrote 4 files under .cursor/rules for Cursor
 wrote 4 files under .github/instructions for GitHub Copilot
 ```
 
+The three copies hold one body: the same directories, sentences, areas and counts. A Cursor or
+Copilot overview is two lines longer than the `.claude/rules` one, 42 where that one is 40, for the
+line that makes it load on every turn and the line saying a scanner wrote it, and three where an
+area has no file there.
+
 You pass the flag once. A target stays on while its `anatomiya-overview` file is in its directory,
 so every later scan, and the background refresh, keeps writing it. Nothing else remembers the
 choice. The flag names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns
@@ -477,7 +492,7 @@ wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-over
 ```
 
 `/anatomiya:doctor`, run inside the repository, prints a line for
-each target that is on.
+each target that is on, and a second where its directory holds other entries named `anatomiya-*`.
 
 Both directories are ones people write rules in, so a scan is strict there. It never writes over a
 file it did not write: where one sits at a name the map needs, a scan that names the target refuses,
@@ -485,6 +500,15 @@ writes nothing anywhere, and says which file to move. It writes through no link:
 `.cursor/rules`, `.github` and `.github/instructions` each have to be a real directory of the
 repository, or not exist yet. Your own rule files there are not opened and not reported. Only
 entries named `anatomiya-*` are looked at.
+
+A target that is on and whose directory cannot be written does not stop a scan that did not name
+it. The scan writes the `.claude/rules` map, leaves that directory as it is and says so:
+
+```
+.cursor/rules could not be written (.cursor/rules is not writable), so nothing there was written or removed: fix its permissions, then scan again
+```
+
+A scan that names the target refuses.
 
 The last two exclude lines under [Quick start](#quick-start) keep both copies out of git. To commit
 one instead, leave its exclude line out and commit its files. GitHub's documentation says the cloud
@@ -605,7 +629,10 @@ dimensions each.** Python, PHP, Go, Java, C#, Rust and Kotlin are read through t
 carries. Each gets the layout section, its test files and namesake tests by the language's own
 naming, and the rows counted under [What it measures](#what-it-measures). A map of one of them
 mostly prints counts and states a claim only where a directory is consistent: a scan of fastapi
-states 1 of 82 claims, hugo 0 of 102, ktor 0 of 133 and tokio 14 of 33. None of the seven gets the
+states 1 of 82 claims, hugo 0 of 102, ktor 0 of 133 and tokio 14 of 33. A package that sits at the
+repository root is in no area, which is how a Go library is laid out: gin's map has 3 areas and its
+overview says `53 at the repository root` and `42 source files sit in no area (at the repository
+root, under the per-directory floor, or under a name no glob can spell)`. None of the seven gets the
 type checker, the "most imported from here" lines or the end-of-turn reuse check. The notice before
 a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of them, and say nothing of a Go, Java, Kotlin or C#
 test that sits in the one place its language's tool reads it from: a Rust test has no name, since cargo collects by place, so no `.rs` file is
@@ -645,8 +672,10 @@ as no dependencies), and the repository has a root `tsconfig.json`, a root `tsco
 where there is none, or a TypeScript source file that is not a declaration file, and leaves it off
 otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
-`jsconfig.json` does not count. It costs: a scan with it measured about 3x a
-plain one on a 3,800-file repository and about 8x on a 2,600-file one, and the checker is whole-program, so it
+`jsconfig.json` does not count.
+
+It costs: on typeorm, where a scan reads 3,347 files, a scan with the checker took 5.6 to 5.7
+seconds against 1.3 without it, about 4.5 times, and the checker is whole-program, so it
 cannot be narrowed to the files you changed. The map says when the checker answered badly, and
 prints no count for this claim then. While that answer stands and the plugin version, the root
 config, and the size and modification time of `node_modules` and of the install record in it are

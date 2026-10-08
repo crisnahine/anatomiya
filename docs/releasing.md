@@ -24,7 +24,9 @@ on a release that already existed. Push the tag and let the workflow make the re
       version the manifests carry. For anatomiya it also reads the dimension
       and decision-row counts in `README.md`, `docs/why.md` and `CONTRIBUTING.md`, the runtime
       dependency set in `README.md` and `SECURITY.md`, the gate table, the command list, and every
-      shipped key having an intake row.
+      shipped key having an intake row. Run it in a checkout: it asks git for the tracked files, and
+      where git cannot list them, as in a `git archive` copy, it exits 1 with one line and checks
+      nothing.
 - [ ] `npm run validate` passes. Four checks, in the order `package.json` runs them: the manifests
       (`scripts/validate.mjs`), the shipped set (`scripts/shipped.mjs`), the plugin's own lockfile
       (`scripts/plugin-lock.mjs --check`), and the grammar files (`scripts/grammars.mjs --check`).
