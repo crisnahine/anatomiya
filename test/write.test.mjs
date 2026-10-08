@@ -1880,7 +1880,8 @@ test("a file that cannot be replaced or removed is named in a sentence with its 
     const theirs = OTHERS.map((o) => tree(join(dir, o.dir)));
     locked = { at, code };
 
-    assert.throws(() => writeMap(result(dir, [a, b])), { message: said(at, "replaced", code) }, at);
+    // Named, since a locked file in a directory nobody named costs that directory alone.
+    assert.throws(() => writeMap(result(dir, [a, b]), { targets: ALL }), { message: said(at, "replaced", code) }, at);
 
     locked = null;
     assert.deepEqual(unstamped(snapshot(dir)), before, at);
@@ -1890,12 +1891,146 @@ test("a file that cannot be replaced or removed is named in a sentence with its 
   const dir = workspace(t);
   writeMap(result(dir, [a, b]), { targets: ALL });
   locked = { at: `${cursor.dir}/${areaName(cursor, b.id)}`, code: "EPERM" };
-  assert.throws(() => writeMap(result(dir, [a])), { message: said(locked.at, "removed", "EPERM") });
+  assert.throws(() => writeMap(result(dir, [a]), { targets: ALL }), { message: said(locked.at, "removed", "EPERM") });
 
   // Anything else is not a lock, so it is not called one.
   locked = { at: `${cursor.dir}/${overviewName(cursor)}`, code: "ENOSPC" };
   assert.throws(() => writeMap(result(dir, [a, b])), { code: "ENOSPC" });
   locked = null;
+});
+
+/** Make a rename onto a path, or a removal of one, throw the code `lock.on` answers for it. */
+async function refusing(t) {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = { renameSync: fs.renameSync, unlinkSync: fs.unlinkSync };
+  const lock = { on: null };
+  for (const name of Object.keys(real)) {
+    fs[name] = (...args) => {
+      const code = lock.on?.(String(args.at(-1)).split(sep).join("/")) ?? null;
+      if (code !== null) throw Object.assign(new Error(`${code}: operation not permitted, ${name} '${args[0]}'`), { code });
+      return real[name](...args);
+    };
+  }
+  syncBuiltinESMExports();
+  t.after(() => {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  });
+  return lock;
+}
+
+const UNLOCK = "close what holds it or change its mode";
+
+test("a locked file in a directory the scan did not name stops that directory alone, and Claude Code's map is written", async (t) => {
+  const lock = await refusing(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  for (const target of OTHERS) {
+    const other = OTHERS.find((o) => o !== target);
+    // The first file replaced there, the last, and the stale file's removal after all three.
+    for (const [name, verb, code] of [
+      [overviewName(target), "replaced", "EPERM"],
+      [areaName(target, c.id), "replaced", "EBUSY"],
+      [areaName(target, b.id), "removed", "EACCES"],
+    ]) {
+      const dir = workspace(t);
+      const said = `${target.dir}/${name}`;
+      writeMap(result(dir, [a, b]), { targets: ALL });
+      const theirs = tree(join(dir, target.dir));
+      lock.on = (at) => (at.endsWith(`/${said}`) ? code : null);
+
+      const plan = writeMap(result(dir, [a, c]));
+
+      lock.on = null;
+      const { state, on, reason, remedy, unwritable, write, remove, names } = plan.targets[target.id];
+      assert.deepEqual(
+        { state, on, reason, remedy, unwritable, write, remove, names },
+        { state: "unknown", on: false, reason: `${said} could not be ${verb} (${code})`, remedy: UNLOCK, unwritable: true, write: [], remove: [], names: mapOf(target, a, b) },
+        said
+      );
+      assert.deepEqual(tree(join(dir, target.dir)), theirs, `${said}: every file there as it was, and no temporary file`);
+      assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, c), `${said}: Claude Code's map moved`);
+      assert.deepEqual(namesIn(dir, other), mapOf(other, a, c), `${said}: and so did the directory beside it`);
+      assert.deepEqual(plan.targets[other.id].state, "on");
+      assert.deepEqual(readFacts(dir).targets, { [target.id]: mapOf(target, a, b), [other.id]: mapOf(other, a, c) }, `${said}: the record names the files still there`);
+      assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), [a.path, c.path].sort());
+      assert.notEqual(readLayout(dir), null, `${said}: and its layout file answers for it`);
+      assert.deepEqual(readdirSync(join(dir, STORE)).sort(), ["facts.json", "layout.json"]);
+
+      const healed = writeMap(result(dir, [a, c]));
+      assert.deepEqual({ state: healed.targets[target.id].state, on: healed.targets[target.id].on }, { state: "on", on: true }, said);
+      assert.deepEqual(namesIn(dir, target), mapOf(target, a, c), `${said}: unlocked, the next scan writes it`);
+    }
+  }
+});
+
+test("a locked file in a directory that cannot be put back alone refuses the whole scan", async (t) => {
+  const lock = await refusing(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const before = unstamped(snapshot(dir));
+  const theirs = tree(join(dir, copilot.dir));
+  const at = `${cursor.dir}/${areaName(cursor, c.id)}`;
+  // Cursor's overview takes its replacement, a later file there is locked, and then so is the overview.
+  let onto = 0;
+  lock.on = (path) => (path.endsWith(`/${at}`) || (path.endsWith(`/${cursor.dir}/${overviewName(cursor)}`) && ++onto > 1) ? "EPERM" : null);
+
+  assert.throws(() => writeMap(result(dir, [a, c])), {
+    message: `${at} could not be replaced (EPERM), so the scan stopped part way: the file is locked or read-only, so ${UNLOCK}, then scan again`,
+  });
+
+  assert.ok(onto > 1, "the control: the put-back was tried");
+  assert.deepEqual(unstamped(snapshot(dir)), before, "the record and Claude Code's files are the ones that were there");
+  assert.deepEqual(tree(join(dir, copilot.dir)), theirs);
+});
+
+test("a record that cannot be written again after a directory was put back refuses the whole scan", async (t) => {
+  const lock = await refusing(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const before = settled(dir);
+  // The record is replaced, then replaced again to name Cursor's old files, and put back: the second is locked.
+  // Cursor's stale file is the locked one, so a file this scan created there has already been taken out again.
+  let records = 0;
+  lock.on = (path) => {
+    if (path.endsWith(`/${cursor.dir}/${areaName(cursor, b.id)}`)) return "EPERM";
+    return path.endsWith(`/${STORE}/facts.json`) && ++records === 2 ? "EBUSY" : null;
+  };
+
+  assert.throws(() => writeMap(result(dir, [a, c])), {
+    message: `${STORE}/facts.json could not be replaced (EBUSY), so the scan stopped and put back what it had replaced: the file is locked or read-only, so ${UNLOCK}, then scan again`,
+  });
+
+  assert.equal(records, 3, "the control: written, written again, put back");
+  assert.deepEqual(settled(dir), before, "all three directories and the record, with no temporary file in any");
+});
+
+const needsImmutableFlag = process.platform === "darwin" ? {} : { skip: "chflags uchg is the lock this case sets on a real file, and only macOS has it" };
+
+test("a file made immutable in a directory the scan did not name is left, and naming the directory refuses", needsImmutableFlag, (t) => {
+  const [a, b] = [area("src/services"), area("src/api")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a]), { targets: ALL });
+  const at = `${cursor.dir}/${overviewName(cursor)}`;
+  const theirs = tree(join(dir, cursor.dir));
+  execFileSync("chflags", ["uchg", join(dir, at)]);
+  try {
+    const before = settled(dir);
+    assert.throws(() => writeMap(result(dir, [a, b]), { targets: ALL }), {
+      message: `${at} could not be replaced (EPERM), so the scan stopped and put back what it had replaced: the file is locked or read-only, so ${UNLOCK}, then scan again`,
+    });
+    assert.deepEqual(settled(dir), before);
+
+    const { state, reason, remedy, unwritable, names } = writeMap(result(dir, [a, b])).targets.cursor;
+    assert.deepEqual({ state, reason, remedy, unwritable, names }, { state: "unknown", reason: `${at} could not be replaced (EPERM)`, remedy: UNLOCK, unwritable: true, names: mapOf(cursor, a) });
+    assert.deepEqual(tree(join(dir, cursor.dir)), theirs);
+    assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, b));
+    assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a), copilot: mapOf(copilot, a, b) });
+  } finally {
+    execFileSync("chflags", ["nouchg", join(dir, at)]);
+  }
 });
 
 test("a locked file whose rollback loses a file says the scan stopped part way, and never that everything was put back", async (t) => {
@@ -2884,7 +3019,7 @@ test("the rename order is record, layout, claude, cursor, copilot", async (t) =>
   for (let n = 1; n <= positions; n++) {
     renames.calls.length = 0;
     renames.failOn(n);
-    assert.throws(() => writeMap(result(dir, [a, c])), /EPERM/, `rename ${n}`);
+    assert.throws(() => writeMap(result(dir, [a, c]), { targets: ALL }), /EPERM/, `rename ${n}`);
     assert.deepEqual(settled(dir), before, `after a failure at rename ${n}`);
     const done = renames.calls.slice(0, n).map(([, to]) => kind(to));
     assert.deepEqual(done, ["record", "layout", "claude", "claude", "claude", "cursor", "cursor", "cursor", "copilot", "copilot", "copilot"].slice(0, n));
@@ -2930,7 +3065,7 @@ test("a throw on the last rename puts back every directory", async (t) => {
   const before = settled(dir);
   await failNth(t, "renameSync", 2 + 3 * 3);
 
-  assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /EPERM/);
+  assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")]), { targets: ALL }), /EPERM/);
 
   assert.deepEqual(settled(dir), before, "all three directories and the record, with no temporary file in any");
   assert.notEqual(readLayout(dir), null);
@@ -2943,7 +3078,7 @@ test("a removal that fails in the last directory puts back every directory", asy
   // One stale file in each of the three directories, removed in that order.
   await failNth(t, "unlinkSync", 3);
 
-  assert.throws(() => writeMap(result(dir, [area("src/services")])), /EPERM/);
+  assert.throws(() => writeMap(result(dir, [area("src/services")]), { targets: ALL }), /EPERM/);
 
   assert.deepEqual(settled(dir), before);
 });

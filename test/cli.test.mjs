@@ -818,6 +818,41 @@ test("a plain scan writes Claude's map past a target directory it cannot write, 
   assert.equal(named.stderr, "anatomiya: .cursor/rules is not writable, so the map could not be written: fix its permissions and scan again\n");
 });
 
+const needsImmutableFlag = process.platform === "darwin" ? {} : { skip: "chflags uchg is the lock this case sets on a real file, and only macOS has it" };
+
+test("a plain scan writes Claude's map past a file it cannot replace in a target directory, and exits 0", needsImmutableFlag, (t) => {
+  const repo = repoWithSource(t);
+  anatomiya(repo, "scan", "--targets", "cursor");
+  const overview = join(repo, ".cursor", "rules", "anatomiya-overview.mdc");
+  const before = [readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8"), readFileSync(overview, "utf8")];
+  mkdirSync(join(repo, "lib"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(repo, "lib", `g${i}.ts`), `const b${i} = 1\nexport { b${i} }\n`);
+  execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "more"], { cwd: repo, stdio: "pipe" });
+  execFileSync("chflags", ["uchg", overview]);
+  let named;
+  let plain;
+  let json;
+  try {
+    named = ran("scan", repo, "--targets", "cursor");
+    plain = ran("scan", repo);
+    json = ran("scan", repo, "--format", "json");
+  } finally {
+    execFileSync("chflags", ["nouchg", overview]);
+  }
+  const at = ".cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)";
+  const remedy = "close what holds it or change its mode";
+  assert.equal(named.code, 1);
+  assert.equal(named.stderr, `anatomiya: ${at}, so the scan stopped and put back what it had replaced: the file is locked or read-only, so ${remedy}, then scan again\n`);
+
+  assert.equal(plain.code, 0, plain.stderr);
+  assert.ok(plain.stdout.split("\n").includes(`.cursor/rules could not be written (${at}), so nothing there was written or removed: ${remedy}, then scan again`), plain.stdout);
+  assert.notEqual(readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8"), before[0], "the Claude map was written");
+  assert.equal(readFileSync(overview, "utf8"), before[1]);
+  assert.equal(json.code, 0, json.stderr);
+  assert.deepEqual(JSON.parse(json.stdout).targets.cursor, { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: at, remedy, unwritable: true });
+});
+
 test("a repository that never turned a target on reads the same whatever sits in the other tools' directories", needsSymlinks, (t) => {
   const repo = repoWithBranch(t);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));

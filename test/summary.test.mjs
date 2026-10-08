@@ -889,6 +889,19 @@ test("a target that was on and could not be read says why, and one never written
   assert.deepEqual(scanLines(never), BEFORE_LINES);
 });
 
+test("a target one locked file stopped says which file, and what to do about it", () => {
+  const locked = { state: "unknown", reason: ".cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)", remedy: "close what holds it or change its mode", unwritable: true };
+  const s = scanSummary(result(), plan(others(locked)));
+
+  assert.ok(
+    scanLines(s).includes(
+      ".cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change its mode, then scan again"
+    ),
+    scanLines(s).join("\n")
+  );
+  assert.deepEqual(JSON.parse(scanJson(s)).targets.cursor, { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, ...locked });
+});
+
 test("a target that was on and could not be written says so whatever the record names, with the remedy", () => {
   const locked = { state: "unknown", reason: ".cursor/rules is not writable", remedy: "fix its permissions", unwritable: true };
   // A clone that brought a committed overview has no record of a file there.

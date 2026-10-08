@@ -1,7 +1,7 @@
 import { lstatSync, mkdirSync, renameSync, rmdirSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, writePair, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   REFRESH_STATE,
@@ -148,7 +148,7 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     result: described,
     // The same fields for each other directory, and why one was left alone.
     targets: Object.fromEntries(
-      rest.map((o) => [o.target.id, untouched(o) ? untouchedPlan(o, previous) : targetPlan(o, described, files, claudeFiles)])
+      rest.map((o) => [o.target.id, untouched(o) ? untouchedPlan(o, recorded(previous, o.target)) : targetPlan(o, described, files, claudeFiles, recorded(previous, o.target))])
     ),
   };
 }
@@ -353,13 +353,17 @@ function renderTarget(target, laid, described, files, claudeFiles = overviewFile
   return bodies;
 }
 
-function targetPlan({ target, state, reason, on, explicit, ...laid }, described, files, claudeFiles) {
+function targetPlan({ target, state, reason, on, explicit, ...laid }, described, files, claudeFiles, was) {
   const bodies = renderTarget(target, laid, described, files, claudeFiles);
   return {
     dir: target.dir,
     state,
     reason,
     on,
+    // Whether the scan was told this target by name, and the files the record
+    // names there now: what a write that a locked file stops is decided by and falls back to.
+    named: explicit,
+    was,
     first: laid.first,
     write: [...bodies].map(([name, body]) => ({ name, body })),
     // A temporary file an earlier scan left is counted with what this one removes.
@@ -375,10 +379,13 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
 }
 
 // The record goes on naming what it named, or none of it could be removed once the directory reads again.
-function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritable }, previous) {
+function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritable }, was) {
   const none = { first: false, write: [], remove: [], foreign: [], unknown: [], unreadableRules: [], unfiled: [] };
-  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...(unwritable ? { unwritable } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
+  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...(unwritable ? { unwritable } : {}), ...none, names: was };
 }
+
+// The files of ours the record on disk names in one directory, sorted.
+const recorded = (previous, target) => [...(knownNames(previous, target) ?? [])].sort();
 
 // The files a scan and a refresh stage in the store, by name.
 const STORE_STAGED = [FACTS_PATH, LAYOUT_PATH, REFRESH_STATE].map((path) => basename(path));
@@ -498,15 +505,26 @@ export function commitMap(root, plan) {
     // Each file by the repository's own spelling of where it is, for a refusal to name.
     const spelled = new Map([[rulesDir, RULES_DIR], [storeDir, STORE_DIR], ...others.map((t) => [t.at, t.dir])]);
     const said = (path) => `${spelled.get(dirname(path))}/${basename(path)}`;
-    replaceAll(staged, removals, { record: factsPath, was: readLayout(root), leftover }, stillOwn, said);
+    // Another tool's directory that nobody named, where a locked file costs that directory alone.
+    const spared = (path) => {
+      const t = byDir.get(dirname(path));
+      return t !== undefined && !t.named ? t : null;
+    };
+    // The record once more, naming in each such directory the files still on disk.
+    const settle = (left) => {
+      const kept = Object.fromEntries(Object.entries(names).map(([id, now]) => [id, left.has(id) ? plan.targets[id].was : now]));
+      writePair(storeDir, factsJson(plan.result, kept), plan.result.layout);
+    };
+    const left = replaceAll(staged, removals, { record: factsPath, was: readLayout(root), leftover, spared, settle }, stillOwn, said);
+    if (left.size === 0) return plan;
+    const stopped = ([id, reason]) => [id, untouchedPlan({ target: TARGETS[id], state: "unknown", reason, remedy: UNLOCK, on: false, unwritable: true }, plan.targets[id].was)];
+    return { ...plan, targets: { ...plan.targets, ...Object.fromEntries([...left].map(stopped)) } };
   } catch (err) {
     for (const [tmp] of staged) quietUnlink(tmp);
     // Deepest first, and only while empty: `rmdir` refuses anything else.
     for (const dir of made.reverse()) quietRmdir(dir);
     throw err;
   }
-
-  return plan;
 }
 
 const UNTOUCHED = "stopped before writing anything there";
@@ -521,8 +539,9 @@ function lockedFile(err, at, verb) {
   return Object.assign(new Error(err.message, { cause: err }), { locked: `${at} could not be ${verb} (${err.code})` });
 }
 
-const lockedSentence = (locked, did) =>
-  `${locked}, so the scan ${did}: the file is locked or read-only, so close what holds it or change its mode, then scan again`;
+const UNLOCK = "close what holds it or change its mode";
+
+const lockedSentence = (locked, did) => `${locked}, so the scan ${did}: the file is locked or read-only, so ${UNLOCK}, then scan again`;
 
 // `moved` names the directory, for the rollback to say what it could not reach.
 function movedAway(dir, did) {
@@ -564,6 +583,12 @@ function makeOwnDirectory(at, rel, made) {
  * A rename in a directory the temporary file was just created in still fails:
  * Windows refuses one over a file another process holds open. `said` names a
  * path for the sentence that failure gets.
+ *
+ * Where `pair.spared` answers for the path with a target, that failure stops
+ * the target's directory alone: what was replaced there is put back, the rest
+ * of it is skipped, and `pair.settle` writes the record again to say so. A
+ * permission in a directory another tool owns may not stop Claude Code's map.
+ * Answers the targets stopped that way, each with what stopped it.
  */
 function replaceAll(staged, removals, pair, stillOwn, said) {
   // Read before the first rename, so the window between the facts and the last
@@ -571,29 +596,62 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
   const kept = removals.filter((path) => !pair.leftover.has(path));
   const before = new Map([...staged.map(([, path]) => path), ...kept].map((p) => [p, previousBytes(p)]));
   const undo = [];
+  const left = new Map();
+  const skipped = (path) => left.has(pair.spared(path)?.id);
+  // Put one directory back and go on without it, or throw for the whole scan to be put back.
+  const stop = (err, path) => {
+    const t = pair.spared(path);
+    if (t === null || !err.locked) throw err;
+    for (let i = undo.length - 1; i >= 0; i--) {
+      const [done, previous] = undo[i];
+      if (pair.spared(done) !== t) continue;
+      try {
+        stillOwn(done);
+        putBack(done, previous, null);
+      } catch {
+        // Not as it was, so not a directory to go on without.
+        throw err;
+      }
+      undo.splice(i, 1);
+    }
+    for (const [tmp, to] of staged) if (pair.spared(to) === t) quietUnlink(tmp);
+    left.set(t.id, err.locked);
+  };
   try {
     for (const [tmp, path] of staged) {
+      if (skipped(path)) continue;
       stillOwn(path);
       try {
         renameSync(tmp, path);
       } catch (err) {
         // A directory swapped since the look above fails here on an errno, so it is asked once more.
         stillOwn(path);
-        throw lockedFile(err, said(path), "replaced");
+        stop(lockedFile(err, said(path), "replaced"), path);
+        continue;
       }
       undo.push([path, before.get(path)]);
     }
     for (const path of removals) {
+      if (skipped(path)) continue;
       stillOwn(path);
       try {
         unlinkSync(path);
       } catch (err) {
         if (err.code === "ENOENT") continue;
-        throw lockedFile(err, said(path), "removed");
+        stop(lockedFile(err, said(path), "removed"), path);
+        continue;
       }
       // A leftover has no bytes here, which the put-back reads as one to leave gone.
       undo.push([path, before.get(path)]);
     }
+    if (left.size > 0) {
+      try {
+        pair.settle(left);
+      } catch (err) {
+        throw lockedFile(err, said(pair.record), "replaced");
+      }
+    }
+    return left;
   } catch (err) {
     let lost = 0;
     for (const [path, previous] of undo.reverse()) {
