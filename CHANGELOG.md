@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [0.14.0] - 2026-10-08
+## [0.14.0] - 2026-10-11
 
 Seven more languages are read, through tree-sitter as a third parser engine: Python, PHP, Go, Java,
 C#, Rust and Kotlin. The script blocks of Vue and Svelte files are read, `scan --targets
