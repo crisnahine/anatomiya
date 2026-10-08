@@ -149,33 +149,31 @@ function goNamedByInterface(program, sets) {
   };
 }
 
-/** The type a Kotlin extension function is written on, by its name without its arguments, or null for any other function. */
-function extendedType(fn, shapes, sets) {
+/** The receiver a Kotlin extension function is written on, as written with one space for each run of them, or null for any other function. */
+function extendedType(fn, shapes, sets, source) {
   for (const child of fn.children) {
     if (child.field === shapes.name) return null;
-    if (!sets.receiverBeforeName.has(child.type)) continue;
-    const type = firstOf(child, sets.receiverType);
-    return type ? type.children.filter((part) => part.children.length === 0).map((part) => part.text).join(".") : null;
+    if (sets.receiverBeforeName.has(child.type)) return source.slice(child.start, child.end).replace(/\s+/g, " ");
   }
   return null;
 }
 
 /**
- * What a function is written in: in Go its receiver's type, in Kotlin the type an extension function is written on, and else
- * the nearest class around it that has a name or the type a Rust `impl` is for. Null at file level.
+ * What a function is written in: in Go its receiver's type, and else the nearest class around it that has a name or the type
+ * a Rust `impl` is for, then in Kotlin the receiver an extension function is written on, read off `source`. Null at file
+ * level with no receiver.
  */
-function ownerOf(fn, ctx, shapes, sets) {
+function ownerOf(fn, ctx, shapes, sets, source = "") {
   if (shapes.receiver) return goReceiver(fn, sets) || null;
-  const extended = extendedType(fn, shapes, sets);
-  if (extended) return extended;
+  const extended = extendedType(fn, shapes, sets, source);
   for (let i = ctx.stack.length - 1; i >= 0; i--) {
     const body = ctx.stack[i];
     if (!sets.cls.has(body.type)) continue;
     const implFor = shapes.implFor ? fieldOf(body, shapes.implFor) : null;
     const name = nameOf(body) ?? (implFor && firstOf(implFor, sets.receiverType)?.text);
-    if (name) return name;
+    if (name) return extended === null ? name : within(name, extended);
   }
-  return null;
+  return extended;
 }
 
 // A site is told from another of its text by the declaration around it, and two classes each hold a `run`.
@@ -348,7 +346,7 @@ export const TREE_DIMENSIONS = [
           if (!PUBLIC[lang](func)) return;
           if (inherited(words) || notOffered.some((word) => words.has(word)) || noSite(func)) return;
           const documented = sets.docstring.size > 0 ? hasDocstring(node, sets, source) : documentedAbove(node, ctx, sets, DOC[lang], source);
-          add({ node: site(named), conforming: documented, where: within(ownerOf(node, ctx, shapes, sets), name) });
+          add({ node: site(named), conforming: documented, where: within(ownerOf(node, ctx, shapes, sets, source), name) });
         },
       };
     },
