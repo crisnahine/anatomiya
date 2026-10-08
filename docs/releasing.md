@@ -43,6 +43,16 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] `npm run coverage` passes its floors. It reads them off an lcov record rather than off the
       total, so the files in a scope are each held to one: an aggregate over a scope says nothing
       about one file inside it, whichever scope it is drawn around.
+- [ ] The line-ending pass shows nothing new. It runs the suite as a Windows runner checks it out:
+      clone the checkout with `git -c core.autocrlf=true clone`, copy `node_modules` into the clone,
+      write a file holding `[core]` and `autocrlf = true`, and run every test file in the clone one
+      at a time with `GIT_CONFIG_SYSTEM` pointing at that file, so every `git init` a test makes
+      converts line endings too. `git ls-files --eol` there lists the tracked text as `w/crlf` and
+      the seven grammars as `w/-text`. It catches a test that reads a tracked file as text and
+      compares bytes, offsets or a multi-line match. One file fails under that override on macOS
+      and is no finding: `test/git.test.mjs`, in `a submodule's filter driver never runs through
+      the superproject's status`, because the override replaces the machine's own system git
+      config. That test is skipped on Windows.
 - [ ] CI is green on the branch. Check it, do not assume: a suite that passes here can fail there
       over `init.defaultBranch`, path separators, or 8.3 short names, and all three have.
 - [ ] The corpus run reports no findings, for a change that touches counting. Leave the checkout
