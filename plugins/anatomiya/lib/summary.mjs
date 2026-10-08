@@ -169,6 +169,13 @@ function targetSummaries(result, plan) {
   return out;
 }
 
+/**
+ * How many entries under this tool's prefix a directory holds that are no file
+ * of the map's, in one spelling for the scan and for `doctor`. An entry, since
+ * a directory can hold the name.
+ */
+export const otherEntries = (dir, n) => `${dir} holds ${n === 1 ? "1 entry" : `${n} entries`} named ${PREFIX}*`;
+
 const UNREAD_ONE = "could not be read, so whose it is was not established";
 const UNREAD_MANY = "could not be read, so whose they are was not established";
 
@@ -192,9 +199,9 @@ function targetLines(s) {
       );
     }
     if (t.foreign) {
-      // An entry, since a directory can hold the name, and neither verb claims who wrote it.
+      // Neither verb claims who wrote it.
       lines.push(
-        `${t.dir} holds ${one(t.foreign) ? "1 entry" : `${t.foreign} entries`} named ${PREFIX}* that this scan neither wrote nor removed; ` +
+        `${otherEntries(t.dir, t.foreign)} that this scan neither wrote nor removed; ` +
           `${one(t.foreign) ? "it was left as it is" : "they were left as they are"}`
       );
     }

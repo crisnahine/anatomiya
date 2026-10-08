@@ -18,7 +18,7 @@ import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, PRE
 import { TARGETS, isClaude } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
-import { pinSummary, scanSummary } from "./summary.mjs";
+import { otherEntries, pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { removeStaleHook } from "./hook.mjs";
 
@@ -229,7 +229,11 @@ export async function runDoctor({ cwd = null } = {}) {
   return { rows, lines: problem === null ? lines : [problem, ...lines] };
 }
 
-/** One line per Cursor or Copilot target that is on, or that the record names files in and nobody can read; none for any other. */
+/**
+ * One line per Cursor or Copilot target that is on, or that the record names
+ * files in and nobody can read; none for any other. A target that is on gets a
+ * second line where its directory holds entries a scan counts as left there.
+ */
 async function targetLines(cwd) {
   let root;
   try {
@@ -245,10 +249,15 @@ async function targetLines(cwd) {
     const known = knownNames(facts, target);
     if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);
     if (state !== "on") continue;
-    // A name a scan gives a file, and the key, with or without a record: a clone holds the files and not the record.
-    const { ours, unknown, listed } = auditRules(root, known, target);
-    const mine = [...ours, ...unknown].filter((name) => isMapName(name, target));
+    // The split a scan makes: the files the record names are the map's, and
+    // the scan's summary counts every other entry as left there. A clone holds
+    // the files and not the record, and there the key and a name a scan gives
+    // a file are all there is to go on.
+    const { ours, unknown, foreign, occupied, listed } = auditRules(root, known, target);
+    const mine = known === null ? unknown.filter((name) => isMapName(name, target)) : ours;
     lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);
+    const others = unknown.length - (known === null ? mine.length : 0) + foreign.length + occupied.length;
+    if (others > 0) lines.push(`${otherEntries(target.dir, others)} that a scan neither writes nor removes`);
   }
   return lines;
 }

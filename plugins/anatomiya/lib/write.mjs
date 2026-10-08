@@ -312,7 +312,11 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     // about a file this run just replaced. It also moved the overview
     // between two scans of unchanged source, which is the one thing it may never
     // do: named on the first scan, ours and silent on the second.
-    foreign: [...new Set([...audit.foreign.filter((f) => !planned.has(f)), ...taken.filter((n) => audit.occupied.includes(n)), ...aliases])].sort(),
+    //
+    // In another tool's directory a directory or a fifo under this tool's
+    // prefix is somebody's entry as a link there is, planned name or not: a
+    // target turned off plans no name and still leaves the entry behind.
+    foreign: [...new Set([...audit.foreign.filter((f) => !planned.has(f)), ...(isClaude(target) ? [] : audit.occupied), ...aliases])].sort(),
     replaced: audit.foreign.filter((f) => planned.has(f)),
     // Whose these are was never established. They load, they are never removed,
     // and calling them somebody else's would assert authorship nobody checked.

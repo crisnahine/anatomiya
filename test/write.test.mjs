@@ -2356,10 +2356,33 @@ function oddEntryAtAnAreaName(t, make) {
   const off = writeMap(result(dir, [a, b]), { targets: ["claude"] });
   for (const target of OTHERS) {
     assert.deepEqual(off.targets[target.id].remove, mapOf(target, a));
+    assert.deepEqual(off.targets[target.id].foreign, [areaName(target, b.id)], "and is said to be left, as a link there is");
     assert.deepEqual(namesIn(dir, target), [areaName(target, b.id)]);
   }
   assert.deepEqual(still(), [false, false]);
 }
+
+test("a directory spelled as an area's name in another case refuses a named target as somebody's entry", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const spelled = areaName(cursor, a.id).replace("area", "Area");
+  mkdirSync(join(dir, cursor.dir, spelled), { recursive: true });
+
+  assert.throws(() => writeMap(result(dir, [a]), { targets: ALL }), (err) => err.message === refusal(cursor, spelled));
+});
+
+test("a link at an area's name is left and counted when its target is turned off", needsSymlinks, (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  for (const target of OTHERS) {
+    rmSync(join(dir, target.dir, areaName(target, b.id)));
+    symlinkSync(join(dir, target.dir, areaName(target, a.id)), join(dir, target.dir, areaName(target, b.id)));
+  }
+  const off = writeMap(result(dir, [a, b]), { targets: ["claude"] });
+  for (const target of OTHERS) assert.deepEqual(off.targets[target.id].foreign, [areaName(target, b.id)]);
+});
 
 test("a directory at a name a target that is merely on writes is left, and that area has no file there", (t) => {
   oddEntryAtAnAreaName(t, (path) => {
