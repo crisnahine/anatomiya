@@ -219,7 +219,8 @@ export const PROSE_NAMES = { python: "Python", php: "PHP", go: "Go", java: "Java
 assertKeyed("PROSE_NAMES", PROSE_NAMES, hostedBy("tree-sitter"));
 
 /**
- * Every file of this repository git can see, or none where git cannot say.
+ * Every file of this repository git can see, or `{ error }` holding git's own
+ * first line where it cannot say.
  *
  * The working tree rather than the index: a file added and not staged is still
  * a file the prose may name, and a gate that reads the index answers about a
@@ -230,12 +231,12 @@ assertKeyed("PROSE_NAMES", PROSE_NAMES, hostedBy("tree-sitter"));
  */
 function repositoryFiles() {
   try {
-    return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" })
+    return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
       .split("\n")
       .filter(Boolean)
       .filter((rel) => existsSync(join(root, rel)));
-  } catch {
-    return [];
+  } catch (err) {
+    return { error: String(err.stderr || err.message).trim().split("\n")[0] };
   }
 }
 
@@ -861,8 +862,12 @@ export function checkDocs() {
   // Git's list rather than a walk, because the local working directories a tool
   // leaves behind are full of paths that were never this repository's, and
   // because a tree git cannot answer for is not this repository: the gate runs on
-  // a checkout, and there is nothing there to check a path against.
-  const tracked = new Set(repositoryFiles());
+  // a checkout, and there is nothing there to check a path against. That is a
+  // failure and never a pass: with no list, every check below reads nothing and
+  // the summary line says the documents match.
+  const listed = repositoryFiles();
+  claim("git", Array.isArray(listed), `could not list the files here, so no path a document names was read against the tree: ${listed.error}`);
+  const tracked = new Set(Array.isArray(listed) ? listed : []);
   // The same leak the measurements are checked for, from the other kind of
   // document. A generated one never spells a placeholder, so the shape of a home
   // directory is enough there; a hand-written one does, and `/Users/me/code/app`

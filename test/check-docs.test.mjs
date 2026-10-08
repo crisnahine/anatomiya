@@ -107,10 +107,10 @@ function repositoryFiles() {
   }
 }
 
-// The module under test answers `[]` where git cannot say, on purpose, and a
-// suite that dies at import over the same question is a file whose other 30
-// cases stop running with nothing said. A tree that is not a checkout is a real
-// place to run this from: this repository is copied to one for review.
+// The gate under test fails where git cannot say, and a suite that dies at
+// import over the same question is a file whose other 30 cases stop running
+// with nothing said. A tree that is not a checkout is a real place to run this
+// from: this repository is copied to one for review.
 const REPOSITORY_FILES = repositoryFiles();
 const needsCheckout = REPOSITORY_FILES
   ? {}
@@ -118,6 +118,16 @@ const needsCheckout = REPOSITORY_FILES
 const isRepositoryFile = (src) => statSync(src).isDirectory() || REPOSITORY_FILES.has(src);
 
 function repoCopy(t) {
+  const dir = copyWithNoRepository(t);
+  // Nothing is staged or committed: the sweep asks git for the working tree, and
+  // a commit would need an identity this suite has no business setting on the
+  // machine it runs on.
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  return dir;
+}
+
+/** The copy as files alone, which is no tree the gate can ask git about. */
+function copyWithNoRepository(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-check-docs-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -129,19 +139,6 @@ function repoCopy(t) {
   for (const f of readdirSync(ROOT).filter((f) => f.endsWith(".md"))) cpSync(join(ROOT, f), join(dir, f));
   // The lockfile carries the version twice, and the checker reads both.
   for (const f of ["package.json", "package-lock.json"]) cpSync(join(ROOT, f), join(dir, f));
-  return dir;
-}
-
-/**
- * The same copy, made a repository, so the path sweep has a file list to read.
- *
- * Nothing is staged or committed: the sweep asks git for the working tree, and
- * a commit would need an identity this suite has no business setting on the
- * machine it runs on.
- */
-function repoCopyTracked(t) {
-  const dir = repoCopy(t);
-  execFileSync("git", ["init", "-q"], { cwd: dir });
   return dir;
 }
 
@@ -179,6 +176,17 @@ test("an untouched copy of this repository passes", (t) => {
 
   assert.equal(status, 0, output);
   assert.match(output, /docs match the code/);
+});
+
+test("a tree git cannot list the files of fails the gate and says why, where it passed with every path unread", (t) => {
+  const dir = copyWithNoRepository(t);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /^::error::git: could not list the files here, so no path a document names was read against the tree: .*not a git repository/m);
+  assert.doesNotMatch(output, /docs match the code/);
+  assert.equal(output.split("\n").filter((line) => line.startsWith("::error::")).length, 1, "the one fault, said once");
 });
 
 test("the worktree recipe is read line by line, so a CRLF checkout passes and a missing line still fails", (t) => {
@@ -793,7 +801,7 @@ test("a path that is still where the prose says it is passes", () => {
 });
 
 test("a document naming a file that lives somewhere else now is failed, with where it went", needsCheckout, (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   const path = join(dir, "CONTRIBUTING.md");
   writeFileSync(path, `${readFileSync(path, "utf8")}\n\nThe registry is \`lib/registry.mjs\`.\n`);
 
@@ -804,7 +812,7 @@ test("a document naming a file that lives somewhere else now is failed, with whe
 });
 
 test("a tracked copy with nothing wrong still passes, so the sweep is not failing on its own reading", needsCheckout, (t) => {
-  const { status, output } = check(repoCopyTracked(t));
+  const { status, output } = check(repoCopy(t));
 
   assert.equal(status, 0, output);
 });
@@ -835,7 +843,7 @@ test("a row citing a number no row has is named, and a key in a code span is not
 });
 
 test("a decision row naming a file that is gone fails the check", needsCheckout, (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   edit(join(dir, "DECISIONS.md"), (text) => text.replace("**done** `scan.mjs` (`corpus.scriptOnly`)", "**done** `scripts/scan-gone.mjs` (`corpus.scriptOnly`)"));
 
   const { status, output } = check(dir);
@@ -857,7 +865,7 @@ test("a decision row citing a row that does not exist fails the check", (t) => {
 // A tracked file removed from the working tree and not yet staged is still in
 // git's list, and reading it threw a stack in place of the gate's answer.
 test("a tracked document deleted from the working tree is passed over, not read", needsCheckout, (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   writeFileSync(join(dir, "docs", "gone.md"), "A note.\n");
   execFileSync("git", ["add", "docs/gone.md"], { cwd: dir });
   rmSync(join(dir, "docs", "gone.md"));
@@ -869,7 +877,7 @@ test("a tracked document deleted from the working tree is passed over, not read"
 });
 
 test("a document carrying the path of the machine it was written on is failed", needsCheckout, (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   const path = join(dir, "docs", "why.md");
   writeFileSync(path, `${readFileSync(path, "utf8")}\n\nRead from ${join(homedir(), "notes.md")}\n`);
 
@@ -883,7 +891,7 @@ test("a document carrying the path of the machine it was written on is failed", 
 // file at the path it had then is true of that release and would be false
 // rewritten to today's.
 test("a changelog names the paths its releases had", (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   const path = join(dir, "CHANGELOG.md");
   writeFileSync(path, `${readFileSync(path, "utf8")}\n\nThe read was in \`lib/hook.mjs\` then.\n`);
 
@@ -1000,7 +1008,7 @@ test("an outcome the glossary stops naming fails the check", { ...needsCheckout 
 // spawned the binary for `--help`, ran `git ls-files` and read every document
 // before their first assertion. The gate is a function now, and this is the
 // one call that runs it, on the checkout the suite is in.
-test("the gate is a function, and on this checkout it answers no problem", () => {
+test("the gate is a function, and on this checkout it answers no problem", needsCheckout, () => {
   const { problems, owed, summary } = checkDocs();
 
   assert.deepEqual(problems, []);
