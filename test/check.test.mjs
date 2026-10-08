@@ -4669,8 +4669,8 @@ test("a sibling whose path merely starts with another area's is not inside it", 
 });
 
 test("the repository root is an ancestor of everything and is asked last", async (t) => {
-  // "." contains every path without being a prefix of any of them, the same
-  // rule `areaOwner` already carries.
+  // "." is a prefix of no path and still sits above every area. It owns only
+  // the files directly in it, and what it states is asked of an area below last.
   const dir = repo(t, ({ git, write, commit }) => {
     write("root.ts", clean(2));
     write("src/api/b.ts", `export const b = 1;\n`);
