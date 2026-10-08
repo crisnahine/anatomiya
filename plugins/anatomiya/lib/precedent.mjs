@@ -93,11 +93,12 @@ function testedTail(rel) {
  * root of that project answers: a PHP `tests/Cache` is about the `src/Cache`
  * beside it, and a `Cache` in another tree is not its to answer for.
  *
- * `created` answers whether the change made a directory and put source of a
- * root's family in it. A tail shortened past one is a test of that directory,
- * which has no habit yet, and the files of the directory above it are another
- * directory's: a package added with its source and its test in one change was
- * held to its parent's ratio.
+ * Answered with the directories the answer turns on, each with the family its
+ * root counts: a tail shortened past a directory is a test of that directory,
+ * and where the change made it and put source of that family in it, it has no
+ * habit yet and the files of the directory above it are another directory's.
+ * A package added with its source and its test in one change was held to its
+ * parent's ratio.
  */
 const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
 
@@ -106,7 +107,7 @@ const countsAreNumbers = (r) =>
   isCount(r.companions.with) && isCount(r.companions.of) && (r.companions.inline === undefined || isCount(r.companions.inline)) &&
   Array.isArray(r.tests ?? []) && (r.tests ?? []).every((t) => isCount(t?.files) && (t.under === undefined || isCount(t.under)));
 
-function coveredRoot(rel, roots, created) {
+function coveredRoot(rel, roots) {
   const parts = testedTail(rel).split("/").filter(Boolean);
   const family = namedFamily(rel);
   const inProject = family === null ? null : pairedWith(dirOf(rel), family);
@@ -132,8 +133,8 @@ function coveredRoot(rel, roots, created) {
     const below = parts.slice(end);
     // The family a root counts, or the test's own where the map recorded no extension for it.
     const counted = (r) => familyOf(language(`x${r.companions.ext ?? extOf(rel)}`));
-    if (below.length > 0 && matches.some((r) => created([r.dir, ...below].join("/"), counted(r)))) return null;
-    return matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0];
+    const turnsOn = below.length === 0 ? [] : matches.map((r) => ({ dir: [r.dir, ...below].join("/"), family: counted(r) }));
+    return { root: matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0], turnsOn };
   }
   return null;
 }
@@ -201,16 +202,20 @@ const testFilesHeld = (root) => (root.tests ?? []).reduce((n, t) => n + t.files,
  * of what says a file arrived.
  *
  * `holdsTest` answers whether a directory already holds a test that this change
- * did not bring, and `created` whether the change made a directory for source
- * of a family. A caller that cannot tell says nothing, which leaves the rule
+ * did not bring. A caller that cannot tell says nothing, which leaves the rule
  * where it was before the question was asked.
+ *
+ * `turnsOn` on a finding is the directories it does not stand for where the
+ * change made one of them for source of the family beside it (`coveredRoot`).
+ * Only a caller holding the change and its base can tell, so it is handed the
+ * question and the finding is stated as if none was.
  *
  * Nothing is said of a test that sits where its language's own tool reads it
  * from and nowhere else (`sitsWhereItsToolReads`): the first test of a Go
  * package has no other directory to go to, so "where the siblings put theirs"
  * is where it already is.
  */
-export function precedentFindings(arrived, roots, { fresh = true, holdsTest = () => false, created = () => false } = {}) {
+export function precedentFindings(arrived, roots, { fresh = true, holdsTest = () => false } = {}) {
   // A repository that pairs no tests anywhere has no habit to have departed
   // from, and a zero there is the absence of a practice rather than a breach of
   // one. It is also the first thing a repository adopting tests would trip.
@@ -228,7 +233,7 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
     // notice can see is from the write it is about, and a check has to leave
     // out everything the same change brought.
     if (holdsTest(dirOf(rel))) continue;
-    const covered = coveredRoot(rel, roots, created);
+    const { root: covered, turnsOn } = coveredRoot(rel, roots) ?? {};
     if (!covered) continue;
     if (covered.companions.of < PRECEDENT_FLOOR) continue;
     // Tests under the root that pair with nothing are still tests. The same
@@ -255,6 +260,7 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
       precision: "precise",
       where: null,
       snippet: null,
+      turnsOn,
     });
   }
   return found;

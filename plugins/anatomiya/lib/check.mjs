@@ -294,13 +294,16 @@ export async function check(cwd, { baseRef = null } = {}) {
   const broughtSource = (dir, family) =>
     arrived.some((c) => c.path.startsWith(`${dir}/`) && familyOf(language(c.path)) === family &&
       isProducer({ rel: c.path, lang: language(c.path), facets: headFacets.get(c.path) ?? null }, placed));
-  // Asked once to learn which directories the answer turns on, then again with
-  // what the merge base says of them: one listing, and none where no finding
-  // was about to be stated or the change put no source under the directory.
-  const turnsOn = new Set();
-  precedentFindings(arrived, roots, { ...asked, created: (dir, family) => broughtSource(dir, family) && turnsOn.add(dir) && false });
-  const absent = await absentAt(root, base.mergeBase, [...turnsOn]);
-  findings.push(...precedentFindings(arrived, roots, { ...asked, created: (dir) => absent.has(dir) }));
+  // A finding does not stand where the change made the directory it is about
+  // and put source there, which the merge base says: one listing, and none
+  // where no finding was about to be stated or the change put no source under
+  // the directory.
+  const stated = precedentFindings(arrived, roots, asked);
+  const filled = (turnsOn) => turnsOn.filter(({ dir, family }) => broughtSource(dir, family)).map(({ dir }) => dir);
+  const absent = await absentAt(root, base.mergeBase, [...new Set(stated.flatMap((f) => filled(f.turnsOn)))]);
+  for (const { turnsOn, ...finding } of stated) {
+    if (!filled(turnsOn).some((dir) => absent.has(dir))) findings.push(finding);
+  }
 
   findings.sort(
     (a, b) =>

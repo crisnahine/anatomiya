@@ -70,12 +70,14 @@ export const startsAtSeparator = (extra) => /^[._-]/.test(extra);
  * The one directory name that is a claim about the file rather than about where
  * a repository keeps things. Whole segments, or `src/latest` is one.
  *
- * Nothing but a test is ever put in a `__tests__`. A `spec` or `cypress` tree
- * holds the factories, fixtures, page objects and support code beside its
- * specs, and charging those to the runner is the roster's own denominator going
- * wrong: `136 test files under spec/factories` on empire-flippers/api,
- * `spec/support: 22 test files` on rubocop, 1,979 fixture modules under
- * webpack's `test/cases`.
+ * Nearly everything put in a `__tests__` is a test, and every module there is
+ * counted as one: 20 of the 73 files vitepress keeps under the name hold no
+ * case, its e2e site's configs, data loaders and helpers, and 3 of
+ * element-plus's 167. A `spec` or `cypress` tree holds the factories, fixtures,
+ * page objects and support code beside its specs, and charging those to the
+ * runner is the roster's own denominator going wrong: `136 test files under
+ * spec/factories` on empire-flippers/api, `spec/support: 22 test files` on
+ * rubocop, 1,979 fixture modules under webpack's `test/cases`.
  */
 export const TEST_DIRS = new Set(["__tests__"]);
 
@@ -287,6 +289,15 @@ const below = (dir, above) => {
   return above.every((segment, i) => segments[i] === segment) ? segments.slice(above.length) : null;
 };
 
+const jvmPairing = (family) => (segments) => {
+  const at = segments.findIndex((segment, i) => JVM_TREES.test.test(segment) || (segment === "test" && segments[i - 1] === "src"));
+  if (at === -1) return null;
+  return (dir) => {
+    const own = below(dir, segments.slice(0, at));
+    return own !== null && own.length > 0 && !isTestTree(own[0], family);
+  };
+};
+
 /**
  * Per family, the source directories a test directory is paired with by the
  * family's own project layout, as a predicate over a source directory, or null
@@ -310,15 +321,6 @@ const below = (dir, above) => {
  * 10 are so named, 7 of them wrong. Only where a source directory of the
  * paired tree carries the name: `tests/Unit` mirrors none.
  */
-const jvmPairing = (family) => (segments) => {
-  const at = segments.findIndex((segment, i) => JVM_TREES.test.test(segment) || (segment === "test" && segments[i - 1] === "src"));
-  if (at === -1) return null;
-  return (dir) => {
-    const own = below(dir, segments.slice(0, at));
-    return own !== null && own.length > 0 && !isTestTree(own[0], family);
-  };
-};
-
 const PAIRINGS = {
   csharp: (segments) => {
     const project = segments.find((segment) => FAMILY_TREES.csharp.test.test(segment));

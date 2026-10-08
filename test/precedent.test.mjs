@@ -531,35 +531,27 @@ test("a test sitting in the one place its language's tool reads it from is asked
   }
 });
 
-test("a test for a directory the same change created is not held to the files of the directory above it", () => {
+test("a finding names the directories it turns on, which a change that made one for source retracts it by", () => {
   const roots = [root("app/services", { companions: { with: 6, of: 6, root: "spec" } }), root("src/pages", { files: 9, companions: { with: 0, of: 9, root: null } })];
-  const asked = [];
-  const created = (answer) => (dir, family) => {
-    asked.push(dir);
-    families.push(family);
-    return answer;
-  };
-  const families = [];
+  const turnsOn = (rel, among = roots) => precedentFindings([rel], among)[0].turnsOn;
 
-  assert.equal(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots, { created: created(false) }).length, 1);
-  assert.deepEqual(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots, { created: created(true) }), []);
-  assert.deepEqual(asked, ["src/pages/Listing", "src/pages/Listing"], "the directory asked about is the one the tail was shortened past");
-
+  // The directory asked about is the one the tail was shortened past.
+  assert.deepEqual(turnsOn("src/pages/Listing/__tests__/form.test.ts"), [{ dir: "src/pages/Listing", family: "js" }]);
   // A tail a root answers whole is that root's own directory, which a change adding a test to it did not create.
-  asked.length = 0;
-  assert.equal(precedentFindings(["src/pages/__tests__/form.test.ts"], roots, { created: created(true) }).length, 1);
-  assert.deepEqual(asked, []);
-  // With nobody to ask, as before a write, the finding stands.
-  assert.equal(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots).length, 1);
+  assert.deepEqual(turnsOn("src/pages/__tests__/form.test.ts"), []);
 
   // The family asked about is the one the root counts, and the test's own where the map recorded no extension.
   const counting = (ext) => [roots[0], { ...roots[1], companions: { ...roots[1].companions, ext } }];
-  families.length = 0;
-  precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots, { created: created(false) });
-  precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], counting(".vue"), { created: created(false) });
-  precedentFindings(["src/pages/Listing/form_spec.rb"], roots, { created: created(false) });
-  precedentFindings(["src/pages/Listing/form_spec.rb"], counting(".py"), { created: created(false) });
-  assert.deepEqual(families, ["js", "js", "ruby", "python"]);
+  assert.equal(turnsOn("src/pages/Listing/__tests__/form.test.ts", counting(".vue"))[0].family, "js");
+  assert.equal(turnsOn("src/pages/Listing/form_spec.rb")[0].family, "ruby");
+  assert.equal(turnsOn("src/pages/Listing/form_spec.rb", counting(".py"))[0].family, "python");
+});
+
+test("a test under a test tree of its family's own is about the directory with that tree's word dropped", () => {
+  // symfony keeps a `Tests` directory inside each component, which no test tree every family shares is named.
+  const roots = [rootOf(".php", "src/Log", { with: 5, of: 5, root: null }), rootOf(".php", "src/Cache/Adapter", { with: 0, of: 4, root: null })];
+  const [found] = precedentFindings(["src/Cache/Tests/Adapter/RedisTest.php"], roots);
+  assert.equal(found.area, "src/Cache/Adapter");
 });
 
 test("a test is judged against a directory of its own project, where its language's layout pairs one", () => {
