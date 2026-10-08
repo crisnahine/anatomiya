@@ -13,7 +13,7 @@ import { isCorpusPath } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { namesakeClause, pathText, testsParts } from "./render-layout.mjs";
-import { encode } from "./encode.mjs";
+import { encode, locator } from "./encode.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
 
 /** Whether a root pairs enough of its files with tests to call that its habit. */
@@ -291,7 +291,7 @@ export function noticeFor(rel, layout, { holdsTest, from = null } = {}) {
     `anatomiya: ${pathText(rel)}`,
     `  ${finding.reason}.`,
     `  ${PRECEDENT_COUNTED} Put it where the siblings put theirs, or leave it out and say which rule you followed.`,
-    // A worktree with no map of its own is answered from its main checkout's.
-    ...(from === null ? [] : [`  Counted from this repository's main checkout at ${from}, not this worktree.`]),
+    // A worktree with no map of its own is answered from its main checkout's, named as the path it is opened by.
+    ...(from === null ? [] : [`  Counted from this repository's main checkout at ${locator(from)}, not this worktree.`]),
   ].join("\n");
 }

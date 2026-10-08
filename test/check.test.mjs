@@ -5516,7 +5516,7 @@ test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, asyn
   assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
 });
 
-test("a merge base that cannot say whether it held a directory states no finding about a test for it", needsShebang, async (t) => {
+test("a merge base that cannot say whether it held a directory states no finding about a test for it, and says it could not", needsShebang, async (t) => {
   const dir = repo(t, ({ write, commit }) => {
     for (const [rel, body] of [...PY_TREE, pyIn("src/bare/old", 9)]) write(rel, body);
     commit("init");
@@ -5534,10 +5534,53 @@ test("a merge base that cannot say whether it held a directory states no finding
   assert.equal(answered.calls.filter((c) => c.startsWith(placement)).length, 1, answered.calls.join("\n"));
   assert.deepEqual(forKey(answered.report, "test_precedent").map((f) => f.path), ["src/bare/old/test_m9.py"]);
 
-  // Silent the way an index that cannot be listed is: the fact that decides the finding was not read (C33).
+  // Declined the way an index that cannot be listed is, and said: the fact that decides the finding was not read (C33).
   const unanswered = (await checkThroughShim(t, dir, { fail: placement })).report;
   assert.deepEqual(forKey(unanswered, "test_precedent"), []);
-  assert.deepEqual(unanswered.caveats, answered.report.caveats);
+  assert.deepEqual(unanswered.caveats, [
+    ...answered.report.caveats,
+    { code: "base-unreadable", message: "the merge base could not be asked which directories it held, so 1 test under a directory this change put source in drew no placement finding" },
+  ]);
+});
+
+test("more directories than one call's arguments hold are asked of the merge base in a second call, and each answer is read", needsShebang, async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    for (const [rel, body] of [...JS_TREE, jsIn("src/bare/aaa-old", 9), jsIn("src/bare/zzz-old", 9)]) write(rel, body);
+    commit("init");
+  });
+  writeMap(await scan(dir), {});
+  const { files } = await collect(dir);
+  writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+  execFileSync("git", ["checkout", "-q", "-b", "feature"], { cwd: dir, stdio: "pipe" });
+  // One hundred new packages, each named in 200 characters, and a first test in each of two the base held.
+  const fresh = Array.from({ length: 100 }, (_, i) => `src/bare/p${String(i).padStart(3, "0")}${"x".repeat(196)}`);
+  const added = [
+    ...fresh.flatMap((at) => [jsIn(at, 0), jsTestIn(`${at}/tests`, 0)]),
+    ...["src/bare/aaa-old", "src/bare/zzz-old"].flatMap((at) => [jsIn(at, 7), jsTestIn(`${at}/tests`, 9)]),
+    // And one whose finding turns on no directory, so no listing decides it.
+    jsTestIn("src/bare/lonely/tests", 0),
+  ];
+  for (const [rel, body] of added) {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), body);
+  }
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "a hundred packages"], { cwd: dir, stdio: "pipe" });
+
+  const { report, calls } = await checkThroughShim(t, dir);
+  const listings = calls.filter((c) => c.startsWith("ls-tree -z --name-only"));
+  assert.equal(listings.length, 2, `${listings.length} listings`);
+  assert.ok(listings.every((c) => c.length < 32_767), "each fits the shortest command line a platform takes");
+  assert.deepEqual(forKey(report, "test_precedent").map((f) => f.path), ["src/bare/aaa-old/tests/m9.test.js", "src/bare/lonely/tests/m0.test.js", "src/bare/zzz-old/tests/m9.test.js"]);
+
+  // The second call alone fails: no finding is stated off the half that answered.
+  const failed = await checkThroughShim(t, dir, { fail: "(literal)src/bare/zzz-old" });
+  assert.equal(failed.calls.filter((c) => c.startsWith("ls-tree -z --name-only") && !c.includes("zzz-old")).length, 1, "the first call ran and answered");
+  const half = failed.report;
+  assert.deepEqual(forKey(half, "test_precedent").map((f) => f.path), ["src/bare/lonely/tests/m0.test.js"]);
+  assert.deepEqual(half.caveats.filter((c) => c.code === "base-unreadable").map((c) => c.message), [
+    "the merge base could not be asked which directories it held, so 102 tests under a directory this change put source in drew no placement finding",
+  ]);
 });
 
 for (const top of [":top", "*"]) {
