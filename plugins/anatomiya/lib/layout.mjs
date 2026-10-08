@@ -52,8 +52,7 @@ const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel
  * file or a root of that language and no other: `commonTest` is a Gradle
  * source set and an ordinary directory name in a JavaScript repository.
  *
- * Exported because `scripts/measure-layout.mjs` recounts the printed line and
- * a second copy of this rule there would measure the disagreement.
+ * Exported for its own test.
  */
 export const underTestTree = (dir, family = null) =>
   dir !== "" && dir.split("/").some((seg) => isTestTree(seg, family));
@@ -146,14 +145,54 @@ const isComponent = (lang) => Boolean(lang) && embeddedIn(lang) !== null;
 // A component in a `__tests__` directory is what the tests there mount, so no test is owed it.
 const isFixture = (f) => isComponent(f.lang) && dirOf(f.rel).split("/").some((seg) => TEST_DIRS.has(seg));
 
+// A file a test can be about. A helper under a test tree has tests of its own
+// name, so it keeps them: left out, a fixture's test goes to whichever source
+// file elsewhere shares its stem.
+const answersATest = (f, mirrored) =>
+  Boolean(f.lang) && !holdsNothing(f.facets) && !isTestFile(f, mirrored) && !isStoryFile(f.rel) && !isFixture(f);
+
 /**
- * A file a namesake test could be written for: one this tool reads that holds
- * something and is not itself a test, a story or a fixture.
+ * A file a test could be written for: source this tool reads that holds
+ * something, and is not a test, a story, a declaration file, a file a runner
+ * loads for its own use, or anything under a test tree of its family.
+ *
+ * A runner's own file is one by the parse, which names its runner. What sits
+ * under a test tree is what the tests run on, whatever root it is counted in:
+ * Newtonsoft.Json's `Src` read `63 of 631` with 388 of the 631 under
+ * `Src/Newtonsoft.Json.Tests`, and kit's `packages/adapter-vercel` read
+ * `0 of 13` over the 13 files of its test apps alone. The cost is a library
+ * whose own source sits under such a name, which the root rule already paid:
+ * storybook's `code/core/src/test`, 6 files of 2,053.
+ *
+ * `f.facets` is null where the caller holds no parse, and the file is then
+ * read by its path alone. Asked by a root's namesake count, by the placement
+ * finding of what a change put in a directory, and by
+ * `scripts/measure-layout.mjs`, so the three cannot differ on it.
+ */
+export const isProducer = (f, mirrored = null) =>
+  answersATest(f, mirrored) && !extOf(f.rel).startsWith(".d.") && !underTestTree(dirOf(f.rel), familyOf(f.lang));
+
+/**
+ * The extensions a root's namesake counts are taken over, of the ones its line
+ * prints: the first this tool reads, and the other where either is a
+ * component's. Null for one the root has none of.
  *
  * Exported for the reason `underTestTree` is.
  */
-export const isProducer = (f, mirrored = null) =>
-  Boolean(f.lang) && !holdsNothing(f.facets) && !isTestFile(f, mirrored) && !isStoryFile(f.rel) && !isFixture(f);
+export function countedExtensions(own, exts) {
+  // The denominator has to be a number the line already printed: one of the
+  // top two extensions, not always the first of them. supabase's own
+  // marketing site prints more screenshots than components, and matching
+  // only exts[0] read every producer there as zero instead of naming its
+  // `.tsx` files.
+  const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
+  const first = exts.find(([ext]) => read(ext))?.[0] ?? null;
+  // Where one of the two printed extensions is a component's the other is counted too, and apart:
+  // summed into the first, the denominator is a number the line never printed.
+  const component = (ext) => own.some((f) => isComponent(f.lang) && extOf(f.rel) === ext);
+  const other = exts.find(([ext]) => ext !== first && read(ext) && (component(ext) || component(first)))?.[0] ?? null;
+  return [first, other];
+}
 
 /**
  * A test file is one the parse saw import a runner or call `describe`, one
@@ -502,7 +541,7 @@ export function layoutIndexes(files, mirrored = mirroredTests(files)) {
   // a producer, so no root would ever count it, and letting it win ownership
   // retires the spec outright: the real file elsewhere in the tree then reads
   // untested and the roster loses the place along with the count.
-  const sources = files.filter((f) => isProducer(f, mirrored));
+  const sources = files.filter((f) => answersATest(f, mirrored));
   return { testFiles, mirrored, byStem: namesakeIndex(testFiles, sources) };
 }
 
@@ -521,13 +560,7 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   const tests = own.filter((f) => isTestFile(f, mirrored));
   const jsxFiles = own.filter((f) => f.facets?.jsx);
   const exts = tally(own.map((f) => extOf(f.rel))).slice(0, 2);
-  // The denominator has to be a number the line already printed: one of the
-  // top two extensions, not always the first of them. supabase's own
-  // marketing site prints more screenshots than components, and matching
-  // only exts[0] read every producer there as zero instead of naming its
-  // `.tsx` files.
-  const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
-  const producerExt = exts.find(([ext]) => read(ext))?.[0];
+  const [producerExt, otherExt] = countedExtensions(own, exts);
   // Neither source to imitate nor a test, so a story never fills the
   // namesake question: storybook's `.stories.tsx` is literal JSX and would
   // otherwise stand for the component beside it.
@@ -537,11 +570,6 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   // repository: once as the source that lost its test, once as a new producer.
   const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
   const producers = producersOf(producerExt);
-  // Where one of the two printed extensions is a component's the other is counted too, and apart:
-  // summed into the first, the denominator is a number the line never printed.
-  const component = (ext) => own.some((f) => isComponent(f.lang) && extOf(f.rel) === ext);
-  const otherExt = exts.find(
-    ([ext]) => ext !== producerExt && read(ext) && (component(ext) || component(producerExt)))?.[0];
   const others = producersOf(otherExt);
   const stories = own.filter((f) => isStoryFile(f.rel));
 
@@ -563,11 +591,11 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
     testRoot: tests.length * 2 > own.length,
   };
   if (stories.length > 0) record.stories = stories.length;
-  if (producers.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(producers[0].lang))) {
+  if (producers.length > 0 && testFiles.length > 0) {
     // The extension the count is over, which is not always the root's first.
     record.companions = { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt };
   }
-  if (others.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(others[0].lang))) {
+  if (others.length > 0 && testFiles.length > 0) {
     record.otherCompanions = { ...namesakeCompanions(others, testFiles, dir, byStem), ext: otherExt };
   }
   const helpers = helperFacet(own, jsxFiles, mirrored);
