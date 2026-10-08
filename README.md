@@ -188,8 +188,9 @@ it finds one, and leaves everything else in the file alone.
 After the first `/anatomiya:scan` in a checkout, you do not run it again. At the start of every
 session, and whenever HEAD moves (a checkout, a commit, a pull, a merge, a reset), the plugin starts
 a background refresh that rescans only when something the map depends on changed: the commit, the
-tracked files, the pin, this plugin's version, whether the repository holds packages, or where
-`typescript` resolves. It watches the reflog, or, where there is none, the reftable backend's table
+tracked files and what is staged, the pin, this plugin's version, whether the repository holds
+packages, which root config the type checker reads (`tsconfig.json`, `tsconfig.base.json` or
+neither), or where `typescript` resolves and at what version. It watches the reflog, or, where there is none, the reftable backend's table
 list or the index, so a repository created without a reflog or on reftable refreshes on every move
 too. The hook returns at once and the scan runs detached, so nothing waits on it. Each rescan
 decides on its own whether to run the type checker, the same way `/anatomiya:scan` does, with one
@@ -201,12 +202,11 @@ tries again after half an hour or once the checkout moves, and the delivered map
 failed until one succeeds. A committed map's `.claude/anatomiya/layout.json` comes along but does
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
 
-A map written by 0.13.4 does not come out the same from this version, and the first scan or refresh
-rewrites it. On the 35 corpus repositories every overview differs and 6,120 of 6,834 area files are
-byte-identical. What you will see:
+A map written by 0.13.4 or earlier is rewritten by the first scan or refresh of 0.14.0, and it
+will differ. A committed map is not refreshed, so scan it by hand and commit the result. Expect:
 
 - one more "Not covered" line, or a longer one, for files in a language the map does not read
-  (`.erb`, `.haml`, `.scss`), and on 19 of the 35 one or two root lines fewer to make room;
+  (`.erb`, `.haml`, `.scss`), and often one or two root lines fewer to make room for it;
 - `, in .rb files` or the like on a claim line, where the area holds three or more files the claim
   is never asked of;
 - areas, test counts and claims for Python, PHP, Go, Java, C#, Rust and Kotlin, and for the script
@@ -214,7 +214,7 @@ byte-identical. What you will see:
 - no count line for the type-checked claim where the checker reads `degraded`;
 - at the 500-area ceiling, small areas giving their place to larger ones of a newly read language.
 
-[CHANGELOG.md](CHANGELOG.md) has the counts per repository.
+The 0.14.0 section of [CHANGELOG.md](CHANGELOG.md) has the counts, measured on 35 repositories.
 
 A session started in the directory that holds your checkouts, which has no map of its own, refreshes
 and watches each mapped checkout directly below it, and the reuse check reads each one's change,
@@ -398,7 +398,8 @@ clause.
 
 ## What it measures
 
-61 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. A Vue or Svelte script
+61 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby, and one more for
+JavaScript and JSX that needs the type checker. A Vue or Svelte script
 block is asked most of the JavaScript ones: 24 for Vue, 24 for Svelte. Three are asked of the
 languages a tree-sitter grammar reads, each where measured repositories differ on it: 2 for
 Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for Rust, 1 for Kotlin. Each is one claim
@@ -464,7 +465,8 @@ wrote 4 files under .github/instructions for GitHub Copilot
 You pass the flag once. A target stays on while its `anatomiya-overview` file is in its directory,
 so every later scan, and the background refresh, keeps writing it. Nothing else remembers the
 choice. The flag names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns
-both off and removes the files this tool wrote there. Deleting a target's overview file by hand
+both off and removes the files this tool wrote there. A scan that drops a target says so:
+`removed 4 files under .github/instructions`, then `.github/instructions is off now`. Deleting a target's overview file by hand
 turns it off as well, and the next scan removes the area files beside it. The two directories stay,
 holding none of this tool's files. In a clone that brings a committed overview file, the first scan
 says on that directory's line which file switched the target on and what switches it off:
@@ -604,14 +606,14 @@ naming, and the rows counted under [What it measures](#what-it-measures). A map 
 mostly prints counts and states a claim only where a directory is consistent: a scan of fastapi
 states 1 of 82 claims, hugo 0 of 102, ktor 0 of 133 and tokio 14 of 33. None of the seven gets the
 type checker, the "most imported from here" lines or the end-of-turn reuse check. The notice before
-a test file is written, and the finding `check` reports for one, read a test by its language's
-name in six of them: a Rust test has no name, since cargo collects by place, so no `.rs` file is
+a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of them, and say nothing of a Go, Java, Kotlin or C#
+test that sits in the one place its language's tool reads it from: a Rust test has no name, since cargo collects by place, so no `.rs` file is
 asked. A file of any other language is not read: "What lives where" counts it, and
 "Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
 
-Of naming, imports, tests and layout, each of the seven gets its tests and the layout section, and
-none gets a naming or an imports row. A row is asked of a language only where three measured
-repositories of it differ:
+Each of the seven gets its test files and the layout section. None gets a naming row or an imports
+row. A row is asked of a language only where three measured repositories of it differ. No reference
+parser was run for Java, C#, Rust or Kotlin, so the files of those four languages that a grammar could not read were classed as a syntax error or a gap in the grammar by reading each one (`DECISIONS.md` B60, B63):
 
 | Language | A test file is | Rows asked | Measured or weighed, and not asked |
 |---|---|---|---|
@@ -642,12 +644,14 @@ as no dependencies), and the repository has a root `tsconfig.json`, a root `tsco
 where there is none, or a TypeScript source file that is not a declaration file, and leaves it off
 otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
-`jsconfig.json` does not count. It costs: a scan with it measured about 5x a plain one on a
-3,800-file repository and about 10x on a 2,600-file one, and the checker is whole-program, so it
+`jsconfig.json` does not count. It costs: a scan with it measured about 3x a
+plain one on a 3,800-file repository and about 8x on a 2,600-file one, and the checker is whole-program, so it
 cannot be narrowed to the files you changed. The map says when the checker answered badly, and
 prints no count for this claim then. While that answer stands and the plugin version, the root
 config, and the size and modification time of `node_modules` and of the install record in it are
-unchanged, a background refresh keeps the answer without running the checker; `/anatomiya:scan` always runs it. On four repositories that read degraded, that
+unchanged, a background refresh keeps the answer without running the checker; `/anatomiya:scan` always runs it.
+An install starts no refresh by itself, so after one the checker is measured by the next refresh a
+commit, a checkout or a pull starts, or by a scan you run. On four repositories that read degraded, that
 took a refresh from 4.4s to 21.2s down to 1.2s to 3.8s.
 
 **A Vue or Svelte file is read for its script block, never its template.** The `<script>` blocks

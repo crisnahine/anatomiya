@@ -447,6 +447,9 @@ whether the root holds packages, where `typescript` resolves, the size and modif
 `node_modules` and of the install record in it (`.package-lock.json`, `.modules.yaml`,
 `.yarn-state.yml` or `.yarn-integrity`), and the name and bytes of the config the root is read
 through. A root config that leaves the repository contributes its refusal in place of its bytes.
+An install or a config edit starts no refresh by itself, since the stamp that starts one holds
+neither the install record nor the config's bytes: the checker is measured again by the next
+refresh a commit, a checkout or a pull starts, or by a scan run by hand.
 The record has to be one a scan could have written: a reason the classifier or the config reader
 produces, a rate that reason allows, and a moment not after now; any other record is measured
 over. The refresh then writes the recorded status, reason and rate with
@@ -1471,9 +1474,9 @@ merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to 
 to the rescan, which decides it the way any scan does, except that the refresh hands it a degraded
 verdict measured under the same build, install and root config, and the rescan then does not run
 the checker (B8). Where the repository tracks the overview of
-a Cursor or Copilot copy of the map, the rescan holds that directory as it is and writes the rest:
+a Cursor or Copilot copy of the map, the rescan leaves that directory alone and writes the rest:
 nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
-by hand rewrites it. A copy git could not be asked about is held too. A scan that throws writes nothing, so the
+by hand rewrites it. A copy git could not be asked about is left alone too. A scan that throws writes nothing, so the
 previous map stays; the same stamp is tried again only after half an hour, and the echo says the
 refresh failed until a refresh or a scan run by hand succeeds. A scan run by hand records its stamp
 too, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
@@ -1982,8 +1985,10 @@ module, so it is named for the module it comes from, `user (default)`, and an in
 directory. A specifier is mapped to a file the way
 `pairing.mjs` learns a companion root: a relative one resolves against the importer's directory,
 one ending in `/` names a directory and resolves only through its `index`, the way Node and
-TypeScript read `./base/`, `./` and `../`, SvelteKit's `$lib/` resolves the same way against the `src/lib` of the nearest
-directory above the importer that holds the file, anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
+TypeScript read `./base/`, `./` and `../`, SvelteKit's `$lib/` is tried against the `src/lib` of each
+directory above the importer and resolves where one file answers, a `~/`, `@/`, `#/` or `src/`
+written in a component is tried the same way against each directory above it and its `src`,
+anything else is matched on the path tail once such a prefix is cut, and a
 tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` or
 `svelte.config.js` is read. A component is named only by a specifier that spells its extension:
 `./Foo.vue` is that file and a bare `./Foo` never is, since a bundler needs the extension written.

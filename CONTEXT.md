@@ -75,6 +75,19 @@ root took. A different unit from an area: it is counted over every tracked file 
 and it says nothing about which area a file belongs to.
 _Avoid_: top-level directory, folder, package, area
 
+**Fold**:
+What happens to files whose directory gets no unit of its own. A directory too small to be an area,
+or pushed out at the **area ceiling**, folds into the nearest area above it, and its files are
+counted there. A root the overview has no line left for folds into the roster's last line, which
+counts the directories and files it took: `and 7 more directories holding 252 files`.
+_Avoid_: merged, collapsed, hidden, dropped
+
+**Area ceiling**:
+The most areas one map may hold: a sixteenth of the source files, never under 120 and never over
+500. Past it the smallest areas fold first, by file count alone, whatever language they hold and
+whatever they state.
+_Avoid_: area limit, area budget, cap
+
 **Engine**:
 One of the three parser engines a language is routed to: `oxc` for JavaScript, TypeScript and a
 component's script blocks, `prism` for Ruby, and `tree-sitter` for Python, PHP, Go, Java, C#, Rust
@@ -109,6 +122,14 @@ The languages a test may be written in and still answer a source file of another
 TypeScript, JSX, Vue and Svelte are one family, Ruby is another, and Python, PHP, Go, Java, C#,
 Rust and Kotlin are each a family of one. A test never answers a file of another family.
 _Avoid_: engine, ecosystem, stack
+
+**Test tree**:
+A directory whose name puts what is under it among the tests: `test`, `tests`, `spec`,
+`__tests__`, `cypress` and `e2e` for every family, and what a family's own build names one,
+which is a Gradle source set ending in `Test`, a .NET project named `X.Tests` or `X.Test`, and
+a `Test` or `Tests` directory in PHP. Sitting in one does not make a file a test: its name does,
+or for Rust its place.
+_Avoid_: test folder, test root, spec directory
 
 **Namesake test**:
 A test file that answers one source file by carrying its stem. It says that file is tested, and nothing
@@ -248,6 +269,12 @@ A named condition a slot must clear before it may state anything. The first one 
 recorded and printed.
 _Avoid_: threshold, check, filter, guard
 
+**Scope clause**:
+The words on a claim line that name the files it was counted over, `, in .rb files`. It prints
+where the area holds three or more source files of languages the dimension is never asked of, and
+it joins the line and adds none. One or two such files earn no clause.
+_Avoid_: qualifier, language suffix, filter
+
 **Author**:
 A person the history shows in an area's files, counted across the names those files used to carry. One
 is a habit rather than a convention, so a slot clears a bar of them before it may state anything, and
@@ -331,6 +358,12 @@ The rescan a detached worker runs on its own when HEAD, the tracked files, the p
 version has moved since the last scan, in a checkout that already holds a map of its own. It follows the pin where it
 is safe to, and keeps the previous map when the rescan fails.
 _Avoid_: rebuild, sync, auto-scan
+
+**Degraded**:
+The verdict on a type checker run that cannot be believed: under 0.80 of its type lookups resolved,
+or its config was refused. The map then prints no count for a type-checked claim, and the overview
+gives the share that resolved and the reason. The other verdict of a run that finished is `ok`.
+_Avoid_: broken, failed, partial, low confidence
 
 **Carried verdict**:
 A type checker verdict of `degraded` that a refresh writes again without running the checker. A
