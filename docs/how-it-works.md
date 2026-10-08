@@ -2306,7 +2306,9 @@ arbitrary code in the plugin directory. `--include=optional` is there because th
 binding is an optional dependency of `oxc-parser`: an npm configured with `optional=false` left it
 out and answered "up to date". An exit of 0 is not taken at its word either: setup asks the
 node-hosted engines again, in a fresh node because a module that failed to load stays failed in the
-process that tried it, and fails naming any that still does not load. A grammar file is not
+process that tried it, and fails naming any that still does not load. Where every one loads, the
+last line says to scan again in any repository that holds a map: a refresh that stopped for the
+missing package waits on that checkout's HEAD or its retry clock, and the map there is as it was. A grammar file is not
 something it can put back, and it is not listed as something to install: with one cut short,
 `setup` and `setup --dry-run` print `doctor`'s own line for it, `tree-sitter 0.27.0: grammars: 6
 of 7, kotlin.wasm did not load, reinstall this plugin, which ships its grammar files in its own

@@ -641,6 +641,23 @@ test("a target stays on with no flag, and --targets claude turns the others off"
   assert.deepEqual(listed(repo, CURSOR), []);
 });
 
+test("a scan that names one target turns off the other one that was on, and says which directory", (t) => {
+  const repo = repoWithSource(t);
+  anatomiya(repo, "scan", "--targets", "cursor,copilot");
+
+  const dry = JSON.parse(anatomiya(repo, "scan", "--dry-run", "--targets", "cursor", "--format", "json"));
+  assert.deepEqual([dry.targets.cursor.state, dry.targets.copilot.state, dry.targets.copilot.removed], ["on", "off", 2]);
+  assert.equal(listed(repo, COPILOT).length, 2, "and the dry run removed nothing");
+
+  const out = anatomiya(repo, "scan", "--targets", "cursor");
+  assert.match(out, /^wrote 2 files under \.cursor\/rules for Cursor$/m, out);
+  assert.match(out, /^removed 2 files under \.github\/instructions$/m, out);
+  assert.match(out, /^\.github\/instructions is off now$/m, out);
+  assert.doesNotMatch(out, /\.cursor\/rules is off/, out);
+  assert.deepEqual(listed(repo, COPILOT), []);
+  assert.equal(listed(repo, CURSOR).length, 2);
+});
+
 test("a dry run with --targets plans every directory and writes none", (t) => {
   const repo = repoWithSource(t);
 
@@ -964,6 +981,11 @@ test("setup runs npm in the plugin's own directory, with the arguments it printe
   assert.equal(code, 0, stdout);
   assert.match(stdout, /^not installed: oxc, flow-remove-types, tree-sitter, typescript$/m, stdout);
   assert.match(stdout, /added 2 packages/, "npm's own words come back");
+  assert.equal(
+    stdout.trimEnd().split("\n").at(-1),
+    "run `/anatomiya:scan` again in any repository you have a map in: a background refresh that stopped for what was missing may not run again until that checkout's HEAD moves",
+    "and the last line says what to do with the maps written before it"
+  );
   assert.deepEqual(
     readFileSync(join(install, "npm-argv.txt"), "utf8").trim().split("\n"),
     ["install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"],
@@ -1029,6 +1051,7 @@ test("a setup whose npm finished without the engine loading fails and names it",
   assert.equal(code, 2, stdout);
   assert.match(stderr, /up to date in 1ms/, "npm's own words still come back");
   assert.match(stderr, /^npm finished, and still not loading: oxc \(oxc-parser did not load\)/m, stderr);
+  assert.doesNotMatch(stderr + stdout, /anatomiya:scan/, "nothing to scan again for");
 });
 
 for (const args of [["setup"], ["setup", "--dry-run"]]) {

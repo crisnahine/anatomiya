@@ -345,7 +345,7 @@ test("frontmatter: the exact lines for all six target and kind pairs", () => {
   assert.equal(lines(cursor, "overview")[1], `generator: ${GENERATOR}`);
 });
 
-test("an area with no pattern: claude refuses it, cursor attaches nothing, copilot cannot say so", () => {
+test("an area with no pattern: claude refuses it, cursor matches nothing, copilot cannot say so", () => {
   for (const given of [{ kind: "area", patterns: [] }, { kind: "area" }]) {
     assert.throws(() => frontmatter(claude, given), { message: "an area file with no pattern would load on every turn" });
     assert.deepEqual(frontmatter(cursor, given), ["---", "generator: anatomiya", "alwaysApply: false", "---"]);

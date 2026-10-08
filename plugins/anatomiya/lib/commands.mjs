@@ -326,7 +326,14 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   // A missing runtime hides a lost grammar file until the install brings the runtime back, so the rows read after it are the ones asked.
   const lostNow = after ? readinessLines(after.filter(lostGrammar)) : lost;
   lines.push(...lostNow);
-  return answer(root, needed, { ran: true, ok: !error && still.length === 0 && lostNow.length === 0, output: lines.join("\n") });
+  const ok = !error && still.length === 0 && lostNow.length === 0;
+  // A refresh that stopped for the missing runtime waits on its checkout's HEAD or its retry clock, and the map there is as it was.
+  if (ok) {
+    lines.push(
+      "run `/anatomiya:scan` again in any repository you have a map in: a background refresh that stopped for what was missing may not run again until that checkout's HEAD moves"
+    );
+  }
+  return answer(root, needed, { ran: true, ok, output: lines.join("\n") });
 }
 
 /**
