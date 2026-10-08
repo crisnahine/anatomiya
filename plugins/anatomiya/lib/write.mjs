@@ -18,6 +18,7 @@ import {
   resolveRulesDir,
   resolveTargetDir,
   spelledOtherwise,
+  stagedBy,
   targetStatus,
 } from "./rules.mjs";
 import { TARGETS, TARGET_IDS, areaName, assertTargets, isClaude, overviewName } from "./targets.mjs";
@@ -122,6 +123,8 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   return {
     write: [...bodies.keys()],
     remove: claude.stale,
+    // The temporary files an earlier scan left in Claude Code's directory, removed with the rest.
+    staged: claude.staged,
     foreign: claude.foreign,
     unknown: claude.unknown,
     replaced: claude.replaced,
@@ -258,8 +261,15 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   const stale = blind ? [] : mine.filter((f) => !planned.has(f) && (!on || !heldNames.has(f)));
   // Ours and held, so still ours after this run: the next record has to go on naming it.
   const kept = mine.filter((f) => !planned.has(f) && !stale.includes(f) && heldNames.has(f));
+  // A scan that stopped while this directory was swapped for a link missed its
+  // own temporary files, and nothing else knows their names: 66 stayed in one
+  // directory after 8 such scans. Removed wherever this scan writes or removes,
+  // and where a target was left out by name, since off is none of this tool's
+  // files. One whose stager is still running is a scan about to rename it.
+  const cleans = on || explicit || stale.length > 0;
+  const staged = blind || !cleans ? [] : audit.staged.filter((f) => !running(stagedBy(f, target)));
   // Claude Code's two directories were held to this before anything was read.
-  if (!isClaude(target) && (names.length > 0 || stale.length > 0)) refuseNonDirectory(root, target.dir);
+  if (!isClaude(target) && (names.length > 0 || stale.length > 0 || staged.length > 0)) refuseNonDirectory(root, target.dir);
 
   return {
     filed,
@@ -270,6 +280,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     left: [...wanted.filter((a) => taken.includes(nameOf(a))), ...held.filter((a) => !kept.includes(nameOf(a)))].map((a) => a.id),
     names,
     stale,
+    staged,
     kept,
     // Our prefix and our key, but no map on disk names it: an older build wrote
     // it, or the store was deleted. It still loads, so it is reported; it is not
@@ -328,7 +339,8 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
     on,
     first: laid.first,
     write: [...bodies].map(([name, body]) => ({ name, body })),
-    remove: laid.stale,
+    // A temporary file an earlier scan left is counted with what this one removes.
+    remove: [...laid.stale, ...laid.staged],
     foreign: laid.foreign,
     unknown: laid.unknown,
     replaced: laid.replaced,
@@ -437,7 +449,7 @@ export function commitMap(root, plan) {
     ];
     for (const [path, body] of writes) staged.push([writeTemp(path, body), path]);
     const removals = [
-      ...plan.remove.map((f) => join(rulesDir, f)),
+      ...[...plan.remove, ...plan.staged].map((f) => join(rulesDir, f)),
       ...others.flatMap((t) => t.remove.map((f) => join(t.at, f))),
     ];
     // And once more with everything staged: writing the bodies is the long part,
@@ -565,6 +577,16 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
     if (err.moved && lost > 0) err.message = movedAway(err.moved, `${PUT_BACK} everywhere else`).message;
     if (err.locked) err.message = lockedSentence(err.locked, lost > 0 ? "stopped part way" : PUT_BACK);
     throw err;
+  }
+}
+
+// Whether a process is there to be signalled. One this user may not signal is there.
+function running(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
   }
 }
 
