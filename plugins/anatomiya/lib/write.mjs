@@ -4,6 +4,7 @@ import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mj
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
+  REFRESH_STATE,
   RULES_DIR,
   STORE_DIR,
   areaFilename,
@@ -19,6 +20,7 @@ import {
   resolveTargetDir,
   spelledOtherwise,
   stagedBy,
+  stagedInStore,
   targetStatus,
 } from "./rules.mjs";
 import { TARGETS, TARGET_IDS, areaName, assertTargets, isClaude, overviewName } from "./targets.mjs";
@@ -125,6 +127,8 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     remove: claude.stale,
     // The temporary files an earlier scan left in Claude Code's directory, removed with the rest.
     staged: claude.staged,
+    // And the ones a scan or a refresh left in the store, where the record is megabytes on a large repository.
+    storeStaged: blind ? [] : stagedInStore(storeDir, STORE_STAGED).filter(({ pid }) => !running(pid)).map(({ name }) => name),
     foreign: claude.foreign,
     unknown: claude.unknown,
     replaced: claude.replaced,
@@ -376,6 +380,9 @@ function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritabl
   return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...(unwritable ? { unwritable } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
 }
 
+// The files a scan and a refresh stage in the store, by name.
+const STORE_STAGED = [FACTS_PATH, LAYOUT_PATH, REFRESH_STATE].map((path) => basename(path));
+
 // Nobody read it, or the caller said to leave it alone: neither is written, cleared or turned off.
 const untouched = (o) => o.state === "unknown" || o.leftAlone === true;
 
@@ -466,9 +473,17 @@ export function commitMap(root, plan) {
     ];
     for (const [path, body] of writes) staged.push([writeTemp(path, body), path]);
     const removals = [
+      ...plan.storeStaged.map((f) => join(storeDir, f)),
       ...[...plan.remove, ...plan.staged].map((f) => join(rulesDir, f)),
       ...others.flatMap((t) => t.remove.map((f) => join(t.at, f))),
     ];
+    // A temporary file holds nothing worth putting back, and its size is whatever
+    // the repository made it: 1.5 GB sparse at such a name took a scan to 1,535 MB.
+    const leftover = new Set([
+      ...plan.storeStaged.map((f) => join(storeDir, f)),
+      ...plan.staged.map((f) => join(rulesDir, f)),
+      ...others.flatMap((t) => t.remove.filter((f) => stagedBy(f, TARGETS[t.id]) !== null).map((f) => join(t.at, f))),
+    ]);
     // And once more with everything staged: writing the bodies is the long part,
     // and a link put at a directory meanwhile is where the renames would land.
     for (const t of others) own(t.id, t, UNTOUCHED);
@@ -483,7 +498,7 @@ export function commitMap(root, plan) {
     // Each file by the repository's own spelling of where it is, for a refusal to name.
     const spelled = new Map([[rulesDir, RULES_DIR], [storeDir, STORE_DIR], ...others.map((t) => [t.at, t.dir])]);
     const said = (path) => `${spelled.get(dirname(path))}/${basename(path)}`;
-    replaceAll(staged, removals, { record: factsPath, was: readLayout(root) }, stillOwn, said);
+    replaceAll(staged, removals, { record: factsPath, was: readLayout(root), leftover }, stillOwn, said);
   } catch (err) {
     for (const [tmp] of staged) quietUnlink(tmp);
     // Deepest first, and only while empty: `rmdir` refuses anything else.
@@ -543,7 +558,8 @@ function makeOwnDirectory(at, rel, made) {
 /**
  * Rename every staged file into place and remove the orphans, or put back what
  * was there before the first one moved. `stillOwn` throws for a path whose
- * directory is no longer where the plan found it.
+ * directory is no longer where the plan found it. A path in `pair.leftover` is
+ * removed unread and never put back.
  *
  * A rename in a directory the temporary file was just created in still fails:
  * Windows refuses one over a file another process holds open. `said` names a
@@ -552,7 +568,8 @@ function makeOwnDirectory(at, rel, made) {
 function replaceAll(staged, removals, pair, stillOwn, said) {
   // Read before the first rename, so the window between the facts and the last
   // file holds renames and nothing else.
-  const before = new Map([...staged.map(([, path]) => path), ...removals].map((p) => [p, previousBytes(p)]));
+  const kept = removals.filter((path) => !pair.leftover.has(path));
+  const before = new Map([...staged.map(([, path]) => path), ...kept].map((p) => [p, previousBytes(p)]));
   const undo = [];
   try {
     for (const [tmp, path] of staged) {
@@ -567,7 +584,6 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
       undo.push([path, before.get(path)]);
     }
     for (const path of removals) {
-      const previous = before.get(path);
       stillOwn(path);
       try {
         unlinkSync(path);
@@ -575,7 +591,8 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
         if (err.code === "ENOENT") continue;
         throw lockedFile(err, said(path), "removed");
       }
-      undo.push([path, previous]);
+      // A leftover has no bytes here, which the put-back reads as one to leave gone.
+      undo.push([path, before.get(path)]);
     }
   } catch (err) {
     let lost = 0;

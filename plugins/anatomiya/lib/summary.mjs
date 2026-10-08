@@ -3,7 +3,7 @@ import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { unreadReasons } from "./readiness.mjs";
-import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
+import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
 import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
 
@@ -118,6 +118,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     removed: plan.remove.length,
     // Only where there were any: a scan that stopped part way is the one thing that leaves them.
     ...(plan.staged?.length ? { stagedRemoved: plan.staged.length } : {}),
+    ...(plan.storeStaged?.length ? { storeStagedRemoved: plan.storeStaged.length } : {}),
     wrote: plan.write.length,
     // A language read no file of is one of two facts, told apart by whether
     // anything else was read: `blind` is a run that wrote nothing at all, and
@@ -296,9 +297,8 @@ export function scanLines(s) {
         : `${s.removed} area files ${what}: their area is gone or states nothing`
     );
   }
-  if (s.stagedRemoved) {
-    const n = s.stagedRemoved;
-    lines.push(`${plural(n, "temporary file")} an earlier scan left in ${RULES_DIR} ${s.dryRun ? "would be removed" : n === 1 ? "was removed" : "were removed"}`);
+  for (const [n, dir] of [[s.stagedRemoved, RULES_DIR], [s.storeStagedRemoved, STORE_DIR]]) {
+    if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} ${s.dryRun ? "would be removed" : n === 1 ? "was removed" : "were removed"}`);
   }
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.

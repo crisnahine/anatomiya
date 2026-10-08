@@ -11,7 +11,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
+import { outsideClaude, readHead, resolveInside, stagedPath } from "./rules.mjs";
 import { wilsonLower } from "./gates.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
@@ -355,7 +355,7 @@ export function writeTemp(path, body) {
   // repository shipping that name as a tracked symlink had the map's bytes
   // written wherever it pointed. The directories were resolved (F2); this
   // leaf was not.
-  const tmp = `${path}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
+  const tmp = stagedPath(path, process.pid, randomBytes(8).toString("hex"));
   // Created on its own, and written inside the cleanup: a write that fails part
   // way, on a full disk, has already made the temp file, and ENOSPC out of a
   // single `writeFileSync` before the `try` left it beside the map. A create

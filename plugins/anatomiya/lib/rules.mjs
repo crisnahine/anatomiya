@@ -144,8 +144,20 @@ export function isMapName(name, target = TARGETS.claude) {
 
 const AREA_STEM = new RegExp(`^${PREFIX}area-[0-9a-f]{8}$`);
 
-// What `writeTemp` puts after the path it stages a file for: its process id, then sixteen hex digits.
+/**
+ * Where a file is staged before it is renamed to `path`: beside it, under the
+ * stager's process id and sixteen hex digits nobody can predict.
+ */
+export const stagedPath = (path, pid, hex) => `${path}.tmp-${pid}-${hex}`;
+
+// The one reading of what `stagedPath` adds.
 const STAGED = /\.tmp-(\d+)-[0-9a-f]{16}$/;
+
+// The stager's process id where the name is one `owns` answers for with that added, or null.
+function stager(name, owns) {
+  const added = STAGED.exec(name);
+  return added !== null && owns(name.slice(0, added.index)) ? Number(added[1]) : null;
+}
 
 /**
  * The process that staged a temporary file of the map's, read off the file's
@@ -153,8 +165,26 @@ const STAGED = /\.tmp-(\d+)-[0-9a-f]{16}$/;
  * directory, then what the stager adds to it.
  */
 export function stagedBy(name, target = TARGETS.claude) {
-  const added = STAGED.exec(name);
-  return added !== null && isMapName(name.slice(0, added.index), target) ? Number(added[1]) : null;
+  return stager(name, (staged) => isMapName(staged, target));
+}
+
+/**
+ * The temporary files a stopped writer left in the store, each with the process
+ * that staged it: a regular file whose whole name is one of `names` and what
+ * the stager adds. Never a link, a directory or a fifo, and never another name,
+ * since the directory comes with the repository.
+ */
+export function stagedInStore(dir, names) {
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries
+    .sort()
+    .map((name) => ({ name, pid: stager(name, (staged) => names.includes(staged)) }))
+    .filter(({ name, pid }) => pid !== null && isPlainFile(join(dir, name)));
 }
 
 /** What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`. */
