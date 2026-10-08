@@ -290,7 +290,9 @@ scanned by 0.13.4 and by this version.
   the scan did not name, what was replaced there is put back, the `.claude/rules` map and the other
   copy are written, the exit is 0, and the scan says `.cursor/rules could not be written
   (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was
-  written or removed: close what holds it or change its mode, then scan again`. Where the scan
+  written or removed: close what holds it or change its mode, then scan again`. A refresh that
+  leaves a directory this way names it under `stopped` in `refresh.json` and is due again after 30
+  minutes, for as long as the directory stays stopped. Where the scan
   named the target, or the file is in `.claude/rules` or `.claude/anatomiya`, the scan stops with a
   sentence that names the file and puts back every file it had replaced. A dry run renames
   nothing, so it does not see the lock and says `would write`.

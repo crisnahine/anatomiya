@@ -1524,8 +1524,12 @@ a Cursor or Copilot copy of the map, the rescan leaves that directory alone and 
 nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
 by hand rewrites it. A copy git could not be asked about is left alone too. A scan that throws writes nothing, so the
 previous map stays; the same stamp is tried again only after half an hour, and the echo says the
-refresh failed until a refresh or a scan run by hand succeeds. A scan run by hand records its stamp
-too, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
+refresh failed until a refresh or a scan run by hand succeeds. A rescan that wrote the `.claude/rules`
+map and left a Cursor or Copilot directory stopped at a locked file is no failure and the echo says
+nothing of it: `refresh.json` keeps `ok: true` and names the directory under `stopped`
+(`stoppedIn`), and the same stamp is due again on that half hour for as long as the key is there
+(`settled`). A rescan that leaves no directory stopped writes no such key. A scan run by hand
+records its stamp too, with no such key, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
 running session through the echo's digest, and an area file is read from disk the first time its
 directory is.
 

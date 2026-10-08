@@ -41,6 +41,14 @@ const retryDue = (state) => {
   return !Number.isFinite(at) || Date.now() - at > RETRY_MS;
 };
 
+// A scan that wrote Claude Code's map and left another tool's directory stopped is no failure, and is not the last
+// word either: what held a file there is often an editor, for a moment. It waits on the failure's clock, so a
+// directory stopped for good costs one scan each interval. Read as nothing stopped by a build that does not know it.
+const settled = (state) => (state.ok && !(state.stopped?.length > 0)) || !retryDue(state);
+
+/** The directories a scan's plan left stopped, in the plan's order. */
+const stoppedIn = (answer) => Object.values(answer?.plan?.targets ?? {}).filter((target) => target.unwritable).map((target) => target.dir);
+
 // Rescans in one worker when HEAD keeps moving under it. A rebase landing
 // commit by commit is the case; the next change after that starts another.
 const PASSES = 3;
@@ -107,15 +115,16 @@ async function passes(root, store, { scan, pin, git }) {
     const stamp = await stampOf(root);
     if (stamp === null) return { reason: "no-head", pinned, held };
     const state = readRecord(join(store, basename(REFRESH_STATE))).record;
-    if (state?.stamp === stamp && (state.ok || !retryDue(state)) && sameHold(state.held, held)) {
+    if (state?.stamp === stamp && settled(state) && sameHold(state.held, held)) {
       return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned, held };
     }
-    if (state?.stamp === stamp && (state.ok || !retryDue(state))) {
+    if (state?.stamp === stamp && settled(state)) {
       // Nothing to rescan; only what the pin decided is new.
       // The retry clock is the failure's, so it keeps its moment.
       writeState(store, { ...state, pinned: state.pinned ?? null, held });
       return { reason: state.ok ? "current" : "failed-before", pinned, held };
     }
+    let stopped = [];
     try {
       const leaveAlone = await committedTargets(root, git);
       // A checker the last run measured as degraded, with nothing it reads
@@ -125,7 +134,7 @@ async function passes(root, store, { scan, pin, git }) {
       const recorded = readFacts(root).facts?.semantic ?? null;
       const carried = recorded?.status === "degraded" ? carriedVerdict(recorded, verdictStamp(root, buildVersion())) : null;
       const options = { ...(leaveAlone.length > 0 ? { leaveAlone } : {}), ...(carried !== null ? { carried } : {}) };
-      await (Object.keys(options).length > 0 ? scan(root, options) : scan(root));
+      stopped = stoppedIn(await (Object.keys(options).length > 0 ? scan(root, options) : scan(root)));
     } catch (err) {
       // The previous map stays: a scan that throws has written nothing or
       // put back what it replaced, and one that would not run now will not
@@ -134,7 +143,7 @@ async function passes(root, store, { scan, pin, git }) {
       writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted, held });
       return { reason: "failed", pinned, held };
     }
-    writeState(store, { stamp, ok: true, error: null, pinned: accepted, held });
+    writeState(store, { stamp, ok: true, error: null, pinned: accepted, held, stopped });
   }
   return { reason: "scanned", pinned, held };
 }
@@ -442,8 +451,8 @@ async function gitBusy(root) {
   return !r.ok || operationUnfinished(r.stdout.trim());
 }
 
-function writeState(store, { stamp, ok, error, pinned = null, held = null, at = new Date().toISOString() }) {
-  const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}) };
+function writeState(store, { stamp, ok, error, pinned = null, held = null, stopped = [], at = new Date().toISOString() }) {
+  const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}), ...(stopped?.length > 0 ? { stopped } : {}) };
   atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
 }
 
