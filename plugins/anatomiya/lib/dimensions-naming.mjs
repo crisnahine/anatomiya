@@ -86,13 +86,15 @@ export function claimFor(dim, cls, kind) {
  *
  * A name that is nothing but two capitals cannot say either: `IO` is the type
  * of that name, and reading it as `I` on an `O` or as a word are the same two
- * readings with nothing to separate them.
+ * readings with nothing to separate them. Two capitals and a digit is the
+ * same: `IV8Profile` is `I` on `V8Profile`, and `ID3Tag` is the tag of an
+ * `ID3`.
  */
 export function prefixClass(name) {
   const s = name || "";
   const m = /^([A-Z])[A-Z][a-z]/.exec(s);
   if (m) return PREFIX_LETTERS.has(m[1]) && !ACRONYM_OPENING.test(s) ? m[1] : null;
-  if (/^[A-Z]{3,}/.test(s) || /^[A-Z]{2}$/.test(s)) return null;
+  if (/^[A-Z]{3,}/.test(s) || /^[A-Z]{2}(?:\d|$)/.test(s)) return null;
   return "none";
 }
 
