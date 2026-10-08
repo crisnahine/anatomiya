@@ -538,3 +538,49 @@ test("SvelteKit's virtual modules name no file", () => {
     assert.equal(specifierToFile(spec, "src/routes/+page.svelte", rels), null, spec);
   }
 });
+
+// The clock bound is sized against a walk that builds every candidate path under
+// every directory above the importer for every import, which takes over 30,000 ms
+// on these inputs; a lookup that does not grow with the path takes under 100 ms.
+test("an alias import from a deep directory resolves in time that does not grow with the path", () => {
+  const dir = "a/".repeat(400);
+  const half = "a/".repeat(200);
+  const rels = corpus(`${dir}X.svelte`, `${half}src/lib/p/q0.ts`, `${half}src/lib/p/dir/index.ts`, `${half}p/v0.ts`);
+
+  const before = performance.now();
+  for (let i = 1; i <= 4000; i++) assert.equal(specifierToFile(`$lib/p/q${i}`, `${dir}X.svelte`, rels), null);
+  for (let i = 1; i <= 4000; i++) assert.equal(specifierToFile(`@/p/v${i}`, `${dir}X.svelte`, rels), null);
+  for (let i = 1; i <= 4000; i++) assert.equal(specifierToFile(`$lib/${"../".repeat(i % 400)}..`, `${dir}X.svelte`, rels), null);
+  const took = performance.now() - before;
+
+  assert.equal(specifierToFile("$lib/p/q0", `${dir}X.svelte`, rels), `${half}src/lib/p/q0.ts`);
+  assert.equal(specifierToFile("$lib/p/dir/", `${dir}X.svelte`, rels), `${half}src/lib/p/dir/index.ts`);
+  assert.equal(specifierToFile("@/p/v0", `${dir}X.svelte`, rels), `${half}p/v0.ts`);
+  assert.ok(took < 5000, `12,000 alias imports took ${Math.round(took)} ms`);
+});
+
+test("an alias that climbs out of its root names what the path names from each directory above the importer", () => {
+  const page = "apps/web/src/routes/+page.svelte";
+
+  assert.equal(specifierToFile("$lib/../util", page, corpus("apps/web/src/util.ts")), "apps/web/src/util.ts");
+  assert.equal(specifierToFile("$lib/../../../shared/x", page, corpus("apps/shared/x.ts")), "apps/shared/x.ts", "from two directories up");
+  assert.equal(specifierToFile("$lib/../../../shared/x", page, corpus("apps/web/src/routes/shared/x.ts")), null, "never under the importer's own directory");
+  assert.equal(specifierToFile("$lib/../../../../../../x/y", page, corpus("x/y.ts")), "x/y.ts", "from the repository's top");
+  assert.equal(specifierToFile("$lib/../../../../../../../x/y", page, corpus("x/y.ts")), null, "past the repository's top");
+  assert.equal(specifierToFile("$lib/../..", page, corpus("apps/web.ts")), "apps/web.ts", "a path that is a directory above the importer");
+  assert.equal(specifierToFile("$lib/../..", page, corpus("apps/web/src/index.ts")), "apps/web/src/index.ts");
+  assert.equal(specifierToFile("$lib/../../", page, corpus("apps/web.ts", "apps/web/index.ts")), "apps/web/index.ts", "a trailing slash asks for the index alone");
+  assert.equal(specifierToFile("$lib/../..", page, corpus("apps/web.ts", "apps/index.ts")), null, "two directories answer");
+  assert.equal(specifierToFile("$lib/../../..", page, corpus("apps/web/src/routes.ts")), null, "the walk starts above the importer's directory");
+  assert.equal(specifierToFile("$lib/../../..", page, corpus("apps/web/src/routes.ts", "apps/web/src.ts")), "apps/web/src.ts");
+  assert.equal(specifierToFile("$lib/../..", "a/X.svelte", corpus(".ts", "index.ts")), null, "the repository's top is no file's name");
+  assert.equal(specifierToFile("@//components/./Button.vue", "src/pages/Home.vue", corpus("src/components/Button.vue")), "src/components/Button.vue");
+});
+
+test("an alias names the first spelling each directory holds, however many directories end in the path", () => {
+  const apps = ["a", "b", "c", "d", "e"].flatMap((app) => [`apps/${app}/src/lib/utils.ts`, `apps/${app}/src/lib/utils/index.ts`]);
+
+  assert.equal(specifierToFile("$lib/utils", "apps/c/x.svelte", corpus(...apps)), "apps/c/src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/utils", "x.svelte", corpus(...apps)), null);
+  assert.equal(specifierToFile("$lib/utils", "apps/c/x.svelte", corpus(...apps, "apps/src/lib/utils.js")), null);
+});
