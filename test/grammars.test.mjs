@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -203,6 +204,57 @@ test("a manifest that is not a list is one problem", async () => {
 test("a lockfile that is missing or does not parse is one problem, not a throw", async () => {
   await oneProblem((root) => rmSync(join(root, "package-lock.json")), /^package-lock\.json could not be read/);
   await oneProblem((root) => writeFileSync(join(root, "package-lock.json"), "{"), /^package-lock\.json could not be read/);
+});
+
+/** The script as a release or a workflow step runs it: its exit code and what it printed. */
+const gate = (...argv) => spawnSync(process.execPath, [join(ROOT, "scripts", "grammars.mjs"), ...argv], { encoding: "utf8", env: { ...process.env, GITHUB_ACTIONS: "" } });
+
+test("the gate exits 1 and names the grammar on a copy with one grammar altered, and 0 on a clean or a vendored one", async () => {
+  await withCopy((root, dir) => {
+    const clean = gate("--check", root);
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.match(clean.stdout, /^the 7 vendored grammars are the ones their packages hold\n$/);
+
+    writeFileSync(join(dir, "go.wasm"), readFileSync(join(dir, "go.wasm")).subarray(0, 4096));
+    const altered = gate("--check", root);
+    assert.equal(altered.status, 1, altered.stdout);
+    assert.match(altered.stderr, /go\.wasm does not hash to its manifest entry\n/);
+    assert.match(altered.stderr, /run npm run grammars\n$/);
+    assert.equal(altered.stdout, "");
+
+    const vendored = gate(root);
+    assert.equal(vendored.status, 0, vendored.stderr);
+    assert.match(vendored.stdout, /^vendored 7 grammars into /);
+    assert.equal(gate("--check", root).status, 0, "with no flag the copies are written again from the packages");
+  });
+});
+
+test("the gate refuses an argument it does not know before it reads or writes anything", async () => {
+  await withCopy((root, dir) => {
+    const before = readdirSync(dir);
+    const typo = gate("--chek", root);
+    assert.equal(typo.status, 2, typo.stdout);
+    assert.match(typo.stderr, /--chek/);
+    assert.match(typo.stderr, /\nusage: node scripts\/grammars\.mjs \[--check\] \[marketplaceRoot\]\n$/);
+
+    const second = gate("--check", root, "elsewhere");
+    assert.equal(second.status, 2, second.stdout);
+    assert.match(second.stderr, /^only one marketplace root may be given, and elsewhere was the second\n/);
+    assert.equal(typo.stdout + second.stdout, "");
+    assert.deepEqual(readdirSync(dir), before);
+  });
+});
+
+test("the plugin job runs each check `npm run validate` runs, as a step of its own", () => {
+  // A package script and a workflow cannot share a list, and a check only a person is told to run is one nobody runs.
+  const checks = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts.validate.split(" && ");
+  const workflow = readFileSync(join(ROOT, ".github", "workflows", "ci.yml"), "utf8").replace(/\r\n/g, "\n");
+  const job = workflow.slice(workflow.indexOf("\n  plugin:\n")).split(/\n  [a-z-]+:\n/)[1];
+
+  assert.equal(checks.length, 4);
+  for (const command of checks) {
+    assert.match(job, new RegExp(`\\n      - name: [^\\n]+\\n        run: ${command.replace(/[.]/g, "\\.")}\\n`), command);
+  }
 });
 
 test("no workflow installs with install scripts on", () => {

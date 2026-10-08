@@ -11,8 +11,9 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, readArgv } from "./entry.mjs";
 import { REL, ROOT } from "./plugins.mjs";
+import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { manifestVersion } from "../plugins/anatomiya/lib/version.mjs";
 
 /** Each language id against its package and the grammar file inside it. */
@@ -121,7 +122,7 @@ export function check(root) {
     if (!listed.has(`${id}.wasm`)) problems.push(`${id} has no manifest entry in ${at}/${MANIFEST}`);
   }
   // A link hashes as its target here and ships as a link, which an installed plugin cannot follow.
-  for (const found of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+  for (const found of readdirSync(dir, { withFileTypes: true }).sort((a, b) => byCode(a.name, b.name))) {
     if (!found.isFile()) problems.push(`${at}/${found.name} is not a regular file`);
     else if (!listed.has(found.name)) problems.push(`${at}/${found.name} has no manifest entry`);
   }
@@ -130,14 +131,15 @@ export function check(root) {
 
 async function main(argv) {
   const prefix = process.env.GITHUB_ACTIONS === "true" ? "::error::" : "";
-  const typo = argv.find((arg) => arg.startsWith("-") && arg !== "--check");
-  const positional = argv.filter((arg) => !arg.startsWith("-"));
-  if (typo !== undefined || positional.length > 1) {
-    console.error(`${prefix}${typo !== undefined ? `unknown option: ${typo}` : `only one marketplace root may be given, and ${positional[1]} was the second`}\nusage: node scripts/grammars.mjs [--check] [marketplaceRoot]`);
+  const read = readArgv(argv, { check: { type: "boolean" } }, { positionals: true });
+  const refused = read.error ?? (read.positionals.length > 1 ? `only one marketplace root may be given, and ${read.positionals[1]} was the second` : null);
+  if (refused !== null) {
+    console.error(`${prefix}${refused}\nusage: node scripts/grammars.mjs [--check] [marketplaceRoot]`);
     process.exit(2);
   }
-  const root = positional[0] ? resolve(positional[0]) : ROOT;
-  if (!argv.includes("--check")) {
+  const [given = null] = read.positionals;
+  const root = given === null ? ROOT : resolve(given);
+  if (!read.values.check) {
     const entries = await vendor(root);
     console.log(`vendored ${entries.length} grammars into ${vendoredIn(root)}`);
     return;
