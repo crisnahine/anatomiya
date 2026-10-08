@@ -270,6 +270,13 @@ test("no workflow installs with install scripts on", () => {
   assert.deepEqual(offenders, []);
 });
 
+test("a grammar is binary by the repository's own word, not by what git makes of its bytes", (t) => {
+  const { file } = manifest()[0];
+  const asked = spawnSync("git", ["-C", ROOT, "check-attr", "binary", "--", `${REL.anatomiya}/grammars/${file}`], { encoding: "utf8" });
+  if (asked.status !== 0) return t.skip("the test tree is not a git checkout, so git has no attribute to answer with");
+  assert.match(asked.stdout, /: binary: set\r?\n$/, asked.stdout);
+});
+
 test("vendoring from the installed packages writes the manifest that is committed", async () => {
   await withCopy(async (root, dir) => {
     rmSync(dir, { recursive: true });
