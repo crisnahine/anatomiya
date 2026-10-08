@@ -83,12 +83,12 @@ body starts and ends.
 | CDATA, closed, never closed, cut short, in a template and at the top | 9 | 9 |
 | a processing instruction | 5 | 5 |
 | a declaration and a bare `<!` | 6 | 6 |
-| a comment written `<!-->` | 1 | 0 |
+| a comment written `<!-->` | 1 | 1 |
 | a tag or an end tag with an upper-case letter, `_`, a digit or a dash | 10 | 10 |
 
-30 of 31. The one that differs: `<!--><script>one()</script>-->` and a `<script setup>` after it.
-The compiler ends the comment at once and finds both scripts. The scanner reads the comment to the
-`-->` and finds the second.
+31 of 31. In `<!--><script>one()</script>-->` with a `<script setup>` after it, the compiler ends
+the comment at once and finds both scripts, and so does the scanner: it looks for a comment's end
+from the comment's own two dashes.
 
 A top-level block named with an upper-case letter or `_` (`<TEMPLATE>`, `<Docs>`, `<Script>`,
 `<my_block>`) never ends in the compiler and takes the rest of the file, and the scanner reads it
