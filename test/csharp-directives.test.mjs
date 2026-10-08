@@ -117,6 +117,9 @@ test("a verbatim string that opens with an escaped quote is not read as a raw st
 
   assert.deepEqual(kept(source), ['var s = @"""a"" b";', "a();"]);
   assert.deepEqual(kept('var s = $@"""{a}"" b";\n#if X\na();\n#endif\n'), ['var s = $@"""{a}"" b";', "a();"]);
+  // The two prefixes are legal in either order.
+  assert.deepEqual(kept('var s = @$"""{a}"" b";\n#if X\na();\n#else\nb();\n#endif\n'), ['var s = @$"""{a}"" b";', "a();"]);
+  assert.deepEqual(kept('var s = @$"\n#if X\n""{a}""\n#endif\n";\n#if Y\na();\n#endif\n'), ['var s = @$"', "#if X", '""{a}""', "#endif", '";', "a();"]);
 });
 
 test("a directive-looking line inside a raw string is the string's text, whatever the quote count", () => {

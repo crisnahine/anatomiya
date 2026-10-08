@@ -31,7 +31,7 @@ import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules
 import { FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { GATES } from "../plugins/anatomiya/lib/gates.mjs";
-import { ENGINES, LANGUAGES, hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
+import { ENGINES, LANGUAGES, assertKeyed, hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PROBE_IDS } from "../plugins/anatomiya/lib/readiness.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
@@ -209,6 +209,14 @@ export function readGlossary(text) {
   close();
   return { terms, problems };
 }
+
+/**
+ * The name prose gives each language tree-sitter reads, by the id the registry
+ * knows it by. Held to the registry where this loads, so a language added
+ * there has its "N for X" count read here or the gate does not start.
+ */
+export const PROSE_NAMES = { python: "Python", php: "PHP", go: "Go", java: "Java", csharp: "C#", rust: "Rust", kotlin: "Kotlin" };
+assertKeyed("PROSE_NAMES", PROSE_NAMES, hostedBy("tree-sitter"));
 
 /**
  * Every file of this repository git can see, or none where git cannot say.
@@ -442,8 +450,7 @@ export function checkDocs() {
   const jsx = rowsForLangs(["jsx"]).length;
   const ruby = rowsForLangs(["ruby"]).length;
   const component = { Vue: rowsForLangs(["vue"]).length, Svelte: rowsForLangs(["svelte"]).length };
-  // The names prose gives the tree-sitter languages, beside the id the registry knows each by.
-  const TREE_LANGS = [["Python", "python"], ["PHP", "php"], ["Go", "go"], ["Java", "java"], ["C#", "csharp"], ["Rust", "rust"], ["Kotlin", "kotlin"]];
+  const TREE_LANGS = hostedBy("tree-sitter").map((id) => [PROSE_NAMES[id], id]);
   const obligations = rowsOfKind("pairing").length;
 
   // Section 4 of the walkthrough counts the rows asked of a file, so the

@@ -2621,11 +2621,11 @@ test("a target left alone is neither written nor cleared, and the record goes on
   assert.deepEqual(tree(join(dir, cursor.dir)), before, "every byte there is what it was");
   assert.equal(targetState(dir, cursor), "on", "and it is not turned off");
   assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a, b), copilot: mapOf(copilot, a, c) });
-  assert.deepEqual(namesIn(dir, copilot), mapOf(copilot, a, c), "the one not held is written as usual");
+  assert.deepEqual(namesIn(dir, copilot), mapOf(copilot, a, c), "the one not left alone is written as usual");
   assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, c));
   assert.equal("held" in plan.targets.copilot, false);
 
-  // The next scan that holds nothing catches it up.
+  // The next scan that leaves nothing alone catches it up.
   const next = writeMap(result(dir, [a, c]));
   assert.deepEqual(next.targets.cursor.remove, [areaName(cursor, b.id)]);
   assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, c));

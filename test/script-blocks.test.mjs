@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { spawnSync } from "node:child_process";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
 import { assertScanners, scriptBlocks, blankOutside } from "../plugins/anatomiya/lib/script-blocks.mjs";
+import { ANATOMIYA } from "../scripts/plugins.mjs";
 
 // What the scanner kept, with each range read back out of the source.
 const read = (source, kind) => {
@@ -412,6 +419,36 @@ const label = '</' + "script>";
       for (const b of blocks) assert.ok(0 <= b.start && b.start <= b.end && b.end <= source.length);
     }
   }
+});
+
+test("a block is its body's two offsets and its language, and nothing else of the tag", () => {
+  assert.deepEqual(scriptBlocks('<template><p/></template>\n<script setup lang="ts" src-set generic="T">\nconst a = 1;\n</script>\n', "vue"), {
+    blocks: [{ start: 70, end: 84, lang: "ts" }],
+    unterminated: false,
+  });
+  assert.deepEqual(scriptBlocks('<script context="module" lang="ts">\nexport const a = 1;\n</script>\n<p>a</p>\n', "svelte"), {
+    blocks: [{ start: 35, end: 56, lang: "ts" }],
+    unterminated: false,
+  });
+});
+
+test("the module refuses to load where the registry names an extractor it has no scanner for", (t) => {
+  // The real table against a registry that declares one more, in a copy: the call that holds the two together runs at import.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-scanners-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const file of ["script-blocks.mjs", "blank.mjs"]) cpSync(join(ANATOMIYA, "lib", file), join(dir, file));
+  const registry = readFileSync(join(ANATOMIYA, "lib", "langs.mjs"), "utf8");
+  const declared = 'Object.freeze(["vue", "svelte"])';
+  assert.equal(registry.split(declared).length, 2, "the registry declares its extractors in one place");
+  const load = (text) => {
+    writeFileSync(join(dir, "langs.mjs"), text);
+    return spawnSync(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(pathToFileURL(join(dir, "script-blocks.mjs")).href)});`], { encoding: "utf8" });
+  };
+
+  assert.equal(load(registry).status, 0, "the copy loads as the module does");
+  const refused = load(registry.replace(declared, 'Object.freeze(["vue", "svelte", "astro"])'));
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /Error: SCANNERS and the registry's extractors disagree on astro/);
 });
 
 test("a scanner table that lacks a declared extractor, or holds one nothing declares, is refused", () => {

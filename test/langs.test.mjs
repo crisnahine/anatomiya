@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   EXT_BY_LANG,
@@ -53,6 +57,7 @@ test("a language tree-sitter reads declares its extensions, one grammar named af
     module: "web-tree-sitter",
     remedy: "node bin/anatomiya.mjs setup in the plugin directory",
     rejects: "grammar",
+    grammars: null,
   });
 });
 
@@ -310,6 +315,56 @@ test("every engine says what runs it and what to do when it is not there", () =>
     assert.equal(typeof engine.remedy, "string", engine.id);
     assert.ok(engine.remedy.length > 0, `${engine.id} declares an empty remedy`);
   }
+});
+
+test("a grammar name the declaration's engine does not read refuses to load, as a default or for an extension", () => {
+  const with_ = (id, grammars) => LANGUAGES.map((l) => (l.id === id ? { ...l, grammars } : l));
+
+  assert.throws(() => assertRegistry(with_("js", { byExtension: { ts: "ts" }, default: "tsxx" })), /^Error: js names a grammar oxc does not read: tsxx$/);
+  assert.throws(() => assertRegistry(with_("js", { byExtension: { ts: "tx" }, default: "tsx" })), /^Error: js names a grammar oxc does not read: tx$/);
+  assert.throws(() => assertRegistry(with_("vue", { byExtension: {}, default: "vue" })), /^Error: vue names a grammar oxc does not read: vue$/);
+  assert.throws(() => assertRegistry(with_("ruby", { byExtension: {}, default: "ruby" })), /^Error: ruby names a grammar prism does not read: ruby$/);
+  // tree-sitter reads the file named after one of its own languages, so a language may borrow another's and none may invent one.
+  assert.throws(() => assertRegistry(with_("go", { byExtension: {}, default: "golang" })), /^Error: go names a grammar tree-sitter does not read: golang$/);
+  assert.throws(() => assertRegistry(with_("go", { byExtension: {}, default: "tsx" })), /^Error: go names a grammar tree-sitter does not read: tsx$/);
+  assert.throws(() => assertRegistry(with_("go", { byExtension: {}, default: "ruby" })), /^Error: go names a grammar tree-sitter does not read: ruby$/, "another engine's language");
+  assert.doesNotThrow(() => assertRegistry(with_("kotlin", { byExtension: { kts: "kotlin" }, default: "java" })));
+  for (const engine of Object.values(ENGINES)) {
+    assert.ok(engine.grammars === null || (Array.isArray(engine.grammars) && engine.grammars.length > 0), engine.id);
+  }
+  assert.equal(ENGINES["tree-sitter"].grammars, null, "its grammars are the files named after the languages it hosts");
+});
+
+test("a capability that is not a boolean, or a checker claimed for a file it cannot open, refuses to load", () => {
+  const with_ = (id, capabilities) => LANGUAGES.map((l) => (l.id === id ? { ...l, capabilities } : l));
+
+  assert.throws(() => assertRegistry(with_("js", { semantic: "yes", importGraph: true })), /^Error: js declares the capability semantic as "yes", which is no boolean$/);
+  assert.throws(() => assertRegistry(with_("ruby", { semantic: false, importGraph: 0 })), /^Error: ruby declares the capability importGraph as 0, which is no boolean$/);
+  assert.throws(() => assertRegistry(with_("go", { semantic: false })), /^Error: go declares capabilities off the closed pair: semantic$/);
+  for (const id of EXTRACTORS) {
+    assert.throws(
+      () => assertRegistry(with_(id, { semantic: true, importGraph: true })),
+      new RegExp(`^Error: ${id} embeds its script, which the checker cannot open, and declares itself semantic$`)
+    );
+  }
+});
+
+test("a registry with no fallback, or with two, is refused by that name where the module loads", (t) => {
+  const none = LANGUAGES.map((l) => ({ ...l, fallback: false }));
+  assert.throws(() => assertRegistry(none), /^Error: 0 declarations claim the fallback; exactly one may$/);
+  assert.throws(() => assertRegistry(LANGUAGES.map((l) => ({ ...l, fallback: l.id === "js" || l.id === "ruby" }))), /^Error: 2 declarations claim the fallback; exactly one may$/);
+
+  // The module's own load, on a copy that declares none: the sentence above, and no TypeError ahead of it.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-langs-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = readFileSync(new URL("../plugins/anatomiya/lib/langs.mjs", import.meta.url), "utf8");
+  assert.equal(source.split("fallback: true,").length, 2, "one declaration claims the fallback");
+  writeFileSync(join(dir, "langs.mjs"), source.replace("fallback: true,", "fallback: false,"));
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(pathToFileURL(join(dir, "langs.mjs")).href)});`], { encoding: "utf8" });
+
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /Error: 0 declarations claim the fallback; exactly one may/);
+  assert.doesNotMatch(run.stderr, /TypeError/);
 });
 
 test("a declaration naming an engine the table does not hold refuses to load", () => {
