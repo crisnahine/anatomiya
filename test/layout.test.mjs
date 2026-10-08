@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import {
-  countedExtensions,
   isProducer,
   isStoryFile,
   isTestFile,
@@ -13,6 +12,7 @@ import {
   minRootFiles,
   mirroredTests,
   placedTests,
+  printedExtensions,
   rootFacts,
   runnerOf,
   tally,
@@ -1433,8 +1433,37 @@ test("a helper under a test tree keeps the test of its own name", () => {
 });
 
 test("the counted extensions are the first the tool reads and the other where either is a component's", () => {
-  const own = [file("a/x.png"), file("a/y.png"), file("a/C.vue", "vue"), file("a/m.ts", "js")];
-  assert.deepEqual(countedExtensions(own, [[".png", 2], [".vue", 1]]), [".vue", null]);
-  assert.deepEqual(countedExtensions(own, [[".vue", 1], [".ts", 1]]), [".vue", ".ts"]);
-  assert.deepEqual(countedExtensions(own, [[".png", 2]]), [null, null]);
+  const png = [file("a/x.png"), file("a/y.png"), file("a/z.png")];
+  assert.deepEqual(printedExtensions([...png, file("a/C.vue", "vue"), file("a/D.vue", "vue"), file("a/m.ts", "js")]), {
+    exts: [[".png", 3], [".vue", 2]],
+    counted: [".vue", null],
+  });
+  assert.deepEqual(printedExtensions([file("a/C.vue", "vue"), file("a/D.vue", "vue"), file("a/m.ts", "js")]), {
+    exts: [[".vue", 2], [".ts", 1]],
+    counted: [".vue", ".ts"],
+  });
+  assert.deepEqual(printedExtensions(png), { exts: [[".png", 3]], counted: [null, null] });
+});
+
+test("a root whose two commonest extensions are both unread names the source it holds, and counts over it", () => {
+  // django's own package printed `1226 .mo, 1226 .po and 1164 other` with 907 `.py` files inside the 1164.
+  const corpus = [
+    ...files(6, (i) => file(`pkg/locale/l${i}/a.mo`)),
+    ...files(6, (i) => file(`pkg/locale/l${i}/a.po`)),
+    ...files(4, (i) => file(`pkg/m${i}.py`, "python")),
+    file("pkg/README.txt"),
+    file("tests/test_m0.py", "python", { testRunner: "pytest", testCalls: true }),
+  ];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus.slice(0, 17) }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".mo", 6], [".po", 6], [".py", 4]]);
+  assert.equal(record.other, 1, "and the leftover is what the three did not name");
+  assert.deepEqual(record.companions, { with: 1, of: 4, root: null, ext: ".py" });
+});
+
+test("a root names no third extension where one of its two commonest is read, or where it holds no source", () => {
+  const mixed = [...files(6, (i) => file(`a/s${i}.png`)), ...files(4, (i) => file(`a/C${i}.tsx`, "jsx")), file("a/m.ts", "js")];
+  assert.deepEqual(printedExtensions(mixed).exts, [[".png", 6], [".tsx", 4]], "the screenshots case keeps its two");
+  const none = [...files(3, (i) => file(`d/a${i}.md`)), ...files(2, (i) => file(`d/b${i}.png`)), file("d/c.txt")];
+  assert.deepEqual(printedExtensions(none).exts, [[".md", 3], [".png", 2]]);
 });

@@ -353,6 +353,18 @@ test("the recount reads a root holding a test tree, whose files are in no namesa
   assert.match(run.section, /^- pkg: 8 \.js; 1 vitest spec; 1 of 3 has a namesake test$/m);
 });
 
+test("the recount reads a root that names its source after two kinds of file this tool does not read", (t) => {
+  const run = recountOf(t, {
+    ...Object.fromEntries([0, 1, 2, 3, 4, 5].flatMap((i) => [[`pkg/locale/l${i}/a.mo`, `mo ${i}\n`], [`pkg/locale/l${i}/a.po`, `po ${i}\n`]])),
+    ...Object.fromEntries([0, 1, 2, 3].map((i) => [`pkg/m${i}.py`, `def f${i}():\n    return ${i}\n`])),
+    "pkg/README.txt": "pkg\n",
+    "tests/test_m0.py": "def test_f0():\n    assert True\n",
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- pkg: 6 \.mo, 6 \.po, 4 \.py and 1 other; 1 of 4 has a namesake test$/m);
+});
+
 test("the recount reads a root of components then modules, which prints a namesake clause for each", (t) => {
   const vitest = (name) => `import { test } from "vitest";\ntest("${name}", () => {});\n`;
   const run = recountOf(t, {

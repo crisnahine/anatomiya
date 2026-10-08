@@ -1264,6 +1264,11 @@ test("only the sentence a repository has earned is printed", () => {
   assert.doesNotMatch(onlyOurs, /scan again to clear/, "scanning is what left them alone");
 });
 
+test("a root line names the source it holds after two extensions this tool does not read", () => {
+  const lines = renderLayout(clientLayout({ roots: [unreadFirst] }));
+  assert.equal(lines[2], "- django: 1226 .mo, 1226 .po, 907 .py and 257 other; 31 of 880 have a namesake test under tests");
+});
+
 test("the overview holds its bound over every section that can grow, not just the areas", () => {
   // The bound was budgeted against the area listing alone, while the listing of
   // rule files this tool did not write was rendered after it and unbounded. A
@@ -1283,7 +1288,7 @@ test("the overview holds its bound over every section that can grow, not just th
           { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5, missingStripper: true },
         ]) {
         for (const untracked of [0, 4]) {
-        for (const layout of [null, clientLayout(), clientLayout({ principles: [] }), truncatedLayout()]) {
+        for (const layout of [null, clientLayout(), clientLayout({ principles: [] }), clientLayout({ roots: [unreadFirst, ...clientLayout().roots] }), truncatedLayout()]) {
           const out = renderOverview(
             {
               layout,
@@ -1552,6 +1557,14 @@ const root = (path, o = {}) => ({
   tests: [],
   testRoot: false,
   ...o,
+});
+
+// A root whose two commonest extensions are unread, so its line names a third.
+const unreadFirst = root("django", {
+  files: 3616,
+  exts: [[".mo", 1226], [".po", 1226], [".py", 907]],
+  other: 257,
+  companions: { with: 31, of: 880, root: "tests", ext: ".py" },
 });
 
 // The client numbers of the spec's rendered target, recounted by hand there.
