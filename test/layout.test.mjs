@@ -1507,6 +1507,21 @@ test("the floor is over files a test could be written for, not over files of the
   assert.deepEqual(printedExtensions(own).exts, [[".mo", 6], [".po", 6]]);
 });
 
+test("the source a root names beside two unread kinds is the commonest that holds enough files a test could be written for", () => {
+  const unread = [...files(10, (i) => file(`pkg/a${i}.mo`)), ...files(9, (i) => file(`pkg/a${i}.po`))];
+  const declared = [...unread, ...files(5, (i) => file(`pkg/t${i}.d.ts`, "js")), ...files(4, (i) => file(`pkg/m${i}.js`, "js"))];
+  assert.deepEqual(printedExtensions(declared), { exts: [[".mo", 10], [".po", 9], [".js", 4]], counted: [".js", null] });
+
+  const stories = [...unread, ...files(5, (i) => file(`pkg/C${i}.stories.tsx`, "jsx")), ...files(4, (i) => file(`pkg/m${i}.ts`, "js"))];
+  assert.deepEqual(printedExtensions(stories), { exts: [[".mo", 10], [".po", 9], [".ts", 4]], counted: [".ts", null] });
+
+  const corpus = [...declared, file("test/other.test.js", "js", { testRunner: "jest" })];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: declared }, layoutIndexes(corpus));
+  assert.deepEqual(record.exts, [[".mo", 10], [".po", 9], [".js", 4]]);
+  assert.equal(record.other, 5, "the declarations are among the rest");
+  assert.equal(record.companions.of, 4);
+});
+
 test("a root's count is over the commonest printed extension that holds a file a test could be written for", () => {
   // webpack's `schemas/plugins` is 39 `.d.ts` beside 39 `.js`, and counted over the declarations it read `0 of 39`, then nothing.
   const corpus = [

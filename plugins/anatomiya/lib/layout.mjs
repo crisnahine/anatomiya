@@ -185,6 +185,9 @@ export const isProducer = (f, mirrored = null) =>
  * with 907 `.py` files inside the 1164. Only from the floor a test precedent
  * is read at: flask's `docs` is 76 `.rst`, 5 `.png` and one `conf.py`, which
  * is not that root's source, and `0 of 1 have a namesake test` says nothing.
+ * The floor is asked of each read extension in turn, commonest first: five
+ * `.d.ts` beside four `.js` named neither, the declarations holding nothing a
+ * test could be written for.
  *
  * Over an extension that holds one, not the first this tool reads: webpack's
  * `schemas/plugins` is 39 `.d.ts` beside 39 `.js`, and the count was taken
@@ -199,8 +202,8 @@ export function printedExtensions(own, mirrored = null) {
   const producers = (ext) => own.filter((f) => extOf(f.rel) === ext && isProducer(f, mirrored)).length;
   const exts = all.slice(0, 2);
   if (!exts.some(([ext]) => read(ext))) {
-    const source = all.find(([ext]) => read(ext));
-    if (source && producers(source[0]) >= PRECEDENT_FLOOR) exts.push(source);
+    const source = all.find(([ext]) => read(ext) && producers(ext) >= PRECEDENT_FLOOR);
+    if (source) exts.push(source);
   }
   // The denominator has to be a number the line already printed: one of the
   // printed extensions, not always the first of them. supabase's own
