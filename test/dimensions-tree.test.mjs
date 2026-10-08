@@ -8,6 +8,7 @@ import { isTestFile, mirroredTests } from "../plugins/anatomiya/lib/layout.mjs";
 import { withOneBranch } from "../plugins/anatomiya/lib/csharp-directives.mjs";
 import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 import { TREE_DECLINED } from "./declined-fixtures.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 
 /**
  * Every source goes through `parseTreeFile` in counts mode, which is the body
@@ -287,36 +288,35 @@ const CASES = {
 };
 
 // Each function asks where it sits among its siblings, and a Go method which methods its type has: a search for every
-// one makes four times the functions cost sixteen times as long. The row is timed alone, on a tree already parsed, so
-// its walk is all the clock sees. Each shape as [language, the smaller count, the source of one function, what the file opens with].
+// one makes twice the functions cost four times as long. The row is timed alone, on a tree already parsed, so its
+// walk is all the clock sees. Each shape as [language, the smaller count, the source of one function, what the file opens with].
 const MANY_FUNCTIONS = {
-  "an attribute that takes each out of the documented surface": ["rust", 20_000, (i) => `#[cfg(test)]\npub fn f${i}() {}\n`],
-  "a doc comment and an attribute above each": ["rust", 20_000, (i) => `/// Runs.\n#[inline]\npub fn f${i}() {}\n`],
+  "an attribute that takes each out of the documented surface": ["rust", 40_000, (i) => `#[cfg(test)]\npub fn f${i}() {}\n`],
+  "a doc comment and an attribute above each": ["rust", 40_000, (i) => `/// Runs.\n#[inline]\npub fn f${i}() {}\n`],
   // Smaller, since the search this one guards took 2,096 ms at 10,000 methods and 13,488 ms at 20,000.
-  "a method of one type named as a sorting interface names it": ["go", 2_500, () => "func (t T) Len() int { return 0 }\n", "package a\n\n"],
+  "a method of one type named as a sorting interface names it": ["go", 5_000, () => "func (t T) Len() int { return 0 }\n", "package a\n\n"],
 };
 
 for (const [shape, [lang, few, item, head = ""]] of Object.entries(MANY_FUNCTIONS)) {
   test(`public_doc_comment reads a file of many functions in time linear in them: ${shape}`, async () => {
     const row = TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment");
     const rel = `src/a.${declOf(lang).exts[0]}`;
-    const fastest = async (count) => {
+    const parsed = new Map();
+    for (const count of [few, 2 * few]) {
       const source = head + Array.from({ length: count }, (_, i) => item(i)).join("");
-      let best = Infinity;
-      for (let turn = 0; turn < 3; turn++) {
-        // A tree of its own each turn, and no row run by the parse, so no turn reads what another built.
-        const { program } = await parseTreeFile(source, rel, lang, { withProgram: true, rows: [] });
-        const before = performance.now();
-        row.run(program, () => {}, { source, rel });
-        best = Math.min(best, performance.now() - before);
-      }
-      return best;
+      // No row run by the parse: the tree is all that is wanted of it.
+      parsed.set(count, { source, program: (await parseTreeFile(source, rel, lang, { withProgram: true, rows: [] })).program });
+    }
+    const read = (count) => {
+      const { source } = parsed.get(count);
+      // A tree of its own for each timing, so none reads what another built.
+      const program = structuredClone(parsed.get(count).program);
+      return () => row.run(program, () => {}, { source, rel });
     };
 
-    const short = await fastest(few);
-    const long = await fastest(few * 4);
+    const ratio = doublingRatio(read, few);
 
-    assert.ok(long / short < 8, `${few} functions took ${short.toFixed(1)} ms and ${few * 4} took ${long.toFixed(1)} ms`);
+assert.ok(ratio < LINEAR, `twice the functions took ${ratio.toFixed(2)} times as long`);
   });
 }
 

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile } from "../plugins/anatomiya/lib/siblings.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const isRelative = (m) => m.startsWith("./") || m.startsWith("../") || m === "." || m === "..";
 
@@ -560,26 +561,18 @@ test("an alias import from a deep directory resolves in time that does not grow 
 });
 
 // A specifier is the repository's text, and a pattern that strips its trailing
-// slashes tries every start in a run of them that is not at the end: four times
-// the run then costs sixteen times as long, 213 ms and 3,375 ms on these two.
+// slashes tries every start in a run of them that is not at the end: twice the
+// run then costs four times as long, 213 ms at 20,000 and 3,375 ms at 80,000.
 test("a specifier holding a long run of slashes resolves in time linear in the run", () => {
   const rels = corpus("a/b/Page.ts", "x/y.ts");
-  const fastest = (run) => {
+  const resolve = (run) => {
     const spec = `x${"/".repeat(run)}y`;
-    let best = Infinity;
-    for (let turn = 0; turn < 3; turn++) {
-      const before = performance.now();
-      assert.equal(specifierToFile(spec, "a/b/Page.ts", rels), null);
-      best = Math.min(best, performance.now() - before);
-    }
-    return best;
+    return () => assert.equal(specifierToFile(spec, "a/b/Page.ts", rels), null);
   };
 
-  const short = fastest(20_000);
-  const long = fastest(80_000);
+  const ratio = doublingRatio(resolve, 20_000);
 
-  // Under a millisecond the clock measures itself, so the short run is counted as one.
-  assert.ok(long / Math.max(short, 1) < 8, `20,000 slashes took ${short.toFixed(2)} ms and 80,000 took ${long.toFixed(2)} ms`);
+  assert.ok(ratio < LINEAR, `twice the slashes took ${ratio.toFixed(2)} times as long`);
   assert.equal(specifierToFile("x/y///", "a/b/Page.ts", rels), null, "a trailing run still asks for an index alone");
   assert.equal(specifierToFile("@/x/y///", "a/b/Page.vue", corpus("x/y/index.ts")), "x/y/index.ts");
 });
