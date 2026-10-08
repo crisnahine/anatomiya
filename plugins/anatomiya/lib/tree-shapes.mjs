@@ -44,8 +44,8 @@ export const SHAPES = {
     ident: ["name"],
     // A name is a variable only inside one of these: `$x->e` spells `e` and reads no `$e`.
     variable: ["variable_name"],
-    // `A::$e` spells its property as a variable, in the field a name sits in.
-    staticProperty: ["scoped_property_access_expression"],
+    // `A::$e` spells its property as a variable, in the field a name sits in, and so does the `static $e;` that declares one.
+    property: ["scoped_property_access_expression", "property_element"],
     base: ["base_clause"],
     // What a file holds outside any code: the tags, and the markup around them.
     header: ["php_tag", "text", "text_interpolation"],
@@ -80,8 +80,11 @@ export const SHAPES = {
     args: ["annotation_argument_list"],
     raise: ["throw_statement"],
     ident: ["identifier"],
-    // A label, and the name a `break` or a `continue` jumps to, is an identifier with no field.
-    label: ["labeled_statement", "break_statement", "continue_statement"],
+    // A label, and the name a `break` or a `continue` jumps to, is an identifier with no field. So is the
+    // constant a `case` names and the one argument of `@A(e)`, and a caught variable is no constant.
+    label: ["labeled_statement", "break_statement", "continue_statement", "switch_label", "annotation_argument_list"],
+    // `A::e` names a method after what it is taken from, and neither has a field.
+    reference: ["method_reference"],
     // An enum's methods sit one node deeper than its body, past the constants.
     wrap: ["enum_body_declarations"],
     iface: ["interface_declaration"],
