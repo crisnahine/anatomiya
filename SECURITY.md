@@ -284,8 +284,9 @@ is removed. One whose removal fails, whatever the removal answers, is left where
 nothing: the scan writes the map and counts it (`1 temporary file an earlier scan left in
 .claude/anatomiya could not be removed, so it was left as it is`, `stagedLeft` and
 `storeStagedLeft` in `--format json`, and in a Cursor or Copilot directory that directory's count
-of entries the scan neither wrote nor removed). So a file a repository ships under such a name and
-makes read-only costs every scan one line and no more.
+of entries the scan neither wrote nor removed). In a Cursor or Copilot directory whose target is
+off, such a file is left where it is and no line or JSON key names it. So a file a repository ships
+under such a name and makes read-only costs every scan one line at most.
 
 A scan that refuses leaves nothing behind. Every refusal above is decided while the plan is made,
 before a directory is created or a byte is written, and a dry run refuses the same way; the
