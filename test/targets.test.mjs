@@ -33,8 +33,8 @@ const TEST_GLOBS = [
 ];
 const SIX = EXTS.map((e) => `test/**/*.${e}`);
 const NONE = { patterns: [], widened: [], dropped: [], unspellable: [] };
-const plain = (g) => globText(g);
-const encoded = (g) => globText(g, (dir) => encodePath(dir).slice(1, -1));
+const plain = (g, anchored) => globText(g, null, anchored);
+const encoded = (g, anchored) => globText(g, (dir) => encodePath(dir).slice(1, -1), anchored);
 
 // The fence the renderer writes, read back off its own output.
 const fenceOf = (text) => {

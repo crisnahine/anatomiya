@@ -35,6 +35,7 @@ import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
 import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
+import { underArea } from "../plugins/anatomiya/lib/areas.mjs";
 import { LANGUAGES, assertKeyed, familyOf, language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
@@ -333,9 +334,6 @@ function extFor(area, key) {
   return exts.map(([ext]) => ext).find((ext) => isSource(`f${ext}`) && langs.includes(language(`f${ext}`))) ?? null;
 }
 
-// An area at the repository root has the path ".", and a file in it has no directory half.
-const under = (areaPath, name) => (areaPath === "." ? name : `${areaPath}/${name}`);
-
 /**
  * One file that breaks a row the map stated, or null when nothing stated one.
  *
@@ -361,7 +359,7 @@ export function probePlan(facts) {
       const stem = key === "file_naming_case" ? STEM[OTHER_CLASS[d.learned]] : "zzprobe";
       const body = probeBody(ext, key, d.learnedKind ?? null);
       if (body === null) continue;
-      return { area: area.path, dimension: key, learned: d.learned, path: under(area.path, `${stem}${ext}`), body };
+      return { area: area.path, dimension: key, learned: d.learned, path: underArea(area.path, `${stem}${ext}`), body };
     }
   }
   return siteProbePlan(facts);
@@ -384,7 +382,7 @@ function siteProbePlan(facts) {
       const body = PROBES[familyOf(language(`f${ext}`))][bodies[side]];
       if (typeof body !== "string") continue;
       const { claim, counterClaim } = rowByKey(key);
-      return { area: area.path, dimension: key, learned: side === "counter" ? counterClaim : claim, path: under(area.path, `zzprobe${ext}`), body };
+      return { area: area.path, dimension: key, learned: side === "counter" ? counterClaim : claim, path: underArea(area.path, `zzprobe${ext}`), body };
     }
   }
   return null;

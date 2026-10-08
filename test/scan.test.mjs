@@ -1729,7 +1729,7 @@ test("a package at the repository root gets an area file wherever a reader can b
   assert.deepEqual(result.areas.map((a) => [a.path, a.fileCount]), [[".", 12], ["binding", 6], ["the repository root", 6]]);
   const rootFiles = result.areas[0].globs;
   const tracked = execFileSync("git", ["ls-files"], { cwd: dir }).toString().split("\n").filter(Boolean);
-  // conf.js and the directory under the floor: in no area, as before there was one at the root.
+  // conf.js and the directory under the floor are in no area: the root area owns its own language's direct files.
   assert.equal(result.corpus.orphaned, 2);
   assert.ok(scanLines(scanSummary(result, planMap(result))).some((l) => l.startsWith("2 files in no area: ")));
 

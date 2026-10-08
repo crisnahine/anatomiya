@@ -74,7 +74,7 @@ const KINDS_LINES = 2;
  * A leading `!` is the matcher's negation marker rather than part of any
  * directory name, so `globText` puts it back outside the encoded half.
  */
-const spellGlob = (g) => globText(g, (dir) => encodePath(dir).slice(1, -1));
+const spellGlob = (g, anchored) => globText(g, (dir) => encodePath(dir).slice(1, -1), anchored);
 
 const NAMED = 6;
 const some = (names) => {
