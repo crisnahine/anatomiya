@@ -330,6 +330,26 @@ test("a directory a module resolves is loaded from by name, so every file in it 
   assert.deepEqual(shipped(carried), []);
 });
 
+test("a file reached through a resolved directory is data, and nothing written in it is followed", (t) => {
+  // A grammar is megabytes of bytes, and a manifest beside it is text that may spell a path: neither names a file the plugin loads.
+  const dir = packaged(t, {
+    files: ["**"],
+    extra: (at) => {
+      writeFileSync(join(at, "lib", "work.mjs"), [`const DATA = new URL("../data/", import.meta.url);`, `export const work = () => DATA;`].join("\n"));
+      mkdirSync(join(at, "data"));
+      writeFileSync(join(at, "data", "notes.mjs"), 'import "../lib/unreached.mjs";\nnew URL("../other/", import.meta.url);\n// ${CLAUDE_PLUGIN_ROOT}/lib/nowhere.mjs\n');
+      writeFileSync(join(at, "lib", "unreached.mjs"), "export const a = 1;\n");
+      mkdirSync(join(at, "other"));
+      writeFileSync(join(at, "other", "more.txt"), "more\n");
+    },
+  });
+
+  const { files, missing } = reachableFrom(dir, ["bin/run.mjs"]);
+
+  assert.deepEqual(files.sort(), ["bin/run.mjs", "data/notes.mjs", "lib/work.mjs"]);
+  assert.deepEqual([...missing], []);
+});
+
 test("the grammars this plugin loads are files the shipped-set walk reaches", () => {
   const { files } = reachableFrom(ANATOMIYA, ["lib/tree-sitter-file.mjs"]);
 

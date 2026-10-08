@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { READS, checkDocs, doneFilesGone, pathsThatMoved, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, checkDocs, doneFilesGone, pathsThatMoved, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
 
@@ -249,7 +250,8 @@ test("the rows a component's script is asked are read against the registry, per 
 });
 
 test("the rows asked of each tree-sitter language are read against the registry", (t) => {
-  for (const name of ["Python", "PHP", "Go", "Java", "C#", "Rust", "Kotlin"]) {
+  assert.deepEqual(Object.keys(PROSE_NAMES), hostedBy("tree-sitter"), "one name for each language the registry routes to tree-sitter");
+  for (const name of Object.values(PROSE_NAMES)) {
     const dir = repoCopy(t);
     const wrong = bumpCount(dir, new RegExp(`(\\d+)\\s+for\\s+${name.replace("#", "\\#")}(?![\\w#])`), "docs/how-it-works.md");
 

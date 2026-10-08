@@ -384,10 +384,15 @@ for (const d of ALL_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, wa
 
 /**
  * The walk a row's engine reads its tree with. Refused at import where there
- * is none: a row walked by another engine's walk counts nothing and says nothing.
+ * is none, and where the row lists languages of two engines: a row walked by
+ * another engine's walk counts nothing and says nothing.
  */
 export function walkFor(row, walks = WALKS) {
-  const engine = engineOf(row.langs[0]);
+  const engines = [...new Set(row.langs.map(engineOf))];
+  if (engines.length !== 1) {
+    throw new Error(engines.length ? `${row.key} lists languages of ${engines.join(" and ")}, and one walk reads one engine's tree` : `${row.key} lists no language`);
+  }
+  const [engine] = engines;
   if (!walks[engine]) throw new Error(`${row.key} is a row for ${engine}, and no walk reads a ${engine} tree`);
   return walks[engine];
 }

@@ -389,6 +389,28 @@ test("a row is handed the walk, the source and the path, and its sites cross as 
   assert.equal(seen[0].facets, r.facets);
 });
 
+test("a parser made for a grammar the runtime then refuses is deleted, not left in the wasm heap", async (t) => {
+  // Nothing frees a parser the collector cannot see, and one is made before the grammar is set on it.
+  const { Parser } = await ensureRuntime();
+  const { setLanguage, delete: free } = Parser.prototype;
+  const freed = [];
+  Parser.prototype.setLanguage = function () {
+    throw new Error("Incompatible language version 12. Compatibility range 13 through 15.");
+  };
+  Parser.prototype.delete = function () {
+    freed.push(this);
+    return free.call(this);
+  };
+  t.after(() => Object.assign(Parser.prototype, { setLanguage, delete: free }));
+  const dir = scratch(t, "anatomiya-refused-grammar-");
+  cpSync(GRAMMARS, dir, { recursive: true });
+
+  await assert.rejects(parseTreeFile(SAMPLES.python, "a.py", "python", { grammars: dir }), /^Error: grammars\/python\.wasm did not load: Incompatible language version 12/);
+  assert.equal(freed.length, 1);
+  assert.deepEqual((await probeGrammars({ grammars: dir })).refused[0], { grammar: "python", version: 12, reads: [13, 15] });
+  assert.equal(freed.length, 7, "one for each grammar, and the first is not made again");
+});
+
 test("a grammar that is not there reads as a missing parser, and names the file", async (t) => {
   const empty = scratch(t, "anatomiya-no-grammars-");
 

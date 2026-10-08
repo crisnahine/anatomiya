@@ -1091,4 +1091,9 @@ test("a row is walked by its own engine's walk, and one whose engine has none re
     () => walkFor({ key: "declared_return_type", langs: ["python"] }, { oxc: walk, prism: walkRuby }),
     /^Error: declared_return_type is a row for tree-sitter, and no walk reads a tree-sitter tree$/
   );
+  // One walk reads one engine's tree, so a row listing languages of two would count nothing on the second.
+  assert.throws(() => walkFor({ key: "swallowed_error", langs: ["js", "jsx", "python"] }), /^Error: swallowed_error lists languages of oxc and tree-sitter, and one walk reads one engine's tree$/);
+  assert.throws(() => walkFor({ key: "mixed", langs: ["ruby", "go", "rust"] }), /^Error: mixed lists languages of prism and tree-sitter, /);
+  assert.equal(walkFor({ key: "d", langs: ["js", "jsx", "vue", "svelte"] }), walk, "a component's script is the JavaScript engine's");
+  assert.throws(() => walkFor({ key: "none", langs: [] }), /^Error: none lists no language$/);
 });

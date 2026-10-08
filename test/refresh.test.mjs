@@ -370,7 +370,7 @@ test("a refresh of a map with no other target on creates no other directory", as
   assert.equal(existsSync(join(dir, ".github")), false);
 });
 
-test("a committed Cursor or Copilot copy is held while the refresh rewrites the map that is not committed", async (t) => {
+test("a committed Cursor or Copilot copy is left alone while the refresh rewrites the map that is not committed", async (t) => {
   // Copilot's cloud agent and its code review read what is committed, so that copy is the one a repository commits.
   for (const [id, at, overview] of [
     ["cursor", ".cursor", join(".cursor", "rules", "anatomiya-overview.mdc")],
@@ -398,9 +398,9 @@ test("a committed Cursor or Copilot copy is held while the refresh rewrites the 
     assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "", `${id}: and git sees no change`);
     assert.deepEqual(JSON.parse(readFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "utf8")).targets[id], named, `${id}: the record still names its files`);
     assert.equal(summaries.length, 1);
-    assert.equal("targets" in summaries[0], false, `${id}: nothing is said about a held target`);
+    assert.equal("targets" in summaries[0], false, `${id}: nothing is said about a target left alone`);
 
-    // A person's own scan holds nothing.
+    // A person's own scan leaves nothing alone.
     await runScan(dir);
     assert.match(readFileSync(join(dir, overview), "utf8"), /lib\/services/, `${id}: the next scan by hand rewrites it`);
   }

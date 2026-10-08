@@ -28,11 +28,15 @@
  * oxc and prism are their languages' own parsers, so it is the file's syntax.
  * A tree-sitter grammar covers less than its language: measured, it rejects a
  * correct Kotlin file with a `when` guard in it, so it is the grammar's reach.
+ *
+ * `grammars` is every grammar name the engine reads, which is what a
+ * declaration's `grammars` may name. Null for tree-sitter: its grammars are
+ * files, one named after each language it hosts.
  */
 export const ENGINES = Object.freeze({
-  oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "syntax" },
-  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH", rejects: "syntax" },
-  "tree-sitter": { id: "tree-sitter", host: "node", module: "web-tree-sitter", remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "grammar" },
+  oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "syntax", grammars: ["js", "jsx", "ts", "tsx"] },
+  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH", rejects: "syntax", grammars: ["rb"] },
+  "tree-sitter": { id: "tree-sitter", host: "node", module: "web-tree-sitter", remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "grammar", grammars: null },
 });
 
 const STRIPPER = ENGINES.oxc.extras.find((e) => e.role === "stripper");
@@ -230,7 +234,8 @@ export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby, python, php,
 const BY_ID = new Map(LANGUAGES.map((l) => [l.id, l]));
 const EXT_TO_ID = new Map(LANGUAGES.flatMap((l) => l.exts.map((e) => [e, l.id])));
 const FILENAME_TO_ID = new Map(LANGUAGES.flatMap((l) => l.filenames.map((n) => [n, l.id])));
-const FALLBACK = LANGUAGES.find((l) => l.fallback).id;
+// Null with none declared, which `assertRegistry` refuses below in its own words.
+const FALLBACK = LANGUAGES.find((l) => l.fallback)?.id ?? null;
 
 /** The declaration behind an id. An unknown id past the corpus is a bug, so it throws by name. */
 export function declOf(id) {
@@ -425,6 +430,18 @@ export function assertRegistry(langs) {
     const caps = Object.keys(decl.capabilities).sort().join(",");
     if (caps !== "importGraph,semantic") {
       throw new Error(`${decl.id} declares capabilities off the closed pair: ${caps}`);
+    }
+    for (const [name, has] of Object.entries(decl.capabilities)) {
+      // Anything but `true` reads as no, so `"yes"` would switch a capability off and say nothing.
+      if (typeof has !== "boolean") throw new Error(`${decl.id} declares the capability ${name} as ${JSON.stringify(has)}, which is no boolean`);
+    }
+    if (decl.embedded && decl.capabilities.semantic) {
+      throw new Error(`${decl.id} embeds its script, which the checker cannot open, and declares itself semantic`);
+    }
+    // A name the engine does not read rejects every file routed to it, as a syntax error in each.
+    const reads = ENGINES[decl.engine].grammars ?? langs.filter((l) => l.engine === decl.engine).map((l) => l.id);
+    for (const named of [decl.grammars.default, ...Object.values(decl.grammars.byExtension)]) {
+      if (!reads.includes(named)) throw new Error(`${decl.id} names a grammar ${decl.engine} does not read: ${named}`);
     }
     for (const ext of decl.exts) {
       if (extOwner.has(ext)) throw new Error(`.${ext} is declared by ${extOwner.get(ext)} and ${decl.id}`);

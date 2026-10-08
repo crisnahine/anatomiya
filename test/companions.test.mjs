@@ -817,7 +817,7 @@ test("one stem holding two languages decides each against its own sources", () =
 });
 
 test("a spec importing a component by its full name covers it", () => {
-  // Nested under a flat test root, so no path shape answers and only the
+  // Nested under a flat test tree, so no path shape answers and only the
   // import can.
   for (const ext of ["vue", "svelte"]) {
     const source = [file(`pkg/src/Foo.${ext}`)];
@@ -986,7 +986,7 @@ test("a Python test below the top of its test tree answers only the path it mirr
   assert.equal(count("tests/test_exceptions.py"), 1);
   assert.equal(count("tests/fastapi/test_exceptions.py"), 1);
   assert.equal(count("tests/test_telemetry/test_exceptions.py"), 0);
-  // A JavaScript test root that files by type still answers a flat script.
+  // A JavaScript test tree that files by type still answers a flat script.
   assert.equal(namesakeCompanions([file("scripts/seed.mjs")], [file("test/unit/seed.test.mjs")], "scripts").with, 1);
 });
 

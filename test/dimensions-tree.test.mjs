@@ -120,6 +120,8 @@ const CASES = {
       ["<?php\nclass A\n{\n    /**\n     * Adds.\n     */\n    #[Pure]\n    public function add() {}\n}\n", [true]],
       ["<?php\n// adds\nfunction add() {}\n", [false]],
       ["<?php\nclass A\n{\n    /* adds */\n    function add() {}\n}\n", [false]],
+      // An empty block comment opens on the same three characters and documents nothing.
+      ["<?php\n/**/\nfunction add() {}\n", [false]],
       ["<?php\nclass A\n{\n    private function add() {}\n\n    protected function sub() {}\n}\n", []],
       // PHP reads a keyword without its case.
       ["<?php\nclass A\n{\n    PRIVATE function add() {}\n\n    Protected Function sub() {}\n}\n", []],
@@ -161,6 +163,7 @@ const CASES = {
       ["enum E {\n    X;\n\n    /** Runs. */\n    public void run() {}\n\n    public void walk() {}\n}\n", [true, false]],
       ["class A {\n    // runs\n    public void run() {}\n}\n", [false]],
       ["class A {\n    /* runs */\n    public void run() {}\n}\n", [false]],
+      ["class A {\n    /**/\n    public void run() {}\n}\n", [false]],
       ["interface A {\n    void run();\n}\n", [false]],
       ["class A {\n    void run() {}\n\n    private void walk() {}\n\n    protected void crawl() {}\n}\n", []],
       ["class A {\n    @Override\n    public String toString() { return \"\"; }\n}\n", []],
