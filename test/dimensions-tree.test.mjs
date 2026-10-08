@@ -286,33 +286,37 @@ const CASES = {
   },
 };
 
-// Each function asks where it sits among its siblings, and a search of them for every one makes four times the
-// functions cost sixteen times as long. The row is timed alone, on a tree already parsed, so its walk is all the clock sees.
+// Each function asks where it sits among its siblings, and a Go method which methods its type has: a search for every
+// one makes four times the functions cost sixteen times as long. The row is timed alone, on a tree already parsed, so
+// its walk is all the clock sees. Each shape as [language, the smaller count, the source of one function, what the file opens with].
 const MANY_FUNCTIONS = {
-  "an attribute that takes each out of the documented surface": (i) => `#[cfg(test)]\npub fn f${i}() {}\n`,
-  "a doc comment and an attribute above each": (i) => `/// Runs.\n#[inline]\npub fn f${i}() {}\n`,
+  "an attribute that takes each out of the documented surface": ["rust", 20_000, (i) => `#[cfg(test)]\npub fn f${i}() {}\n`],
+  "a doc comment and an attribute above each": ["rust", 20_000, (i) => `/// Runs.\n#[inline]\npub fn f${i}() {}\n`],
+  // Smaller, since the search this one guards took 2,096 ms at 10,000 methods and 13,488 ms at 20,000.
+  "a method of one type named as a sorting interface names it": ["go", 2_500, () => "func (t T) Len() int { return 0 }\n", "package a\n\n"],
 };
 
-for (const [shape, item] of Object.entries(MANY_FUNCTIONS)) {
+for (const [shape, [lang, few, item, head = ""]] of Object.entries(MANY_FUNCTIONS)) {
   test(`public_doc_comment reads a file of many functions in time linear in them: ${shape}`, async () => {
     const row = TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment");
+    const rel = `src/a.${declOf(lang).exts[0]}`;
     const fastest = async (count) => {
-      const source = Array.from({ length: count }, (_, i) => item(i)).join("");
+      const source = head + Array.from({ length: count }, (_, i) => item(i)).join("");
       let best = Infinity;
       for (let turn = 0; turn < 3; turn++) {
-        // A tree of its own each turn, so no turn reads what the one before it built.
-        const { program } = await parseTreeFile(source, "src/a.rs", "rust", { withProgram: true });
+        // A tree of its own each turn, and no row run by the parse, so no turn reads what another built.
+        const { program } = await parseTreeFile(source, rel, lang, { withProgram: true, rows: [] });
         const before = performance.now();
-        row.run(program, () => {}, { source, rel: "src/a.rs" });
+        row.run(program, () => {}, { source, rel });
         best = Math.min(best, performance.now() - before);
       }
       return best;
     };
 
-    const few = await fastest(20_000);
-    const many = await fastest(80_000);
+    const short = await fastest(few);
+    const long = await fastest(few * 4);
 
-    assert.ok(many / few < 8, `20,000 functions took ${few.toFixed(1)} ms and 80,000 took ${many.toFixed(1)} ms`);
+    assert.ok(long / short < 8, `${few} functions took ${short.toFixed(1)} ms and ${few * 4} took ${long.toFixed(1)} ms`);
   });
 }
 

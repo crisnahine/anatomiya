@@ -160,8 +160,15 @@ const GO_SORT_METHODS = ["Len", "Less", "Swap"];
 
 /** A Go method that satisfies a standard interface by its name. golint reads a package for the sortable types and this reads the file. */
 function goNamedByInterface(program, sets) {
-  const methods = Map.groupBy(program.children.filter((node) => sets.fn.has(node.type) && goReceiver(node, sets) !== null), (fn) => goReceiver(fn, sets));
-  const sortable = (type) => GO_SORT_METHODS.every((name) => methods.get(type).some((fn) => nameOf(fn) === name));
+  // Each type's method names, read once: searched again for every method, 20,000 methods of one type took 13 s.
+  const named = new Map();
+  for (const node of program.children) {
+    const type = sets.fn.has(node.type) ? goReceiver(node, sets) : null;
+    if (type === null) continue;
+    if (!named.has(type)) named.set(type, new Set());
+    named.get(type).add(nameOf(node));
+  }
+  const sortable = (type) => GO_SORT_METHODS.every((name) => named.get(type).has(name));
   return ({ name, fn }) => {
     const type = goReceiver(fn, sets);
     return type !== null && (GO_COMMON_METHODS.has(name) || (GO_SORT_METHODS.includes(name) && sortable(type)));
