@@ -258,7 +258,8 @@ pin of its own reads its main checkout's.
 ## What it prints
 
 A first run against [excalidraw](https://github.com/excalidraw/excalidraw) at `438d898`, a public
-React and TypeScript repository, on a 4-CPU Linux container, with the root path shortened:
+React and TypeScript repository, on a 4-CPU Linux container, with the root path shortened. The
+build that became 0.11.0 printed it, so the engine version and the counts are that build's:
 
 ```
 693 files, 38 areas, 3409ms, root /Users/me/code/excalidraw
@@ -645,9 +646,9 @@ repository root is in no area, which is how a Go library is laid out: gin's map 
 overview says `53 at the repository root` and `42 source files sit in no area (at the repository
 root, under the per-directory floor, or under a name no glob can spell)`. None of the seven gets the
 type checker, the "most imported from here" lines or the end-of-turn reuse check. The notice before
-a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of them, and say nothing of a Go, Java, Kotlin or C#
-test that sits in the one place its language's tool reads it from: a Rust test has no name, since cargo collects by place, so no `.rs` file is
-asked. A file of any other language is not read: "What lives where" counts it, and
+a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of the seven. Neither says anything of a Go, Java,
+Kotlin or C# test that sits in the one place its language's tool reads it from. No `.rs` file is
+asked, since cargo collects by place and a Rust test has no name. A file of any other language is not read: "What lives where" counts it, and
 "Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
 
 Each of the seven gets its test files and the layout section. None gets a naming row or an imports

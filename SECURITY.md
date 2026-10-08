@@ -167,7 +167,9 @@ files in `.claude/rules/` the tool did not write, and a scan and a check report 
 unattributed context. Deletion needs all three signals at once: the `anatomiya-` filename prefix, the
 `generator: anatomiya` frontmatter key, and being named by the `facts.json` already on disk, read
 before this scan's record replaces it. A file with
-the prefix that the tool did not write is reported, never removed.
+the prefix that the tool did not write is reported and never removed. One that sits at a name the
+scan writes in `.claude/rules` is replaced by the map file of that name, and the scan says so:
+`"anatomiya-overview.md" in .claude/rules/ held a name this scan writes, so it was replaced`.
 
 If you clone an unfamiliar repository, read `.claude/rules/`, `.cursor/rules/` and
 `.github/instructions/` before you start a session. That is true whether or not you use this tool.
@@ -202,9 +204,9 @@ one: a clone holding a committed `.cursor/rules/anatomiya-overview.mdc` with the
 target on, and the first scan run there writes that directory without being asked. Its summary
 says so on that directory's line: which file switched the target on, and that
 `scan --targets claude` switches it off. In that
-directory the scan writes only the map's own names, and removes only a regular file under a map
-name that carries the key and that the record on disk lists, or, when a scan leaves the target out
-of `--targets`, any such file under a map name. A repository can commit the record as well, and
+directory the scan writes only the map's own names. A plain scan removes a regular file under a
+map name only where the file carries the key and the record on disk lists it. A scan that leaves
+the target out of `--targets` removes every regular file under a map name that carries the key. A repository can commit the record as well, and
 then it chooses which of those files the record lists. The writes and the removals land on tracked
 files: the scan replaces the committed overview and area files and can delete a committed area
 file, so `git status` shows changes nobody made by hand, and `git commit -a` takes them in. The
@@ -260,8 +262,8 @@ Where the record lists no file in that directory, the scan prints nothing about 
 name, with the target on, the scan leaves the entry, writes no file at that name, and counts it in
 its summary
 (`.cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was
-left as it is`). A plain scan refuses only when the overview stops being this tool's between the
-moment the scan reads the target's state and the moment it lists the directory.
+left as it is`). A plain scan refuses in one case: the overview was this tool's when the scan read
+the target's state and was not when it listed the directory.
 
 Removal there has two rules. A scan that does not name the targets removes a file only
 on the three signals above: the prefix, the key, and the record on disk naming it. A scan that
@@ -272,8 +274,8 @@ removed, and neither is a file under any other name, keyed or not. So the most a
 removed is a file it shipped under this tool's own name carrying this tool's own key, or a regular
 file it shipped under such a name plus the suffix a staged file carries, `.tmp-<pid>-<16 hex>`:
 that one is removed with no key asked, where no process of that id is running, by a scan that
-writes or removes in the directory. The store is swept the same way for three names: a regular file
-in `.claude/anatomiya` named `facts.json`, `layout.json` or `refresh.json` plus that suffix, whose
+writes or removes in the directory. `.claude/anatomiya` is swept the same way for three names: a regular
+file there named `facts.json`, `layout.json` or `refresh.json` plus that suffix, whose
 stager is not running, is removed by a scan that writes, and the summary counts them (`3 temporary
 files an earlier scan left in .claude/anatomiya were removed`). `baseline.json.tmp-...` and
 `refresh.lock.tmp-...` are not swept, and neither is a link, a directory or a fifo at any of these
