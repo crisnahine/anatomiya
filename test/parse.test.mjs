@@ -276,6 +276,18 @@ test("a runtime that is installed and will not load reports no version, so nothi
   assert.equal(out.engines["tree-sitter"].version, null);
 });
 
+test("a runtime's load failure is kept with nothing in it that moves a terminal or opens a line", needsSymlinks, (t) => {
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+  const broken = join(install, "node_modules", "web-tree-sitter");
+  mkdirSync(broken);
+  writeFileSync(join(broken, "package.json"), JSON.stringify({ name: "web-tree-sitter", version: "9.9.9", type: "module", exports: "./index.js" }));
+  writeFileSync(join(broken, "index.js"), 'throw new Error("its wasm\\u001b[2J is\\ngone");\n');
+
+  const out = parseAllFrom(install, [{ rel: "a.py", source: "x = 1\n", lang: "python" }]);
+
+  assert.equal(out.missingParser, "web-tree-sitter is not installed: its wasm [2J is gone");
+});
+
 test("a grammar file that is gone costs its own language, and the engine goes on reading the rest", needsSymlinks, (t) => {
   const install = installLacking(t, { grammars: ["kotlin"] });
 
