@@ -172,6 +172,23 @@ test("a pattern that already starts with **/ is not widened", () => {
   assert.deepEqual(out.widened, ["*.py"]);
 });
 
+test("a pattern anchored at the repository root is spelled as each reader reads one", () => {
+  // Run on the matchers cut out of Cursor 3.20.21 and VS Code 1.140.0: `/*.go`
+  // matched no file of a repository in either, since both read a leading slash
+  // as the file system's root. Cursor's matched `*.go` at the root alone.
+  // VS Code's matched it at every depth, which is what `widened` reports, and
+  // no pattern short of the repository's own absolute path matched only the root.
+  const root = [globEntry(".", ["go"], { recursive: false }), { negated: true, dir: "", tail: "zz_gen.go" }];
+  assert.deepEqual(spelledGlobs(claude, root, plain), { ...NONE, patterns: ["/*.go", "!/zz_gen.go"] });
+  assert.deepEqual(spelledGlobs(cursor, root, plain), { ...NONE, patterns: ["*.go"], dropped: ["zz_gen.go"] });
+  assert.deepEqual(spelledGlobs(copilot, root, plain), { ...NONE, patterns: ["*.go"], widened: ["*.go"], dropped: ["zz_gen.go"] });
+  assert.deepEqual(spelledGlobs(cursor, root, encoded).patterns, ["*.go"]);
+  // A brace of two extensions is one pattern per extension, each without the slash.
+  const two = [{ negated: false, dir: "", tail: "*.{go,rb}" }];
+  assert.deepEqual(spelledGlobs(cursor, two, plain).patterns, ["*.go", "*.rb"]);
+  assert.deepEqual(spelledGlobs(claude, two, plain).patterns, ["/*.{go,rb}"]);
+});
+
 test("a bare filename pattern passes through", () => {
   const bare = [{ negated: false, dir: "", tail: "Rakefile" }, { negated: false, dir: "lib", tail: "**/Gemfile" }];
   assert.deepEqual(spelledGlobs(cursor, bare, plain), { ...NONE, patterns: ["Rakefile", "lib/**/Gemfile"] });
@@ -212,10 +229,13 @@ test("each target refuses what its own reader would change: a fence for cursor, 
 
 test("cursor trims each pattern and unwraps a quoted line, so neither edge may hold a space nor the start a quote", () => {
   const at = (dir, tail = "*.js") => spelledGlobs(cursor, [{ negated: false, dir, tail }], plain);
-  for (const [dir, tail] of [[" a"], ["\ta"], ['"a'], ["'a"], ["lib", "x "], ["", "x\u00a0"]]) {
+  for (const [dir, tail] of [[" a"], ["\ta"], ['"a'], ["'a"], ["lib", "x "]]) {
     const p = plain({ dir, tail: tail ?? "*.js" });
     assert.deepEqual(at(dir, tail), { ...NONE, unspellable: [p] }, JSON.stringify(p));
   }
+  // At the root the name is the whole pattern Cursor is handed, so its edges are the pattern's.
+  assert.deepEqual(at("", "x\u00a0"), { ...NONE, unspellable: ["x\u00a0"] });
+  assert.deepEqual(at("", " x"), { ...NONE, unspellable: [" x"] });
   for (const [dir, tail] of [["a b"], ['a"'], ["a'b"], ["lib", 'x"']]) {
     const p = plain({ dir, tail: tail ?? "*.js" });
     assert.deepEqual(at(dir, tail), { ...NONE, patterns: [p] }, JSON.stringify(p));

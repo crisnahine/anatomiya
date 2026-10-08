@@ -98,12 +98,21 @@ const UNSPELLABLE = {
 };
 // Cursor reads a `globs` value of exactly `true` or `false` as a boolean.
 const MISREAD_ALONE = { claude: null, cursor: /^(true|false)$/, copilot: null };
+// What anchors a pattern at the repository root for Claude Code, and whether a
+// reader takes it. Run on the matchers cut out of Cursor 3.20.21 and VS Code
+// 1.140.0: both read a leading slash as the file system's root, so `/*.go`
+// matched no file of a repository. Without it Cursor matched `*.go` at the root
+// alone, and VS Code at every depth, which `widened` reports.
+const ANCHOR = "/";
+const READS_ANCHOR = { claude: true, cursor: false, copilot: false };
 assertPerTarget("UNSPELLABLE", UNSPELLABLE);
 assertPerTarget("MISREAD_ALONE", MISREAD_ALONE);
+assertPerTarget("READS_ANCHOR", READS_ANCHOR);
 
 /** Whether a target is handed every pattern as the area spells it, so its file's patterns match the area and nothing else. */
 export const readsEveryPattern = (target) => UNSPELLABLE[target.id] === null;
 
+const ANCHOR_IN_FRONT = new RegExp(`^${ANCHOR}`);
 const EXT_BRACE = /\.\{([^{}]+)\}$/;
 
 const expanded = (g) => {
@@ -116,19 +125,23 @@ const expanded = (g) => {
 const within = (dir, parent) => parent === "" || dir === parent || dir.startsWith(`${parent}/`);
 
 /**
- * An area's globs as one target can read them, each spelled by the caller's `text`.
+ * An area's globs as one target can read them, each spelled by the caller's `spell`.
  *
  * `dropped` is the negations the target cannot be told, so its file's patterns
  * match more than the area. `unspellable` is the opposite: patterns that could
  * not be written, so the file matches nothing there, and a negation only they
  * reach is in neither list. `widened` is what the target reads more loosely
  * than written: VS Code puts `**` and a slash in front of a pattern that starts
- * with neither, so `app/*.rb` also matches `vendor/x/app/a.rb`.
+ * with neither, so `app/*.rb` also matches `vendor/x/app/a.rb`, and a pattern
+ * anchored at the repository root also matches below it.
  */
-export function spelledGlobs(target, globs, text) {
+export function spelledGlobs(target, globs, spell) {
   const out = { patterns: [], widened: [], dropped: [], unspellable: [] };
   const unspellable = UNSPELLABLE[target.id];
-  if (unspellable === null) return { ...out, patterns: globs.map((g) => text(g)) };
+  if (unspellable === null) return { ...out, patterns: globs.map((g) => spell(g)) };
+  // No directory starts with a slash, so one in front is the anchor and nothing
+  // else, and no negation is spelled past this line.
+  const text = READS_ANCHOR[target.id] ? spell : (g) => spell(g).replace(ANCHOR_IN_FRONT, "");
   // Read off the emitted string: an encoder can fold a comma in that the name did not hold.
   const cannot = (p) => unspellable.test(p);
   const written = [];

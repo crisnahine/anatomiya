@@ -5914,6 +5914,57 @@ for (const [lang, rel, glob, old, added, line, where] of [
   });
 }
 
+const rootPackage = (dimensions) => ({ id: "aaaaaaaa", path: ".", globs: [{ negated: false, dir: "", tail: "*.go" }], fileCount: 8, dimensions });
+const undocumented = (pkg, name) => `package ${pkg}\n\nfunc ${name}() {}\n`;
+
+test("a file added to the root package is held to the claim the root area states, and one in an uncovered directory is not", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("gin.go", "package gin\n\n// Run runs.\nfunc Run() {}\n");
+    write("binding/json.go", "package binding\n\n// Bind binds.\nfunc Bind() {}\n");
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("context.go", undocumented("gin", "Next"));
+    write("tiny/helper.go", undocumented("tiny", "Help"));
+    write("binding/xml.go", undocumented("binding", "Decode"));
+    commit("three files");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      rootPackage([documented]),
+      { id: "bbbbbbbb", path: "binding", globs: [{ negated: false, dir: "binding", tail: "**/*.go" }], fileCount: 8, dimensions: [documented] },
+    ],
+  });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.caveats, []);
+  for (const path of ["context.go", "tiny/helper.go", "binding/xml.go"]) assertExamined(report, path);
+  assert.deepEqual(
+    forKey(report, "public_doc_comment").map((f) => [f.path, f.line, f.area, f.where]).sort(),
+    // Outside every area the file is asked what a model writes by default, and no area's claim.
+    [["binding/xml.go", 3, "binding", "Decode"], ["context.go", 3, ".", "Next"], ["tiny/helper.go", 3, null, "Help"]]
+  );
+  assert.equal(report.findings.find((f) => f.path === "tiny/helper.go").severity, "NIT");
+});
+
+test("a root package's own file is asked the root area's claim at the severity its pattern earns", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("gin.go", "package gin\n\n// Run runs.\nfunc Run() {}\n");
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("context.go", undocumented("gin", "Next"));
+    commit("one file");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: [rootPackage([dim({ key: "public_doc_comment", precision: "precise" })])] });
+
+  const [finding] = forKey(await check(dir, { baseRef: "main" }), "public_doc_comment");
+
+  assert.equal(finding.severity, "MUST-FIX", "the root area's pattern reaches a file at the root, so the map told its author");
+  assert.equal(finding.area, ".");
+});
+
 test("a handler written above an old one of its text, in a method of the same name in another class, is reported on the line the branch wrote", async (t) => {
   const cls = (name) => `class ${name} {\n    void run() {\n        try { go(); } catch (E e) { }\n    }\n}\n`;
   const dir = repo(t, ({ git, write, commit }) => {
