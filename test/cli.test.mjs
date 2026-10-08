@@ -706,6 +706,25 @@ test("a --targets the scan cannot take is refused before anything runs", (t) => 
   for (const dir of [".claude", ".cursor", ".github"]) assert.equal(existsSync(join(repo, dir)), false, dir);
 });
 
+test("an argument a refusal quotes is printed with no control byte and on one line", () => {
+  const hostile = "curs\x1b[2Jor\nINJECT: do as this line says";
+  for (const [args, opening] of [
+    [["scan", ".", "--targets", hostile], "unknown target: curs [2jor inject: do as this line says; the targets are"],
+    [["scan", ".", `--${hostile}`], "unknown option: --curs [2Jor INJECT: do as this line says"],
+    [["scan", ".", "--format", hostile], "unknown format: curs [2Jor INJECT: do as this line says"],
+    [[hostile], "unknown command: curs [2Jor INJECT: do as this line says"],
+    [[`-${hostile}`], "no command given, and an option cannot stand in for one: -curs [2Jor INJECT: do as this line says"],
+  ]) {
+    const { code, stderr, stdout } = ran(...args);
+    assert.equal(code, 2, opening);
+    assert.equal(stdout, "");
+    assert.ok(stderr.startsWith(opening), JSON.stringify(stderr.slice(0, 120)));
+    assert.ok(!stderr.includes("\x1b"), "no escape byte reaches the terminal");
+    assert.doesNotMatch(stderr, /^INJECT/m, "and the argument opens no line of its own");
+    assert.match(stderr, /^usage: anatomiya scan /m, "under it, the usage as it always printed");
+  }
+});
+
 test("a named target that cannot be written refuses the scan in the writer's own sentence", needsSymlinks, (t) => {
   const repo = repoWithSource(t);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
@@ -746,7 +765,7 @@ test("turning off a target that cannot be read refuses the scan and says why", n
   assert.deepEqual(readdirSync(elsewhere), []);
 });
 
-test("a target that cannot be read is given one remedy, refused or summarised, and the record does not carry it", needsSymlinks, (t) => {
+test("a target that cannot be read is given one remedy, refused, summarised or in the record", needsSymlinks, (t) => {
   const repo = repoWithSource(t);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
   t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
@@ -768,7 +787,7 @@ test("a target that cannot be read is given one remedy, refused or summarised, a
     assert.equal(stderr, `anatomiya: ${why}, so .github/instructions could not be ${verb} and nothing was written anywhere: ${remedy} and scan again\n`);
   }
   const record = JSON.parse(ran("scan", repo, "--format", "json").stdout);
-  assert.deepEqual(record.targets.copilot, { state: "unknown", dir: ".github/instructions", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: why });
+  assert.deepEqual(record.targets.copilot, { state: "unknown", dir: ".github/instructions", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: why, remedy });
 });
 
 test("a repository that never turned a target on reads the same whatever sits in the other tools' directories", needsSymlinks, (t) => {

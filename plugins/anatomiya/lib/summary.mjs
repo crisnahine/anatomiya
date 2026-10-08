@@ -38,7 +38,8 @@ const hookRemoved = (dryRun) =>
 // 2 replaced `hookInstalled` with `hookRemoved`: the scan installed a hook into
 // the repository and now only removes the one it used to install. `targets`
 // shares 2: it is a key an older reader never looks for, and it is absent
-// wherever that reader's answer would be whole without it.
+// wherever that reader's answer would be whole without it. So does a target's
+// `remedy`, beside the `reason` it is the answer to.
 export const SUMMARY_SCHEMA = 2;
 
 /** Every fact a scan prints, derived once, so nothing derives it twice. */
@@ -159,8 +160,8 @@ function targetSummaries(result, plan) {
       ...(t.unreadableRules.length ? { unreadable: t.unreadableRules } : {}),
       // Once: the record names files there from this scan on.
       ...(t.first === true && t.write.length ? { switchedOnBy: `${t.dir}/${overviewName(TARGETS[id])}` } : {}),
-      // The remedy is for the line below, and `encodeScan` keeps it out of the record.
-      ...(unread ? { reason: t.reason, remedy: t.remedy } : {}),
+      // Why, and what a person does about it, for the line below and for the record.
+      ...(unread ? { reason: t.reason, ...(t.remedy ? { remedy: t.remedy } : {}) } : {}),
     };
   }
   return out;
@@ -347,7 +348,7 @@ function encodeScan(s) {
       replaced: s.rules.replaced.map(locator),
     },
     ...(s.targets
-      ? { targets: Object.fromEntries(Object.entries(s.targets).map(([id, { remedy, ...t }]) => [id, t.unreadable ? { ...t, unreadable: t.unreadable.map(locator) } : t])) }
+      ? { targets: Object.fromEntries(Object.entries(s.targets).map(([id, t]) => [id, t.unreadable ? { ...t, unreadable: t.unreadable.map(locator) } : t])) }
       : {}),
   };
 }
