@@ -1415,9 +1415,11 @@ through a directory that moved. Where the failure is a file that is locked or re
 
 That is the answer in `.claude/rules`, in the store and in a target the scan named. In a Cursor or
 Copilot directory it did not name, a locked file stops that directory alone (`spared` in
-`replaceAll`): what was replaced there is put back, its staged files are removed, the rest of its
-renames and removals are passed over, and after the last removal the record and its layout file are
-written again through `writePair`, with that target's names as the record on disk had them. The
+`replaceAll`): the record and its layout file are written again through `writePair`, with that
+target's names as the record on disk had them, then what was replaced there is put back, its staged
+files are removed, and the rest of its renames and removals are passed over. The record goes
+first so that a process killed during the put-back, or after it, leaves a record naming the map
+files that directory holds, and the next scan writes the directory and counts nothing left there. The
 plan comes back with the target `unknown` and `unwritable`, the `.claude/rules` map and the other
 directory are written, and the exit is 0:
 

@@ -523,7 +523,7 @@ export function commitMap(root, plan) {
       const t = byDir.get(dirname(path));
       return t !== undefined && !t.named ? t : null;
     };
-    // The record once more, naming in each such directory the files still on disk.
+    // The record once more, naming in each such directory the files it held and is about to hold again.
     const settle = (stopped) => {
       const kept = Object.fromEntries(Object.entries(names).map(([id, now]) => [id, stopped.has(id) ? plan.targets[id].was : now]));
       writePair(storeDir, factsJson(plan.result, kept), plan.result.layout);
@@ -627,8 +627,9 @@ function makeOwnDirectory(at, rel, made) {
  * path for the sentence that failure gets.
  *
  * Where `pair.spared` answers for the path with a target, that failure stops
- * the target's directory alone: what was replaced there is put back, nothing
- * more is done there, and `pair.settle` writes the record again to say so. A
+ * the target's directory alone: `pair.settle` writes the record again to name
+ * what that directory held, then what was replaced there is put back and
+ * nothing more is done there. A
  * permission in a directory another tool owns may not stop Claude Code's map.
  * Answers the targets stopped that way, each with what stopped it.
  */
@@ -644,6 +645,12 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
   const stop = (err, path) => {
     const t = pair.spared(path);
     if (t === null || !err.locked) throw err;
+    // The record first, so a process killed from here on leaves one that names the files the directory holds.
+    try {
+      pair.settle(new Set([...stopped.keys(), t.id]));
+    } catch (failed) {
+      throw lockedFile(failed, said(pair.record), "replaced");
+    }
     for (let i = undo.length - 1; i >= 0; i--) {
       const [done, previous] = undo[i];
       if (pair.spared(done) !== t) continue;
@@ -690,13 +697,6 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
       }
       // A leftover has no bytes here, which the put-back reads as one to leave gone.
       undo.push([path, before.get(path)]);
-    }
-    if (stopped.size > 0) {
-      try {
-        pair.settle(stopped);
-      } catch (err) {
-        throw lockedFile(err, said(pair.record), "replaced");
-      }
     }
     return stopped;
   } catch (err) {

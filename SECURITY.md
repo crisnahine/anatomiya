@@ -295,9 +295,9 @@ directory this run made if it is empty. A map file that is locked or read-only (
 or `EBUSY` from the rename or the removal) is such a failure in `.claude/rules`, in
 `.claude/anatomiya`, and in a Cursor or Copilot directory the scan named: the scan names the file
 and says to close what holds it or change its mode. In a Cursor or Copilot directory the scan did
-not name, it stops that directory alone. What was replaced there is put back, the temporary files
-staged for it are removed, and the record is written a second time, naming for that directory the
-files it held before. The `.claude/rules` map and the other directory are written, the exit is 0,
+not name, it stops that directory alone. The record is written a second time, naming for that
+directory the files it held before, then what was replaced there is put back and the temporary
+files staged for it are removed. The `.claude/rules` map and the other directory are written, the exit is 0,
 and the scan says `.cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could
 not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change
 its mode, then scan again`. That directory reads `unknown` in `--format json`. A refresh that
@@ -315,11 +315,11 @@ in .cursor/rules (EACCES)), so nothing there was written or removed: fix its per
 again`. A temporary file an
 earlier scan left there, removed before the locked file was met, stays removed. Where the put-back
 or the second record write fails, the scan refuses whole and everything is put back. A dry run
-renames nothing, so past a locked file it says `would write`. A process killed between the put-back
-and the second record write leaves the record naming the files that scan planned. An area file the
-directory holds under a name that scan did not plan then carries the key and is not on the record:
-later scans count it as an entry left there and do not remove it, and a scan that leaves the target
-out by name does. On a repository with no map yet, a failure at that stage can
+renames nothing, so past a locked file it says `would write`. The second record write comes
+before the put-back, so a process killed while that directory is put back, or after, leaves a
+record that names the map files the directory holds: the next scan writes the directory, removes
+what went stale and counts no entry left there. Killed before that write it is in the window every
+scan has between two renames, where the record names the files that scan planned. On a repository with no map yet, a failure at that stage can
 leave `.claude/rules` and `.claude/anatomiya` behind, empty.
 
 One window is left. The last look at a directory and the `rename` or `unlink` that follows it are
