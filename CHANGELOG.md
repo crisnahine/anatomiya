@@ -75,9 +75,9 @@ scanned by 0.13.4 and by this version.
 - Speed, on a repository with none of the new languages. A scan starts 17 to 59 ms later: 470 ms
   to 487 ms on errbit, 252 files, medians of 9 interleaved pairs, and 1.25 s to 1.30 s on typeorm
   with its type checker off, medians of 3. That is about 4% and 5%. With the checker on, typeorm
-  took 5.75 s and 5.86 s. The two hooks that run on every prompt and tool call take 1 to 2 ms
-  longer: 36.8 ms to 37.5 ms for the echo and 39.2 ms to 41.4 ms for the notice, medians of 30
-  runs. All of it was taken on one machine at a load of 4 to 6.
+  took 5.75 s and 5.86 s. The two hooks that run on every prompt and tool call take 0.7 ms and
+  2.2 ms longer: 36.8 ms to 37.5 ms for the echo and 39.2 ms to 41.4 ms for the notice, medians of
+  30 runs. All of it was taken on one machine at a load of 4 to 6.
 - Three claims lost with no file changed. On storybook, `scripts/ci` stated `exported names are
   camelCase` (34 of 36 sites), and `code/addons/a11y/src` (11 of 12) and
   `code/frameworks/nextjs/src` (32 of 34) stated `exported names in files that hold no JSX are
