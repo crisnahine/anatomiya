@@ -877,6 +877,22 @@ test("a target that was on and could not be read says why, and one never written
   assert.deepEqual(scanLines(never), BEFORE_LINES);
 });
 
+test("a target that was on and could not be written says so whatever the record names, with the remedy", () => {
+  const locked = { state: "unknown", reason: ".cursor/rules is not writable", remedy: "fix its permissions", unwritable: true };
+  // A clone that brought a committed overview has no record of a file there.
+  const s = scanSummary(result(), plan(others(locked)));
+
+  assert.deepEqual(s.targets, {
+    cursor: { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: locked.reason, remedy: locked.remedy, unwritable: true },
+  });
+  assert.deepEqual(scanLines(s).slice(-3), [
+    "wrote 2 files",
+    ".cursor/rules could not be written (.cursor/rules is not writable), so nothing there was written or removed: fix its permissions, then scan again",
+    RUNNING_SESSION,
+  ]);
+  assert.deepEqual(JSON.parse(scanJson(s)).targets, s.targets);
+});
+
 test("a target that could not be read says the remedy its reason came with, and no other", () => {
   const unread = { state: "unknown", reason: ".cursor could not be read", listed: false, names: ["anatomiya-overview.mdc"] };
   const line = ".cursor/rules could not be read (.cursor could not be read), so nothing there was written or removed";
