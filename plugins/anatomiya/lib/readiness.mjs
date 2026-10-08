@@ -150,7 +150,7 @@ function probeFor(id) {
  */
 export function remedyFor(engineId, root = pluginRoot()) {
   const engine = probeFor(engineId);
-  return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, root ?? PLUGIN_DIRECTORY)}` : engine.remedy;
+  return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, () => root ?? PLUGIN_DIRECTORY)}` : engine.remedy;
 }
 
 /**
