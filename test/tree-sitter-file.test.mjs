@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ENGINE, ENGINE_VERSION, ensureRuntime, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
-import { createPool } from "../plugins/anatomiya/lib/pool.mjs";
+import { ENGINE, ENGINE_VERSION, RETRY_BUDGET_MS, ensureRuntime, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { GUARDS, createPool } from "../plugins/anatomiya/lib/pool.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { ANATOMIYA, ROOT } from "../scripts/plugins.mjs";
@@ -234,6 +234,43 @@ test("csharp: a file is parsed once where it reads as written, and again only fo
   assert.deepEqual(await parsesOf(needsABranchDropped.trimEnd() + UNENDED), ["written", "ended", "blanked"]);
 });
 
+test("csharp: a retry is taken only while one more parse as long as the first would end inside the budget", async (t) => {
+  const { Parser } = await ensureRuntime();
+  const parse = Parser.prototype.parse;
+  const texts = [];
+  Parser.prototype.parse = function (text, ...rest) {
+    texts.push(text);
+    return parse.call(this, text, ...rest);
+  };
+  t.after(() => (Parser.prototype.parse = parse));
+  // Rejected as written and with a line break appended, and read with one branch kept: three parses on a quick clock.
+  const source = CONDITIONAL["a parameter list"].trimEnd() + UNENDED;
+  // The clock's answers in the order it is asked: at the start, after the first parse, then before each later attempt.
+  const parsesAt = async (...times) => {
+    texts.length = 0;
+    let asked = 0;
+    const r = await parseTreeFile(source, "src/A.cs", "csharp", { now: () => times[Math.min(asked++, times.length - 1)] });
+    return [texts.map((text) => (text === source ? "written" : text === `${source}\n` ? "ended" : "blanked")), r.ok, Object.keys(r).sort().join()];
+  };
+  const read = "errors,facets,hits,length,ok,oneBranch,rel";
+  const rejected = "error,errors,ok,rel";
+  const half = RETRY_BUDGET_MS / 2;
+
+  assert.deepEqual(await parsesAt(0, 1, 1, 2), [["written", "ended", "blanked"], true, read]);
+  assert.deepEqual(await parsesAt(0, half / 2, half / 2, half), [["written", "ended", "blanked"], true, read]);
+  assert.deepEqual(await parsesAt(0, half, half, RETRY_BUDGET_MS), [["written", "ended"], false, rejected], "a third parse would end past the budget");
+  assert.deepEqual(await parsesAt(0, half, half, half + 1), [["written", "ended"], false, rejected]);
+  assert.deepEqual(await parsesAt(0, half + 1, half + 1), [["written"], false, rejected], "and so would a second");
+  // Measured from the start of the file's own parse, wherever the clock stood then.
+  assert.deepEqual(await parsesAt(90_000, 90_001, 90_001, 90_002), [["written", "ended", "blanked"], true, read]);
+  // The pool stops a parse at its own clock and charges it as a crash, and the budget is what keeps a rejected file inside it.
+  assert.ok(RETRY_BUDGET_MS < GUARDS.timeoutMs, "the budget ends before the pool's clock does");
+
+  texts.length = 0;
+  assert.equal((await parseTreeFile(source, "src/A.cs", "csharp")).oneBranch, true, "on the real clock a small file takes all three");
+  assert.equal(texts.length, 3);
+});
+
 test("csharp: a byte order mark before a first-line conditional does not switch the retry off", async () => {
   const r = await parseTreeFile("\uFEFF#if X\nclass A : I\n#else\nclass A : J\n#endif\n{ }\n", "src/A.cs", "csharp");
 
@@ -415,13 +452,13 @@ process.stderr.write(JSON.stringify({ first, last: await ask(500), early: rss[8]
 });
 
 test("the grammar probe counts what loads and names what does not", async (t) => {
-  assert.deepEqual(await probeGrammars(), { total: 7, missing: [], foreign: [], manifest: true });
+  assert.deepEqual(await probeGrammars(), { total: 7, missing: [], foreign: [], refused: [], manifest: true });
 
   const dir = scratch(t, "anatomiya-probe-grammars-");
   cpSync(GRAMMARS, dir, { recursive: true });
   rmSync(join(dir, "rust.wasm"));
   writeFileSync(join(dir, "go.wasm"), "not a grammar");
-  assert.deepEqual(await probeGrammars({ grammars: dir }), { total: 7, missing: ["go", "rust"], foreign: [], manifest: true });
+  assert.deepEqual(await probeGrammars({ grammars: dir }), { total: 7, missing: ["go", "rust"], foreign: [], refused: [], manifest: true });
 });
 
 test("the grammar probe holds each file that loads to the hash the manifest records for it", async (t) => {
@@ -429,18 +466,18 @@ test("the grammar probe holds each file that loads to the hash the manifest reco
   const swapped = scratch(t, "anatomiya-probe-swapped-");
   cpSync(GRAMMARS, swapped, { recursive: true });
   cpSync(join(GRAMMARS, "java.wasm"), join(swapped, "kotlin.wasm"));
-  assert.deepEqual(await probeGrammars({ grammars: swapped }), { total: 7, missing: [], foreign: ["kotlin"], manifest: true });
+  assert.deepEqual(await probeGrammars({ grammars: swapped }), { total: 7, missing: [], foreign: ["kotlin"], refused: [], manifest: true });
 
   // A parser stays loaded for the life of the process, so a file gone since then still "loads": it has no bytes to hash.
   rmSync(join(swapped, "go.wasm"));
-  assert.deepEqual(await probeGrammars({ grammars: swapped }), { total: 7, missing: [], foreign: ["go", "kotlin"], manifest: true });
+  assert.deepEqual(await probeGrammars({ grammars: swapped }), { total: 7, missing: [], foreign: ["go", "kotlin"], refused: [], manifest: true });
 
   // With no manifest nothing that loads can be shown to be the plugin's own, and a file that does not load is still that.
   const bare = scratch(t, "anatomiya-probe-bare-");
   cpSync(GRAMMARS, bare, { recursive: true });
   rmSync(join(bare, "grammars.json"));
   rmSync(join(bare, "php.wasm"));
-  assert.deepEqual(await probeGrammars({ grammars: bare }), { total: 7, missing: ["php"], foreign: ["python", "go", "java", "csharp", "rust", "kotlin"], manifest: false });
+  assert.deepEqual(await probeGrammars({ grammars: bare }), { total: 7, missing: ["php"], foreign: ["python", "go", "java", "csharp", "rust", "kotlin"], refused: [], manifest: false });
 });
 
 test("a failure is answered in the worker's reply shape, and only a wasm trap retires the worker", () => {

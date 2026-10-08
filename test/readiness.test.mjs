@@ -160,6 +160,59 @@ test("a file that does not load and files that are not the plugin's own are each
   assert.deepEqual(row.lostGrammars, ["go", "rust", "kotlin"]);
 });
 
+/**
+ * An install whose runtime is a later one: the real runtime behind a package of
+ * the same name that refuses a grammar under language version 15, in the words
+ * `setLanguage` refuses one in.
+ */
+function installWithNewerRuntime(t) {
+  const home = installLacking(t, { modules: ["web-tree-sitter"] });
+  const real = import.meta.resolve("web-tree-sitter");
+  const dir = join(home, "node_modules", "web-tree-sitter");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "web-tree-sitter", version: "0.99.0", type: "module", main: "index.js" }));
+  writeFileSync(
+    join(dir, "index.js"),
+    `import { Parser as Real } from ${JSON.stringify(real)};
+export * from ${JSON.stringify(real)};
+export class Parser extends Real {
+  setLanguage(language) {
+    if (language.abiVersion < 15) throw new Error(\`Incompatible language version \${language.abiVersion}. Compatibility range 15 through 16.\`);
+    return super.setLanguage(language);
+  }
+}
+`
+  );
+  return home;
+}
+
+test("a grammar the runtime refuses by its language version is said as a mismatch, with both versions", needsSymlinks, (t) => {
+  const { row, lines } = treeSitterRowOf(installWithNewerRuntime(t));
+
+  assert.equal(row.present, true);
+  assert.equal(row.version, "0.99.0");
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "grammars: 4 of 7, java.wasm and rust.wasm and kotlin.wasm are language version 14 and this runtime reads 15 through 16");
+  // A reinstall brings back the runtime the plugin locks beside its grammars, so the remedy is the one every lost grammar has.
+  assert.equal(row.remedy, GRAMMAR_REMEDY);
+  assert.deepEqual(row.lostGrammars, ["java", "rust", "kotlin"]);
+  assert.deepEqual(lines, [`tree-sitter 0.99.0: ${row.reason}, ${GRAMMAR_REMEDY}`]);
+  assert.doesNotMatch(row.reason, /did not load/, "nothing failed to load: the runtime turned the files away");
+});
+
+test("a refused grammar beside one that is missing keeps each in its own words", needsSymlinks, (t) => {
+  const home = installWithNewerRuntime(t);
+  rmSync(join(home, "grammars", "go.wasm"));
+  rmSync(join(home, "grammars", "rust.wasm"));
+  rmSync(join(home, "grammars", "kotlin.wasm"));
+
+  const { row } = treeSitterRowOf(home);
+
+  assert.equal(row.reason, "grammars: 3 of 7, go.wasm and rust.wasm and kotlin.wasm did not load, java.wasm is language version 14 and this runtime reads 15 through 16");
+  assert.equal(row.remedy, GRAMMAR_REMEDY);
+  assert.deepEqual(row.lostGrammars, ["go", "java", "rust", "kotlin"]);
+});
+
 test("with no manifest to hold a grammar file to, none is counted", needsSymlinks, (t) => {
   // Three ways to have none: the file gone, a file that is not JSON, and one that names no hash for a grammar.
   const all = ["csharp", "go", "java", "kotlin", "php", "python", "rust"];
