@@ -5788,6 +5788,12 @@ for (const [lang, rel, glob, old, added, line, where] of [
   ["Rust", "src/rs/views.rs", "**/*.rs", "struct A;\n\nimpl A {\n    pub fn run(&self) {}\n}\n", "struct B;\n\nimpl B {\n    pub fn run(&self) {}\n}\n\n", 4, "B.run"],
   // An extension function is written on a type and inside no class.
   ["Kotlin", "src/kt/Mappers.kt", "**/*.kt", "fun User.toDto(): UserDto {\n    return UserDto(name)\n}\n", "fun Invoice.toDto(): InvoiceDto {\n    return InvoiceDto(total)\n}\n\n", 1, "Invoice.toDto"],
+  // Written inside a class, it is that class's, and the receiver as written tells two of one type's name apart.
+  ["Kotlin, inside a class", "src/kt/Mappers.kt", "**/*.kt", "class A {\n    fun User.show(): String {\n        return name\n    }\n}\n", "package shop\n\nclass B {\n    fun User.show(): String {\n        return name\n    }\n}\n\n", 4, "B.User.show"],
+  ["Kotlin, a type argument", "src/kt/Mappers.kt", "**/*.kt", "fun List<User>.toDtos(): Int {\n    return size\n}\n", "fun List<Invoice>.toDtos(): Int {\n    return size\n}\n\n", 1, "List<Invoice>.toDtos"],
+  ["Kotlin, a nullable receiver", "src/kt/Mappers.kt", "**/*.kt", "fun User.label(): String {\n    return name\n}\n", "fun User?.label(): String {\n    return \"\"\n}\n\n", 1, "User?.label"],
+  ["Kotlin, a function type", "src/kt/Mappers.kt", "**/*.kt", "fun (() -> Int).twice(): Int {\n    return this() + this()\n}\n", "fun ((Int) -> Int).twice(): Int {\n    return 0\n}\n\n", 1, "((Int) -> Int).twice"],
+  ["Kotlin, a qualified receiver", "src/kt/Mappers.kt", "**/*.kt", "fun java.util.Date.iso(): String {\n    return toString()\n}\n", "fun java.sql.Date.iso(): String {\n    return toString()\n}\n\n", 1, "java.sql.Date.iso"],
 ]) {
   test(`${lang}: a method written above an old one of its name, in another class, is reported on the line the branch wrote`, async (t) => {
     const dir = repo(t, ({ git, write, commit }) => {

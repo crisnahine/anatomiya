@@ -623,7 +623,8 @@ Java, a static `Main` in C#, a `main` at the top of a Kotlin or Rust file), and 
 golint asks no comment of: `Error`, `Read`, `ServeHTTP`, `String`, `Write`, `Unwrap`, and `Len`,
 `Less` and `Swap` on a type the file gives all three. The handler row reads a Java clause that
 names what it caught `ignored` as binding nothing, as `_` binds nothing. A site of these rows
-carries the class beside the name, `Views.run`, or in Go the receiver's type, which is what tells a
+carries the class beside the name, `Views.run`, in Go the receiver's type, or for a Kotlin extension
+function its class and its receiver as written, `Host.List<User>.toDtos`, which is what tells a
 new method from an older one of the same name in another class when `check` asks what a branch
 added.
 

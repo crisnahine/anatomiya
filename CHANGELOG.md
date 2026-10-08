@@ -359,8 +359,9 @@ scanned by 0.13.4 and by this version.
   method, `Importer#run`, where 0.13.4 printed `run`. JavaScript has the same misplacement for
   two classes in one file with a method of the same name, and this version does not fix it. In
   the seven new languages a finding is matched to what its function is written in: the class, the
-  type a Rust `impl` is for, a Go receiver's type, and the type a Kotlin extension function is
-  written on, so `fun Invoice.toDto()` and `fun User.toDto()` in one file are two names.
+  type a Rust `impl` is for, a Go receiver's type, and for a Kotlin extension function its class
+  and then its receiver as written, so `fun Invoice.toDto()` and `fun User.toDto()` in one file
+  are two names, and so are `fun List<Invoice>.toDtos()` and `fun List<User>.toDtos()`.
 - `check` judged a file renamed from a name that is no source against its old text. `notes.txt`
   renamed to `notes.js` with nothing edited was parsed as JavaScript at the merge base, every site
   in it was taken for one the base already held, and nothing was reported. Where the text was not

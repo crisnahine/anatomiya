@@ -339,10 +339,22 @@ test("a site crosses with the name a reader is sent to, and the class that name 
   assert.deepEqual(await where("public_doc_comment", "go", "package a\n\nfunc (t *T) Run() {}\n\nfunc (s Set[K]) Run() {}\n"), ["T.Run", "Set.Run"]);
   assert.deepEqual(await where("public_doc_comment", "csharp", "struct A\n{\n    public void Run() { }\n}\n"), ["A.Run"]);
   assert.deepEqual(await where("public_doc_comment", "kotlin", "class A {\n    fun run() {}\n\n    companion object {\n        fun make() {}\n    }\n}\n\nobject B {\n    fun run() {}\n}\n"), ["A.run", "A.make", "B.run"]);
-  // A Kotlin extension function is known by the type it is written on, whatever class it is written in.
+  // A Kotlin extension function is known by the class it is written in and the receiver as written, so two that differ
+  // in a type argument, a `?` or the class around them are two names: [the function written above, the one below, their owners].
+  for (const [above, below, owners] of [
+    ["fun Invoice.toDto() {}", "fun User.toDto() {}", ["Invoice.toDto", "User.toDto"]],
+    ["fun java.sql.Date.iso() {}", "fun java.util.Date.iso() {}", ["java.sql.Date.iso", "java.util.Date.iso"]],
+    ["class B {\n    fun User.show() {}\n}", "class A {\n    fun User.show() {}\n}", ["B.User.show", "A.User.show"]],
+    ["fun List<Invoice>.toDtos() {}", "fun List<User>.toDtos() {}", ["List<Invoice>.toDtos", "List<User>.toDtos"]],
+    ["fun User?.label() {}", "fun User.label() {}", ["User?.label", "User.label"]],
+    ["fun ((Int) -> Int).twice() {}", "fun (() -> Int).twice() {}", ["((Int) -> Int).twice", "(() -> Int).twice"]],
+  ]) {
+    assert.deepEqual(await where("public_doc_comment", "kotlin", `${above}\n\n${below}\n`), owners);
+  }
+  // One receiver spaced two ways is one name, and a function with no receiver is known by its class alone.
   assert.deepEqual(
-    await where("public_doc_comment", "kotlin", "fun Invoice.toDto() {}\n\nfun User.toDto() {}\n\nfun <T> List<T>.second(): T = this[1]\n\nfun shop.Invoice?.orNone() {}\n\nfun plain(): Invoice = Invoice()\n\nclass A {\n    fun Invoice.inA() {}\n}\n"),
-    ["Invoice.toDto", "User.toDto", "List.second", "shop.Invoice.orNone", "plain", "Invoice.inA"]
+    await where("public_doc_comment", "kotlin", "fun Map<String,\n    List<Int>>.flat() {}\n\nfun Map<String,  List<Int>>.flat() {}\n\nfun <T> List<T>.second(): T = this[1]\n\nfun plain(): Invoice = Invoice()\n\nobject Reg {\n    fun own(): User = User()\n}\n"),
+    ["Map<String, List<Int>>.flat", "Map<String, List<Int>>.flat", "List<T>.second", "plain", "Reg.own"]
   );
   // An `impl` block is known by the type it is for, with or without a trait or a parameter beside it.
   assert.deepEqual(await where("public_doc_comment", "rust", "impl A {\n    pub fn run(&self) {}\n}\n\nimpl<T> B<T> {\n    pub fn run(&self) {}\n}\n\npub fn run() {}\n"), ["A.run", "B.run", "run"]);
