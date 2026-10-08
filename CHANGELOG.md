@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-08
+
 Seven more languages are read, through tree-sitter as a third parser engine: Python, PHP, Go, Java,
 C#, Rust and Kotlin. The script blocks of Vue and Svelte files are read, `scan --targets
 cursor,copilot` writes the same map for Cursor and GitHub Copilot, and the type checker reads a root
@@ -4133,7 +4135,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.4...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/crisnahine/anatomiya/compare/v0.13.4...v0.14.0
 [0.13.4]: https://github.com/crisnahine/anatomiya/compare/v0.13.3...v0.13.4
 [0.13.3]: https://github.com/crisnahine/anatomiya/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/crisnahine/anatomiya/compare/v0.13.1...v0.13.2
