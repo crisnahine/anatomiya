@@ -162,7 +162,7 @@ const answersATest = (f, mirrored) =>
  * `Src/Newtonsoft.Json.Tests`, and kit's `packages/adapter-vercel` read
  * `0 of 13` over the 13 files of its test apps alone. The cost is a library
  * whose own source sits under such a name, which the root rule already paid:
- * storybook's `code/core/src/test`, 6 files of 2,053.
+ * storybook's `code/core/src/test`, 6 files of 2,053, and django's `django/test`, 7 of 755.
  *
  * `f.facets` is null where the caller holds no parse, and the file is then
  * read by its path alone. Asked by a root's namesake count, by the placement
@@ -173,25 +173,34 @@ export const isProducer = (f, mirrored = null) =>
   answersATest(f, mirrored) && !extOf(f.rel).startsWith(".d.") && !underTestTree(dirOf(f.rel), familyOf(f.lang));
 
 /**
- * The extensions a root's namesake counts are taken over, of the ones its line
- * prints: the first this tool reads, and the other where either is a
- * component's. Null for one the root has none of.
+ * The extensions a root's line prints with their counts, and the ones its
+ * namesake counts are taken over: the first printed this tool reads, and the
+ * other where either is a component's. Null for one the root has none of.
  *
- * Exported for the reason `underTestTree` is.
+ * The two commonest print. Where the root holds source and neither is an
+ * extension this tool reads, the commonest it does read prints after them, or
+ * the line says nothing of the source: django's own package read `1226 .mo,
+ * 1226 .po and 1164 other` with 907 `.py` files inside the 1164.
+ *
+ * Exported because `scripts/measure-layout.mjs` recounts the printed line and
+ * a second copy of this rule there would measure the disagreement.
  */
-export function countedExtensions(own, exts) {
+export function printedExtensions(own) {
+  const all = tally(own.map((f) => extOf(f.rel)));
+  const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
+  const exts = all.slice(0, 2);
+  if (!exts.some(([ext]) => read(ext))) exts.push(...all.filter(([ext]) => read(ext)).slice(0, 1));
   // The denominator has to be a number the line already printed: one of the
-  // top two extensions, not always the first of them. supabase's own
+  // printed extensions, not always the first of them. supabase's own
   // marketing site prints more screenshots than components, and matching
   // only exts[0] read every producer there as zero instead of naming its
   // `.tsx` files.
-  const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
   const first = exts.find(([ext]) => read(ext))?.[0] ?? null;
   // Where one of the two printed extensions is a component's the other is counted too, and apart:
   // summed into the first, the denominator is a number the line never printed.
   const component = (ext) => own.some((f) => isComponent(f.lang) && extOf(f.rel) === ext);
   const other = exts.find(([ext]) => ext !== first && read(ext) && (component(ext) || component(first)))?.[0] ?? null;
-  return [first, other];
+  return { exts, counted: [first, other] };
 }
 
 /**
@@ -559,8 +568,7 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   const own = root.files;
   const tests = own.filter((f) => isTestFile(f, mirrored));
   const jsxFiles = own.filter((f) => f.facets?.jsx);
-  const exts = tally(own.map((f) => extOf(f.rel))).slice(0, 2);
-  const [producerExt, otherExt] = countedExtensions(own, exts);
+  const { exts, counted: [producerExt, otherExt] } = printedExtensions(own);
   // Neither source to imitate nor a test, so a story never fills the
   // namesake question: storybook's `.stories.tsx` is literal JSX and would
   // otherwise stand for the component beside it.
