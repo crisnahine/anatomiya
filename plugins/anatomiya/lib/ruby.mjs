@@ -407,8 +407,9 @@ const bytesOf = (abs, maxBytes) => stat(abs).then((s) => (s.size > maxBytes ? 0 
  * The results are the whole record: `parse.mjs` classifies every outcome off
  * them, so no count rides beside them.
  *
- * `dimensions` must be rows of `ALL_DIMENSIONS`: they reach the shard threads
- * by key, and a row the registry does not hold charges its batch as crashed.
+ * `dimensions` must be prism rows of `ALL_DIMENSIONS`: they reach the shard
+ * threads by key, and a row the prism tables do not hold charges its batch as
+ * crashed.
  */
 export async function parseRuby(
   files,

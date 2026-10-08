@@ -230,6 +230,27 @@ test("a parser is loaded by the body that parses with it, and by no other module
   assert.doesNotMatch(readFileSync(join(LIB, "tree-sitter-file.mjs"), "utf8"), /from\s*["']web-tree-sitter["']/);
 });
 
+// What only a tree-sitter read needs: the engine's body, its rows, its walk and the tables behind them.
+const TREE_SITTER_ONLY = ["csharp-directives.mjs", "dimensions-tree.mjs", "tree-facets.mjs", "tree-shapes.mjs", "tree-sitter-file.mjs", "tree-walk.mjs"];
+
+test("a Ruby shard thread loads the prism rows and no other engine's", () => {
+  // The thread's heap hold is sized over what its own modules hold (`heldHeap`),
+  // so a module it loads and never calls is taken out of every file's margin.
+  // Measured on Linux arm64, Node 24, median of 20 threads: 8.09 MB used once
+  // `dimensions.mjs` is loaded with every engine's rows, 7.43 MB with the prism tables alone.
+  const loaded = reachedFrom("ruby-shard.mjs", graph(LIB, { dynamic: false }));
+  assert.deepEqual([...TREE_SITTER_ONLY, "dimensions.mjs"].filter((file) => loaded.has(file)), []);
+});
+
+test("a parse child that reads no component loads no component scanner, and no child loads another engine's body", () => {
+  // Counted from each shell's static imports: what a child holds before its first file.
+  const loads = (shell) => reachedFrom(shell, graph(LIB, { dynamic: false }));
+  assert.deepEqual(["blank.mjs", "script-blocks.mjs", "csharp-directives.mjs", "tree-sitter-file.mjs"].filter((file) => loads("parse-worker.mjs").has(file)), []);
+  assert.deepEqual(["script-blocks.mjs", "parse-file.mjs"].filter((file) => loads("tree-sitter-worker.mjs").has(file)), []);
+  // Loaded on the first component instead, by the body that reads one.
+  assert.ok(reachedFrom("parse-worker.mjs").has("script-blocks.mjs"));
+});
+
 test("a module that branches on a row's kind loads the registry that stamps it", () => {
   // `stampKind` writes the field in place while the registry is assembled, so
   // a reader that never loads it reads undefined off a tree row and takes the
