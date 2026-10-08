@@ -950,9 +950,9 @@ function typedRepo(t, { deps = "dir", pinned = false, areas = ["src/models"], br
 }
 
 // What a tier no run measured says of its measurement.
-const UNMEASURED = { carried: false, measuredAt: null, measuredUnder: null };
+const UNMEASURED = { carried: false, measuredAt: null, measuredUnder: null, failures: 0 };
 
-const CARRIED = { status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61, measuredAt: "2026-10-08T01:02:03.000Z", measuredUnder: "s1" };
+const CARRIED = { status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61, measuredAt: "2026-10-08T01:02:03.000Z", measuredUnder: "s1", failures: 0 };
 
 test("a measured tier says when it was measured and under what", async (t) => {
   const dir = typedRepo(t);
@@ -962,6 +962,59 @@ test("a measured tier says when it was measured and under what", async (t) => {
   assert.equal(r.semantic.carried, false);
   assert.equal(r.semantic.measuredAt, r.scannedAt);
   assert.equal(r.semantic.measuredUnder, verdictStamp(dir, buildVersion()));
+  assert.equal(r.semantic.failures, 0);
+});
+
+/** A checker whose child cannot start, counting its runs; `mended` runs the real one. */
+function failingChecker() {
+  const seen = { runs: 0, mended: false };
+  const runChecker = (root, files, options) => {
+    seen.runs++;
+    return runSemantic(root, files, seen.mended ? options : { ...options, workerPath: join(root, "no-such-worker.mjs") });
+  };
+  return { seen, runChecker };
+}
+
+/** What a refresh reads back from the record of a scan whose checker failed. */
+const failedBefore = (semantic) => ({ status: semantic.status, reason: semantic.reason, typedResolutionRate: null, measuredAt: semantic.measuredAt, measuredUnder: semantic.measuredUnder, failures: semantic.failures });
+
+test("a checker that fails is counted, and measured again on its first failure", async (t) => {
+  const dir = typedRepo(t);
+  const { seen, runChecker } = failingChecker();
+
+  const first = (await scan(dir, { runChecker })).semantic;
+  assert.deepEqual(first, { ran: true, status: "degraded", reason: "tier-failed", typedResolutionRate: null, carried: false, measuredAt: first.measuredAt, measuredUnder: verdictStamp(dir, buildVersion()), failures: 1 });
+
+  const second = (await scan(dir, { runChecker, carried: failedBefore(first) })).semantic;
+  assert.equal(seen.runs, 2, "one failure was carried");
+  assert.deepEqual([second.ran, second.carried, second.reason, second.failures], [true, false, "tier-failed", 2]);
+  assert.equal((await scan(dir, { runChecker })).semantic.failures, 1, "a scan handed nothing counts from one");
+  assert.equal((await scan(dir, { runChecker, carried: { ...failedBefore(first), measuredUnder: "another-stamp" } })).semantic.failures, 1, "a failure under another stamp was counted on");
+});
+
+test("a checker that failed twice under one stamp is not run, and its failure is recorded as carried", async (t) => {
+  const dir = typedRepo(t);
+  const { seen, runChecker } = failingChecker();
+  const first = (await scan(dir, { runChecker })).semantic;
+  const twice = { ...failedBefore(first), failures: 2 };
+
+  const measured = await scan(dir, { runChecker, carried: failedBefore(first) });
+  const r = await scan(dir, { runChecker, carried: twice });
+
+  assert.equal(seen.runs, 2, "the checker ran though it had failed twice");
+  assert.deepEqual(r.semantic, { ran: false, ...twice, carried: true });
+  assert.deepEqual(r.areas, measured.areas, "the carried failure and the measured one describe different areas");
+});
+
+test("a success after a failure resets the count", async (t) => {
+  const dir = typedRepo(t);
+  const { seen, runChecker } = failingChecker();
+  const first = (await scan(dir, { runChecker })).semantic;
+
+  seen.mended = true;
+  const mended = (await scan(dir, { runChecker, carried: failedBefore(first) })).semantic;
+
+  assert.deepEqual([mended.ran, mended.status, mended.failures], [true, "ok", 0]);
 });
 
 test("a carried verdict stands in for the checker's run, and is marked", async (t) => {

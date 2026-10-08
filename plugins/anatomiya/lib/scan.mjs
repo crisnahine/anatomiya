@@ -5,7 +5,7 @@ import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
 import { defaultPoolSize } from "./pool.mjs";
 import { buildVersion } from "./readiness.mjs";
-import { checkerBlocked, runSemantic, semanticOver, verdictStamp } from "./semantic.mjs";
+import { checkerBlocked, failuresIn, runSemantic, semanticOver, standsIn, verdictStamp } from "./semantic.mjs";
 import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
@@ -47,6 +47,8 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * (`carriedVerdict`): where the checker could run it is not run, and the verdict
  * is recorded as carried. No type-checked row is counted then, since the counts
  * are the checker's, and none is kept from a run that measures the tier degraded.
+ * A failed run's verdict is carried from its second failure under one stamp
+ * (`standsIn`): handed the first, the checker runs and the scan records the count.
  */
 export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null } = {}) {
   const started = Date.now();
@@ -64,10 +66,11 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // driving unresolved types from 3.1% to 36.2%. Its verdict is taken once the
   // fold below knows which areas the map describes.
   const checked = files.filter((f) => langHas(f.lang, "semantic"));
+  const kept = carried !== null && standsIn(carried) ? carried : null;
   const stopChecker = new AbortController();
   const startChecker = async () => {
     const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checkedRels: checked.map((f) => f.rel) });
-    if (offReason || carried !== null || stopChecker.signal.aborted) return { offReason, whole: null, measuredUnder: null };
+    if (offReason || kept !== null || stopChecker.signal.aborted) return { offReason, whole: null, measuredUnder: null };
     // Read before the checker starts, so a config edited under a long run is
     // not recorded as the one it measured, and only where it runs: a scan that
     // leaves the checker off reads no config.
@@ -327,10 +330,11 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
           carried: false,
           measuredAt: scannedAt,
           measuredUnder,
+          failures: failuresIn(semantic, carried, measuredUnder),
         }
-      : carried !== null && offReason === null
-        ? { ran: false, ...carried, carried: true }
-        : { ran: false, status: null, reason: offReason, typedResolutionRate: null, carried: false, measuredAt: null, measuredUnder: null },
+      : kept !== null && offReason === null
+        ? { ran: false, ...kept, carried: true }
+        : { ran: false, status: null, reason: offReason, typedResolutionRate: null, carried: false, measuredAt: null, measuredUnder: null, failures: 0 },
     scannedAt,
     durationMs: Date.now() - started,
     // `orphaned` is the files discovery found nowhere to put. The rest of the

@@ -139,29 +139,66 @@ function sizeAndTime(path) {
 }
 
 /**
- * The verdict a refresh carries in place of a run, or null where the checker
- * has to measure: `recorded` is the last record's tier, `under` the stamp now.
- * Only a degraded verdict a run measured under the same stamp: an ok tier's
- * numbers are the claims, and a failed run measured nothing.
+ * The last verdict, where a refresh may hand it to its scan, or null where the
+ * checker has to measure with nothing behind it: `recorded` is the last
+ * record's tier, `under` the stamp now. Only a degraded verdict under the same
+ * stamp: an ok tier's numbers are the claims. One a run finished is carried in
+ * place of a run. A failed run measured nothing, so it is handed on with its
+ * count, and `standsIn` says from which count it is carried.
  *
  * The record is a file anyone on the machine can edit, and what is carried is
  * printed in the always-loaded overview on every refresh after. So only a
- * verdict a scan could have written is carried, and any other is measured.
+ * verdict a scan could have written is handed on, and any other is measured.
  */
 export function carriedVerdict(recorded, under, now = Date.now()) {
   if (recorded?.status !== "degraded" || (recorded.ran !== true && recorded.carried !== true)) return null;
   if (recorded.measuredUnder !== under) return null;
   const { status, reason, measuredAt, measuredUnder } = recorded;
   const typedResolutionRate = recorded.typedResolutionRate ?? null;
-  if (!classified(reason, typedResolutionRate) || !isMomentBy(measuredAt, now)) return null;
-  return { status, reason, typedResolutionRate, measuredAt, measuredUnder };
+  // A record with no count holds no failure a run counted.
+  const failures = recorded.failures ?? 0;
+  if (!classified(reason, typedResolutionRate, failures) || !isMomentBy(measuredAt, now)) return null;
+  return { status, reason, typedResolutionRate, measuredAt, measuredUnder, failures };
+}
+
+/**
+ * How many runs in a row have to fail under one stamp before a refresh stops
+ * starting the checker. One failure can be a machine under load, and carried
+ * on its first sighting it would stick. The second costs a repository that
+ * always fails one more run: 47 seconds on the 4,099-file workspace measured.
+ */
+export const FAILURES_CARRIED = 2;
+
+const TIER_FAILED = "tier-failed";
+
+/** Whether a scan handed `verdict` by a refresh records it in place of running the checker. */
+export function standsIn(verdict) {
+  return verdict.reason !== TIER_FAILED || verdict.failures >= FAILURES_CARRIED;
+}
+
+/**
+ * The failures in a row a measuring scan records, this run counted: `last` is
+ * the verdict the refresh handed in, or null, and `under` the stamp this run
+ * measured under. A run that finished records none, and a failure under
+ * another stamp, or with nothing behind it, is the first. A verdict that is no
+ * failure counts none.
+ */
+export function failuresIn(semantic, last, under) {
+  if (semantic.reason !== TIER_FAILED) return 0;
+  return (last?.measuredUnder === under ? last.failures : 0) + 1;
 }
 
 const LOW_RESOLUTION = "low-resolution";
 const REFUSALS = new Set(Object.values(CONFIG_REFUSALS));
 
-/** Whether `classifySemantic` answers degraded with this reason beside this rate. */
-function classified(reason, rate) {
+/**
+ * Whether a scan records a degraded tier with this reason beside this rate and
+ * this count. A failed run has no rate, and its count is 1 up to the count a
+ * refresh carries from, past which no run measures to raise it.
+ */
+function classified(reason, rate, failures) {
+  if (reason === TIER_FAILED) return rate === null && Number.isInteger(failures) && failures >= 1 && failures <= FAILURES_CARRIED;
+  if (failures !== 0) return false;
   if (REFUSALS.has(reason)) return rate === null || isShare(rate, 1);
   if (reason !== LOW_RESOLUTION && reason !== NO_CONFIG) return false;
   return isShare(rate, 1) && rate < RESOLUTION_FLOOR;
@@ -302,7 +339,7 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
       settled = true;
       sup.settle();
       sup.kill("finished");
-      if (error) return resolve({ records, config, status: "degraded", reason: "tier-failed", typedResolutionRate: null, error });
+      if (error) return resolve({ records, config, status: "degraded", reason: TIER_FAILED, typedResolutionRate: null, error });
       resolve({ records, config, ...classifySemantic({ config, resolution: summed(records.keys(), records) }), error: null });
     };
 
