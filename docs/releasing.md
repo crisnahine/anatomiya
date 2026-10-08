@@ -25,15 +25,19 @@ on a release that already existed. Push the tag and let the workflow make the re
       and decision-row counts in `README.md`, `docs/why.md` and `CONTRIBUTING.md`, the runtime
       dependency set in `README.md` and `SECURITY.md`, the gate table, the command list, and every
       shipped key having an intake row.
-- [ ] `npm run validate` passes. Three checks: the manifests, the shipped set, and the plugin's own
-      lockfile. The second reads `package.json` `files` through `npm pack --dry-run` and holds it
+- [ ] `npm run validate` passes. Four checks, in the order `package.json` runs them: the manifests
+      (`scripts/validate.mjs`), the shipped set (`scripts/shipped.mjs`), the plugin's own lockfile
+      (`scripts/plugin-lock.mjs --check`), and the grammar files (`scripts/grammars.mjs --check`).
+      The second reads `package.json` `files` through `npm pack --dry-run` and holds it
       against every file the hooks and command files actually reach. The third rebuilds
       `plugins/anatomiya/package-lock.json` from the marketplace's resolutions and refuses one that
       differs, since Claude Code installs a plugin's dependencies from the lockfile beside its
       manifest and a plugin with none installs nothing at all. `npm run lock:plugin` writes it. On
       Windows it says why it did not run and passes, the way the shipped-set check does and for the
       same reason: both spawn npm, which is a batch file there. The Linux job is where either one
-      actually gates.
+      actually gates. The fourth holds each `.wasm` file under `plugins/anatomiya/grammars/` to the
+      SHA-256 in `grammars.json` and to the installed package's file, and each grammar's version to
+      the root lockfile's.
 - [ ] `npm run coverage` passes its floors. It reads them off an lcov record rather than off the
       total, so the files in a scope are each held to one: an aggregate over a scope says nothing
       about one file inside it, whichever scope it is drawn around.

@@ -1356,6 +1356,23 @@ test("--help and -h still print the usage with no command word", () => {
   }
 });
 
+test("no paragraph of the usage breaks a line where its next word still fits", () => {
+  // One sentence stopped at column 44 and went on below, so the paragraph read as two. The width is the text's own:
+  // a paragraph line ends only where the next word would run past the widest of them.
+  const out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "--help"], { stdio: "pipe", encoding: "utf8" });
+  const prose = out.split("\n\n").slice(1).map((paragraph) => paragraph.trimEnd().split("\n"));
+  const widest = Math.max(...prose.flat().map((line) => line.length));
+  const early = [];
+  for (const lines of prose) {
+    for (const [i, line] of lines.slice(0, -1).entries()) {
+      if (line.length + 1 + lines[i + 1].split(" ")[0].length < widest) early.push(line);
+    }
+  }
+
+  assert.ok(prose.length > 5 && widest > 60, "the usage's paragraphs were not read");
+  assert.deepEqual(early, []);
+});
+
 test("the usage says what --targets writes, that a target stays on, and how to turn one off", () => {
   const out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "--help"], { stdio: "pipe", encoding: "utf8" });
   // Joined, so where a line wraps is not what is held.

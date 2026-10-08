@@ -457,12 +457,13 @@ jobs:
       # above holds a file it reads, so outside the unit suite no runner would
       # parse a file with the wasm runtime and a vendored grammar. The plugin
       # job's doctor check loads both and parses nothing.
-      # Pinned to a tag, small and all Python: 83 .py files in 12 areas. At this
-      # ref, on a clone this deep, the scan states 1 of 24 claims: `functions
-      # declare what they return`, 174 of 174 sites under src/flask. A scan that
-      # reads the files and states nothing is the failure a summary line alone
-      # would pass, and the step asks for that sentence by name, so a claim of
-      # another row cannot pass it.
+      # Pinned to a tag, small and all Python. The step asserts that tree-sitter
+      # answered with a version, that the scan found an area and stated a claim,
+      # that an area file carries a stated claim's sites line and the sentence
+      # `functions declare what they return`, and that the grammar read every
+      # file. A scan that reads the files and states nothing is the failure a
+      # summary line alone would pass, and the step asks for that sentence by
+      # name, so a claim of another row cannot pass it.
       - name: Scan a Python repository
         shell: bash
         env:
