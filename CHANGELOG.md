@@ -418,10 +418,10 @@ scanned by 0.13.4 and by this version.
   measured by the next refresh a commit, checkout or pull starts, or by a scan run by hand. A
   repository whose checker degrades still pays for it on every scan a person runs: 3.2s of a 4.2s
   scan on eslint, 11.4s of 13.5s on prisma, 6.2s of 8.7s on react and 19.3s of 23.1s on Ghost.
-  Of the eight roots measured that hold only a base config, the two whose base declares no
-  `paths` both degrade (eslint and prisma) and five of the six that declare it resolve. Two
-  repositories are too few to skip on, so the checker runs on every one (DECISIONS B8,
-  `docs/measurements/2026-10-07-checker-root-config.md`). A refresh after a commit measured 4.4s
+  Whether a base config declares `paths` does not tell such a root apart: of 16 roots measured
+  that hold only a base config with no `paths`, 8 degrade and 8 do not, and 9 of 10 with `paths`
+  resolve. A skip would close the 8 that answer, so the checker runs on every one (DECISIONS B8,
+  `docs/measurements/2026-10-08-base-config-without-paths.md`). A refresh after a commit measured 4.4s
   with the checker and 1.2s without on eslint, 8.9s and 2.8s on react, 13.9s and 2.3s on prisma, and
   21.2s and 3.8s on Ghost, with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four
   the verdict was the same 50 commits earlier, within 0.3 points. A map written that way says
