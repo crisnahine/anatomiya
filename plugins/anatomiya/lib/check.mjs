@@ -294,10 +294,10 @@ export async function check(cwd, { baseRef = null } = {}) {
   const broughtSource = (dir, family) =>
     arrived.some((c) => c.path.startsWith(`${dir}/`) && familyOf(language(c.path)) === family &&
       isProducer({ rel: c.path, lang: language(c.path), facets: headFacets.get(c.path) ?? null }, placed));
-  // A finding does not stand where the change made the directory it is about
-  // and put source there, which the merge base says: one listing, and none
-  // where no finding was about to be stated or the change put no source under
-  // the directory.
+  // A finding does not stand where the change made a directory its test is
+  // under and put source there, which the merge base says: one listing, and
+  // none where no finding was about to be stated or the change put no source
+  // under any of them.
   const stated = precedentFindings(arrived, roots, asked);
   const filled = (turnsOn) => turnsOn.filter(({ dir, family }) => broughtSource(dir, family)).map(({ dir }) => dir);
   const absent = await absentAt(root, base.mergeBase, [...new Set(stated.flatMap((f) => filled(f.turnsOn)))]);
