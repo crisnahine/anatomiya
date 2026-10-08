@@ -1548,7 +1548,15 @@ refresh failed until a refresh or a scan run by hand succeeds. A rescan that wro
 map and left a Cursor or Copilot directory stopped at a locked file is no failure and the echo says
 nothing of it: `refresh.json` keeps `ok: true` and names the directory under `stopped`
 (`stoppedIn`), and the same stamp is due again on that half hour for as long as the key is there
-(`settled`). A rescan that leaves no directory stopped writes no such key. A scan run by hand
+(`settled`). `stoppedIn` reads `unwritable` on the plan, which a directory with no write permission
+carries too (`audited` in `write.mjs`), so while it stays that way a refresh scans the checkout
+again once each half hour: with `.cursor/rules` at mode 555 and the target on, four refreshes 31
+minutes apart ran four scans. Each is a whole scan, the type checker included unless the last
+verdict was degraded and is carried, and the `SessionStart` answer says nothing of it. Fixing the
+directory's mode ends it at the next of those scans. So does a scan run by hand, which prints the
+reason. `scan --targets claude` does not turn such a target off: it refuses with
+`.cursor/rules is not writable, so the map could not be written: fix its permissions and scan again`
+while the directory cannot be written. A rescan that leaves no directory stopped writes no such key. A scan run by hand
 records its stamp too, with no such key, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
 running session through the echo's digest, and an area file is read from disk the first time its
 directory is.

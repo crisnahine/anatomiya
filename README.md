@@ -208,7 +208,9 @@ since, the rescan keeps that verdict and does not run it. It leaves
 alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
-failed until one succeeds. A committed map's `.claude/anatomiya/layout.json` comes along but does
+failed until one succeeds. A Cursor or Copilot directory a rescan could not write, for a locked file
+or a missing write permission, is tried again each half hour for as long as it stays so, and a scan
+run by hand prints why. A committed map's `.claude/anatomiya/layout.json` comes along but does
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
 
 A map written by 0.13.4 or earlier is rewritten by the first scan or refresh of 0.14.0, and it
