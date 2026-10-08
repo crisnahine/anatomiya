@@ -15,7 +15,9 @@ Run the readiness probe and report what it said.
    interpreter, and installing Ruby does not install a node module. Report only the lines it
    printed. It takes no path. Its engine lines are about this installation. Run inside a
    repository, it also prints one line for each Cursor or Copilot target that is on there,
-   `.cursor/rules: on, 5 files`, and run anywhere else it prints none.
+   `.cursor/rules: on, 5 files`, and a second where that directory holds other entries named
+   `anatomiya-*` (`.cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor
+   removes`). Run anywhere else it prints none.
 
 3. A first line reading `nothing is installed here: ...` is one fault, not one per engine below it:
    Claude Code installs this plugin's dependencies on `/plugin install`, and that install did not
@@ -29,8 +31,9 @@ Run the readiness probe and report what it said.
 5. The `tree-sitter` line is the engine that reads Python, PHP, Go, Java, C#, Rust and Kotlin, and
    it counts the grammar files that load and are the ones the plugin shipped, each held to the
    SHA-256 in `grammars.json` beside them: `tree-sitter 0.27.0 ok (grammars: 7 of 7)`. A line that
-   names a file is not something setup fixes, whichever of the three it is: `grammars: 6 of 7,
+   names a file is not something setup fixes, whichever of the four it is: `grammars: 6 of 7,
    kotlin.wasm did not load`, `grammars: 6 of 7, kotlin.wasm is not the file this plugin shipped`,
+   `grammars: 6 of 7, java.wasm is language version 14 and this runtime reads 15 through 16`,
    or `grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped`. The
    grammars ship in the plugin's own directory and no package install writes one. Report the remedy
    the line carries, which is to reinstall the plugin, and do not offer `/anatomiya:setup` for it.

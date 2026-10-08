@@ -379,8 +379,8 @@ A language new to the engine is these sites, in order:
    repositories
 6. `test/tree-samples.mjs` and `test/tree-broken.mjs`: an ordinary source, one the grammar answers
    with an ERROR node and one with a MISSING token
-7. `scripts/check-docs.mjs` (`TREE_LANGS`): the name prose gives it, and `scripts/e2e-corpus.mjs`:
-   its probe body
+7. `scripts/check-docs.mjs` (`PROSE_NAMES`): the name prose gives it, without which the script does
+   not load, and `scripts/e2e-corpus.mjs`: its probe body
 8. the sentences `npm run check:docs` holds to the registry: `SECURITY.md` names the grammar's
    `package@version`, every sentence that counts the grammars (`seven grammars`) counts one more,
    and so does the count of declarations in DECISIONS B21 (`The registry holds twelve
@@ -389,6 +389,30 @@ A language new to the engine is these sites, in order:
 `test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids and fail until the
 new one is in it. Before anything ships, measure how much of three real repositories the grammar
 leaves unread, and write the rate into DECISIONS beside B63's.
+
+A component language, a third beside `.vue` and `.svelte` such as `.astro`, is no grammar of this
+engine. Its script blocks are read on the `oxc` engine (B52), and it is these sites, in order:
+
+1. `plugins/anatomiya/lib/langs.mjs`: a `component(id, markup)` declaration and its place in
+   `LANGUAGES`, its id in `EXTRACTORS`, and one more answer in `MARKUP` where its markup changes
+   the script in a way neither `propsByExportLet` nor `mountsByName` says
+2. `plugins/anatomiya/lib/script-blocks.mjs`: its scanner and its entry in `SCANNERS`, which the
+   module holds to `EXTRACTORS` where it loads
+3. the `langs` of each row it is asked, in `dimensions.mjs`, `dimensions-extra.mjs`,
+   `dimensions-naming.mjs` and `dimensions-capability.mjs`, all under `plugins/anatomiya/lib/`: a
+   row whose answer is in the markup stays off it (B54)
+4. `plugins/anatomiya/lib/render.mjs`: its extension out of `OTHER_LANGUAGE_EXTS`, where `.astro`
+   sits today
+5. `plugins/anatomiya/lib/siblings.mjs`: the framework's package in `RUNTIME_MODULES`, the
+   packages the imports roster passes over
+6. `test/component-fixtures.mjs`: its components in `COMPONENT_FIXTURES`, the rows that hold for it
+   in `HOLDS`, and its id on each row of `EXCLUDED` that misreads it
+7. `scripts/check-docs.mjs`: its name beside `Vue` and `Svelte` in the table that counts the rows
+   asked of each
+
+`test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids here too. Before
+anything ships, run the scanner against the framework's own compiler on real files, as
+`docs/measurements/2026-10-08-script-blocks-against-compilers.md` records for the two there are.
 
 ### Every site the row has to reach
 

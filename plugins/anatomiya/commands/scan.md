@@ -97,8 +97,8 @@ installed, the repository's own dependencies are on disk inside it, and it has a
 is not a declaration file. A `node_modules` linked
 in from outside the repository is not read, so it counts as no dependencies, and a `jsconfig.json`
 does not count as a config. Missing any of these, the scan leaves the checker off and records why in
-`semantic.reason`; plain JavaScript reads `plain-javascript`. With it, a scan measured about 3x a
-plain one on a 3,800-file repository and about 8x on a 2,600-file one, and it cannot be narrowed to
+`semantic.reason`; plain JavaScript reads `plain-javascript`. With it, a scan of typeorm, which reads
+3,347 files, took 5.6 to 5.7 seconds against 1.3 without it, about 4.5 times, and it cannot be narrowed to
 the files that changed. A scan you run always runs it. A background refresh does not where the
 last run measured the checker as degraded and the plugin version, the root config, and the size and
 modification time of `node_modules` and of the install record in it are unchanged: it carries that verdict, the record says so in `semantic.carried` with
