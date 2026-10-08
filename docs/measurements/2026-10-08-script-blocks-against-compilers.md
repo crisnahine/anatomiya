@@ -70,3 +70,26 @@ no `<script>` in the file states a `lang` of `ts`.
 
 How many of those blocks hold a type annotation, which Vue's compiler rejects under a bare
 `<script>`, was not counted.
+
+## Markup the Vue tokenizer reads to its own end, and upper-case tags
+
+Run 2026-10-08 against `@vue/compiler-sfc` 3.5.43: 31 hand-built sources, each a script the
+compiler should or should not find behind CDATA, a processing instruction, a declaration, a
+comment, or a block whose tag holds an upper-case letter or `_`. Compared on where each block's
+body starts and ends.
+
+| shapes | of them | same blocks as the compiler |
+|---|---|---|
+| CDATA, closed, never closed, cut short, in a template and at the top | 9 | 9 |
+| a processing instruction | 5 | 5 |
+| a declaration and a bare `<!` | 6 | 6 |
+| a comment written `<!-->` | 1 | 0 |
+| a tag or an end tag with an upper-case letter, `_`, a digit or a dash | 10 | 10 |
+
+30 of 31. The one that differs: `<!--><script>one()</script>-->` and a `<script setup>` after it.
+The compiler ends the comment at once and finds both scripts. The scanner reads the comment to the
+`-->` and finds the second.
+
+A top-level block named with an upper-case letter or `_` (`<TEMPLATE>`, `<Docs>`, `<Script>`,
+`<my_block>`) never ends in the compiler and takes the rest of the file, and the scanner reads it
+the same way. `<docs>a</DOCS>` and `<i18n-2>` end in both.
