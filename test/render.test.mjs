@@ -498,6 +498,11 @@ test("the terminal is the surface that says how much of the history there is", (
     "history truncated: shallow clone, 1 commit, so author counts are a floor"
   );
   assert.equal(
+    line({ commits: 785, oldest: "2026-02-22T00:00:00Z" }, 1),
+    "history truncated: shallow clone, 785 commits since 2026-02-22, so author counts are a floor" +
+      " and 1 claim prints as counts on the author gate"
+  );
+  assert.equal(
     line({ commits: 503, oldest: "not a date" }, 0),
     "history truncated: shallow clone, 503 commits, so author counts are a floor",
     "a committer date is a value the repository sets, so it prints only where it is one"

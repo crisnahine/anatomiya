@@ -258,7 +258,7 @@ test("the author-gate count is taken on the side the map prints", () => {
   );
 
   assert.equal(s.authorGated, 1);
-  assert.ok(s.historyTruncated.endsWith("and 1 claim print as counts on the author gate"), s.historyTruncated);
+  assert.ok(s.historyTruncated.endsWith("and 1 claim prints as counts on the author gate"), s.historyTruncated);
 });
 
 test("a history that could not be read at all says that, and not that it was a window", () => {
