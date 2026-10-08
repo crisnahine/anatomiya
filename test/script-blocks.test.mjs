@@ -39,6 +39,44 @@ test("vue: only a top-level script is a block, not one in a template or a commen
   assert.deepEqual(read("<Script>a</Script><docs><script>x</script></docs>", "vue"), []);
 });
 
+test("vue: CDATA, a processing instruction and a declaration are passed over whole, in a template and outside one", () => {
+  const good = "\n<script setup>good()</script>";
+  const kept = [js("good()")];
+  // CDATA runs to its `]]>`, and with none it takes the rest of the file.
+  assert.deepEqual(read(`<template><div><![CDATA[ </template><script>bad()</script> ]]></div></template>${good}`, "vue"), kept);
+  assert.deepEqual(read(`<![CDATA[<script>bad()</script>]]>${good}`, "vue"), kept);
+  assert.deepEqual(read(`<![CDATA[]]>${good}`, "vue"), kept);
+  assert.deepEqual(read(`<![CDATA[ ]] > ]]><script>one()</script>]]>${good}`, "vue"), [js("one()"), js("good()")]);
+  assert.deepEqual(read(`<![CDATA[<script>bad()</script>${good}`, "vue"), []);
+  assert.deepEqual(read(`<template><![CDATA[</template>${good}`, "vue"), []);
+  // A processing instruction and any other `<!` run to the first `>`.
+  assert.deepEqual(read(`<template><?xml </template><script>bad()</script> ?></template>${good}`, "vue"), kept);
+  assert.deepEqual(read(`<?xml <script>bad()</script> ?>${good}`, "vue"), kept);
+  assert.deepEqual(read(`<?><script>one()</script>${good}`, "vue"), [js("one()"), js("good()")]);
+  assert.deepEqual(read(`<!DOCTYPE html <script>bad()</script>>${good}`, "vue"), kept);
+  assert.deepEqual(read(`<template><!x </template><script>bad()</script>></template>${good}`, "vue"), kept);
+  // CDATA spelled any other way is such a declaration, and the character after `<!` is never its end.
+  assert.deepEqual(read(`<![cdata[<script>bad()</script>]]>${good}`, "vue"), kept);
+  assert.deepEqual(read(`<![CD><script>one()</script>${good}`, "vue"), [js("one()"), js("good()")]);
+  assert.deepEqual(read(`<!><script>bad()</script>${good}`, "vue"), kept);
+  assert.deepEqual(read(`<!-><script>bad()</script>${good}`, "vue"), kept);
+  for (const open of ["<?xml", "<!DOCTYPE html", "<template><?xml", "<template><!x"]) {
+    assert.deepEqual(scriptBlocks(`${open} ${good.replaceAll(">", "")}`, "vue"), { blocks: [], unterminated: false }, open);
+  }
+});
+
+test("vue: a top-level block ends at its name as written, so one named with an upper-case letter or an underscore never ends", () => {
+  const good = "\n<script setup>good()</script>";
+  // The compiler holds each character of an end tag, its case bit set, against the name as written.
+  assert.deepEqual(read("<TEMPLATE><div/></TEMPLATE><script>good()</script>", "vue"), []);
+  assert.deepEqual(read(`<Docs>a</Docs>${good}`, "vue"), []);
+  assert.deepEqual(read(`<my_block>a</my_block>${good}`, "vue"), []);
+  assert.deepEqual(read(`<script>one()</script>\n<Docs>a</Docs>${good}`, "vue"), [js("one()")]);
+  assert.deepEqual(read(`<docs>a</DOCS>${good}`, "vue"), [js("good()")]);
+  assert.deepEqual(read(`<i18n-2>a</i18n-2>${good}`, "vue"), [js("good()")]);
+  assert.deepEqual(read(`<template lang="pug">a</TEMPLATE>${good}`, "vue"), [js("good()")]);
+});
+
 test("vue: a template is passed over to its own end tag, whatever it holds", () => {
   const afterTemplate = (inside, attrs = "") =>
     read(`<template${attrs}>${inside}</template><script>y</script>`, "vue");
@@ -312,6 +350,21 @@ test("a megabyte of markup is scanned in linear time", () => {
   const script = "<script>const a = 1;</script>";
   scanFiveTimes(`<template>${markup}</template>\n${script}`, "vue", [js("const a = 1;")]);
   scanFiveTimes(`${markup}\n${script}`, "svelte", [js("const a = 1;")]);
+});
+
+test("a megabyte of CDATA, processing instructions or declarations is scanned in linear time", () => {
+  const script = "<script>const a = 1;</script>";
+  for (const [open, close] of [["<![CDATA[", "]]>"], ["<?x ", ">"], ["<!x ", ">"], ["<![CDAT", ">"]]) {
+    const closed = (open + close).repeat(Math.ceil(1_000_000 / (open + close).length));
+    scanFiveTimes(`${closed}\n${script}`, "vue", [js("const a = 1;")]);
+    scanFiveTimes(`<template>${closed}</template>\n${script}`, "vue", [js("const a = 1;")]);
+    // Opened a quarter of a million times and closed once, at the end of the file.
+    const nested = open.repeat(Math.ceil(1_000_000 / open.length)) + close;
+    scanFiveTimes(`${nested}\n${script}`, "vue", [js("const a = 1;")]);
+    scanFiveTimes(`<template>${nested}</template>\n${script}`, "vue", [js("const a = 1;")]);
+    // And never closed, which takes the script with it.
+    scanFiveTimes(`${script}\n${open.repeat(Math.ceil(1_000_000 / open.length))}`, "vue", [js("const a = 1;")]);
+  }
 });
 
 test("a long tag name costs no more for each end tag it is held against", () => {
