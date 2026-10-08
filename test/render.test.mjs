@@ -20,7 +20,7 @@ import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout, runnerC
 import { areaFilename, isOwned, GENERATOR } from "../plugins/anatomiya/lib/rules.mjs";
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { PRECEDENT_FLOOR, principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
-import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
+import { areaLabel, discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { TARGETS, isClaude } from "../plugins/anatomiya/lib/targets.mjs";
@@ -4348,4 +4348,65 @@ test("a sentence the page drops holds no line, so a root prints in it", () => {
   assert.deepEqual(six, renderLayout({ ...layout, principles: ["test_shape"] }, 6), "as if the key were not stored");
   // Two armed sentences at that budget give their lines to a root.
   assert.equal(printed(renderLayout({ ...layout, principles: ["test_shape", "granularity"] }, 6)), "a");
+});
+
+// --- the area at the repository root ---
+
+const ROOT_GLOBS = [globEntry(".", ["go"], { recursive: false })];
+const rootArea = (o = {}) => area({ id: "cdb4ee2a", path: ".", globs: ROOT_GLOBS, ...o });
+// A directory may be called what the root area is called, and `.` beside it reads as a path.
+const namedLikeRoot = () => area({ id: "0badf00d", path: "the repository root", globs: [globEntry("the repository root", ["go"])], fileCount: 9 });
+
+test("the root area is named in words wherever areas are named, and a directory of that name is said as a path", () => {
+  assert.equal(areaLabel("."), "the repository root");
+  assert.equal(areaLabel("the repository root"), "./the repository root");
+  assert.equal(areaLabel("lib/the repository root"), "lib/the repository root");
+  assert.equal(areaLabel("src"), "src");
+  // The encoder's answer is what is compared, since two spaces print as one.
+  assert.equal(areaLabel("the repository  root", (p) => p.replace(/ +/g, " ")), "./the repository root");
+  assert.equal(areaLabel(".", () => "never asked"), "the repository root");
+});
+
+test("the overview lists the root area and a directory of its name on two lines a reader can tell apart", () => {
+  const out = renderOverview(result({ areas: [rootArea(), namedLikeRoot(), area()] }), { uncovered: 0 });
+
+  assert.match(out, /^## Areas \(3\)$/m);
+  assert.match(out, /^- the repository root — 40 files, 1 stated$/m);
+  assert.match(out, /^- \.\/the repository root — 9 files, 1 stated$/m);
+  assert.doesNotMatch(out, /^- \. — /m);
+  assert.doesNotMatch(out, /^-  — /m);
+});
+
+test("the root area's own file is headed by its name and scoped to the root alone, for each reader", () => {
+  const heads = Object.fromEntries([claude, cursor, copilot].map((t) => [t.id, renderArea(rootArea(), t).split("\n")]));
+
+  assert.deepEqual(heads.claude.slice(0, 6), ["---", "generator: anatomiya", "paths:", '  - "/*.go"', "---", ""]);
+  assert.deepEqual(heads.cursor.slice(0, 5), ["---", "generator: anatomiya", "globs: *.go", "alwaysApply: false", "---"]);
+  assert.deepEqual(heads.copilot.slice(0, 4), ["---", "generator: anatomiya", 'applyTo: "*.go"', "---"]);
+  for (const lines of Object.values(heads)) assert.ok(lines.includes("# the repository root  40 files"), lines.join("\n"));
+  assert.ok(renderArea(namedLikeRoot()).split("\n").includes("# ./the repository root  9 files"));
+
+  // One body under three heads, and the reader that matches the pattern below the root says so.
+  const body = (lines) => lines.slice(lines.indexOf("# the repository root  40 files"));
+  assert.deepEqual(body(heads.cursor), body(heads.claude));
+  assert.deepEqual(body(heads.copilot), [...body(heads.claude).slice(0, -1), "", WIDENS, ""]);
+  assert.ok(!body(heads.cursor).includes(WIDENS));
+});
+
+test("a root area a reader has no file for is named in words on the line that says so", () => {
+  const unwritten = rootArea({ globs: [{ negated: false, dir: "", tail: "a,b.go" }] });
+  const out = renderOverview(result({ areas: [area(), unwritten] }), { uncovered: 0 }, cursor);
+
+  assert.match(out, /^- 1 area has no pattern Cursor can be given, so no file here covers it: the repository root\.$/m);
+});
+
+test("an overview with a root area stays inside its bound and is the same over shuffled areas", () => {
+  const areas = [rootArea(), namedLikeRoot(), ...Array.from({ length: 60 }, (_, i) => area({ id: `a${i}`, path: `pkg/p${String(i).padStart(2, "0")}` }))];
+  for (const target of [claude, cursor, copilot]) {
+    const out = renderOverview(result({ areas }), { uncovered: 3 }, target);
+    const lines = out.trimEnd().split("\n");
+    const body = lines.slice(lines.indexOf("---", 1) + 1);
+    assert.ok(body.length <= (isClaude(target) ? 40 : 43), `${target.id}: ${body.length} lines`);
+    assert.equal(renderOverview(result({ areas }), { uncovered: 3 }, target), out, "and twice over is the same bytes");
+  }
 });

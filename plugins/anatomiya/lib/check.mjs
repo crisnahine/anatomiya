@@ -19,7 +19,7 @@ import {
 } from "./corpus.mjs";
 import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
 import { isProducer, placedTests } from "./layout.mjs";
-import { areaOwner, globsReach } from "./areas.mjs";
+import { areaLabel, areaOwner, globsReach } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase } from "./render.mjs";
 import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
@@ -991,7 +991,7 @@ async function collect(root, run) {
         // as "no convention" and never delivered here either.
         const away = own && area && !globsReach(area.globs, path);
         const verdict = up
-          ? { severity: "FIX", reason: `counted in ${up.from}, which this directory sits inside` }
+          ? { severity: "FIX", reason: `counted in ${areaLabel(up.from)}, which this directory sits inside` }
           : cappedAway(
               severityFor(
                 { path, oldPath: job.file.from },
@@ -1158,10 +1158,10 @@ function cappedAway(verdict, away, area, path) {
   // sitting in the area's own directory that it sat inside that directory.
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (globsReach(area.globs, area.path === "." ? name : `${area.path}/${name}`)) {
-    return { severity: "FIX", reason: `counted in ${area.path}, which this directory sits inside` };
+    return { severity: "FIX", reason: `counted in ${areaLabel(area.path)}, which this directory sits inside` };
   }
   const type = name.lastIndexOf(".") > 0 ? `${name.slice(name.lastIndexOf("."))} files` : name;
-  return { severity: "FIX", reason: `the area file for ${area.path} does not reach ${type}, so this claim was never delivered here` };
+  return { severity: "FIX", reason: `the area file for ${areaLabel(area.path)} does not reach ${type}, so this claim was never delivered here` };
 }
 
 /** How an area's file dropped this slot, `named` or `unnamed`, or false where it printed it. */
@@ -1213,7 +1213,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
   // is not delivered here, so the map did not tell this file's author.
   const away = !from && !globsReach(area.globs, path);
   const verdict = from
-    ? { severity: "FIX", reason: `counted in ${from}, which this directory sits inside` }
+    ? { severity: "FIX", reason: `counted in ${areaLabel(from)}, which this directory sits inside` }
     : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, capped, dropped }), away, area, path);
   return {
     severity: verdict.severity,

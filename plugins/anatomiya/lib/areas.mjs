@@ -66,6 +66,22 @@ export function areaId(path) {
   return createHash("sha256").update(path).digest("hex").slice(0, 8);
 }
 
+const ROOT_AREA = "the repository root";
+
+/**
+ * An area's name as a listing or a sentence says it, a directory spelled by the caller's encoder.
+ *
+ * The area at the root has a path of one dot, which reads as punctuation, so
+ * it is named in words. A directory can be called those words too, and it is
+ * said as the path it is, `./` in front, so the two lines stay apart. Compared
+ * after the encoder, which prints two spaces as one.
+ */
+export function areaLabel(path, encodeName) {
+  if (path === ".") return ROOT_AREA;
+  const said = typeof encodeName === "function" ? encodeName(path) : path;
+  return said === ROOT_AREA ? `./${said}` : said;
+}
+
 /**
  * A glob for the delivery channel's `paths` key.
  *
