@@ -4378,18 +4378,18 @@ test("the overview lists the root area and a directory of its name on two lines 
 });
 
 test("the root area's own file is headed by its name and scoped to the root alone, for each reader", () => {
-  const heads = Object.fromEntries([claude, cursor, copilot].map((t) => [t.id, renderArea(rootArea(), t).split("\n")]));
+  const heads = Object.fromEntries([claude, cursor].map((t) => [t.id, renderArea(rootArea(), t).split("\n")]));
 
   assert.deepEqual(heads.claude.slice(0, 6), ["---", "generator: anatomiya", "paths:", '  - "/*.go"', "---", ""]);
   assert.deepEqual(heads.cursor.slice(0, 5), ["---", "generator: anatomiya", "globs: *.go", "alwaysApply: false", "---"]);
-  assert.deepEqual(heads.copilot.slice(0, 4), ["---", "generator: anatomiya", 'applyTo: "*.go"', "---"]);
+  // VS Code matches `*.go` under every parent directory, so Copilot is given no file for the root.
+  assert.equal(renderArea(rootArea(), copilot), null);
   for (const lines of Object.values(heads)) assert.ok(lines.includes("# the repository root  40 files"), lines.join("\n"));
   assert.ok(renderArea(namedLikeRoot()).split("\n").includes("# ./the repository root  9 files"));
 
-  // One body under three heads, and the reader that matches the pattern below the root says so.
+  // One body under both heads.
   const body = (lines) => lines.slice(lines.indexOf("# the repository root  40 files"));
   assert.deepEqual(body(heads.cursor), body(heads.claude));
-  assert.deepEqual(body(heads.copilot), [...body(heads.claude).slice(0, -1), "", WIDENS, ""]);
   assert.ok(!body(heads.cursor).includes(WIDENS));
 });
 
