@@ -119,6 +119,9 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // Only where there were any: a scan that stopped part way is the one thing that leaves them.
     ...(plan.staged?.length ? { stagedRemoved: plan.staged.length } : {}),
     ...(plan.storeStaged?.length ? { storeStagedRemoved: plan.storeStaged.length } : {}),
+    // And the ones that would not go: a file somebody holds, or made read-only.
+    ...(plan.stagedLeft?.length ? { stagedLeft: plan.stagedLeft.length } : {}),
+    ...(plan.storeStagedLeft?.length ? { storeStagedLeft: plan.storeStagedLeft.length } : {}),
     wrote: plan.write.length,
     // A language read no file of is one of two facts, told apart by whether
     // anything else was read: `blind` is a run that wrote nothing at all, and
@@ -299,6 +302,9 @@ export function scanLines(s) {
   }
   for (const [n, dir] of [[s.stagedRemoved, RULES_DIR], [s.storeStagedRemoved, STORE_DIR]]) {
     if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} ${s.dryRun ? "would be removed" : n === 1 ? "was removed" : "were removed"}`);
+  }
+  for (const [n, dir] of [[s.stagedLeft, RULES_DIR], [s.storeStagedLeft, STORE_DIR]]) {
+    if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
   }
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.

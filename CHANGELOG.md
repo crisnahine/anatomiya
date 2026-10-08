@@ -294,7 +294,13 @@ scanned by 0.13.4 and by this version.
   leaves a directory this way names it under `stopped` in `refresh.json` and is due again after 30
   minutes, for as long as the directory stays stopped. Where the scan
   named the target, or the file is in `.claude/rules` or `.claude/anatomiya`, the scan stops with a
-  sentence that names the file and puts back every file it had replaced. A dry run renames
+  sentence that names the file and puts back every file it had replaced. A directory that refuses a
+  new file (`EPERM`, `EACCES` or `EBUSY` when a temporary file is created there) is handled as the
+  locked file is, before anything is replaced: not named, the directory is left with `.cursor/rules
+  could not be written (a file could not be created in .cursor/rules (EACCES)), so nothing there
+  was written or removed: fix its permissions, then scan again`; named, or `.claude/rules` or
+  `.claude/anatomiya`, the scan stops with `a file could not be created in .claude/rules (EACCES),
+  so nothing was written: fix its permissions and scan again`. A dry run renames
   nothing, so it does not see the lock and says `would write`.
 - Cursor and Copilot read looser patterns than Claude Code, and the files say so. A brace set is
   written as one pattern per extension. Neither reader that was run accepts a pattern that excludes
@@ -318,8 +324,8 @@ scanned by 0.13.4 and by this version.
   entry per directory with `state`, `dir`, `wrote`, `removed`, `unfiled` and `foreign`, and where
   they apply `reason`, `remedy` (what the text line tells a person to do), `unwritable` and
   `switchedOnBy`. It gains `stagedRemoved` and `storeStagedRemoved`, the temporary files an earlier
-  scan left in `.claude/rules` and in `.claude/anatomiya` that this one removed, each absent at
-  none, and `unanswered`, which the Changed entry on a missing engine describes. `check` gains
+  scan left in `.claude/rules` and in `.claude/anatomiya` that this one removed, `stagedLeft` and
+  `storeStagedLeft`, the ones it could not remove, each absent at none, and `unanswered`, which the Changed entry on a missing engine describes. `check` gains
   `parse.missingGrammars`, the languages whose grammar file did not load, an empty list where all
   did, and `targets`, with what it found in each directory that is on.
 - Two more exclude lines in the README, `.cursor/rules/anatomiya-*.mdc` and
@@ -508,6 +514,11 @@ scanned by 0.13.4 and by this version.
   removed, and in `.claude/anatomiya` for a temporary file of `facts.json`, `layout.json` or
   `refresh.json`, on a line of its own: `1 temporary file an earlier scan left in
   .claude/anatomiya was removed`. A leftover is removed without being opened, whatever its size.
+  One that cannot be removed, locked or read-only, is left where it is and stops nothing: the scan
+  writes, and says `1 temporary file an earlier scan left in .claude/anatomiya could not be
+  removed, so it was left as it is`, the same for `.claude/rules`. In a Cursor or Copilot directory
+  it is counted with the entries left there: `.cursor/rules holds 1 entry named anatomiya-* that
+  this scan neither wrote nor removed; it was left as it is`.
 - One import with a long run of slashes in its specifier held a scan for seconds, in the parent
   process, where no clock stops it. On a 17-file repository with one file importing from `x`,
   150,000 slashes and `y`, a 150 kB file, a scan with 0.13.4 took 10.4 to 11.9 seconds and this

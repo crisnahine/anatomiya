@@ -455,7 +455,7 @@ export function commitMap(root, plan) {
     if (dir === null) throw movedAway(t.dir, did);
     return dir;
   };
-  const others = Object.entries(plan.targets)
+  const all = Object.entries(plan.targets)
     .filter(([, t]) => t.write.length > 0 || t.remove.length > 0)
     .map(([id, t]) => ({ ...t, id, at: own(id, t, UNTOUCHED) }));
 
@@ -463,22 +463,35 @@ export function commitMap(root, plan) {
   // the old files call a map fresh that the session holds an older scan of.
   const factsPath = join(storeDir, basename(FACTS_PATH));
   const staged = [];
+  const theirs = [];
   const made = [];
   try {
-    for (const t of others) if (t.write.length > 0) makeOwnDirectory(t.at, t.dir, made);
+    for (const t of all) if (t.write.length > 0) makeOwnDirectory(t.at, t.dir, made);
     mkdirSync(rulesDir, { recursive: true });
     mkdirSync(storeDir, { recursive: true });
 
-    const names = Object.fromEntries(Object.entries(plan.targets).map(([id, t]) => [id, t.names]));
-    const recordTemp = writeTemp(factsPath, factsJson(plan.result, names));
+    // Ahead of the record, which names what each directory holds once this is done. A directory nobody named that
+    // takes no new file is left as a locked file leaves it, one step sooner: `access` passed it at the audit, and on
+    // Windows that call reads no ACL.
+    const refused = new Map();
+    for (const t of all) {
+      const from = theirs.length;
+      try {
+        for (const { name, body } of t.write) theirs.push([stage(join(t.at, name), body, t.dir), join(t.at, name)]);
+      } catch (err) {
+        if (!err.unstaged || t.named) throw err;
+        for (const [tmp] of theirs.splice(from)) quietUnlink(tmp);
+        refused.set(t.id, err.unstaged);
+      }
+    }
+    const others = all.filter((t) => !refused.has(t.id));
+
+    const names = Object.fromEntries(Object.entries(plan.targets).map(([id, t]) => [id, refused.has(id) ? t.was : t.names]));
+    const recordTemp = stage(factsPath, factsJson(plan.result, names), STORE_DIR);
     staged.push([recordTemp, factsPath]);
     // In the order they are renamed: the record, its layout file, then each directory in turn.
-    const writes = [
-      [join(storeDir, basename(LAYOUT_PATH)), stampedLayout(plan.result.layout, recordTemp)],
-      ...[...plan.bodies].map(([name, body]) => [join(rulesDir, name), body]),
-      ...others.flatMap((t) => t.write.map(({ name, body }) => [join(t.at, name), body])),
-    ];
-    for (const [path, body] of writes) staged.push([writeTemp(path, body), path]);
+    staged.push([stage(join(storeDir, basename(LAYOUT_PATH)), stampedLayout(plan.result.layout, recordTemp), STORE_DIR), join(storeDir, basename(LAYOUT_PATH))]);
+    for (const [name, body] of plan.bodies) staged.push([stage(join(rulesDir, name), body, RULES_DIR), join(rulesDir, name)]);
     const removals = [
       ...plan.storeStaged.map((f) => join(storeDir, f)),
       ...[...plan.remove, ...plan.staged].map((f) => join(rulesDir, f)),
@@ -515,12 +528,25 @@ export function commitMap(root, plan) {
       const kept = Object.fromEntries(Object.entries(names).map(([id, now]) => [id, stopped.has(id) ? plan.targets[id].was : now]));
       writePair(storeDir, factsJson(plan.result, kept), plan.result.layout);
     };
-    const stopped = replaceAll(staged, removals, { record: factsPath, was: readLayout(root), leftover, spared, settle }, stillOwn, said);
-    if (stopped.size === 0) return plan;
-    const unwritten = ([id, reason]) => [id, untouchedPlan({ target: TARGETS[id], state: "unknown", reason, remedy: UNLOCK, on: false, unwritable: true }, plan.targets[id].was)];
-    return { ...plan, targets: { ...plan.targets, ...Object.fromEntries([...stopped].map(unwritten)) } };
+    const left = [];
+    const stopped = replaceAll([...staged, ...theirs], removals, { record: factsPath, was: readLayout(root), leftover, left, spared, settle }, stillOwn, said);
+    if (stopped.size === 0 && refused.size === 0 && left.length === 0) return plan;
+    const leftIn = (dir) => left.filter((path) => dirname(path) === dir).map((path) => basename(path));
+    const without = (names, gone) => names.filter((name) => !gone.includes(name));
+    const unwritten = (remedy) => ([id, reason]) => [id, untouchedPlan({ target: TARGETS[id], state: "unknown", reason, remedy, on: false, unwritable: true }, plan.targets[id].was)];
+    // A leftover that would not go is one more entry the directory holds that this scan neither wrote nor removed.
+    const littered = others
+      .filter((t) => !stopped.has(t.id) && leftIn(t.at).length > 0)
+      .map((t) => [t.id, { ...plan.targets[t.id], remove: without(t.remove, leftIn(t.at)), foreign: [...t.foreign, ...leftIn(t.at)].sort() }]);
+    const [inRules, inStore] = [leftIn(rulesDir), leftIn(storeDir)];
+    return {
+      ...plan,
+      ...(inRules.length > 0 ? { staged: without(plan.staged, inRules), stagedLeft: inRules } : {}),
+      ...(inStore.length > 0 ? { storeStaged: without(plan.storeStaged, inStore), storeStagedLeft: inStore } : {}),
+      targets: { ...plan.targets, ...Object.fromEntries([...littered, ...[...refused].map(unwritten(PERMIT)), ...[...stopped].map(unwritten(UNLOCK))]) },
+    };
   } catch (err) {
-    for (const [tmp] of staged) quietUnlink(tmp);
+    for (const [tmp] of [...staged, ...theirs]) quietUnlink(tmp);
     // Deepest first, and only while empty: `rmdir` refuses anything else.
     for (const dir of made.reverse()) quietRmdir(dir);
     throw err;
@@ -540,6 +566,21 @@ function lockedFile(err, at, verb) {
 }
 
 const UNLOCK = "close what holds it or change its mode";
+const PERMIT = "fix its permissions";
+
+/**
+ * `writeTemp`, with a create the directory refuses said as what it is. `unstaged` carries the sentence's first half,
+ * for a directory nobody named to be left with.
+ */
+function stage(path, body, dir) {
+  try {
+    return writeTemp(path, body);
+  } catch (err) {
+    if (!LOCKED.includes(err.code)) throw err;
+    const unstaged = `a file could not be created in ${dir} (${err.code})`;
+    throw Object.assign(new Error(`${unstaged}, so nothing was written: ${PERMIT} and scan again`, { cause: err }), { unstaged });
+  }
+}
 
 const lockedSentence = (locked, did) => `${locked}, so the scan ${did}: the file is locked or read-only, so ${UNLOCK}, then scan again`;
 
@@ -578,7 +619,8 @@ function makeOwnDirectory(at, rel, made) {
  * Rename every staged file into place and remove the orphans, or put back what
  * was there before the first one moved. `stillOwn` throws for a path whose
  * directory is no longer where the plan found it. A path in `pair.leftover` is
- * removed unread and never put back.
+ * removed unread and never put back, and one whose removal fails goes on
+ * `pair.left` and stops nothing.
  *
  * A rename in a directory the temporary file was just created in still fails:
  * Windows refuses one over a file another process holds open. `said` names a
@@ -638,6 +680,11 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
         unlinkSync(path);
       } catch (err) {
         if (err.code === "ENOENT") continue;
+        // Litter, and never a reason to stop: one that will not go stays, and the scan says how many did.
+        if (pair.leftover.has(path)) {
+          pair.left.push(path);
+          continue;
+        }
         stop(lockedFile(err, said(path), "removed"), path);
         continue;
       }

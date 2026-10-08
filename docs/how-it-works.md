@@ -1400,7 +1400,12 @@ swept for three names, `facts.json`, `layout.json` and `refresh.json` plus that 
 .claude/anatomiya were removed`. The pin's and the refresh lock's temporary files are not swept. A
 leftover is removed without being opened, where every other file about to be replaced or removed
 is read whole first for the put-back, so its size costs the scan nothing and a scan that fails
-later does not put it back.
+later does not put it back. A leftover whose removal fails, on any code, stops nothing
+(`pair.left` in `replaceAll`): it stays, the scan writes, and the plan comes back with it moved
+from what was removed to what was left: `stagedLeft` for `.claude/rules` and `storeStagedLeft` for
+the store, each a summary line (`1 temporary file an earlier scan left in .claude/anatomiya could
+not be removed, so it was left as it is`), and in a Cursor or Copilot directory one more of the
+entries `foreign` counts.
 
 A failure at any rename or removal puts back every file already replaced, in every directory, takes
 out the temporary files, and removes a Cursor or Copilot directory this run made if it is empty. Nothing is put back
@@ -1419,6 +1424,15 @@ directory are written, and the exit is 0:
 ```
 .cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change its mode, then scan again
 ```
+
+A temporary file that cannot be created is the same ruling at the step before (`stage` in
+`write.mjs`, on the same three codes). The Cursor and Copilot files are staged first, so the record
+can name what each directory will hold. A directory the scan did not name that refuses one has its
+staged files removed and takes no rename and no removal, the record is staged with the names it
+had there, and the target comes back `unknown` and `unwritable` with `a file could not be created
+in .cursor/rules (EACCES)` and the remedy `fix its permissions`. Named, or in `.claude/rules` or
+the store, the scan refuses before any rename: `a file could not be created in .claude/rules
+(EACCES), so nothing was written: fix its permissions and scan again`.
 
 A put-back that fails there, or a second record write that fails, refuses the whole scan as above.
 So does any error that is no lock, a full disk for one. A dry run renames nothing, so it says
@@ -1454,7 +1468,8 @@ wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-over
 target's entry there also carries `reason` and `remedy` where it was left alone, the remedy being
 what the text line tells a person to do, and `unwritable` where its directory could not be written.
 `stagedRemoved` counts the temporary files an earlier scan left in `.claude/rules` that this one
-removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. Each is absent at none.
+removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. `stagedLeft` and
+`storeStagedLeft` count the ones it could not remove. Each is absent at none.
 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
