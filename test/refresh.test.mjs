@@ -435,6 +435,48 @@ test("a target git cannot be asked about is held as a committed one is", async (
   assert.match(readFileSync(join(dir, ".github", "instructions", "anatomiya-overview.instructions.md"), "utf8"), /lib\/services/);
 });
 
+test("a file locked in another tool's directory costs a refresh that directory alone", async (t) => {
+  const dir = await scanned(t);
+  await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
+  const overview = join(dir, ".cursor", "rules", "anatomiya-overview.mdc");
+  const before = readFileSync(overview, "utf8");
+  const record = () => JSON.parse(readFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "utf8")).targets;
+  const named = record().cursor;
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  // What Windows answers a rename over a file another process holds open.
+  fs.renameSync = (from, to) => {
+    if (String(to) === overview) throw Object.assign(new Error(`EBUSY: resource busy or locked, rename '${from}'`), { code: "EBUSY" });
+    return real(from, to);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+  const summaries = [];
+  const scan = async (root, options) => {
+    const answer = await runScan(root, options);
+    summaries.push(answer.summary);
+    return answer;
+  };
+
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+
+  assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).ok, true);
+  assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), /lib\/services/, "Claude Code's map is the new one");
+  assert.match(readFileSync(join(dir, ".github", "instructions", "anatomiya-overview.instructions.md"), "utf8"), /lib\/services/);
+  assert.equal(readFileSync(overview, "utf8"), before);
+  assert.deepEqual(record().cursor, named, "the record names the files still there");
+  assert.equal(record().copilot.length, named.length + 1);
+  assert.deepEqual(summaries.map((s) => s.targets.cursor), [
+    { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: ".cursor/rules/anatomiya-overview.mdc could not be replaced (EBUSY)", remedy: "close what holds it or change its mode", unwritable: true },
+  ]);
+});
+
 test("a committed Claude map still stops the refresh whole, whatever else is on", async (t) => {
   const dir = await scanned(t);
   await runScan(dir, { targets: ["claude", "cursor"] });

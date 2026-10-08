@@ -445,7 +445,7 @@ export function previousBytes(path) {
  * nothing. The record goes first because that rename is the one that can fail
  * with nothing moved: the old pair stays whole and still answers.
  */
-function writePair(dir, recordBytes, layout, schema) {
+export function writePair(dir, recordBytes, layout, schema) {
   const record = join(dir, basename(FACTS_PATH));
   const temps = [writeTemp(record, recordBytes)];
   try {
