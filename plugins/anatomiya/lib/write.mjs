@@ -556,7 +556,9 @@ export function commitMap(root, plan) {
 const UNTOUCHED = "stopped before writing anything there";
 const PUT_BACK = "stopped and put back what it had replaced";
 
-// What a file somebody holds open, or made read-only, answers a rename or a removal with.
+// What a rename or a removal answers where it is not allowed. On Windows: `EPERM` for a target held open or
+// read-only, `EBUSY` for a sharing violation. Elsewhere: `EPERM` for an immutable file, `EACCES` for a directory
+// that cannot be written.
 const LOCKED = ["EPERM", "EACCES", "EBUSY"];
 
 // `locked` carries the sentence's first half, for the rollback to say what it put back.

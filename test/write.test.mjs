@@ -2564,7 +2564,8 @@ test("an entry spelled as an area's name in another case holds that name", (t) =
       name.replace(b.id, b.id.toUpperCase()),
       name.replace(PREFIX, "Anatomiya-"),
       name.slice(0, -target.ext.length) + target.ext.toUpperCase(),
-      // The long s, which APFS folds onto `s`, and neither NTFS nor a plain lower-casing does.
+      // The long s, which APFS folds onto `s` and a plain lower-casing does not. Nothing Microsoft publishes says
+      // whether NTFS does, so the fold is measured for the pair.
       name.replace("area", "area".replace("a", "A")).replace(target.ext, target.ext.replace("s", "ſ")),
     ];
   };
@@ -3534,8 +3535,9 @@ test("nothing is removed until every file has been renamed into place", async (t
   assert.deepEqual(events, [...Array(renames).fill("renameSync"), "unlinkSync", "unlinkSync", "unlinkSync"], "the record, its layout file and two files in each directory, then one orphan in each");
 });
 
-// A process id no system gives, since Windows hands a freed one to the next
-// process, and sixteen hex digits, as the stager spells them.
+// A process id past the largest Linux and macOS hand out; Windows documents no range. The id of a
+// process that ran and exited would not do: Windows may hand a freed one to the next process. And
+// sixteen hex digits, as the stager spells them.
 const gone = () => 2 ** 22 + 7;
 const stagedName = (name, pid, hex = "0123456789abcdef") => stagedPath(name, pid, hex);
 const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
