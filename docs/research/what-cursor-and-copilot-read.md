@@ -141,6 +141,6 @@ Run on 2026-10-07, on the build of that day. The scripts and their outputs are n
 | 300 generated Cursor area files through the reader cut out of Cursor: the patterns it returns against the patterns each `globs` line was written from | 0 mismatches over 1,250 patterns |
 | 302 generated Copilot area files through VS Code's parser and splitter | 0 mismatches over 1,262 patterns |
 | the `.claude/rules` overview rendered with and without the target argument: 8,192 sets of optional lines, four mixes of other files in the directory, three shapes, untracked files on and off | 393,216 renders, 0 differ |
-| each target's overview over the same optional lines | 196,608 combinations, none over 40 lines |
+| each target's overview over the same optional lines | 196,608 combinations, none over its bound: 40, 43 and 43 lines (DECISIONS A103) |
 | a write over an existing map with one file-system call failed in turn | 42 of 42 left every file as it was |
 | the same write with the process killed before each commit operation, in three scenarios, then a plain scan | 118 kills, no file a person wrote was lost |

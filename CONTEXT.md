@@ -153,8 +153,8 @@ _Avoid_: inline test file, self-tested, unit-tested
 A test tree the language's build ties to one source tree by name and place: a .NET `X.Tests` or
 `X.Test` project with `X`, a Maven or Gradle `src/test` or `<set>Test` source set with what sits
 beside it, a PHP `tests` with the `src` or `app` beside it. A test there answers the one source
-file of its stem in the paired tree at any depth, no file where two carry the stem, and no file
-of that name outside the pair. A Python `tests`
+file of its stem at any depth of the paired tree. Where two source files there carry the stem it
+answers neither, and it answers no file of that name outside the pair. A Python `tests`
 directory beside a package is paired too, and a test in it answers only the path it mirrors. No
 project file is read to find a pair.
 _Avoid_: test module, companion project, sibling project

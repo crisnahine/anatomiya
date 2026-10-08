@@ -43,6 +43,12 @@ commonest case class. Go and Rust were not measured.
 | C# | serilog | 20 | 815 | 815 | 1.0000 | 1.0000 | 8 of 20 |
 | C# | Newtonsoft.Json | 13 | 2,333 | 2,333 | 1.0000 | 1.0000 | 5 of 13 |
 
+In every table of this shape `areas` counts the areas where the row was asked of that line's
+language, and `areas stating it` is taken over every area of the repository the row was asked in,
+whatever the language. The two differ where a repository holds a second language the row was asked
+of: junit5 has 6 Kotlin areas beside its 59 Java ones, okhttp 4 Java areas beside its 45 Kotlin
+ones, and in section 2 ktor one Rust area beside its 157 Kotlin ones.
+
 | language | lowest | highest | spread | one under 0.90 | spread of 0.15 |
 |---|---|---|---|---|---|
 | Python | 0.9895 | 1.0000 | 0.0105 | no | no |

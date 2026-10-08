@@ -503,7 +503,8 @@ a backslash is a character in a name rather than a separator.
 
 A dimension is one claim about one area. 52 ship, the filename row included: 28 for JavaScript, 33
 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and
-reaches a scan only when the checker runs. A component's script block is asked most of the 28: 24
+reaches a scan only when the checker runs. Beside them are 9 file-to-file obligations, all Ruby,
+which makes the 25 for Ruby and the 61 dimensions the README counts. A component's script block is asked most of the 28: 24
 for Vue and 24 for Svelte. Three are asked of a tree-sitter tree, each of the languages whose
 measured repositories differ on it: 2 for Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for
 Rust and 1 for Kotlin. Each is defined by three quantities, not one.
@@ -1196,7 +1197,7 @@ Three constraints shape the rendering:
 
 - **The overview must be byte-stable between scans with no source change.** The token economics only
   work on a cached read, so there is no timestamp, no duration, and no count that moves per commit.
-- **Each generated file's body stays under 40 lines.** The bound is the `.claude/rules` file's. A
+- **Each generated file's body is 40 lines or fewer.** The bound is the `.claude/rules` file's. A
   Cursor or Copilot file holds the same body and adds its own lines, so an overview there runs to at
   most 43 lines and an area file to at most 43. A rewritten context file does not re-attach inside
   one context window, and the change notice truncates head and tail, so a long file loses its middle
@@ -1358,7 +1359,7 @@ it get the lines Claude Code's listing takes and what its overview leaves under 
 those. In an area file the closing lines sit under the body and take no line from it, so one
 runs to at most 43. Over 196,608 renders of the three overviews with each of 12 optional lines on
 and off, none passed its bound, 40, 43 and 43, and each reached it (A103). An input outside those
-can pass the bound, for Claude's overview too:
+can pass the bound, for Claude Code's overview too:
 `test/render.test.mjs` renders one at 41, on a shape it says no scan reaches.
 
 The plan is made per target, and all of it before anything is created. The two `.claude`
@@ -1384,7 +1385,7 @@ of its listing, and the summary counts it, because a refresh has nobody to read 
 
 The commit stages every file as a temporary file beside its destination, then renames in one order:
 the record, its layout file, the `.claude/rules` files, the Cursor files, the Copilot files. Removals
-come last, the store's leftover temporary files first and then each directory in that order. A target's directory is made one component at a time, only when that target has a file to
+come last, the leftover temporary files of `.claude/anatomiya` first and then each directory in that order. A target's directory is made one component at a time, only when that target has a file to
 write, and each component is looked at again after its `mkdir`. Each target directory is resolved
 again before anything is made, after everything is staged, before each rename and before each
 removal, and a directory that stopped being the repository's own stops the scan in a sentence that
@@ -1394,8 +1395,8 @@ while the map was being written`).
 A temporary file a scan left behind, by a kill or through a directory swapped under it, is removed
 by the next scan that writes or removes in that directory: a regular file named as a map file plus
 `.tmp-<pid>-<16 hex>`, where no process of that id is running. The summary counts the ones under
-`.claude/rules`, `1 temporary file an earlier scan left in .claude/rules was removed`. The store is
-swept for three names, `facts.json`, `layout.json` and `refresh.json` plus that suffix
+`.claude/rules`, `1 temporary file an earlier scan left in .claude/rules was removed`.
+`.claude/anatomiya` is swept for three names, `facts.json`, `layout.json` and `refresh.json` plus that suffix
 (`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier scan left in
 .claude/anatomiya were removed`. The pin's and the refresh lock's temporary files are not swept. A
 leftover is removed without being opened, where every other file about to be replaced or removed
@@ -1403,7 +1404,7 @@ is read whole first for the put-back, so its size costs the scan nothing and a s
 later does not put it back. A leftover whose removal fails, on any code, stops nothing
 (`pair.left` in `replaceAll`): it stays, the scan writes, and the plan comes back with it moved
 from what was removed to what was left: `stagedLeft` for `.claude/rules` and `storeStagedLeft` for
-the store, each a summary line (`1 temporary file an earlier scan left in .claude/anatomiya could
+`.claude/anatomiya`, each a summary line (`1 temporary file an earlier scan left in .claude/anatomiya could
 not be removed, so it was left as it is`), and in a Cursor or Copilot directory one more of the
 entries `foreign` counts.
 
@@ -1413,7 +1414,7 @@ through a directory that moved. Where the failure is a file that is locked or re
 `EACCES` or `EBUSY` from the rename or the removal), the scan names it:
 `<dir>/<name> could not be replaced (EPERM), so the scan stopped and put back what it had replaced: the file is locked or read-only, so close what holds it or change its mode, then scan again`.
 
-That is the answer in `.claude/rules`, in the store and in a target the scan named. In a Cursor or
+That is the answer in `.claude/rules`, in `.claude/anatomiya` and in a target the scan named. In a Cursor or
 Copilot directory it did not name, a locked file stops that directory alone (`spared` in
 `replaceAll`): the record and its layout file are written again through `writePair`, with that
 target's names as the record on disk had them, then what was replaced there is put back, its staged
@@ -1433,7 +1434,7 @@ can name what each directory will hold. A directory the scan did not name that r
 staged files removed and takes no rename and no removal, the record is staged with the names it
 had there, and the target comes back `unknown` and `unwritable` with `a file could not be created
 in .cursor/rules (EACCES)` and the remedy `fix its permissions`. Named, or in `.claude/rules` or
-the store, the scan refuses before any rename: `a file could not be created in .claude/rules
+`.claude/anatomiya`, the scan refuses before any rename: `a file could not be created in .claude/rules
 (EACCES), so nothing was written: fix its permissions and scan again`.
 
 A put-back that fails there, or a second record write that fails, refuses the whole scan as above.
@@ -1467,7 +1468,8 @@ wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-over
 ```
 
 `--format json` carries the file as `switchedOnBy` in that target's entry, on that scan alone. A
-target's entry there also carries `reason` and `remedy` where it was left alone, the remedy being
+target's entry there also carries `reason` and `remedy` where its directory could not be read or
+written, the remedy being
 what the text line tells a person to do, and `unwritable` where its directory could not be written.
 `stagedRemoved` counts the temporary files an earlier scan left in `.claude/rules` that this one
 removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. `stagedLeft` and
@@ -1475,7 +1477,8 @@ removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. `stagedLeft` 
 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
-that is on (`.cursor/rules: on, 4 files`, counting the files the record names), a second where that
+that is on (`.cursor/rules: on, 4 files`, counting the files the record names, or with no record
+the files under a map name that carry the key), a second where that
 directory holds other entries under the prefix (`.cursor/rules holds 1 entry named anatomiya-* that a
 scan neither writes nor removes`), and `pin` leaves the generated names of all three
 directories out of its clean-tree test. The record names the files written for each target under an
@@ -1832,9 +1835,9 @@ Every clause is dropped when it counts nothing.
 ```
 - <root>: <n1> <ext1>[ (JSX)][, <n2> <ext2>][ and <k> other]
         [; <t> <Runner> specs[ under <sub>]]
-        [; <c> of <n>[ <ext> files] has|have a namesake test[, <v>][ under <test root>]]
+        [; <c> of <n>[ <ext> files] has|have a namesake test[, <v>][ under <test tree>]]
         [; <i> holds its|hold their own tests]
-        [; <c2> of <n2> <ext2> files has|have a namesake test[, <v>][ under <test root>]]
+        [; <c2> of <n2> <ext2> files has|have a namesake test[, <v>][ under <test tree>]]
         [; <m> sibling modules[ named <up to three stems>]; <f> of <j> JSX files inline a helper]
 ```
 
@@ -2013,18 +2016,20 @@ its gate matter. A zero means no namesake was matched, never that the directory 
 repository has to be seen pairing tests with sources somewhere before the sentence can say it does
 not here. That half is asked of every root the roster counted, printed or folded, since it is a fact
 about the repository. The other is asked of the printed roots only: the directory with no precedent
-has to have a line, or the sentence reads as being about the directories that do. Asked of every
-counted root, fastlane prints it over five Ruby roots at 15 to 86 namesakes each, armed by a Java
-directory of 19 files folded into `and 8 more directories`. Of 56 repositories measured with one
-build, six print it on a folded root alone under that reading and none of the six under this one.
+has to have a line, or the sentence reads as being about the directories that do. jellyfin's
+record stores the sentence's key, armed by `src/Jellyfin.Database` (0 of 261), a root folded into `and 13
+more directories`, and its overview prints `MediaBrowser.Controller` and `MediaBrowser.Model` at 10
+namesake tests each: printed there, the sentence would read as being about those two. Of 56
+repositories measured with one build, four store the key armed by folded roots alone,
+backstage, prisma, next.js and jellyfin, and none of the four prints it.
 
 A sentence the printed roots do not arm holds no line. The roots are fitted to the budget without
-it, up to the first root that would arm it: vscode's overview prints `extensions` in that line.
+it, up to the first root that would arm it.
 Where the next root in line is the arming one, the root and the sentence cannot both have the
-line and the section leaves it. On backstage and fastlane the Areas listing below takes it and
-names one area, and both overviews are 40 lines. jellyfin has no area, and its overview is 39.
-One line short of every stored sentence, the unarmed one is the line that does not fit, so the
-others print and no root does.
+line and the section leaves it. On backstage, next.js and jellyfin the Areas listing below takes
+it and names one area, and prisma's listing names none. All four overviews are 40 lines.
+Where the budget is one line short of holding every stored sentence, the unarmed sentence is the
+one left out: the other sentences print and no root line does.
 
 ### In an area file
 

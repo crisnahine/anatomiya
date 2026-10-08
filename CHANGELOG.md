@@ -16,13 +16,13 @@ cursor,copilot` writes the same map for Cursor and GitHub Copilot, and the type 
 first scan: a root's namesake tests are counted over the files a test could be written for.
 
 After updating, run `/anatomiya:doctor`. If it prints `tree-sitter absent: web-tree-sitter did not
-load`, run `/anatomiya:setup`, then `/anatomiya:scan` in each mapped repository that holds one of
-the seven languages: nothing the refresh watches moves when the package arrives, so the map there
-can stay as it was until that checkout's HEAD moves. Otherwise there is nothing to run. A map that
-is not committed is rewritten by the first background refresh, and with the package missing that
-still happens in a repository holding none of the seven. A committed map is never refreshed: scan
-it by hand and commit the result. The Cursor and Copilot copies are new and off: `scan --targets
-cursor,copilot` turns them on.
+load`, run `/anatomiya:setup`. Then run `/anatomiya:scan` in each mapped repository that holds one
+of the seven languages: the refresh does not notice a package arriving, so the map there can stay as
+it was until that checkout's HEAD moves. If `doctor` does not print that line, there is nothing to
+run. A map that is not committed is rewritten by the first background refresh. With the package
+missing, that still happens in a repository that holds none of the seven. A committed map is never
+refreshed: scan it by hand and commit the result. The Cursor and Copilot copies are new and off:
+`scan --targets cursor,copilot` turns them on.
 
 ### What changes in an existing map
 
@@ -33,18 +33,18 @@ scanned by 0.13.4 and by this version.
 - The overview. All 35 differ. 22 gain the "Not covered" line for files in a language the map does
   not read, and on the 13 that had it the line reads differently. Every overview was at
   its 40-line limit in 0.13.4, so each new line pushes another line out.
-- Root lines. 18 overviews print fewer: 15 print one fewer, and storybook, supabase and next.js
-  two. What took the room is the unread-languages line on 15 of them; the component line (`of 180
-  .vue and .svelte files only the script block is read`) on storybook and supabase; `8 source
-  files sit in a directory nothing was counted in` on supabase; on next.js that line with 73, `22
-  files could not be read by this tool's grammar` and one more area named under Areas; and on
-  fastlane, a new root line for `screengrab` (its Java is read) and the test-precedent sentence,
-  which that root's 1 of 19 namesake tests switches on. On the other seven that gain the
-  unread-languages line it costs something else: six list one area fewer under Areas, and prisma
-  loses the test-precedent sentence. vscode keeps its three root lines: its grammar line, `6 files
-  could not be read by this tool's grammar`, takes the line its test-precedent sentence leaves.
-  Homebrew keeps its root lines too: its `docs` line gains a count, the count switches on the
-  test-precedent sentence, and the sentence takes the line of one area named under Areas.
+- Root lines. 18 overviews print fewer: 15 print one fewer, and storybook, supabase and next.js two.
+  What took the room differs. On 15 of the 18 it is the unread-languages line. On storybook and
+  supabase it is the component line (`of 180 .vue and .svelte files only the script block is read`),
+  and on supabase also `8 source files sit in a directory nothing was counted in`. On next.js it is
+  that line with 73, `22 files could not be read by this tool's grammar` and one more area named
+  under Areas. On fastlane it is a new root line for `screengrab` (its Java is read) and the
+  test-precedent sentence, which that root's 1 of 19 namesake tests switches on. On the other seven
+  that gain the unread-languages line it costs something else: six list one area fewer under Areas,
+  and prisma loses the test-precedent sentence. vscode keeps its three root lines: its grammar line,
+  `6 files could not be read by this tool's grammar`, takes the line its test-precedent sentence
+  leaves. Homebrew keeps its root lines too: its `docs` line gains a count, the count switches on
+  the test-precedent sentence, and the sentence takes the line of one area named under Areas.
 - Namesake counts. A root's `N of M have a namesake test` is taken over the files a test could be
   written for, and a helper or a fixture under a test directory inside the root is not one, so M
   shrinks. 18 of the 35 overviews show it, on 46 root lines and on the tests line of 11:
@@ -64,11 +64,11 @@ scanned by 0.13.4 and by this version.
   fastlane 3 over its Java, storybook 12 over its components, and supabase 16 over its components,
   Kotlin and Python. storybook also loses 4 areas that deeper ones replace, and supabase 3.
 - The 500-area ceiling. vscode holds 500 areas in both versions. Six areas of 8 files each leave,
-  which stated 18 claims, and six arrive, four of them over the Rust of `cli/src`, which state
-  none, and two kept areas state 4 more: 1,798 claims stated become 1,784. next.js held 500 and
-  holds 497. 30 JavaScript and TypeScript areas of 10 or 11 files leave, which stated 7 claims,
-  and 27 arrive, 26 of them holding Rust, which state none, and among the kept areas one gains 2
-  and one loses 1: 429 become 423. openproject holds 500 in both and nothing moves.
+  and they stated 18 claims. Six arrive, four of them over the Rust of `cli/src`, and state none.
+  Two kept areas state 4 more. Stated claims go from 1,798 to 1,784. next.js held 500 and holds
+  497. 30 JavaScript and TypeScript areas of 10 or 11 files leave, and they stated 7 claims. 27
+  arrive, 26 of them holding Rust, and state none. Among the kept areas one gains 2 and one loses
+  1. Stated claims go from 429 to 423. openproject holds 500 in both and nothing moves.
 - Claims stated. The number is the same on 29 of the 35. It moves on vscode and next.js, as the
   bullet on the 500-area ceiling says, and on appsmith (802 to 803), react (127 to 126), storybook
   (554 to 563) and supabase (918 to 927).
@@ -83,8 +83,8 @@ scanned by 0.13.4 and by this version.
   `code/frameworks/nextjs/src` (32 of 34) stated `exported names in files that hold no JSX are
   camelCase`. This version prints the first two as `no convention` and drops the third below its
   area's line budget. None of the three clears the gates on its own counts. 0.13.4 stated each
-  because the repository-wide ratio for its row let it, and the bar that ratio sets rose when the
-  180 components joined it: from 0.9725 to 0.9811 as `scripts/ci` sees it.
+  on the strength of the same row in the rest of the repository. The 180 components count toward
+  that in this version, and the bar they set rose from 0.9725 to 0.9811 as `scripts/ci` sees it.
 
 ### Added
 
@@ -171,10 +171,10 @@ scanned by 0.13.4 and by this version.
   package is no finding. Python and PHP, where a place is a choice, keep it. A Rust test has no
   name, so no `.rs` file is asked. Run over the 5,727 existing test files of those languages in 60
   repositories as if each were new, the finding fires on none.
-- A test for a directory the branch made. In any language, `check` says nothing of a test for a
-  directory the same branch created and put a file a test could be written for in. That directory
-  is any one between the source root and the test's own, so a new package added with its source
-  and with its test in its own `test`, `tests`, `spec` or `e2e` directory draws no finding. A
+- A test for a directory the branch made. In any language, `check` says nothing of a test when
+  the same branch created a directory on the way from the source root to the test's own, and put
+  a file a test could be written for in it. So a new package added with its source, and with its
+  test in its own `test`, `tests`, `spec` or `e2e` directory, draws no finding. A
   directory holding only the tests the branch wrote is asked about, and so is one holding a test
   beside an empty file, a declaration file, a story or a `conftest.py`. Where git cannot list the
   directories of the merge base, `check` states none of the findings that turn on one and prints
@@ -240,10 +240,10 @@ scanned by 0.13.4 and by this version.
   `component files here are named PascalCase`.
 - A directory whose components sit beside modules counts their namesake tests apart: `85 of 745
   .ts files have a namesake test; 81 of 164 .vue files have a namesake test`, on the root line,
-  the tests line and an area's kinds line, whichever of the two the directory holds more of.
-  The less common extension gets a count of its own only where the directory holds three or more
-  such files or a test matches one, so ten components beside one `index.ts` print one count. The
-  count over the first extension is the one 0.13.4 printed. A
+  the tests line and an area's kinds line. The more common of the two extensions always gets its
+  count. The less common gets one only where the directory holds three or more such files or a
+  test matches one, so ten components beside one `index.ts` print one count. The count over the
+  first extension is the one 0.13.4 printed. A
   test answers one component of its stem where the repository holds several: the one under the
   test's own directory, or the one it imports. A docs example named like a packaged component is
   not credited with that package's test.
@@ -323,12 +323,13 @@ scanned by 0.13.4 and by this version.
 - The record names the files written for each target under an optional `targets` key, present only
   where a target is on. The schema stays 19, so a build that does not know the key reads the record
   as 0.13.4 does.
-- `--format json` says more. `scan` gains `targets` where a target is on or was left alone: one
-  entry per directory with `state`, `dir`, `wrote`, `removed`, `unfiled` and `foreign`, and where
-  they apply `reason`, `remedy` (what the text line tells a person to do), `unwritable` and
-  `switchedOnBy`. It gains `stagedRemoved` and `storeStagedRemoved`, the temporary files an earlier
-  scan left in `.claude/rules` and in `.claude/anatomiya` that this one removed, `stagedLeft` and
-  `storeStagedLeft`, the ones it could not remove, each absent at none, and `unanswered`, which the Changed entry on a missing engine describes. `check` gains
+- `--format json` says more. `scan` gains `targets` where a target is on, or is on and could not be
+  read or written: one entry per directory with `state`, `dir`, `wrote`, `removed`, `unfiled` and
+  `foreign`, and where they apply `reason`, `remedy` (what the text line tells a person to do),
+  `unwritable` and `switchedOnBy`. It gains `stagedRemoved` and `storeStagedRemoved`, the temporary
+  files an earlier scan left in `.claude/rules` and in `.claude/anatomiya` that this one removed,
+  `stagedLeft` and `storeStagedLeft`, the ones it could not remove, each absent at none, and
+  `unanswered`, which the Changed entry on a missing engine describes. `check` gains
   `parse.missingGrammars`, the languages whose grammar file did not load, an empty list where all
   did, and `targets`, with what it found in each directory that is on.
 - Two more exclude lines in the README, `.cursor/rules/anatomiya-*.mdc` and
@@ -342,10 +343,12 @@ scanned by 0.13.4 and by this version.
   and fixtures of a test directory inside a root as files that owe a test, so a package that keeps
   its tests in `test/` read as less tested than it is. Ghost's `ghost/core` goes from `326 of
   1396` to `325 of 1360`, and vscode's `src/vs` from `1427 of 6497` to `1418 of 6217`. Measured as
-  one build with and without this rule and the next entry's, every root printed: 80 root lines
+  one build with and without this rule and the one in the entry that opens `A root whose two
+  commonest extensions`, every root printed: 80 root lines
   differ in 30 of the 60 measured repositories, and 5,725 files leave a count, 5,541 under a test
-  tree and 184 declaration files. A credit goes with a
-  file where the file credited was itself under a test tree, which is the 326 that became 325.
+  tree and 184 declaration files. One count lost a
+  credit as well: a file under a test tree that had been credited with a test left the count,
+  which is why 326 became 325.
   The tests line and an area's kinds line carry the same count and move with it. This gives up
   real source kept under a directory named for tests, 14 files in the 60 repositories:
   storybook's `code/core/src/test` (6), `django/test` (7) and puppet's `lib/puppet/test` (1).
@@ -394,43 +397,32 @@ scanned by 0.13.4 and by this version.
   file runs on the defaults, as in 0.13.4: one of five measured resolves that way, so nothing is
   skipped for the missing file. Plain JavaScript beside a `tsconfig.base.json` is checked, as it
   is beside a `tsconfig.json`.
-- No skip was added for a root the checker is going to read as `degraded`, because nothing readable
-  without running it tells such a root apart. Two comparisons were made. Of the eight bases, six
-  declare `paths`: the five that resolve and one that does not (71.1%). The two that declare none,
-  eslint and prisma, both degrade, and two repositories cannot carry a rule: a base without `paths`
-  is also what a single-package repository with several build configs writes, and none of those was
-  measured. Then, on the four corpus repositories that degrade (eslint, prisma, and react and Ghost,
-  which hold neither file and read 60.2% and 54.9%) against three that read `ok` through a root
-  `tsconfig.json`, four facts were compared: the share of checked files that are TypeScript, the
-  number of `tsconfig.json` files below the root, `paths` in the root config, and a workspace file.
-  None separates the two groups. So a repository whose checker degrades still pays for it on every
-  scan a person runs (3.2s of a 4.2s scan on eslint, 11.4s of 13.5s on prisma, 6.2s of 8.7s on react
-  and 19.3s of 23.1s on Ghost), on the first refresh after a plugin update, and on the first refresh
-  a commit, checkout or pull starts after an install or an edit to the root config. Every other
-  refresh carries the verdict, which is the entry that opens `A background refresh does not run the
-  type checker`. `docs/measurements/2026-10-07-checker-root-config.md` holds the tables.
 - A background refresh does not run the type checker where the last scan measured it as `degraded`
   and none of these changed since: the plugin version, the `typescript` it resolves to, the size and
   modification time of `node_modules` and of the install record in it (`.package-lock.json`,
   `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity`), and which root config is read and its
-  bytes. The refresh carries the measured verdict instead. An install starts no refresh by itself:
-  the stamp that starts one holds whether `node_modules` holds a package and not the install record.
-  So after an install that adds a missing package, the checker is measured by the next refresh a
-  commit, checkout or pull starts, or by a scan run by hand. A refresh after a commit measured 4.4s
+  bytes. The refresh carries the measured verdict instead. An install does not start a refresh by
+  itself: the stamp that starts one records whether `node_modules` holds any package, and the
+  install record is no part of it. So after an install that adds a missing package, the checker is
+  measured by the next refresh a commit, checkout or pull starts, or by a scan run by hand. A
+  repository whose checker degrades still pays for it on every scan a person runs: 3.2s of a 4.2s
+  scan on eslint, 11.4s of 13.5s on prisma, 6.2s of 8.7s on react and 19.3s of 23.1s on Ghost.
+  Nothing readable without running the checker tells such a root apart, so the checker runs on
+  every one (`docs/measurements/2026-10-07-checker-root-config.md`). A refresh after a commit measured 4.4s
   with the checker and 1.2s without on eslint, 8.9s and 2.8s on react, 13.9s and 2.3s on prisma, and
   21.2s and 3.8s on Ghost, with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four
   the verdict was the same 50 commits earlier, within 0.3 points. A map written that way says
   `type-checked claims are not counted: 61% of type lookups resolved when measured 2026-10-07 UTC
   (low-resolution)` in the overview. The words `when measured`, the day and `UTC` are all that
   differ from the map the measuring scan wrote: on eslint, Ghost, prisma and react the other 29,
-  283, 192 and 131 rule files are the same bytes. The day is the UTC one, so it can be the day
-  before or after yours. `/anatomiya:scan` always runs the checker, and a checker that reads `ok`
-  runs on every refresh, as in 0.13.4. A repository whose code changes lift it over the floor stays
-  `degraded` until someone runs the scan. A refresh carries only a record a scan could have written:
-  a reason from the checker's own list, a rate that reason allows and a moment from 2020 on and at
-  most a day after now. Any other record is measured over, so text written into `facts.json` by hand
-  does not reach the overview. The record's `semantic` gains `carried`, `measuredAt` and
-  `measuredUnder`, and the schema stays 19.
+  283, 192 and 131 map files are the same bytes. The day is the UTC one, so it can be the day before
+  or after yours. `/anatomiya:scan` always runs the checker, and a checker that reads `ok` runs on
+  every refresh, as in 0.13.4. A repository whose code changes lift it over the floor stays
+  `degraded` until someone runs the scan. A refresh carries a record only if a scan could have
+  written it: its reason is one the checker gives, its rate is one that reason allows, and its
+  moment is from 2020 on and at most a day after now. Any other record is measured over, so text
+  written into `facts.json` by hand does not reach the overview. The record's `semantic` gains
+  `carried`, `measuredAt` and `measuredUnder`, and the schema stays 19.
 - A type checker that reads `degraded` prints no count for its claims, whether this scan measured
   it or a refresh carried the verdict. 0.13.4 printed `a call chain stays inside one type: no
   convention. 298 of 586 sites (degraded-semantic)` in each area; those lines are gone, the

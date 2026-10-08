@@ -113,5 +113,5 @@ the checker run. Wall time and peak resident memory, median of three.
 | Ghost | 21.2s, 2,681 MB | 3.8s, 243 MB |
 
 The map a refresh writes with the verdict carried differs from the one the measuring scan wrote
-in one line of the overview, which gains `when measured` and the day: 1 of 30 rule files on eslint,
+in one line of the overview, which gains `when measured` and the day: 1 of 30 map files on eslint,
 1 of 284 on Ghost, 1 of 193 on prisma and 1 of 132 on react, with the record's `areas` equal. That run's overview printed the day alone; the scan has printed `UTC` after the day since.

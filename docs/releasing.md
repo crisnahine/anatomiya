@@ -21,12 +21,12 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] `npm run check:docs` passes. It is the mechanical half of this list: for every plugin, the
       version agreement across its manifests and a changelog section for the version it carries,
       plus an `## [Unreleased]` heading in each changelog and a link definition for it and for the
-      version the manifests carry. For anatomiya it also reads the dimension
-      and decision-row counts in `README.md`, `docs/why.md` and `CONTRIBUTING.md`, the runtime
-      dependency set in `README.md` and `SECURITY.md`, the gate table, the command list, and every
-      shipped key having an intake row. Run it in a checkout: it asks git for the tracked files, and
-      where git cannot list them, as in a `git archive` copy, it exits 1 with one line and checks
-      nothing.
+      version the manifests carry. For anatomiya it also reads the dimension and decision-row counts
+      in `README.md`, `docs/why.md` and `CONTRIBUTING.md`, the runtime dependency set in `README.md`
+      and `SECURITY.md`, the gate table, the command list, and every shipped key having an intake
+      row. Run it in a checkout: it asks git for the tracked files, and where git cannot list them,
+      as in a `git archive` copy, it exits 1 with two lines, the refusal and a count of one claim,
+      and checks nothing.
 - [ ] `npm run validate` passes. Four checks, in the order `package.json` runs them: the manifests
       (`scripts/validate.mjs`), the shipped set (`scripts/shipped.mjs`), the plugin's own lockfile
       (`scripts/plugin-lock.mjs --check`), and the grammar files (`scripts/grammars.mjs --check`).
