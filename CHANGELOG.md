@@ -52,7 +52,7 @@ scanned by 0.13.4 and by this version.
   with the 20 files under `Library/Homebrew/test` out of the count. An area's kinds line carries
   the same count, and it changes in 136 area files of 19 repositories. The Changed entry that
   opens `A root's namesake count` has the rule.
-- Area files. 5,999 of the 6,834 that 0.13.4 wrote are byte-identical, 792 change, 43 are removed
+- Area files. 5,996 of the 6,834 that 0.13.4 wrote are byte-identical, 795 change, 43 are removed
   and 156 are new. 11 repositories keep every area file as it was.
 - The scope clause. 85 area files in 14 repositories carry `, in .rb files` or the like on a
   claim line, 567 lines in all.
@@ -94,18 +94,23 @@ scanned by 0.13.4 and by this version.
   section and no area: flask got `83 files hold a language this map does not read (83 .py)`. This
   version adds areas, test files and namesake tests counted by the language's own naming, and the
   dimensions of the `Three dimensions` entry in this list. Expect mostly counts, and a claim only
-  where a directory is consistent: a scan of fastapi states 1 of 82 claims, hugo 0 of 102, ktor 0
-  of 133 and tokio 14 of 33. A package that sits at the repository root is in no area, which is
-  where a Go library keeps its code: gin's map has 3 areas and states 1 claim, and its overview
-  says `53 at the repository root` and `42 source files sit in no area (at the repository root,
-  under the per-directory floor, or under a name no glob can spell)`.
+  where a directory is consistent: a scan of fastapi states 1 of 82 claims, hugo 0 of 103, ktor 0
+  of 133 and tokio 14 of 33. A Go package that sits at the repository root, which is where a Go
+  library keeps its code, is an area of its own, named `the repository root`, with a pattern
+  (`/*.go`) that matches the root's files and none below: gin's map has 4 areas and states 1
+  claim, caddy's has 29 and states 6, and gin's overview says `53 at the repository root` and `2
+  source files sit in no area (at the repository root, under the per-directory floor, or under a
+  name no glob can spell)`. No other language gets one. In `check` the root area is still the
+  furthest enclosing area: a subdirectory area with no slot of its own for a dimension is held to
+  the root area's claim at FIX, `counted in the repository root, which this directory sits inside`.
 - Test files and namesake tests in those seven languages. A test file is found by what the
   language's own tool collects: `_test.go`; `test_*.py`, `*_test.py` and `conftest.py`; under a test
   tree, `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and `*Test.php`
   for PHP. In Rust a `.rs` file directly under a crate's `tests` is a test file with a case in it
   or none, unless it holds only comments, and so is one holding a `#[test]` that has a `tests`
   directory anywhere above it or is named `tests.rs`. A test tree is `test`, `tests` and what
-  the language's build names one: a Gradle source set ending in `Test`, a .NET project named
+  the language's build names one: a Gradle source set ending in `Test` or named `testFixtures`, a
+  .NET project named
   `X.Tests` or `X.Test`, a `Test` or `Tests` directory in PHP. The tests line names the runner: `389
   go test specs`, `505 of 522 pytest specs under tests`, `38 of 40 xunit specs under
   test/Serilog.Tests`. A directory named exactly `tests` prints as `tests/` on its own line, since
@@ -137,24 +142,26 @@ scanned by 0.13.4 and by this version.
   a method reference (`A::e`). None of these moves a count on the 21 repositories the rows were
   measured on.
 - What was measured for the seven and not shipped. Each of the seven gets its test files and the
-  layout section. None gets a naming row or an imports row. No reference parser was run for Java,
-  C#, Rust or Kotlin, so the files of those four languages that a grammar could not read were
-  classed as a syntax error or a gap in the grammar by reading each one. Not shipped: the handler
-  row in Python, where all three repositories read 1.0000, a language default; the handler row in
-  Kotlin and C#, whose repositories did not differ by 0.15; how functions are named, which read
-  over 0.94 in all fifteen repositories of Python, PHP, Java, Kotlin and C#, and was not asked of
-  Go, where a name's case is its visibility, or of Rust, where the compiler lints it; and whether
-  an import names what it takes, a default in Python and Java, short of the spread in Rust, in
-  Kotlin a rule ktlint already enforces by default, and not asked of PHP or C#, which have no
+  layout section. None gets a naming row or an imports row. For Java, C#, Rust and Kotlin each
+  language's own parser was run in a container over the same three repositories: every file a
+  grammar could not read in those four is one its compiler accepts, and no file a grammar read is
+  one its compiler rejects (`docs/measurements/2026-10-08-reference-parsers.md`). Not shipped: the
+  handler row in Python, where all three repositories read 1.0000, a language default; the handler
+  row in Kotlin and C#, whose repositories did not differ by 0.15; how functions are named, which
+  read over 0.94 in all fifteen repositories of Python, PHP, Java, Kotlin and C#, and was not asked
+  of Go, where a name's case is its visibility, or of Rust, where the compiler lints it; and
+  whether an import names what it takes, a default in Python and Java, short of the spread in Rust,
+  in Kotlin a rule ktlint already enforces by default, and not asked of PHP or C#, which have no
   wildcard form, or of Go, where a dot import is 1 of 9,863 import lines measured. The README's
-  table under Limits says the same per language, and
-  `docs/measurements/2026-10-07-refused-rows.md` holds the ratios per repository.
+  table under Limits says the same per language, and `docs/measurements/2026-10-07-refused-rows.md`
+  holds the ratios per repository.
 - What is not read in those seven. A grammar reads less than its language, and a file one cannot
   read is left out of every count and counted on a line of its own: `82 files could not be read by
   this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may
   be fine.` Measured on three repositories per language, that is under 1% of the lines of every
   Python, PHP, Go, Java and Rust repository, 4.35% of serilog's C#, and 1.32% to 7.88% of the
-  Kotlin ones, which use syntax newer than the grammar. A C# file with `#if` inside an expression
+  Kotlin ones, where the grammar misses new syntax (context parameters, `$$` strings) and some old
+  (a local named `in1`, `get(` on the line after a `val`). A C# file with `#if` inside an expression
   is read with the first branch of each conditional kept, and the scan says how many: `7 files
   were read with one branch of each #if; the other branches were not read`. A C# file its grammar
   rejects is parsed up to twice more, and a later attempt starts only while it can end inside 4
@@ -321,7 +328,11 @@ scanned by 0.13.4 and by this version.
   a subtree, and the other Copilot surfaces document none, so none is written: an area file's
   patterns can then match files the area excludes, and its closing line names them. A Copilot file
   adds that VS Code matches its patterns under any parent directory. An area none of whose patterns
-  can be written for a tool has no file there, and the scan says how many.
+  can be written for a tool has no file there, and the scan says how many. The root area of a Go
+  repository is one for Copilot: VS Code matches `*.go` under every parent directory, so Copilot
+  gets no file for it and its overview says `1 area has no pattern GitHub Copilot can be given, so
+  no file here covers it: the repository root.` Cursor gets it as `*.go`, which Cursor matches at
+  the root alone.
 - What those two copies are not. Delivery is not measured in either tool: for Cursor it was read
   from the code of the 3.20.21 app and not seen in a running one, and for Copilot the files were run
   through VS Code 1.140.0's parser and nothing else. So their overviews say what each area's file
@@ -409,33 +420,37 @@ scanned by 0.13.4 and by this version.
   skipped for the missing file. Plain JavaScript beside a `tsconfig.base.json` is checked, as it
   is beside a `tsconfig.json`.
 - A background refresh does not run the type checker where the last scan measured it as `degraded`
-  and none of these changed since: the plugin version, the `typescript` it resolves to, the size and
-  modification time of `node_modules` and of the install record in it (`.package-lock.json`,
+  and none of these changed since: the plugin version, the `typescript` it resolves to, the size
+  and modification time of `node_modules` and of the install record in it (`.package-lock.json`,
   `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity`), and which root config is read and its
-  bytes. The refresh carries the measured verdict instead. An install does not start a refresh by
-  itself: the stamp that starts one records whether `node_modules` holds any package, and the
-  install record is no part of it. So after an install that adds a missing package, the checker is
-  measured by the next refresh a commit, checkout or pull starts, or by a scan run by hand. A
-  repository whose checker degrades still pays for it on every scan a person runs: 3.2s of a 4.2s
-  scan on eslint, 11.4s of 13.5s on prisma, 6.2s of 8.7s on react and 19.3s of 23.1s on Ghost.
-  Whether a base config declares `paths` does not tell such a root apart: of 16 roots measured
-  that hold only a base config with no `paths`, 8 degrade and 8 do not, and 9 of 10 with `paths`
-  resolve. A skip would close the 8 that answer, so the checker runs on every one (DECISIONS B8,
-  `docs/measurements/2026-10-08-base-config-without-paths.md`). A refresh after a commit measured 4.4s
-  with the checker and 1.2s without on eslint, 8.9s and 2.8s on react, 13.9s and 2.3s on prisma, and
-  21.2s and 3.8s on Ghost, with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four
-  the verdict was the same 50 commits earlier, within 0.3 points. A map written that way says
-  `type-checked claims are not counted: 61% of type lookups resolved when measured 2026-10-07 UTC
-  (low-resolution)` in the overview. The words `when measured`, the day and `UTC` are all that
-  differ from the map the measuring scan wrote: on eslint, Ghost, prisma and react the other 29,
-  283, 192 and 131 map files are the same bytes. The day is the UTC one, so it can be the day before
-  or after yours. `/anatomiya:scan` always runs the checker, and a checker that reads `ok` runs on
-  every refresh, as in 0.13.4. A repository whose code changes lift it over the floor stays
-  `degraded` until someone runs the scan. A refresh carries a record only if a scan could have
-  written it: its reason is one the checker gives, its rate is one that reason allows, and its
-  moment is from 2020 on and at most a day after now. Any other record is measured over, so text
-  written into `facts.json` by hand does not reach the overview. The record's `semantic` gains
-  `carried`, `measuredAt` and `measuredUnder`, and the schema stays 19.
+  bytes. The refresh carries the measured verdict instead. A failed run, such as a checker whose
+  child aborted, is followed by one more run on the next refresh. If that one fails too with none
+  of those changed, later refreshes carry its verdict, and the overview says `type-checked claims
+  are not counted: no type lookups resolved when measured 2026-10-08 UTC (tier-failed)`. An install
+  does not start a refresh by itself: the stamp that starts one records whether `node_modules`
+  holds any package, and the install record is no part of it. So after an install that adds a
+  missing package, the checker is measured by the next refresh a commit, checkout or pull starts,
+  or by a scan run by hand. A repository whose checker degrades still pays for it on every scan a
+  person runs: 3.2s of a 4.2s scan on eslint, 11.4s of 13.5s on prisma, 6.2s of 8.7s on react and
+  19.3s of 23.1s on Ghost. Whether a base config declares `paths` does not tell such a root apart:
+  of 16 roots measured that hold only a base config with no `paths`, 8 degrade and 8 do not, and 9
+  of 10 with `paths` resolve. A skip would close the 8 that answer, so the checker runs on every
+  one (DECISIONS B8, `docs/measurements/2026-10-08-base-config-without-paths.md`). A refresh after
+  a commit measured 4.4s with the checker and 1.2s without on eslint, 8.9s and 2.8s on react, 13.9s
+  and 2.3s on prisma, and 21.2s and 3.8s on Ghost, with peak memory of 808 MB to 2.7 GB against 160
+  to 243 MB. On those four the verdict was the same 50 commits earlier, within 0.3 points. A map
+  written that way says `type-checked claims are not counted: 61% of type lookups resolved when
+  measured 2026-10-07 UTC (low-resolution)` in the overview. The words `when measured`, the day and
+  `UTC` are all that differ from the map the measuring scan wrote: on eslint, Ghost, prisma and
+  react the other 29, 283, 192 and 131 map files are the same bytes. The day is the UTC one, so it
+  can be the day before or after yours. `/anatomiya:scan` always runs the checker, and a checker
+  that reads `ok` runs on every refresh, as in 0.13.4. A repository whose code changes lift it over
+  the floor stays `degraded` until someone runs the scan. A refresh carries a record only if a scan
+  could have written it: its reason is one the checker gives, its rate and its count of failed runs
+  are ones that reason allows, and its moment is from 2020 on and at most a day after now. Any
+  other record is measured over, so text written into `facts.json` by hand does not reach the
+  overview. The record's `semantic` gains `carried`, `measuredAt`, `measuredUnder` and `failures`,
+  and the schema stays 19.
 - A type checker that reads `degraded` prints no count for its claims, whether this scan measured
   it or a refresh carried the verdict. 0.13.4 printed `a call chain stays inside one type: no
   convention. 298 of 586 sites (degraded-semantic)` in each area; those lines are gone, the
@@ -536,6 +551,22 @@ scanned by 0.13.4 and by this version.
   version 0.3, three runs each at a load of 9. With that import removed 0.13.4 takes 0.3. A file
   may be up to 1 MB. A specifier's trailing slashes were stripped by a pattern that tries every
   start in a run, and are stripped by a walk from the end.
+- On a volume that folds letter case, default APFS for one, a scan wrote over a hand-written file
+  in `.claude/rules` named like one of the map's files in another letter case, and said in the same
+  run `"Anatomiya-Overview.md" in .claude/rules/ was not written by this tool`. The overview it had
+  just written into that file listed the file under the same words. This version says
+  `"Anatomiya-Overview.md" in .claude/rules/ held a name this scan writes, so it was replaced`, and
+  the overview lists nothing. Which entry a name is gets asked of the volume, so a name that only
+  JavaScript folds onto the map's, a dotless `ı` for an `i`, stays another file and is listed.
+- An interface or type alias whose name opens on two capitals and a digit (`IV8Profile`,
+  `ID3Tag`) is a site of neither prefix row. 0.13.4 read it as carrying no prefix, so in an area
+  that states an `I` prefix a new `IV8Profile` was a finding no spelling could clear. On the 35 corpus
+  repositories 7 such names leave the count, 6 in two areas of vscode and 1 in angular, and no
+  stated claim moves.
+- With history truncated and one claim on the author gate, the scan printed `1 claim print as
+  counts on the author gate`. It prints `1 claim prints`.
+- The remedy for a missing parser package printed the plugin's directory wrong where its name
+  holds `$&`, `` $` ``, `$'` or `$$`: `/tmp/a$&b` printed as `/tmp/athe plugin directoryb`.
 
 ## [0.13.4] - 2026-10-07
 

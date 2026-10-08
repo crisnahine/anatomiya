@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 296 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 297 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -383,7 +383,9 @@ A language new to the engine is these sites, in order:
 1. `plugins/anatomiya/lib/langs.mjs`: a `grammar(id, exts)` declaration and its place in
    `LANGUAGES`, with `placeTests` on the declaration where the language's tool collects a test by
    where the file sits, as cargo does (B21). `grammar()` answers `null` for it and nothing fails
-   on a language that needed one: its tests by place are read as source
+   on a language that needed one: its tests by place are read as source. `rootPackage: true`
+   belongs there too where the language's build makes the repository root a package like any
+   directory, as Go's does: `grammar()` answers `false`, and a root package then sits in no area
 2. the grammar package as an exact dev dependency, its entry in `GRAMMARS` in
    `scripts/grammars.mjs`, then `npm run grammars`; and a line under `ignore` in
    `.github/dependabot.yml` where the package's name matches neither `tree-sitter-*` nor
