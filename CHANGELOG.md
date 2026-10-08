@@ -159,8 +159,10 @@ scanned by 0.13.4 and by this version.
   were read with one branch of each #if; the other branches were not read`. A C# file its grammar
   rejects is parsed up to twice more, and a later attempt starts only while it can end inside 4
   seconds, which is under the 5 seconds a file is stopped at. A file of the seven that its grammar
-  cannot finish in 5 seconds is stopped there and counted as crashed. Nothing retries it in that
-  scan, and every later scan and refresh pays the 5 seconds again. The case measured is Kotlin.
+  cannot finish in 5 seconds is stopped there and counted as crashed. The parse runs in a pool
+  of child processes like the one the oxc engine uses, and the pool's clock is what stops it.
+  Nothing retries it in that scan, and every later scan and refresh pays the 5 seconds again. The
+  case measured is Kotlin.
   None of the seven gets the type checker, the "most imported from here" lines or the end-of-turn
   reuse check, and a `.pyi` stub is not read.
 - Where a test is placed, in those seven. The notice before a test file is written, and the
@@ -298,7 +300,8 @@ scanned by 0.13.4 and by this version.
   minutes, for as long as the directory stays stopped. A directory with no write permission is
   retried the same way: with `.cursor/rules` at mode 555 and the target on, four refreshes 31
   minutes apart ran four scans. Each is a whole scan, the type checker included unless the last
-  verdict was degraded and is carried, and the `SessionStart` hook says nothing of it. Fix the
+  verdict was degraded and is carried, and the `SessionStart` hook says nothing of it. Neither do
+  `doctor` and `check`: `doctor` counts the files the stopped directory holds. Fix the
   directory's mode and the next of those scans writes it. A scan run by hand prints the reason and
   ends the retry until the checkout moves. `scan --targets claude` does not turn such a target
   off: it refuses with
@@ -415,8 +418,10 @@ scanned by 0.13.4 and by this version.
   measured by the next refresh a commit, checkout or pull starts, or by a scan run by hand. A
   repository whose checker degrades still pays for it on every scan a person runs: 3.2s of a 4.2s
   scan on eslint, 11.4s of 13.5s on prisma, 6.2s of 8.7s on react and 19.3s of 23.1s on Ghost.
-  Nothing readable without running the checker tells such a root apart, so the checker runs on
-  every one (`docs/measurements/2026-10-07-checker-root-config.md`). A refresh after a commit measured 4.4s
+  Of the eight roots measured that hold only a base config, the two whose base declares no
+  `paths` both degrade (eslint and prisma) and five of the six that declare it resolve. Two
+  repositories are too few to skip on, so the checker runs on every one (DECISIONS B8,
+  `docs/measurements/2026-10-07-checker-root-config.md`). A refresh after a commit measured 4.4s
   with the checker and 1.2s without on eslint, 8.9s and 2.8s on react, 13.9s and 2.3s on prisma, and
   21.2s and 3.8s on Ghost, with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four
   the verdict was the same 50 commits earlier, within 0.3 points. A map written that way says
