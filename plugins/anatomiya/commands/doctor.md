@@ -13,7 +13,9 @@ Run the readiness probe and report what it said.
 2. Report every line it printed, as it printed them. A line that is not `ok` carries what was
    wrong and what to do about it, and the remedy differs per engine: npm cannot install an
    interpreter, and installing Ruby does not install a node module. Report only the lines it
-   printed. It takes no path and answers about this installation, not about any repository.
+   printed. It takes no path. Its engine lines are about this installation. Run inside a
+   repository, it also prints one line for each Cursor or Copilot target that is on there,
+   `.cursor/rules: on, 5 files`, and run anywhere else it prints none.
 
 3. A first line reading `nothing is installed here: ...` is one fault, not one per engine below it:
    Claude Code installs this plugin's dependencies on `/plugin install`, and that install did not

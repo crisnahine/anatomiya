@@ -89,8 +89,8 @@ filename was the whole exploit.
 The rules that came out of that:
 
 - Arguments after `--`, so a path can never be read as an option.
-- Reject a path that starts with `-` rather than trying to escape it. `plugins/anatomiya/lib/ruby.mjs` drops such
-  files with `suspicious path` before they are queued.
+- A path that starts with `-` is read as a file like any other, because no path reaches a command
+  line: a tracked `-e.rb` is parsed and counted.
 - Keep repository-controlled strings out of argv when there is any other channel. Paths reach the
   Ruby parser on stdin, not the command line, which closes the whole class instead of filtering it.
 - `git ls-files -z`, split on NUL. A newline split would turn one hostile filename into two corpus
@@ -286,7 +286,7 @@ file back if a later step fails. Those files are `facts.json` and `layout.json` 
 without it, and every file it removes; and in `.cursor/rules` and `.github/instructions`, the files
 it replaces or removes there, which all carry the key, since a person's file at a planned name is
 never planned. A dry run reads none of them whole. Neither does a scan that writes nothing because
-an engine is missing and it read no source file, and a refresh reads none in a target it holds. A
+an engine is missing and it read no source file, and a refresh reads none in a target it leaves alone. A
 dry run still reads `facts.json` up to the 64 MB every command reads of it: a 600 MB `facts.json`
 took a dry run's peak resident memory from 65 MB to 193 MB.
 Measured on one machine, a scan's peak resident memory was 65 MB with nothing unusual in the tree,
