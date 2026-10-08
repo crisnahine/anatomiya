@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, exist
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, stagedPath, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
@@ -1964,6 +1964,23 @@ test("a locked file in a directory the scan did not name stops that directory al
   }
 });
 
+test("a locked file in each of the two directories stops both, and the record names what each still holds", async (t) => {
+  const lock = await refusing(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const theirs = OTHERS.map((target) => tree(join(dir, target.dir)));
+  lock.on = (at) => (OTHERS.some((target) => at.endsWith(`/${target.dir}/${overviewName(target)}`)) ? "EBUSY" : null);
+
+  const plan = writeMap(result(dir, [a, c]));
+
+  lock.on = null;
+  assert.deepEqual(OTHERS.map((target) => plan.targets[target.id].state), ["unknown", "unknown"]);
+  assert.deepEqual(OTHERS.map((target) => tree(join(dir, target.dir))), theirs);
+  assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, c));
+  assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a, b), copilot: mapOf(copilot, a, b) });
+});
+
 test("a locked file in a directory that cannot be put back alone refuses the whole scan", async (t) => {
   const lock = await refusing(t);
   const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
@@ -1985,14 +2002,106 @@ test("a locked file in a directory that cannot be put back alone refuses the who
   assert.deepEqual(tree(join(dir, copilot.dir)), theirs);
 });
 
-test("a record that cannot be written again after a directory was put back refuses the whole scan", async (t) => {
+test("a stopped directory swapped for a link while it is put back has nothing more put back through the link", needsSymlinks, async (t) => {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  for (const target of OTHERS) {
+    const dir = workspace(t);
+    const outside = elsewhere(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    // Somebody's files where the link will lead, under the names this directory's map has.
+    for (const name of mapOf(target, a, b)) writeFileSync(join(outside, name), HAND);
+    const theirs = tree(outside);
+    const before = unstamped(snapshot(dir));
+    const at = join(realpathSync(dir), ...target.dir.split("/"));
+    const last = writeMap(result(dir, [a, b, c]), { dryRun: true }).targets[target.id].write.at(-1).name;
+    let putBacks = null;
+    // The last file there is locked. The first put-back lands, and the directory is a link from then on.
+    fs.renameSync = (from, to) => {
+      if (String(to) === join(at, last)) {
+        putBacks = 0;
+        throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}'`), { code: "EPERM" });
+      }
+      real(from, to);
+      if (putBacks !== null && String(to).startsWith(at + sep) && ++putBacks === 1) {
+        rmSync(at, { recursive: true });
+        symlinkSync(outside, at);
+      }
+    };
+    syncBuiltinESMExports();
+    t.after(() => {
+      fs.renameSync = real;
+      syncBuiltinESMExports();
+    });
+
+    assert.throws(() => writeMap(result(dir, [a, b, c])), { message: `${target.dir}/${last} could not be replaced (EPERM), so the scan stopped part way: the file is locked or read-only, so ${UNLOCK}, then scan again` }, target.id);
+
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+    assert.equal(putBacks, 1, `${target.id}: the control, one put-back landed, the swap happened, and no other rename went there`);
+    assert.deepEqual(tree(outside), theirs, `${target.id}: nothing where the link leads was written or removed`);
+    assert.deepEqual(unstamped(snapshot(dir)), before, `${target.id}: the record and Claude Code's files are the ones that were there`);
+  }
+});
+
+// A scan in a process of its own, which a throw cannot stand in for: a throw is caught and put back, and a kill is not.
+// The rename onto a path ending in `locked` answers EPERM, and the process kills itself before the first rename after
+// that into a directory spelled `dies`. Both are read off the path's end, since the writer resolves its own spelling of the root.
+const KILLED_SCAN = `
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { sep } from "node:path";
+const { writer, result, locked, dies } = JSON.parse(process.env.ANATOMIYA_KILLED_SCAN);
+const real = fs.renameSync;
+let met = false;
+fs.renameSync = (from, to) => {
+  const at = String(to).split(sep).join("/");
+  if (at.endsWith(locked)) {
+    met = true;
+    throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+  }
+  if (met && at.includes(dies)) process.kill(process.pid, "SIGKILL");
+  return real(from, to);
+};
+syncBuiltinESMExports();
+const { writeMap } = await import(writer);
+writeMap(result);
+console.log("survived");
+`;
+
+test("a scan killed once a locked file stopped a directory leaves a record that names the files there, and the next scan leaves none behind", (t) => {
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const writer = new URL("../plugins/anatomiya/lib/write.mjs", import.meta.url).href;
+  // While the directory is put back, and once it has been: before the first rename back into it, and before the first into the one after it.
+  for (const dies of [cursor, copilot]) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    const last = writeMap(result(dir, [a, c]), { dryRun: true }).targets.cursor.write.at(-1).name;
+    const setup = { writer, result: result(dir, [a, c]), locked: `/${cursor.dir}/${last}`, dies: `/${dies.dir}/` };
+
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", KILLED_SCAN], { env: { ...process.env, ANATOMIYA_KILLED_SCAN: JSON.stringify(setup) }, encoding: "utf8" });
+
+    assert.notEqual(child.status, 0, `${dies.id}: ${child.stderr}`);
+    assert.doesNotMatch(child.stdout, /survived/, dies.id);
+    const held = namesIn(dir, cursor).filter((name) => stagedBy(name, cursor) === null);
+    assert.deepEqual(readFacts(dir).targets.cursor, held, `${dies.id}: the record names each map file the directory holds, and no other`);
+
+    const plan = writeMap(result(dir, [a, c]));
+    assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, c), `${dies.id}: the next scan writes the directory and removes what went stale`);
+    assert.deepEqual([plan.targets.cursor.unknown, plan.targets.cursor.foreign], [[], []], `${dies.id}: and counts nothing left there`);
+  }
+});
+
+test("a record that cannot be written again for a directory a locked file stopped refuses the whole scan", async (t) => {
   const lock = await refusing(t);
   const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
   const dir = workspace(t);
   writeMap(result(dir, [a, b]), { targets: ALL });
   const before = settled(dir);
   // The record is replaced, then replaced again to name Cursor's old files, and put back: the second is locked.
-  // Cursor's stale file is the locked one, so a file this scan created there has already been taken out again.
+  // Cursor's stale file is the locked one, so the put-back takes out a file this scan created there.
   let records = 0;
   lock.on = (path) => {
     if (path.endsWith(`/${cursor.dir}/${areaName(cursor, b.id)}`)) return "EPERM";
