@@ -4,7 +4,6 @@ import { statedSide } from "./facts.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "./rules.mjs";
-import { areaLabel } from "./areas.mjs";
 import { formatDelta } from "./baseline.mjs";
 import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
 
@@ -456,8 +455,7 @@ export function pinSummary({ root = null, previous, next, delta, path, dryRun = 
 
 /** The pin summary as the lines the CLI prints. Facts only, no recommendation. */
 export function pinLines(s) {
-  // Named as the overview names them. The record keeps each path, which the pin is keyed by.
-  const lines = formatDelta({ ...s.delta, areas: s.delta.areas.map((a) => ({ ...a, path: areaLabel(a.path) })) }).split("\n");
+  const lines = formatDelta(s.delta).split("\n");
   if (s.previousUnreadable) {
     lines.push(
       `the pin on disk could not be read because ${s.previousUnreadable}, so nothing was compared against it ` +

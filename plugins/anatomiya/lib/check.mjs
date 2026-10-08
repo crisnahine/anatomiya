@@ -19,7 +19,7 @@ import {
 } from "./corpus.mjs";
 import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
 import { isProducer, placedTests } from "./layout.mjs";
-import { areaLabel, areaOwner, globsReach } from "./areas.mjs";
+import { areaLabel, areaOwner, globsReach, underArea } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase } from "./render.mjs";
 import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
@@ -1157,7 +1157,7 @@ function cappedAway(verdict, away, area, path) {
   // cover; missed there too, the name is. One sentence for both told a `.tsx`
   // sitting in the area's own directory that it sat inside that directory.
   const name = path.slice(path.lastIndexOf("/") + 1);
-  if (globsReach(area.globs, area.path === "." ? name : `${area.path}/${name}`)) {
+  if (globsReach(area.globs, underArea(area.path, name))) {
     return { severity: "FIX", reason: `counted in ${areaLabel(area.path)}, which this directory sits inside` };
   }
   const type = name.lastIndexOf(".") > 0 ? `${name.slice(name.lastIndexOf("."))} files` : name;

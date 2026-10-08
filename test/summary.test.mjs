@@ -1013,17 +1013,25 @@ test("a pin that gains a root area names it in words, and a directory of that na
   const previous = pinFor(["lib"]);
   const rootAt = (path) => ({ id: "root", path, files: [{ rel: "a.go" }, { rel: "b.go" }] });
   const next = buildPin(
-    [{ id: "id0", path: "lib", files: [{ rel: "lib/a.js" }, { rel: "lib/b.js" }] }, rootAt("."), { ...rootAt("the repository root"), id: "named" }],
-    { sha: "abcdef1234567890abcdef1234567890abcdef12", corpus: 6 }
+    [
+      { id: "id0", path: "lib", files: [{ rel: "lib/a.js" }, { rel: "lib/b.js" }] },
+      rootAt("."),
+      { ...rootAt("the repository root"), id: "named" },
+      // The encoder prints two spaces as one, so this name reads as the root's words too.
+      { id: "spaced", path: "the  repository root", files: [{ rel: "c.go" }] },
+    ],
+    { sha: "abcdef1234567890abcdef1234567890abcdef12", corpus: 7 }
   );
   const s = pinSummary({ previous, next, delta: pinDelta(previous, next), path: PIN_PATH, dryRun: true });
   const lines = pinLines(s);
 
   assert.ok(lines.includes('"the repository root" (new area)  +2 -0'), lines.join("\n"));
   assert.ok(lines.includes('"./the repository root" (new area)  +2 -0'), lines.join("\n"));
+  assert.ok(lines.includes('"./the repository root" (new area)  +1 -0'), lines.join("\n"));
+  assert.equal(lines.filter((l) => l.startsWith('"the repository root"')).length, 1, lines.join("\n"));
   assert.ok(!lines.some((l) => l.startsWith('"."')), lines.join("\n"));
   // The record keeps the path, which is what the pin and the facts are keyed by.
-  assert.deepEqual(JSON.parse(pinJson(s)).delta.areas.map((a) => a.path).sort(), [".", "the repository root"]);
+  assert.deepEqual(JSON.parse(pinJson(s)).delta.areas.map((a) => a.path).sort(), [".", "the  repository root", "the repository root"]);
 });
 
 test("the pin summary carries the shas either side of the delta", () => {

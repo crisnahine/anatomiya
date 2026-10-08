@@ -68,6 +68,9 @@ export function areaId(path) {
 
 const ROOT_AREA = "the repository root";
 
+/** A path under an area from the area's own and the rest: the area at the root has no directory half. */
+export const underArea = (areaPath, rest) => (areaPath === "." ? rest : `${areaPath}/${rest}`);
+
 /**
  * An area's name as a listing or a sentence says it, a directory spelled by the caller's encoder.
  *
@@ -121,20 +124,22 @@ const entry = (dir, tail, negated) => ({ negated, dir: dir === "." ? "" : dir, t
  * split, so the two cannot disagree; the renderer passes its encoder in rather
  * than composing a second time.
  */
-export function globText({ negated, dir, tail }, encodeDir) {
+export function globText({ negated, dir, tail }, encodeDir, anchored) {
   // Ignored unless it is callable, because `globs.map(globText)` hands this the
   // array index and the pattern comes back unencoded rather than throwing.
   const encode = typeof encodeDir === "function" ? encodeDir : (d) => d;
   // A tail with no `*` is a file's own name, repository-controlled like the directory.
   const name = tail.includes("*") ? tail : encode(tail);
-  return `${negated ? "!" : ""}${dir ? `${encode(dir)}/` : anchorFor(tail)}${name}`;
+  // Left off only for a caller that says `false`: a reader that takes a leading slash as something else.
+  const front = dir ? `${encode(dir)}/` : anchored !== false && !tail.startsWith("**/") ? ROOT_ANCHOR : "";
+  return `${negated ? "!" : ""}${front}${name}`;
 }
 
 // What stands where the directory half would, for a pattern at the repository
 // root. Claude Code matches `paths` by gitignore's rules, where a pattern
 // holding no slash matches at every depth: `*.go` reaches `binding/json.go`.
 // A leading slash is what holds it to the root, and a recursive tail has one.
-const anchorFor = (tail) => (tail.startsWith("**/") ? "" : "/");
+const ROOT_ANCHOR = "/";
 
 // The names the extension brace cannot spell, from the registry so the corpus
 // filter and the cover cannot drift apart again.
@@ -428,7 +433,7 @@ function withLeftOut(corpus, left) {
  * and not a name the matcher would read as more than a name.
  */
 function byExcludedName(area, left) {
-  const under = area.path === "." ? "" : `${area.path}/`;
+  const under = underArea(area.path, "");
   const counted = new Set(area.files.flatMap((f) => f.rel.slice(under.length).split("/").slice(0, -1).map(foldCase)));
   const byName = new Map();
   const inTree = [];
@@ -475,7 +480,7 @@ function cutsOwn(g, own) {
 function reachable(area, uncounted, bare) {
   const exts = new Set(area.langs.flatMap((l) => EXT_BY_LANG[l] || []).map(foldCase));
   const names = new Set(bare.map(foldCase));
-  const under = area.path === "." ? "" : `${area.path}/`;
+  const under = underArea(area.path, "");
   return uncounted.filter((f) => {
     if (!f.rel.startsWith(under)) return false;
     const name = foldCase(baseName(f.rel));
