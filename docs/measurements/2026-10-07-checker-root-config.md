@@ -59,8 +59,10 @@ Six declare `paths`: the five that resolve and one that does not. The two that d
 degrade. The file was read a day after the rates were measured and from the default branch, so a
 base edited in between would not show here.
 
-Not measured: a base-only root that declares no `paths` and is not a workspace, such as a
-single-package repository with several build configs.
+Not measured here: a base-only root that declares no `paths` and is not a workspace, such as a
+single-package repository with several build configs. `2026-10-08-base-config-without-paths.md`
+measures fourteen more roots whose base declares no `paths`, three of them single packages: with
+the two above, eight of sixteen degrade.
 
 ## 3. The four corpus repositories that degrade, at two commits
 
