@@ -377,8 +377,8 @@ export const ALL_DIMENSIONS = [
 
 // A visitor row's `run` walks the tree alone, on its engine's walk, for the
 // callers that ask one row at a time: the check, and the tests. Here, where the
-// tree rows meet, because the parse worker and the Ruby shard read this list
-// and must not reach `registry.mjs`.
+// tree rows meet, because the parse workers read this list and must not reach
+// `registry.mjs`.
 const WALKS = { oxc: walk, prism: walkRuby, "tree-sitter": walkTree };
 for (const d of ALL_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, walkFor(d));
 

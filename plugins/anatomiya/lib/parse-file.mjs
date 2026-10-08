@@ -13,7 +13,6 @@ import { collectHits } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
 import { ENGINES, embeddedIn, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
-import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
 import { installedVersion } from "./version.mjs";
 
 let parseSync = null;
@@ -281,7 +280,9 @@ const blockGrammar = (block, lang, rel) => (block.lang === "ts" ? "ts" : grammar
  * the file as the caller holds it. No dialect retry runs: a component is built
  * by its compiler, never run under Node's wrapper or written in Flow.
  */
-function parseEmbedded(parse, source, rel, lang, { withProgram }) {
+async function parseEmbedded(parse, source, rel, lang, { withProgram }) {
+  // Loaded by the first component, so a child that reads none does not hold the scanner.
+  const { blankOutside, scriptBlocks } = await import("./script-blocks.mjs");
   const { blocks, unterminated } = scriptBlocks(source, embeddedIn(lang));
   // A script that never ends is a rejected file, whatever was read before it.
   if (unterminated) return { rel, ok: false, error: "a script block is never closed", errors: 1 };
