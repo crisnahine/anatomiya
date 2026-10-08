@@ -4692,7 +4692,7 @@ test("the repository root is an ancestor of everything and is asked last", async
   const hits = forKey(r, "swallowed_error");
 
   assert.equal(hits.length, 1, JSON.stringify(r.findings));
-  assert.match(hits[0].reason, /counted in \./, hits[0].reason);
+  assert.equal(hits[0].reason, "counted in the repository root, which this directory sits inside");
 });
 
 test("the nearest ancestor that states wins over a further one", async (t) => {
@@ -5963,6 +5963,66 @@ test("a root package's own file is asked the root area's claim at the severity i
 
   assert.equal(finding.severity, "MUST-FIX", "the root area's pattern reaches a file at the root, so the map told its author");
   assert.equal(finding.area, ".");
+});
+
+test("a filename claim inherited from the root area says where it was counted in the area's name", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("user-profile.ts", `export const a = 1;\n`);
+    write("src/keep-me.ts", `export const k = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/OrderList.ts", `export const o = 1;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: ".", globs: [{ negated: false, dir: "", tail: "*.ts" }], fileCount: 8, dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })] },
+      { id: "bbbbbbbb", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const found = forKey(await check(dir), "file_naming_case");
+
+  assert.deepEqual(found.map((f) => [f.path, f.severity, f.reason]), [
+    ["src/OrderList.ts", "FIX", "counted in the repository root, which this directory sits inside"],
+  ]);
+});
+
+test("a directory named as the root area is named is said as a path in a finding's reason", async (t) => {
+  const named = "the repository root";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write(`${named}/one.ts`, `export const one = 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write(`${named}/nested/deep.ts`, `let two = 2\nexport { two }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{ id: "aaaaaaaa", path: named, globs: [{ negated: false, dir: named, tail: "*.ts" }], fileCount: 8, dimensions: [dim({ key: "module_state_const" })] }],
+  });
+
+  const found = forKey(await check(dir), "module_state_const");
+
+  assert.deepEqual(found.map((f) => f.reason), ["counted in ./the repository root, which this directory sits inside"]);
+});
+
+test("a root file the root area's pattern does not reach is told so in the area's name, never as a dot", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("gin.go", "package gin\n\n// Run runs.\nfunc Run() {}\n");
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("setup.py", "def run():\n    return 1\n");
+    commit("another language at the root");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: [rootPackage([dim({ key: "public_doc_comment", precision: "precise" })])] });
+
+  const [finding] = forKey(await check(dir, { baseRef: "main" }), "public_doc_comment");
+
+  assert.equal(finding.severity, "FIX");
+  assert.equal(finding.reason, "the area file for the repository root does not reach .py files, so this claim was never delivered here");
+  assert.equal(finding.area, ".", "the record keeps the path the facts are keyed by");
 });
 
 test("a handler written above an old one of its text, in a method of the same name in another class, is reported on the line the branch wrote", async (t) => {

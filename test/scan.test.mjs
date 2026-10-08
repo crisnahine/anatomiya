@@ -12,7 +12,10 @@ import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 import { factsJson } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
-import { globsReach } from "../plugins/anatomiya/lib/areas.mjs";
+import { areaId, globsReach } from "../plugins/anatomiya/lib/areas.mjs";
+import { echoContext, holdsTestIn, ownLayout } from "../plugins/anatomiya/lib/hook.mjs";
+import { isTestPath, noticeFor } from "../plugins/anatomiya/lib/precedent.mjs";
+import { claudeCodeReaches } from "./paths-reader.mjs";
 import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
@@ -1641,6 +1644,76 @@ test("three scans with every target on leave every file byte-identical after the
   assert.deepEqual(rosterLines(third, ".github"), ["- .github: 3 .yml"]);
   assert.deepEqual(rosterLines(third, ".cursor"), ["- .cursor/rules: 3 .mdc"]);
   assert.deepEqual(rosterLines(third, ".claude"), [], "nor the store and the map under .claude");
+});
+
+/** A Go module whose package is the repository root, beside a subpackage, a directory under the floor and a directory named as the root area is. */
+function goRootRepo(t) {
+  const fn = (pkg, name) => `package ${pkg}\n\n// ${name} runs.\nfunc ${name}() int {\n\treturn 1\n}\n`;
+  return repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`g${i}.go`, fn("gin", `Run${i}`));
+      write(`g${i}_test.go`, `package gin\n\nimport "testing"\n\nfunc TestRun${i}(t *testing.T) {\n}\n`);
+      write(`binding/b${i}.go`, fn("binding", `Bind${i}`));
+      write(`the repository root/n${i}.go`, fn("named", `Name${i}`));
+    }
+    write("tiny/t.go", fn("tiny", "Tiny"));
+    write("conf.js", "module.exports = {}\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+test("a package at the repository root gets an area file under every target, the same over three scans", async (t) => {
+  const dir = goRootRepo(t);
+  const result = await scan(dir);
+  writeMap(result, { targets: Object.keys(TARGETS) });
+  const first = mapBytes(dir);
+  for (let i = 0; i < 2; i++) {
+    writeMap(await scan(dir), { targets: null });
+    assert.deepEqual(mapBytes(dir), first, `scan ${i + 2}`);
+  }
+
+  assert.deepEqual(result.areas.map((a) => [a.path, a.fileCount]), [[".", 12], ["binding", 6], ["the repository root", 6]]);
+  const rootFiles = result.areas[0].globs;
+  const tracked = execFileSync("git", ["ls-files"], { cwd: dir }).toString().split("\n").filter(Boolean);
+  // conf.js and the directory under the floor: in no area, as before there was one at the root.
+  assert.equal(result.corpus.orphaned, 2);
+  assert.ok(scanLines(scanSummary(result, planMap(result))).some((l) => l.startsWith("2 files in no area: ")));
+
+  const fileOf = (target, path) => first[`${target.dir}/anatomiya-area-${areaId(path)}${target.ext}`].split("\n");
+  const past = (lines, head) => lines.slice(lines.indexOf(head));
+  const { claude, cursor, copilot } = TARGETS;
+  const HEAD = "# the repository root  12 files";
+
+  // Claude Code: the patterns as written reach the root's own .go files and nothing else that is tracked.
+  const paths = fileOf(claude, ".").filter((l) => l.startsWith('  - "')).map((l) => JSON.parse(l.slice(4)));
+  assert.deepEqual(paths, ["/*.go"]);
+  for (const rel of tracked) {
+    const mine = !rel.includes("/") && rel.endsWith(".go");
+    assert.equal(claudeCodeReaches(paths, rel), mine, rel);
+    assert.equal(globsReach(rootFiles, rel), mine, rel);
+  }
+  // Cursor reads it at the root alone with no slash; VS Code reads it everywhere, and the file says so.
+  assert.ok(fileOf(cursor, ".").includes("globs: *.go"));
+  assert.ok(fileOf(copilot, ".").includes('applyTo: "*.go"'));
+  assert.deepEqual(past(fileOf(cursor, "."), HEAD), past(fileOf(claude, "."), HEAD));
+  const widens = ["", TARGETS.copilot.widens, ""];
+  assert.deepEqual(past(fileOf(copilot, "."), HEAD), [...past(fileOf(claude, "."), HEAD).slice(0, -1), ...widens]);
+
+  // Two areas a reader could confuse, on two heads.
+  assert.ok(fileOf(claude, "the repository root").includes("# ./the repository root  6 files"));
+  for (const [name, body] of Object.entries(first)) {
+    const lines = body.trimEnd().split("\n");
+    assert.ok(lines.length - (lines.indexOf("---", 1) + 1) <= 43, `${name}: ${lines.length} lines`);
+    assert.doesNotMatch(body, /^# \.  /m, name);
+  }
+
+  // The hooks: the echo hands over the overview a scan with a root area wrote, and a test written at the root, where tests already sit, draws no notice.
+  const echoed = echoContext(dir);
+  assert.match(echoed, /^## Areas \(3\)$/m);
+  assert.match(echoed, /^- 2 source files sit in no area /m);
+  const layout = ownLayout(dir).layout;
+  assert.equal(noticeFor("fresh_test.go", layout, { holdsTest: holdsTestIn(dir, isTestPath) }), null);
 });
 
 test("three scans with every target on and the map untracked leave every file byte-identical", async (t) => {
