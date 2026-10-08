@@ -123,7 +123,7 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   }
 
   const alias = ALIASES.find((a) => spec.startsWith(a));
-  const tail = (alias ? spec.slice(alias.length) : spec).replace(/\/+$/, "");
+  const tail = withoutTrailingSlashes(alias ? spec.slice(alias.length) : spec);
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
@@ -150,6 +150,17 @@ export function specifierToFile(spec, importerRel, corpusRels) {
 }
 
 /**
+ * A path with the slashes it ends in taken off, by a walk from its end: a
+ * pattern anchored there tries every start in a run of slashes elsewhere in a
+ * specifier as written, and 80,000 of them held one import for 3.4 seconds.
+ */
+function withoutTrailingSlashes(path) {
+  let end = path.length;
+  while (end > 0 && path[end - 1] === "/") end -= 1;
+  return path.slice(0, end);
+}
+
+/**
  * The one file `paths` name under a directory above the importer, or null.
  *
  * Null where two directories answer with different files: the alias means one
@@ -166,7 +177,7 @@ function inProject(importerRel, paths, dirOnly, corpusRels) {
   const found = new Set();
   for (const path of paths) {
     // What `posix.join` makes of the path under any directory: the steps it climbs, then the rest.
-    const segments = posix.join(".", path).replace(/\/+$/, "").split("/");
+    const segments = withoutTrailingSlashes(posix.join(".", path)).split("/");
     const climbs = segments.filter((segment) => segment === "..").length;
     const rest = segments.slice(climbs).join("/");
     const named = rest === "" || rest === "." ? directoriesNamed(above, climbs, dirOnly, corpusRels) : tailsNamed(rest, above, climbs, dirOnly, index);
@@ -180,12 +191,13 @@ function tailsNamed(rest, above, climbs, dirOnly, index) {
   const named = [];
   const answered = new Set();
   for (const candidate of candidatesAt(rest, dirOnly)) {
-    const prefixes = index.tails.get(candidate);
-    if (prefixes === undefined) continue;
+    const held = index.tails.get(candidate);
+    if (held === undefined) continue;
+    const alone = typeof held === "string";
     // The shorter of the two is walked, so neither a deep importer nor a tail a thousand files end in sets the cost alone.
-    const fewer = prefixes.size <= above.steps.size ? prefixes : above.steps;
-    for (const prefix of fewer.keys()) {
-      if (!prefixes.has(prefix) || !(above.steps.get(prefix) >= climbs) || answered.has(prefix)) continue;
+    const fewer = alone ? [held] : held.size <= above.steps.size ? held.keys() : above.steps.keys();
+    for (const prefix of fewer) {
+      if (!(alone || held.has(prefix)) || !(above.steps.get(prefix) >= climbs) || answered.has(prefix)) continue;
       answered.add(prefix);
       named.push(prefix === "" ? candidate : `${prefix}/${candidate}`);
     }
@@ -223,6 +235,10 @@ function directoriesAbove(dir, index) {
  * directories each sits under. Built on the first alias `inProject` answers, so
  * a repository with none pays nothing, and memoised on the set as the tail
  * index below is.
+ *
+ * A tail one directory holds is kept with that directory as itself, and with a
+ * set from the second: most tails are one file's, and a set for each retained
+ * 195 MB on 100,000 files eight segments deep.
  */
 const PROJECT_INDEX = new WeakMap();
 
@@ -234,9 +250,11 @@ function projectIndex(corpusRels) {
   for (const rel of corpusRels) {
     for (let cut = -1, last = false; !last; cut = rel.indexOf("/", cut + 1)) {
       const tail = rel.slice(cut + 1);
-      let prefixes = tails.get(tail);
-      if (!prefixes) tails.set(tail, (prefixes = new Set()));
-      prefixes.add(rel.slice(0, Math.max(cut, 0)));
+      const prefix = rel.slice(0, Math.max(cut, 0));
+      const held = tails.get(tail);
+      if (held === undefined) tails.set(tail, prefix);
+      else if (typeof held === "string") tails.set(tail, new Set([held, prefix]));
+      else held.add(prefix);
       last = !tail.includes("/");
     }
   }
@@ -247,7 +265,7 @@ function projectIndex(corpusRels) {
 
 /** The file a path names as written, through an extension it leaves off or emits, or as a directory's index. */
 function fileAt(path, dirOnly, corpusRels) {
-  return candidatesAt(path.replace(/\/+$/, ""), dirOnly).find((candidate) => corpusRels.has(candidate)) ?? null;
+  return candidatesAt(withoutTrailingSlashes(path), dirOnly).find((candidate) => corpusRels.has(candidate)) ?? null;
 }
 
 /** Every spelling of the file a path names, in the order a bundler tries them. */
