@@ -562,6 +562,48 @@ test("a refresh that found nothing stopped leaves no mark and is current however
   assert.equal(holder.scans, 1);
 });
 
+test("a directory whose overview is not a file is not stopped, and brings no refresh due", async (t) => {
+  const { dir, overview, holder, state, age, refresh } = await withCursorHeld(t);
+  holder.held = false;
+  // A directory at the overview's name: the target reads as unknown before anything is written there.
+  rmSync(overview);
+  mkdirSync(overview);
+  const answers = [];
+  const scan = async (root, options) => {
+    holder.scans++;
+    const answer = await runScan(root, options);
+    answers.push(answer.plan.targets.cursor);
+    return answer;
+  };
+
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+
+  assert.equal(answers[0].state, "unknown", "the control: the scan left it as unknown");
+  assert.equal("unwritable" in answers[0], false);
+  assert.equal("stopped" in state(), false);
+  age();
+  assert.equal(await refresh(), "current");
+  assert.equal(holder.scans, 1);
+});
+
+test("a hold that moves while a stopped directory is not yet due keeps the mark, and the retry still comes", async (t) => {
+  const { dir, holder, state, age, refresh } = await withCursorHeld(t);
+  assert.equal(await refresh(), "scanned");
+  const at = state().at;
+  // A hold the last refresh recorded and this one does not find: the record is written again with no scan.
+  writeFileSync(join(dir, REFRESH_STATE), JSON.stringify({ ...state(), held: { reason: "made-here", commit: "abcdef1234", pin: null, by: "reflog" } }));
+
+  assert.equal(await refresh(), "current");
+
+  assert.equal("held" in state(), false, "the control: the record was written again");
+  assert.deepEqual(state().stopped, [".cursor/rules"]);
+  assert.equal(state().at, at);
+  assert.equal(holder.scans, 1);
+  age();
+  assert.equal(await refresh(), "scanned");
+  assert.equal(holder.scans, 2);
+});
+
 test("a copy committed under another letter case is left alone where the repository folds case", needsFoldingFilesystem, async (t) => {
   const dir = await scanned(t);
   await runScan(dir, { targets: ["claude", "cursor"] });

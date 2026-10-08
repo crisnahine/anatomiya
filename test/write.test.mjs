@@ -3794,6 +3794,45 @@ test("a temporary file an earlier scan left that cannot be removed is left where
   for (const target of OTHERS) assert.deepEqual([plan.targets[target.id].remove, plan.targets[target.id].foreign], [[left[target.id]], []], target.id);
 });
 
+test("a temporary file that cannot be removed beside a locked file of the map leaves the directory unknown, and is not counted", async (t) => {
+  const lock = await refusing(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  for (const target of OTHERS) {
+    const other = OTHERS.find((o) => o !== target);
+    const left = stagedName(overviewName(target), gone());
+    // The first rename there and the one removal of a file of the map's, each with the leftover held and free.
+    for (const [name, verb] of [[overviewName(target), "replaced"], [areaName(target, b.id), "removed"]]) {
+      for (const held of [true, false]) {
+        const dir = workspace(t);
+        const said = `${target.dir}/${name}`;
+        writeMap(result(dir, [a, b]), { targets: ALL });
+        writeFileSync(join(dir, target.dir, left), "half a map\n");
+        const theirs = tree(join(dir, target.dir));
+        lock.on = (at) => (at.endsWith(`/${said}`) || (held && at.endsWith(`/${target.dir}/${left}`)) ? "EBUSY" : null);
+
+        const plan = writeMap(result(dir, [a, c]));
+
+        lock.on = null;
+        const { state, on, reason, unwritable, write, remove, foreign, names } = plan.targets[target.id];
+        assert.deepEqual(
+          { state, on, reason, unwritable, write, remove, foreign, names },
+          { state: "unknown", on: false, reason: `${said} could not be ${verb} (EBUSY)`, unwritable: true, write: [], remove: [], foreign: [], names: mapOf(target, a, b) },
+          said
+        );
+        assert.deepEqual(tree(join(dir, target.dir)), theirs, `${said}: every entry there as it was, the leftover with them`);
+        assert.deepEqual(["stagedLeft" in plan, "storeStagedLeft" in plan], [false, false], said);
+        assert.deepEqual(readFacts(dir).targets, { [target.id]: mapOf(target, a, b), [other.id]: mapOf(other, a, c) }, `${said}: the record names the files still there`);
+        assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, c), `${said}: Claude Code's map moved`);
+        assert.deepEqual(namesIn(dir, other), mapOf(other, a, c), said);
+
+        const healed = writeMap(result(dir, [a, c]));
+        assert.deepEqual(healed.targets[target.id].remove, [areaName(target, b.id), left], said);
+        assert.deepEqual(namesIn(dir, target), mapOf(target, a, c), `${said}: let go, the next scan writes it and takes the leftover`);
+      }
+    }
+  }
+});
+
 test("a temporary file made immutable is left where it is and counted, and the scan writes", needsImmutableFlag, (t) => {
   const { dir, left, scanned, assertLeft } = leftoverInEach(t);
   const at = [join(dir, STORE, left.store), ...EVERY_TARGET.map((target) => join(dir, target.dir, left[target.id]))];

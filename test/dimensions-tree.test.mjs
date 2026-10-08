@@ -8,7 +8,6 @@ import { isTestFile, mirroredTests } from "../plugins/anatomiya/lib/layout.mjs";
 import { withOneBranch } from "../plugins/anatomiya/lib/csharp-directives.mjs";
 import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 import { TREE_DECLINED } from "./declined-fixtures.mjs";
-import { doublingRatio, LINEAR } from "./growth.mjs";
 
 /**
  * Every source goes through `parseTreeFile` in counts mode, which is the body
@@ -289,7 +288,9 @@ const CASES = {
 
 // Each function asks where it sits among its siblings, and a search for every one reads every sibling ahead of it:
 // twice the functions, four times the reads. A clock does not tell the two apart at 40,000 functions (3.0 to 3.5
-// with the search, 1.7 to 2.4 without, on a loaded machine), so the reads are counted. Each shape as
+// with the search, 1.7 to 2.4 without, on a loaded machine), so the reads are counted. A Go method asks which methods
+// its type has, and a search for every one reads every method's name: 2,096 ms at 10,000 methods of one type and
+// 13,488 ms at 20,000, and 1.9 to 2.2 on the clock without it against a bound of 3. Each shape as
 // [language, the sites one function makes, its source, what the file opens with, what it closes with].
 const MANY_SIBLINGS = {
   "an attribute that takes each out of the documented surface": ["rust", 0, (i) => `#[cfg(test)]\npub fn f${i}() {}\n`],
@@ -301,6 +302,7 @@ const MANY_SIBLINGS = {
     "class A\n{\n",
     "}\n",
   ],
+  "a method of one type named as a sorting interface names it": ["go", 1, () => "func (t T) Len() int { return 0 }\n", "package a\n\n"],
 };
 const FEW_SIBLINGS = 500;
 
@@ -334,29 +336,6 @@ for (const [shape, [lang, each, item, head, tail]] of Object.entries(MANY_SIBLIN
     assert.deepEqual([fewer.sites, more.sites], [each * FEW_SIBLINGS, each * 2 * FEW_SIBLINGS]);
   });
 }
-
-// A Go method asks which methods its type has, and a search for every one took 2,096 ms at 10,000 methods and 13,488 ms
-// at 20,000. The row is timed alone, on a tree already parsed, so its walk is all the clock sees.
-test("public_doc_comment reads a file of many functions in time linear in them: a method of one type named as a sorting interface names it", async () => {
-  const few = 5_000;
-  const rel = `src/a.${declOf("go").exts[0]}`;
-  const parsed = new Map();
-  for (const count of [few, 2 * few]) {
-    const source = `package a\n\n${"func (t T) Len() int { return 0 }\n".repeat(count)}`;
-    // No row run by the parse: the tree is all that is wanted of it.
-    parsed.set(count, { source, program: (await parseTreeFile(source, rel, "go", { withProgram: true, rows: [] })).program });
-  }
-  const read = (count) => {
-    const { source } = parsed.get(count);
-    // A tree of its own for each timing, so none reads what another built.
-    const program = structuredClone(parsed.get(count).program);
-    return () => docRow().run(program, () => {}, { source, rel });
-  };
-
-  const ratio = doublingRatio(read, few);
-
-  assert.ok(ratio < LINEAR, `twice the functions took ${ratio.toFixed(2)} times as long`);
-});
 
 const TESTLESS = ["public_doc_comment", "declared_return_type"];
 
