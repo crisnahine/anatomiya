@@ -204,7 +204,9 @@ list or the index, so a repository created without a reflog or on reftable refre
 too. The hook returns at once and the scan runs detached, so nothing waits on it. Each rescan
 decides on its own whether to run the type checker, the same way `/anatomiya:scan` does, with one
 exception: where the last scan measured the checker as degraded and nothing it reads has changed
-since, the rescan keeps that verdict and does not run it. It leaves
+since, the rescan keeps that verdict and does not run it. After a failed run of the checker the
+next rescan runs it again, and from the second failed run in a row it keeps that verdict the same
+way. It leaves
 alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
@@ -643,10 +645,15 @@ dimensions each.** Python, PHP, Go, Java, C#, Rust and Kotlin are read through t
 carries. Each gets the layout section, its test files and namesake tests by the language's own
 naming, and the rows counted under [What it measures](#what-it-measures). A map of one of them
 mostly prints counts and states a claim only where a directory is consistent: a scan of fastapi
-states 1 of 82 claims, hugo 0 of 102, ktor 0 of 133 and tokio 14 of 33. A package that sits at the
-repository root is in no area, which is how a Go library is laid out: gin's map has 3 areas and its
-overview says `53 at the repository root` and `42 source files sit in no area (at the repository
-root, under the per-directory floor, or under a name no glob can spell)`. None of the seven gets the
+states 1 of 82 claims, hugo 0 of 103, ktor 0 of 133 and tokio 14 of 33. A Go package that sits at the
+repository root, which is how a Go library is laid out, is an area of its own, named `the repository
+root`, whose pattern (`/*.go`) matches the root's `.go` files and none below: gin's map has 4 areas,
+40 files in the root one, and its overview says `53 at the repository root` and `2 source files sit
+in no area (at the repository root, under the per-directory floor, or under a name no glob can
+spell)`. No other language gets one. With `scan --targets cursor,copilot`, Cursor gets that area as
+`*.go`, and Copilot gets no file for it, since VS Code matches such a pattern at every depth: the
+Copilot overview says `1 area has no pattern GitHub Copilot can be given, so no file here covers it:
+the repository root.` None of the seven gets the
 type checker, the "most imported from here" lines or the end-of-turn reuse check. The notice before
 a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of the seven. Neither says anything of a Go, Java,
 Kotlin or C# test that sits in the one place its language's tool reads it from. No `.rs` file is
@@ -654,8 +661,11 @@ asked, since cargo collects by place and a Rust test has no name. A file of any 
 "Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
 
 Each of the seven gets its test files and the layout section. None gets a naming row or an imports
-row. A row is asked of a language only where three measured repositories of it differ. No reference
-parser was run for Java, C#, Rust or Kotlin, so the files of those four languages that a grammar could not read were classed as a syntax error or a gap in the grammar by reading each one (`DECISIONS.md` B60, B63):
+row. A row is asked of a language only where three measured repositories of it differ. For Java,
+C#, Rust and Kotlin each language's own parser was run in a container over the same three
+repositories: every file a grammar could not read in those four is one its compiler accepts, and no
+file a grammar read is one its compiler rejects (`docs/measurements/2026-10-08-reference-parsers.md`,
+`DECISIONS.md` B60, B63):
 
 | Language | A test file is | Rows asked | Measured or weighed, and not asked |
 |---|---|---|---|
@@ -674,7 +684,8 @@ seven, for the same reason. `DECISIONS.md` rows C50 to C54 and H52 hold the numb
 count, and the scan and the overview say how many there were: `82 files could not be read by this
 tool's grammar` on ktor. Measured on three repositories per language, that is under 1% of the
 lines of every Python, PHP, Go, Java and Rust one, 4.35% of serilog's C#, and 1.32% to 7.88% of the
-three Kotlin ones, which use syntax newer than the grammar. A C# file with `#if` inside an
+three Kotlin ones, where the grammar misses new syntax (context parameters, `$$` strings) and some
+old (a local named `in1`, `get(` on the line after a `val`). A C# file with `#if` inside an
 expression is read with the first branch of each conditional kept, and the scan counts those files
 too. A Python stub (`.pyi`) is not read.
 
@@ -694,6 +705,8 @@ cannot be narrowed to the files you changed. The map says when the checker answe
 prints no count for this claim then. While that answer stands and the plugin version, the root
 config, and the size and modification time of `node_modules` and of the install record in it are
 unchanged, a background refresh keeps the answer without running the checker; `/anatomiya:scan` always runs it.
+A failed run, such as a checker whose child aborted, is followed by one more run on the next
+refresh, and its answer is kept the same way from the second failed run in a row.
 An edit to a config the root config extends or references does not end a carried verdict.
 An install starts no refresh by itself, so after one the checker is measured by the next refresh a
 commit, a checkout or a pull starts, or by a scan you run. On four repositories that read degraded, that
@@ -727,7 +740,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 296 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 297 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
