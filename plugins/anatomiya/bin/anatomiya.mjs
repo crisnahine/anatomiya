@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { locator } from "../lib/encode.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
 import { unsupportedNode } from "../lib/readiness.mjs";
 import { parseTargets } from "../lib/targets.mjs";
@@ -213,6 +214,17 @@ function fail(message, code = 2) {
 }
 
 /**
+ * Refuse the arguments in one sentence, with the usage under it.
+ *
+ * The sentence quotes what the caller typed, so it is printed with every
+ * unprintable character as a space: an argument holding an escape sequence or
+ * a line break otherwise reaches the terminal as one, under this tool's name.
+ */
+function refuse(sentence) {
+  fail(`${locator(sentence)}\n${USAGE}`);
+}
+
+/**
  * The directory this process is in, or nothing where it has been removed under it.
  *
  * `process.cwd()` refuses with ENOENT once the directory a session started in is
@@ -249,8 +261,8 @@ function parseArgs(argv) {
   // names the wrong fix. A mistyped option was already refused by name.
   if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") return { cmd: null, help: true };
   if (!Object.hasOwn(COMMANDS, argv[0])) {
-    if (argv[0].startsWith("-")) fail(`no command given, and an option cannot stand in for one: ${argv[0]}\n${USAGE}`);
-    fail(`unknown command: ${argv[0]}\n${USAGE}`);
+    if (argv[0].startsWith("-")) refuse(`no command given, and an option cannot stand in for one: ${argv[0]}`);
+    refuse(`unknown command: ${argv[0]}`);
   }
   const cmd = argv.shift();
   const spec = COMMANDS[cmd];
@@ -260,48 +272,48 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") return { ...opts, help: true };
     if (arg === "--deep") {
-      fail(`--deep is not an option: scan runs the type checker on its own where it can resolve types\n${USAGE}`);
+      refuse("--deep is not an option: scan runs the type checker on its own where it can resolve types");
     }
     if (arg === "--dry-run") {
-      if (!spec.dryRun) fail(`${cmd} takes no --dry-run option\n${USAGE}`);
+      if (!spec.dryRun) refuse(`${cmd} takes no --dry-run option`);
       opts.dryRun = true;
       continue;
     }
     if (arg === "--base" || arg.startsWith("--base=")) {
-      if (cmd !== "check") fail(`${cmd} takes no --base option\n${USAGE}`);
+      if (cmd !== "check") refuse(`${cmd} takes no --base option`);
       const value = arg === "--base" ? argv[++i] : arg.slice("--base=".length);
-      if (!value || value.startsWith("-")) fail(`--base needs a ref\n${USAGE}`);
+      if (!value || value.startsWith("-")) refuse("--base needs a ref");
       opts.baseRef = value;
       continue;
     }
     if (arg === "--targets" || arg.startsWith("--targets=")) {
-      if (cmd !== "scan") fail(`${cmd} takes no --targets option\n${USAGE}`);
-      if (opts.targets !== null) fail(`--targets may be given once\n${USAGE}`);
+      if (cmd !== "scan") refuse(`${cmd} takes no --targets option`);
+      if (opts.targets !== null) refuse("--targets may be given once");
       const value = arg === "--targets" ? argv[++i] : arg.slice("--targets=".length);
       try {
         // An option where the list belongs is a list nobody gave.
         opts.targets = parseTargets(value?.startsWith("-") ? "" : value);
       } catch (err) {
-        fail(`${err.message}\n${USAGE}`);
+        refuse(err.message);
       }
       continue;
     }
     if (arg === "--format" || arg.startsWith("--format=")) {
       const value = arg === "--format" ? argv[++i] : arg.slice("--format=".length);
-      if (!value || value.startsWith("-")) fail(`--format needs a name\n${USAGE}`);
-      if (!FORMATS.has(value)) fail(`unknown format: ${value}\n${USAGE}`);
+      if (!value || value.startsWith("-")) refuse("--format needs a name");
+      if (!FORMATS.has(value)) refuse(`unknown format: ${value}`);
       // Refused rather than accepted and answered in text: a format that was
       // asked for and quietly not used reads as a run whose output shape nobody
       // has to check.
       if (!spec.formats.includes(value)) {
-        fail(`${cmd} does not answer in ${value}: it answers in ${spec.formats.join(" and ")}\n${USAGE}`);
+        refuse(`${cmd} does not answer in ${value}: it answers in ${spec.formats.join(" and ")}`);
       }
       opts.format = value;
       continue;
     }
-    if (arg.startsWith("-")) fail(`unknown option: ${arg}\n${USAGE}`);
-    if (!spec.path) fail(`${cmd} takes no path: it answers about this installation\n${USAGE}`);
-    if (opts.path !== null) fail(`only one path may be given\n${USAGE}`);
+    if (arg.startsWith("-")) refuse(`unknown option: ${arg}`);
+    if (!spec.path) refuse(`${cmd} takes no path: it answers about this installation`);
+    if (opts.path !== null) refuse("only one path may be given");
     opts.path = arg;
   }
 

@@ -867,9 +867,8 @@ test("a target that was on and could not be read says why, and one never written
   assert.deepEqual(was.targets, {
     cursor: { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: ".cursor is a link", remedy: unread.remedy },
   });
-  assert.deepEqual(JSON.parse(scanJson(was)).targets, {
-    cursor: { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: ".cursor is a link" },
-  });
+  // The record says what to do about it beside why, as the line does.
+  assert.deepEqual(JSON.parse(scanJson(was)).targets, was.targets);
   assert.deepEqual(scanLines(was).slice(-3), [
     "wrote 2 files",
     ".cursor/rules could not be read (.cursor is a link), so nothing there was written or removed: make .cursor a directory of this repository, then scan again",
@@ -886,11 +885,14 @@ test("a target that could not be read says the remedy its reason came with, and 
   assert.ok(scanLines(given).includes(`${line}: ask whoever owns it, then scan again`), scanLines(given).join("\n"));
   assert.ok(scanLines(given).includes(`${COPILOT_DIR} could not be read (.cursor could not be read), so nothing there was written or removed: make it readable, then scan again`));
 
-  // A record read back carries the reason alone, so its line is the reason alone.
+  // A reason that came with none prints alone.
   const bare = scanSummary(result(), plan(others(unread, { ...unread, unreadableRules: ["anatomiya-area-0badf00d.instructions.md"] })));
   assert.ok(scanLines(bare).includes(line), scanLines(bare).join("\n"));
-  assert.equal(scanJson(given), scanJson(bare), "the remedy is words, and the record is not");
-  assert.ok(scanLines(JSON.parse(scanJson(given))).includes(line));
+  assert.equal("remedy" in JSON.parse(scanJson(bare)).targets.cursor, false);
+  // A record read back carries each remedy, so its lines are the ones the scan printed.
+  const read = JSON.parse(scanJson(given));
+  assert.deepEqual([read.targets.cursor.remedy, read.targets.copilot.remedy], ["ask whoever owns it", "make it readable"]);
+  assert.deepEqual(scanLines(read).filter((l) => l.includes("could not be read (")), scanLines(given).filter((l) => l.includes("could not be read (")));
 });
 
 test("a target the scan was told to leave alone says nothing, whatever the record names there", () => {
