@@ -496,7 +496,7 @@ test("the nearest project above a component answers its alias", () => {
 });
 
 test("an alias two directories above a component both answer names neither file", () => {
-  // The root the alias means is one of them and no path says which: a feature's own folder is not it.
+  // The root the alias means is one of them and no path says which: a feature's own directory is not it.
   const button = corpus("src/features/cart/CartPage.vue", "src/features/cart/components/Button.vue", "src/components/Button.vue");
   assert.equal(specifierToFile("@/components/Button.vue", "src/features/cart/CartPage.vue", button), null);
   const format = corpus("src/features/cart/Cart.vue", "src/features/cart/utils/format.ts", "src/utils/format.ts");
@@ -557,6 +557,45 @@ test("an alias import from a deep directory resolves in time that does not grow 
   assert.equal(specifierToFile("$lib/p/dir/", `${dir}X.svelte`, rels), `${half}src/lib/p/dir/index.ts`);
   assert.equal(specifierToFile("@/p/v0", `${dir}X.svelte`, rels), `${half}p/v0.ts`);
   assert.ok(took < 5000, `12,000 alias imports took ${Math.round(took)} ms`);
+});
+
+// A specifier is the repository's text, and a pattern that strips its trailing
+// slashes tries every start in a run of them that is not at the end: four times
+// the run then costs sixteen times as long, 213 ms and 3,375 ms on these two.
+test("a specifier holding a long run of slashes resolves in time linear in the run", () => {
+  const rels = corpus("a/b/Page.ts", "x/y.ts");
+  const fastest = (run) => {
+    const spec = `x${"/".repeat(run)}y`;
+    let best = Infinity;
+    for (let turn = 0; turn < 3; turn++) {
+      const before = performance.now();
+      assert.equal(specifierToFile(spec, "a/b/Page.ts", rels), null);
+      best = Math.min(best, performance.now() - before);
+    }
+    return best;
+  };
+
+  const short = fastest(20_000);
+  const long = fastest(80_000);
+
+  // Under a millisecond the clock measures itself, so the short run is counted as one.
+  assert.ok(long / Math.max(short, 1) < 8, `20,000 slashes took ${short.toFixed(2)} ms and 80,000 took ${long.toFixed(2)} ms`);
+  assert.equal(specifierToFile("x/y///", "a/b/Page.ts", rels), null, "a trailing run still asks for an index alone");
+  assert.equal(specifierToFile("@/x/y///", "a/b/Page.vue", corpus("x/y/index.ts")), "x/y/index.ts");
+});
+
+// The other half of the walk the deep-importer test holds: a walk over every
+// directory a tail sits under takes over 14,000 ms on these inputs, and one over
+// the importer's own three takes under 300 ms.
+test("an alias import of a tail tens of thousands of files share resolves in time that does not grow with them", () => {
+  const shared = Array.from({ length: 50_000 }, (_, i) => `d${i}/src/lib/p/q.ts`);
+  const rels = corpus(...shared, "a/src/lib/p/q.ts", "a/b/X.svelte");
+
+  const before = performance.now();
+  for (let i = 0; i < 8000; i++) assert.equal(specifierToFile("$lib/p/q", "a/b/X.svelte", rels), "a/src/lib/p/q.ts");
+  const took = performance.now() - before;
+
+  assert.ok(took < 5000, `8,000 alias imports took ${Math.round(took)} ms`);
 });
 
 test("an alias that climbs out of its root names what the path names from each directory above the importer", () => {
