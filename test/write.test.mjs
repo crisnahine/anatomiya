@@ -1795,6 +1795,22 @@ test("a named target gets the overview and one file per area with a directive", 
   for (const t of OTHERS) assert.deepEqual(readdirSync(join(dir, t.dir)).filter((n) => n.includes(".tmp-")), []);
 });
 
+test("every directory's overview names the areas claude's does, whatever else each directory holds", (t) => {
+  const dir = workspace(t);
+  const areas = Array.from({ length: 30 }, (_, i) => area(`src/a${String(i).padStart(2, "0")}`));
+  mkdirSync(rules(dir), { recursive: true });
+  // Six files of somebody's in Claude Code's directory, each a line of its overview that an area would have had.
+  for (let i = 0; i < 6; i++) writeFileSync(join(rules(dir), `house-${i}.md`), "# by hand\n");
+
+  writeMap(result(dir, areas), { targets: ALL });
+
+  const named = (target) =>
+    readFileSync(join(dir, target.dir, overviewName(target)), "utf8").split("\n").filter((l) => /^- (src\/a\d\d|and \d+ more areas)/.test(l)).map((l) => l.replace(target.listed, "LISTED"));
+  const mine = named(TARGETS.claude);
+  assert.ok(mine.length > 2 && mine.length < 30, mine.join("\n"));
+  for (const target of OTHERS) assert.deepEqual(named(target), mine, target.id);
+});
+
 test("a target stays on without being named again", (t) => {
   const dir = workspace(t);
   const a = area("src/services");

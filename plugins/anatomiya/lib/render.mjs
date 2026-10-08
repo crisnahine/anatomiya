@@ -8,7 +8,7 @@ import { globText } from "./areas.mjs";
 import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
 import { byCode } from "./paths.mjs";
-import { frontmatter, isClaude, spelledGlobs, TARGETS } from "./targets.mjs";
+import { frontmatter, isClaude, readsEveryPattern, spelledGlobs, TARGETS } from "./targets.mjs";
 
 /**
  * The line bound every generated file is held to.
@@ -26,6 +26,28 @@ import { frontmatter, isClaude, spelledGlobs, TARGETS } from "./targets.mjs";
  * pattern and pays for them on top.
  */
 export const MAX_LINES = 40;
+
+/**
+ * The most lines a target's overview and one of its area files run to, or null
+ * for an area file whose frontmatter grows with the cover.
+ *
+ * The bound is held over the body, which is the one Claude Code's file has,
+ * and a target pays for its own lines on top: the frontmatter it takes, the
+ * sentence saying what wrote the file, the line naming the areas it has no
+ * file for, and under an area's body a blank and one line per way its patterns
+ * can differ from the area.
+ */
+export function mostLines(target) {
+  const fence = (t, kind, patterns) => frontmatter(t, { kind, patterns }).length;
+  const exact = readsEveryPattern(target);
+  const overview = MAX_LINES + fence(target, "overview") - fence(TARGETS.claude, "overview") + (target.wrote ? 1 : 0) + (exact ? 0 : 1);
+  if (fence(target, "area", ["a", "b"]) > fence(target, "area", ["a"])) return { overview, area: null };
+  const closing = exact ? 0 : 1 + CLOSING_KINDS + (target.widens ? 1 : 0);
+  return { overview, area: MAX_LINES + fence(target, "area", ["a"]) - fence(TARGETS.claude, "area", ["a"]) + closing };
+}
+
+// The patterns a target cannot be told and the ones it cannot be given, a closing line each.
+const CLOSING_KINDS = 2;
 
 // What an area file says even when its `paths` list has eaten the budget: one
 // directive block, its exceptions, and the count of what did not fit. The kinds
@@ -440,23 +462,10 @@ function rosterLines(area) {
  * and none of them is the claim text: a directive block's height is its counts
  * line, its exceptions and its blank.
  */
-function areaBlocks(area, target = TARGETS.claude) {
-  // Measured: a `paths` key with no pattern under it loads on every turn, which
-  // is what the overview is for and what an area file must never do. There is
-  // no glob-less area to render, so this is a bug in the caller either way.
-  if (!area.globs || area.globs.length === 0) {
-    throw new Error(`area has no paths glob, so its file would load on every turn: ${area.path}`);
-  }
-
-  const spelled = spelledGlobs(target, area.globs, spellGlob);
-  if (spelled.patterns.length === 0) return null;
-
-  const head = [
-    ...frontmatter(target, { kind: "area", patterns: spelled.patterns }),
-    "",
-    `# ${encode(area.path)}  ${area.fileCount} files`,
-    "",
-  ];
+function areaBlocks(area) {
+  // Claude Code's head, whichever target the file is for: the body is laid out
+  // once, under the list of patterns that file carries, and every target gets it.
+  const { head } = areaEnds(area, TARGETS.claude);
 
   // A stated inverse prints in the shape a stated claim prints. The sentence is
   // the directive either way, and a marker saying which side it is would spend
@@ -566,14 +575,31 @@ function areaBlocks(area, target = TARGETS.claude) {
   // Six body lines still hold one directive block, an exception and the notice,
   // and a reader who has to give up two of those for the line naming what the
   // siblings do is better off by it.
-  //
-  // The closing lines and their blank come out the same way, so `settle` drops
-  // a block for them and never them: a file whose patterns match more than its
-  // area and does not say so is worse than one directive short.
-  const closing = matchLines(target, spelled);
-  const budget =
-    Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0) - (closing.length ? closing.length + 1 : 0);
-  return { head, blocks, keys, claims, stated, descriptions, kinds, budget, closing };
+  const budget = Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0);
+  return { blocks, keys, claims, stated, descriptions, kinds, budget };
+}
+
+/**
+ * What one target puts around an area's body: its frontmatter and the heading
+ * above, and below it what its patterns match that the area does not. Null
+ * where the target can be given none of the area's patterns.
+ */
+function areaEnds(area, target) {
+  // Measured: a `paths` key with no pattern under it loads on every turn, which
+  // is what the overview is for and what an area file must never do. There is
+  // no glob-less area to render, so this is a bug in the caller either way.
+  if (!area.globs || area.globs.length === 0) {
+    throw new Error(`area has no paths glob, so its file would load on every turn: ${area.path}`);
+  }
+  const spelled = spelledGlobs(target, area.globs, spellGlob);
+  if (spelled.patterns.length === 0) return null;
+  const head = [
+    ...frontmatter(target, { kind: "area", patterns: spelled.patterns }),
+    "",
+    `# ${encode(area.path)}  ${area.fileCount} files`,
+    "",
+  ];
+  return { head, closing: matchLines(target, spelled) };
 }
 
 /**
@@ -668,7 +694,6 @@ export function droppedDirectives(area) {
  * sentence without counts, and `unnamed` where the file says nothing of it.
  */
 export function droppedSlots(area) {
-  // The Claude file's layout, whichever targets are on.
   const { blocks, keys, claims, budget } = areaBlocks(area);
   const { kept, names } = settle(blocks, keys, claims, budget);
   // By position, never by prose: `names` runs over the hidden stated keys in
@@ -679,9 +704,10 @@ export function droppedSlots(area) {
 
 /** Null where the target can be given none of the area's patterns. */
 export function renderArea(area, target = TARGETS.claude) {
-  const laid = areaBlocks(area, target);
-  if (laid === null) return null;
-  const { head, blocks, keys, claims, stated, descriptions, kinds, budget, closing } = laid;
+  const ends = areaEnds(area, target);
+  if (ends === null) return null;
+  const { head, closing } = ends;
+  const { blocks, keys, claims, stated, descriptions, kinds, budget } = areaBlocks(area);
   const { kept, names, unnamed } = settle(blocks, keys, claims, budget);
 
   // The frontmatter is delivery rather than content: the globs are what route
@@ -708,7 +734,9 @@ export function renderArea(area, target = TARGETS.claude) {
   }
 
   // Read under the heading: what the area holds is what a reader wants before
-  // what it asks of them.
+  // what it asks of them. The closing lines go under the body and take nothing
+  // from it: a line one target's file had no room for is a claim the check
+  // still holds, off the one layout it reads.
   const tail = closing.length ? ["", ...closing] : [];
   return [...head, ...(kinds ? [kinds, ""] : []), ...body, ...tail].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
@@ -758,8 +786,63 @@ function companionAudit(d) {
  * byte-stable between scans with no source change: the token economics only
  * work on a cached read, and anything that moves per commit destroys that. So
  * no timestamp, no duration, no counts that drift.
+ *
+ * `claudeFiles` is what `files` is for Claude Code's directory, which another
+ * target's overview is laid out against.
  */
-export function renderOverview(result, files, target = TARGETS.claude) {
+export function renderOverview(result, files, target = TARGETS.claude, claudeFiles = files) {
+  const head = overviewHead(result, target);
+  // Everything that gives way under the bound is decided as Claude Code's
+  // overview decides it, off that directory's own listings, so the roots, the
+  // sentences and the number of areas named are the same in every directory
+  // and a target's own lines are paid for on top (`mostLines`).
+  const mine = overviewHead(result, TARGETS.claude).length;
+
+  // What the scan could not cover, and how many files this tool generated.
+  // Neither grows with the repository, so both are paid before anything else.
+  // A listing that named an area the target has no file for would promise notes that never arrive.
+  // Nor one whose file there is somebody else's, which the writer hands in as `left`.
+  const filed = result.areas.filter((a) => hasFile(a, target) && !files.left?.includes(a.id));
+  const unfiled = result.areas.filter((a) => !hasFile(a, target));
+  const fixed = overviewTail(result, filed, files, target);
+
+  // The roster is paid next and shrinks into what is left of the bound, minus
+  // the `## Areas` heading and its blank and the lines the two listings below
+  // never give up: one sentence per kind of rule file this tool did not write,
+  // and one line of areas. Pushed unbudgeted it was head, and `Math.max(2, ...)`
+  // has nothing to give back: seven roots on a repository with a full tail put
+  // the overview six lines past its bound.
+  const listings = otherFiles(claudeFiles.others, 1).length + 1;
+  const layout = renderLayout(result.layout, MAX_LINES - mine - fixed.length - 2 - listings);
+
+  // Two listings do grow: the areas, and the rule files this tool did not write.
+  // They share whatever is left, and each keeps at least one line, because a
+  // budget that starves one of them entirely is a fact the file stops carrying.
+  // Budgeting the areas alone was the bug: the other listing was rendered first
+  // and unbounded, and a repository with enough of both put the overview eight
+  // lines past its bound.
+  const room = Math.max(2, MAX_LINES - mine - layout.length - 2 - fixed.length);
+  const theirs = otherFiles(claudeFiles.others, Math.max(1, room - 1));
+  // No area at all left the heading over two blank lines, which reads as a
+  // listing that failed to print rather than as a repository where no directory
+  // cleared the floor and kept a count. Why is not said here: the causes are the
+  // Not covered lines, and an empty repository has none of them.
+  const listed = (areas, none, reader) =>
+    result.areas.length
+      ? areaListing(areas, none, Math.max(1, room - theirs.length), reader)
+      : ["No directory became an area, so nothing here states a claim."];
+  const listing = listed(filed, unfiled, target);
+  // A directory's own listing of other files takes the lines Claude Code's
+  // takes and the ones that overview leaves under the bound, and folds into them.
+  const inClaude = result.areas.filter((a) => !claudeFiles.left?.includes(a.id));
+  const spare = MAX_LINES - mine - layout.length - 2 - listed(inClaude, [], TARGETS.claude).length - fixed.length - theirs.length;
+  const others = isClaude(target) ? theirs : otherFiles(files.others, theirs.length + Math.max(0, spare), true);
+
+  return [...head, ...layout, `## Areas (${filed.length})`, "", ...listing, ...fixed, ...others].join("\n") + "\n";
+}
+
+/** The overview down to where the roster starts: what the file is, how to read it, and what this scan could not say. */
+function overviewHead(result, target) {
   const head = [
     ...frontmatter(target, { kind: "overview" }),
     "",
@@ -821,44 +904,7 @@ export function renderOverview(result, files, target = TARGETS.claude) {
   // head saying the window was the reason.
   const truncated = truncatedHistorySentence(result.authors?.error ? null : result.authors?.shallow);
   if (truncated) head.push(truncated, "");
-
-  // What the scan could not cover, and how many files this tool generated.
-  // Neither grows with the repository, so both are paid before anything else.
-  // A listing that named an area the target has no file for would promise notes that never arrive.
-  // Nor one whose file there is somebody else's, which the writer hands in as `left`.
-  const filed = result.areas.filter((a) => hasFile(a, target) && !files.left?.includes(a.id));
-  const unfiled = result.areas.filter((a) => !hasFile(a, target));
-  const fixed = overviewTail(result, filed, files, target);
-
-  // The roster is paid next and shrinks into what is left of the bound, minus
-  // the `## Areas` heading and its blank and the lines the two listings below
-  // never give up: one sentence per kind of rule file this tool did not write,
-  // and one line of areas. Pushed unbudgeted it was head, and `Math.max(2, ...)`
-  // has nothing to give back: seven roots on a repository with a full tail put
-  // the overview six lines past its bound.
-  const listings = otherFiles(files.others, 1).length + 1 + (unfiled.length ? 1 : 0);
-  head.push(...renderLayout(result.layout, MAX_LINES - head.length - fixed.length - 2 - listings));
-  head.push(`## Areas (${filed.length})`, "");
-
-  // Two listings do grow: the areas, and the rule files this tool did not write.
-  // They share whatever is left, and each keeps at least one line, because a
-  // budget that starves one of them entirely is a fact the file stops carrying.
-  // Budgeting the areas alone was the bug: the other listing was rendered first
-  // and unbounded, and a repository with enough of both put the overview eight
-  // lines past its bound.
-  const room = Math.max(2, MAX_LINES - head.length - fixed.length - (unfiled.length ? 1 : 0));
-  // The floors are what Claude's overview fills the bound with, so the lines only
-  // another target carries are paid for by the one listing that can still fold.
-  const others = otherFiles(files.others, Math.max(1, room - 1), !isClaude(target));
-  // No area at all left the heading over two blank lines, which reads as a
-  // listing that failed to print rather than as a repository where no directory
-  // cleared the floor and kept a count. Why is not said here: the causes are the
-  // Not covered lines, and an empty repository has none of them.
-  const listing = result.areas.length
-    ? areaListing(filed, unfiled, Math.max(1, room - others.length), target)
-    : ["No directory became an area, so nothing here states a claim."];
-
-  return [...head, ...listing, ...fixed, ...others].join("\n") + "\n";
+  return head;
 }
 
 /**
