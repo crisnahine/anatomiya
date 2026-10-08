@@ -28,9 +28,9 @@ ways: a first line where nothing was installed at all, and an engine line where 
 4. Then run `/anatomiya:doctor` to see what answers now. A zero exit says npm succeeded and every
    engine npm provides loads afterwards, not that every engine is ready: npm cannot install Ruby, so
    an interpreter line stays whatever it was. Nor can it put back a grammar file: those ship in the
-   plugin's own directory, so a `tree-sitter` line that names a `.wasm` file that did not load is
-   fixed by reinstalling the plugin, and setup run for it prints that line, installs nothing for
-   it, and ends non-zero.
+   plugin's own directory, so a `tree-sitter` line that names a `.wasm` file that did not load or
+   is not the file the plugin shipped, or names `grammars.json`, is fixed by reinstalling the
+   plugin, and setup run for it prints that line, installs nothing for it, and ends non-zero.
 
 5. **Do not open the generated files with the Read tool.** Reading a context file permanently
    suppresses its automatic injection for the rest of the session. Use `cat` or `head` through
@@ -52,9 +52,9 @@ Exit 0:
 
 Exit non-zero. Stop after each; do not run setup again unless the ending says to:
 
-- A `tree-sitter` line naming a `.wasm` file that did not load, with or without an install before
-  it. A grammar file ships in the plugin and no install writes one. Tell the user to reinstall the
-  plugin, as the line says.
+- A `tree-sitter` line naming a `.wasm` file that did not load or is not the file the plugin
+  shipped, or naming `grammars.json`, with or without an install before it. A grammar file ships
+  in the plugin and no install writes one. Tell the user to reinstall the plugin, as the line says.
 - `npm on Windows is a batch file ...` and `run it yourself: ...`. Nothing here spawns a shell.
   Give the user the printed command and the directory to run it in.
 - `npm was not found; ...`. Tell the user to install Node.js 22 with npm, then run setup again.

@@ -50,6 +50,8 @@ Rust and Kotlin). Those files are committed to this repository and nothing fetch
 or at run time. Each is a byte-for-byte copy of the file in its grammar's npm package, and
 `plugins/anatomiya/grammars/grammars.json` records the package, the version and the SHA-256. `npm run validate` and
 the test suite refuse a copy that does not hash to its entry, or to the installed package's file.
+On your machine `doctor` and `setup` hash each grammar file against that manifest and name one that
+does not match, or a manifest that is not there. A scan does not hash: it loads the file that is there.
 The packages of the seven grammars are dev dependencies of this repository at exact versions and no
 dependency of the plugin, so installing the plugin never fetches one:
 `tree-sitter-python@0.25.0`, `tree-sitter-php@0.24.2`, `tree-sitter-go@0.25.0`,
@@ -437,6 +439,8 @@ Say the quiet part plainly.
   the `.wasm` files of the seven grammars, copied from their npm packages, `prism` from your Ruby install,
   `git`, and `ps`. Their supply chain is not something this tool checks. The hash in
   `plugins/anatomiya/grammars/grammars.json` says a grammar file is the one its package published, and nothing more.
+  `doctor` holding each file to it finds a damaged or mixed-up install. It is no defence against
+  someone who can write the plugin's directory, since the manifest sits beside the files.
 - **The type checker reads the repository's `tsconfig.json`, or its `tsconfig.base.json` where the
   root has no `tsconfig.json`.** It is the one tier that reads
   repository configuration. A scan runs it on its own when the optional `typescript` dependency is

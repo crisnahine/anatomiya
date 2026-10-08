@@ -123,6 +123,65 @@ test("a grammar that does not load is named on the engine's row, with the remedy
   assert.deepEqual(lines, [`tree-sitter ${row.version}: grammars: 5 of 7, go.wasm and kotlin.wasm did not load, ${GRAMMAR_REMEDY}`]);
 });
 
+/** The tree-sitter row and its doctor line, asked by a node started on an install copy. */
+function treeSitterRowOf(home) {
+  const script = `
+    import { readiness, readinessLines } from ${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)};
+    const rows = await readiness({ engines: ["tree-sitter"] });
+    process.stdout.write(JSON.stringify({ row: rows[0], lines: readinessLines(rows) }));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+}
+
+test("a grammar file that loads and is not the one the plugin shipped is named on the engine's row", needsSymlinks, (t) => {
+  // Measured with java.wasm copied over kotlin.wasm: the file loads, the row read
+  // `grammars: 7 of 7`, and a scan then called 720 Kotlin files unreadable and said they may be fine.
+  const home = installLacking(t);
+  cpSync(join(home, "grammars", "java.wasm"), join(home, "grammars", "kotlin.wasm"));
+
+  const { row, lines } = treeSitterRowOf(home);
+
+  assert.equal(row.present, true);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "grammars: 6 of 7, kotlin.wasm is not the file this plugin shipped");
+  assert.equal(row.remedy, GRAMMAR_REMEDY);
+  assert.deepEqual(row.lostGrammars, ["kotlin"]);
+  assert.deepEqual(lines, [`tree-sitter ${row.version}: grammars: 6 of 7, kotlin.wasm is not the file this plugin shipped, ${GRAMMAR_REMEDY}`]);
+});
+
+test("a file that does not load and files that are not the plugin's own are each said in their own words", needsSymlinks, (t) => {
+  const home = installLacking(t, { grammars: ["go"] });
+  cpSync(join(home, "grammars", "java.wasm"), join(home, "grammars", "kotlin.wasm"));
+  cpSync(join(home, "grammars", "java.wasm"), join(home, "grammars", "rust.wasm"));
+
+  const { row } = treeSitterRowOf(home);
+
+  assert.equal(row.reason, "grammars: 4 of 7, go.wasm did not load, rust.wasm and kotlin.wasm are not the files this plugin shipped");
+  assert.deepEqual(row.lostGrammars, ["go", "rust", "kotlin"]);
+});
+
+test("with no manifest to hold a grammar file to, none is counted", needsSymlinks, (t) => {
+  // Three ways to have none: the file gone, a file that is not JSON, and one that names no hash for a grammar.
+  const all = ["csharp", "go", "java", "kotlin", "php", "python", "rust"];
+  const manifests = [
+    (path) => rmSync(path),
+    (path) => writeFileSync(path, "not a manifest"),
+    (path) => writeFileSync(path, JSON.stringify(JSON.parse(readFileSync(path, "utf8")).filter((entry) => entry.id !== "go"))),
+    (path) => writeFileSync(path, JSON.stringify(JSON.parse(readFileSync(path, "utf8")).map(({ sha256, ...entry }) => entry))),
+  ];
+  for (const spoil of manifests) {
+    const home = installLacking(t);
+    spoil(join(home, "grammars", "grammars.json"));
+
+    const { row, lines } = treeSitterRowOf(home);
+
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, "grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped");
+    assert.deepEqual([...row.lostGrammars].sort(), all);
+    assert.deepEqual(lines, [`tree-sitter ${row.version}: ${row.reason}, ${GRAMMAR_REMEDY}`]);
+  }
+});
+
 test("an install older than the tree-sitter runtime reads as that engine absent, and says how to install it", needsSymlinks, (t) => {
   const home = installLacking(t, { modules: ["web-tree-sitter"] });
   const script = `

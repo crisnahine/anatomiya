@@ -27,8 +27,11 @@ Run the readiness probe and report what it said.
    report the remedy its line carries and stop there: installing an interpreter is the user's call.
 
 5. The `tree-sitter` line is the engine that reads Python, PHP, Go, Java, C#, Rust and Kotlin, and
-   it counts the grammar files that load: `tree-sitter 0.27.0 ok (grammars: 7 of 7)`. A line that
-   names a file, `grammars: 6 of 7, kotlin.wasm did not load`, is not something setup fixes: the
+   it counts the grammar files that load and are the ones the plugin shipped, each held to the
+   SHA-256 in `grammars.json` beside them: `tree-sitter 0.27.0 ok (grammars: 7 of 7)`. A line that
+   names a file is not something setup fixes, whichever of the three it is: `grammars: 6 of 7,
+   kotlin.wasm did not load`, `grammars: 6 of 7, kotlin.wasm is not the file this plugin shipped`,
+   or `grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped`. The
    grammars ship in the plugin's own directory and no package install writes one. Report the remedy
    the line carries, which is to reinstall the plugin, and do not offer `/anatomiya:setup` for it.
    A scan still reads every other language meanwhile. `tree-sitter absent` is the package missing,

@@ -72,9 +72,10 @@ ordinary case.
 files under `plugins/anatomiya/grammars/`: Python, PHP, Go, Java, C#, Rust and Kotlin. Nothing is downloaded for them, and none of the seven
 needs its own toolchain on your machine: Node runs all of them.
 Each file is a copy of the one in its grammar's npm package, and `plugins/anatomiya/grammars/grammars.json` records
-the package, the version and the SHA-256 of each. `/anatomiya:doctor` loads them and prints how
-many answered on its `tree-sitter` line, `grammars: 7 of 7`; one that does not load is named
-there, and the fix is to reinstall the plugin, since no package install writes a grammar file.
+the package, the version and the SHA-256 of each. `/anatomiya:doctor` loads them, hashes each
+against that record, and prints how many passed on its `tree-sitter` line, `grammars: 7 of 7`; one
+that does not load, or that is not the file the plugin shipped, is named there, and the fix is to
+reinstall the plugin, since no package install writes a grammar file.
 
 When nothing was installed, `/anatomiya:doctor` says so in its first line. When an install ran and
 stopped short, its engine lines say which one did not load. One command answers both:
