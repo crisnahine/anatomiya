@@ -326,6 +326,18 @@ test("temporary files an earlier scan left are counted apart from the area files
   assert.equal("stagedRemoved" in scanSummary(result(), plan({ staged: [] })), false);
 });
 
+test("temporary files left in the store are counted apart from the ones left beside the map", () => {
+  const one = scanSummary(result(), plan({ staged: ["a", "b"], storeStaged: ["facts.json.tmp-1-0123456789abcdef"] }));
+  assert.deepEqual([one.stagedRemoved, one.storeStagedRemoved], [2, 1]);
+  assert.ok(scanLines(one).includes("1 temporary file an earlier scan left in .claude/anatomiya was removed"), scanLines(one).join("\n"));
+  assert.ok(scanLines(one).includes("2 temporary files an earlier scan left in .claude/rules were removed"));
+  const many = scanSummary(result(), plan({ storeStaged: ["a", "b"] }), { dryRun: true });
+  assert.ok(scanLines(many).includes("2 temporary files an earlier scan left in .claude/anatomiya would be removed"));
+  assert.equal("stagedRemoved" in many, false);
+  assert.equal("storeStagedRemoved" in scanSummary(result(), plan()), false);
+  assert.equal("storeStagedRemoved" in scanSummary(result(), plan({ storeStaged: [] })), false);
+});
+
 test("one removed area file and one default-matching claim read at one", () => {
   const lines = scanLines(summary({ removed: 1, claims: { stated: 3, matchingDefault: 1, total: 9 } }));
 

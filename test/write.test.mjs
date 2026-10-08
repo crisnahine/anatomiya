@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
-import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, stagedPath, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { writeFacts, writeTemp, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
@@ -1632,6 +1632,7 @@ const BEFORE_PLAN = {
   write: ["anatomiya-overview.md", "anatomiya-area-5c06cdf8.md"],
   remove: [],
   staged: [],
+  storeStaged: [],
   foreign: [],
   unknown: [],
   replaced: [],
@@ -1643,8 +1644,8 @@ const BEFORE_PLAN = {
   held: [],
   blind: false,
 };
-// `staged` came after: the temporary files an earlier scan left, none on a directory no scan stopped in.
-const BEFORE_KEYS = ["write", "remove", "staged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
+// `staged` and `storeStaged` came after: the temporary files an earlier scan left, none where no scan stopped.
+const BEFORE_KEYS = ["write", "remove", "staged", "storeStaged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
 const BEFORE_AREA = `---
 generator: anatomiya
 paths:
@@ -3207,8 +3208,10 @@ test("nothing is removed until every file has been renamed into place", async (t
 // A process id no system gives, since Windows hands a freed one to the next
 // process, and sixteen hex digits, as the stager spells them.
 const gone = () => 2 ** 22 + 7;
-const stagedName = (name, pid, hex = "0123456789abcdef") => `${name}.tmp-${pid}-${hex}`;
+const stagedName = (name, pid, hex = "0123456789abcdef") => stagedPath(name, pid, hex);
 const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
+// The names a scan or a refresh stages in the store.
+const STORE_FILES = ["facts.json", "layout.json", "refresh.json"];
 
 test("the name a staged file is given is the name a later scan knows as one", (t) => {
   const dir = workspace(t);
@@ -3217,6 +3220,7 @@ test("the name a staged file is given is the name a later scan knows as one", (t
       const tmp = writeTemp(join(dir, name), "x");
       assert.equal(stagedBy(tmp.slice(dir.length + 1), target), process.pid, tmp);
     }
+    assert.equal(stagedPath("a", 7, "0123456789abcdef"), "a.tmp-7-0123456789abcdef");
     // Under another target's extension, a name no scan gives a file, no prefix, and a suffix cut short or run long.
     const other = EVERY_TARGET.find((o) => o !== target && !overviewName(o).endsWith(target.ext));
     for (const name of [
@@ -3358,6 +3362,104 @@ test("a link at a temporary file's name is never removed, nor what it leads to",
 
 test("a fifo at a temporary file's name is never removed", needsPosixSpecialFiles, (t) => {
   nonFileAtAStagedName(t, (path) => execFileSync("mkfifo", [path]));
+});
+
+test("a temporary file an earlier scan left is removed without a byte of it being read", async (t) => {
+  // Its bytes were read to be put back, and a 1.5 GB sparse file at such a name took a scan to 1,535 MB resident.
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  const left = [
+    ...EVERY_TARGET.map((target) => join(dir, target.dir, stagedName(overviewName(target), gone()))),
+    ...STORE_FILES.map((name) => join(dir, STORE, stagedName(name, gone()))),
+  ];
+  for (const path of left) writeFileSync(path, "half a map\n");
+  const opened = await watched(t, "openSync");
+
+  writeMap(result(dir, [a]));
+
+  for (const path of left) assert.equal(existsSync(path), false, path);
+  const read = opened.calls.filter(([, flags]) => flags !== "wx").map(([path]) => String(path));
+  assert.ok(read.some((path) => path.endsWith("facts.json")), "the control: a file that is put back is opened to be read");
+  assert.deepEqual(read.filter((path) => path.includes(".tmp-")), []);
+});
+
+test("a scan that stops after removing a temporary file does not put that file back", async (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a, area("src/api")]), { targets: ALL });
+  const before = settled(dir);
+  const left = [join(dir, STORE, stagedName("facts.json", gone())), join(dir, RULES, stagedName(overviewName(TARGETS.claude), gone()))];
+  for (const path of left) writeFileSync(path, "half a map\n");
+  // Both of them and Claude Code's stale area file go, then Cursor's stale one is locked.
+  await failNth(t, "unlinkSync", 4);
+
+  assert.throws(() => writeMap(result(dir, [a]), { targets: ALL }), /could not be removed \(EPERM\), so the scan stopped and put back what it had replaced/);
+
+  assert.deepEqual(settled(dir), before, "the map that was there, and neither temporary file");
+});
+
+test("a temporary file an earlier scan left in the store is removed, and nothing else there is", (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  const left = STORE_FILES.map((name) => stagedName(name, gone())).sort();
+  // Another name, a suffix cut short or run on, and one whose stager is this process.
+  const kept = [
+    stagedName("notes.json", gone()),
+    stagedName("baseline.json", gone()),
+    stagedName("facts.json", gone(), "0123456789abcde"),
+    `${stagedName("facts.json", gone())}.bak`,
+    "facts.json.tmp",
+    stagedName("layout.json", process.pid),
+  ];
+  const plant = () => {
+    for (const name of [...left, ...kept]) writeFileSync(join(dir, STORE, name), "{}\n");
+  };
+  const held = () => readdirSync(join(dir, STORE)).filter((name) => name.includes(".tmp")).sort();
+  plant();
+
+  const dry = writeMap(result(dir, [a]), { dryRun: true });
+  assert.deepEqual(dry.storeStaged, left);
+  assert.deepEqual(held(), [...left, ...kept].sort(), "a dry run removes nothing");
+
+  const blind = result(dir, []);
+  blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+  assert.deepEqual(writeMap(blind).storeStaged, []);
+  assert.deepEqual(held(), [...left, ...kept].sort(), "nor does a run that read no file of a language");
+
+  const plan = writeMap(result(dir, [a]));
+  assert.deepEqual(plan.storeStaged, left);
+  assert.deepEqual(held(), [...kept].sort());
+  assert.deepEqual(writeMap(result(dir, [a])).storeStaged, []);
+});
+
+function nonFileAtAStoreName(t, make) {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  const at = STORE_FILES.map((name) => join(dir, STORE, stagedName(name, gone())));
+  for (const path of at) make(path);
+  const shapes = () => at.map((path) => lstatSync(path).mode);
+  const before = shapes();
+
+  assert.deepEqual(writeMap(result(dir, [a])).storeStaged, []);
+  assert.deepEqual(shapes(), before, "the entry is what it was");
+}
+
+test("a directory at a temporary file's name in the store is never removed", (t) => {
+  nonFileAtAStoreName(t, (path) => mkdirSync(path));
+});
+
+test("a link at a temporary file's name in the store is never removed, nor what it leads to", needsSymlinks, (t) => {
+  const outside = elsewhere(t);
+  writeFileSync(join(outside, "theirs.json"), "{}\n");
+  nonFileAtAStoreName(t, (path) => symlinkSync(join(outside, "theirs.json"), path));
+  assert.equal(readFileSync(join(outside, "theirs.json"), "utf8"), "{}\n");
+});
+
+test("a fifo at a temporary file's name in the store is never removed", needsPosixSpecialFiles, (t) => {
+  nonFileAtAStoreName(t, (path) => execFileSync("mkfifo", [path]));
 });
 
 test("a target directory that cannot be written is refused by name before a dry run answers", needsPosixPermissions, (t) => {
