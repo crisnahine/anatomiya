@@ -10,9 +10,10 @@
  * leaves, and nothing else.
  */
 import { blank } from "./blank.mjs";
-import { EXTRACTORS } from "./langs.mjs";
+import { ENGINES, EXTRACTORS } from "./langs.mjs";
 
-const LANGS = new Set(["js", "jsx", "ts", "tsx"]);
+// The grammars a block's `lang` may name are the ones the engine that parses it reads.
+const LANGS = new Set(ENGINES.oxc.grammars);
 
 const isSpace = (c) => c === " " || c === "\n" || c === "\t" || c === "\r" || c === "\f";
 const endsName = (c) => c === undefined || c === "/" || c === ">" || isSpace(c);

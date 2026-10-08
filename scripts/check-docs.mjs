@@ -216,7 +216,14 @@ export function readGlossary(text) {
  * there has its "N for X" count read here or the gate does not start.
  */
 export const PROSE_NAMES = { python: "Python", php: "PHP", go: "Go", java: "Java", csharp: "C#", rust: "Rust", kotlin: "Kotlin" };
-assertKeyed("PROSE_NAMES", PROSE_NAMES, hostedBy("tree-sitter"));
+
+/** Each language tree-sitter hosts as `[its name in prose, its id]`, refused where the names and the registry differ on a language. */
+export function proseNamed(names = PROSE_NAMES, hosted = hostedBy("tree-sitter")) {
+  assertKeyed("PROSE_NAMES", names, hosted);
+  return hosted.map((id) => [names[id], id]);
+}
+
+const TREE_LANGS = proseNamed();
 
 /**
  * Every file of this repository git can see, or `{ error }` holding git's own
@@ -451,7 +458,6 @@ export function checkDocs() {
   const jsx = rowsForLangs(["jsx"]).length;
   const ruby = rowsForLangs(["ruby"]).length;
   const component = { Vue: rowsForLangs(["vue"]).length, Svelte: rowsForLangs(["svelte"]).length };
-  const TREE_LANGS = hostedBy("tree-sitter").map((id) => [PROSE_NAMES[id], id]);
   const obligations = rowsOfKind("pairing").length;
 
   // Section 4 of the walkthrough counts the rows asked of a file, so the

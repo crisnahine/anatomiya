@@ -117,7 +117,7 @@ test("a package that is not installed is said, not passed over", async () => {
     rmSync(join(root, "node_modules", GRAMMARS.python.package), { recursive: true });
     const problems = check(root);
     assert.equal(problems.length, 1, problems.join("\n"));
-    assert.match(problems[0], /tree-sitter-python\/tree-sitter-python\.wasm is not installed/);
+    assert.match(problems[0], /tree-sitter-python\/tree-sitter-python\.wasm is not installed, so nothing holds python\.wasm to it; run npm ci --ignore-scripts$/);
   });
 });
 
@@ -174,11 +174,11 @@ test("an installed package that is not at the locked version is refused, whateve
   await oneProblem((root) => {
     const path = join(root, "node_modules", GRAMMARS.go.package, "package.json");
     writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), version: "0.23.4" }));
-  }, /installed tree-sitter-go is 0\.23\.4, the lockfile says 0\.25\.0: run npm ci/);
+  }, /installed tree-sitter-go is 0\.23\.4, the lockfile says 0\.25\.0: run npm ci --ignore-scripts$/);
 });
 
 test("an installed package with no manifest of its own is refused", async () => {
-  await oneProblem((root) => rmSync(join(root, "node_modules", GRAMMARS.go.package, "package.json")), /installed tree-sitter-go is unreadable, the lockfile says 0\.25\.0: run npm ci/);
+  await oneProblem((root) => rmSync(join(root, "node_modules", GRAMMARS.go.package, "package.json")), /installed tree-sitter-go is unreadable, the lockfile says 0\.25\.0: run npm ci --ignore-scripts$/);
 });
 
 test("a manifest id this does not vendor is refused, and so is one that is not a string", async () => {

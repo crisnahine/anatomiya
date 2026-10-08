@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { PROSE_NAMES, READS, checkDocs, doneFilesGone, pathsThatMoved, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, checkDocs, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
@@ -178,7 +178,7 @@ test("an untouched copy of this repository passes", (t) => {
   assert.match(output, /docs match the code/);
 });
 
-test("a tree git cannot list the files of fails the gate and says why, where it passed with every path unread", (t) => {
+test("a tree git cannot list the files of fails the gate and says why", (t) => {
   const dir = copyWithNoRepository(t);
 
   const { status, output } = check(dir);
@@ -259,6 +259,11 @@ test("the rows a component's script is asked are read against the registry, per 
 
 test("the rows asked of each tree-sitter language are read against the registry", (t) => {
   assert.deepEqual(Object.keys(PROSE_NAMES), hostedBy("tree-sitter"), "one name for each language the registry routes to tree-sitter");
+  // The gate does not start on a table and a registry that differ, in either direction.
+  const { kotlin, ...short } = PROSE_NAMES;
+  assert.throws(() => proseNamed(short), /^Error: PROSE_NAMES has no entry for kotlin$/);
+  assert.throws(() => proseNamed({ ...PROSE_NAMES, zig: "Zig" }), /^Error: PROSE_NAMES holds zig, which nothing asks it about$/);
+  assert.deepEqual(proseNamed().at(-1), [kotlin, "kotlin"]);
   for (const name of Object.values(PROSE_NAMES)) {
     const dir = repoCopy(t);
     const wrong = bumpCount(dir, new RegExp(`(\\d+)\\s+for\\s+${name.replace("#", "\\#")}(?![\\w#])`), "docs/how-it-works.md");
