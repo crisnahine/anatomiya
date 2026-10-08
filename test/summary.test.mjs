@@ -338,6 +338,21 @@ test("temporary files left in the store are counted apart from the ones left bes
   assert.equal("storeStagedRemoved" in scanSummary(result(), plan({ storeStaged: [] })), false);
 });
 
+test("a temporary file that could not be removed is counted as left, apart from the ones that went", () => {
+  const one = scanSummary(result(), plan({ staged: ["a"], stagedLeft: ["anatomiya-overview.md.tmp-1-0123456789abcdef"], storeStagedLeft: ["b", "c"] }));
+  assert.deepEqual([one.stagedRemoved, one.stagedLeft, one.storeStagedLeft, "storeStagedRemoved" in one], [1, 1, 2, false]);
+  const lines = scanLines(one);
+  assert.ok(lines.includes("1 temporary file an earlier scan left in .claude/rules was removed"), lines.join("\n"));
+  assert.ok(lines.includes("1 temporary file an earlier scan left in .claude/rules could not be removed, so it was left as it is"), lines.join("\n"));
+  assert.ok(lines.includes("2 temporary files an earlier scan left in .claude/anatomiya could not be removed, so they were left as they are"), lines.join("\n"));
+  // None left, none said, and the record has no key for it.
+  for (const key of ["stagedLeft", "storeStagedLeft"]) {
+    assert.equal(key in scanSummary(result(), plan()), false);
+    assert.equal(key in scanSummary(result(), plan({ [key]: [] })), false);
+  }
+  assert.equal(scanLines(scanSummary(result(), plan({ staged: ["a"] }))).some((line) => line.includes("could not be removed")), false);
+});
+
 test("one removed area file and one default-matching claim read at one", () => {
   const lines = scanLines(summary({ removed: 1, claims: { stated: 3, matchingDefault: 1, total: 9 } }));
 

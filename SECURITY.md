@@ -278,7 +278,12 @@ stager is not running, is removed by a scan that writes, and the summary counts 
 files an earlier scan left in .claude/anatomiya were removed`). `baseline.json.tmp-...` and
 `refresh.lock.tmp-...` are not swept, and neither is a link, a directory or a fifo at any of these
 names. A dry run removes none and says how many a scan would. No temporary file is opened before it
-is removed.
+is removed. One whose removal fails, whatever the removal answers, is left where it is and stops
+nothing: the scan writes the map and counts it (`1 temporary file an earlier scan left in
+.claude/anatomiya could not be removed, so it was left as it is`, `stagedLeft` and
+`storeStagedLeft` in `--format json`, and in a Cursor or Copilot directory that directory's count
+of entries the scan neither wrote nor removed). So a file a repository ships under such a name and
+makes read-only costs every scan one line and no more.
 
 A scan that refuses leaves nothing behind. Every refusal above is decided while the plan is made,
 before a directory is created or a byte is written, and a dry run refuses the same way; the
@@ -298,7 +303,16 @@ not be replaced (EPERM)), so nothing there was written or removed: close what ho
 its mode, then scan again`. That directory reads `unknown` in `--format json`. A refresh that
 leaves a directory this way names it under `stopped` in `refresh.json`, and a refresh started
 more than 30 minutes later scans the same checkout again, for as long as a directory stays stopped
-and no more often. A temporary file an
+and no more often. A directory that
+refuses a new file (the same three codes when a temporary file is created in it) is the same case
+one step sooner, before anything is replaced: in `.claude/rules`, in `.claude/anatomiya` and in a
+directory the scan named, the scan refuses with `a file could not be created in .claude/rules
+(EACCES), so nothing was written: fix its permissions and scan again`, and no path of a temporary
+file is printed. In a Cursor or Copilot directory the scan did not name, the temporary files
+already created there are removed, the record is written once, naming for that directory the files
+it held before, and the scan says `.cursor/rules could not be written (a file could not be created
+in .cursor/rules (EACCES)), so nothing there was written or removed: fix its permissions, then scan
+again`. A temporary file an
 earlier scan left there, removed before the locked file was met, stays removed. Where the put-back
 or the second record write fails, the scan refuses whole and everything is put back. A dry run
 renames nothing, so past a locked file it says `would write`. A process killed between the put-back

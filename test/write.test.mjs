@@ -2033,6 +2033,91 @@ test("a file made immutable in a directory the scan did not name is left, and na
   }
 });
 
+/** Make the exclusive create of a temporary file throw the code `lock.on` answers for its path. */
+async function refusingToStage(t) {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.openSync;
+  const lock = { on: null };
+  fs.openSync = (path, flags, ...rest) => {
+    const code = flags === "wx" ? (lock.on?.(String(path).split(sep).join("/")) ?? null) : null;
+    if (code !== null) throw Object.assign(new Error(`${code}: injected, openSync '${path}'`), { code });
+    return real(path, flags, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.openSync = real;
+    syncBuiltinESMExports();
+  });
+  return lock;
+}
+
+const PERMIT = "fix its permissions";
+
+test("a file that cannot be staged in a directory the scan did not name leaves that directory alone, and Claude Code's map is written", async (t) => {
+  const lock = await refusingToStage(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  for (const target of OTHERS) {
+    const other = OTHERS.find((o) => o !== target);
+    // The first file staged there, and the last, with one already staged beside it.
+    for (const [name, code] of [[overviewName(target), "EACCES"], [areaName(target, c.id), "EPERM"]]) {
+      const dir = workspace(t);
+      const said = `${target.dir}/${name}`;
+      writeMap(result(dir, [a, b]), { targets: ALL });
+      const theirs = tree(join(dir, target.dir));
+      lock.on = (at) => (at.includes(`/${said}.tmp-`) ? code : null);
+
+      const plan = writeMap(result(dir, [a, c]));
+
+      lock.on = null;
+      const { state, on, reason, remedy, unwritable, write, remove, names } = plan.targets[target.id];
+      assert.deepEqual(
+        { state, on, reason, remedy, unwritable, write, remove, names },
+        { state: "unknown", on: false, reason: `a file could not be created in ${target.dir} (${code})`, remedy: PERMIT, unwritable: true, write: [], remove: [], names: mapOf(target, a, b) },
+        said
+      );
+      assert.deepEqual(tree(join(dir, target.dir)), theirs, `${said}: every file there as it was, and no temporary file`);
+      assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, c), `${said}: Claude Code's map moved`);
+      assert.deepEqual(namesIn(dir, other), mapOf(other, a, c), `${said}: and so did the directory beside it`);
+      assert.deepEqual(readFacts(dir).targets, { [target.id]: mapOf(target, a, b), [other.id]: mapOf(other, a, c) }, `${said}: the record names the files still there`);
+      assert.notEqual(readLayout(dir), null, `${said}: and its layout file answers for it`);
+      assert.deepEqual(readdirSync(join(dir, STORE)).sort(), ["facts.json", "layout.json"]);
+
+      const healed = writeMap(result(dir, [a, c]));
+      assert.deepEqual({ state: healed.targets[target.id].state, on: healed.targets[target.id].on }, { state: "on", on: true }, said);
+      assert.deepEqual(namesIn(dir, target), mapOf(target, a, c), `${said}: writable again, the next scan writes it`);
+    }
+  }
+});
+
+test("a file that cannot be staged where the scan must write refuses whole, in a sentence that names the directory", async (t) => {
+  const lock = await refusingToStage(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const before = settled(dir);
+  const refuses = (said, options) => {
+    assert.throws(() => writeMap(result(dir, [a, c]), options), { message: `a file could not be created in ${said} (EACCES), so nothing was written: ${PERMIT} and scan again` }, said);
+    assert.deepEqual(settled(dir), before, `${said}: all three directories and the record, with no temporary file in any`);
+  };
+
+  // A target the scan named, the last file staged there.
+  lock.on = (at) => (at.includes(`/${copilot.dir}/${areaName(copilot, c.id)}.tmp-`) ? "EACCES" : null);
+  refuses(copilot.dir, { targets: ALL });
+  // Claude Code's own directory and the store, named or not.
+  lock.on = (at) => (at.includes(`/${RULES}/${areaFilename(c)}.tmp-`) ? "EACCES" : null);
+  refuses(RULES);
+  lock.on = (at) => (at.includes(`/${STORE}/layout.json.tmp-`) ? "EACCES" : null);
+  refuses(STORE);
+  lock.on = (at) => (at.includes(`/${STORE}/facts.json.tmp-`) ? "EACCES" : null);
+  refuses(STORE);
+
+  // A full disk is no permission, and is not called one.
+  lock.on = (at) => (at.includes(`/${cursor.dir}/`) ? "ENOSPC" : null);
+  assert.throws(() => writeMap(result(dir, [a, c])), { code: "ENOSPC" });
+  assert.deepEqual(settled(dir), before);
+});
+
 test("a locked file whose rollback loses a file says the scan stopped part way, and never that everything was put back", async (t) => {
   const a = area("src/services");
   const b = area("src/api");
@@ -3546,6 +3631,69 @@ test("a scan that stops after removing a temporary file does not put that file b
   assert.throws(() => writeMap(result(dir, [a]), { targets: ALL }), /could not be removed \(EPERM\), so the scan stopped and put back what it had replaced/);
 
   assert.deepEqual(settled(dir), before, "the map that was there, and neither temporary file");
+});
+
+/** One temporary file an earlier scan left in the store and in each of the three rule directories, all three on. */
+function leftoverInEach(t) {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]), { targets: ALL });
+  const left = { store: stagedName("facts.json", gone()) };
+  writeFileSync(join(dir, STORE, left.store), "{}\n");
+  for (const target of EVERY_TARGET) {
+    left[target.id] = stagedName(overviewName(target), gone());
+    writeFileSync(join(dir, target.dir, left[target.id]), "half a map\n");
+  }
+  const scanned = () => writeMap(result(dir, [a, area("src/api")]));
+  /** What a scan that left all four must say and leave: the map of two areas everywhere, each leftover in place and counted. */
+  const assertLeft = (plan, went = []) => {
+    const b = area("src/api");
+    assert.deepEqual([plan.storeStaged, plan.storeStagedLeft], [went, [left.store]]);
+    assert.deepEqual([plan.staged, plan.stagedLeft], [[], [left.claude]]);
+    assert.deepEqual(listRules(dir), [...mapOf(TARGETS.claude, a, b), left.claude].sort());
+    assert.deepEqual(readdirSync(join(dir, STORE)).sort(), ["facts.json", left.store, "layout.json"].sort());
+    for (const target of OTHERS) {
+      const { state, write, remove, foreign } = plan.targets[target.id];
+      assert.deepEqual({ state, wrote: write.length, remove, foreign }, { state: "on", wrote: 3, remove: [], foreign: [left[target.id]] }, target.id);
+      assert.deepEqual(namesIn(dir, target), [...mapOf(target, a, b), left[target.id]].sort(), target.id);
+    }
+    assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a, b), copilot: mapOf(copilot, a, b) }, "the record names the map and no leftover");
+  };
+  return { dir, left, scanned, assertLeft };
+}
+
+test("a temporary file an earlier scan left that cannot be removed is left where it is and counted, in the store and in every rule directory", async (t) => {
+  const lock = await refusing(t);
+  const { dir, left, scanned, assertLeft } = leftoverInEach(t);
+  // One more in the store, which nothing holds.
+  const goes = stagedName("layout.json", gone());
+  // Whatever the removal answers: a leftover is no file of the map's to stop for.
+  for (const code of ["EPERM", "EBUSY", "EIO"]) {
+    writeFileSync(join(dir, STORE, goes), "{}\n");
+    const held = new Set(Object.values(left));
+    lock.on = (at) => (held.has(at.slice(at.lastIndexOf("/") + 1)) ? code : null);
+
+    const plan = scanned();
+
+    lock.on = null;
+    assertLeft(plan, [goes]);
+    assert.equal(existsSync(join(dir, STORE, goes)), false, `${code}: the one that could be removed was`);
+  }
+
+  const plan = scanned();
+  assert.deepEqual([plan.storeStaged, plan.staged, "storeStagedLeft" in plan, "stagedLeft" in plan], [[left.store], [left.claude], false, false], "let go, the next scan removes each and says nothing of any left");
+  for (const target of OTHERS) assert.deepEqual([plan.targets[target.id].remove, plan.targets[target.id].foreign], [[left[target.id]], []], target.id);
+});
+
+test("a temporary file made immutable is left where it is and counted, and the scan writes", needsImmutableFlag, (t) => {
+  const { dir, left, scanned, assertLeft } = leftoverInEach(t);
+  const at = [join(dir, STORE, left.store), ...EVERY_TARGET.map((target) => join(dir, target.dir, left[target.id]))];
+  for (const path of at) execFileSync("chflags", ["uchg", path]);
+  try {
+    assertLeft(scanned());
+  } finally {
+    for (const path of at) execFileSync("chflags", ["nouchg", path]);
+  }
 });
 
 test("a temporary file an earlier scan left in the store is removed, and nothing else there is", (t) => {
