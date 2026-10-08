@@ -258,6 +258,17 @@ const pyIn = (d, n) => [`${d}/m${n}.py`, `def f${n}():\n    return ${n}\n`];
 const pyTestIn = (d, n) => [`${d}/test_m${n}.py`, `def test_f${n}():\n    assert True\n`];
 const rustIn = (crate, n) => [`${crate}/src/m${n}.rs`, `pub fn f${n}() -> i32 { ${n} }\n`];
 const PY_TEST = "def test_x():\n    assert True\n";
+const rbIn = (d, n) => [`${d}/m${n}.rb`, `class M${n}\n  def run\n    ${n}\n  end\nend\n`];
+const rbSpecIn = (d, n) => [`${d}/m${n}_spec.rb`, `RSpec.describe M${n} do\n  it "runs" do\n  end\nend\n`];
+const jsIn = (d, n) => [`${d}/m${n}.js`, `export function f${n}() {\n  return ${n};\n}\n`];
+const jsTestIn = (d, n) => [`${d}/m${n}.test.js`, `import { test } from "node:test";\ntest("f${n}", () => {});\n`];
+const RB_TREE = [...five(rbIn, "app/tested"), ...five(rbSpecIn, "spec/tested"), ...five(rbIn, "app/bare")];
+const JS_TREE = [...five(jsIn, "src/tested"), ...five(jsTestIn, "src/tested"), ...five(jsIn, "src/bare")];
+const PY_TREE = [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare")];
+const PHP_TREE = [...five(PLACED.php.source, "Tested"), ...five(PLACED.php.spec, "Tested"), ...five(PLACED.php.source, "Bare"), ["composer.json", "{}\n"]];
+const MAVEN_TREE = [...five(PLACED.java.source, "tested"), ...five(PLACED.java.spec, "tested"), ...five(PLACED.java.source, "bare"), ["pom.xml", "<project/>\n"]];
+const four = (make, ...at) => [0, 1, 2, 3].map((n) => make(...at, n));
+const paths = (files) => files.map(([rel]) => rel);
 
 // A first test, in the shapes a corpus of existing tests cannot hold: [name, the base tree, what the branch adds, the paths found].
 const FIRST_TESTS = [
@@ -284,10 +295,34 @@ const FIRST_TESTS = [
     [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare")], [pyIn("src/bare/fresh", 0), pyTestIn("src/bare/fresh", 0)], [], ["src/bare/fresh/test_m0.py"]],
   ["Python: a first test in a package the base already held below an untested one",
     [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare"), pyIn("src/bare/old", 9)], [pyTestIn("src/bare/old", 9)], ["src/bare/old/test_m9.py"]],
+  // A directory holding nothing but the tests the change wrote was made for them, and is the directory this asks about.
+  // The notice speaks of the first alone: once that one is written the directory holds a test.
+  ["Ruby: four specs in a directory the change invented, with no source directory of its name",
+    RB_TREE, four(rbSpecIn, "spec/bare/fresh"), paths(four(rbSpecIn, "spec/bare/fresh")), ["spec/bare/fresh/m0_spec.rb"]],
+  ["JavaScript: four tests in a directory the change invented, with no source beside them",
+    JS_TREE, four(jsTestIn, "src/bare/fresh/__tests__"), paths(four(jsTestIn, "src/bare/fresh/__tests__")), ["src/bare/fresh/__tests__/m0.test.js"]],
+  ["JavaScript: a test and its helper in a directory the change invented",
+    JS_TREE, [jsTestIn("src/bare/fresh/__tests__", 0), jsIn("src/bare/fresh/__tests__", 1)], ["src/bare/fresh/__tests__/m0.test.js"]],
+  ["Python: a test alone in a directory the change invented", PY_TREE, [pyTestIn("src/bare/fresh", 0)], ["src/bare/fresh/test_m0.py"]],
+  ["PHP: a test for a source directory that exists nowhere", PHP_TREE, [PLACED.php.spec("Bare/Fresh", 0)], ["tests/Bare/Fresh/M0Test.php"]],
+  ["Java: a test in a flat directory the build pairs with nothing",
+    MAVEN_TREE, [["bare/test/shop/bare/M0Test.java", PLACED.java.spec("bare", 0)[1]]], ["bare/test/shop/bare/M0Test.java"]],
+  ["Ruby: a first spec for a directory the base already held", [...RB_TREE, rbIn("app/bare/old", 9)], [rbSpecIn("spec/bare/old", 9)], ["spec/bare/old/m9_spec.rb"]],
+  ["Ruby: a new directory with its source and its spec",
+    RB_TREE, [rbIn("app/bare/fresh", 0), rbSpecIn("spec/bare/fresh", 0)], [], ["spec/bare/fresh/m0_spec.rb"]],
+  ["JavaScript: a new directory with its source and its test",
+    JS_TREE, [jsIn("src/bare/fresh", 0), jsTestIn("src/bare/fresh/__tests__", 0)], [], ["src/bare/fresh/__tests__/m0.test.js"]],
+  ["Python: a test in a directory the change invented, beside a file of another language and with source added elsewhere",
+    PY_TREE, [pyTestIn("src/bare/fresh", 0), jsIn("src/bare/fresh", 1), pyIn("src/tested", 7)], ["src/bare/fresh/test_m0.py"]],
+  // git lists the inner directory alone when asked of both, and the outer one is still the base's.
+  ["Python: tests for a package the base held and for one inside it, with source added to both",
+    [...PY_TREE, pyIn("src/bare/old", 9), pyIn("src/bare/old/deep", 8)],
+    [pyIn("src/bare/old", 7), pyIn("src/bare/old/deep", 6), pyTestIn("src/bare/old", 9), pyTestIn("src/bare/old/deep", 8)],
+    ["src/bare/old/deep/test_m8.py", "src/bare/old/test_m9.py"], ["src/bare/old/test_m9.py", "src/bare/old/deep/test_m8.py"]],
 ];
 
 for (const [name, tree, added, found, noticed = found] of FIRST_TESTS) {
-  test(`a first test: ${name}`, async (t) => {
+  test(`a first test: ${name}`, name.startsWith("Ruby") ? needsRuby : {}, async (t) => {
     const dir = repo(t, ({ write, commit }) => {
       for (const [rel, body] of tree) write(rel, body);
       commit("init");
@@ -5444,6 +5479,50 @@ test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, asyn
   assert.equal(calls.filter((c) => c === "rev-parse --verify --quiet main^{commit}").length, 1, "and main once");
   const listing = calls.filter((c) => c.startsWith("ls-tree -r"));
   assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
+});
+
+test("a merge base that cannot say whether it held a directory states no finding about a test for it", needsShebang, async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    for (const [rel, body] of [...PY_TREE, pyIn("src/bare/old", 9)]) write(rel, body);
+    commit("init");
+  });
+  writeMap(await scan(dir), {});
+  const { files } = await collect(dir);
+  writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+  execFileSync("git", ["checkout", "-q", "-b", "feature"], { cwd: dir, stdio: "pipe" });
+  for (const [rel, body] of [pyIn("src/bare/old", 7), pyTestIn("src/bare/old", 9)]) writeFileSync(join(dir, rel), body);
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "source and a test"], { cwd: dir, stdio: "pipe" });
+  const placement = "ls-tree -z --name-only";
+
+  const answered = await checkThroughShim(t, dir);
+  assert.equal(answered.calls.filter((c) => c.startsWith(placement)).length, 1, answered.calls.join("\n"));
+  assert.deepEqual(forKey(answered.report, "test_precedent").map((f) => f.path), ["src/bare/old/test_m9.py"]);
+
+  // Silent the way an index that cannot be listed is: the fact that decides the finding was not read (C33).
+  const unanswered = (await checkThroughShim(t, dir, { fail: placement })).report;
+  assert.deepEqual(forKey(unanswered, "test_precedent"), []);
+  assert.deepEqual(unanswered.caveats, answered.report.caveats);
+});
+
+test("a change that puts no source under a directory asks the merge base nothing about it", needsShebang, async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    for (const [rel, body] of PY_TREE) write(rel, body);
+    commit("init");
+  });
+  writeMap(await scan(dir), {});
+  const { files } = await collect(dir);
+  writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+  execFileSync("git", ["checkout", "-q", "-b", "feature"], { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src/bare/fresh"));
+  writeFileSync(join(dir, "src/bare/fresh/test_m0.py"), PY_TEST);
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "a test alone"], { cwd: dir, stdio: "pipe" });
+
+  const { report, calls } = await checkThroughShim(t, dir);
+
+  assert.deepEqual(calls.filter((c) => c.startsWith("ls-tree -z")), []);
+  assert.deepEqual(forKey(report, "test_precedent").map((f) => f.path), ["src/bare/fresh/test_m0.py"]);
 });
 
 test("each read that runs beside the others still reports its own failure", needsShebang, async (t) => {

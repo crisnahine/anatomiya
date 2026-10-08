@@ -7,7 +7,7 @@
  * one where a convention was most likely broken. This asks the prior question
  * instead, and answers it from counts the scan already took (H38).
  */
-import { byCode, dirOf } from "./paths.mjs";
+import { byCode, dirOf, extOf } from "./paths.mjs";
 import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, namesATest, pairedWith, sitsWhereItsToolReads, withoutTree } from "./test-shape.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
@@ -93,10 +93,11 @@ function testedTail(rel) {
  * root of that project answers: a PHP `tests/Cache` is about the `src/Cache`
  * beside it, and a `Cache` in another tree is not its to answer for.
  *
- * `created` answers whether the change made a directory. A tail shortened past
- * one is a test of that directory, which has no habit yet, and the files of
- * the directory above it are another directory's: a package added with its
- * source and its test in one change was held to its parent's ratio.
+ * `created` answers whether the change made a directory and put source of a
+ * root's family in it. A tail shortened past one is a test of that directory,
+ * which has no habit yet, and the files of the directory above it are another
+ * directory's: a package added with its source and its test in one change was
+ * held to its parent's ratio.
  */
 function coveredRoot(rel, roots, created) {
   const parts = testedTail(rel).split("/").filter(Boolean);
@@ -121,7 +122,9 @@ function coveredRoot(rel, roots, created) {
     if (matches.length === 0) continue;
     if (matches.some(hasPrecedent)) return null;
     const below = parts.slice(end);
-    if (below.length > 0 && matches.some((r) => created([r.dir, ...below].join("/")))) return null;
+    // The family a root counts, or the test's own where the map recorded no extension for it.
+    const counted = (r) => familyOf(language(`x${r.companions.ext ?? extOf(rel)}`));
+    if (below.length > 0 && matches.some((r) => created([r.dir, ...below].join("/"), counted(r)))) return null;
     return matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0];
   }
   return null;
@@ -190,9 +193,9 @@ const testFilesHeld = (root) => (root.tests ?? []).reduce((n, t) => n + t.files,
  * of what says a file arrived.
  *
  * `holdsTest` answers whether a directory already holds a test that this change
- * did not bring, and `created` whether the change made a directory. A caller
- * that cannot tell says nothing, which leaves the rule where it was before the
- * question was asked.
+ * did not bring, and `created` whether the change made a directory for source
+ * of a family. A caller that cannot tell says nothing, which leaves the rule
+ * where it was before the question was asked.
  *
  * Nothing is said of a test that sits where its language's own tool reads it
  * from and nowhere else (`sitsWhereItsToolReads`): the first test of a Go
