@@ -52,7 +52,9 @@ on a release that already existed. Push the tag and let the workflow make the re
       compares bytes, offsets or a multi-line match. One file fails under that override on macOS
       and is no finding: `test/git.test.mjs`, in `a submodule's filter driver never runs through
       the superproject's status`, because the override replaces the machine's own system git
-      config. That test is skipped on Windows.
+      config. That test is skipped on Windows. Why the clone stands in for the runner, and what
+      Windows does with a held file, a process id and a name in another case, is read from the
+      owners' pages and source in `docs/research/what-windows-does-with-a-name-a-lock-and-a-pid.md`.
 - [ ] CI is green on the branch. Check it, do not assume: a suite that passes here can fail there
       over `init.defaultBranch`, path separators, or 8.3 short names, and all three have.
 - [ ] The corpus run reports no findings, for a change that touches counting. Leave the checkout
