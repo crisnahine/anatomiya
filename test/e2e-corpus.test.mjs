@@ -234,6 +234,12 @@ test("the probe breaks the learned naming class the map actually stated", () => 
   assert.match(plan.body, /^#/);
 });
 
+test("a probe for an area at the repository root is a file at the root", () => {
+  const plan = probePlan({ areas: [{ ...rubyArea([dim("file_naming_case")]), path: "." }] });
+
+  assert.equal(plan.path.includes("/"), false, plan.path);
+});
+
 test("the probe spells the other class in each direction the learning can go", () => {
   const at = (learned) => probePlan({ areas: [rubyArea([dim("file_naming_case", { learned })])] }).path;
 

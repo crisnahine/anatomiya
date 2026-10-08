@@ -1663,7 +1663,7 @@ function goRootRepo(t) {
   });
 }
 
-test("a package at the repository root gets an area file under every target, the same over three scans", async (t) => {
+test("a package at the repository root gets an area file wherever a reader can be given its pattern, the same over three scans", async (t) => {
   const dir = goRootRepo(t);
   const result = await scan(dir);
   writeMap(result, { targets: Object.keys(TARGETS) });
@@ -1693,12 +1693,12 @@ test("a package at the repository root gets an area file under every target, the
     assert.equal(claudeCodeReaches(paths, rel), mine, rel);
     assert.equal(globsReach(rootFiles, rel), mine, rel);
   }
-  // Cursor reads it at the root alone with no slash; VS Code reads it everywhere, and the file says so.
+  // Cursor reads it at the root alone with no slash. VS Code reads it under every parent directory, so
+  // Copilot has no file for the root, and its overview says which area that is.
   assert.ok(fileOf(cursor, ".").includes("globs: *.go"));
-  assert.ok(fileOf(copilot, ".").includes('applyTo: "*.go"'));
   assert.deepEqual(past(fileOf(cursor, "."), HEAD), past(fileOf(claude, "."), HEAD));
-  const widens = ["", TARGETS.copilot.widens, ""];
-  assert.deepEqual(past(fileOf(copilot, "."), HEAD), [...past(fileOf(claude, "."), HEAD).slice(0, -1), ...widens]);
+  assert.equal(first[`${copilot.dir}/anatomiya-area-${areaId(".")}${copilot.ext}`], undefined);
+  assert.match(first[`${copilot.dir}/anatomiya-overview${copilot.ext}`], /^- 1 area has no pattern GitHub Copilot can be given, so no file here covers it: the repository root\.$/m);
 
   // Two areas a reader could confuse, on two heads.
   assert.ok(fileOf(claude, "the repository root").includes("# ./the repository root  6 files"));

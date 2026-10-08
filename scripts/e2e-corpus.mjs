@@ -333,6 +333,9 @@ function extFor(area, key) {
   return exts.map(([ext]) => ext).find((ext) => isSource(`f${ext}`) && langs.includes(language(`f${ext}`))) ?? null;
 }
 
+// An area at the repository root has the path ".", and a file in it has no directory half.
+const under = (areaPath, name) => (areaPath === "." ? name : `${areaPath}/${name}`);
+
 /**
  * One file that breaks a row the map stated, or null when nothing stated one.
  *
@@ -358,7 +361,7 @@ export function probePlan(facts) {
       const stem = key === "file_naming_case" ? STEM[OTHER_CLASS[d.learned]] : "zzprobe";
       const body = probeBody(ext, key, d.learnedKind ?? null);
       if (body === null) continue;
-      return { area: area.path, dimension: key, learned: d.learned, path: `${area.path}/${stem}${ext}`, body };
+      return { area: area.path, dimension: key, learned: d.learned, path: under(area.path, `${stem}${ext}`), body };
     }
   }
   return siteProbePlan(facts);
@@ -381,7 +384,7 @@ function siteProbePlan(facts) {
       const body = PROBES[familyOf(language(`f${ext}`))][bodies[side]];
       if (typeof body !== "string") continue;
       const { claim, counterClaim } = rowByKey(key);
-      return { area: area.path, dimension: key, learned: side === "counter" ? counterClaim : claim, path: `${area.path}/zzprobe${ext}`, body };
+      return { area: area.path, dimension: key, learned: side === "counter" ? counterClaim : claim, path: under(area.path, `zzprobe${ext}`), body };
     }
   }
   return null;

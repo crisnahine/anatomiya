@@ -165,23 +165,25 @@ test("copilot gets the same patterns, each one widened because none starts with 
   });
 });
 
-test("a pattern that already starts with **/ is not widened", () => {
+test("a pattern that already starts with **/ is not widened, and one for the root alone is not written for VS Code", () => {
   const root = [globEntry(".", ["ruby"]), { negated: false, dir: "", tail: "*.py" }];
   const out = spelledGlobs(copilot, root, plain);
-  assert.ok(out.patterns.includes("**/*.rb") && out.patterns.includes("*.py"), out.patterns.join(" "));
-  assert.deepEqual(out.widened, ["*.py"]);
+  assert.ok(out.patterns.includes("**/*.rb") && !out.patterns.includes("*.py"), out.patterns.join(" "));
+  assert.deepEqual(out.widened, []);
+  assert.deepEqual(out.unspellable, ["*.py"]);
 });
 
 test("a pattern anchored at the repository root is spelled as each reader reads one", () => {
   // Run on the matchers cut out of Cursor 3.20.21 and VS Code 1.140.0: `/*.go`
   // matched no file of a repository in either, since both read a leading slash
   // as the file system's root. Cursor's matched `*.go` at the root alone.
-  // VS Code's matched it at every depth, which is what `widened` reports, and
-  // no pattern short of the repository's own absolute path matched only the root.
+  // VS Code's matched it at every depth, and no pattern short of the repository's
+  // own absolute path matched only the root: a file that loaded the root's claims
+  // for every file below it would state them of the wrong files, so Copilot gets none.
   const root = [globEntry(".", ["go"], { recursive: false }), { negated: true, dir: "", tail: "zz_gen.go" }];
   assert.deepEqual(spelledGlobs(claude, root, plain), { ...NONE, patterns: ["/*.go", "!/zz_gen.go"] });
   assert.deepEqual(spelledGlobs(cursor, root, plain), { ...NONE, patterns: ["*.go"], dropped: ["zz_gen.go"] });
-  assert.deepEqual(spelledGlobs(copilot, root, plain), { ...NONE, patterns: ["*.go"], widened: ["*.go"], dropped: ["zz_gen.go"] });
+  assert.deepEqual(spelledGlobs(copilot, root, plain), { ...NONE, unspellable: ["*.go"] });
   assert.deepEqual(spelledGlobs(cursor, root, encoded).patterns, ["*.go"]);
   // A brace of two extensions is one pattern per extension, each without the slash.
   const two = [{ negated: false, dir: "", tail: "*.{go,rb}" }];
@@ -192,7 +194,7 @@ test("a pattern anchored at the repository root is spelled as each reader reads 
 test("a bare filename pattern passes through", () => {
   const bare = [{ negated: false, dir: "", tail: "Rakefile" }, { negated: false, dir: "lib", tail: "**/Gemfile" }];
   assert.deepEqual(spelledGlobs(cursor, bare, plain), { ...NONE, patterns: ["Rakefile", "lib/**/Gemfile"] });
-  assert.deepEqual(spelledGlobs(copilot, bare, plain), { ...NONE, patterns: ["Rakefile", "lib/**/Gemfile"], widened: ["Rakefile", "lib/**/Gemfile"] });
+  assert.deepEqual(spelledGlobs(copilot, bare, plain), { ...NONE, patterns: ["lib/**/Gemfile"], widened: ["lib/**/Gemfile"], unspellable: ["Rakefile"] });
 });
 
 test("a single extension has no brace to expand", () => {
@@ -260,7 +262,7 @@ test("a lone cursor pattern that reads as a boolean is not written", () => {
   for (const word of ["true", "false"]) {
     const lone = [{ negated: false, dir: "", tail: word }];
     assert.deepEqual(spelledGlobs(cursor, lone, plain), { ...NONE, unspellable: [word] });
-    assert.deepEqual(spelledGlobs(copilot, lone, plain).patterns, [word]);
+    assert.deepEqual(spelledGlobs(copilot, lone, plain), { ...NONE, unspellable: [word] });
     const beside = [...lone, { negated: false, dir: "lib", tail: "*.js" }];
     assert.deepEqual(spelledGlobs(cursor, beside, plain), { ...NONE, patterns: [word, "lib/*.js"] });
   }

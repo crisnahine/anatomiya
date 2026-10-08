@@ -102,7 +102,7 @@ const MISREAD_ALONE = { claude: null, cursor: /^(true|false)$/, copilot: null };
 // reader takes it. Run on the matchers cut out of Cursor 3.20.21 and VS Code
 // 1.140.0: both read a leading slash as the file system's root, so `/*.go`
 // matched no file of a repository. Without it Cursor matched `*.go` at the root
-// alone, and VS Code at every depth, which `widened` reports.
+// alone, and VS Code at every depth, so Copilot is given no pattern for the root.
 const ANCHOR = "/";
 const READS_ANCHOR = { claude: true, cursor: false, copilot: false };
 assertPerTarget("UNSPELLABLE", UNSPELLABLE);
@@ -142,12 +142,15 @@ export function spelledGlobs(target, globs, spell) {
   // No directory starts with a slash, so one in front is the anchor and nothing
   // else, and no negation is spelled past this line.
   const text = READS_ANCHOR[target.id] ? spell : (g) => spell(g).replace(ANCHOR_IN_FRONT, "");
+  // A reader that matches a pattern under every parent directory cannot be given one for the root
+  // alone: its file would state the root's claims of every file below, so it gets no pattern there.
+  const rootOnly = (g) => !READS_ANCHOR[target.id] && target.widens !== null && ANCHOR_IN_FRONT.test(spell(g));
   // Read off the emitted string: an encoder can fold a comma in that the name did not hold.
   const cannot = (p) => unspellable.test(p);
   const written = [];
   for (const g of globs.filter((g) => !g.negated)) {
     const each = expanded(g).map((e) => text(e));
-    if (each.some(cannot)) {
+    if (each.some(cannot) || rootOnly(g)) {
       out.unspellable.push(text(g));
       continue;
     }
