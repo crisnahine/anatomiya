@@ -348,11 +348,11 @@ const LAYOUT_FRAME = 3;
  * It sits above the area listing because a directory that already holds 504
  * components is what decides where the next one goes, and the names of the
  * areas are the part of this file already established as the one to squeeze.
- * It is still not worth the bound, so it gives way in the order it is read
- * backwards: root lines fold into the count that was already there, then that
- * count goes, and the tests line and the sentences it grounds are what a
- * squeezed section still says. A root line names one directory; the tests line
- * is the denominator for all of them.
+ * It is still not worth the bound, so it gives way: every sentence goes at
+ * once where the budget cannot hold them beside the tests line, then the
+ * tests line, and what is left is spent on root lines, the ones with no room
+ * folding into the count that was already there. A sentence only a root with
+ * no line arms goes too, and gives its line to a root.
  *
  * Counts over an arbitrary subset rendered as a description of the tree is the
  * failure the truncation rule exists for, so a truncated scan says so and
@@ -418,7 +418,7 @@ export function renderLayout(layout, budget = Infinity) {
   if (fold && shown.length < room) lines.push(fold);
 
   if (tests) lines.push(tests);
-  const said = page.said.filter((p) => !p.onPage || p.onPage(shown)).map((p) => p.sentence);
+  const said = page.said.map((p) => p.sentence);
   if (said.length > 0) lines.push("", ...said);
 
   lines.push("");

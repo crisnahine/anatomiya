@@ -431,6 +431,9 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
   return byStem;
 }
 
+// Most votes first. Code units on a tie, not locale: the tie decides a rendered root, and ICU differs by machine.
+const byVotes = (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
+
 /**
  * `{ with, of, root }`: how many of the root's source files have a namesake
  * test, out of how many, and the directory prefix the most namesakes share.
@@ -456,11 +459,11 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       inline++;
       continue;
     }
-    const named = answersAs(f.rel);
-    const fDir = dirOf(named);
+    const answers = answersAs(f.rel);
+    const fDir = dirOf(answers);
     const family = familyAt(f.rel);
     const component = embeddedIn(language(f.rel)) !== null;
-    const tail = tailOf(named, rootPath);
+    const tail = tailOf(answers, rootPath);
     // The tail with the tree words dropped, falling back to the whole
     // directory's when that leaves nothing. A tail that is only tree words is
     // the most ordinary layout there is: at `packages/foo` the tail of
@@ -509,7 +512,7 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // prints and settles a shape it does not contain.
     let kept = null;
     let pair = null;
-    for (const t of byStem.get(stemOf(named)) ?? []) {
+    for (const t of byStem.get(stemOf(answers)) ?? []) {
       // A test its build pairs with one source was written for that one, whatever else its path lines up with.
       if (t.paired !== null && t.paired !== f.rel) continue;
       // Another source in the corpus is the one this test was written for, so
@@ -578,11 +581,11 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // mirror parting on an ordinary name names none, and stopping there threw
       // away a vote the next candidate was going to cast.
       if (whole || mirrored) {
-        const named = whole ? wholeRoot(t.dir, tail) : mirrorRoot(fDir, t.dir, family);
-        if (named !== null) {
+        const place = whole ? wholeRoot(t.dir, tail) : mirrorRoot(fDir, t.dir, family);
+        if (place !== null) {
           structural = true;
-          if (named) {
-            prefix = named;
+          if (place) {
+            prefix = place;
             break;
           }
         }
@@ -603,17 +606,16 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
 
   // The place the mirrored tests named, where a test of a paired test project sits inside one, and the tree it crossed
   // otherwise: serilog's 10 such tests are all under the `test/Serilog.Tests` its 18 mirrored ones name.
-  const named = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const ranked = [...votes].sort(byVotes);
   for (const { dir, crossed } of pairedAt) {
-    const vote = named.find(([place]) => dir === place || dir.startsWith(`${place}/`))?.[0] ?? crossed;
+    const vote = ranked.find(([place]) => dir === place || dir.startsWith(`${place}/`))?.[0] ?? crossed;
     if (vote !== null) votes.set(vote, (votes.get(vote) ?? 0) + 1);
   }
 
   // Null where the votes name the repository root, and null where they split:
   // "under ." is not a place and neither is a directory most of the matches
   // disagree with, so the renderer drops the clause rather than print one.
-  // Code units, not locale: the tie decides a rendered root, and ICU differs by machine.
-  const [top] = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const [top] = [...votes].sort(byVotes);
   // One answered file agrees with itself, so the half rule cannot refuse it and
   // the name is whatever that file happens to touch: react's one answered file
   // named a compiled fixture bundle. The counts stay, the place goes.

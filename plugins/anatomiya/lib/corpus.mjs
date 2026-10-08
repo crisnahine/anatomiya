@@ -478,16 +478,16 @@ export async function collect(root) {
     const { drop, abs } = classify(root, rel, generatedRules);
     // Non-source tracked files feed the roster this scan builds over every
     // tracked path, not just the parsed ones.
-    const folded = drop === "notSource" || drop === "excluded" ? languageInAnyCase(rel) : null;
+    const anyCase = drop === "notSource" || drop === "excluded" ? languageInAnyCase(rel) : null;
     if (drop === "notSource") {
       dropped.notSource++;
       if (isOwnOutput(rel)) return;
       others.push({ rel });
-      if (folded) uncounted.push({ rel, lang: folded });
+      if (anyCase) uncounted.push({ rel, lang: anyCase });
       return;
     }
     // Left out as unidiomatic on purpose, so an area's glob has to cut it out.
-    if (drop === "excluded" && folded) uncounted.push({ rel, lang: folded, excludedAt: excludedAt(rel) });
+    if (drop === "excluded" && anyCase) uncounted.push({ rel, lang: anyCase, excludedAt: excludedAt(rel) });
     if (drop === "generated") uncounted.push({ rel, lang: language(rel) });
     if (drop) { dropped[drop]++; return; }
     const file = { rel, abs, lang: language(rel) };
