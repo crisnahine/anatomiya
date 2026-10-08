@@ -367,16 +367,44 @@ Moving a grammar to another version is the two commands under [Setup and tests](
 then the suite: `node scripts/grammars.mjs --check` (part of `npm run validate`) holds the copy to
 its package, and the shapes test says which names the new grammar dropped.
 
+A grammar is built for one language version, its ABI, and a runtime reads a range of them:
+`web-tree-sitter` 0.27.0 reads 13 through 15. `plugins/anatomiya/grammars/grammars.json` records
+each grammar's. Java, Rust and Kotlin are at 14 and Python, PHP, Go and C# at 15, so those three are
+the first a runtime that raises its floor turns away. The test that fails then is `every vendored
+grammar loads, reports the manifest's ABI and reads a sample clean` in `test/grammars.test.mjs`.
+On a user's machine `doctor` names the file with both numbers, `java.wasm is language version 14
+and this runtime reads 15 through 16`, and a scan reads no file of that language. Dependabot holds
+back the grammar packages and not the runtime, so it offers a `web-tree-sitter` update like any
+other: run the suite on it, and move the grammars it turns away before it merges.
+
 A language new to the engine is these sites, in order:
 
-1. `plugins/anatomiya/lib/langs.mjs`: a `grammar(id, exts)` declaration and its place in `LANGUAGES`
+1. `plugins/anatomiya/lib/langs.mjs`: a `grammar(id, exts)` declaration and its place in
+   `LANGUAGES`, with `placeTests` on the declaration where the language's tool collects a test by
+   where the file sits, as cargo does (B21). `grammar()` answers `null` for it and nothing fails
+   on a language that needed one: its tests by place are read as source
 2. the grammar package as an exact dev dependency, its entry in `GRAMMARS` in
-   `scripts/grammars.mjs`, then `npm run grammars`
+   `scripts/grammars.mjs`, then `npm run grammars`; and a line under `ignore` in
+   `.github/dependabot.yml` where the package's name matches neither `tree-sitter-*` nor
+   `@tree-sitter-grammars/*`
 3. `plugins/anatomiya/lib/tree-shapes.mjs` and `plugins/anatomiya/lib/tree-facets.mjs`: its entries
 4. `plugins/anatomiya/lib/render.mjs`: its extensions out of `OTHER_LANGUAGE_EXTS`, or the overview counts its
    files as a language the map does not read
-5. `plugins/anatomiya/lib/test-shape.mjs`: its test names and its pairing, each decided by counting real
-   repositories
+5. `plugins/anatomiya/lib/test-shape.mjs`, each entry decided by counting real repositories.
+   `FAMILY_TEST_NAMES` (H48) is the one table the module refuses to load without. The others take
+   a language or leave it out and nothing fails either way, so decide each:
+   - `FAMILY_TREES` (H48, H50): left out, only the six shared names (`test`, `tests`, `spec`,
+     `__tests__`, `cypress`, `e2e`) are a test tree for it, and no word of its build's own is
+     read out of a mirror
+   - `PAIRINGS` (H50): left out, no test directory is paired with a source tree, so a test answers
+     by the mirror and the stem alone
+   - `PACKAGE_SHELL` and `PACKAGE_FILE` (H50): left out, no directory is read as the one a
+     package sits under and no file stands for its directory. Python is the one entry in each
+   - `FEATURE_TREES` (H50): left out, a test at any depth of a test tree answers a package at the
+     top of the tree. Python is the one entry
+   - `FIXED_PLACE` (H38): left out, the first test written in the one place the language's tool
+     reads tests from draws the placement finding. An entry is for a tool that fixes that place, as
+     `go test`, Maven, Gradle and .NET do
 6. `test/tree-samples.mjs` and `test/tree-broken.mjs`: an ordinary source, one the grammar answers
    with an ERROR node and one with a MISSING token
 7. `scripts/check-docs.mjs` (`PROSE_NAMES`): the name prose gives it, without which the script does
@@ -385,6 +413,19 @@ A language new to the engine is these sites, in order:
    `package@version`, every sentence that counts the grammars (`seven grammars`) counts one more,
    and so does the count of declarations in DECISIONS B21 (`The registry holds twelve
    declarations`)
+9. by hand, every place that lists the languages by name. No gate reads these, so a list left at
+   seven names passes:
+   - `README.md`: the opening paragraph, the paragraph on the grammars the plugin carries, the
+     list under Staying current, the sentence that counts the rows for each, and under Limits
+     the paragraph and its table
+   - `CONTEXT.md`: Engine and Family
+   - `SECURITY.md`: the names beside the grammar packages
+   - this file: `The other seven dev dependencies` and the line for `dimensions-tree.mjs`
+   - `plugins/anatomiya/README.md`, and `doctor.md`, `scan.md` and `setup.md` under
+     `plugins/anatomiya/commands/`
+   - the help text in `plugins/anatomiya/bin/anatomiya.mjs`
+   - `docs/how-it-works.md`: the paragraph on the runtime in section 3, the sentence that counts
+     the rows for each, the paragraph under Facets and the Language bullet in section 9
 
 `test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids and fail until the
 new one is in it. Before anything ships, measure how much of three real repositories the grammar
@@ -407,8 +448,9 @@ engine. Its script blocks are read on the `oxc` engine (B52), and it is these si
    packages the imports roster passes over
 6. `test/component-fixtures.mjs`: its components in `COMPONENT_FIXTURES`, the rows that hold for it
    in `HOLDS`, and its id on each row of `EXCLUDED` that misreads it
-7. `scripts/check-docs.mjs`: its name beside `Vue` and `Svelte` in the table that counts the rows
-   asked of each
+7. `scripts/check-docs.mjs`: its name beside `Vue` and `Svelte` in two places, the table that
+   counts the rows asked of each (`component`) and the pattern under it that reads `24 for Vue`
+   out of a document. Named in the table alone, a count written for it is read by nothing
 
 `test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids here too. Before
 anything ships, run the scanner against the framework's own compiler on real files, as
