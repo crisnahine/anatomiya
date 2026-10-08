@@ -179,8 +179,8 @@ export function coveredStem(stem, family) {
   return null;
 }
 
-// A Gradle source set, `commonTest` beside `commonMain`, and the directory Maven and Gradle root a package at.
-const JVM_TREES = { test: /^[a-z][A-Za-z]*Test$/, source: /^[a-z][A-Za-z]*Main$/, packagesUnder: new Set(["java", "kotlin"]) };
+// A Gradle source set, `commonTest` beside `commonMain` and the `testFixtures` its tests share, and the directory Maven and Gradle root a package at.
+const JVM_TREES = { test: /^(?:[a-z][A-Za-z]*Test|testFixtures)$/, source: /^[a-z][A-Za-z]*Main$/, packagesUnder: new Set(["java", "kotlin"]) };
 
 /**
  * What a family calls the two halves of its own split, beside the names every
