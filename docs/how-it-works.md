@@ -2299,7 +2299,7 @@ object and exits 0, as it does on any failure.
 | `node` | the process itself | its version is 22.0.0 or newer, the floor both manifests declare in `engines` | install Node 22 or newer and put it first on `PATH` |
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
-| `tree-sitter` | node | `web-tree-sitter` imports and the file of each of the seven grammars loads. The line carries the count, `grammars: 7 of 7`, and one that does not load is named on it: `grammars: 6 of 7, kotlin.wasm did not load` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
+| `tree-sitter` | node | `web-tree-sitter` imports, and the file of each of the seven grammars loads and hashes to the SHA-256 `grammars.json` records for it. The line carries the count, `grammars: 7 of 7`, and a file that fails either is named on it: `grammars: 6 of 7, kotlin.wasm did not load`, or `kotlin.wasm is not the file this plugin shipped`; with no manifest to hold them to, `grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
 | `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version rather than called absent, and the scan leaves the checker off. Optional: only the type checker needs it | the same install |
 
@@ -2318,7 +2318,8 @@ missing package waits on that checkout's HEAD or its retry clock, and the map th
 something it can put back, and it is not listed as something to install: with one cut short,
 `setup` and `setup --dry-run` print `doctor`'s own line for it, `tree-sitter 0.27.0: grammars: 6
 of 7, kotlin.wasm did not load, reinstall this plugin, which ships its grammar files in its own
-directory`, run no install for it, and end non-zero. It is the only command that installs anything
+directory`, run no install for it, and end non-zero; a file that loads and is not the one the plugin
+shipped, or a missing `grammars.json`, gets the same treatment under its own words. It is the only command that installs anything
 and the only one that reaches a package registry; `scan`, `check` and `pin` never call it. The only
 other outbound call anywhere here is the check's shallow-clone path, which is one `ls-remote` and
 one `fetch --depth=1` and nothing else (F5).

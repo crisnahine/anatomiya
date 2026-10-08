@@ -45,15 +45,16 @@ const USAGE = [
   "",
   "doctor prints a line for node, one for each engine (oxc, prism and",
   "tree-sitter) and one for each package beside them: flow-remove-types and",
-  "the optional typescript. The tree-sitter line counts the grammars that load",
-  "(grammars: 7 of 7). tree-sitter reads Python, PHP, Go, Java, C#, Rust and",
-  "Kotlin.",
+  "the optional typescript. The tree-sitter line counts the grammar files that",
+  "load and are the ones this plugin shipped (grammars: 7 of 7). tree-sitter",
+  "reads Python, PHP, Go, Java, C#, Rust and Kotlin.",
   "",
   "setup installs the packages the node-hosted engines load, in the plugin's",
   "own directory. It is the only command that installs anything and the only",
   "one that reaches a package registry, and nothing else here runs it. On",
   "Windows it prints the command to run by hand instead. A grammar file is no",
-  "package: one that does not load is fixed by reinstalling the plugin.",
+  "package: one that does not load, or is not the file this plugin shipped, is",
+  "fixed by reinstalling the plugin.",
 ].join("\n");
 
 /**

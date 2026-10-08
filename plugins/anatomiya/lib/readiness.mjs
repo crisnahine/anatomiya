@@ -422,9 +422,10 @@ async function probeNode(engine) {
     // An engine that loads and cannot read one of its languages is not ready,
     // and says which: the count is on its row either way.
     const held = extra === null && GRAMMARS[engine.id] ? await GRAMMARS[engine.id]() : null;
-    if (held?.missing.length) {
-      const reason = `${grammarsLine(held)}, ${held.missing.map((id) => `${id}.wasm`).join(" and ")} did not load`;
-      rows.push(row(engine, { extra, present: true, version: installedVersion(module), reason, remedy: GRAMMAR_REMEDY, lostGrammars: held.missing }));
+    const lost = held ? [...held.missing, ...held.foreign] : [];
+    if (lost.length) {
+      const reason = [grammarsLine(held), ...grammarFaults(held)].join(", ");
+      rows.push(row(engine, { extra, present: true, version: installedVersion(module), reason, remedy: GRAMMAR_REMEDY, lostGrammars: lost }));
       continue;
     }
     rows.push(row(engine, { extra, present: true, version: installedVersion(module), ok: true, reason: held ? grammarsLine(held) : null }));
@@ -432,7 +433,21 @@ async function probeNode(engine) {
   return rows;
 }
 
-const grammarsLine = ({ total, missing }) => `grammars: ${total - missing.length} of ${total}`;
+const grammarsLine = ({ total, missing, foreign }) => `grammars: ${total - missing.length - foreign.length} of ${total}`;
+
+/**
+ * What is wrong with the grammar files a probe could not count, each cause in
+ * its own words: a file that loads and is another file is not one that "did
+ * not load", and the reader of either is sent to the same reinstall.
+ */
+function grammarFaults({ missing, foreign, manifest }) {
+  const files = (ids) => ids.map((id) => `${id}.wasm`).join(" and ");
+  const faults = [];
+  if (missing.length) faults.push(`${files(missing)} did not load`);
+  if (!manifest) faults.push("grammars.json is missing or is not the file this plugin shipped");
+  else if (foreign.length) faults.push(`${files(foreign)} ${foreign.length === 1 ? "is not the file" : "are not the files"} this plugin shipped`);
+  return faults;
+}
 
 /**
  * An interpreter-hosted engine: run the interpreter, ask the library its version.

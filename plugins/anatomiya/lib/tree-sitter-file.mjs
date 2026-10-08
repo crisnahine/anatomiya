@@ -9,7 +9,7 @@
  * the copy. The body lives apart from the shell for the reason `parse-file.mjs`
  * does: tests and the pool cross the same seam.
  */
-import { readFileSync } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -198,16 +198,52 @@ export function failure(rel, err) {
 
 const HOSTED = hostedBy(ENGINE);
 
-/** Which of the grammars this engine's languages name load here, asked the way a parse asks. */
+/** A file's SHA-256, read as a stream so a file of any size costs one chunk of memory; null where it cannot be read. */
+async function sha256Of(path) {
+  // Loaded by the probe, which only `doctor` and `setup` run: no parse hashes anything.
+  const { createHash } = await import("node:crypto");
+  const hash = createHash("sha256");
+  try {
+    for await (const chunk of createReadStream(path)) hash.update(chunk);
+  } catch {
+    return null;
+  }
+  return hash.digest("hex");
+}
+
+/** The hash the manifest beside the grammar files records for each of them, or null where it is missing, is not a manifest, or records none for one of them. */
+function shippedHashes(dir, files) {
+  try {
+    const hashes = new Map(JSON.parse(readFileSync(join(dir, "grammars.json"), "utf8")).map((entry) => [entry.file, entry.sha256]));
+    return files.every((file) => typeof hashes.get(file) === "string") ? hashes : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which of the grammars this engine's languages name can be read with here.
+ *
+ * `missing` did not load, asked the way a parse asks. `foreign` loads and is
+ * not shown to be the file the plugin shipped: its bytes do not hash to the
+ * manifest's entry, or there is no manifest to hold it to, which `manifest`
+ * says. A grammar file that loads reads another language's files as syntax
+ * errors, and nothing a parse sees tells that from a file nobody could read.
+ */
 export async function probeGrammars({ grammars = GRAMMARS } = {}) {
+  const fileOf = (id) => `${declOf(id).grammars.default}.wasm`;
+  const shipped = shippedHashes(grammars, HOSTED.map(fileOf));
   const absent = [];
+  const foreign = [];
   for (const id of HOSTED) {
     const named = declOf(id).grammars.default;
     try {
       await parserFor(named, grammars, id);
     } catch {
       absent.push(named);
+      continue;
     }
+    if (!shipped || (await sha256Of(join(grammars, fileOf(id)))) !== shipped.get(fileOf(id))) foreign.push(named);
   }
-  return { total: HOSTED.length, missing: absent };
+  return { total: HOSTED.length, missing: absent, foreign, manifest: shipped !== null };
 }

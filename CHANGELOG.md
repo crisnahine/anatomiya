@@ -147,6 +147,12 @@ scanned by 0.13.4 and by this version.
   not load`. The fix for that is to reinstall the plugin, since no package install writes a
   grammar file. A scan says no file of that one language was read and reads the rest. `setup`
   prints the same line for it, installs nothing for it and exits non-zero.
+- `doctor` also holds each grammar file that loads to the SHA-256 `grammars.json` records for it.
+  One grammar's file under another's name loads, and a scan then reads every file of that language
+  as a syntax error, so the line names it: `grammars: 6 of 7, kotlin.wasm is not the file this
+  plugin shipped`. With the manifest gone or not a manifest, it is `grammars: 0 of 7, grammars.json
+  is missing or is not the file this plugin shipped`. Same fix, and `setup` treats it the same way.
+  A scan does not hash anything.
 - `setup` ends an install that leaves every engine loading with one more line: scan again in any
   repository you have a map in. A background refresh that stopped for the missing package may not
   run again until that checkout's HEAD moves, so the map there is as it was.

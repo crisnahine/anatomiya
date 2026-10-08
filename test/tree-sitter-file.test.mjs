@@ -415,13 +415,32 @@ process.stderr.write(JSON.stringify({ first, last: await ask(500), early: rss[8]
 });
 
 test("the grammar probe counts what loads and names what does not", async (t) => {
-  assert.deepEqual(await probeGrammars(), { total: 7, missing: [] });
+  assert.deepEqual(await probeGrammars(), { total: 7, missing: [], foreign: [], manifest: true });
 
   const dir = scratch(t, "anatomiya-probe-grammars-");
   cpSync(GRAMMARS, dir, { recursive: true });
   rmSync(join(dir, "rust.wasm"));
   writeFileSync(join(dir, "go.wasm"), "not a grammar");
-  assert.deepEqual(await probeGrammars({ grammars: dir }), { total: 7, missing: ["go", "rust"] });
+  assert.deepEqual(await probeGrammars({ grammars: dir }), { total: 7, missing: ["go", "rust"], foreign: [], manifest: true });
+});
+
+test("the grammar probe holds each file that loads to the hash the manifest records for it", async (t) => {
+  // A grammar is a grammar to the runtime: Java's file loads under Kotlin's name and reads every Kotlin file as errors.
+  const swapped = scratch(t, "anatomiya-probe-swapped-");
+  cpSync(GRAMMARS, swapped, { recursive: true });
+  cpSync(join(GRAMMARS, "java.wasm"), join(swapped, "kotlin.wasm"));
+  assert.deepEqual(await probeGrammars({ grammars: swapped }), { total: 7, missing: [], foreign: ["kotlin"], manifest: true });
+
+  // A parser stays loaded for the life of the process, so a file gone since then still "loads": it has no bytes to hash.
+  rmSync(join(swapped, "go.wasm"));
+  assert.deepEqual(await probeGrammars({ grammars: swapped }), { total: 7, missing: [], foreign: ["go", "kotlin"], manifest: true });
+
+  // With no manifest nothing that loads can be shown to be the plugin's own, and a file that does not load is still that.
+  const bare = scratch(t, "anatomiya-probe-bare-");
+  cpSync(GRAMMARS, bare, { recursive: true });
+  rmSync(join(bare, "grammars.json"));
+  rmSync(join(bare, "php.wasm"));
+  assert.deepEqual(await probeGrammars({ grammars: bare }), { total: 7, missing: ["php"], foreign: ["python", "go", "java", "csharp", "rust", "kotlin"], manifest: false });
 });
 
 test("a failure is answered in the worker's reply shape, and only a wasm trap retires the worker", () => {

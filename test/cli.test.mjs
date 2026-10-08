@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, cpSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1071,6 +1071,23 @@ for (const args of [["setup"], ["setup", "--dry-run"]]) {
     assert.equal(existsSync(join(install, "npm-ran.txt")), false, "npm was not run");
   });
 }
+
+test("doctor and setup say a grammar file that is not the plugin's own the way they say one that does not load", needsSymlinks, (t) => {
+  const install = installLacking(t);
+  cpSync(join(install, "grammars", "java.wasm"), join(install, "grammars", "kotlin.wasm"));
+  const bin = stubNpm(t, "#!/bin/sh\necho ran > npm-ran.txt\n");
+
+  const doctor = runFrom(install, ["doctor"], process.env.PATH);
+  const line = doctor.stdout.split("\n").find((l) => l.startsWith("tree-sitter "));
+  const setup = runFrom(install, ["setup", "--dry-run"], `${bin}${delimiter}${process.env.PATH}`);
+
+  assert.equal(doctor.code, 0);
+  assert.match(line, /^tree-sitter \d[\d.]*: grammars: 6 of 7, kotlin\.wasm is not the file this plugin shipped, reinstall this plugin, /);
+  assert.equal(setup.code, 2, setup.stdout);
+  assert.ok(setup.stderr.split("\n").includes(line), setup.stderr);
+  assert.match(setup.stderr, /^nothing to install: /m, setup.stderr);
+  assert.equal(existsSync(join(install, "npm-ran.txt")), false, "npm was not run");
+});
 
 test("a setup that installs a package on an install that also lost a grammar file names each once, and does not call the grammar a package still not loading", needsShebang, (t) => {
   const install = installLacking(t, { modules: ["flow-remove-types"], grammars: ["kotlin"] });
