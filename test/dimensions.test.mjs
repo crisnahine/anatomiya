@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { parseSync } from "oxc-parser";
 import {
   DIMENSIONS,
@@ -1077,6 +1078,21 @@ test("a nested binding of the same name does not use the caught error", () => {
     candidates: 1,
     conforming: 1,
   });
+});
+
+test("a row that walks its own tree is held to one engine where the rows load, as a visitor row is", () => {
+  // Such a row listing a language of a second engine loaded, and a scan then crashed that engine's parser on every file.
+  const lib = (name) => JSON.stringify(new URL(`../plugins/anatomiya/lib/${name}`, import.meta.url).href);
+  const script = `
+const { EXTRA_DIMENSIONS } = await import(${lib("dimensions-extra.mjs")});
+const row = EXTRA_DIMENSIONS.find((d) => d.key === "hook_per_module");
+if (row.visitor || typeof row.run !== "function") throw new Error("hook_per_module is not a row that walks its own tree");
+row.langs.push("ruby");
+await import(${lib("dimensions.mjs")}).then(() => console.log("loaded"), (err) => console.log(err.message));
+`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+
+  assert.equal(run.stdout.trim(), "hook_per_module lists languages of oxc and prism, and one walk reads one engine's tree", run.stderr);
 });
 
 test("a row is walked by its own engine's walk, and one whose engine has none refuses to load", () => {

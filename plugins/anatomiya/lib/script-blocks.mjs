@@ -107,7 +107,8 @@ function passedOver(source, lt) {
     const close = source.indexOf(end, from);
     return close === -1 ? -1 : close + end.length;
   };
-  if (source.startsWith("<!--", lt)) return past("-->", lt + 4);
+  // From the comment's own two dashes, which its end may share: `<!-->` and `<!--->` are whole comments.
+  if (source.startsWith("<!--", lt)) return past("-->", lt + 2);
   if (source.startsWith("<![CDATA[", lt)) return past("]]>", lt + 9);
   if (source[lt + 1] === "?") return past(">", lt + 2);
   if (source[lt + 1] === "!") return past(">", lt + (source[lt + 2] === "-" ? 4 : 3));
