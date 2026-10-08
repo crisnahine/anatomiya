@@ -9,11 +9,12 @@
  * the copy. The body lives apart from the shell for the reason `parse-file.mjs`
  * does: tests and the pool cross the same seam.
  */
-import { createReadStream, readFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { dimensionsFor } from "./dimensions.mjs";
+import { encode } from "./encode.mjs";
 import { collectHits } from "./walk.mjs";
 import { withOneBranch } from "./csharp-directives.mjs";
 import { ENGINES, declOf, grammarFor, hostedBy, mayHoldDirectives } from "./langs.mjs";
@@ -49,6 +50,34 @@ const parsers = new Map();
  */
 export const RETRY_BUDGET_MS = 4_000;
 
+// The most a grammar file or the manifest beside them is read at. The largest grammar shipped is 5.4 MB and the
+// manifest 1.8 kB: six times the one and thirty-six times the other, so a later grammar fits and a file that is
+// neither is never held in memory.
+const GRAMMAR_MOST_BYTES = 32 * 1024 * 1024;
+const MANIFEST_MOST_BYTES = 64 * 1024;
+
+/**
+ * The bytes of an entry that is a regular file of at most `most` bytes, or null for any other: a directory, a fifo, a
+ * device, a link, a file past the bound. A missing or unreadable one throws as the read it is.
+ *
+ * Typed on the handle that is read, so the file typed is the file read. `O_NONBLOCK` keeps a fifo from holding the
+ * open and `O_NOFOLLOW` refuses a link out of the directory; both are absent on Windows and fold to 0.
+ */
+function shippedBytes(path, most) {
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0));
+    const entry = fstatSync(fd);
+    return entry.isFile() && entry.size <= most ? readFileSync(fd) : null;
+  } catch (err) {
+    // A shape that will not open is typed by its path, and nothing is read after it.
+    if (lstatSync(path, { throwIfNoEntry: false })?.isFile() === false) return null;
+    throw err;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 const missing = (message, extra = {}) => Object.assign(new Error(message), { missingParser: true }, extra);
 
 /** The runtime, loaded and initialised on first use, or a throw marked as the missing install it is. */
@@ -59,10 +88,14 @@ export async function ensureRuntime() {
     await loaded.Parser.init();
     runtime = loaded;
   } catch (err) {
-    throw missing(`${DECLARED.module} is not installed: ${err && err.message}`);
+    // The loader's own words, which quote what it read: encoded, since a scan and a check print them.
+    throw missing(`${DECLARED.module} is not installed: ${encode(err && err.message)}`);
   }
   return runtime;
 }
+
+// What a grammar file is that no load was tried of: the words `doctor` has for one whose bytes are another file's.
+const NOT_SHIPPED = "is not the file this plugin shipped";
 
 async function parserFor(grammar, dir, lang) {
   const key = `${dir}\0${grammar}`;
@@ -71,19 +104,25 @@ async function parserFor(grammar, dir, lang) {
   if (known) return known;
   const { Language, Parser } = await ensureRuntime();
   let parser = null;
+  // One language's loss, named as the language: every other grammar on this engine still reads its files.
+  let lost = null;
   try {
     // Handed the bytes, so the path is read by node and never by the runtime's own loader.
-    const language = await Language.load(readFileSync(join(dir, `${grammar}.wasm`)));
-    parser = new Parser();
-    parser.setLanguage(language);
+    const bytes = shippedBytes(join(dir, `${grammar}.wasm`), GRAMMAR_MOST_BYTES);
+    if (bytes === null) {
+      lost = missing(`grammars/${grammar}.wasm ${NOT_SHIPPED}`, { missingGrammar: lang, foreignGrammar: true });
+    } else {
+      const language = await Language.load(bytes);
+      parser = new Parser();
+      parser.setLanguage(language);
+    }
   } catch (err) {
     parser?.delete();
-    // One language's loss, named as the language: every other grammar on this engine still reads its files.
-    const lost = missing(`grammars/${grammar}.wasm did not load: ${err && err.message}`, { missingGrammar: lang });
-    parsers.set(key, lost);
-    throw lost;
+    // A grammar's failure quotes the file, a function name out of it included: encoded, since a scan and a check print it.
+    lost = missing(`grammars/${grammar}.wasm did not load: ${encode(err && err.message)}`, { missingGrammar: lang });
   }
-  parsers.set(key, parser);
+  parsers.set(key, lost ?? parser);
+  if (lost) throw lost;
   return parser;
 }
 
@@ -210,23 +249,23 @@ export function failure(rel, err) {
 
 const HOSTED = hostedBy(ENGINE);
 
-/** A file's SHA-256, read as a stream so a file of any size costs one chunk of memory; null where it cannot be read. */
+/** A grammar file's SHA-256, read under the bound a load reads it under; null where it cannot be read or is no such file. */
 async function sha256Of(path) {
   // Loaded by the probe, which only `doctor` and `setup` run: no parse hashes anything.
   const { createHash } = await import("node:crypto");
-  const hash = createHash("sha256");
   try {
-    for await (const chunk of createReadStream(path)) hash.update(chunk);
+    const bytes = shippedBytes(path, GRAMMAR_MOST_BYTES);
+    return bytes === null ? null : createHash("sha256").update(bytes).digest("hex");
   } catch {
     return null;
   }
-  return hash.digest("hex");
 }
 
 /** The hash the manifest beside the grammar files records for each of them, or null where it is missing, is not a manifest, or records none for one of them. */
 function shippedHashes(dir, files) {
   try {
-    const hashes = new Map(JSON.parse(readFileSync(join(dir, "grammars.json"), "utf8")).map((entry) => [entry.file, entry.sha256]));
+    // An entry that is no file of a manifest's size parses as `null`, which is no list.
+    const hashes = new Map(JSON.parse(String(shippedBytes(join(dir, "grammars.json"), MANIFEST_MOST_BYTES))).map((entry) => [entry.file, entry.sha256]));
     return files.every((file) => typeof hashes.get(file) === "string") ? hashes : null;
   } catch {
     return null;
@@ -246,6 +285,8 @@ const REFUSED_VERSION = /Incompatible language version (\d{1,9})\. Compatibility
  * manifest's entry, or there is no manifest to hold it to, which `manifest`
  * says. A grammar file that loads reads another language's files as syntax
  * errors, and nothing a parse sees tells that from a file nobody could read.
+ * An entry that is no regular file, or is larger than any grammar, is foreign
+ * too and is never read: a fifo there held `doctor` until it was killed.
  */
 export async function probeGrammars({ grammars = GRAMMARS } = {}) {
   const fileOf = (id) => `${declOf(id).grammars.default}.wasm`;
@@ -258,6 +299,10 @@ export async function probeGrammars({ grammars = GRAMMARS } = {}) {
     try {
       await parserFor(named, grammars, id);
     } catch (err) {
+      if (err?.foreignGrammar) {
+        foreign.push(named);
+        continue;
+      }
       absent.push(named);
       const said = REFUSED_VERSION.exec(String(err?.message));
       if (said) refused.push({ grammar: named, version: Number(said[1]), reads: [Number(said[2]), Number(said[3])] });
