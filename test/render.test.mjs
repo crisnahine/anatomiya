@@ -5,6 +5,7 @@ import {
   degradedSemanticSentence,
   droppedDirectives,
   droppedSlots,
+  mostLines,
   renderArea,
   renderOverview,
   truncatedHistoryLine,
@@ -22,7 +23,7 @@ import { PRECEDENT_FLOOR, principleKeys } from "../plugins/anatomiya/lib/princip
 import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
-import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
+import { TARGETS, isClaude } from "../plugins/anatomiya/lib/targets.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const dim = (o = {}) => ({
@@ -4049,54 +4050,98 @@ const toggled = (on, { unfiled = false, others = true, layout = false, n = 1, un
 };
 const height = (out) => out.split("\n").length - 1;
 
-test("an overview that names areas with no file still holds its bound", () => {
-  const areas = [...Array.from({ length: 30 }, (_, i) => area({ id: `a${i}`, path: `src/a${i}` })), unwritable("lib/odd")];
-  const files = { uncovered: 30, orphaned: 12, others: ALL_OTHERS };
+// A file with the lines only its target carries taken out and its own words put back as Claude Code's.
+const bodyOf = (text, target) => {
+  const lines = text.split("\n");
+  return lines
+    .slice(lines.indexOf("---", 1) + 1)
+    .filter((l) => l !== target.wrote)
+    .map((l) => (l === target.reads ? claude.reads : l.replace(target.listed, claude.listed).replace(`${target.dir}/anatomiya-*${target.ext}`, ".claude/rules/anatomiya-*.md")));
+};
+
+test("the three overviews are one body under each reader's frontmatter and own sentences", () => {
+  const shapes = [
+    toggled(EVERY),
+    toggled(EVERY, { layout: true, n: 30 }),
+    toggled(0, { layout: true, n: 30, others: false }),
+    toggled(EVERY, { untracked: 4 }),
+    [noted(), NOTED_FILES],
+  ];
+  for (const [i, shape] of shapes.entries()) {
+    const body = bodyOf(renderOverview(...shape, claude), claude);
+    for (const target of [cursor, copilot]) {
+      const out = renderOverview(...shape, target);
+      assert.deepEqual(bodyOf(out, target), body, `${target.id}, shape ${i}`);
+      // Longer than Claude Code's by its scope line and the line saying what wrote it, and by nothing else.
+      assert.equal(height(out), height(renderOverview(...shape, claude)) + 2, `${target.id}, shape ${i}`);
+    }
+  }
+  // The shape that fills the bound is among them, so nothing above passed for want of a full file.
+  assert.equal(height(renderOverview(...shapes[1], claude)), MAX_LINES);
+});
+
+test("an area a target has no file for costs its overview one line and no root or sentence", () => {
+  const shape = toggled(EVERY, { unfiled: true, layout: true, n: 30 });
+  const mine = renderOverview(...shape, claude).split("\n");
+  assert.equal(mine.length - 1, MAX_LINES);
+  const section = (lines) => lines.slice(0, lines.findIndex((l) => l.startsWith("## Areas")));
   for (const target of [cursor, copilot]) {
-    const lines = renderOverview(result({ areas, layout: clientLayout() }), files, target).split("\n");
-    assert.ok(lines.length - 1 <= MAX_LINES, `${target.id}: ${lines.length - 1} lines`);
-    assert.ok(lines.some((l) => l.startsWith("- 1 area has no pattern")), lines.join("\n"));
+    const out = renderOverview(...shape, target);
+    const lines = out.split("\n");
+    assert.deepEqual(bodyOf(section(lines).join("\n"), target), bodyOf(section(mine).join("\n"), claude), target.id);
+    assert.equal(lines.filter((l) => l.startsWith("- 1 area has no pattern")).length, 1, out);
+    assert.ok(lines.includes(`- 30 areas, each in its own file, ${target.listed}`), out);
+    assert.equal(height(out), MAX_LINES + 3, target.id);
+    assert.equal(height(out), mostLines(target).overview, target.id);
   }
 });
 
-test("with every optional line on, the lines a target adds come out of the listings", () => {
-  const SENTENCES = [
+test("a directory's own listing of other files folds into the lines claude's listing takes", () => {
+  const [scan, files] = toggled(EVERY, { layout: true, n: 30 });
+  const quiet = { ...files, others: {} };
+  for (const target of [cursor, copilot]) {
+    // Claude Code's directory holds nothing else, so its listing is one line and this one's three kinds share it.
+    const out = renderOverview(scan, files, target, quiet).split("\n");
+    assert.deepEqual(out.slice(-3), [out.at(-3), "3 other files there were not written by this scan.", ""], target.id);
+    assert.match(out.at(-3), /^Generated files: 31 under /, target.id);
+    assert.equal(out.length - 1, MAX_LINES + 2, target.id);
+    assert.deepEqual(
+      bodyOf(out.slice(0, -2).join("\n"), target),
+      bodyOf(renderOverview(scan, quiet, claude).split("\n").slice(0, -2).join("\n"), claude),
+      target.id
+    );
+  }
+  // Whatever else the scan says, the roster is the one Claude Code's directory left room for.
+  const roster = (text, target) => bodyOf(text.slice(0, text.indexOf("## Areas")), target);
+  let squeezed = 0;
+  for (let on = 0; on < 1 << TOGGLES.length; on++) {
+    const [each, held] = toggled(on, { layout: true, n: 3 });
+    const mine = roster(renderOverview(each, { ...held, others: {} }, claude), claude);
+    if (mine.some((l) => /^- and \d+ more director/.test(l))) squeezed++;
+    assert.deepEqual(roster(renderOverview(each, held, copilot, { ...held, others: {} }), copilot), mine, String(on));
+  }
+  assert.ok(squeezed > 0 && squeezed < 1 << TOGGLES.length, `${squeezed} of them fold a root`);
+  // Where Claude Code's overview leaves lines under the bound, the listing has them and names the file.
+  const [small, few] = toggled(0, { n: 1 });
+  const named = renderOverview(small, few, cursor, { ...few, others: {} }).split("\n");
+  assert.deepEqual(named.slice(-5), [
     "1 file here was written by an earlier scan and not listed in this map; this tool leaves it, so delete it by hand if unwanted.",
     "1 file here could not be read, so whose it is is unknown.",
     "Any other file there was not written by this tool:",
     '- "a.md"',
-  ];
-  // Claude's own lines fill the bound exactly here, so it has nothing to give a line it does not carry.
-  assert.deepEqual(renderOverview(...toggled(EVERY), claude).split("\n").slice(-5), [...SENTENCES, ""]);
-  assert.equal(height(renderOverview(...toggled(EVERY), claude)), MAX_LINES);
-  // Past the bound, on a shape no scan reaches, Claude's file still reads as it always did.
-  const past = renderOverview(...toggled(EVERY, { untracked: 4 }), claude).split("\n");
-  assert.equal(past.length - 1, MAX_LINES + 1);
-  assert.deepEqual(past.slice(-4), [SENTENCES[0], SENTENCES[1], "1 other file there was not written by this tool.", ""]);
-
-  for (const target of [cursor, copilot]) {
-    // 41 lines before the target's own were paid for.
-    const plain = renderOverview(...toggled(EVERY), target).split("\n");
-    assert.equal(plain.length - 1, MAX_LINES, target.id);
-    assert.deepEqual(plain.slice(-3), [SENTENCES[0], "2 other files there were not written by this scan.", ""], target.id);
-    assert.ok(plain.includes("- src/a0 — 40 files, 1 stated"), target.id);
-
-    // 42 lines: the area with no file costs one more.
-    const odd = renderOverview(...toggled(EVERY, { unfiled: true }), target).split("\n");
-    assert.equal(odd.length - 1, MAX_LINES, target.id);
-    assert.deepEqual(odd.slice(-3), [odd.at(-3), "3 other files there were not written by this scan.", ""], target.id);
-    assert.match(odd.at(-3), /^Generated files: 2 under /, target.id);
-    assert.ok(odd.includes("- src/a0 — 40 files, 1 stated"), target.id);
-    assert.ok(odd.some((l) => l.startsWith("- 1 area has no pattern")), target.id);
-
-    // More areas than fit are counted on the one line the areas keep.
-    const many = renderOverview(...toggled(EVERY, { unfiled: true, n: 30, layout: true }), target).split("\n");
-    assert.equal(many.length - 1, MAX_LINES, target.id);
-    assert.ok(many.includes(`- 30 areas, each in its own file, ${target.listed}`), target.id);
-  }
+    "",
+  ]);
 });
 
-test("no target's overview passes the bound, whichever optional lines a scan turns on", () => {
+test("the most lines a file runs to is the bound and the lines its target adds", () => {
+  assert.deepEqual(mostLines(claude), { overview: 40, area: null });
+  // A scope line, the line saying what wrote it, and the line naming the areas it has no file for.
+  // An area file: 31 lines under Claude Code's shortest head, under this head, a blank and the closing lines.
+  assert.deepEqual(mostLines(cursor), { overview: 43, area: 43 });
+  assert.deepEqual(mostLines(copilot), { overview: 43, area: 43 });
+});
+
+test("no target's overview passes its bound, whichever optional lines a scan turns on", () => {
   for (const target of [claude, cursor, copilot]) {
     let worst = 0;
     let at = null;
@@ -4104,16 +4149,21 @@ test("no target's overview passes the bound, whichever optional lines a scan tur
       for (const unfiled of [false, true]) {
         for (const others of [false, true]) {
           for (const [layout, n] of [[false, 0], [false, 1], [true, 3]]) {
-            const lines = height(renderOverview(...toggled(on, { unfiled, others, layout, n }), target));
-            if (lines > worst) {
-              worst = lines;
-              at = { on: TOGGLES.filter((_, i) => on & (1 << i)), unfiled, others, layout, n };
+            const [scan, files] = toggled(on, { unfiled, others, layout, n });
+            // Against a Claude Code directory holding the same other files, and one holding none.
+            for (const claudeFiles of others && !isClaude(target) ? [files, { ...files, others: {} }] : [files]) {
+              const lines = height(renderOverview(scan, files, target, claudeFiles));
+              if (lines > worst) {
+                worst = lines;
+                at = { on: TOGGLES.filter((_, i) => on & (1 << i)), unfiled, others, layout, n };
+              }
             }
           }
         }
       }
     }
-    assert.ok(worst <= MAX_LINES, `${target.id}: ${worst} lines at ${JSON.stringify(at)}`);
+    assert.ok(worst <= mostLines(target).overview, `${target.id}: ${worst} lines at ${JSON.stringify(at)}`);
+    assert.equal(worst, mostLines(target).overview, `${target.id}: the bound is reached at ${JSON.stringify(at)}`);
   }
 });
 
@@ -4123,35 +4173,47 @@ test("an area with no glob at all is refused, by its path, as it was", () => {
   assert.throws(() => renderArea(area({ globs: undefined }), claude), { message });
 });
 
-test("at the budget the lines about attaching stay and a directive gives way", () => {
-  const laid = (shown, closing) => [
-    "---",
-    "generator: anatomiya",
-    'applyTo: "test/**/*.js,test/**/*.ts"',
-    "---",
-    "",
-    "# test  40 files",
-    "",
-    ...shownClaims(0, shown),
-    `and ${14 - shown} more not shown here, all of them stated. Also stated here, without counts:`,
-    ...namedClaims(shown, 14),
-    "",
-    ...closing,
-    "",
-  ];
-  // Claude shows eight of these fourteen; two closing lines and their blank cost one.
-  assert.deepEqual(renderArea(overfull(), copilot).split("\n"), laid(7, [ALSO, WIDENS]));
+test("at the budget an area file's closing lines go under the body claude gets, which gives up nothing", () => {
+  const body = CLAUDE_CROWDED.slice(6, -1);
+  const laid = (closing) => ["---", "generator: anatomiya", 'applyTo: "test/**/*.js,test/**/*.ts"', "---", ...body, "", ...closing, ""];
+  assert.deepEqual(renderArea(overfull(), copilot).split("\n"), laid([ALSO, WIDENS]));
+  assert.deepEqual(
+    renderArea(overfull(), cursor).split("\n"),
+    ["---", "generator: anatomiya", "globs: test/**/*.js,test/**/*.ts", "alwaysApply: false", "---", ...body, "", ALSO, ""]
+  );
 
   const globs = [...SCOPED_GLOBS, { negated: false, dir: "a,b", tail: "*.js" }];
   const three = renderArea({ ...overfull(), globs }, copilot).split("\n");
-  assert.deepEqual(three, laid(7, [ALSO, WIDENS, notGiven("a,b/*.js", "GitHub Copilot")]));
-  assert.equal(three.length - 1, MAX_LINES);
+  // One more pattern in Claude Code's list is one line less under it, in all three files.
+  const fewer = renderArea({ ...overfull(), globs }, claude).split("\n");
+  assert.deepEqual(three, [...laid([]).slice(0, 4), ...fewer.slice(7, -1), "", ALSO, WIDENS, notGiven("a,b/*.js", "GitHub Copilot"), ""]);
+  assert.ok(three.length - 1 <= mostLines(copilot).area, `${three.length - 1} lines`);
+});
 
-  // One more claim and the three lines are still there, at the cost of a block.
-  const more = area({ ...overfull(), globs, dimensions: [...overfull().dimensions, dim({ key: "k14", claim: "claim number 14" })] });
-  const over = renderArea(more, copilot).split("\n");
-  assert.ok(over.length - 1 <= MAX_LINES, `${over.length - 1} lines`);
-  assert.deepEqual(over.slice(-5), ["", ALSO, WIDENS, notGiven("a,b/*.js", "GitHub Copilot"), ""]);
+test("the three files of an area show the same lines, whatever each one's frontmatter and closing lines take", () => {
+  const under = (text) => {
+    const lines = text.split("\n");
+    const body = lines.slice(lines.indexOf("---", 1) + 1);
+    const closing = body.findIndex((l) => l.startsWith("This file's patterns") || l === WIDENS);
+    return closing === -1 ? body : [...body.slice(0, closing - 1), ""];
+  };
+  const wide = Array.from({ length: 12 }, (_, i) => ({ negated: false, dir: `pkg/${i}`, tail: "*.{js,ts}" }));
+  const unspelled = [...SCOPED_GLOBS, { negated: false, dir: "a,b", tail: "*.js" }];
+  let worst = { cursor: 0, copilot: 0 };
+  for (const globs of [SCOPED_GLOBS, [SCOPED_GLOBS[0]], [{ negated: false, dir: "", tail: "**/*.rb" }], unspelled, wide, [...wide, ...unspelled]]) {
+    for (const n of [1, 5, 9, 10, 11, 14, 20, 30]) {
+      for (const kinds of [null, root("test", { files: 40, exts: [[".ts", 40]] })]) {
+        const one = area({ path: "test", globs, kinds, dimensions: Array.from({ length: n }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}`, ...(i % 3 === 2 ? { directive: false, gate: "ratio" } : {}) })) });
+        const mine = under(renderArea(one, claude));
+        for (const target of [cursor, copilot]) {
+          const out = renderArea(one, target);
+          assert.deepEqual(under(out), mine, `${target.id}: ${globs.length} patterns, ${n} claims`);
+          worst[target.id] = Math.max(worst[target.id], height(out));
+        }
+      }
+    }
+  }
+  for (const target of [cursor, copilot]) assert.ok(worst[target.id] <= mostLines(target).area, `${target.id}: ${worst[target.id]} lines`);
 });
 
 test("what the check reads as dropped is still the claude file's", () => {

@@ -116,6 +116,8 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
 
   const files = { uncovered, orphaned };
   const bodies = renderTarget(TARGETS.claude, claude, described, files);
+  // Every other overview is laid out against what Claude Code's directory holds.
+  const claudeFiles = overviewFiles(claude, files);
 
   return {
     write: [...bodies.keys()],
@@ -139,7 +141,7 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     result: described,
     // The same fields for each other directory, and why one was left alone.
     targets: Object.fromEntries(
-      rest.map((o) => [o.target.id, untouched(o) ? untouchedPlan(o, previous) : targetPlan(o, described, files)])
+      rest.map((o) => [o.target.id, untouched(o) ? untouchedPlan(o, previous) : targetPlan(o, described, files, claudeFiles)])
     ),
   };
 }
@@ -289,10 +291,8 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   };
 }
 
-/** Every body one directory gets, by filename: none for a target that plans no name. */
-function renderTarget(target, laid, described, files) {
-  const bodies = new Map();
-  if (laid.names.length === 0) return bodies;
+/** What one directory's overview is told about that directory, beside the counts every overview carries. */
+function overviewFiles(laid, files) {
   // The two kinds travel apart, because only one sentence is true of each
   // and the overview says both. Sorted, since `readdir` order is the
   // filesystem's and this file may not move between scans of unchanged
@@ -302,7 +302,14 @@ function renderTarget(target, laid, described, files) {
     unknown: [...laid.unknown].sort(),
     unreadable: [...laid.unreadableRules].sort(),
   };
-  bodies.set(overviewName(target), renderOverview(described, { ...files, others, left: laid.left }, target));
+  return { ...files, others, left: laid.left };
+}
+
+/** Every body one directory gets, by filename: none for a target that plans no name. */
+function renderTarget(target, laid, described, files, claudeFiles = overviewFiles(laid, files)) {
+  const bodies = new Map();
+  if (laid.names.length === 0) return bodies;
+  bodies.set(overviewName(target), renderOverview(described, overviewFiles(laid, files), target, claudeFiles));
   for (const a of laid.filed) {
     const body = renderArea(a, target);
     // The name was planned off the same question, so this is two answers to it.
@@ -312,8 +319,8 @@ function renderTarget(target, laid, described, files) {
   return bodies;
 }
 
-function targetPlan({ target, state, reason, on, explicit, ...laid }, described, files) {
-  const bodies = renderTarget(target, laid, described, files);
+function targetPlan({ target, state, reason, on, explicit, ...laid }, described, files, claudeFiles) {
+  const bodies = renderTarget(target, laid, described, files, claudeFiles);
   return {
     dir: target.dir,
     state,

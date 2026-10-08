@@ -100,6 +100,10 @@ const UNSPELLABLE = {
 const MISREAD_ALONE = { claude: null, cursor: /^(true|false)$/, copilot: null };
 assertPerTarget("UNSPELLABLE", UNSPELLABLE);
 assertPerTarget("MISREAD_ALONE", MISREAD_ALONE);
+
+/** Whether a target is handed every pattern as the area spells it, so its file's patterns match the area and nothing else. */
+export const readsEveryPattern = (target) => UNSPELLABLE[target.id] === null;
+
 const EXT_BRACE = /\.\{([^{}]+)\}$/;
 
 const expanded = (g) => {
