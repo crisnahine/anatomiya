@@ -101,7 +101,7 @@ does not count as a config. Missing any of these, the scan leaves the checker of
 3,347 files, took 5.6 to 5.7 seconds against 1.3 without it, about 4.5 times, and it cannot be narrowed to
 the files that changed. A scan you run always runs it. A background refresh does not where the
 last run measured the checker as degraded and the plugin version, the root config, and the size and
-modification time of `node_modules` and of the install record in it are unchanged: it carries that verdict, and an edit to a config the root config extends or references does not end a carried verdict. The record says so in `semantic.carried` with
+modification time of `node_modules` and of the install record in it are unchanged: it carries that verdict, and an edit to a config the root config extends or references does not end a carried verdict. After a failed run (`semantic.reason` reads `tier-failed`) the next refresh runs the checker again, and carries the verdict from the second failed run in a row; `semantic.failures` holds the count. The record says so in `semantic.carried` with
 `semantic.measuredAt`, and the overview adds the UTC day it was measured. A degraded checker's claims
 are not counted either way, so the area files are the ones your scan wrote. An install starts no
 refresh by itself: after one, the checker is measured by the next refresh a commit, a checkout or a

@@ -66,7 +66,11 @@ _Avoid_: codebase, file list, tree
 
 **Area**:
 A directory holding enough source files to be counted as a unit, together with the files beneath it that
-no deeper area claimed.
+no deeper area claimed. The repository root is one in a single case: the language of the files directly
+in it builds the root as a package like any directory, which Go's does, and those files clear the floor
+counted alone. That area owns the files directly at the root and none below, nothing folds into it, and
+it prints as `the repository root`. In `check` it is still the furthest enclosing area of every other
+one, so an area with no slot of its own for a dimension is held to its claim at FIX.
 _Avoid_: module, package, folder, scope
 
 **Root**:
@@ -126,7 +130,7 @@ _Avoid_: engine, ecosystem, stack
 **Test tree**:
 A directory whose name puts what is under it among the tests: `test`, `tests`, `spec`,
 `__tests__`, `cypress` and `e2e` for every family, and what a family's own build names one,
-which is a Gradle source set ending in `Test`, a .NET project named `X.Tests` or `X.Test`, and
+which is a Gradle source set ending in `Test` or named `testFixtures`, a .NET project named `X.Tests` or `X.Test`, and
 a `Test` or `Tests` directory in PHP. Sitting in one does not make a file a test: its name does,
 or in Rust its place directly under a crate's `tests`, or a `#[test]` in it with a `tests`
 directory anywhere above it.
@@ -151,7 +155,7 @@ _Avoid_: inline test file, self-tested, unit-tested
 
 **Paired test project**:
 A test tree the language's build ties to one source tree by name and place: a .NET `X.Tests` or
-`X.Test` project with `X`, a Maven or Gradle `src/test` or `<set>Test` source set with what sits
+`X.Test` project with `X`, a Maven or Gradle `src/test`, `<set>Test` or `testFixtures` source set with what sits
 beside it, a PHP `tests` with the `src` or `app` beside it. A test there answers the one source
 file of its stem at any depth of the paired tree. Where two source files there carry the stem it
 answers neither, and it answers no file of that name outside the pair. A Python `tests`
@@ -365,18 +369,29 @@ is safe to, and keeps the previous map when the rescan fails.
 _Avoid_: rebuild, sync, auto-scan
 
 **Degraded**:
-The verdict on a type checker run that cannot be believed: under 0.80 of its type lookups resolved,
-or its config was refused. The map then prints no count for a type-checked claim, and the overview
-gives the share that resolved and the reason. The other verdict of a run that finished is `ok`.
-_Avoid_: broken, failed, partial, low confidence
+The verdict on a type checker run that finished and cannot be believed: under 0.80 of its type
+lookups resolved, or its config was refused. The map then prints no count for a type-checked claim,
+and the overview gives the share that resolved and the reason. The other verdict of a run that
+finished is `ok`. A run that did not finish is a failed run.
+_Avoid_: broken, partial, low confidence, failed (that word is the failed run's)
+
+**Failed run**:
+A type checker run that ended with no verdict of its own: its child did not start, went quiet past
+its clock, or ended before it answered. A degraded run finished and measured too little; a failed
+run measured nothing. The record holds it under the status `degraded` with the reason `tier-failed`,
+no share, and `semantic.failures`, the failed runs in a row under one stamp. The map prints no count
+for a type-checked claim, and the overview says `no type lookups resolved (tier-failed)`.
+_Avoid_: crashed checker, checker error, aborted run, degraded run (for one that did not finish)
 
 **Carried verdict**:
-A type checker verdict of `degraded` that a refresh writes again without running the checker. A
-scan measured it, and nothing its stamp holds has moved since: this version, where `typescript`
+A type checker verdict that a refresh writes again without running the checker: a `degraded` one
+from a run that finished, or a failed run's from the second in a row. Nothing its stamp holds has
+moved since it was measured: this version, where `typescript`
 resolves, the size and modification time of `node_modules` and of the install record in it, and the
 name and bytes of the root config. The record marks
-it `carried` with the moment it was measured, and the overview says the UTC day. Only `degraded` is
-carried: an `ok` verdict is measured on every refresh, and a scan run by hand always measures.
+it `carried` with the moment it was measured, and the overview says the UTC day. An `ok` verdict is
+never carried: it is measured on every refresh. After one failed run the next refresh runs the
+checker again, and a scan run by hand always measures.
 _Avoid_: cached verdict, stale verdict, skipped check
 
 **Left alone**:

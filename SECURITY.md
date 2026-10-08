@@ -170,6 +170,12 @@ before this scan's record replaces it. A file with
 the prefix that the tool did not write is reported and never removed. One that sits at a name the
 scan writes in `.claude/rules` is replaced by the map file of that name, and the scan says so:
 `"anatomiya-overview.md" in .claude/rules/ held a name this scan writes, so it was replaced`.
+On a volume that folds case, an entry spelled as one of those names in another letter case, such as
+`Anatomiya-Overview.md`, is the file at that name: it is replaced, and the line names it as the
+directory spells it. Which entry a name is gets asked of the volume and not of JavaScript, whose
+fold sends a dotless `ı` onto `i` where APFS keeps the two apart: the two names are one entry where
+`lstat` gives both the same device and inode, with one link. On a volume that keeps case apart the
+two are two files, and the other one is named as not written by this tool.
 
 If you clone an unfamiliar repository, read `.claude/rules/`, `.cursor/rules/` and
 `.github/instructions/` before you start a session. That is true whether or not you use this tool.
@@ -532,14 +538,16 @@ Say the quiet part plainly.
   that steps out of the repository that way is refused. Decisions B7 to B9 and B51 in
   `DECISIONS.md` carry the measurements. A scan that leaves the checker off reads neither
   file. A background refresh runs the checker like any scan, except where the last run measured it
-  as degraded and nothing it reads has changed: to compare, the refresh hashes up to the first
+  as degraded, or the last two runs failed, and nothing it reads has changed: to compare, the refresh hashes up to the first
   megabyte of the root config through a bounded read and parses nothing, and a scan that runs the
   checker hashes the same bytes before it starts. A root config that leaves the repository through
   a link is not opened for this either: its refusal is hashed in place of its bytes. `node_modules`
   and the install record in it are read with a stat of the entry itself, never through a link. The
   refresh carries a recorded verdict only where a scan could have written it: a reason from the
-  checker's own list, a rate that reason allows, and a moment from 2020 on and at most a day after
-  now. The reason and the day are encoded where the overview prints them. A record edited into
+  checker's own list, a rate that reason allows, a failure count that reason allows (1 or 2 beside
+  `tier-failed`, none beside any other), and a moment from 2020 on and at most a day after
+  now. A record written by hand as a second failed run under a matching stamp keeps the checker off
+  until the stamp moves or a scan is run by hand, as one written as degraded does. The reason and the day are encoded where the overview prints them. A record edited into
   anything else is measured over, so no text from the record reaches the overview.
 - **No guarantee the map is correct.** The gates in `plugins/anatomiya/lib/reduce.mjs`, with their numbers in `gates.mjs`, are thresholds, not proofs. A
   wrong directive is a correctness problem, not a security one, but it is worth knowing that a
