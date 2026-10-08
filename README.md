@@ -209,8 +209,8 @@ alone a checkout with no map of its own, a map, pin or refresh file committed to
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
 failed until one succeeds. A Cursor or Copilot directory a rescan could not write, for a locked file
-or a missing write permission, is tried again each half hour for as long as it stays so, and a scan
-run by hand prints why. A committed map's `.claude/anatomiya/layout.json` comes along but does
+or a missing write permission, is tried again each half hour for as long as it stays so. A scan run
+by hand prints why and ends that retry until the checkout moves. A committed map's `.claude/anatomiya/layout.json` comes along but does
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
 
 A map written by 0.13.4 or earlier is rewritten by the first scan or refresh of 0.14.0, and it
@@ -664,7 +664,7 @@ parser was run for Java, C#, Rust or Kotlin, so the files of those four language
 | Go | `_test.go` | doc comments | naming (a name's case is its visibility); imports (a dot import is 1 of 9,863 lines) |
 | Java | `*Test`, `*Tests`, `*IT` under a test tree | doc comments, handlers | naming (1.0000 in all three); imports (a default) |
 | C# | `*Tests`, `*Test` under a test tree | doc comments | handlers (repositories differ by 0.10); naming (1.0000); imports (no wildcard form) |
-| Rust | a `.rs` file directly under a crate's `tests`; one holding a `#[test]` under any other `tests` directory or named `tests.rs` | doc comments | naming (the compiler lints it); imports (repositories differ by 0.10) |
+| Rust | a `.rs` file directly under a crate's `tests`; one holding a `#[test]` with a `tests` directory anywhere above it, or named `tests.rs` | doc comments | naming (the compiler lints it); imports (repositories differ by 0.10) |
 | Kotlin | `*Test`, `*Tests`, `*IT` under a test tree | doc comments | handlers (repositories differ by 0.12); naming (0.95 to 1.00); imports (ktlint's default rule) |
 
 The bar is one repository under 0.90 and a spread of 0.15. No filename claim is asked of any of the
