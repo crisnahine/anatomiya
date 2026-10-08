@@ -689,7 +689,9 @@ async function trackedTests(root) {
  */
 async function absentAt(root, mergeBase, dirs) {
   if (!mergeBase || dirs.length === 0) return new Set();
-  const listed = await gitBuffered(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...dirs], { timeout: GIT.checkTimeoutMs });
+  // Spelled literal, since a name is the repository's: git reads a leading colon as pathspec magic and lists nothing for `:top`.
+  const named = dirs.map((dir) => `:(literal)${dir}`);
+  const listed = await gitBuffered(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...named], { timeout: GIT.checkTimeoutMs });
   // Asked of a directory and of one inside it, git lists the inner one alone.
   const held = listed.stdout.split("\0");
   return new Set(dirs.filter((dir) => !held.some((entry) => entry === dir || entry.startsWith(`${dir}/`))));

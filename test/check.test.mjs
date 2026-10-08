@@ -5516,6 +5516,27 @@ test("a merge base that cannot say whether it held a directory states no finding
   assert.deepEqual(unanswered.caveats, answered.report.caveats);
 });
 
+for (const top of [":top", "*"]) {
+  test(`a directory the base held under a top-level directory named ${top} is asked of the base by that name`, needsPosixPaths, async (t) => {
+    // git reads a leading colon as pathspec magic, and lists nothing for the directory it names.
+    const dir = repo(t, ({ write, commit }) => {
+      for (const [rel, body] of [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, top), pyIn(`${top}/old`, 9)]) write(rel, body);
+      commit("init");
+    });
+    writeMap(await scan(dir), {});
+    const { files } = await collect(dir);
+    writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+    const base = sha(dir);
+    for (const [rel, body] of [pyIn(`${top}/old`, 7), pyTestIn(`${top}/old`, 9)]) writeFileSync(join(dir, rel), body);
+    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+    execFileSync("git", ["commit", "-qm", "source and a test"], { cwd: dir, stdio: "pipe" });
+
+    const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+    assert.deepEqual(found.map((f) => f.path), [`${top}/old/test_m9.py`], JSON.stringify(found));
+  });
+}
+
 test("a change that puts no source under a directory asks the merge base nothing about it", needsShebang, async (t) => {
   const dir = repo(t, ({ write, commit }) => {
     for (const [rel, body] of PY_TREE) write(rel, body);
