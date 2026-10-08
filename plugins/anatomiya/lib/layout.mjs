@@ -13,6 +13,7 @@
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
 import { embeddedIn, familyOf, language, placeTestsOf } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
+import { PRECEDENT_FLOOR } from "./principles.mjs";
 import {
   FAMILY_TEST_NAMES,
   TEST_DIRS,
@@ -174,28 +175,39 @@ export const isProducer = (f, mirrored = null) =>
 
 /**
  * The extensions a root's line prints with their counts, and the ones its
- * namesake counts are taken over: the first printed this tool reads, and the
- * other where either is a component's. Null for one the root has none of.
+ * namesake counts are taken over: the commonest printed that holds a file a
+ * test could be written for, and the other this tool reads where either is a
+ * component's. Null for one the root has none of.
  *
- * The two commonest print. Where the root holds source and neither is an
- * extension this tool reads, the commonest it does read prints after them, or
- * the line says nothing of the source: django's own package read `1226 .mo,
- * 1226 .po and 1164 other` with 907 `.py` files inside the 1164.
+ * The two commonest print. Where neither is an extension this tool reads, the
+ * commonest it does read prints after them, or the line says nothing
+ * of the source: django's own package read `1226 .mo, 1226 .po and 1164 other`
+ * with 907 `.py` files inside the 1164. Only from the floor a test precedent
+ * is read at: flask's `docs` is 76 `.rst`, 5 `.png` and one `conf.py`, which
+ * is not that root's source, and `0 of 1 have a namesake test` says nothing.
+ *
+ * Over an extension that holds one, not the first this tool reads: webpack's
+ * `schemas/plugins` is 39 `.d.ts` beside 39 `.js`, and the count was taken
+ * over the declarations.
  *
  * Exported because `scripts/measure-layout.mjs` recounts the printed line and
  * a second copy of this rule there would measure the disagreement.
  */
-export function printedExtensions(own) {
+export function printedExtensions(own, mirrored = null) {
   const all = tally(own.map((f) => extOf(f.rel)));
   const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
+  const producers = (ext) => own.filter((f) => extOf(f.rel) === ext && isProducer(f, mirrored)).length;
   const exts = all.slice(0, 2);
-  if (!exts.some(([ext]) => read(ext))) exts.push(...all.filter(([ext]) => read(ext)).slice(0, 1));
+  if (!exts.some(([ext]) => read(ext))) {
+    const source = all.find(([ext]) => read(ext));
+    if (source && producers(source[0]) >= PRECEDENT_FLOOR) exts.push(source);
+  }
   // The denominator has to be a number the line already printed: one of the
   // printed extensions, not always the first of them. supabase's own
   // marketing site prints more screenshots than components, and matching
   // only exts[0] read every producer there as zero instead of naming its
   // `.tsx` files.
-  const first = exts.find(([ext]) => read(ext))?.[0] ?? null;
+  const first = exts.find(([ext]) => producers(ext) > 0)?.[0] ?? null;
   // Where one of the two printed extensions is a component's the other is counted too, and apart:
   // summed into the first, the denominator is a number the line never printed.
   const component = (ext) => own.some((f) => isComponent(f.lang) && extOf(f.rel) === ext);
@@ -568,7 +580,7 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   const own = root.files;
   const tests = own.filter((f) => isTestFile(f, mirrored));
   const jsxFiles = own.filter((f) => f.facets?.jsx);
-  const { exts, counted: [producerExt, otherExt] } = printedExtensions(own);
+  const { exts, counted: [producerExt, otherExt] } = printedExtensions(own, mirrored);
   // Neither source to imitate nor a test, so a story never fills the
   // namesake question: storybook's `.stories.tsx` is literal JSX and would
   // otherwise stand for the component beside it.

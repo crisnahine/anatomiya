@@ -20,6 +20,7 @@ import {
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
 import { roster } from "../plugins/anatomiya/lib/layout-scan.mjs";
+import { PRECEDENT_FLOOR } from "../plugins/anatomiya/lib/principles.mjs";
 
 const file = (rel, lang = null, facets = null) => ({ rel, lang, facets });
 const files = (n, make) => Array.from({ length: n }, (_, i) => make(i));
@@ -1466,4 +1467,56 @@ test("a root names no third extension where one of its two commonest is read, or
   assert.deepEqual(printedExtensions(mixed).exts, [[".png", 6], [".tsx", 4]], "the screenshots case keeps its two");
   const none = [...files(3, (i) => file(`d/a${i}.md`)), ...files(2, (i) => file(`d/b${i}.png`)), file("d/c.txt")];
   assert.deepEqual(printedExtensions(none).exts, [[".md", 3], [".png", 2]]);
+});
+
+// A root of two unread kinds and `n` Python files, with one test elsewhere so a count can be taken.
+const unreadRoot = (n) => {
+  const own = [
+    ...files(76, (i) => file(`docs/p${i}.rst`)),
+    ...files(5, (i) => file(`docs/i${i}.png`)),
+    ...files(n, (i) => file(`docs/s${i}.py`, "python")),
+  ];
+  const corpus = [...own, file("tests/test_s0.py", "python", { testRunner: "pytest", testCalls: true })];
+  return rootFacts({ path: "docs", dir: "docs", files: own }, layoutIndexes(corpus));
+};
+
+test("one or two stray scripts beside two unread kinds are not a root's source, and print no count", () => {
+  // flask's `docs` is 76 `.rst`, 5 `.png` and one `conf.py`.
+  for (const n of [1, PRECEDENT_FLOOR - 1]) {
+    const record = unreadRoot(n);
+    assert.deepEqual(record.exts, [[".rst", 76], [".png", 5]], `${n}`);
+    assert.equal(record.other, n);
+    assert.equal("companions" in record, false, `${n}`);
+  }
+});
+
+test("a root names its read source beside two unread kinds from the floor a test precedent needs", () => {
+  const record = unreadRoot(PRECEDENT_FLOOR);
+  assert.deepEqual(record.exts, [[".rst", 76], [".png", 5], [".py", PRECEDENT_FLOOR]]);
+  assert.equal(record.other, 0);
+  assert.equal(record.companions.of, PRECEDENT_FLOOR);
+});
+
+test("the floor is over files a test could be written for, not over files of the extension", () => {
+  const own = [
+    ...files(6, (i) => file(`pkg/a${i}.mo`)),
+    ...files(6, (i) => file(`pkg/a${i}.po`)),
+    ...files(2, (i) => file(`pkg/m${i}.py`, "python")),
+    ...files(3, (i) => file(`pkg/e${i}.py`, "python", { empty: true })),
+  ];
+  assert.deepEqual(printedExtensions(own).exts, [[".mo", 6], [".po", 6]]);
+});
+
+test("a root's count is over the commonest printed extension that holds a file a test could be written for", () => {
+  // webpack's `schemas/plugins` is 39 `.d.ts` beside 39 `.js`, and counted over the declarations it read `0 of 39`, then nothing.
+  const corpus = [
+    ...files(4, (i) => file(`schemas/p${i}.d.ts`, "js")),
+    ...files(3, (i) => file(`schemas/p${i}.check.js`, "js")),
+    file("test/other.test.js", "js", { testRunner: "jest" }),
+  ];
+  const record = rootFacts({ path: "schemas", dir: "schemas", files: corpus.slice(0, 7) }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".d.ts", 4], [".js", 3]]);
+  assert.deepEqual(record.companions, { with: 0, of: 3, root: null, ext: ".js" });
+  assert.deepEqual(printedExtensions(corpus.slice(0, 4)).counted, [null, null], "and none where no printed extension holds one");
 });

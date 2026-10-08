@@ -1277,6 +1277,10 @@ test("a root line names the source it holds after two extensions this tool does 
   assert.equal(lines[2], "- django: 1226 .mo, 1226 .po, 907 .py and 257 other; 31 of 880 have a namesake test under tests");
 });
 
+test("a root line whose read source is under the floor prints its two extensions and no count", () => {
+  assert.equal(renderLayout(clientLayout({ roots: [underFloor] }))[2], "- docs: 76 .rst, 5 .png and 1 other");
+});
+
 test("the overview holds its bound over every section that can grow, not just the areas", () => {
   // The bound was budgeted against the area listing alone, while the listing of
   // rule files this tool did not write was rendered after it and unbounded. A
@@ -1296,7 +1300,7 @@ test("the overview holds its bound over every section that can grow, not just th
           { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5, missingStripper: true },
         ]) {
         for (const untracked of [0, 4]) {
-        for (const layout of [null, clientLayout(), clientLayout({ principles: [] }), clientLayout({ roots: [unreadFirst, ...clientLayout().roots] }), truncatedLayout()]) {
+        for (const layout of [null, clientLayout(), clientLayout({ principles: [] }), clientLayout({ roots: [unreadFirst, ...clientLayout().roots] }), clientLayout({ roots: [underFloor, ...clientLayout().roots] }), truncatedLayout()]) {
           const out = renderOverview(
             {
               layout,
@@ -1574,6 +1578,9 @@ const unreadFirst = root("django", {
   other: 257,
   companions: { with: 31, of: 880, root: "tests", ext: ".py" },
 });
+
+// The same shape with its read source under the floor: two extensions, and no count.
+const underFloor = root("docs", { files: 82, exts: [[".rst", 76], [".png", 5]], other: 1 });
 
 // The client numbers of the spec's rendered target, recounted by hand there.
 const clientLayout = (o = {}) => ({

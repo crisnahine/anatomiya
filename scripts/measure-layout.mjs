@@ -130,7 +130,7 @@ function recountRoot(path, corpus, testFiles, byStem) {
   // Which extensions print and are counted, and which files a test could be
   // written for, are the layout's own answers: a second spelling of either here
   // measures the two spellings against each other and not the count.
-  const { exts: printed, counted: [producerExt, otherExt] } = printedExtensions(own);
+  const { exts: printed, counted: [producerExt, otherExt] } = printedExtensions(own, mirrored);
   const exts = printed.map(([ext]) => [ext, own.filter((f) => extOf(f.rel) === ext).length]);
   const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
   const producers = producersOf(producerExt);
