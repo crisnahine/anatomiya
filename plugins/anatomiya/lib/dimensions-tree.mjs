@@ -7,13 +7,23 @@ import { fieldOf, nameOf, site } from "./tree-walk.mjs";
 
 const KINDS = [
   "fn", "cls", "scope", "wrap", "comment", "annotation", "inner", "directive", "catch", "raise", "ident", "variable",
-  "block", "docstring", "doc", "args", "iface", "receiverType", "receiverBeforeName", "paren", "staticProperty", "label", "conditional",
+  "block", "docstring", "doc", "args", "iface", "receiverType", "receiverBeforeName", "paren", "property", "label", "reference", "conditional",
 ];
 const SETS = new Map(
   Object.entries(SHAPES).map(([lang, shapes]) => [lang, Object.fromEntries(KINDS.map((kind) => [kind, new Set(shapes[kind] ?? [])]))])
 );
 
 const IDLE = { node() {} };
+
+// Where each child sits among its parent's children, built once for a parent. Every function asks it, and a search
+// of the siblings for each took 2.2 s on 40,000 functions in one file, where their parse took 0.5.
+const PLACES = new WeakMap();
+
+function placeAmong(parent, child) {
+  let places = PLACES.get(parent);
+  if (!places) PLACES.set(parent, (places = new Map(parent.children.map((node, i) => [node, i]))));
+  return places.get(child);
+}
 
 /** Whether a runner collects this file, off the facets the caller already read where it hands them over. */
 const inTestFile = (program, { rel = "", facets } = {}) =>
@@ -34,7 +44,7 @@ function headerOf(fn, ctx, sets, shapes) {
   const words = new Set();
   const work = [];
   const siblings = ctx.ancestors.at(-1).children;
-  for (let i = siblings.indexOf(fn) - 1; i >= 0; i--) {
+  for (let i = placeAmong(ctx.ancestors.at(-1), fn) - 1; i >= 0; i--) {
     if (sets.annotation.has(siblings[i].type)) work.push(siblings[i]);
     else if (!sets.comment.has(siblings[i].type)) break;
   }
@@ -74,6 +84,15 @@ const OUTSIDE = {
   rust: (item, sets) => attributeSays(item, sets, "cfg", "test") || attributeSays(item, sets, "doc", "hidden"),
 };
 
+/** The first node after an attribute among its siblings that is neither an attribute nor a comment, or null. */
+function standsOn(parent, attribute, sets) {
+  for (let i = placeAmong(parent, attribute) + 1; i < parent.children.length; i++) {
+    const next = parent.children[i];
+    if (!sets.annotation.has(next.type) && !sets.comment.has(next.type)) return next;
+  }
+  return null;
+}
+
 /** Which nodes an attribute takes out of the documented surface, so the row passes over each and all it holds. */
 function outside(lang, sets) {
   const says = OUTSIDE[lang];
@@ -83,8 +102,7 @@ function outside(lang, sets) {
     note(node, ctx) {
       if (!sets.annotation.has(node.type) || !says(node, sets)) return;
       const parent = ctx.ancestors.at(-1);
-      const after = parent.children.slice(parent.children.indexOf(node) + 1);
-      const on = sets.inner.has(node.type) ? parent : after.find((n) => !sets.annotation.has(n.type) && !sets.comment.has(n.type));
+      const on = sets.inner.has(node.type) ? parent : standsOn(parent, node, sets);
       if (on) marked.add(on);
     },
     holds: (node, ctx) => marked.size > 0 && (marked.has(node) || ctx.ancestors.some((a) => marked.has(a))),
@@ -252,7 +270,7 @@ function documentedAbove(fn, ctx, sets, rule, source, shapes) {
   let siblings = ctx.ancestors[depth].children;
   const gap = rule.tight ? TIGHT : LOOSE;
   let below = fn;
-  for (let i = siblings.indexOf(fn) - 1; i >= 0; i--) {
+  for (let i = placeAmong(ctx.ancestors[depth], fn) - 1; i >= 0; i--) {
     const above = siblings[i];
     const comment = sets.comment.has(above.type);
     if (!gap.test(source.slice(above.end, below.start))) return false;
@@ -261,7 +279,7 @@ function documentedAbove(fn, ctx, sets, rule, source, shapes) {
       if (!sets.conditional.has(holder.type) || above.field !== shapes.condition) return false;
       below = holder;
       siblings = ctx.ancestors[--depth].children;
-      i = siblings.indexOf(holder);
+      i = placeAmong(ctx.ancestors[depth], holder);
       continue;
     }
     if (!comment) {
@@ -300,17 +318,19 @@ function caughtName(header, shapes, sets) {
 
 /**
  * Whether anything under a handler's body reads the name, a closure's body included. A member spelling it reads nothing, and
- * neither does a static property, an annotation's argument name, or a label.
+ * neither does a property read off a class or declared in one, an annotation's argument or its name, a label, a case's
+ * constant, or the method a reference names: only what the reference is taken from, its first child, is read.
  */
 function readsName(body, name, shapes, sets) {
   const spelled = [shapes.name, shapes.member, shapes.key];
+  const named = (node, parent) => sets.label.has(parent.type) || (sets.reference.has(parent.type) && node !== parent.children[0]);
   const reads = (node, parent) =>
-    sets.variable.size > 0 ? sets.variable.has(parent.type) : !(node.field && spelled.includes(node.field)) && !sets.label.has(parent.type);
+    sets.variable.size > 0 ? sets.variable.has(parent.type) : !(node.field && spelled.includes(node.field)) && !named(node, parent);
   const work = [body];
   while (work.length) {
     const parent = work.pop();
     for (const node of parent.children) {
-      if (sets.staticProperty.has(parent.type) && node.field === shapes.name && sets.variable.has(node.type)) continue;
+      if (sets.property.has(parent.type) && node.field === shapes.name && sets.variable.has(node.type)) continue;
       if (node.children.length) work.push(node);
       else if (sets.ident.has(node.type) && node.text === name && reads(node, parent)) return true;
     }
@@ -335,7 +355,7 @@ export const TREE_DIMENSIONS = [
     counterClaim: null, // discarding the error is an absence, not a style anyone picked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a PHP or Java file holding a catch clause that binds the error to a name, each such clause of a chain counted; a PHP clause that names a type and binds no name has used what it was given and is not a site, and neither is a Java clause that binds `_` or names what it caught `ignored`. A clause uses the error when its body reads the name it bound, inside a closure or an interpolated string too, or when its body throws: the error again, or another in its place. A property, static or not, a field, a method, an annotation's argument name or a label spelling the same name reads nothing",
+      sites: "a PHP or Java file holding a catch clause that binds the error to a name, each such clause of a chain counted; a PHP clause that names a type and binds no name has used what it was given and is not a site, and neither is a Java clause that binds `_` or names what it caught `ignored`. A clause uses the error when its body reads the name it bound, inside a closure or an interpolated string too, or when its body throws: the error again, or another in its place. A property, static or not, read or declared, a field, a method, a method reference's method, an annotation's argument name or its one argument, a `case` constant or a label spelling the same name reads nothing",
       blind: "a lambda, a closure or a nested handler that binds the same name again hides the caught one, and a read of the inner name counts as a read of the error",
     },
     langs: ["php", "java"],

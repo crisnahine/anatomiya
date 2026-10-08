@@ -52,6 +52,10 @@ const CASES = {
       ["<?php\ntry { a(); } catch (E $e) { log($x->e); }\n", [false]],
       // A static property is spelled with the variable's own sigil and reads no variable.
       ["<?php\ntry { a(); } catch (E $e) { A::$e; static::$e = null; self::$e++; }\n", [false]],
+      // So is a property an anonymous class declares.
+      ["<?php\ntry { a(); } catch (E $e) { $o = new class { static $e; }; }\n", [false]],
+      ["<?php\ntry { a(); } catch (E $e) { $o = new class { public $e = 1; private int $f; }; }\n", [false]],
+      ["<?php\ntry { a(); } catch (E $e) { $o = new class($e) { public $e; }; }\n", [true]],
       ["<?php\ntry { a(); } catch (E $e) { log($x->$e); }\n", [true]],
       ["<?php\ntry { a(); } catch (E $e) { log(A::$$e); }\n", [true]],
       ["<?php\ntry { a(); } catch (E $e) { log($e::$count); }\n", [true]],
@@ -73,6 +77,15 @@ const CASES = {
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { @B(e = 1) int x; }\n    }\n}\n", [false]],
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { e: for (;;) { break e; } }\n    }\n}\n", [false]],
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { e: while (true) { continue e; } }\n    }\n}\n", [false]],
+      // Nor is the method a reference names, a case's constant, or an annotation's one argument: none of the three can be a caught variable.
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { run(A::e); }\n    }\n}\n", [false]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { run(this::e); run(A::<T>e); }\n    }\n}\n", [false]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { switch (k) { case e: break; } }\n    }\n}\n", [false]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { int n = switch (k) { case e -> 1; default -> 2; }; }\n    }\n}\n", [false]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { @B(e) int x = 0; }\n    }\n}\n", [false]],
+      // What a reference is taken from is read, and so is what a switch turns on.
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { run(e::getMessage); }\n    }\n}\n", [true]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { switch (e.code()) { case e: break; } }\n    }\n}\n", [true]],
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { @B(v = e) int x; }\n    }\n}\n", [true]],
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { e: for (;;) { log(e); break e; } }\n    }\n}\n", [true]],
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { return; }\n    }\n}\n", [false]],
@@ -272,6 +285,36 @@ const CASES = {
     ],
   },
 };
+
+// Each function asks where it sits among its siblings, and a search of them for every one makes four times the
+// functions cost sixteen times as long. The row is timed alone, on a tree already parsed, so its walk is all the clock sees.
+const MANY_FUNCTIONS = {
+  "an attribute that takes each out of the documented surface": (i) => `#[cfg(test)]\npub fn f${i}() {}\n`,
+  "a doc comment and an attribute above each": (i) => `/// Runs.\n#[inline]\npub fn f${i}() {}\n`,
+};
+
+for (const [shape, item] of Object.entries(MANY_FUNCTIONS)) {
+  test(`public_doc_comment reads a file of many functions in time linear in them: ${shape}`, async () => {
+    const row = TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment");
+    const fastest = async (count) => {
+      const source = Array.from({ length: count }, (_, i) => item(i)).join("");
+      let best = Infinity;
+      for (let turn = 0; turn < 3; turn++) {
+        // A tree of its own each turn, so no turn reads what the one before it built.
+        const { program } = await parseTreeFile(source, "src/a.rs", "rust", { withProgram: true });
+        const before = performance.now();
+        row.run(program, () => {}, { source, rel: "src/a.rs" });
+        best = Math.min(best, performance.now() - before);
+      }
+      return best;
+    };
+
+    const few = await fastest(20_000);
+    const many = await fastest(80_000);
+
+    assert.ok(many / few < 8, `20,000 functions took ${few.toFixed(1)} ms and 80,000 took ${many.toFixed(1)} ms`);
+  });
+}
 
 const TESTLESS = ["public_doc_comment", "declared_return_type"];
 

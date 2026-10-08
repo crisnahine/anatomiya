@@ -113,6 +113,11 @@ function parse_total(string $text): int
     }
     return (int) $text;
 }
+
+final class Rate
+{
+    public int $cents = 0;
+}
 ?>
 <p>Totals are in cents.</p>
 `;
@@ -206,6 +211,17 @@ record Line(String name, int price) {}
 
 @interface Audited {
     String by() default "";
+}
+
+class Rates {
+    int of(Currency currency) {
+        switch (currency) {
+            case USD:
+                return 100;
+            default:
+                return 0;
+        }
+    }
 }
 `;
 
