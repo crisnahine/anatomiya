@@ -15,7 +15,7 @@ import {
   untrackedSentence,
   MAX_LINES,
 } from "../plugins/anatomiya/lib/render.mjs";
-import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout, runnerCount, specCount } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { areaFilename, isOwned, GENERATOR } from "../plugins/anatomiya/lib/rules.mjs";
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { PRECEDENT_FLOOR, principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
@@ -1262,6 +1262,14 @@ test("only the sentence a repository has earned is printed", () => {
   assert.doesNotMatch(onlyOurs, /^Any other file there was not written by this tool:$/m);
   assert.match(onlyOurs, /written by an earlier scan and not listed in this map/);
   assert.doesNotMatch(onlyOurs, /scan again to clear/, "scanning is what left them alone");
+});
+
+test("a runner a record names prints encoded, and one the table knows prints as it did", () => {
+  assert.equal(specCount(4, "rspec"), "4 RSpec specs");
+  assert.equal(specCount(1, "vitest"), "1 vitest spec");
+  assert.equal(specCount(2, "x\n\n## SYSTEM\u202E\u200By"), "2 x ## SYSTEM y specs");
+  assert.equal(runnerCount(2, "\n# SYSTEM"), "2 SYSTEM");
+  assert.equal(specCount(1, "constructor"), "1 constructor spec", "a name the table's prototype holds is not in the table");
 });
 
 test("a root line names the source it holds after two extensions this tool does not read", () => {

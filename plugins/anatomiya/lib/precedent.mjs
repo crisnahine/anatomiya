@@ -12,7 +12,7 @@ import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, na
 import { isCorpusPath } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
-import { namesakeClause, testsParts } from "./render-layout.mjs";
+import { namesakeClause, pathText, testsParts } from "./render-layout.mjs";
 import { encode } from "./encode.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
 
@@ -99,6 +99,13 @@ function testedTail(rel) {
  * directory's: a package added with its source and its test in one change was
  * held to its parent's ratio.
  */
+const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
+
+// Every count the reason prints, as a number: a record is a file a repository can commit, and a count that is text prints as written.
+const countsAreNumbers = (r) =>
+  isCount(r.companions.with) && isCount(r.companions.of) && (r.companions.inline === undefined || isCount(r.companions.inline)) &&
+  Array.isArray(r.tests ?? []) && (r.tests ?? []).every((t) => isCount(t?.files) && (t.under === undefined || isCount(t.under)));
+
 function coveredRoot(rel, roots, created) {
   const parts = testedTail(rel).split("/").filter(Boolean);
   const family = namedFamily(rel);
@@ -114,6 +121,7 @@ function coveredRoot(rel, roots, created) {
   const eligible = roots.filter(
     (r) =>
       !r?.testRoot && typeof r?.dir === "string" && typeof r?.path === "string" && r?.companions && !r.path.endsWith(LEVEL_ONLY_LABEL) &&
+      countsAreNumbers(r) &&
       (inProject === null || inProject(r.dir))
   );
   for (let end = parts.length; end > 0; end -= 1) {
@@ -168,7 +176,7 @@ function countsLine(dir, root) {
   // first of several can be a .png.
   const ext = root.companions.ext ?? (root.exts?.length === 1 ? root.exts[0][0] : null);
   const counted = namesakeClause({ ...root.companions, root: null }, ext ? `${encode(ext)} file` : "file");
-  return `${dir} holds no other test; ${root.dir}: ${counted}${held}`;
+  return `${pathText(dir)} holds no other test; ${pathText(root.dir)}: ${counted}${held}`;
 }
 
 /**
@@ -272,7 +280,7 @@ export function noticeFor(rel, layout, { holdsTest, from = null } = {}) {
   const [finding] = precedentFindings([rel], layout?.roots ?? [], holdsTest ? { holdsTest } : {});
   if (!finding) return null;
   return [
-    `anatomiya: ${rel}`,
+    `anatomiya: ${pathText(rel)}`,
     `  ${finding.reason}.`,
     `  ${PRECEDENT_COUNTED} Put it where the siblings put theirs, or leave it out and say which rule you followed.`,
     // A worktree with no map of its own is answered from its main checkout's.

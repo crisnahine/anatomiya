@@ -31,13 +31,16 @@ export const plural = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
  *
  * A name the encoder empties, `###` or a setext underline, would render as
  * `- : 30 .ts`, which is a bullet about nothing.
+ *
+ * Exported because the notice names a path and a root in the overview's spelling.
  */
-const pathText = (p) => (p === "." ? ROOT_LABEL : JSON.parse(encodePath(p)) || "(unnamed)");
+export const pathText = (p) => (p === "." ? ROOT_LABEL : JSON.parse(encodePath(p)) || "(unnamed)");
 
 // What a flat repository's one root is called, since "." reads as punctuation.
 export const ROOT_LABEL = "(repository root)";
 
-const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
+// A record is read off the disk, where a repository can commit one, so a runner outside the table is its text and not this tool's.
+const runnerLabel = (runner) => (Object.hasOwn(RUNNER_LABELS, runner) ? RUNNER_LABELS[runner] : encode(runner));
 
 /**
  * A runner group's count with its noun: `4 RSpec specs`, or `4 test files`
