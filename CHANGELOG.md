@@ -7,12 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Seven more languages are read through tree-sitter, a third parser engine: Python, PHP, Go, Java,
-C#, Rust and Kotlin. The script blocks of Vue and Svelte files are read too, `scan --targets
-cursor,copilot` writes the same map for Cursor and GitHub Copilot, and the type checker reads a
-root `tsconfig.base.json` where a repository has no root `tsconfig.json`. A root's count of
-namesake tests is taken over the files a test could be written for, which changes that count in
-maps of every language.
+Seven more languages are read, through tree-sitter as a third parser engine: Python, PHP, Go, Java,
+C#, Rust and Kotlin. The script blocks of Vue and Svelte files are read, `scan --targets
+cursor,copilot` writes the same map for Cursor and GitHub Copilot, and the type checker reads a root
+`tsconfig.base.json` where there is no root `tsconfig.json`. Every existing map changes on its
+first scan: a root's namesake tests are counted over the files a test could be written for.
 
 After updating, run `/anatomiya:doctor`. If it prints `tree-sitter absent: web-tree-sitter did not
 load`, run `/anatomiya:setup`, then `/anatomiya:scan` in each mapped repository that holds one of
@@ -42,6 +41,8 @@ scanned by 0.13.4 and by this version.
   unread-languages line it costs something else: six list one area fewer under Areas, and prisma
   loses the test-precedent sentence. vscode keeps its three root lines: its grammar line, `6 files
   could not be read by this tool's grammar`, takes the line its test-precedent sentence leaves.
+  Homebrew keeps its root lines too: its `docs` line gains a count, the count switches on the
+  test-precedent sentence, and the sentence takes the line of one area named under Areas.
 - Namesake counts. A root's `N of M have a namesake test` is taken over the files a test could be
   written for, and a helper or a fixture under a test directory inside the root is not one, so M
   shrinks. 18 of the 35 overviews show it, on 46 root lines and on the tests line of 11:
@@ -97,36 +98,39 @@ scanned by 0.13.4 and by this version.
   says `53 at the repository root` and `42 source files sit in no area (at the repository root,
   under the per-directory floor, or under a name no glob can spell)`.
 - Test files and namesake tests in those seven languages. A test file is found by what the
-  language's own tool collects: `_test.go`; `test_*.py`, `*_test.py` and `conftest.py`; under a
-  test tree, `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and
-  `*Test.php` for PHP; a `.rs` file directly under a crate's `tests`. A test tree is `test`,
-  `tests` and what the language's build names one: a Gradle source set ending in `Test`, a .NET
-  project named `X.Tests` or `X.Test`, a `Test` or `Tests` directory in PHP. The tests line names
-  the runner: `389 go test specs`, `505 of 522 pytest specs under tests`, `38 of 40 xunit specs
-  under test/Serilog.Tests`. A directory named exactly `tests` prints as `tests/` on its own
-  line, since the tests line is labelled `tests`. A namesake test is matched inside the language, across the layout its build
-  uses: `55 of 152 .kt files under okhttp/src/commonJvmAndroid/kotlin/okhttp3 have a namesake
-  test`, `28 of 113 .cs files under src/Serilog have a namesake test`. A Rust file that holds its
-  own `#[test]` functions is asked for no namesake and is counted apart: `0 of 56 .rs files under
-  crates have a namesake test; 34 hold their own tests`. A Python package is asked for a test of
-  its directory's name, `flask/json/__init__.py` for `tests/test_json.py`. A C# test project is
-  paired by name only (`Serilog.Tests` with `Serilog`), so `Foo` tested from `Bar.Tests` gets no
+  language's own tool collects: `_test.go`; `test_*.py`, `*_test.py` and `conftest.py`; under a test
+  tree, `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and `*Test.php`
+  for PHP; a `.rs` file directly under a crate's `tests`. A test tree is `test`, `tests` and what
+  the language's build names one: a Gradle source set ending in `Test`, a .NET project named
+  `X.Tests` or `X.Test`, a `Test` or `Tests` directory in PHP. The tests line names the runner: `389
+  go test specs`, `505 of 522 pytest specs under tests`, `38 of 40 xunit specs under
+  test/Serilog.Tests`. A directory named exactly `tests` prints as `tests/` on its own line, since
+  the tests line is labelled `tests`. A namesake test is matched inside the language, across the
+  layout its build uses: `55 of 152 .kt files under okhttp/src/commonJvmAndroid/kotlin/okhttp3 have
+  a namesake test`, `28 of 113 .cs files under src/Serilog have a namesake test`. A Rust file that
+  holds its own `#[test]` functions is asked for no namesake and is counted apart: `0 of 56 .rs
+  files under crates have a namesake test; 34 hold their own tests`. A Python package is asked for a
+  test of its directory's name, `flask/json/__init__.py` for `tests/test_json.py`. A C# test project
+  is paired by name only (`Serilog.Tests` with `Serilog`), so `Foo` tested from `Bar.Tests` gets no
   credit, and a test matched to one source file counts for no other file of the same name.
 - Three dimensions for the seven languages. Each was measured on three repositories per language
-  and is asked only of a language whose three disagree:
-  `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin and
-  `functions declare what they return` in Python and PHP, each of which may state its counter-claim where an area writes the other way; `exception handlers use the error they caught` in PHP and
-  Java. A function row passes over every file the layout counts as a test. The doc comment row
-  counts no constructor and no entry point (`main`), and in Go no method golint asks no comment
-  of: `Error`, `Read`, `ServeHTTP`, `String`, `Write`, `Unwrap`, and `Len`, `Less` and `Swap` on
-  a type that has all three. In Java, `catch (IOException ignored)` is no site of the handler row, the same as a
-  clause that binds `_`. A finding of these rows names the class
-  beside the method, `Views.run`. Each row reads a spelling the way its language does: PHP's
-  `PUBLIC` and `Protected` are the modifiers in any letter case, `A::$e` in a PHP handler reads no
-  caught `$e`, a C# doc comment above a `#if` that opens on the method documents the method, a
-  Python docstring may sit in parentheses, a Java annotation argument or a label named like the
-  caught variable reads nothing, and a comment inside a Kotlin receiver is no part of its name. None
-  of those six moves a count on the 21 repositories the rows were measured on.
+  and is asked only of a language whose three disagree: `public functions carry a doc comment` in
+  Python, PHP, Go, Java, C#, Rust and Kotlin and `functions declare what they return` in Python
+  and PHP, each of which may state its counter-claim where an area writes the other way; and
+  `exception handlers use the error they caught` in PHP and Java. A function row passes over every
+  file the layout counts as a test. The doc comment row counts no constructor and no entry point
+  (`main`), and in Go no method golint asks no comment of: `Error`, `Read`, `ServeHTTP`, `String`,
+  `Write`, `Unwrap`, and `Len`, `Less` and `Swap` on a type that has all three. In Java, `catch
+  (IOException ignored)` is no site of the handler row, the same as a clause that binds `_`. A
+  finding of these rows names the class beside the method, `Views.run`.
+- Each of those rows reads a spelling the way its language does. PHP's `PUBLIC` and `Protected`
+  are the modifiers in any letter case. A C# doc comment above a `#if` that opens on the method
+  documents the method. A Python docstring may sit in parentheses. A comment inside a Kotlin
+  receiver is no part of its name. In a handler, a name spelled like the caught variable reads
+  nothing where the language reads no variable: in PHP `A::$e` and a property a class declares
+  (`public $e;`), and in Java an annotation argument, a label, a `case` constant and the method of
+  a method reference (`A::e`). None of these moves a count on the 21 repositories the rows were
+  measured on.
 - What was measured for the seven and not shipped. Each of the seven gets its test files and the
   layout section. None gets a naming row or an imports row. No reference parser was run for Java,
   C#, Rust or Kotlin, so the files of those four languages that a grammar could not read were
@@ -149,30 +153,38 @@ scanned by 0.13.4 and by this version.
   is read with the first branch of each conditional kept, and the scan says how many: `7 files
   were read with one branch of each #if; the other branches were not read`. A C# file its grammar
   rejects is parsed up to twice more, and a later attempt starts only while it can end inside 4
-  seconds, which is under the 5 seconds a file is stopped at. None of the seven gets
-  the type checker, the "most imported from here" lines or the end-of-turn reuse check, and a
-  `.pyi` stub is not read. The notice before a test file is written, and the finding `check`
-  reports for a test placed where its siblings have none, know a test by its language's naming in six of the seven. They say nothing of a test that sits in the one place its language's tool
-  reads it from: a Go `_test.go` beside its package, a Java or Kotlin test in its module's own
-  `src/test`, a C# test in its `.Tests` project. So the first test of an untested Go package is
-  no finding. Python and PHP, where a place is a choice, keep it. A Rust test has no name, so no
-  `.rs` file is asked. In any language, `check` says nothing of a test for a directory the same
-  branch created and put a file a test could be written for in. A directory holding only the tests
-  the branch wrote is asked about, and so is one holding a test beside an empty file, a
-  declaration file, a story or a `conftest.py`. Run over the 5,727 existing test files of those languages in 60 repositories as if each
-  were new, the finding fires on none. A file of the seven that its grammar cannot finish in 5 seconds is
-  stopped there and counted as crashed. Nothing retries it in that scan, and every later scan and
-  refresh pays the 5 seconds again. The case measured is Kotlin.
-- Three runtime dependencies, where 0.13.4 had two. The new one is `web-tree-sitter`: JavaScript
-  and one WebAssembly module, with no dependency and no install script. The seven grammars ship
-  inside the plugin as `.wasm` files, 12 MB in all, each a copy of the file in its grammar's npm
-  package, and `plugins/anatomiya/grammars/grammars.json` records the package, the version and the
-  SHA-256 of each. CI holds each copy to its package on every commit, with `node
-  scripts/grammars.mjs --check`. Nothing is downloaded for them. An install whose `node_modules` is older than
-  this version does not hold the package: `/anatomiya:doctor` prints `tree-sitter absent:
-  web-tree-sitter did not load` with the command, and `/anatomiya:setup` installs it. Until then a
-  scan maps every other language, says no file of these seven was read, and refuses a repository
-  that holds nothing else.
+  seconds, which is under the 5 seconds a file is stopped at. A file of the seven that its grammar
+  cannot finish in 5 seconds is stopped there and counted as crashed. Nothing retries it in that
+  scan, and every later scan and refresh pays the 5 seconds again. The case measured is Kotlin.
+  None of the seven gets the type checker, the "most imported from here" lines or the end-of-turn
+  reuse check, and a `.pyi` stub is not read.
+- Where a test is placed, in those seven. The notice before a test file is written, and the
+  finding `check` reports for a test placed where its siblings have none, know a test by its
+  language's naming in six of the seven. They say nothing of a test that sits in the one place its
+  language's tool reads it from: a Go `_test.go` beside its package, a Java or Kotlin test in its
+  module's own `src/test`, a C# test in its `.Tests` project. So the first test of an untested Go
+  package is no finding. Python and PHP, where a place is a choice, keep it. A Rust test has no
+  name, so no `.rs` file is asked. Run over the 5,727 existing test files of those languages in 60
+  repositories as if each were new, the finding fires on none.
+- A test for a directory the branch made. In any language, `check` says nothing of a test for a
+  directory the same branch created and put a file a test could be written for in. That directory
+  is any one between the source root and the test's own, so a new package added with its source
+  and with its test in its own `test`, `tests`, `spec` or `e2e` directory draws no finding. A
+  directory holding only the tests the branch wrote is asked about, and so is one holding a test
+  beside an empty file, a declaration file, a story or a `conftest.py`. Where git cannot list the
+  directories of the merge base, `check` states none of the findings that turn on one and prints
+  one caveat, `base-unreadable`, with their count. The notice has no merge base to ask, so it
+  speaks before a test is written into a package the same session made.
+- Three runtime dependencies, where 0.13.4 had two. The new one is `web-tree-sitter`: JavaScript and
+  one WebAssembly module, with no dependency and no install script. The seven grammars ship inside
+  the plugin as `.wasm` files, 12 MB in all, each a copy of the file in its grammar's npm package,
+  and `plugins/anatomiya/grammars/grammars.json` records the package, the version and the SHA-256 of
+  each. CI holds each copy to its package on every commit, with `node scripts/grammars.mjs --check`,
+  and `.gitattributes` marks `*.wasm` binary, so no checkout converts a grammar's line endings.
+  Nothing is downloaded for them. An install whose `node_modules` is older than this version does
+  not hold the package: `/anatomiya:doctor` prints `tree-sitter absent: web-tree-sitter did not
+  load` with the command, and `/anatomiya:setup` installs it. Until then a scan maps every other
+  language, says no file of these seven was read, and refuses a repository that holds nothing else.
 - `doctor` prints a line for tree-sitter with the grammars that load, `tree-sitter 0.27.0 ok
   (grammars: 7 of 7)`, and names a grammar file that does not: `grammars: 6 of 7, kotlin.wasm did
   not load`. The fix for that is to reinstall the plugin, since no package install writes a
@@ -186,6 +198,11 @@ scanned by 0.13.4 and by this version.
   A scan does not hash anything. A grammar the runtime turns away by its language version is named
   with both numbers, `java.wasm is language version 14 and this runtime reads 15 through 16`, and
   not as one that did not load.
+- A grammar entry that is a link, a directory, a fifo or anything else that is no regular file, or
+  is over 32 MB, is never read. `doctor` names it as `is not the file this plugin shipped`, and a
+  scan or a check that needs it says `grammars/go.wasm is not the file this plugin shipped` with
+  the same remedy. Where a grammar does not load, `scan` and `check` print what its loader said on
+  one line with no control byte.
 - `setup` ends an install that leaves every engine loading with one more line: scan again in any
   repository you have a map in. A background refresh that stopped for the missing package may not
   run again until that checkout's HEAD moves, so the map there is as it was.
@@ -193,16 +210,16 @@ scanned by 0.13.4 and by this version.
   `head-one-branch` names the file, once, and its findings are about the branch that was read.
 - Vue and Svelte. The `<script>` blocks of a `.vue` or `.svelte` file are read by the parser that
   reads JavaScript and counted by the JavaScript dimensions that hold for a component: 24 for Vue
-  and 24 for Svelte, out of the 28 that need no type checker. A file may hold two blocks (`<script>` and `<script setup>`, or
-  Svelte's module and instance scripts), and they are read as one program. `lang="ts"` picks
-  TypeScript, a block with no `lang` is read the way a `.js` file is, and the lines `check`
-  reports are the file's own. The scanner that finds the blocks
-  agreed with each framework's compiler on 4,100 of 4,100 Vue files and 8,047 of 8,048 Svelte
-  files. The one it misses is a top-level script with a space before it, which reads as a
-  component with no script. In a Vue file, CDATA, a processing instruction and a declaration are
-  passed over as Vue's compiler passes them, and a block whose tag holds an upper-case letter takes
-  the rest of the file, as it does there. Of 31 such shapes run against `@vue/compiler-sfc`
-  3.5.43, one differs: a comment written `<!-->`.
+  and 24 for Svelte, out of the 28 that need no type checker. A file may hold two blocks (`<script>`
+  and `<script setup>`, or Svelte's module and instance scripts), and they are read as one program.
+  `lang="ts"` picks TypeScript, a block with no `lang` is read the way a `.js` file is, and the
+  lines `check` reports are the file's own. The scanner that finds the blocks agreed with each
+  framework's compiler on 4,100 of 4,100 Vue files and 8,047 of 8,048 Svelte files. The one it
+  misses is a top-level script with a space before it, which reads as a component with no script. In
+  a Vue file, CDATA, a processing instruction and a declaration are passed over as Vue's compiler
+  passes them, and a block whose tag holds an upper-case letter takes the rest of the file, as it
+  does there. All 31 such shapes run against `@vue/compiler-sfc` 3.5.43 give the same blocks, the
+  short comments `<!-->` and `<!--->` among them.
 - Three dimensions are not asked of a component, because the answer is in its template:
   `module-level bindings are const`, `optional values are read with ?.` and `imports used only as
   types are marked import type`. `failure is returned, not thrown` is not asked of Vue, and `a
@@ -231,9 +248,9 @@ scanned by 0.13.4 and by this version.
   `@/`, `~/`, `#/` and `src/` written in a component are tried against each directory above the
   component and its `src`. Where none holds the file nothing is credited, so a Vue package's
   `@/components/ui/button` is not counted as an importer of another package's `button.tsx`. Where
-  two of them hold different files the alias could name, nothing is credited either, which gives
-  up a true credit: a package's own `src/utils/fmt.ts` gets none where the workspace root holds
-  the same path, and the same goes for `$lib/`. The time to resolve one does not grow with the length of
+  two of them hold different files the alias could name, nothing is credited either, which gives up
+  a true credit: a package's own `src/utils/fmt.ts` gets none where the workspace root holds the
+  same path, and the same goes for `$lib/`. The time to resolve one does not grow with the length of
   the importing file's path.
 - The end-of-turn reuse check asks about a component: the lines its script added and no others. An
   edit to a template or a style block asks nothing.
@@ -241,39 +258,46 @@ scanned by 0.13.4 and by this version.
   `.cursor/rules/anatomiya-*.mdc` and `.github/instructions/anatomiya-*.instructions.md`, an
   overview and one file per area in each, with the frontmatter that tool reads. The three copies
   hold one body: the same directories, sentences, areas and counts. A Cursor or Copilot overview is
-  two lines longer than the `.claude/rules` one, 42 where that one is 40, for the line that makes
-  it load on every turn and the line saying a scanner wrote it, and an area file's closing lines
-  sit under its body. It is off until a scan names it, or the repository already holds an overview this tool wrote
-  there, which a clone can bring. A target stays on for every later scan, and for the background refresh, while its
-  `anatomiya-overview` file is in its directory, and nothing else stores the choice. `--targets`
-  names the whole set: `--targets cursor` drops Copilot, printing `removed 4 files under
-  .github/instructions` and `.github/instructions is off now`, and `--targets claude` turns both
-  off and removes the files this tool wrote there. The scan prints one group of lines per directory
-  (`wrote 4 files under .cursor/rules for Cursor`), `doctor` prints a line for a target that is on,
-  and a second where its directory holds other entries named `anatomiya-*`, `check` audits its
-  directory, and `pin` leaves its generated files out of the clean-tree test. In
+  two lines longer than the `.claude/rules` one, 42 where that one is 40, for the line that makes it
+  load on every turn and the line saying a scanner wrote it, and an area file's closing lines sit
+  under its body. It is off until a scan names it, or the repository already holds an overview this
+  tool wrote there, which a clone can bring. A target stays on for every later scan, and for the
+  background refresh, while its `anatomiya-overview` file is in its directory, and nothing else
+  stores the choice. `--targets` names the whole set: `--targets cursor` drops Copilot, printing
+  `removed 4 files under .github/instructions` and `.github/instructions is off now`, and `--targets
+  claude` turns both off and removes the files this tool wrote there. The scan prints one group of
+  lines per directory (`wrote 4 files under .cursor/rules for Cursor`), `doctor` prints a line for a
+  target that is on, and a second where its directory holds other entries named `anatomiya-*`,
+  `check` audits its directory, and `pin` leaves its generated files out of the clean-tree test. In
   a clone that brings a committed overview, the first plain scan says on that line which file
   switched the target on and that `scan --targets claude` switches it off, and `--format json`
   carries the file as `switchedOnBy`.
 - In those two directories a scan never writes over a file it did not write, and writes through no
   link: `.cursor`, `.cursor/rules`, `.github` and `.github/instructions` each have to be a real
   directory of the repository, or not exist yet. A scan that names a target it cannot write as asked
-  refuses, says which file or link is in the way, and writes nothing anywhere. A scan that did not name the target, which is on from an earlier scan, leaves
-  that entry alone, writes the rest and prints how many it left. A name that differs from one of
-  the map's only in letter case blocks it, since on a case-folding disk the two are one file:
-  `Anatomiya-Overview.mdc` for `anatomiya-overview.mdc`. Where the directory lists both spellings,
-  neither blocks the other. A map
-  file that is locked or read-only stops the scan with a sentence that names it, and every file
-  already replaced is put back. A target directory that cannot be written refuses a scan that names
-  the target. A scan that did not name it writes the `.claude/rules` map, leaves that directory as
-  it is and says `.cursor/rules could not be written (.cursor/rules is not writable), so nothing
-  there was written or removed: fix its permissions, then scan again`.
+  refuses, says which file or link is in the way, and writes nothing anywhere. A scan that did not
+  name the target, which is on from an earlier scan, leaves that entry alone, writes the rest and
+  prints how many it left. A name that differs from one of the map's only in letter case blocks it,
+  since on a case-folding disk the two are one file: `Anatomiya-Overview.mdc` for
+  `anatomiya-overview.mdc`. Where the directory lists both spellings, neither blocks the other. A
+  target directory that cannot be written refuses a scan that names the target. A scan that did not
+  name it writes the `.claude/rules` map, leaves that directory as it is and says `.cursor/rules
+  could not be written (.cursor/rules is not writable), so nothing there was written or removed: fix
+  its permissions, then scan again`.
+- A map file that is locked or read-only is handled the same way. In a Cursor or Copilot directory
+  the scan did not name, what was replaced there is put back, the `.claude/rules` map and the other
+  copy are written, the exit is 0, and the scan says `.cursor/rules could not be written
+  (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was
+  written or removed: close what holds it or change its mode, then scan again`. Where the scan
+  named the target, or the file is in `.claude/rules` or `.claude/anatomiya`, the scan stops with a
+  sentence that names the file and puts back every file it had replaced. A dry run renames
+  nothing, so it does not see the lock and says `would write`.
 - Cursor and Copilot read looser patterns than Claude Code, and the files say so. A brace set is
-  written as one pattern per extension. Neither reader that was run accepts a pattern that
-  excludes a subtree, and the other Copilot surfaces document none, so none is written: an area
-  file's patterns can then match files the area excludes, and its closing line names them. A Copilot file adds that VS Code matches its
-  patterns under any parent directory. An area none of whose patterns can be written for a tool has
-  no file there, and the scan says how many.
+  written as one pattern per extension. Neither reader that was run accepts a pattern that excludes
+  a subtree, and the other Copilot surfaces document none, so none is written: an area file's
+  patterns can then match files the area excludes, and its closing line names them. A Copilot file
+  adds that VS Code matches its patterns under any parent directory. An area none of whose patterns
+  can be written for a tool has no file there, and the scan says how many.
 - What those two copies are not. Delivery is not measured in either tool: for Cursor it was read
   from the code of the 3.20.21 app and not seen in a running one, and for Copilot the files were run
   through VS Code 1.140.0's parser and nothing else. So their overviews say what each area's file
@@ -289,11 +313,11 @@ scanned by 0.13.4 and by this version.
 - `--format json` says more. `scan` gains `targets` where a target is on or was left alone: one
   entry per directory with `state`, `dir`, `wrote`, `removed`, `unfiled` and `foreign`, and where
   they apply `reason`, `remedy` (what the text line tells a person to do), `unwritable` and
-  `switchedOnBy`. It gains `stagedRemoved`, the temporary files an earlier scan left in
-  `.claude/rules` that this one removed, and `unanswered`, which the Changed entry on a missing
-  engine describes. `check` gains `parse.missingGrammars`, the languages whose grammar file did
-  not load, an empty list where all did, and `targets`, with what it found in each directory that
-  is on.
+  `switchedOnBy`. It gains `stagedRemoved` and `storeStagedRemoved`, the temporary files an earlier
+  scan left in `.claude/rules` and in `.claude/anatomiya` that this one removed, each absent at
+  none, and `unanswered`, which the Changed entry on a missing engine describes. `check` gains
+  `parse.missingGrammars`, the languages whose grammar file did not load, an empty list where all
+  did, and `targets`, with what it found in each directory that is on.
 - Two more exclude lines in the README, `.cursor/rules/anatomiya-*.mdc` and
   `.github/instructions/anatomiya-*.instructions.md`, which match nothing until a target is on.
 
@@ -313,14 +337,18 @@ scanned by 0.13.4 and by this version.
   real source kept under a directory named for tests, 14 files in the 60 repositories:
   storybook's `code/core/src/test` (6), `django/test` (7) and puppet's `lib/puppet/test` (1).
 - A root whose two commonest extensions are both ones this tool does not read names the source it
-  holds, where it holds three or more files of it that a test could be written for, and counts its
-  namesake tests over that. supabase's `apps/docs` is `874 .png, 873 .mdx, 256 .ts and 676 other`
-  with `20 of 228 have a namesake test under apps/docs`, where 0.13.4 named the two and counted
-  nothing, and typeorm's `docs` gains `5 .tsx` and `0 of 5`. Both roots are folded in their
-  overviews, so neither page moves. Of the newly read repositories django's own package is one:
-  `- django: 1226 .mo, 1226 .po, 907 .py and 257 other; 2 of 3 unittest specs under test; 2 of 748
-  have a namesake test under tests`. django files its tests by app and not by name, so that count
-  reads low. Under three such files the line keeps its two extensions and no count.
+  holds: the commonest extension it reads that has three or more files a test could be written for.
+  It counts the root's namesake tests over that. supabase's `apps/docs` is `874 .png, 873 .mdx, 256
+  .ts and 676 other` with `20 of 228 have a namesake test under apps/docs`, where 0.13.4 named the
+  two and counted nothing, and typeorm's `docs` gains `5 .tsx` and `0 of 5`. Both roots are folded
+  in their overviews, so neither page moves. Homebrew's does: its `docs` line read `85 .md, 11 .yml
+  and 19 other` and reads `85 .md, 11 .yml, 3 .rb and 16 other; 0 of 3 have a namesake test`. The
+  three are markdownlint style files, and the count switches on the test-precedent sentence in that
+  overview, which folds one area out of the Areas list to make room. Of the newly read repositories
+  django's own package is one: `- django: 1226 .mo, 1226 .po, 907 .py and 257 other; 2 of 3 unittest
+  specs under test; 2 of 748 have a namesake test under tests`. django files its tests by app and
+  not by name, so that count reads low. Under three such files the line keeps its two extensions and
+  no count.
 - The "Not covered" line for files in a language this map does not read knows 24 more extensions,
   among them `.erb`, `.haml`, `.css`, `.scss`, `.html`, `.sh` and `.sql`, so a repository holding
   them gains the line or a longer one. `.py`, `.php`, `.go`, `.java`, `.cs`, `.rs`, `.kt` and
@@ -353,44 +381,43 @@ scanned by 0.13.4 and by this version.
   file runs on the defaults, as in 0.13.4: one of five measured resolves that way, so nothing is
   skipped for the missing file. Plain JavaScript beside a `tsconfig.base.json` is checked, as it
   is beside a `tsconfig.json`.
-- No skip was added for a root the checker is going to read as `degraded`, because nothing
-  readable without running it tells such a root apart. Two comparisons were made. Of the eight
-  bases, six declare `paths`: the five that resolve and one that does not (71.1%). The two that
-  declare none, eslint and prisma, both degrade, and two repositories cannot carry a rule: a base
-  without `paths` is also what a single-package repository with several build configs writes, and
-  none of those was measured. Then, on the four corpus repositories that degrade (eslint, prisma,
-  and react and Ghost, which hold neither file and read 60.2% and 54.9%) against three that read
-  `ok` through a root `tsconfig.json`, four facts were compared: the share of checked files that
-  are TypeScript, the number of `tsconfig.json` files below the root, `paths` in the root config,
-  and a workspace file. None separates the two groups. So a repository whose checker degrades
-  still pays for it on every scan a person runs (3.2s of a 4.2s scan on eslint, 11.4s of 13.5s on
-  prisma, 6.2s of 8.7s on react and 19.3s of 23.1s on Ghost), on the first refresh after a plugin update, and on the first refresh a commit, checkout
-  or pull starts after an install or an edit to the root config. Every other refresh carries the
-  verdict, which is the entry that opens `A background refresh does not run the type checker`.
-  `docs/measurements/2026-10-07-checker-root-config.md` holds the tables.
-- A background refresh does not run the type checker where the last scan measured it as
-  `degraded` and none of these changed since: the plugin version, the `typescript` it resolves
-  to, the size and modification time of `node_modules` and of the install record in it
-  (`.package-lock.json`, `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity`), and which root
-  config is read and its bytes. The refresh carries the measured verdict instead. An install
-  starts no refresh by itself: the stamp that starts one holds whether `node_modules` holds a
-  package and not the install record. So after an install that adds a missing package, the
-  checker is measured by the next refresh a commit, checkout or pull starts, or by a scan run by
-  hand. A refresh after a commit measured 4.4s with the checker and 1.2s
-  without on eslint, 8.9s and 2.8s on react, 13.9s and 2.3s on prisma, and 21.2s and 3.8s on Ghost,
-  with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four the verdict was the
-  same 50 commits earlier, within 0.3 points. A map written that way says
-  `type-checked claims are not counted: 61% of type lookups resolved when measured 2026-10-07
-  UTC (low-resolution)` in the overview. The words `when measured`, the day and `UTC` are all
-  that differ from the map the measuring scan wrote: on eslint, Ghost, prisma and react the other
-  29, 283, 192 and 131 rule files are the same bytes. The day is the UTC one, so it can be the day
-  before or after yours. `/anatomiya:scan` always
-  runs the checker, and a checker that reads `ok` runs on every refresh, as in 0.13.4. A
-  repository whose code changes lift it over the floor stays `degraded` until someone runs the
-  scan. A refresh carries only a record a scan could have written: a reason from the checker's own
-  list, a rate that reason allows and a moment from 2020 on and at most a day after now. Any other record is measured over,
-  so text written into `facts.json` by hand does not reach the overview. The record's `semantic`
-  gains `carried`, `measuredAt` and `measuredUnder`, and the schema stays 19.
+- No skip was added for a root the checker is going to read as `degraded`, because nothing readable
+  without running it tells such a root apart. Two comparisons were made. Of the eight bases, six
+  declare `paths`: the five that resolve and one that does not (71.1%). The two that declare none,
+  eslint and prisma, both degrade, and two repositories cannot carry a rule: a base without `paths`
+  is also what a single-package repository with several build configs writes, and none of those was
+  measured. Then, on the four corpus repositories that degrade (eslint, prisma, and react and Ghost,
+  which hold neither file and read 60.2% and 54.9%) against three that read `ok` through a root
+  `tsconfig.json`, four facts were compared: the share of checked files that are TypeScript, the
+  number of `tsconfig.json` files below the root, `paths` in the root config, and a workspace file.
+  None separates the two groups. So a repository whose checker degrades still pays for it on every
+  scan a person runs (3.2s of a 4.2s scan on eslint, 11.4s of 13.5s on prisma, 6.2s of 8.7s on react
+  and 19.3s of 23.1s on Ghost), on the first refresh after a plugin update, and on the first refresh
+  a commit, checkout or pull starts after an install or an edit to the root config. Every other
+  refresh carries the verdict, which is the entry that opens `A background refresh does not run the
+  type checker`. `docs/measurements/2026-10-07-checker-root-config.md` holds the tables.
+- A background refresh does not run the type checker where the last scan measured it as `degraded`
+  and none of these changed since: the plugin version, the `typescript` it resolves to, the size and
+  modification time of `node_modules` and of the install record in it (`.package-lock.json`,
+  `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity`), and which root config is read and its
+  bytes. The refresh carries the measured verdict instead. An install starts no refresh by itself:
+  the stamp that starts one holds whether `node_modules` holds a package and not the install record.
+  So after an install that adds a missing package, the checker is measured by the next refresh a
+  commit, checkout or pull starts, or by a scan run by hand. A refresh after a commit measured 4.4s
+  with the checker and 1.2s without on eslint, 8.9s and 2.8s on react, 13.9s and 2.3s on prisma, and
+  21.2s and 3.8s on Ghost, with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four
+  the verdict was the same 50 commits earlier, within 0.3 points. A map written that way says
+  `type-checked claims are not counted: 61% of type lookups resolved when measured 2026-10-07 UTC
+  (low-resolution)` in the overview. The words `when measured`, the day and `UTC` are all that
+  differ from the map the measuring scan wrote: on eslint, Ghost, prisma and react the other 29,
+  283, 192 and 131 rule files are the same bytes. The day is the UTC one, so it can be the day
+  before or after yours. `/anatomiya:scan` always runs the checker, and a checker that reads `ok`
+  runs on every refresh, as in 0.13.4. A repository whose code changes lift it over the floor stays
+  `degraded` until someone runs the scan. A refresh carries only a record a scan could have written:
+  a reason from the checker's own list, a rate that reason allows and a moment from 2020 on and at
+  most a day after now. Any other record is measured over, so text written into `facts.json` by hand
+  does not reach the overview. The record's `semantic` gains `carried`, `measuredAt` and
+  `measuredUnder`, and the schema stays 19.
 - A type checker that reads `degraded` prints no count for its claims, whether this scan measured
   it or a refresh carried the verdict. 0.13.4 printed `a call chain stays inside one type: no
   convention. 298 of 586 sites (degraded-semantic)` in each area; those lines are gone, the
@@ -412,25 +439,27 @@ scanned by 0.13.4 and by this version.
 
 ### Fixed
 
-- The layout counted the map as part of the repository it describes. Where `.claude/rules/anatomiya-*.md`
-  or a file of `.claude/anatomiya/` is committed, "What lives where" counted those files, so the
-  overview written before the commit and the one written after it differed with no source change.
-  On a copy of Homebrew/brew with the 58 files of its map committed, the second scan added
-  `- .claude/rules: 58 .md` and dropped an area from the Areas list to make room. The map's own
-  files are left out by name: the overview and area files in `.claude/rules`, `.cursor/rules` and
-  `.github/instructions`, and every file under `.claude/anatomiya/` that is not source. A map
-  committed through a linked `.claude/rules` is left out where git tracks it. A map under
-  `.Cursor/Rules` is left out too, on a volume git reports as case-insensitive. A hand-written file under one of those exact names is left out with it.
+- The layout counted the map as part of the repository it describes. Where
+  `.claude/rules/anatomiya-*.md` or a file of `.claude/anatomiya/` is committed, "What lives where"
+  counted those files, so the overview written before the commit and the one written after it
+  differed with no source change. On a copy of Homebrew/brew with the 58 files of its map committed,
+  the second scan added `- .claude/rules: 58 .md` and dropped an area from the Areas list to make
+  room. The map's own files are left out by name: the overview and area files in `.claude/rules`,
+  `.cursor/rules` and `.github/instructions`, and every file under `.claude/anatomiya/` that is not
+  source. A map committed through a linked `.claude/rules` is left out where git tracks it. A map
+  under `.Cursor/Rules` is left out too, on a volume git reports as case-insensitive. A hand-written
+  file under one of those exact names is left out with it.
 - The overview's sentence about a directory with no test precedent prints only where such a
   directory has a line in the same section. 0.13.4 printed the sentence even when the untested
-  directory had no line of its own, so it read as a remark on the directories that did. Against 0.13.4 it is gone
-  from four of the 35 measured repositories. On prisma and next.js that release printed it with
-  the directory that armed it folded. On backstage that directory, `docs-ui/src/app/components`,
-  had a line in that release and is folded in this version, so the sentence goes with it. On
-  vscode it was `src/vscode-dts`, whose 177 files are declaration files: 0.13.4 printed `0 of 145
-  have a namesake test` for it, and this version counts no declaration file as owing a test. A repository that prints an untested directory
-  keeps it, and fastlane gains it for `screengrab`, whose Java this version reads: `1 of 19 has a
-  namesake test`.
+  directory had no line of its own, so it read as a remark on the directories that did. Against
+  0.13.4 it is gone from four of the 35 measured repositories. On prisma and next.js that release
+  printed it with the directory that armed it folded. On backstage that directory,
+  `docs-ui/src/app/components`, had a line in that release and is folded in this version, so the
+  sentence goes with it. On vscode it was `src/vscode-dts`, whose 177 files are declaration files:
+  0.13.4 printed `0 of 145 have a namesake test` for it, and this version counts no declaration file
+  as owing a test. A repository that prints an untested directory keeps it, and two gain it:
+  fastlane for `screengrab`, whose Java this version reads (`1 of 19 has a namesake test`), and
+  Homebrew for `docs`, whose line gains a count (`0 of 3`).
 - A name that opens with a number and a dot prints whole. `check --base 13.x` printed `base x`.
   In a map, a path whose first directory opens that way lost its head: on a repository that
   keeps code under `3.2/app`, "What lives where" printed `2/app: 5 .js`, and the directory got no
@@ -458,16 +487,29 @@ scanned by 0.13.4 and by this version.
 - The notice before a test file is written printed the file's path as the repository spelled it.
   A directory named with line breaks and a heading reached the model's context as lines of its
   own. This version prints the path, the directory and the root through the encoder the map
-  uses, on one line, and reads no record whose counts are not whole numbers.
+  uses, on one line, and reads no record whose counts are not whole numbers. In a linked worktree
+  the notice also names the main checkout it counted from, and that path loses its control and
+  invisible characters the same way.
 - A usage refusal printed the argument it refused as typed. `scan --format` with an escape
   sequence and a line break in its value sent both to the terminal. This version prints the
-  argument on one line with no control byte, for an unknown command, option, format or target.
+  argument on one line with no control byte, for an unknown command, option, format or target. The
+  same holds for a refusal that names what it was given: `scan` of a path that is no directory,
+  `scan`, `pin` or `check` in a directory that is no git repository, and `check --base` with a
+  name that resolves to no commit.
 - A temporary file a killed scan left in `.claude/rules` stayed there, named
   `anatomiya-area-<id>.md.tmp-<pid>-<16 hex>`, and showed in `git status`, since the exclude line
   does not match it. The next scan removes it and says `1 temporary file an earlier scan left in
   .claude/rules was removed`. One whose process is still running is left for that scan to rename.
   The same holds in the Cursor and Copilot directories, where it is counted with the files
-  removed.
+  removed, and in `.claude/anatomiya` for a temporary file of `facts.json`, `layout.json` or
+  `refresh.json`, on a line of its own: `1 temporary file an earlier scan left in
+  .claude/anatomiya was removed`. A leftover is removed without being opened, whatever its size.
+- One import with a long run of slashes in its specifier held a scan for seconds, in the parent
+  process, where no clock stops it. On a 17-file repository with one file importing from `x`,
+  150,000 slashes and `y`, a 150 kB file, a scan with 0.13.4 took 10.4 to 11.9 seconds and this
+  version 0.3, three runs each at a load of 9. With that import removed 0.13.4 takes 0.3. A file
+  may be up to 1 MB. A specifier's trailing slashes were stripped by a pattern that tries every
+  start in a run, and are stripped by a walk from the end.
 
 ## [0.13.4] - 2026-10-07
 
