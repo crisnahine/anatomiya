@@ -1057,8 +1057,8 @@ export function degradedSemanticSentence(semantic) {
   if (!semantic || semantic.status !== "degraded" || (semantic.ran !== true && semantic.carried !== true)) return null;
   const rate = semantic.typedResolutionRate;
   const pct = rate === null || rate === undefined ? "no" : `${Math.round(rate * 100)}% of`;
-  const measured = semantic.carried === true ? ` when measured ${String(semantic.measuredAt).slice(0, 10)} UTC` : "";
-  return `type-checked claims are not counted: ${pct} type lookups resolved${measured} (${semantic.reason})`;
+  const measured = semantic.carried === true ? ` when measured ${encode(String(semantic.measuredAt).slice(0, 10))} UTC` : "";
+  return `type-checked claims are not counted: ${pct} type lookups resolved${measured} (${encode(semantic.reason)})`;
 }
 
 const count = (xs, noun) => plural(xs.length, noun);

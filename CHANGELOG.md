@@ -307,7 +307,7 @@ scanned by 0.13.4 and by this version.
   runs the checker, and a checker that reads `ok` runs on every refresh, as in 0.13.4. A
   repository whose code changes lift it over the floor stays `degraded` until someone runs the
   scan. A refresh carries only a record a scan could have written: a reason from the checker's own
-  list, a rate that reason allows and a moment not after now. Any other record is measured over,
+  list, a rate that reason allows and a moment from 2020 on and at most a day after now. Any other record is measured over,
   so text written into `facts.json` by hand does not reach the overview. The record's `semantic`
   gains `carried`, `measuredAt` and `measuredUnder`, and the schema stays 19.
 - A type checker that reads `degraded` prints no count for its claims, whether this scan measured

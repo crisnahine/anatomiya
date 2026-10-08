@@ -451,7 +451,7 @@ An install or a config edit starts no refresh by itself, since the stamp that st
 neither the install record nor the config's bytes: the checker is measured again by the next
 refresh a commit, a checkout or a pull starts, or by a scan run by hand.
 The record has to be one a scan could have written: a reason the classifier or the config reader
-produces, a rate that reason allows, and a moment not after now; any other record is measured
+produces, a rate that reason allows, and a moment from 2020 on and at most a day after now; any other record is measured
 over. The refresh then writes the recorded status, reason and rate with
 `semantic.carried` true and the run's `semantic.measuredAt`, and the overview's sentence adds the
 UTC day it was measured. Every other byte of the map is what the measuring scan wrote, since a degraded
