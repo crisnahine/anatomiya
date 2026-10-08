@@ -13,6 +13,7 @@ import {
   PREFIX,
   RULES_DIR,
   auditRules,
+  foldedOnto,
   isGeneratedName,
   isMapName,
   isOwned,
@@ -346,6 +347,19 @@ test("another spelling holds a name only where the listing does not also hold th
   assert.equal(spelledOtherwise([], name), null);
 });
 
+test("an entry is a name on this volume only where the listing lacks the name and the directory answers for it", (t) => {
+  const dir = workspace(t);
+  const theirs = "Anatomiya-Overview.md";
+  assert.deepEqual(foldedOnto(dir, [theirs], [OVERVIEW_FILE]), [], "nothing answers for the name");
+  writeFileSync(join(dir, OVERVIEW_FILE), OWNED);
+  // The listing is the caller's: one read before the file arrived, and one holding both spellings in either order.
+  assert.deepEqual(foldedOnto(dir, [], [OVERVIEW_FILE]), [], "no entry is spelled as it");
+  assert.deepEqual(foldedOnto(dir, ["team.md"], [OVERVIEW_FILE]), []);
+  assert.deepEqual(foldedOnto(dir, [OVERVIEW_FILE, theirs], [OVERVIEW_FILE]), [], "beside the name, the volume tells the two apart");
+  assert.deepEqual(foldedOnto(dir, [theirs, OVERVIEW_FILE], [OVERVIEW_FILE]), []);
+  assert.deepEqual(foldedOnto(dir, [theirs, "team.md"], [OVERVIEW_FILE, `${PREFIX}area-00000000.md`]), [theirs], "the entry, as the listing spells it");
+});
+
 test("on: our overview beside somebody's file spelled in another case", (t) => {
   const volume = caseSensitiveDir(t);
   if (volume.skip) return t.skip(volume.skip);
@@ -358,6 +372,75 @@ test("on: our overview beside somebody's file spelled in another case", (t) => {
       assert.equal(readdirSync(at).length, 2, "the control: two entries");
       assert.equal(targetState(join(volume.dir, target.id), target), "on", target.id);
     }
+  }
+});
+
+// The two spellings a hand can give one of the map's names in Claude Code's directory.
+const UPPER_AREA = `${PREFIX}area-5C06CDF8.md`;
+const otherSpellings = [
+  ["Anatomiya-Overview.md", OVERVIEW_FILE],
+  [UPPER_AREA, UPPER_AREA.toLowerCase()],
+];
+
+test("where the volume folds case, a keyed file spelled as one of the map's names is the file at that name", needsFoldingFilesystem, (t) => {
+  for (const [spelled, name] of otherSpellings) {
+    const dir = workspace(t);
+    mkdirSync(join(dir, RULES_DIR), { recursive: true });
+    writeFileSync(join(dir, RULES_DIR, spelled), OWNED);
+    assert.deepEqual(readdirSync(join(dir, RULES_DIR)), [spelled], "the control: one entry, as it was spelled");
+
+    const named = auditRules(dir, new Set([name]));
+    assert.deepEqual({ ours: named.ours, unknown: named.unknown, foreign: named.foreign }, { ours: [name], unknown: [], foreign: [] }, spelled);
+    const unnamed = auditRules(dir, null);
+    assert.deepEqual({ ours: unnamed.ours, unknown: unnamed.unknown, foreign: unnamed.foreign }, { ours: [], unknown: [name], foreign: [] }, spelled);
+
+    // Without the key it is somebody's, under the spelling the directory holds.
+    writeFileSync(join(dir, RULES_DIR, spelled), HAND);
+    const theirs = auditRules(dir, new Set([name]));
+    assert.deepEqual({ ours: theirs.ours, unknown: theirs.unknown, foreign: theirs.foreign }, { ours: [], unknown: [], foreign: [spelled] }, spelled);
+  }
+  // A name no scan gives a file is nobody's name to fold onto.
+  const dir = workspace(t);
+  mkdirSync(join(dir, RULES_DIR), { recursive: true });
+  writeFileSync(join(dir, RULES_DIR, "Anatomiya-Notes.md"), OWNED);
+  assert.deepEqual(auditRules(dir, new Set([`${PREFIX}notes.md`])).foreign, ["Anatomiya-Notes.md"]);
+});
+
+test("a directory of names spelled as area files in another case is audited in linear time", (t) => {
+  // Measured: asking the listing, per entry, for another spelling of it took 19.7 s over 20,000 such
+  // files where the audit before it took 0.8 s, and the directory comes with the repository.
+  const dirs = new Map();
+  const holding = (files) => {
+    if (!dirs.has(files)) {
+      const dir = workspace(t);
+      mkdirSync(join(dir, RULES_DIR), { recursive: true });
+      for (let i = 0; i < files; i++) writeFileSync(join(dir, RULES_DIR, `${PREFIX}area-F${i.toString(16).toUpperCase().padStart(7, "0")}.md`), HAND);
+      dirs.set(files, dir);
+    }
+    return dirs.get(files);
+  };
+  const ratio = doublingRatio((files) => { const dir = holding(files); return () => auditRules(dir); }, 6000);
+  assert.equal(auditRules(holding(6000)).foreign.length, 6000, "the control: every one is read, and is somebody's");
+  assert.ok(ratio < LINEAR, `twice the files took ${ratio.toFixed(2)} times as long`);
+});
+
+test("where the volume keeps case apart, a file spelled as one of the map's names in another case is another file", (t) => {
+  const volume = caseSensitiveDir(t);
+  if (volume.skip) return t.skip(volume.skip);
+  const dir = mkdtempSync(join(volume.dir, "repo-"));
+  mkdirSync(join(dir, RULES_DIR), { recursive: true });
+  for (const [spelled] of otherSpellings) writeFileSync(join(dir, RULES_DIR, spelled), OWNED);
+  const known = new Set(otherSpellings.map(([, name]) => name));
+
+  // Alone, and then beside the map's own files.
+  for (const beside of [false, true]) {
+    if (beside) for (const name of known) writeFileSync(join(dir, RULES_DIR, name), OWNED);
+    const audit = auditRules(dir, known);
+    assert.deepEqual(
+      { ours: audit.ours, unknown: audit.unknown, foreign: audit.foreign },
+      { ours: beside ? [...known].sort() : [], unknown: [UPPER_AREA], foreign: ["Anatomiya-Overview.md"] },
+      beside ? "beside the map" : "alone"
+    );
   }
 });
 

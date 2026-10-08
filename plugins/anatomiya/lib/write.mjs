@@ -10,6 +10,7 @@ import {
   areaFilename,
   auditRules,
   blockedOnTheWay,
+  foldedOnto,
   isGeneratedName,
   isMapName,
   knownNames,
@@ -247,6 +248,11 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   const names = all.filter((n) => !taken.includes(n));
   const filed = wanted.filter((a) => !taken.includes(nameOf(a)));
   const planned = new Set(names);
+  // An entry a volume that folds case answers a planned name with is the file
+  // at that name, so this run writes over it. In Claude Code's directory alone:
+  // anywhere else a name with such an entry is taken, and not planned.
+  const landed = new Set(foldedOnto(audit.dir, audit.entries, names));
+  const written = (f) => planned.has(f) || landed.has(f);
   const heldNames = new Set(held.map(nameOf));
 
   // A name we are about to write that is a directory, or a fifo, or anything
@@ -316,11 +322,11 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     // In another tool's directory a directory or a fifo under this tool's
     // prefix is somebody's entry as a link there is, planned name or not: a
     // target turned off plans no name and still leaves the entry behind.
-    foreign: [...new Set([...audit.foreign.filter((f) => !planned.has(f)), ...(isClaude(target) ? [] : audit.occupied), ...aliases])].sort(),
-    replaced: audit.foreign.filter((f) => planned.has(f)),
+    foreign: [...new Set([...audit.foreign.filter((f) => !written(f)), ...(isClaude(target) ? [] : audit.occupied), ...aliases])].sort(),
+    replaced: audit.foreign.filter(written),
     // Whose these are was never established. They load, they are never removed,
     // and calling them somebody else's would assert authorship nobody checked.
-    unreadableRules: audit.unreadable.filter((f) => !planned.has(f) && !aliases.includes(f)),
+    unreadableRules: audit.unreadable.filter((f) => !written(f) && !aliases.includes(f)),
     listed: audit.listed,
   };
 }

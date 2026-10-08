@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { caseSensitiveDir, needsBindableSocketPath, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { caseSensitiveDir, needsBindableSocketPath, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -1578,7 +1578,7 @@ test("a held area whose committed record is malformed is dropped, not carried in
 
 /* --- the same map in the Cursor and Copilot directories --- */
 
-const { cursor, copilot } = TARGETS;
+const { claude, cursor, copilot } = TARGETS;
 const ALL = ["claude", "cursor", "copilot"];
 const OTHERS = [cursor, copilot];
 const namesIn = (dir, target) => (existsSync(join(dir, target.dir)) ? readdirSync(join(dir, target.dir)).sort() : null);
@@ -2649,6 +2649,87 @@ test("a volume that tells two spellings apart keeps both: the other spelling is 
 });
 
 /** What a scan does with an entry at an area's name that no rename can replace, in each other directory. */
+// A hand-written file in Claude Code's directory under one of the map's names in another letter case.
+const otherCase = (b) => [
+  ["Anatomiya-Overview.md", overviewName(claude)],
+  [areaName(claude, b.id).replace(b.id, b.id.toUpperCase()), areaName(claude, b.id)],
+];
+const others = (plan) => ({ replaced: plan.replaced, foreign: plan.foreign, unknown: plan.unknown, remove: plan.remove });
+const NONE_OTHER = "Any other file there was not written by this tool.";
+
+test("where the volume folds case, a file in .claude/rules spelled as one of the map's names is replaced, and the scan says so once", needsFoldingFilesystem, (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  for (const [theirs, name] of otherCase(b)) {
+    const dir = workspace(t);
+    mkdirSync(rules(dir), { recursive: true });
+    writeFileSync(join(rules(dir), theirs), HAND);
+    const overview = () => readFileSync(join(rules(dir), overviewName(claude)), "utf8");
+
+    const dry = writeMap(result(dir, [a, b]), { dryRun: true });
+    assert.deepEqual(others(dry), { replaced: [theirs], foreign: [], unknown: [], remove: [] }, `${theirs}: a dry run`);
+    assert.equal(readFileSync(join(rules(dir), theirs), "utf8"), HAND, `${theirs}: a dry run writes nothing`);
+
+    const first = writeMap(result(dir, [a, b]));
+    assert.deepEqual(others(first), { replaced: [theirs], foreign: [], unknown: [], remove: [] }, theirs);
+    const held = listRules(dir);
+    assert.equal(held.length, 3, `${theirs}: the control, the volume kept one entry for the two spellings`);
+    assert.ok(held.includes(theirs) && !held.includes(name), `${theirs}: the control, under the spelling it had`);
+    assert.ok(isOwned(readFileSync(join(rules(dir), theirs), "utf8")), `${theirs}: it holds the map now`);
+    const wrote = overview();
+    assert.ok(wrote.endsWith(`\nGenerated files: 3 under .claude/rules/anatomiya-*.md\n${NONE_OTHER}\n`), wrote.slice(-200));
+
+    const second = writeMap(result(dir, [a, b]));
+    assert.deepEqual(others(second), { replaced: [], foreign: [], unknown: [], remove: [] }, `${theirs}: the next scan reads it as its own`);
+    assert.equal(overview(), wrote, `${theirs}: byte-stable across two scans of unchanged source`);
+
+    // An area that is gone takes its file with it, whatever case the directory spells the name in.
+    const without = writeMap(result(dir, [a]));
+    assert.deepEqual(without.remove, [areaName(claude, b.id)], theirs);
+    assert.equal(listRules(dir).length, 2, theirs);
+  }
+});
+
+test("where the volume folds case, a file that cannot be read under one of the map's names in another case is written over as one at the name is", { ...needsFoldingFilesystem, ...needsPosixPermissions }, (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  for (const [theirs] of otherCase(b)) {
+    const dir = workspace(t);
+    mkdirSync(rules(dir), { recursive: true });
+    writeFileSync(join(rules(dir), theirs), HAND);
+    chmodSync(join(rules(dir), theirs), 0o000);
+
+    const plan = writeMap(result(dir, [a, b]));
+    assert.deepEqual({ ...others(plan), unreadableRules: plan.unreadableRules }, { replaced: [], foreign: [], unknown: [], remove: [], unreadableRules: [] }, theirs);
+    assert.ok(isOwned(readFileSync(join(rules(dir), theirs), "utf8")), theirs);
+  }
+});
+
+test("where the volume keeps case apart, a file in .claude/rules spelled as one of the map's names in another case is somebody's and stays", (t) => {
+  const volume = caseSensitiveDir(t);
+  if (volume.skip) return t.skip(volume.skip);
+  const a = area("src/services");
+  const b = area("src/api");
+  for (const [theirs] of otherCase(b)) {
+    for (const body of [HAND, OURS]) {
+      const dir = mkdtempSync(join(volume.dir, "repo-"));
+      const said = `${theirs}, ${body === OURS ? "keyed" : "keyless"}`;
+      mkdirSync(rules(dir), { recursive: true });
+      writeFileSync(join(rules(dir), theirs), body);
+      // Under the prefix and keyed it is a file no map names; anything else is somebody's.
+      const listed = body === OURS && theirs.startsWith(PREFIX) ? { foreign: [], unknown: [theirs] } : { foreign: [theirs], unknown: [] };
+
+      for (const dryRun of [true, false, false]) {
+        const plan = writeMap(result(dir, [a, b]), { dryRun });
+        assert.deepEqual(others(plan), { replaced: [], ...listed, remove: [] }, `${said}, ${dryRun ? "dry run" : "real write"}`);
+      }
+      assert.deepEqual(listRules(dir), [theirs, ...mapOf(claude, a, b)].sort(), `${said}: both spellings are in the listing`);
+      assert.equal(readFileSync(join(rules(dir), theirs), "utf8"), body, `${said}: it keeps its bytes`);
+      assert.equal(readFileSync(join(rules(dir), overviewName(claude)), "utf8").includes(NONE_OTHER), false, `${said}: the overview names it`);
+    }
+  }
+});
+
 function oddEntryAtAnAreaName(t, make) {
   const dir = workspace(t);
   const a = area("src/services");
