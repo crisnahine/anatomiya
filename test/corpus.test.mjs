@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -119,6 +119,33 @@ test("collect leaves the map's own files out under a target directory spelled in
   // Told the volume keeps case, `.Cursor/Rules` is a directory this tool does not write.
   git("config", "core.ignorecase", "false");
   assert.deepEqual((await collect(dir)).others.map((f) => f.rel).sort(), [...own, ...theirs].sort());
+});
+
+test("collect asks git whether the repository folds case only for a path that needs the answer", async (t) => {
+  const asked = async (paths) => {
+    const dir = repo(t, (d, { write, git }) => {
+      write("src/a.ts");
+      for (const rel of paths) write(rel, "x\n");
+      git("add", "-A"); git("commit", "-qm", "init");
+    });
+    const trace = `${dir}.trace`;
+    t.after(() => rmSync(trace, { force: true }));
+    process.env.GIT_TRACE2_EVENT = trace;
+    try {
+      await collect(dir);
+    } finally {
+      delete process.env.GIT_TRACE2_EVENT;
+    }
+    const started = readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.event === "start");
+    return started.filter((e) => e.argv.includes("core.ignorecase")).length;
+  };
+
+  // The map's own directories as a scan spells them, and somebody's file beside them: nothing to ask.
+  assert.equal(await asked([".cursor/rules/anatomiya-overview.mdc", ".cursor/rules/team.mdc", "README.md"]), 0);
+  // A map name under a directory in another letter case is this tool's only where the repository folds.
+  assert.equal(await asked([".Cursor/Rules/anatomiya-overview.mdc"]), 1);
+  // Another case and no map name: somebody's file whatever git answers.
+  assert.equal(await asked([".Cursor/Rules/team.mdc"]), 0);
 });
 
 test("collect follows a .claude/rules link to where git tracks the map, and nowhere else", needsSymlinks, async (t) => {
