@@ -203,6 +203,13 @@ jobs:
       - name: The plugin's own lockfile is the one the seed produces
         run: node scripts/plugin-lock.mjs --check
 
+      # The plugin ships copies of seven grammar files and none of the packages
+      # they come from, so a copy is held to its package only where this runs.
+      # The suite makes the same comparison; this is the command a release is
+      # told to run, and its exit code is what a person reads.
+      - name: The vendored grammars are the ones their packages hold
+        run: node scripts/grammars.mjs --check
+
       # What a marketplace install actually does, on the files it actually
       # copies. Claude Code reads the plugin root with a non-recursive `readdir`
       # and runs this exact command where a manifest and a lockfile sit
@@ -464,14 +471,18 @@ jobs:
       # file. A scan that reads the files and states nothing is the failure a
       # summary line alone would pass, and the step asks for that sentence by
       # name, so a claim of another row cannot pass it.
+      # A clone that fails twice fails the step, where the two smokes above pass
+      # with a warning: they repeat what the unit suite parses, and a warning
+      # nobody reads here would leave the wasm runtime with no smoke at all.
       - name: Scan a Python repository
         shell: bash
         env:
           PYTHON_REPO: https://github.com/pallets/flask.git
           PYTHON_REF: 3.1.3
         run: |
-          git clone --quiet --depth 50 --branch "$PYTHON_REF" "$PYTHON_REPO" "$RUNNER_TEMP/python-smoke" \
-            || { echo "::warning::could not clone the Python smoke repository"; exit 0; }
+          clone() { git clone --quiet --depth 50 --branch "$PYTHON_REF" "$PYTHON_REPO" "$RUNNER_TEMP/python-smoke"; }
+          clone || { rm -rf "$RUNNER_TEMP/python-smoke"; sleep 10; clone; } \
+            || { echo "::error::could not clone the Python smoke repository in two tries"; exit 1; }
           cd "$RUNNER_TEMP/python-smoke"
           node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/python-scan.out"
           grep -qE "^engines: .*tree-sitter [0-9]" "$RUNNER_TEMP/python-scan.out" \
