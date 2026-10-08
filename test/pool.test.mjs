@@ -188,8 +188,11 @@ process.send({ ready: true, engine: "stub", version: "1" });
 
     const handed = readFileSync(log, "utf8").trim().split("\n");
     for (const rel of slow) assert.equal(handed.filter((x) => x === rel).length, 1, `${rel} reached a worker once`);
-    // Six files over two workers is three clocks. One retry each, alone, would add six more.
-    assert.ok(elapsed < slow.length * timeoutMs, `${elapsed}ms for ${slow.length} files on a ${timeoutMs}ms clock`);
+    // Six files over two workers is three clocks. One retry each, alone, would
+    // add six more, so a run that made one takes nine clocks or longer. The six
+    // between are for the three rounds of replacing killed workers, which a
+    // loaded runner starts several times slower than the 34 to 53 ms measured.
+    assert.ok(elapsed < (slow.length + 3) * timeoutMs, `${elapsed}ms for ${slow.length} files on a ${timeoutMs}ms clock`);
   } finally {
     await pool.close();
   }
