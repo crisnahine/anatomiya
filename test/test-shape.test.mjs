@@ -161,6 +161,10 @@ test("a test tree has the names every family shares, and the ones its own family
     assert.ok(!isTestTree(set, null), set);
   }
   for (const not of ["main", "commonMain", "Contest", "latest", "Test"]) assert.ok(!isTestTree(not, "kotlin"), not);
+  // Gradle's `java-test-fixtures` source set holds what tests share, and no test is written for a file in it.
+  for (const family of ["java", "kotlin"]) assert.ok(isTestTree("testFixtures", family), family);
+  for (const family of [null, "js", "csharp", "php"]) assert.ok(!isTestTree("testFixtures", family), String(family));
+  for (const not of ["fixtures", "TestFixtures", "testFixture", "testFixturesApi", "myTestFixtures"]) assert.ok(!isTestTree(not, "java"), not);
   for (const project of ["Serilog.Tests", "Newtonsoft.Json.Tests", "Serilog.PerformanceTests"]) {
     assert.ok(isTestTree(project, "csharp"), project);
     assert.ok(!isTestTree(project, "java"), project);
@@ -297,6 +301,9 @@ test("a path names a test by its family's rule: the name alone where the tool re
     ["src/test/java/shop/CartIT.java", "java", true],
     ["src/main/java/shop/RepeatedTest.java", "java", false],
     ["shop/commonTest/kotlin/CartTest.kt", "kotlin", true],
+    ["shop/src/testFixtures/java/shop/CartTest.java", "java", true],
+    ["shop/src/testFixtures/kotlin/shop/CartTest.kt", "kotlin", true],
+    ["shop/src/testFixtures/php/CartTest.php", "php", false],
     ["test/Shop.Tests/CartTests.cs", "csharp", true],
     ["src/Shop/CartTests.cs", "csharp", false],
     // A directory named for a test is not one: only a whole segment is a tree.
