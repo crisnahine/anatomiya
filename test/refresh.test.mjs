@@ -15,7 +15,7 @@ import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { gitBuffered } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
-import { needsSymlinks } from "./platform.mjs";
+import { needsFoldingFilesystem, needsSymlinks } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
 const needsTs = { skip: (await loadTypeScript()) ? false : "typescript is not installed" };
@@ -406,7 +406,7 @@ test("a committed Cursor or Copilot copy is left alone while the refresh rewrite
   }
 });
 
-test("a target git cannot be asked about is held as a committed one is", async (t) => {
+test("a target git cannot be asked about is left alone as a committed one is", async (t) => {
   const dir = await scanned(t);
   await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
   const overview = join(dir, ".cursor", "rules", "anatomiya-overview.mdc");
@@ -420,16 +420,16 @@ test("a target git cannot be asked about is held as a committed one is", async (
     asked.push(args.at(-1));
     return { ok: false, code: 128, oversize: false, stdout: "", error: "fatal: index file corrupt" };
   };
-  const held = [];
+  const leftAlone = [];
   const scan = async (root, options) => {
-    held.push(options?.leaveAlone ?? []);
+    leftAlone.push(options?.leaveAlone ?? []);
     return runScan(root, options);
   };
 
   assert.equal((await refreshRepository(dir, { scan, git })).reason, "scanned");
 
   assert.equal(asked.length, 1);
-  assert.deepEqual(held, [["cursor"]], "the one nobody could ask about, and not the one git answered for");
+  assert.deepEqual(leftAlone, [["cursor"]], "the one nobody could ask about, and not the one git answered for");
   assert.equal(readFileSync(overview, "utf8"), before, "so a copy the repository may commit is not rewritten");
   assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), /lib\/services/);
   assert.match(readFileSync(join(dir, ".github", "instructions", "anatomiya-overview.instructions.md"), "utf8"), /lib\/services/);
@@ -475,6 +475,30 @@ test("a file locked in another tool's directory costs a refresh that directory a
   assert.deepEqual(summaries.map((s) => s.targets.cursor), [
     { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: ".cursor/rules/anatomiya-overview.mdc could not be replaced (EBUSY)", remedy: "close what holds it or change its mode", unwritable: true },
   ]);
+});
+
+test("a copy committed under another letter case is left alone where the repository folds case", needsFoldingFilesystem, async (t) => {
+  const dir = await scanned(t);
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  const overview = join(dir, ".cursor", "rules", "anatomiya-overview.mdc");
+  const before = readFileSync(overview, "utf8");
+  // The index spells the directory its own way, and a pathspec matches by exact case unless told otherwise.
+  git(dir, "update-index", "--add", "--cacheinfo", `100644,${git(dir, "hash-object", "-w", overview)},.Cursor/rules/anatomiya-overview.mdc`);
+  git(dir, "commit", "-qm", "commit that copy of the map");
+  assert.equal(git(dir, "ls-files", "--", ".cursor/rules/anatomiya-overview.mdc"), "", "the control: asked as this tool spells it, git lists nothing");
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+  const leftAlone = [];
+  const scan = async (root, options) => {
+    leftAlone.push(options?.leaveAlone ?? []);
+    return runScan(root, options);
+  };
+
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+
+  assert.deepEqual(leftAlone, [["cursor"]]);
+  assert.equal(readFileSync(overview, "utf8"), before);
+  assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), /lib\/services/);
 });
 
 test("a committed Claude map still stops the refresh whole, whatever else is on", async (t) => {

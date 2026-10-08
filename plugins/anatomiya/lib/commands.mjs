@@ -406,5 +406,7 @@ function npmInstall(cwd) {
  * npm, which is the one thing that cannot install an interpreter.
  */
 function notInstalled(parse, command) {
-  return new Error(`${parse.missingParser}\n${remedyForMissing(parse)}, then ${command} again`);
+  // Two lines of this tool's own, kept apart for a printer that puts a quoted argument on one.
+  const lines = [parse.missingParser, `${remedyForMissing(parse)}, then ${command} again`];
+  return Object.assign(new Error(lines.join("\n")), { lines });
 }
