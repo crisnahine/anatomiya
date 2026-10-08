@@ -128,8 +128,8 @@ A directory whose name puts what is under it among the tests: `test`, `tests`, `
 `__tests__`, `cypress` and `e2e` for every family, and what a family's own build names one,
 which is a Gradle source set ending in `Test`, a .NET project named `X.Tests` or `X.Test`, and
 a `Test` or `Tests` directory in PHP. Sitting in one does not make a file a test: its name does,
-or in Rust its place directly under a crate's `tests`, or a `#[test]` in it under any other `tests`
-directory.
+or in Rust its place directly under a crate's `tests`, or a `#[test]` in it with a `tests`
+directory anywhere above it.
 _Avoid_: test folder, test root, spec directory
 
 **Namesake test**:
@@ -384,6 +384,15 @@ Said of a Cursor or Copilot copy of the map that a refresh neither writes, remov
 because the repository tracks that target's overview file. The rest of the map is written, and the
 record keeps the names it had for that copy. A scan run by hand leaves nothing alone.
 _Avoid_: held, skipped, frozen, locked
+
+**Stopped**:
+Said of a Cursor or Copilot directory that one scan could not write and did not name with
+`--targets`: the directory has no write permission, or a file there could not be replaced, removed
+or created. Nothing there is written or removed by that scan, and the rest of the map is written.
+The summary says so with a remedy, `--format json` carries `unwritable` on that target, and a
+refresh lists the directory under `stopped` in `refresh.json` and comes due again on its retry clock
+while it stays so. A scan that names the target refuses whole.
+_Avoid_: left alone, locked, skipped, failed
 
 **Main checkout**:
 The checkout a linked worktree was added from, the one whose `.git` directory holds the worktree's

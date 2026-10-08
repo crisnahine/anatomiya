@@ -290,7 +290,7 @@ const CASES = {
 // twice the functions, four times the reads. A clock does not tell the two apart at 40,000 functions (3.0 to 3.5
 // with the search, 1.7 to 2.4 without, on a loaded machine), so the reads are counted. A Go method asks which methods
 // its type has, and a search for every one reads every method's name: 2,096 ms at 10,000 methods of one type and
-// 13,488 ms at 20,000, and 1.9 to 2.2 on the clock without it against a bound of 3. Each shape as
+// 13,488 ms at 20,000. Each shape as
 // [language, the sites one function makes, its source, what the file opens with, what it closes with].
 const MANY_SIBLINGS = {
   "an attribute that takes each out of the documented surface": ["rust", 0, (i) => `#[cfg(test)]\npub fn f${i}() {}\n`],

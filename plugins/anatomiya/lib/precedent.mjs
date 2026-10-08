@@ -104,9 +104,10 @@ const countsAreNumbers = (r) =>
  * root counts: a tail shortened past directories is a test of something under
  * them, and where the change made one of them and put source of that family
  * under it, the package has no habit yet and the files of the directory above
- * it are another directory's. A package added with its source and its test in
- * one change was held to its parent's ratio, and one whose test sat in a
- * `tests` of its own still was, since that directory holds none of the source.
+ * it are another directory's. Every directory on the way is asked, not the
+ * test's own alone: a package's test can sit in a `tests` of its own, which
+ * holds none of the source, and asking only there holds a new package to its
+ * parent's ratio.
  */
 function coveredRoot(rel, roots) {
   const parts = testedTail(rel).split("/").filter(Boolean);

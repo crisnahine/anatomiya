@@ -471,7 +471,7 @@ export function commitMap(root, plan) {
     mkdirSync(storeDir, { recursive: true });
 
     // Ahead of the record, which names what each directory holds once this is done. A directory nobody named that
-    // takes no new file is left as a locked file leaves it, one step sooner: `access` passed it at the audit, and on
+    // takes no new file is stopped as a locked file stops it, one step sooner: `access` passed it at the audit, and on
     // Windows that call reads no ACL.
     const refused = new Map();
     for (const t of all) {
