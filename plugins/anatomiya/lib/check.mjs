@@ -17,7 +17,8 @@ import {
   safeResolve,
   lsFiles,
 } from "./corpus.mjs";
-import { language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
+import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
+import { isTestTree } from "./test-shape.mjs";
 import { placedTests } from "./layout.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase } from "./render.mjs";
@@ -285,13 +286,18 @@ export async function check(cwd, { baseRef = null } = {}) {
   // The comparison alone is what says a file arrived; a stale map does not
   // bear on that, and it caps at FIX anyway, which is this rule's ceiling.
   const asked = { fresh: mode === "compare", holdsTest };
+  // A directory holding only the tests the change wrote is not one it made
+  // for source, and is the directory this rule asks about.
+  const broughtSource = (dir, family) =>
+    arrived.some((c) => c.path.startsWith(`${dir}/`) && familyOf(language(c.path)) === family && !isTestPath(c.path) &&
+      !dirname(c.path).slice(dir.length).split("/").some((segment) => isTestTree(segment, family)));
   // Asked once to learn which directories the answer turns on, then again with
   // what the merge base says of them: one listing, and none where no finding
-  // was about to be stated.
+  // was about to be stated or the change put no source under the directory.
   const turnsOn = new Set();
-  precedentFindings(arrived, roots, { ...asked, created: (dir) => turnsOn.add(dir) && false });
-  const created = await createdSince(root, base.mergeBase, [...turnsOn]);
-  findings.push(...precedentFindings(arrived, roots, { ...asked, created: (dir) => created.has(dir) }));
+  precedentFindings(arrived, roots, { ...asked, created: (dir, family) => broughtSource(dir, family) && turnsOn.add(dir) && false });
+  const absent = await absentAt(root, base.mergeBase, [...turnsOn]);
+  findings.push(...precedentFindings(arrived, roots, { ...asked, created: (dir) => absent.has(dir) }));
 
   findings.sort(
     (a, b) =>
@@ -672,13 +678,13 @@ async function trackedTests(root) {
 }
 
 /**
- * Which of `dirs` the merge base does not hold, so the change made them.
+ * Which of `dirs` the merge base does not hold.
  *
  * None where there is no merge base to ask. A listing that failed names no
- * directory, so each reads as made by the change and its finding is not
- * stated: what decides whether one prints is a fact this could not read (C33).
+ * directory, so each reads as absent and its finding is not stated: what
+ * decides whether one prints is a fact this could not read (C33).
  */
-async function createdSince(root, mergeBase, dirs) {
+async function absentAt(root, mergeBase, dirs) {
   if (!mergeBase || dirs.length === 0) return new Set();
   const listed = await gitBuffered(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...dirs], { timeout: GIT.checkTimeoutMs });
   // Asked of a directory and of one inside it, git lists the inner one alone.

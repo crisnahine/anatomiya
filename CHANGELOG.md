@@ -128,7 +128,8 @@ scanned by 0.13.4 and by this version.
   `src/test`, a C# test in its `.Tests` project. So the first test of an untested Go package is
   no finding. Python and PHP, where a place is a choice, keep it. A Rust test has no name, so no
   `.rs` file is asked. In any language, `check` says nothing of a test for a directory the same
-  branch created. Run over the 5,727 existing test files of those languages in 60 repositories as if each
+  branch created and put a source file in; a directory holding only the tests the branch wrote is
+  asked about. Run over the 5,727 existing test files of those languages in 60 repositories as if each
   were new, the finding fires on none. A file of the seven that its grammar cannot finish in 5 seconds is
   stopped there and counted as crashed. Nothing retries it in that scan, and every later scan and
   refresh pays the 5 seconds again. The case measured is Kotlin.

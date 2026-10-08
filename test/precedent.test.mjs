@@ -534,10 +534,12 @@ test("a test sitting in the one place its language's tool reads it from is asked
 test("a test for a directory the same change created is not held to the files of the directory above it", () => {
   const roots = [root("app/services", { companions: { with: 6, of: 6, root: "spec" } }), root("src/pages", { files: 9, companions: { with: 0, of: 9, root: null } })];
   const asked = [];
-  const created = (answer) => (dir) => {
+  const created = (answer) => (dir, family) => {
     asked.push(dir);
+    families.push(family);
     return answer;
   };
+  const families = [];
 
   assert.equal(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots, { created: created(false) }).length, 1);
   assert.deepEqual(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots, { created: created(true) }), []);
@@ -549,6 +551,15 @@ test("a test for a directory the same change created is not held to the files of
   assert.deepEqual(asked, []);
   // With nobody to ask, as before a write, the finding stands.
   assert.equal(precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots).length, 1);
+
+  // The family asked about is the one the root counts, and the test's own where the map recorded no extension.
+  const counting = (ext) => [roots[0], { ...roots[1], companions: { ...roots[1].companions, ext } }];
+  families.length = 0;
+  precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], roots, { created: created(false) });
+  precedentFindings(["src/pages/Listing/__tests__/form.test.ts"], counting(".vue"), { created: created(false) });
+  precedentFindings(["src/pages/Listing/form_spec.rb"], roots, { created: created(false) });
+  precedentFindings(["src/pages/Listing/form_spec.rb"], counting(".py"), { created: created(false) });
+  assert.deepEqual(families, ["js", "js", "ruby", "python"]);
 });
 
 test("a test is judged against a directory of its own project, where its language's layout pairs one", () => {
