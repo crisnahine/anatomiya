@@ -1009,6 +1009,7 @@ test("a setup with the dependencies already installed runs nothing", needsEveryt
   assert.equal(ok, true);
   assert.equal(root, pluginRoot());
   assert.match(output, /^nothing to install: oxc \d/, output);
+  assert.doesNotMatch(output, /anatomiya:scan/, "nothing changed, so nothing to scan again for");
 });
 
 test("a dry run answers the exact command and runs nothing", async (t) => {

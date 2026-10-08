@@ -133,6 +133,9 @@ scanned by 0.13.4 and by this version.
   not load`. The fix for that is to reinstall the plugin, since no package install writes a
   grammar file. A scan says no file of that one language was read and reads the rest. `setup`
   prints the same line for it, installs nothing for it and exits non-zero.
+- `setup` ends an install that leaves every engine loading with one more line: scan again in any
+  repository you have a map in. A background refresh that stopped for the missing package may not
+  run again until that checkout's HEAD moves, so the map there is as it was.
 - `check` says so when a C# file was read with one branch of each `#if`: the caveat
   `head-one-branch` names the file, once, and its findings are about the branch that was read.
 - Vue and Svelte. The `<script>` blocks of a `.vue` or `.svelte` file are read by the parser that

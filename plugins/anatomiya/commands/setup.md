@@ -36,7 +36,32 @@ ways: a first line where nothing was installed at all, and an engine line where 
    suppresses its automatic injection for the rest of the session. Use `cat` or `head` through
    Bash if you need to show one.
 
-If setup exits non-zero, show its output and stop. It says which of the four happened: this is
-Windows, where npm is a batch file and nothing here spawns a shell, so the printed command is for
-the user to run themselves; npm was not found at all; npm ran and failed, and that one carries npm's
-own words; or npm finished and an engine it provides still does not load, and that one names it.
+Setup ends one of nine ways, and its output says which. Show the output, then do what the ending
+asks:
+
+Exit 0:
+
+- `nothing to install: ...` and no other line. Every package is there. Say so and stop; run
+  nothing else.
+- `not installed: ...` then `would run npm install ...`. This was `--dry-run`. Show the command and
+  the directory, and run nothing.
+- `not installed: ...`, `ran npm install ...`, and a last line that says to run `/anatomiya:scan`
+  again. The install ran and every engine it provides loads. Pass that last line on: a map written
+  before the install is as it was, so offer to run `/anatomiya:scan` in this repository, and tell
+  the user to do the same in any other repository they have a map in.
+
+Exit non-zero. Stop after each; do not run setup again unless the ending says to:
+
+- A `tree-sitter` line naming a `.wasm` file that did not load, with or without an install before
+  it. A grammar file ships in the plugin and no install writes one. Tell the user to reinstall the
+  plugin, as the line says.
+- `npm on Windows is a batch file ...` and `run it yourself: ...`. Nothing here spawns a shell.
+  Give the user the printed command and the directory to run it in.
+- `npm was not found; ...`. Tell the user to install Node.js 22 with npm, then run setup again.
+- `... failed`, with npm's own words under it. Show what npm said; the fix is in those words
+  (the network, a proxy, a permission), and it is the user's to make.
+- `... did not finish within N minutes`. The install was stopped by its own clock. Say so, and
+  offer to run setup once more.
+- `npm finished, and still not loading: ...` or `npm finished, and whether the engines load now
+  could not be asked: ...`. npm exited 0 and an engine is still not ready. Show the line, then run
+  `/anatomiya:doctor` for that engine's own reason.

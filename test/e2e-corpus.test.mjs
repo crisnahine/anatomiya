@@ -484,10 +484,10 @@ test("what a scan wrote for Cursor and Copilot is listed and held to the same ru
 
   const copilot = writtenProblems(repo, 1, on).problems.join("\n");
   assert.match(copilot, /wrote 2 files and \.github\/instructions\/ holds 3 generated files/);
-  assert.match(copilot, /"anatomiya-area-89abcdef\.instructions\.md" does not carry the scope GitHub Copilot attaches an area file by/);
+  assert.match(copilot, /"anatomiya-area-89abcdef\.instructions\.md" does not carry the scope GitHub Copilot matches an area file by/);
 
   put(".cursor/rules/anatomiya-area-0123abcd.mdc", [...key, "alwaysApply: true", "---", "", "# lib"]);
-  assert.match(writtenProblems(repo, 1, on).problems.join("\n"), /"anatomiya-area-0123abcd\.mdc" does not carry the scope Cursor attaches/);
+  assert.match(writtenProblems(repo, 1, on).problems.join("\n"), /"anatomiya-area-0123abcd\.mdc" does not carry the scope Cursor matches/);
   rmSync(join(repo, ".cursor/rules/anatomiya-overview.mdc"));
   assert.match(writtenProblems(repo, 1, on).problems.join("\n"), /no anatomiya-overview\.mdc was written/);
 });

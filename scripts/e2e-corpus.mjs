@@ -171,7 +171,7 @@ export function areaProblems(name, text, target = TARGETS.claude) {
   const end = frontmatterEnd(lines);
   if (!isClaude(target)) {
     if (!SCOPED[target.id](lines.slice(0, end))) {
-      problems.push(`${JSON.stringify(name)} does not carry the scope ${target.reader} attaches an area file by`);
+      problems.push(`${JSON.stringify(name)} does not carry the scope ${target.reader} matches an area file by`);
     }
     if (lines.length - end > MAX_LINES) problems.push(`${JSON.stringify(name)} has ${lines.length - end} body lines, past ${MAX_LINES}`);
     return problems;
