@@ -113,7 +113,7 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   // is work a repository should not be able to ask for.
   const scan = { root: result.root, previous, blind, held, areas: withDirectives };
   const claude = auditTarget(TARGETS.claude, { on: true }, scan);
-  const rest = others.map((o) => (untouched(o) ? o : { ...o, ...auditTarget(o.target, o, scan) }));
+  const rest = others.map((o) => (untouched(o) ? o : audited(o, scan)));
 
   const files = { uncovered, orphaned };
   const bodies = renderTarget(TARGETS.claude, claude, described, files);
@@ -154,7 +154,8 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
  * whether this scan writes it.
  *
  * One that could not be read is neither written nor cleared: off is what
- * removes a map, and nobody saw that it is off. Asking for it by name refuses
+ * removes a map, and nobody saw that it is off. One whose directory cannot be
+ * written is found out at the audit and left the same way. Asking for it by name refuses
  * the scan instead, since writing the others and not that one is not what was
  * asked. So does leaving it out by name while the record names files of ours
  * there, which asks for a removal that cannot happen.
@@ -179,6 +180,17 @@ function otherTargets(root, asked, previous, leaveAlone) {
       }
       return { target, state, reason, remedy, explicit, on: false };
     });
+}
+
+/**
+ * One other target with its directory audited, or as unknown where the
+ * directory cannot be written and this scan was not told to write it.
+ */
+function audited(o, scan) {
+  const laid = auditTarget(o.target, o, scan);
+  if (!laid.blocked) return { ...o, ...laid };
+  const { sentence, remedy } = laid.blocked;
+  return { ...o, state: "unknown", on: false, reason: sentence, remedy, unwritable: true };
 }
 
 /**
@@ -269,7 +281,14 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   const cleans = on || explicit || stale.length > 0;
   const staged = blind || !cleans ? [] : audit.staged.filter((f) => !running(stagedBy(f, target)));
   // Claude Code's two directories were held to this before anything was read.
-  if (!isClaude(target) && (names.length > 0 || stale.length > 0 || staged.length > 0)) refuseNonDirectory(root, target.dir);
+  if (!isClaude(target) && (names.length > 0 || stale.length > 0 || staged.length > 0)) {
+    // Named, the target cannot be written as asked, and the scan says so.
+    // Found on, it is another tool's directory, and a permission on it may not
+    // stop Claude Code's map: nothing there is written or removed.
+    if (explicit) refuseNonDirectory(root, target.dir);
+    const blocked = blockedOnTheWay(root, target.dir);
+    if (blocked !== null) return { blocked };
+  }
 
   return {
     filed,
@@ -354,9 +373,9 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
 }
 
 // The record goes on naming what it named, or none of it could be removed once the directory reads again.
-function untouchedPlan({ target, state, reason, remedy, on, leftAlone }, previous) {
+function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritable }, previous) {
   const none = { first: false, write: [], remove: [], foreign: [], unknown: [], replaced: [], unreadableRules: [], listed: false, unfiled: [] };
-  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
+  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...(unwritable ? { unwritable } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
 }
 
 // Nobody read it, or the caller said to leave it alone: neither is written, cleared or turned off.

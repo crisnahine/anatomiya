@@ -790,6 +790,34 @@ test("a target that cannot be read is given one remedy, refused, summarised or i
   assert.deepEqual(record.targets.copilot, { state: "unknown", dir: ".github/instructions", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: why, remedy });
 });
 
+test("a plain scan writes Claude's map past a target directory it cannot write, and says what to do about that one", needsUnreadableDirs, (t) => {
+  const repo = repoWithSource(t);
+  anatomiya(repo, "scan", "--targets", "cursor");
+  const before = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+  mkdirSync(join(repo, "lib"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(repo, "lib", `g${i}.ts`), `const b${i} = 1\nexport { b${i} }\n`);
+  execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "more"], { cwd: repo, stdio: "pipe" });
+  chmodSync(join(repo, ".cursor", "rules"), 0o555);
+  let plain;
+  let named;
+  try {
+    plain = ran("scan", repo);
+    named = ran("scan", repo, "--targets", "cursor");
+  } finally {
+    chmodSync(join(repo, ".cursor", "rules"), 0o755);
+  }
+  assert.equal(plain.code, 0, plain.stderr);
+  assert.ok(
+    plain.stdout.split("\n").includes(".cursor/rules could not be written (.cursor/rules is not writable), so nothing there was written or removed: fix its permissions, then scan again"),
+    plain.stdout
+  );
+  assert.notEqual(readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8"), before, "the Claude map was written");
+
+  assert.equal(named.code, 1);
+  assert.equal(named.stderr, "anatomiya: .cursor/rules is not writable, so the map could not be written: fix its permissions and scan again\n");
+});
+
 test("a repository that never turned a target on reads the same whatever sits in the other tools' directories", needsSymlinks, (t) => {
   const repo = repoWithBranch(t);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));

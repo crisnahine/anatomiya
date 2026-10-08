@@ -148,7 +148,8 @@ function targetSummaries(result, plan) {
     const unread = t.state === "unknown";
     const foreign = t.foreign.length + t.unknown.length;
     // One nobody could read is said only where the record names files there.
-    const quiet = unread ? t.names.length === 0 : !t.on && t.state === "off" && t.remove.length === 0;
+    // One that could not be written was on, so it is always said.
+    const quiet = unread ? t.names.length === 0 && !t.unwritable : !t.on && t.state === "off" && t.remove.length === 0;
     if (quiet) continue;
     out[id] = {
       state: unread || plan.blind ? t.state : t.on ? "on" : "off",
@@ -162,6 +163,7 @@ function targetSummaries(result, plan) {
       ...(t.first === true && t.write.length ? { switchedOnBy: `${t.dir}/${overviewName(TARGETS[id])}` } : {}),
       // Why, and what a person does about it, for the line below and for the record.
       ...(unread ? { reason: t.reason, ...(t.remedy ? { remedy: t.remedy } : {}) } : {}),
+      ...(t.unwritable ? { unwritable: true } : {}),
     };
   }
   return out;
@@ -198,7 +200,7 @@ function targetLines(s) {
     }
     lines.push(...ruleFileLines(t.unreadable ?? [], UNREAD_ONE, UNREAD_MANY, t.dir));
     if (t.state === "unknown") {
-      lines.push(`${t.dir} could not be read (${t.reason}), so nothing there was written or removed${t.remedy ? `: ${t.remedy}, then scan again` : ""}`);
+      lines.push(`${t.dir} could not be ${t.unwritable ? "written" : "read"} (${t.reason}), so nothing there was written or removed${t.remedy ? `: ${t.remedy}, then scan again` : ""}`);
     }
   }
   return lines;

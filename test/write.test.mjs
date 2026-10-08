@@ -3350,6 +3350,49 @@ test("a target directory that cannot be written is refused by name before a dry 
   assert.equal(existsSync(join(dir, ".claude")), false);
 });
 
+test("a target that is on and cannot be written is left as it is while Claude's map is written, and refuses only by name", needsPosixPermissions, (t) => {
+  const dir = workspace(t);
+  const a = area("src/services");
+  const b = area("src/api");
+  writeMap(result(dir, [a]), { targets: ALL });
+  const before = Object.fromEntries(namesIn(dir, cursor).map((n) => [n, readFileSync(join(dir, cursor.dir, n), "utf8")]));
+  chmodSync(join(dir, cursor.dir), 0o555);
+  try {
+    for (const dryRun of [true, false]) {
+      const plan = writeMap(result(dir, [a, b]), { dryRun });
+      const { state, on, reason, remedy, unwritable, write, remove, names } = plan.targets.cursor;
+      assert.deepEqual(
+        { state, on, reason, remedy, unwritable, write, remove, names },
+        { state: "unknown", on: false, reason: ".cursor/rules is not writable", remedy: "fix its permissions", unwritable: true, write: [], remove: [], names: mapOf(cursor, a) }
+      );
+      assert.deepEqual(plan.targets.copilot.write.map((w) => w.name).sort(), mapOf(copilot, a, b), "the directory beside it is written as usual");
+    }
+    assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, b), "Claude Code's map moved");
+    assert.deepEqual(namesIn(dir, copilot), mapOf(copilot, a, b));
+    assert.deepEqual(Object.fromEntries(namesIn(dir, cursor).map((n) => [n, readFileSync(join(dir, cursor.dir, n), "utf8")])), before, "and nothing there was written or removed");
+    assert.deepEqual(readFacts(dir).targets.cursor, mapOf(cursor, a), "the record goes on naming what it named");
+
+    // Named, or left out by name: what was asked cannot be done, so nothing is written anywhere.
+    const held = () => [readFileSync(join(dir, STORE, "facts.json"), "utf8"), listRules(dir), namesIn(dir, cursor), namesIn(dir, copilot)];
+    const was = held();
+    for (const targets of [ALL, ["claude", "cursor"], ["claude"]]) {
+      for (const dryRun of [true, false]) {
+        assert.throws(
+          () => writeMap(result(dir, [a]), { dryRun, targets }),
+          (err) => err.message === ".cursor/rules is not writable, so the map could not be written: fix its permissions and scan again",
+          JSON.stringify(targets)
+        );
+      }
+    }
+    assert.deepEqual(held(), was);
+  } finally {
+    chmodSync(join(dir, cursor.dir), 0o755);
+  }
+  const healed = writeMap(result(dir, [a, b]));
+  assert.deepEqual({ state: healed.targets.cursor.state, on: healed.targets.cursor.on }, { state: "on", on: true });
+  assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, b));
+});
+
 test("a directory holding a generated name in a target is reported, not an errno", (t) => {
   const dir = workspace(t);
   const a = area("src/services");
