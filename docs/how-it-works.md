@@ -1384,7 +1384,7 @@ of its listing, and the summary counts it, because a refresh has nobody to read 
 
 The commit stages every file as a temporary file beside its destination, then renames in one order:
 the record, its layout file, the `.claude/rules` files, the Cursor files, the Copilot files. Removals
-come last. A target's directory is made one component at a time, only when that target has a file to
+come last, the store's leftover temporary files first and then each directory in that order. A target's directory is made one component at a time, only when that target has a file to
 write, and each component is looked at again after its `mkdir`. Each target directory is resolved
 again before anything is made, after everything is staged, before each rename and before each
 removal, and a directory that stopped being the repository's own stops the scan in a sentence that
@@ -1394,13 +1394,35 @@ while the map was being written`).
 A temporary file a scan left behind, by a kill or through a directory swapped under it, is removed
 by the next scan that writes or removes in that directory: a regular file named as a map file plus
 `.tmp-<pid>-<16 hex>`, where no process of that id is running. The summary counts the ones under
-`.claude/rules`, `1 temporary file an earlier scan left in .claude/rules was removed`.
+`.claude/rules`, `1 temporary file an earlier scan left in .claude/rules was removed`. The store is
+swept for three names, `facts.json`, `layout.json` and `refresh.json` plus that suffix
+(`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier scan left in
+.claude/anatomiya were removed`. The pin's and the refresh lock's temporary files are not swept. A
+leftover is removed without being opened, where every other file about to be replaced or removed
+is read whole first for the put-back, so its size costs the scan nothing and a scan that fails
+later does not put it back.
 
 A failure at any rename or removal puts back every file already replaced, in every directory, takes
 out the temporary files, and removes a Cursor or Copilot directory this run made if it is empty. Nothing is put back
 through a directory that moved. Where the failure is a file that is locked or read-only (`EPERM`,
 `EACCES` or `EBUSY` from the rename or the removal), the scan names it:
 `<dir>/<name> could not be replaced (EPERM), so the scan stopped and put back what it had replaced: the file is locked or read-only, so close what holds it or change its mode, then scan again`.
+
+That is the answer in `.claude/rules`, in the store and in a target the scan named. In a Cursor or
+Copilot directory it did not name, a locked file stops that directory alone (`spared` in
+`replaceAll`): what was replaced there is put back, its staged files are removed, the rest of its
+renames and removals are passed over, and after the last removal the record and its layout file are
+written again through `writePair`, with that target's names as the record on disk had them. The
+plan comes back with the target `unknown` and `unwritable`, the `.claude/rules` map and the other
+directory are written, and the exit is 0:
+
+```
+.cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change its mode, then scan again
+```
+
+A put-back that fails there, or a second record write that fails, refuses the whole scan as above.
+So does any error that is no lock, a full disk for one. A dry run renames nothing, so it says
+`would write` for that directory.
 
 Turning a target off removes its files, and which ones depends on how. A scan that leaves a target
 out of `--targets` removes every file there that has one of the two names a scan gives, the
@@ -1432,7 +1454,7 @@ wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-over
 target's entry there also carries `reason` and `remedy` where it was left alone, the remedy being
 what the text line tells a person to do, and `unwritable` where its directory could not be written.
 `stagedRemoved` counts the temporary files an earlier scan left in `.claude/rules` that this one
-removed, and is absent at none.
+removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. Each is absent at none.
 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
@@ -2152,7 +2174,11 @@ or Kotlin test in its module's own `src/test` or `<set>Test`, a C# test in its t
 PHP, whose layout pairs a `tests` tree with the `src` beside it, a test is held to a directory of
 that tree. A test for a directory the branch itself created and put a file a test could be written for in is
 not held to the files of the directory above it, and an empty file, a declaration file, a story or
-a `conftest.py` is no such file; `check` asks the merge base for that, and the notice cannot. Its reason, which the `PreToolUse`
+a `conftest.py` is no such file. The directory is any one from the root down to the test's own, so
+a new package that brings its source and keeps its test in its own `tests` directory draws no
+finding. `check` asks the merge base which of those directories it held, in one `git ls-tree` for
+each 16,000 bytes of names, and the notice cannot. Where a listing fails, every finding that turns
+on such a directory is left unstated and one `base-unreadable` caveat counts them. Its reason, which the `PreToolUse`
 notice prints too, gives the root's count in the tests line's words, `src/hooks: 0 of 5 .tsx files
 have a namesake test`: the count is over one extension, and a bare `5 files` read as the whole of a
 directory holding nine. A map written before the root recorded that extension says `0 of 5 files`
@@ -2226,7 +2252,7 @@ are 29. Most appear at most once in a run; the ones that repeat are named under 
 | `frameworks-unknown` | the corpus could not be listed, so no framework's claims were checked |
 | `capabilities-unknown` | the corpus could not be listed, so no routing claim was checked |
 | `head-unreadable` | a file's head version could not be read, in the tree or at HEAD |
-| `base-unreadable` | a file's version at the merge base could not be read, so the file was skipped |
+| `base-unreadable` | a file's version at the merge base could not be read, so the file was skipped; or the merge base could not be asked which directories it held, so the tests under a directory the change put source in drew no placement finding |
 | `head-crashed` | a file crashed the parser at the head side |
 | `head-rejected` | the parser rejected a file's syntax at the head side |
 | `head-oversize` | a file was past the size cap at the head side |
@@ -2333,7 +2359,7 @@ object and exits 0, as it does on any failure.
 | `node` | the process itself | its version is 22.0.0 or newer, the floor both manifests declare in `engines` | install Node 22 or newer and put it first on `PATH` |
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
-| `tree-sitter` | node | `web-tree-sitter` imports, and the file of each of the seven grammars loads and hashes to the SHA-256 `grammars.json` records for it. The line carries the count, `grammars: 7 of 7`, and a file that fails either is named on it: `grammars: 6 of 7, kotlin.wasm did not load`, or `kotlin.wasm is not the file this plugin shipped`; one the runtime turns away by its language version reads `java.wasm is language version 14 and this runtime reads 15 through 16`; with no manifest to hold them to, `grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
+| `tree-sitter` | node | `web-tree-sitter` imports, and the file of each of the seven grammars loads and hashes to the SHA-256 `grammars.json` records for it. The line carries the count, `grammars: 7 of 7`, and a file that fails either is named on it: `grammars: 6 of 7, kotlin.wasm did not load`, or `kotlin.wasm is not the file this plugin shipped`, which is also what an entry that is no regular file, or is over 32 MB, reads as, with none of it read; one the runtime turns away by its language version reads `java.wasm is language version 14 and this runtime reads 15 through 16`; with no manifest to hold them to, `grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
 | `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version rather than called absent, and the scan leaves the checker off. Optional: only the type checker needs it | the same install |
 

@@ -17,7 +17,9 @@ Run the readiness probe and report what it said.
    repository, it also prints one line for each Cursor or Copilot target that is on there,
    `.cursor/rules: on, 5 files`, and a second where that directory holds other entries named
    `anatomiya-*` (`.cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor
-   removes`). Run anywhere else it prints none.
+   removes`). Run anywhere else it prints none. In a clone that holds a target's files and no
+   record yet, the count is of the files named as a scan names them that carry its key, so it can
+   differ from what the first scan there prints, and it moves once, after that scan.
 
 3. A first line reading `nothing is installed here: ...` is one fault, not one per engine below it:
    Claude Code installs this plugin's dependencies on `/plugin install`, and that install did not
@@ -35,7 +37,8 @@ Run the readiness probe and report what it said.
    kotlin.wasm did not load`, `grammars: 6 of 7, kotlin.wasm is not the file this plugin shipped`,
    `grammars: 6 of 7, java.wasm is language version 14 and this runtime reads 15 through 16`,
    or `grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped`. The
-   grammars ship in the plugin's own directory and no package install writes one. Report the remedy
+   second is also what a grammar entry reads as when it is a link, a directory or anything else
+   that is no regular file, or is over 32 MB: such an entry is never read. The grammars ship in the plugin's own directory and no package install writes one. Report the remedy
    the line carries, which is to reinstall the plugin, and do not offer `/anatomiya:setup` for it.
    A scan still reads every other language meanwhile. `tree-sitter absent` is the package missing,
    and that one setup does install.

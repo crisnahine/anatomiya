@@ -510,6 +510,17 @@ it. The scan writes the `.claude/rules` map, leaves that directory as it is and 
 
 A scan that names the target refuses.
 
+A file there that is locked or read-only is the same case one level down. A scan that did not name
+the target puts back what it had replaced in that directory, writes the `.claude/rules` map and the
+other copy, exits 0 and says:
+
+```
+.cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change its mode, then scan again
+```
+
+A scan that names the target stops there and puts back every file it had replaced. A locked file in
+`.claude/rules` stops any scan the same way.
+
 The last two exclude lines under [Quick start](#quick-start) keep both copies out of git. To commit
 one instead, leave its exclude line out and commit its files. GitHub's documentation says the cloud
 agent and code review on GitHub.com read `.github/instructions` from the repository. Nothing here
@@ -680,6 +691,7 @@ cannot be narrowed to the files you changed. The map says when the checker answe
 prints no count for this claim then. While that answer stands and the plugin version, the root
 config, and the size and modification time of `node_modules` and of the install record in it are
 unchanged, a background refresh keeps the answer without running the checker; `/anatomiya:scan` always runs it.
+An edit to a config the root config extends or references does not end a carried verdict.
 An install starts no refresh by itself, so after one the checker is measured by the next refresh a
 commit, a checkout or a pull starts, or by a scan you run. On four repositories that read degraded, that
 took a refresh from 4.4s to 21.2s down to 1.2s to 3.8s.

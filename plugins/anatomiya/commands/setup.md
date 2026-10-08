@@ -43,8 +43,8 @@ Exit 0:
 
 - `nothing to install: ...` and no other line. Every package is there. Say so and stop; run
   nothing else.
-- `not installed: ...` then `would run npm install ...`. This was `--dry-run`. Show the command and
-  the directory, and run nothing.
+- `not installed: ...` then `would run npm install ...`, and no `tree-sitter` line under them. This
+  was `--dry-run`. Show the command and the directory, and run nothing.
 - `not installed: ...`, `ran npm install ...`, and a last line that says to run `/anatomiya:scan`
   again. The install ran and every engine it provides loads. Pass that last line on: a map written
   before the install is as it was, so offer to run `/anatomiya:scan` in this repository, and tell
@@ -53,8 +53,10 @@ Exit 0:
 Exit non-zero. Stop after each; do not run setup again unless the ending says to:
 
 - A `tree-sitter` line naming a `.wasm` file that did not load or is not the file the plugin
-  shipped, or naming `grammars.json`, with or without an install before it. A grammar file ships
-  in the plugin and no install writes one. Tell the user to reinstall the plugin, as the line says.
+  shipped, or naming `grammars.json`, with or without an install before it. A dry run ends this
+  way too, exit 2: under `nothing to install: ...`, or under `not installed: ...` and `would run
+  npm install ...` where a package is missing as well. A grammar file ships in the plugin and no
+  install writes one. Tell the user to reinstall the plugin, as the line says.
 - `npm on Windows is a batch file ...` and `run it yourself: ...`. Nothing here spawns a shell.
   Give the user the printed command and the directory to run it in.
 - `npm was not found; ...`. Tell the user to install Node.js 22 with npm, then run setup again.

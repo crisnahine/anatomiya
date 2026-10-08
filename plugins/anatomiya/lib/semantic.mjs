@@ -2,8 +2,9 @@
 /**
  * The second tier: `typescript@5`'s checker, run where the repository can use it.
  *
- * A scan with it measured about 3x a plain one, and the checker is whole-program,
- * so narrowing its file set does not buy the time back: driving the corpus down
+ * A scan with it measured about 4.5 times a plain one on typeorm (5.6 to 5.7 seconds
+ * against 1.3, 3,347 files read), and the checker is whole-program, so narrowing
+ * its file set does not buy the time back: driving the corpus down
  * drove unresolved types from 3.1% to 36.2%. Major 5 is pinned because 7 is the Go
  * port and publishes no JS API at all.
  */
