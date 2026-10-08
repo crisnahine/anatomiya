@@ -128,7 +128,8 @@ async function passes(root, store, { scan, pin, git }) {
     try {
       const leaveAlone = await committedTargets(root, git);
       // A checker the last run measured as degraded, with nothing it reads
-      // moved since, comes out the same and costs most of the scan. A scan run
+      // moved since, comes out the same and costs most of the scan. So does one
+      // that failed twice in a row; the scan runs one that failed once. A scan run
       // by hand is handed no verdict and measures. The stamp reads the root
       // config, so it is taken only where there is a verdict to compare.
       const recorded = readFacts(root).facts?.semantic ?? null;

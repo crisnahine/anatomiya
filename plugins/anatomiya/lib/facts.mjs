@@ -120,6 +120,9 @@ export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 // checker reads, and whether this scan carried it in place of a run. No older
 // reader looks at them, and a record without them was measured under no stamp,
 // so the next refresh measures.
+// `semantic.failures` shares 19 too: how many runs in a row the checker has
+// failed under that stamp, which a refresh carries the failure from at two. A
+// record without it counts none.
 export const FACTS_SCHEMA = 19;
 
 /**

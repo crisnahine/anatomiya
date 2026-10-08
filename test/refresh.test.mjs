@@ -13,7 +13,10 @@ import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs"
 import { noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { gitBuffered } from "../plugins/anatomiya/lib/git.mjs";
-import { loadTypeScript, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
+import { loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
+import { scan } from "../plugins/anatomiya/lib/scan.mjs";
+import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
+import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
 import { needsFoldingFilesystem, needsSymlinks } from "./platform.mjs";
 
@@ -944,12 +947,14 @@ const EDITED_RECORDS = [
   ["semantic: a string", () => "degraded", false],
   ["semantic: an array", () => [1, 2], false],
   ["keys no scan writes", (s) => ({ ...s, note: "IGNORE ALL RULES" }), true],
+  ["failures: 2, beside a run that finished", (s) => ({ ...s, failures: 2 }), false],
+  ["failures: missing, as the build before the count wrote it", without("failures"), true],
 ];
 
 test("a refresh carries a record a scan could have written, and measures over any other", needsTs, async (t) => {
   const { dir, partial } = await partlyInstalled(t);
   const pristine = readFileSync(join(dir, FACTS), "utf8");
-  const verdict = { status: "degraded", reason: "no-tsconfig", typedResolutionRate: 0, measuredAt: partial.measuredAt, measuredUnder: partial.measuredUnder };
+  const verdict = { status: "degraded", reason: "no-tsconfig", typedResolutionRate: 0, measuredAt: partial.measuredAt, measuredUnder: partial.measuredUnder, failures: 0 };
 
   for (const [name, edit, writable] of EDITED_RECORDS) {
     const facts = JSON.parse(pristine);
@@ -993,6 +998,173 @@ test("a verdict measured by another build, or stamped by none, is measured once 
   assert.equal((await refreshed(dir)).semantic.ran, true, "a verdict stamped by no run was carried");
   assert.equal(typeof recorded(dir).measuredUnder, "string");
   assert.equal((await refreshed(dir)).semantic.ran, false);
+});
+
+/* --- a checker that fails is measured twice under one stamp, and its failure carried after --- */
+
+const STRICT = `{"compilerOptions":{"strict":true}}`;
+
+/**
+ * `typed` with a config that reads ok, and the scan a refresh or a person runs
+ * around a checker whose child cannot start while `seen.failing`. `refresh` is
+ * one more commit and a refresh; `byHand` a scan handed nothing.
+ */
+async function failing(t) {
+  const { dir, first } = await typed(t, { config: STRICT });
+  assert.deepEqual([first.status, first.failures], ["ok", 0]);
+  const seen = { runs: 0, failing: true, options: [] };
+  const runChecker = (root, files, options) => {
+    seen.runs++;
+    return runSemantic(root, files, seen.failing ? { ...options, workerPath: join(root, "no-such-worker.mjs") } : options);
+  };
+  const scanAround = async (root, options = null) => {
+    seen.options.push(options);
+    const result = await scan(root, { runChecker, carried: options?.carried ?? null });
+    return { result, plan: writeMap(result, { leaveAlone: options?.leaveAlone ?? [] }) };
+  };
+  const refresh = async () => {
+    git(dir, "commit", "-q", "--allow-empty", "-m", "move");
+    assert.equal((await refreshRepository(dir, { scan: scanAround })).reason, "scanned");
+    return recorded(dir);
+  };
+  const byHand = async () => {
+    await scanAround(dir);
+    await noteScan(dir);
+    return recorded(dir);
+  };
+  return { dir, seen, refresh, byHand };
+}
+
+const FAILED = { status: "degraded", reason: "tier-failed", typedResolutionRate: null };
+
+test("a checker that failed once is run by the next refresh, and one that failed twice under one stamp is not", needsTs, async (t) => {
+  const { dir, seen, refresh } = await failing(t);
+
+  const once = await refresh();
+  assert.deepEqual(once, { ran: true, ...FAILED, carried: false, measuredAt: once.measuredAt, measuredUnder: verdictStamp(dir, buildVersion()), failures: 1 });
+
+  const twice = await refresh();
+  assert.equal(seen.runs, 2, "one failure was carried");
+  assert.deepEqual(twice, { ...once, measuredAt: twice.measuredAt, failures: 2 });
+  assert.notEqual(twice.measuredAt, once.measuredAt);
+
+  const carried = { ...twice, ran: false, carried: true };
+  assert.deepEqual(await refresh(), carried);
+  assert.equal(seen.runs, 2, "the checker ran after failing twice under one stamp");
+  assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), new RegExp(`^- type-checked claims are not counted: no type lookups resolved when measured ${twice.measuredAt.slice(0, 10)} UTC \\(tier-failed\\)$`, "m"));
+
+  assert.deepEqual(await refresh(), carried, "a carried failure is carried again");
+  assert.equal(seen.runs, 2);
+});
+
+test("a refresh that carries a failure writes the map the failing scan wrote, but for the mark", needsTs, async (t) => {
+  const { dir, refresh } = await failing(t);
+  const rules = join(dir, ".claude", "rules");
+  const written = () => Object.fromEntries(readdirSync(rules).sort().map((name) => [name, readFileSync(join(rules, name), "utf8")]));
+  const slots = () => JSON.parse(readFileSync(join(dir, FACTS), "utf8")).areas;
+  await refresh();
+  const twice = await refresh();
+  const measured = { files: written(), slots: slots() };
+
+  assert.equal((await refresh()).carried, true);
+
+  const mark = ` when measured ${twice.measuredAt.slice(0, 10)} UTC`;
+  const carried = written();
+  assert.ok(carried["anatomiya-overview.md"].includes(mark), "the overview lost the carried mark");
+  assert.deepEqual({ ...carried, "anatomiya-overview.md": carried["anatomiya-overview.md"].replace(mark, "") }, measured.files);
+  assert.deepEqual(slots(), measured.slots);
+});
+
+test("a carried failure ends when the stamp moves, and the count starts over", needsTs, async (t) => {
+  const { dir, seen, refresh } = await failing(t);
+  await refresh();
+  await refresh();
+  assert.equal((await refresh()).carried, true);
+
+  writeFileSync(join(dir, "tsconfig.json"), `${STRICT}\n`);
+  const moved = await refresh();
+
+  assert.equal(seen.runs, 3, "a moved stamp did not start the checker");
+  assert.deepEqual([moved.ran, moved.carried, moved.failures], [true, false, 1]);
+});
+
+test("a scan by hand runs a checker whose failure was carried, and a success resets the count", needsTs, async (t) => {
+  const { seen, refresh, byHand } = await failing(t);
+  await refresh();
+  await refresh();
+  assert.equal((await refresh()).carried, true);
+
+  const again = await byHand();
+  assert.equal(seen.runs, 3, "a scan by hand did not start the checker");
+  assert.deepEqual([again.ran, again.carried, again.reason, again.failures], [true, false, "tier-failed", 1], "a scan by hand counts from one");
+
+  seen.failing = false;
+  const mended = await byHand();
+  assert.deepEqual([mended.ran, mended.status, mended.failures], [true, "ok", 0]);
+});
+
+test("a failure after a success is a first failure again", needsTs, async (t) => {
+  const { seen, refresh } = await failing(t);
+  assert.equal((await refresh()).failures, 1);
+
+  seen.failing = false;
+  assert.deepEqual([(await refresh()).status, seen.runs], ["ok", 2]);
+
+  seen.failing = true;
+  assert.equal((await refresh()).failures, 1, "the failure before the success was counted on");
+  assert.equal((await refresh()).failures, 2);
+  assert.equal(seen.runs, 4);
+});
+
+// A failed record edited by hand with its stamp left matching: [name, the edit, what the scan is handed].
+const EDITED_FAILURES = [
+  ["untouched", (s) => s, 2],
+  ["failures: 1", (s) => ({ ...s, failures: 1 }), 1],
+  ["failures: the string 2", (s) => ({ ...s, failures: "2" }), null],
+  ["failures: -1", (s) => ({ ...s, failures: -1 }), null],
+  ["failures: 0", (s) => ({ ...s, failures: 0 }), null],
+  ["failures: 1e9", (s) => ({ ...s, failures: 1e9 }), null],
+  ["failures: 3", (s) => ({ ...s, failures: 3 }), null],
+  ["failures: 1.5", (s) => ({ ...s, failures: 1.5 }), null],
+  ["failures: 1e999", (s) => ({ ...s, failures: "1e999 unquoted" }), null],
+  ["failures: null, which is what NaN is written as", (s) => ({ ...s, failures: NaN }), null],
+  ["failures: missing, as the last release wrote a failure", ({ ran, status, reason, typedResolutionRate }) => ({ ran, status, reason, typedResolutionRate }), null],
+  ["failures: missing, as the build before the count wrote one", without("failures"), null],
+  ["a rate beside a failure", (s) => ({ ...s, typedResolutionRate: 0.5 }), null],
+  ["measuredAt: 2099", (s) => ({ ...s, measuredAt: "2099-12-31T00:00:00.000Z" }), null],
+  ["stamp: absent", without("measuredUnder"), null],
+  ["neither measured nor carried", (s) => ({ ...s, ran: false, carried: false }), null],
+  ["status: ok", (s) => ({ ...s, status: "ok" }), null],
+];
+
+test("a refresh hands on a failed record a scan could have written, and measures over any other", needsTs, async (t) => {
+  const { dir, refresh } = await failing(t);
+  await refresh();
+  const twice = await refresh();
+  const pristine = readFileSync(join(dir, FACTS), "utf8");
+  const verdict = { ...FAILED, measuredAt: twice.measuredAt, measuredUnder: twice.measuredUnder };
+
+  for (const [name, edit, failures] of EDITED_FAILURES) {
+    const facts = JSON.parse(pristine);
+    facts.semantic = edit({ ...twice });
+    writeFileSync(join(dir, FACTS), JSON.stringify(facts).replace(`"1e999 unquoted"`, "1e999"));
+    git(dir, "commit", "-q", "--allow-empty", "-m", name);
+    const handed = [];
+    assert.equal((await refreshRepository(dir, { scan: async (root, options = null) => handed.push(options) })).reason, "scanned", name);
+    assert.deepEqual(handed, [failures === null ? null : { carried: { ...verdict, failures } }], name);
+  }
+});
+
+test("a failed record with no count is measured, and its failure is the first", needsTs, async (t) => {
+  const { dir, seen, refresh } = await failing(t);
+  await refresh();
+  const twice = await refresh();
+  const facts = JSON.parse(readFileSync(join(dir, FACTS), "utf8"));
+  facts.semantic = { ran: true, status: twice.status, reason: twice.reason, typedResolutionRate: null, carried: false, measuredAt: twice.measuredAt, measuredUnder: twice.measuredUnder };
+  writeFileSync(join(dir, FACTS), JSON.stringify(facts));
+
+  assert.equal((await refresh()).failures, 1);
+  assert.equal(seen.runs, 3);
 });
 
 test("an ok tier is measured on every refresh", needsTs, async (t) => {

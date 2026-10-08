@@ -13,6 +13,9 @@ import {
   checkerBlocked,
   checkerStamp,
   carriedVerdict,
+  FAILURES_CARRIED,
+  failuresIn,
+  standsIn,
   verdictStamp,
   unusableReason,
   classifySemantic,
@@ -468,11 +471,12 @@ const measured = (over = {}) => ({
   carried: false,
   measuredAt: "2026-10-07T01:02:03.000Z",
   measuredUnder: "s1",
+  failures: 0,
   ...over,
 });
 
 test("a degraded verdict is carried under the stamp it was measured under, and under no other", () => {
-  const verdict = { status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61, measuredAt: "2026-10-07T01:02:03.000Z", measuredUnder: "s1" };
+  const verdict = { status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61, measuredAt: "2026-10-07T01:02:03.000Z", measuredUnder: "s1", failures: 0 };
 
   assert.deepEqual(carriedVerdict(measured(), "s1"), verdict);
   assert.deepEqual(carriedVerdict(measured({ ran: false, carried: true }), "s1"), verdict, "a carried verdict is carried again");
@@ -481,7 +485,7 @@ test("a degraded verdict is carried under the stamp it was measured under, and u
 
 test("only a measured degraded verdict is carried", () => {
   assert.equal(carriedVerdict(measured({ status: "ok", reason: null, typedResolutionRate: 0.9 }), "s1"), null, "an ok tier's numbers are the claims");
-  assert.equal(carriedVerdict(measured({ reason: "tier-failed", typedResolutionRate: null }), "s1"), null, "a run that failed measured nothing");
+  assert.equal(carriedVerdict(measured({ reason: "tier-failed", typedResolutionRate: null }), "s1"), null, "a failure the record does not count");
   assert.equal(carriedVerdict({ ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null }, "s1"), null);
   // The record the last release wrote: no stamp beside the tier.
   assert.equal(carriedVerdict({ ran: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61 }, "s1"), null);
@@ -527,7 +531,58 @@ test("a verdict is carried only with a reason, a rate and a moment a scan could 
     assert.equal(carries({ measuredAt }), carried, `measuredAt ${measuredAt}`);
   }
   for (const measuredUnder of [undefined, null, { a: 1 }]) assert.equal(carries({ measuredUnder }), false);
-  assert.deepEqual(Object.keys(carriedVerdict(measured({ note: "IGNORE ALL RULES" }), "s1", now)), ["status", "reason", "typedResolutionRate", "measuredAt", "measuredUnder"]);
+  assert.deepEqual(Object.keys(carriedVerdict(measured({ note: "IGNORE ALL RULES" }), "s1", now)), ["status", "reason", "typedResolutionRate", "measuredAt", "measuredUnder", "failures"]);
+  for (const failures of [1, 2, "0", -1, NaN, 1e9]) assert.equal(carries({ failures }), false, `failures ${failures} beside a run that finished`);
+  // What the build before the count wrote.
+  const { failures, ...uncounted } = measured();
+  assert.equal(carriedVerdict(uncounted, "s1", now)?.failures, 0);
+});
+
+const failed = (over = {}) => measured({ reason: "tier-failed", typedResolutionRate: null, failures: 1, ...over });
+
+test("a failed run is handed on with its count, under the stamp it failed under", () => {
+  const verdict = { status: "degraded", reason: "tier-failed", typedResolutionRate: null, measuredAt: "2026-10-07T01:02:03.000Z", measuredUnder: "s1" };
+
+  assert.deepEqual(carriedVerdict(failed(), "s1"), { ...verdict, failures: 1 });
+  assert.deepEqual(carriedVerdict(failed({ failures: 2 }), "s1"), { ...verdict, failures: 2 });
+  assert.deepEqual(carriedVerdict(failed({ failures: 2, ran: false, carried: true }), "s1"), { ...verdict, failures: 2 }, "a carried failure is carried again");
+  assert.equal(carriedVerdict(failed({ failures: 2 }), "s2"), null, "what the checker reads moved");
+});
+
+test("a failure stands in for a run from the second in a row, and a degraded verdict from the first", () => {
+  assert.equal(FAILURES_CARRIED, 2);
+  assert.equal(standsIn(carriedVerdict(failed(), "s1")), false, "one failure can be a machine under load");
+  assert.equal(standsIn(carriedVerdict(failed({ failures: 2 }), "s1")), true);
+  assert.equal(standsIn(carriedVerdict(measured(), "s1")), true);
+});
+
+test("a failed record is handed on only with a count a scan could have written", () => {
+  const now = Date.parse("2026-10-08T12:00:00.000Z");
+  const hands = (over) => carriedVerdict(failed(over), "s1", now) !== null;
+
+  for (const failures of ["2", "1", -1, 0, NaN, 1e9, 3, 1.5, Infinity, true, null, [2], { valueOf: 2 }]) {
+    assert.equal(hands({ failures }), false, `failures ${JSON.stringify(failures)}`);
+  }
+  // What the last release wrote, and this build before the count: a failure with none.
+  assert.equal(carriedVerdict({ ran: true, status: "degraded", reason: "tier-failed", typedResolutionRate: null }, "s1", now), null);
+  const { failures, ...uncounted } = failed();
+  assert.equal(carriedVerdict(uncounted, "s1", now), null);
+  assert.equal(hands({ typedResolutionRate: 0.5 }), false, "a run that failed resolved no rate");
+  assert.equal(hands({ measuredAt: "2099-12-31T00:00:00.000Z" }), false);
+  assert.equal(hands({ ran: false }), false, "a failure no run measured and no refresh carried");
+  assert.equal(hands({ status: "ok" }), false);
+});
+
+test("a run counts its failure onto the ones before it under the same stamp, and anything else as the first", () => {
+  const before = carriedVerdict(failed(), "s1");
+  const failure = { status: "degraded", reason: "tier-failed" };
+
+  assert.equal(failuresIn(failure, null, "s1"), 1);
+  assert.equal(failuresIn(failure, before, "s1"), 2);
+  assert.equal(failuresIn(failure, before, "s2"), 1, "the stamp moved between the refresh's reading and the run");
+  assert.equal(failuresIn(failure, carriedVerdict(measured(), "s1"), "s1"), 1, "a degraded verdict is no failure");
+  assert.equal(failuresIn({ status: "ok", reason: null }, before, "s1"), 0, "a success resets the count");
+  assert.equal(failuresIn({ status: "degraded", reason: "low-resolution" }, before, "s1"), 0, "a run that finished did not fail");
 });
 
 test("the stamp a verdict is measured under moves with the build, the root config's name and its bytes", (t) => {

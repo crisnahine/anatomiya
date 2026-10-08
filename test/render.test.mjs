@@ -2734,6 +2734,16 @@ test("the overview says a carried verdict in the same one line", () => {
   assert.equal(out.replace(" when measured 2026-10-08 UTC", ""), measured, "a carried verdict and a measured one differ by more than the mark");
 });
 
+test("the overview says a carried failure in the one line a failure has, with the day beside it", () => {
+  const semantic = { ran: false, carried: true, status: "degraded", reason: "tier-failed", typedResolutionRate: null, measuredAt: "2026-10-08T01:02:03.000Z", failures: 2 };
+  const measured = renderOverview(result({ semantic: { ...semantic, ran: true, carried: false } }), { uncovered: 0 });
+  const out = renderOverview(result({ semantic }), { uncovered: 0 });
+
+  assert.match(measured, /^- type-checked claims are not counted: no type lookups resolved \(tier-failed\)$/m, measured);
+  assert.match(out, /^- type-checked claims are not counted: no type lookups resolved when measured 2026-10-08 UTC \(tier-failed\)$/m, out);
+  assert.equal(out.replace(" when measured 2026-10-08 UTC", ""), measured, "a carried failure and a measured one differ by more than the mark");
+});
+
 /* --- which directives a file had no room to state (#70) --- */
 
 test("the directives an area file had no room for are recoverable from the record", () => {
