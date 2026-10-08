@@ -55,8 +55,11 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  *
  * `reason` is one of: scanned, current, failed, failed-before, busy, git-busy,
  * tracked, no-map, outside, no-head.
+ *
+ * `git` is a test seam with one use: it answers whether a target's overview
+ * is committed, which only a git that fails on that question can prove.
  */
-export async function refreshRepository(root, { scan = runScan, pin = runPin } = {}) {
+export async function refreshRepository(root, { scan = runScan, pin = runPin, git = gitBuffered } = {}) {
   const store = resolveInside(root, STORE_DIR);
   if (store === null) return { reason: "outside", pinned: false };
   // Only a checkout's own root: a scan resolves the root from wherever it is
@@ -84,7 +87,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   for (;;) {
     let round;
     try {
-      round = await passes(root, store, { scan, pin });
+      round = await passes(root, store, { scan, pin, git });
     } finally {
       release(lock);
     }
@@ -97,7 +100,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
 }
 
 /** Follow the pin, then rescan until HEAD holds still or the passes run out. */
-async function passes(root, store, { scan, pin }) {
+async function passes(root, store, { scan, pin, git }) {
   const { accepted, held } = await followPin(root, pin);
   const pinned = accepted !== null;
   for (let pass = 0; pass < PASSES; pass++) {
@@ -114,7 +117,7 @@ async function passes(root, store, { scan, pin }) {
       return { reason: state.ok ? "current" : "failed-before", pinned, held };
     }
     try {
-      const leaveAlone = await committedTargets(root);
+      const leaveAlone = await committedTargets(root, git);
       // A checker the last run measured as degraded, with nothing it reads
       // moved since, comes out the same and costs most of the scan. A scan run
       // by hand is handed no verdict and measures. The stamp reads the root
@@ -423,12 +426,12 @@ async function mapTracked(root) {
  * only the copy another tool reads from the remote has no other way to keep
  * the local one current. A question git could not answer leaves the target alone.
  */
-async function committedTargets(root) {
+async function committedTargets(root, git) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
   const committed = [];
   for (const t of Object.values(TARGETS)) {
     if (isClaude(t) || targetState(root, t) !== "on") continue;
-    const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${t.dir}/${overviewName(t)}`]);
+    const r = await git(root, ["ls-files", "-z", "--", `${magic}${t.dir}/${overviewName(t)}`]);
     if (!r.ok || r.stdout.length > 0) committed.push(t.id);
   }
   return committed;

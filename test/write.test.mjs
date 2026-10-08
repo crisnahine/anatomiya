@@ -2113,7 +2113,7 @@ test("a foreign overview does not turn a target on", (t) => {
   for (const target of OTHERS) {
     assert.deepEqual({ state: left.targets[target.id].state, on: left.targets[target.id].on }, { state: "off", on: false });
     assert.deepEqual(left.targets[target.id].foreign, [overviewName(target)], "said to be somebody else's");
-    assert.deepEqual(left.targets[target.id].replaced, []);
+    assert.deepEqual(Object.keys(left.targets[target.id]).filter((k) => k === "replaced" || k === "listed"), [], "only Claude Code's directory has a file replaced or a listing to report");
     assert.deepEqual(namesIn(dir, target), [overviewName(target)]);
     assert.equal(readFileSync(join(dir, target.dir, overviewName(target)), "utf8"), HAND);
   }
@@ -2154,7 +2154,7 @@ test("a person's file at a name a target that is merely on writes is left as it 
 
   for (const target of OTHERS) {
     const mine = plan.targets[target.id];
-    assert.deepEqual({ state: mine.state, on: mine.on, remove: mine.remove, replaced: mine.replaced }, { state: "on", on: true, remove: [], replaced: [] });
+    assert.deepEqual({ state: mine.state, on: mine.on, remove: mine.remove }, { state: "on", on: true, remove: [] });
     assert.deepEqual(mine.foreign, [areaName(target, b.id)]);
     assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a), "the name is not planned");
     assert.equal(readFileSync(join(dir, target.dir, areaName(target, b.id)), "utf8"), HAND);
@@ -2300,7 +2300,7 @@ test("a volume that tells two spellings apart keeps both: the other spelling is 
           const mine = writeMap(result(dir, [a, b]), { dryRun, targets }).targets[target.id];
           const how = `${said}, ${targets ? "named" : "plain"}, ${dryRun ? "dry run" : "real write"}`;
           assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a, b), `${how}: every exact name is planned`);
-          assert.deepEqual({ foreign: mine.foreign, unknown: mine.unknown, remove: mine.remove, replaced: mine.replaced }, { ...others, remove: [], replaced: [] }, how);
+          assert.deepEqual({ foreign: mine.foreign, unknown: mine.unknown, remove: mine.remove }, { ...others, remove: [] }, how);
         }
       }
       assert.deepEqual(namesIn(dir, target), all, said);
@@ -2331,7 +2331,7 @@ function oddEntryAtAnAreaName(t, make) {
     const plan = writeMap(result(dir, [a, b]), { dryRun });
     for (const target of OTHERS) {
       const mine = plan.targets[target.id];
-      assert.deepEqual({ state: mine.state, on: mine.on, remove: mine.remove, replaced: mine.replaced }, { state: "on", on: true, remove: [], replaced: [] });
+      assert.deepEqual({ state: mine.state, on: mine.on, remove: mine.remove }, { state: "on", on: true, remove: [] });
       assert.deepEqual(mine.foreign, [areaName(target, b.id)]);
       assert.deepEqual(mine.write.map((w) => w.name).sort(), mapOf(target, a), "the name is not planned");
     }

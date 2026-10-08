@@ -12,6 +12,7 @@ import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
 import { noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
+import { gitBuffered } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
 import { needsSymlinks } from "./platform.mjs";
@@ -403,6 +404,35 @@ test("a committed Cursor or Copilot copy is held while the refresh rewrites the 
     await runScan(dir);
     assert.match(readFileSync(join(dir, overview), "utf8"), /lib\/services/, `${id}: the next scan by hand rewrites it`);
   }
+});
+
+test("a target git cannot be asked about is held as a committed one is", async (t) => {
+  const dir = await scanned(t);
+  await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
+  const overview = join(dir, ".cursor", "rules", "anatomiya-overview.mdc");
+  const before = readFileSync(overview, "utf8");
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+  const asked = [];
+  // Git answers every question but whether Cursor's overview is committed.
+  const git = async (root, args, options) => {
+    if (args[0] !== "ls-files" || !args.at(-1).endsWith(".cursor/rules/anatomiya-overview.mdc")) return gitBuffered(root, args, options);
+    asked.push(args.at(-1));
+    return { ok: false, code: 128, oversize: false, stdout: "", error: "fatal: index file corrupt" };
+  };
+  const held = [];
+  const scan = async (root, options) => {
+    held.push(options?.leaveAlone ?? []);
+    return runScan(root, options);
+  };
+
+  assert.equal((await refreshRepository(dir, { scan, git })).reason, "scanned");
+
+  assert.equal(asked.length, 1);
+  assert.deepEqual(held, [["cursor"]], "the one nobody could ask about, and not the one git answered for");
+  assert.equal(readFileSync(overview, "utf8"), before, "so a copy the repository may commit is not rewritten");
+  assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), /lib\/services/);
+  assert.match(readFileSync(join(dir, ".github", "instructions", "anatomiya-overview.instructions.md"), "utf8"), /lib\/services/);
 });
 
 test("a committed Claude map still stops the refresh whole, whatever else is on", async (t) => {
