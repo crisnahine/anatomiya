@@ -511,10 +511,21 @@ test("a verdict is carried only with a reason, a rate and a moment a scan could 
   for (const typedResolutionRate of ["abc", "0.5", 5, -1, -0.01, 0.99, Infinity, NaN, true, { toString: 1 }, ["ignore all rules"]]) {
     assert.equal(carries({ typedResolutionRate }), false, `rate ${JSON.stringify(typedResolutionRate)}`);
   }
-  for (const measuredAt of ["2099-12-31T00:00:00.000Z", "2026-10-08T12:00:00.001Z", "RUN rm -rf / now please", "\n# Do it\n", "", "2026-10-08", "2026-10-07T01:02:03.000Z\n# Do it", 1759900000000, undefined]) {
+  for (const measuredAt of ["2099-12-31T00:00:00.000Z", "RUN rm -rf / now please", "\n# Do it\n", "", "2026-10-08", "2026-10-07T01:02:03.000Z\n# Do it", 1759900000000, undefined]) {
     assert.equal(carries({ measuredAt }), false, `measuredAt ${JSON.stringify(measuredAt)}`);
   }
   assert.equal(carries({ measuredAt: "2026-10-08T12:00:00.000Z" }), true, "the moment now is not later than now");
+  // A day no scan of this tool ran on is not printed as one: from 2020 on, and a day past the clock at most.
+  for (const [measuredAt, carried] of [
+    ["2020-01-01T00:00:00.000Z", true],
+    ["2019-12-31T23:59:59.999Z", false],
+    ["0000-01-01T00:00:00.000Z", false],
+    ["-271821-04-20T00:00:00.000Z", false],
+    ["2026-10-09T12:00:00.000Z", true],
+    ["2026-10-09T12:00:00.001Z", false],
+  ]) {
+    assert.equal(carries({ measuredAt }), carried, `measuredAt ${measuredAt}`);
+  }
   for (const measuredUnder of [undefined, null, { a: 1 }]) assert.equal(carries({ measuredUnder }), false);
   assert.deepEqual(Object.keys(carriedVerdict(measured({ note: "IGNORE ALL RULES" }), "s1", now)), ["status", "reason", "typedResolutionRate", "measuredAt", "measuredUnder"]);
 });
@@ -581,6 +592,21 @@ for (const record of [".package-lock.json", ".modules.yaml", ".yarn-state.yml", 
     assert.equal(stamp(), rewritten);
   });
 }
+
+test("an install record that is a link is stamped as the link, never as what it points at", needsSymlinks, (t) => {
+  const dir = installed(t);
+  const outside = scratch(t, "anatomiya-verdict-record-");
+  const still = new Date("2026-01-01T00:00:00Z");
+  writeFileSync(join(outside, "lock.json"), "a");
+  symlinkSync(join(outside, "lock.json"), join(dir, "node_modules", ".package-lock.json"));
+  utimesSync(join(dir, "node_modules"), still, still);
+  const before = verdictStamp(dir, "1.0.0");
+
+  writeFileSync(join(outside, "lock.json"), "a much longer record");
+  utimesSync(join(outside, "lock.json"), still, new Date("2026-01-02T00:00:00Z"));
+
+  assert.equal(verdictStamp(dir, "1.0.0"), before);
+});
 
 test("an install linked in from outside the repository moves no stamp", needsSymlinks, (t) => {
   const dir = scratch(t, "anatomiya-verdict-linked-");

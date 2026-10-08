@@ -457,7 +457,8 @@ Say the quiet part plainly.
   a link is not opened for this either: its refusal is hashed in place of its bytes. `node_modules`
   and the install record in it are read with a stat of the entry itself, never through a link. The
   refresh carries a recorded verdict only where a scan could have written it: a reason from the
-  checker's own list, a rate that reason allows, and a moment not after now. A record edited into
+  checker's own list, a rate that reason allows, and a moment from 2020 on and at most a day after
+  now. The reason and the day are encoded where the overview prints them. A record edited into
   anything else is measured over, so no text from the record reaches the overview.
 - **No guarantee the map is correct.** The gates in `plugins/anatomiya/lib/reduce.mjs`, with their numbers in `gates.mjs`, are thresholds, not proofs. A
   wrong directive is a correctness problem, not a security one, but it is worth knowing that a

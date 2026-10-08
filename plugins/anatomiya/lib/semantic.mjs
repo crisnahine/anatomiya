@@ -168,11 +168,16 @@ function classified(reason, rate) {
 
 const isShare = (rate, most) => typeof rate === "number" && rate >= 0 && rate <= most;
 
-/** Whether `text` is a moment as a scan writes one, and not after `now`. */
+// No scan of this tool ran before it, so a day before it is one a hand wrote.
+const EARLIEST_MOMENT = Date.UTC(2020, 0, 1);
+// What a clock set wrong, on the machine that measured or on this one, is allowed.
+const CLOCK_SLACK_MS = 24 * 60 * 60 * 1000;
+
+/** Whether `text` is a moment as a scan writes one, from 2020 on and no more than a day after `now`. */
 function isMomentBy(text, now) {
   if (typeof text !== "string") return false;
   const at = Date.parse(text);
-  return Number.isFinite(at) && at <= now && new Date(at).toISOString() === text;
+  return at >= EARLIEST_MOMENT && at <= now + CLOCK_SLACK_MS && new Date(at).toISOString() === text;
 }
 
 function hasConfig(root) {
