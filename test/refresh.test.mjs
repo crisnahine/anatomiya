@@ -477,6 +477,91 @@ test("a file locked in another tool's directory costs a refresh that directory a
   ]);
 });
 
+/**
+ * A map in all three directories with a second area committed since, and a rename onto Cursor's overview that answers
+ * as Windows does over an open file for as long as `holder.held` is true. `age()` moves the record's moment back past
+ * the retry clock.
+ */
+async function withCursorHeld(t) {
+  const dir = await scanned(t);
+  await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
+  const overview = join(dir, ".cursor", "rules", "anatomiya-overview.mdc");
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  const holder = { held: true, scans: 0 };
+  fs.renameSync = (from, to) => {
+    if (holder.held && String(to) === overview) throw Object.assign(new Error(`EBUSY: resource busy or locked, rename '${from}'`), { code: "EBUSY" });
+    return real(from, to);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+  const statePath = join(dir, REFRESH_STATE);
+  const state = () => JSON.parse(readFileSync(statePath, "utf8"));
+  const age = () => writeFileSync(statePath, JSON.stringify({ ...state(), at: new Date(Date.now() - 31 * 60 * 1000).toISOString() }));
+  const scan = async (root, options) => {
+    holder.scans++;
+    return runScan(root, options);
+  };
+  const refresh = async () => (await refreshRepository(dir, { scan })).reason;
+  return { dir, overview, holder, state, age, refresh };
+}
+
+test("a directory a lock stopped is written by the next refresh the retry clock lets through, and the mark is cleared", async (t) => {
+  const { overview, holder, state, age, refresh } = await withCursorHeld(t);
+  const before = readFileSync(overview, "utf8");
+
+  assert.equal(await refresh(), "scanned");
+  assert.deepEqual(state().stopped, [".cursor/rules"]);
+  assert.equal(state().ok, true, "Claude Code's map was written");
+  holder.held = false;
+  assert.equal(await refresh(), "current", "not before the clock");
+  assert.equal(readFileSync(overview, "utf8"), before);
+  age();
+
+  assert.equal(await refresh(), "scanned");
+
+  assert.match(readFileSync(overview, "utf8"), /lib\/services/);
+  assert.equal("stopped" in state(), false);
+  age();
+  assert.equal(await refresh(), "current");
+  assert.equal(holder.scans, 2);
+});
+
+test("a directory that stays stopped brings a refresh due once each retry interval and no more often", async (t) => {
+  const { holder, state, age, refresh } = await withCursorHeld(t);
+
+  assert.equal(await refresh(), "scanned");
+  assert.equal(await refresh(), "current");
+  assert.equal(await refresh(), "current");
+  assert.equal(holder.scans, 1);
+  for (const scans of [2, 3]) {
+    age();
+    assert.equal(await refresh(), "scanned");
+    assert.equal(await refresh(), "current");
+    assert.equal(holder.scans, scans);
+    assert.deepEqual(state().stopped, [".cursor/rules"]);
+    assert.equal(state().ok, true);
+  }
+});
+
+test("a refresh that found nothing stopped leaves no mark and is current however old its record", async (t) => {
+  const { holder, state, age, refresh } = await withCursorHeld(t);
+  holder.held = false;
+
+  assert.equal(await refresh(), "scanned");
+
+  assert.equal("stopped" in state(), false);
+  age();
+  assert.equal(await refresh(), "current");
+  assert.equal(holder.scans, 1);
+});
+
 test("a copy committed under another letter case is left alone where the repository folds case", needsFoldingFilesystem, async (t) => {
   const dir = await scanned(t);
   await runScan(dir, { targets: ["claude", "cursor"] });

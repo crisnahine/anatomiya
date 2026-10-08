@@ -295,7 +295,10 @@ staged for it are removed, and the record is written a second time, naming for t
 files it held before. The `.claude/rules` map and the other directory are written, the exit is 0,
 and the scan says `.cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could
 not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change
-its mode, then scan again`. That directory reads `unknown` in `--format json`. A temporary file an
+its mode, then scan again`. That directory reads `unknown` in `--format json`. A refresh that
+leaves a directory this way names it under `stopped` in `refresh.json`, and a refresh started
+more than 30 minutes later scans the same checkout again, for as long as a directory stays stopped
+and no more often. A temporary file an
 earlier scan left there, removed before the locked file was met, stays removed. Where the put-back
 or the second record write fails, the scan refuses whole and everything is put back. A dry run
 renames nothing, so past a locked file it says `would write`. A process killed between the put-back
