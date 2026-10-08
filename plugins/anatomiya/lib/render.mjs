@@ -1068,7 +1068,7 @@ function historyWindow(shallow) {
  */
 const historyClaim = (held, gated) =>
   `history truncated: shallow clone${held ? `, ${held}` : ""}, so author counts are a floor` +
-  (gated > 0 ? ` and ${plural(gated, "claim")} print as counts on the author gate` : "");
+  (gated > 0 ? ` and ${plural(gated, "claim")} ${gated === 1 ? "prints" : "print"} as counts on the author gate` : "");
 
 /**
  * The claim alone, for the overview.
