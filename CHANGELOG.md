@@ -102,15 +102,18 @@ scanned by 0.13.4 and by this version.
 - Test files and namesake tests in those seven languages. A test file is found by what the
   language's own tool collects: `_test.go`; `test_*.py`, `*_test.py` and `conftest.py`; under a test
   tree, `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and `*Test.php`
-  for PHP; a `.rs` file directly under a crate's `tests`. A test tree is `test`, `tests` and what
+  for PHP. In Rust a `.rs` file directly under a crate's `tests` is a test file with a case in it
+  or none, and so is one holding a `#[test]` that sits under any other `tests` directory or is
+  named `tests.rs`. A test tree is `test`, `tests` and what
   the language's build names one: a Gradle source set ending in `Test`, a .NET project named
   `X.Tests` or `X.Test`, a `Test` or `Tests` directory in PHP. The tests line names the runner: `389
   go test specs`, `505 of 522 pytest specs under tests`, `38 of 40 xunit specs under
   test/Serilog.Tests`. A directory named exactly `tests` prints as `tests/` on its own line, since
   the tests line is labelled `tests`. A namesake test is matched inside the language, across the
   layout its build uses: `55 of 152 .kt files under okhttp/src/commonJvmAndroid/kotlin/okhttp3 have
-  a namesake test`, `28 of 113 .cs files under src/Serilog have a namesake test`. A Rust file that
-  holds its own `#[test]` functions is asked for no namesake and is counted apart: `0 of 56 .rs
+  a namesake test`, `28 of 113 .cs files under src/Serilog have a namesake test`. A `#[test]` in any
+  other Rust file leaves it a source file that holds its own tests, which is asked for no namesake
+  and is counted apart: `0 of 56 .rs
   files under crates have a namesake test; 34 hold their own tests`. A Python package is asked for a
   test of its directory's name, `flask/json/__init__.py` for `tests/test_json.py`. A C# test project
   is paired by name only (`Serilog.Tests` with `Serilog`), so `Foo` tested from `Bar.Tests` gets no

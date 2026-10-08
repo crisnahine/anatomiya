@@ -661,7 +661,7 @@ parser was run for Java, C#, Rust or Kotlin, so the files of those four language
 | Go | `_test.go` | doc comments | naming (a name's case is its visibility); imports (a dot import is 1 of 9,863 lines) |
 | Java | `*Test`, `*Tests`, `*IT` under a test tree | doc comments, handlers | naming (1.0000 in all three); imports (a default) |
 | C# | `*Tests`, `*Test` under a test tree | doc comments | handlers (repositories differ by 0.10); naming (1.0000); imports (no wildcard form) |
-| Rust | a `.rs` file directly under a crate's `tests` | doc comments | naming (the compiler lints it); imports (repositories differ by 0.10) |
+| Rust | a `.rs` file directly under a crate's `tests`; one holding a `#[test]` under any other `tests` directory or named `tests.rs` | doc comments | naming (the compiler lints it); imports (repositories differ by 0.10) |
 | Kotlin | `*Test`, `*Tests`, `*IT` under a test tree | doc comments | handlers (repositories differ by 0.12); naming (0.95 to 1.00); imports (ktlint's default rule) |
 
 The bar is one repository under 0.90 and a spread of 0.15. No filename claim is asked of any of the

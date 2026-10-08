@@ -128,7 +128,8 @@ A directory whose name puts what is under it among the tests: `test`, `tests`, `
 `__tests__`, `cypress` and `e2e` for every family, and what a family's own build names one,
 which is a Gradle source set ending in `Test`, a .NET project named `X.Tests` or `X.Test`, and
 a `Test` or `Tests` directory in PHP. Sitting in one does not make a file a test: its name does,
-or for Rust its place.
+or in Rust its place directly under a crate's `tests`, or a `#[test]` in it under any other `tests`
+directory.
 _Avoid_: test folder, test root, spec directory
 
 **Namesake test**:
@@ -142,9 +143,10 @@ file, outside every test tree of its family.
 _Avoid_: unit test, matching spec, paired test, sibling test
 
 **Holds its own tests**:
-Said of a Rust source file with a `#[test]` function in it, in a `mod tests` or beside the code,
-that is not itself a test file. It stays a source file, is asked for no namesake test, and is
-counted in a clause of its own: `34 hold their own tests`.
+Said of a Rust source file with a `#[test]` function in it, in a `mod tests` or beside the code.
+The same attribute in a file under a `tests` directory, or in one named `tests.rs`, makes that file
+a test file, and it is not said to hold its own tests. A file that does stays a source file, is
+asked for no namesake test, and is counted in a clause of its own: `34 hold their own tests`.
 _Avoid_: inline test file, self-tested, unit-tested
 
 **Paired test project**:
