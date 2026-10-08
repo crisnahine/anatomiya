@@ -51,7 +51,14 @@ or at run time. Each is a byte-for-byte copy of the file in its grammar's npm pa
 `plugins/anatomiya/grammars/grammars.json` records the package, the version and the SHA-256. `npm run validate` and
 the test suite refuse a copy that does not hash to its entry, or to the installed package's file.
 On your machine `doctor` and `setup` hash each grammar file against that manifest and name one that
-does not match, or a manifest that is not there. A scan does not hash: it loads the file that is there.
+does not match, or a manifest that is not there. A scan does not hash: it loads the file that is
+there, where that is a regular file of at most 32 MB. An entry at a grammar's name that is a link,
+a directory, a fifo or a device, or a larger file, is never read, and `scan`, `check` and `doctor`
+name it as `is not the file this plugin shipped`. A manifest that is no regular file or is over
+64 kB is never read either, and `doctor` answers as it does for a missing one. On Windows a link is followed and what it leads to is typed. What a
+grammar's loader says when a file does not load is printed through the encoder. `.gitattributes`
+marks `*.wasm` binary, so no git setting rewrites a grammar's line endings on checkout, and a test
+asks git for that attribute.
 The packages of the seven grammars are dev dependencies of this repository at exact versions and no
 dependency of the plugin, so installing the plugin never fetches one:
 `tree-sitter-python@0.25.0`, `tree-sitter-php@0.24.2`, `tree-sitter-go@0.25.0`,
@@ -265,7 +272,13 @@ removed, and neither is a file under any other name, keyed or not. So the most a
 removed is a file it shipped under this tool's own name carrying this tool's own key, or a regular
 file it shipped under such a name plus the suffix a staged file carries, `.tmp-<pid>-<16 hex>`:
 that one is removed with no key asked, where no process of that id is running, by a scan that
-writes or removes in the directory.
+writes or removes in the directory. The store is swept the same way for three names: a regular file
+in `.claude/anatomiya` named `facts.json`, `layout.json` or `refresh.json` plus that suffix, whose
+stager is not running, is removed by a scan that writes, and the summary counts them (`3 temporary
+files an earlier scan left in .claude/anatomiya were removed`). `baseline.json.tmp-...` and
+`refresh.lock.tmp-...` are not swept, and neither is a link, a directory or a fifo at any of these
+names. A dry run removes none and says how many a scan would. No temporary file is opened before it
+is removed.
 
 A scan that refuses leaves nothing behind. Every refusal above is decided while the plan is made,
 before a directory is created or a byte is written, and a dry run refuses the same way; the
@@ -273,8 +286,23 @@ before a directory is created or a byte is written, and a dry run refuses the sa
 scan that names the target: a plain scan and a refresh write the `.claude/rules` map, leave that
 directory as it is and say `.cursor/rules could not be written`, with the remedy. A failure after the writes began puts back every file
 already replaced, in every directory, removes the temporary files, and removes a Cursor or Copilot
-directory this run made if it is empty. A map file that is locked or read-only is such a failure,
-and the scan names the file and says to close what holds it or change its mode. On a repository with no map yet, a failure at that stage can
+directory this run made if it is empty. A map file that is locked or read-only (`EPERM`, `EACCES`
+or `EBUSY` from the rename or the removal) is such a failure in `.claude/rules`, in
+`.claude/anatomiya`, and in a Cursor or Copilot directory the scan named: the scan names the file
+and says to close what holds it or change its mode. In a Cursor or Copilot directory the scan did
+not name, it stops that directory alone. What was replaced there is put back, the temporary files
+staged for it are removed, and the record is written a second time, naming for that directory the
+files it held before. The `.claude/rules` map and the other directory are written, the exit is 0,
+and the scan says `.cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could
+not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change
+its mode, then scan again`. That directory reads `unknown` in `--format json`. A temporary file an
+earlier scan left there, removed before the locked file was met, stays removed. Where the put-back
+or the second record write fails, the scan refuses whole and everything is put back. A dry run
+renames nothing, so past a locked file it says `would write`. A process killed between the put-back
+and the second record write leaves the record naming the files that scan planned. An area file the
+directory holds under a name that scan did not plan then carries the key and is not on the record:
+later scans count it as an entry left there and do not remove it, and a scan that leaves the target
+out by name does. On a repository with no map yet, a failure at that stage can
 leave `.claude/rules` and `.claude/anatomiya` behind, empty.
 
 One window is left. The last look at a directory and the `rename` or `unlink` that follows it are
@@ -294,7 +322,8 @@ on a handle typed before the read. A team's own rule files there are never opene
 
 One read is whole, and this tool puts no cap on it. Before its first rename, a scan that writes
 reads whole every file it is about to replace or remove, through `O_NOFOLLOW`, so it can put that
-file back if a later step fails. Those files are `facts.json` and `layout.json` in
+file back if a later step fails. A temporary file an earlier scan left is the exception: it is
+removed without being opened, and is not put back. Those files are `facts.json` and `layout.json` in
 `.claude/anatomiya`; in `.claude/rules`, every file at a name the scan writes, with the key or
 without it, and every file it removes; and in `.cursor/rules` and `.github/instructions`, the files
 it replaces or removes there, which all carry the key, since a person's file at a planned name is
