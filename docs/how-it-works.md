@@ -78,10 +78,24 @@ and a claim computed over that describes no code anyone works on. Files with now
 reported as uncovered in the overview instead. On the 2,468 file repository the README's overview
 comes from, that was about 8% of its files (the README prints the count). Expect a larger share on a tree with many small leaf directories, and much less on a flat one.
 
+The files directly at the root are an area of their own in one case: their language builds the
+root as a package like any directory, which Go's does (`rootPackage` on its declaration in
+`langs.mjs`), and they clear the floor counted alone. gin holds 40 of its 98 files there and caddy
+39 of 371. Nothing folds into that area. A scan counts it over the root files of that language
+alone, so a root file of another language and a directory under the floor stay uncovered. In
+`check` it owns a path that holds no slash and none below (`areaOwner`).
+It prints as `the repository root`, and a directory of that name prints as `./the repository root`.
+The record and `--format json` keep its path, `.`. Given up: in `check` it is still the furthest
+enclosing area of every other one, so a subdirectory area with no slot of its own for a dimension
+is held to the root area's claim at FIX, with `counted in the repository root, which this directory
+sits inside`, though the root area's count was not taken over that directory and its file is not
+delivered there.
+
 Above the ceiling the smallest areas fold into the nearest ancestor that is itself an area, smallest
 first, until the count fits. Where no ancestor is an area, which happens whenever a directory holds
 only subdirectories, the parent is created rather than the files dropped: leaving it alone orphaned
-76,000 of 100,000 files on a measured repository. The repository root is still never a target.
+76,000 of 100,000 files on a measured repository. The repository root is still never a target,
+whether or not it is an area.
 
 Raising the ceiling is not free coverage. Taking it to 1,000 split a measured 2,468-file repository
 into 209 smaller areas and dropped stated claims from 194 to 143, because a smaller area holds fewer
@@ -93,7 +107,9 @@ name carries no extension, such as a `Rakefile`, gets one more pattern per such 
 cover entry so a negation cuts it out of a foreign subtree too. A glob may never end in a bare `/**`. The
 matcher strips a trailing `/**` before matching, so `app/**` becomes `app`, gitignore semantics then
 forbid re-including anything beneath it, and an exclusion written against that pattern silently does
-nothing. There is an assertion in the code rather than a comment.
+nothing. There is an assertion in the code rather than a comment. The root area's patterns are
+neither general shape: one pattern anchored at the root, `/*.go`, which that reader matches at the
+root alone where `*.go` matches at every depth, and never a recursive one.
 
 The globs match the files the area's counts were taken over, and no others. One recursive glob from
 the area root does not: a deeper directory that became its own area is still under it, and the
@@ -444,7 +460,8 @@ checker reads only those two names. Where any of these is missing the checker st
 facts record says why in `semantic.reason`: `no-checked-files`, `plain-javascript`,
 `no-dependencies` or `not-installed`, which also covers a `typescript` of another major that doctor
 names. A background refresh leaves it off in one more case: the record's tier reads `degraded`,
-a run measured it, and the stamp it was measured under still holds, which is this build's version,
+a run that finished measured it or two runs in a row failed (`semantic.failures` 2), and the stamp
+it was measured under still holds, which is this build's version,
 whether the root holds packages, where `typescript` resolves, the size and modification time of
 `node_modules` and of the install record in it (`.package-lock.json`, `.modules.yaml`,
 `.yarn-state.yml` or `.yarn-integrity`), and the name and bytes of the config the root is read
@@ -453,11 +470,15 @@ An install or a config edit starts no refresh by itself, since the stamp that st
 neither the install record nor the config's bytes: the checker is measured again by the next
 refresh a commit, a checkout or a pull starts, or by a scan run by hand.
 The record has to be one a scan could have written: a reason the classifier or the config reader
-produces, a rate that reason allows, and a moment from 2020 on and at most a day after now; any other record is measured
-over. The refresh then writes the recorded status, reason and rate with
+produces, a rate that reason allows, a failure count that reason allows (1 or 2 beside `tier-failed`,
+which has no rate, and none beside any other), and a moment from 2020 on and at most a day after now; any other record is measured
+over. The refresh then writes the recorded status, reason, rate and failure count with
 `semantic.carried` true and the run's `semantic.measuredAt`, and the overview's sentence adds the
 UTC day it was measured. Every other byte of the map is what the measuring scan wrote, since a degraded
-tier's rows are in neither. A
+tier's rows are in neither. A failed run measured nothing, so it is not carried on its first
+sighting: the refresh hands its verdict to the rescan, the checker runs, and a second failed run
+under the same stamp records `semantic.failures` 2, from which later refreshes carry it. A run that
+finishes records 0. A
 scan run by hand always measures, and so does a refresh after any of those moved; an `ok` tier is
 measured on every refresh (B8). A pin does not switch it off: a pinned file unchanged since the pin reuses its working-tree
 record, type-checked hits included, so an area whose checked pinned files are all unchanged is
@@ -732,7 +753,9 @@ before a second capital, where
 `IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more
 capitals reads both ways, `IOStream` being an acronym and `IEFLogon` being `I` on the `EFLogon` in
 the directory of the same name, so it votes for neither and is not a site; nor does a name that is
-nothing but two capitals, `IO` being the same two readings with nothing to separate them. Only `I`,
+nothing but two capitals, `IO` being the same two readings with nothing to separate them, nor one
+that opens on two capitals and a digit, `IV8Profile` being `I` on `V8Profile` and `ID3Tag` the tag
+of an `ID3`. Only `I`,
 `T` and `E` vote as a prefix, and not where the name opens on a mixed-case acronym ending with its
 word (`IDs`, `IPv4`, `ETag`): `OAuthToken` would otherwise vote `O`, so any other capital-capital-lower
 opening votes for neither too. The first three learn a
@@ -1321,7 +1344,11 @@ and in VS Code it matches none. So a negation is left out, and the area file say
 line. A pattern the reader would change before matching is left out as well: for Cursor one holding
 `---`, a comma, a brace, a backslash or a line break, one with a space at either edge, one that
 starts with a quote, `!` or `#`, and a lone `true` or `false`; for Copilot one holding a comma, a
-brace, a double quote, a backslash or a line break. An area with no pattern left has no file in that
+brace, a double quote, a backslash or a line break. The root area's pattern is anchored with a
+leading slash, which both readers take for the file system's root: `/*.go` matched no file of a
+repository in either. Without the slash Cursor matched `*.go` at the root alone, so Cursor is given
+that. VS Code matched it under every parent directory, so Copilot is given no pattern for the root
+area. An area with no pattern left has no file in that
 directory, the overview there lists and counts only the areas that have one, and both it and the
 scan's summary say how many have none. An area file can end in up to three lines about what its
 patterns match:
@@ -1371,7 +1398,11 @@ of them is refused wherever it leads, and so is a directory that is, holds or si
 `.claude/rules` resolves to. People write rules in both by hand, so an entry this tool did not write
 is never written over there (A105): a file with no key, a link, a file that will not open, a
 directory or a fifo, and an entry spelled as a planned name in another letter case where the listing
-does not also hold the name itself. What happens next depends on who asked. Named by `--targets`,
+does not also hold the name itself. In `.claude/rules` a generated name is this tool's own, so
+there an entry spelled as one of the map's names in another letter case is that file where the
+volume says so, and the scan replaces it and names it as the directory spells it. The volume is
+asked, since JavaScript's fold sends a dotless `ı` onto `i` and APFS keeps the two apart: the two
+names are one entry where `lstat` gives both the same device and inode, with one link. What happens next depends on who asked. Named by `--targets`,
 the target cannot be written as asked, so the scan refuses and writes nothing anywhere, the
 `.claude/rules` map included:
 
@@ -1539,7 +1570,7 @@ map of its own (A24), a map, a pin or any other file of the store the repository
 merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run the type checker
 to the rescan, which decides it the way any scan does, except that the refresh hands it a degraded
 verdict measured under the same build, install and root config, and the rescan then does not run
-the checker (B8). Where the repository tracks the overview of
+the checker, unless that verdict is a first failed run's (B8). Where the repository tracks the overview of
 a Cursor or Copilot copy of the map, the rescan leaves that directory alone and writes the rest:
 nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
 by hand rewrites it. A copy git could not be asked about is left alone too. A scan that throws writes nothing, so the
@@ -1814,7 +1845,7 @@ no case of their own, most of them a subclass that inherits its cases. `IT` need
 letter or a digit before it, so `EXIT` is not one, and `Spec` is not a suffix at all: two files in
 the 21 repositories end in it and neither is a test. A test tree for these is the six names below
 plus the ones the family's own build uses: a Gradle source set ending in `Test` (`commonTest`,
-`jvmTest`) for Java and Kotlin, a dotted project name ending in `Tests` or `Test` (`Serilog.Tests`, `Autofac.Test`) for C#,
+`jvmTest`) or named `testFixtures` for Java and Kotlin, a dotted project name ending in `Tests` or `Test` (`Serilog.Tests`, `Autofac.Test`) for C#,
 and a `Test` or `Tests` directory for PHP (composer's `tests/Composer/Test`, symfony's
 `Component/Cache/Tests`). Rust has no name, and a file there is a test by its facets
 or by sitting directly in a crate's `tests`.
@@ -1947,7 +1978,7 @@ Every clause is dropped when it counts nothing.
   beside it carries the stem: `examples/tutorial/tests/test_auth.py` covers
   `examples/tutorial/flaskr/auth.py`, and flask's `examples` reads 4 of 10. Four families pair a whole project with its tests, and there a test covers the one source
   file of its stem at any depth: a .NET test project and the project its name carries
-  (`Serilog.Tests` and `Serilog`), a Maven or Gradle `src/test` or `<set>Test` source set and what
+  (`Serilog.Tests` and `Serilog`), a Maven or Gradle `src/test`, `<set>Test` or `testFixtures` source set and what
   sits beside it, a PHP `tests` and the `src` or `app` beside it. serilog keeps
   `test/Serilog.Tests/Core/BatchingSinkTests.cs` for `src/Serilog/Core/Sinks/Batching/BatchingSink.cs`
   and reads 28 of 113; gson reads 34 of 80 and Laravel 267 of 1,630. Two source files of one stem in the project are credited with
@@ -2333,7 +2364,7 @@ Roughly, in order of how much they move the number of stated claims:
 - **Language.** JavaScript, TypeScript and Ruby, the script blocks of Vue and Svelte files, and
   Python, PHP, Go, Java, C#, Rust and Kotlin for the one to three rows section 4 counts for each. Nothing
   else is read, a component's template included. A map of one of those seven mostly prints counts:
-  a scan of fastapi states 1 of 82 claims, hugo 0 of 102 and ktor 0 of 133.
+  a scan of fastapi states 1 of 82 claims, hugo 0 of 103 and ktor 0 of 133.
 - **Repository size.** No cap. A 2,468 file repository takes about 1.8 seconds against a pinned
   baseline, a 5,477 file Ruby repository about 6.2, and a synthetic 100,000 file repository about
   9.2. Scaling is close to linear in file count. There was a 50,000 file cap, and hitting it did not
