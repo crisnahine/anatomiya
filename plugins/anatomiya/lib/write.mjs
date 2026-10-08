@@ -232,13 +232,9 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   const taken = isClaude(target) ? [] : all.filter((n) => alias(n) !== null || theirs.some((list) => list.includes(n)));
   if (taken.length && (explicit || taken.includes(overviewName(target)))) {
     const at = alias(taken[0]) ?? taken[0];
-    const what = at !== taken[0]
-      ? "was not written by this tool"
-      : audit.unreadable.includes(at)
-        ? "could not be read"
-        : audit.occupied.includes(at)
-          ? "is not a file"
-          : "was not written by this tool";
+    // An entry spelled otherwise is somebody's, whatever it is.
+    const shape = at !== taken[0] ? null : audit.unreadable.includes(at) ? "could not be read" : audit.occupied.includes(at) ? "is not a file" : null;
+    const what = shape ?? "was not written by this tool";
     throw new Error(
       `${target.dir}/${at} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`
     );
@@ -366,9 +362,7 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
     remove: [...laid.stale, ...laid.staged],
     foreign: laid.foreign,
     unknown: laid.unknown,
-    replaced: laid.replaced,
     unreadableRules: laid.unreadableRules,
-    listed: laid.listed,
     // The areas the overview there says no file covers.
     unfiled: bodies.size ? described.areas.filter((a) => !hasFile(a, target)).map((a) => a.path) : [],
     // Every file of ours the directory holds once this is committed, for the record.
@@ -378,7 +372,7 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
 
 // The record goes on naming what it named, or none of it could be removed once the directory reads again.
 function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritable }, previous) {
-  const none = { first: false, write: [], remove: [], foreign: [], unknown: [], replaced: [], unreadableRules: [], listed: false, unfiled: [] };
+  const none = { first: false, write: [], remove: [], foreign: [], unknown: [], unreadableRules: [], unfiled: [] };
   return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...(unwritable ? { unwritable } : {}), ...none, names: [...(knownNames(previous, target) ?? [])].sort() };
 }
 
