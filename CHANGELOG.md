@@ -295,7 +295,15 @@ scanned by 0.13.4 and by this version.
   (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was
   written or removed: close what holds it or change its mode, then scan again`. A refresh that
   leaves a directory this way names it under `stopped` in `refresh.json` and is due again after 30
-  minutes, for as long as the directory stays stopped. Where the scan
+  minutes, for as long as the directory stays stopped. A directory with no write permission is
+  retried the same way: with `.cursor/rules` at mode 555 and the target on, four refreshes 31
+  minutes apart ran four scans. Each is a whole scan, the type checker included unless the last
+  verdict was degraded and is carried, and the `SessionStart` hook says nothing of it. Fix the
+  directory's mode and the next of those scans writes it. A scan run by hand prints the reason and
+  ends the retry until the checkout moves. `scan --targets claude` does not turn such a target
+  off: it refuses with
+  `.cursor/rules is not writable, so the map could not be written: fix its permissions and scan again`.
+  Where the scan
   named the target, or the file is in `.claude/rules` or `.claude/anatomiya`, the scan stops with a
   sentence that names the file and puts back every file it had replaced. A directory that refuses a
   new file (`EPERM`, `EACCES` or `EBUSY` when a temporary file is created there) is handled as the
@@ -513,7 +521,10 @@ scanned by 0.13.4 and by this version.
   writes, and says `1 temporary file an earlier scan left in .claude/anatomiya could not be
   removed, so it was left as it is`, the same for `.claude/rules`. In a Cursor or Copilot directory
   it is counted with the entries left there: `.cursor/rules holds 1 entry named anatomiya-* that
-  this scan neither wrote nor removed; it was left as it is`.
+  this scan neither wrote nor removed; it was left as it is`. That line is printed where the scan
+  writes the directory or removes a map file from it. In a directory a scan leaves out by name
+  that holds no map file, a leftover that cannot be removed is left without a line, and without a
+  key in `--format json`.
 - One import with a long run of slashes in its specifier held a scan for seconds, in the parent
   process, where no clock stops it. On a 17-file repository with one file importing from `x`,
   150,000 slashes and `y`, a 150 kB file, a scan with 0.13.4 took 10.4 to 11.9 seconds and this

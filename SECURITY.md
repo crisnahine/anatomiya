@@ -305,7 +305,15 @@ not be replaced (EPERM)), so nothing there was written or removed: close what ho
 its mode, then scan again`. That directory reads `unknown` in `--format json`. A refresh that
 leaves a directory this way names it under `stopped` in `refresh.json`, and a refresh started
 more than 30 minutes later scans the same checkout again, for as long as a directory stays stopped
-and no more often. A directory that
+and no more often. A directory with no write permission is named there too, so while it stays that
+way a refresh scans the checkout again once each 30 minutes: with `.cursor/rules` at mode 555 and
+the target on, four refreshes 31 minutes apart ran four scans. Each is a whole scan, the type
+checker included unless the last verdict was degraded and is carried, and the `SessionStart` hook
+says nothing of it. Fixing the directory's mode ends it at the next of those scans, which writes
+the directory. A scan run by hand prints the reason and ends it until the checkout moves. Turning
+the target off does not: `scan --targets claude` refuses with
+`.cursor/rules is not writable, so the map could not be written: fix its permissions and scan again`
+while the directory cannot be written. A directory that
 refuses a new file (the same three codes when a temporary file is created in it) is the same case
 one step sooner, before anything is replaced: in `.claude/rules`, in `.claude/anatomiya` and in a
 directory the scan named, the scan refuses with `a file could not be created in .claude/rules
@@ -321,7 +329,16 @@ renames nothing, so past a locked file it says `would write`. The second record 
 before the put-back, so a process killed while that directory is put back, or after, leaves a
 record that names the map files the directory holds: the next scan writes the directory, removes
 what went stale and counts no entry left there. Killed before that write it is in the window every
-scan has between two renames, where the record names the files that scan planned. On a repository with no map yet, a failure at that stage can
+scan has from the record's rename to its last removal. The second record write closes that window
+for the stopped directory alone, from that write on. Inside it the record names the files that scan
+planned, and an area file the scan had not yet removed stays on disk, in up to three directories,
+under a name the record does not hold. Every later plain scan counts it as an entry left there and
+does not remove it: `.cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor
+removed; it was left as it is`, and for `.claude/rules`, where that file still loads for its paths,
+`"anatomiya-area-<id>.md" in .claude/rules/ carries our frontmatter but no map names it, so it was
+left alone`. A scan that leaves the target out by name removes it from the Cursor and Copilot
+directories, and in `.claude/rules` it is deleted by hand. Measured on a scan of all three
+directories that replaced one area with another: 13 of its 25 kill points left such a file. On a repository with no map yet, a failure at that stage can
 leave `.claude/rules` and `.claude/anatomiya` behind, empty.
 
 One window is left. The last look at a directory and the `rename` or `unlink` that follows it are
