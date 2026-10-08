@@ -94,11 +94,12 @@ function testedTail(rel) {
  * beside it, and a `Cache` in another tree is not its to answer for.
  *
  * Answered with the directories the answer turns on, each with the family its
- * root counts: a tail shortened past a directory is a test of that directory,
- * and where the change made it and put source of that family in it, it has no
- * habit yet and the files of the directory above it are another directory's.
- * A package added with its source and its test in one change was held to its
- * parent's ratio.
+ * root counts: a tail shortened past directories is a test of something under
+ * them, and where the change made one of them and put source of that family
+ * under it, the package has no habit yet and the files of the directory above
+ * it are another directory's. A package added with its source and its test in
+ * one change was held to its parent's ratio, and one whose test sat in a
+ * `tests` of its own still was, since that directory holds none of the source.
  */
 const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
 
@@ -133,7 +134,8 @@ function coveredRoot(rel, roots) {
     const below = parts.slice(end);
     // The family a root counts, or the test's own where the map recorded no extension for it.
     const counted = (r) => familyOf(language(`x${r.companions.ext ?? extOf(rel)}`));
-    const turnsOn = below.length === 0 ? [] : matches.map((r) => ({ dir: [r.dir, ...below].join("/"), family: counted(r) }));
+    // Every directory from the root down to the test's own, nearest the root first: a package's `tests` holds none of its source.
+    const turnsOn = matches.flatMap((r) => below.map((_, i) => ({ dir: [r.dir, ...below.slice(0, i + 1)].join("/"), family: counted(r) })));
     return { root: matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0], turnsOn };
   }
   return null;

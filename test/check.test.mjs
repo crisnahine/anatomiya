@@ -262,8 +262,11 @@ const rbIn = (d, n) => [`${d}/m${n}.rb`, `class M${n}\n  def run\n    ${n}\n  en
 const rbSpecIn = (d, n) => [`${d}/m${n}_spec.rb`, `RSpec.describe M${n} do\n  it "runs" do\n  end\nend\n`];
 const jsIn = (d, n) => [`${d}/m${n}.js`, `export function f${n}() {\n  return ${n};\n}\n`];
 const jsTestIn = (d, n) => [`${d}/m${n}.test.js`, `import { test } from "node:test";\ntest("f${n}", () => {});\n`];
+const tsIn = (d, n) => [`${d}/m${n}.ts`, `export function f${n}(): number {\n  return ${n};\n}\n`];
+const tsTestIn = (d, n) => [`${d}/m${n}.test.ts`, `import { test } from "node:test";\ntest("f${n}", () => {});\n`];
 const RB_TREE = [...five(rbIn, "app/tested"), ...five(rbSpecIn, "spec/tested"), ...five(rbIn, "app/bare")];
 const JS_TREE = [...five(jsIn, "src/tested"), ...five(jsTestIn, "src/tested"), ...five(jsIn, "src/bare")];
+const TS_TREE = [...five(tsIn, "src/tested"), ...five(tsTestIn, "src/tested"), ...five(tsIn, "src/bare")];
 const PY_TREE = [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare")];
 const PHP_TREE = [...five(PLACED.php.source, "Tested"), ...five(PLACED.php.spec, "Tested"), ...five(PLACED.php.source, "Bare"), ["composer.json", "{}\n"]];
 const MAVEN_TREE = [...five(PLACED.java.source, "tested"), ...five(PLACED.java.spec, "tested"), ...five(PLACED.java.source, "bare"), ["pom.xml", "<project/>\n"]];
@@ -330,6 +333,27 @@ const FIRST_TESTS = [
     [...PY_TREE, pyIn("src/bare/old", 9), pyIn("src/bare/old/deep", 8)],
     [pyIn("src/bare/old", 7), pyIn("src/bare/old/deep", 6), pyTestIn("src/bare/old", 9), pyTestIn("src/bare/old/deep", 8)],
     ["src/bare/old/deep/test_m8.py", "src/bare/old/test_m9.py"], ["src/bare/old/test_m9.py", "src/bare/old/deep/test_m8.py"]],
+  // A package's own test directory holds no source, so the base is asked of the package above it.
+  ...["test", "tests", "spec", "e2e"].flatMap((own) => [
+    [`JavaScript: a new package with its source and its test in its own ${own}`,
+      JS_TREE, [jsIn("src/bare/fresh", 0), jsTestIn(`src/bare/fresh/${own}`, 0)], [], [`src/bare/fresh/${own}/m0.test.js`]],
+    [`TypeScript: a new package with its source and its test in its own ${own}`,
+      TS_TREE, [tsIn("src/bare/fresh", 0), tsTestIn(`src/bare/fresh/${own}`, 0)], [], [`src/bare/fresh/${own}/m0.test.ts`]],
+    [`Ruby: a new package with its source and its spec in its own ${own}`,
+      RB_TREE, [rbIn("app/bare/fresh/lib", 0), rbSpecIn(`app/bare/fresh/${own}`, 0)], [], [`app/bare/fresh/${own}/m0_spec.rb`]],
+  ]),
+  ["JavaScript: a new package with its source, and its test two directories below it",
+    JS_TREE, [jsIn("src/bare/fresh", 0), jsTestIn("src/bare/fresh/sub/tests", 0)], [], ["src/bare/fresh/sub/tests/m0.test.js"]],
+  ["JavaScript: a new package inside one the base already held, with its source and its test in its own tests",
+    [...JS_TREE, jsIn("src/bare/old", 9)], [jsIn("src/bare/old/fresh", 0), jsTestIn("src/bare/old/fresh/tests", 0)], [], ["src/bare/old/fresh/tests/m0.test.js"]],
+  ["JavaScript: four tests in a tests directory the change invented, with source added elsewhere",
+    JS_TREE, [...four(jsTestIn, "src/bare/fresh/tests"), jsIn("src/tested", 7)], paths(four(jsTestIn, "src/bare/fresh/tests")), ["src/bare/fresh/tests/m0.test.js"]],
+  ["JavaScript: a test in a directory the change invented inside a package the base already held, with source added to the package",
+    [...JS_TREE, jsIn("src/bare/old", 9)], [jsIn("src/bare/old", 7), jsTestIn("src/bare/old/tests", 9)], ["src/bare/old/tests/m9.test.js"]],
+  ["Ruby: a spec in a directory the change invented inside a package the base already held, with source added to the package",
+    [...RB_TREE, rbIn("app/bare/old/lib", 9)], [rbIn("app/bare/old/lib", 7), rbSpecIn("app/bare/old/spec", 9)], ["app/bare/old/spec/m9_spec.rb"]],
+  ["JavaScript: a new package holding an empty index and a test in its own tests",
+    JS_TREE, [["src/bare/fresh/index.js", ""], jsTestIn("src/bare/fresh/tests", 0)], ["src/bare/fresh/tests/m0.test.js"]],
 ];
 
 for (const [name, tree, added, found, noticed = found] of FIRST_TESTS) {
