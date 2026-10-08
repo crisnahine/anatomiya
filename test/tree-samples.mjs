@@ -69,6 +69,7 @@ class Totals extends Money implements Summable
         try {
             return array_sum($order->prices());
         } catch (\\RuntimeException $e) {
+            self::$failed++;
             return 0;
         }
     }
@@ -186,6 +187,16 @@ enum Currency {
     String code() {
         if (this.name() == null) {
             throw new IllegalStateException();
+        }
+        @SuppressWarnings(value = "unused")
+        int tries = 0;
+        again:
+        while (tries < 2) {
+            tries++;
+            if (tries == 1) {
+                continue again;
+            }
+            break again;
         }
         return this.label;
     }

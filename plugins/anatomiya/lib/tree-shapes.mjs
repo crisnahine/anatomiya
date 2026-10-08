@@ -18,6 +18,7 @@ export const SHAPES = {
     annotation: ["decorator"],
     block: ["block"],
     docstring: ["expression_statement", "string", "concatenated_string"],
+    paren: ["parenthesized_expression"],
     args: ["argument_list"],
     // A decorated function sits in a node of its own, between the function and the body that holds it.
     wrap: ["decorated_definition"],
@@ -43,6 +44,8 @@ export const SHAPES = {
     ident: ["name"],
     // A name is a variable only inside one of these: `$x->e` spells `e` and reads no `$e`.
     variable: ["variable_name"],
+    // `A::$e` spells its property as a variable, in the field a name sits in.
+    staticProperty: ["scoped_property_access_expression"],
     base: ["base_clause"],
     // What a file holds outside any code: the tags, and the markup around them.
     header: ["php_tag", "text", "text_interpolation"],
@@ -77,6 +80,8 @@ export const SHAPES = {
     args: ["annotation_argument_list"],
     raise: ["throw_statement"],
     ident: ["identifier"],
+    // A label, and the name a `break` or a `continue` jumps to, is an identifier with no field.
+    label: ["labeled_statement", "break_statement", "continue_statement"],
     // An enum's methods sit one node deeper than its body, past the constants.
     wrap: ["enum_body_declarations"],
     iface: ["interface_declaration"],
@@ -86,6 +91,8 @@ export const SHAPES = {
     name: "name",
     caught: "name",
     member: "field",
+    // The name of an annotation's argument.
+    key: "key",
   },
   csharp: {
     fn: ["method_declaration", "local_function_statement"],
@@ -97,6 +104,9 @@ export const SHAPES = {
     iface: ["interface_declaration"],
     // A conditional around whole members holds them, where the file read as written.
     wrap: ["preproc_if", "preproc_elif", "preproc_else"],
+    // The one that opens a conditional, and the field its test sits in.
+    conditional: ["preproc_if"],
+    condition: "condition",
     // A directive on a line of its own between two members.
     directive: ["preproc_pragma", "preproc_nullable", "preproc_region", "preproc_endregion", "preproc_line", "preproc_error", "preproc_warning"],
     tokensOf: [],

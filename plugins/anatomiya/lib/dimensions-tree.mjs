@@ -7,7 +7,7 @@ import { fieldOf, nameOf, site } from "./tree-walk.mjs";
 
 const KINDS = [
   "fn", "cls", "scope", "wrap", "comment", "annotation", "inner", "directive", "catch", "raise", "ident", "variable",
-  "block", "docstring", "doc", "args", "iface", "receiverType", "receiverBeforeName",
+  "block", "docstring", "doc", "args", "iface", "receiverType", "receiverBeforeName", "paren", "staticProperty", "label", "conditional",
 ];
 const SETS = new Map(
   Object.entries(SHAPES).map(([lang, shapes]) => [lang, Object.fromEntries(KINDS.map((kind) => [kind, new Set(shapes[kind] ?? [])]))])
@@ -129,7 +129,8 @@ const PUBLIC = {
   go: goExports,
   // `pub(crate)` holds a node of its own, so only a bare `pub` is a word here.
   rust: ({ words }) => words.has("pub"),
-  php: ({ words }) => shown(words),
+  // PHP reads a keyword without its case: `PRIVATE function` is private.
+  php: ({ words }) => shown(new Set([...words].map((word) => word.toLowerCase()))),
   kotlin: ({ words }) => shown(words),
   java: ({ words, inInterface }) => words.has("public") || (inInterface && !words.has("private")),
   csharp: ({ words, inInterface }) => words.has("public") || (inInterface && shown(words)),
@@ -149,11 +150,34 @@ function goNamedByInterface(program, sets) {
   };
 }
 
-/** The receiver a Kotlin extension function is written on, as written with one space for each run of them, or null for any other function. */
+/** A node's text with every node of these types under it cut out. */
+function textWithout(node, types, source) {
+  let text = "";
+  let at = node.start;
+  const work = [node];
+  while (work.length) {
+    const n = work.pop();
+    if (types.has(n.type)) {
+      text += source.slice(at, n.start);
+      at = n.end;
+    } else {
+      for (let i = n.children.length - 1; i >= 0; i--) work.push(n.children[i]);
+    }
+  }
+  return text + source.slice(at, node.end);
+}
+
+/**
+ * The receiver a Kotlin extension function is written on, as written with one space for each run of them and no comment, or null
+ * for any other function. A comment is no part of the type, and its text would print in a finding as part of a name.
+ */
 function extendedType(fn, shapes, sets, source) {
   for (const child of fn.children) {
     if (child.field === shapes.name) return null;
-    if (sets.receiverBeforeName.has(child.type)) return source.slice(child.start, child.end).replace(/\s+/g, " ");
+    if (!sets.receiverBeforeName.has(child.type)) continue;
+    // With no source the name would print as `.name`, which is no function's.
+    if (!source) throw new TypeError("a receiver is read off the source, and this row was handed none");
+    return textWithout(child, sets.comment, source).replace(/\s+/g, " ");
   }
   return null;
 }
@@ -163,7 +187,7 @@ function extendedType(fn, shapes, sets, source) {
  * a Rust `impl` is for, then in Kotlin the receiver an extension function is written on, read off `source`. Null at file
  * level with no receiver.
  */
-function ownerOf(fn, ctx, shapes, sets, source = "") {
+function ownerOf(fn, ctx, shapes, sets, source) {
   if (shapes.receiver) return goReceiver(fn, sets) || null;
   const extended = extendedType(fn, shapes, sets, source);
   for (let i = ctx.stack.length - 1; i >= 0; i--) {
@@ -217,16 +241,29 @@ const DOC = {
 const LOOSE = /^\s*$/;
 const TIGHT = /^[ \t]*\r?\n?[ \t]*$/;
 
-/** Whether the comments, attributes and directive lines that end on the line above this function hold a doc comment. */
-function documentedAbove(fn, ctx, sets, rule, source) {
-  const siblings = ctx.ancestors.at(-1).children;
+/**
+ * Whether the comments, attributes and directive lines that end on the line above this function hold a doc comment.
+ *
+ * A conditional that opens on the function is passed over as a directive line is: the comment above it is the function's, which
+ * is what the same file answers when it is read with one branch kept.
+ */
+function documentedAbove(fn, ctx, sets, rule, source, shapes) {
+  let depth = ctx.ancestors.length - 1;
+  let siblings = ctx.ancestors[depth].children;
   const gap = rule.tight ? TIGHT : LOOSE;
   let below = fn;
   for (let i = siblings.indexOf(fn) - 1; i >= 0; i--) {
     const above = siblings[i];
     const comment = sets.comment.has(above.type);
-    if (!comment && !sets.annotation.has(above.type) && !sets.directive.has(above.type)) return false;
     if (!gap.test(source.slice(above.end, below.start))) return false;
+    if (!comment && !sets.annotation.has(above.type) && !sets.directive.has(above.type)) {
+      const holder = ctx.ancestors[depth];
+      if (!sets.conditional.has(holder.type) || above.field !== shapes.condition) return false;
+      below = holder;
+      siblings = ctx.ancestors[--depth].children;
+      i = siblings.indexOf(holder);
+      continue;
+    }
     if (!comment) {
       if (rule.attribute?.test(source.slice(above.start, above.end))) return true;
     } else {
@@ -247,8 +284,10 @@ function hasDocstring(fn, sets, source) {
   const body = fn.children.find((child) => sets.block.has(child.type));
   const first = body?.children.find((child) => !sets.comment.has(child.type));
   if (first === undefined || !sets.docstring.has(first.type) || first.children.length !== 1) return false;
-  const [literal] = first.children;
-  if (!sets.docstring.has(literal.type)) return false;
+  let [literal] = first.children;
+  // `("doc")` is the string to Python, at any depth of parentheses.
+  while (literal && sets.paren.has(literal.type)) literal = literal.children.find((child) => !sets.comment.has(child.type));
+  if (!literal || !sets.docstring.has(literal.type)) return false;
   const parts = literal.children.filter((child) => sets.docstring.has(child.type));
   return (parts.length ? parts : [literal]).every((part) => PLAIN_STRING.test(source.slice(part.start, part.start + 2)));
 }
@@ -259,14 +298,19 @@ function caughtName(header, shapes, sets) {
   return (holder && firstOf(holder, sets.ident)?.text) ?? null;
 }
 
-/** Whether anything under a handler's body reads the name, a closure's body included. A member spelling it reads nothing. */
+/**
+ * Whether anything under a handler's body reads the name, a closure's body included. A member spelling it reads nothing, and
+ * neither does a static property, an annotation's argument name, or a label.
+ */
 function readsName(body, name, shapes, sets) {
+  const spelled = [shapes.name, shapes.member, shapes.key];
   const reads = (node, parent) =>
-    sets.variable.size > 0 ? sets.variable.has(parent.type) : !(node.field && (node.field === shapes.name || node.field === shapes.member));
+    sets.variable.size > 0 ? sets.variable.has(parent.type) : !(node.field && spelled.includes(node.field)) && !sets.label.has(parent.type);
   const work = [body];
   while (work.length) {
     const parent = work.pop();
     for (const node of parent.children) {
+      if (sets.staticProperty.has(parent.type) && node.field === shapes.name && sets.variable.has(node.type)) continue;
       if (node.children.length) work.push(node);
       else if (sets.ident.has(node.type) && node.text === name && reads(node, parent)) return true;
     }
@@ -291,11 +335,11 @@ export const TREE_DIMENSIONS = [
     counterClaim: null, // discarding the error is an absence, not a style anyone picked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a PHP or Java file holding a catch clause that binds the error to a name, each such clause of a chain counted; a PHP clause that names a type and binds no name has used what it was given and is not a site, and neither is a Java clause that binds `_` or names what it caught `ignored`. A clause uses the error when its body reads the name it bound, inside a closure or an interpolated string too, or when its body throws: the error again, or another in its place. A property, a field or a method spelling the same name reads nothing",
+      sites: "a PHP or Java file holding a catch clause that binds the error to a name, each such clause of a chain counted; a PHP clause that names a type and binds no name has used what it was given and is not a site, and neither is a Java clause that binds `_` or names what it caught `ignored`. A clause uses the error when its body reads the name it bound, inside a closure or an interpolated string too, or when its body throws: the error again, or another in its place. A property, static or not, a field, a method, an annotation's argument name or a label spelling the same name reads nothing",
       blind: "a lambda, a closure or a nested handler that binds the same name again hides the caught one, and a read of the inner name counts as a read of the error",
     },
     langs: ["php", "java"],
-    visitor(program, add) {
+    visitor(program, add, { source } = {}) {
       const shapes = SHAPES[program.lang];
       const sets = SETS.get(program.lang);
       const unbound = UNBOUND[program.lang];
@@ -308,7 +352,7 @@ export const TREE_DIMENSIONS = [
           if (name === null || unbound?.has(name)) return;
           const used = readsName(body, name, shapes, sets) || firstOf(body, sets.raise) !== null;
           const held = ctx.fn && nameOf(ctx.fn);
-          add({ node: site(node), conforming: used, where: held ? within(ownerOf(ctx.fn, ctx, shapes, sets), held) : null });
+          add({ node: site(node), conforming: used, where: held ? within(ownerOf(ctx.fn, ctx, shapes, sets, source), held) : null });
         },
       };
     },
@@ -321,7 +365,7 @@ export const TREE_DIMENSIONS = [
     counterClaim: "public functions carry no doc comment",
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a function or method outside a test file, straight in the file or in the body of a named class or module (so not one inside a function, a block, an `if` or an anonymous class), that is public by its language's rule: in Python a name with no leading underscore, in Go a capitalised name, on a capitalised receiver type where it is a method, in Rust a bare `pub`, in PHP and Kotlin no private, protected or internal modifier, in Java and C# the `public` modifier or membership of an interface. A method marked as an override is not a site, nor is a Kotlin `actual` function, which is documented on its `expect`, a Python `@overload` stub or property setter or deleter, a Rust `#[test]` function, or anything under a Rust `#[cfg(test)]`, alone or inside `all(..)`, on an item or as `#![cfg(test)]` on the file, or under `#[doc(hidden)]`. A Rust trait's methods are not counted: a required one is a signature and a provided one carries no `pub`. A constructor is not a site, a PHP `__construct` or `__destruct` among them, nor is an entry point: a static `main` in Java, a static `Main` in C#, a `main` at the top of a Kotlin or Rust file. A Go method named `Error`, `Read`, `ServeHTTP`, `String`, `Write` or `Unwrap` is not a site, nor is `Len`, `Less` or `Swap` on a type the file gives all three. It is documented by a docstring in Python, a plain string and never an f-string or bytes, and elsewhere by a doc comment in the comments and attributes that end on the line above it, a C# directive line between them passed over: `/** */` in PHP, Java and Kotlin, `///` or `/** */` in C# and Rust, `#[doc = \"..\"]` in Rust, and in Go any comment but a directive, with no blank line under it",
+      sites: "a function or method outside a test file, straight in the file or in the body of a named class or module (so not one inside a function, a block, an `if` or an anonymous class), that is public by its language's rule: in Python a name with no leading underscore, in Go a capitalised name, on a capitalised receiver type where it is a method, in Rust a bare `pub`, in PHP and Kotlin no private, protected or internal modifier, in any case in PHP, in Java and C# the `public` modifier or membership of an interface. A method marked as an override is not a site, nor is a Kotlin `actual` function, which is documented on its `expect`, a Python `@overload` stub or property setter or deleter, a Rust `#[test]` function, or anything under a Rust `#[cfg(test)]`, alone or inside `all(..)`, on an item or as `#![cfg(test)]` on the file, or under `#[doc(hidden)]`. A Rust trait's methods are not counted: a required one is a signature and a provided one carries no `pub`. A constructor is not a site, a PHP `__construct` or `__destruct` among them, nor is an entry point: a static `main` in Java, a static `Main` in C#, a `main` at the top of a Kotlin or Rust file. A Go method named `Error`, `Read`, `ServeHTTP`, `String`, `Write` or `Unwrap` is not a site, nor is `Len`, `Less` or `Swap` on a type the file gives all three. It is documented by a docstring in Python, a plain string and never an f-string or bytes, in parentheses or not, and elsewhere by a doc comment in the comments and attributes that end on the line above it, a C# directive line between them passed over and so the `#if` line of a conditional that opens on the function: `/** */` in PHP, Java and Kotlin, `///` or `/** */` in C# and Rust, `#[doc = \"..\"]` in Rust, and in Go any comment but a directive, with no blank line under it",
       blind: `whether the module or the class around a function is itself public is not read, so a function in a private module, under a non-public class or left out of \`__all__\` counts as public. Rust code inside a macro call is not in the tree, so a function written there is not counted`,
     },
     langs: ["python", "php", "go", "java", "csharp", "rust", "kotlin"],
@@ -345,7 +389,7 @@ export const TREE_DIMENSIONS = [
           const func = { name, fn: node, words, ctx, sets, inInterface: ctx.cls !== null && sets.iface.has(ctx.cls.type) };
           if (!PUBLIC[lang](func)) return;
           if (inherited(words) || notOffered.some((word) => words.has(word)) || noSite(func)) return;
-          const documented = sets.docstring.size > 0 ? hasDocstring(node, sets, source) : documentedAbove(node, ctx, sets, DOC[lang], source);
+          const documented = sets.docstring.size > 0 ? hasDocstring(node, sets, source) : documentedAbove(node, ctx, sets, DOC[lang], source, shapes);
           add({ node: site(named), conforming: documented, where: within(ownerOf(node, ctx, shapes, sets, source), name) });
         },
       };
@@ -374,7 +418,7 @@ export const TREE_DIMENSIONS = [
           const named = fieldOf(node, shapes.name);
           const name = named?.text;
           if (!name || untyped.test(name)) return;
-          add({ node: site(named), conforming: fieldOf(node, shapes.returnType) !== null, where: within(ownerOf(node, ctx, shapes, sets), name) });
+          add({ node: site(named), conforming: fieldOf(node, shapes.returnType) !== null, where: within(ownerOf(node, ctx, shapes, sets, extra?.source), name) });
         },
       };
     },

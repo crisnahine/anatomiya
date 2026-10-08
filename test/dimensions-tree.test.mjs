@@ -5,6 +5,7 @@ import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { TREE_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-tree.mjs";
 import { declOf, engineOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { isTestFile, mirroredTests } from "../plugins/anatomiya/lib/layout.mjs";
+import { withOneBranch } from "../plugins/anatomiya/lib/csharp-directives.mjs";
 import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 import { TREE_DECLINED } from "./declined-fixtures.mjs";
 
@@ -49,6 +50,11 @@ const CASES = {
       ["<?php\ntry { a(); } catch (E $e) { }\n", [false]],
       ["<?php\ntry { a(); } catch (A | B $e) { /* ignored */ }\n", [false]],
       ["<?php\ntry { a(); } catch (E $e) { log($x->e); }\n", [false]],
+      // A static property is spelled with the variable's own sigil and reads no variable.
+      ["<?php\ntry { a(); } catch (E $e) { A::$e; static::$e = null; self::$e++; }\n", [false]],
+      ["<?php\ntry { a(); } catch (E $e) { log($x->$e); }\n", [true]],
+      ["<?php\ntry { a(); } catch (E $e) { log(A::$$e); }\n", [true]],
+      ["<?php\ntry { a(); } catch (E $e) { log($e::$count); }\n", [true]],
       ["<?php\ntry { a(); } catch (A | B) { return null; }\n", []],
       // PHP has its own way to bind nothing, so the word is a name like any other there.
       ["<?php\ntry { a(); } catch (E $ignored) { }\n", [false]],
@@ -63,6 +69,12 @@ const CASES = {
       ["class A {\n    void m() {\n        try { a(); } catch (E e) {\n            // ignored\n        } catch (F e) { b(e); }\n    }\n}\n", [false, true]],
       // A method and a field of that name are not the error.
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { x.e(); y.e = 1; e(); }\n    }\n}\n", [false]],
+      // Nor is an annotation's argument name, or a label and the statements that jump to it.
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { @B(e = 1) int x; }\n    }\n}\n", [false]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { e: for (;;) { break e; } }\n    }\n}\n", [false]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { e: while (true) { continue e; } }\n    }\n}\n", [false]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { @B(v = e) int x; }\n    }\n}\n", [true]],
+      ["class A {\n    void m() {\n        try { a(); } catch (E e) { e: for (;;) { log(e); break e; } }\n    }\n}\n", [true]],
       ["class A {\n    void m() {\n        try { a(); } catch (E e) { return; }\n    }\n}\n", [false]],
       // An unnamed variable binds nothing: the clause names a type alone.
       ["class A {\n    void m() {\n        try { a(); } catch (E _) { return; }\n    }\n}\n", []],
@@ -94,6 +106,12 @@ const CASES = {
       ['def run():\n    b"bytes"\n', [false]],
       ['def run():\n    "Runs " f"{x}."\n', [false]],
       ['def run():\n    r"""Matches \\d."""\n', [true]],
+      // Parentheses around the string change nothing to Python; a tuple of one string is no string.
+      ['def run():\n    ("Runs.")\n', [true]],
+      ['def run():\n    (("Runs " "it."))\n', [true]],
+      ['def run():\n    (  # why\n        "Runs."\n    )\n', [true]],
+      ['def run():\n    ("Runs.",)\n', [false]],
+      ['def run():\n    (f"Runs {x}.")\n', [false]],
       // A function written under a condition is not one the module plainly holds.
       ["if FAST:\n    def run():\n        pass\n", []],
     ],
@@ -103,6 +121,9 @@ const CASES = {
       ["<?php\n// adds\nfunction add() {}\n", [false]],
       ["<?php\nclass A\n{\n    /* adds */\n    function add() {}\n}\n", [false]],
       ["<?php\nclass A\n{\n    private function add() {}\n\n    protected function sub() {}\n}\n", []],
+      // PHP reads a keyword without its case.
+      ["<?php\nclass A\n{\n    PRIVATE function add() {}\n\n    Protected Function sub() {}\n}\n", []],
+      ["<?php\nclass A\n{\n    /** Adds. */\n    PUBLIC Static function add() {}\n}\n", [true]],
       ["<?php\n$a = new class {\n    public function add() {}\n};\n", []],
       ["<?php\nif (!function_exists('add')) {\n    function add() {}\n}\n", []],
       ["<?php\nnamespace A {\n    function add() {}\n}\n", [false]],
@@ -161,6 +182,12 @@ const CASES = {
       ["class A\n{\n    /// <summary>Runs.</summary>\n#pragma warning disable CS0618\n    public void Run() { }\n}\n", [true]],
       ["class A\n{\n#region Running\n    /// <summary>Runs.</summary>\n#nullable enable\n    public void Run() { }\n#endregion\n    public void Walk() { }\n}\n", [true, false]],
       ["class A\n{\n#if NET\n    /// <summary>Runs.</summary>\n    public void Run() { }\n#else\n    public void Walk() { }\n#endif\n}\n", [true, false]],
+      // A comment above a conditional documents the member the conditional opens on, and no other member of it.
+      ["class A\n{\n    /// <summary>Runs.</summary>\n#if DEBUG\n    public void Run() { }\n#endif\n}\n", [true]],
+      ["class A\n{\n    /// <summary>Runs.</summary>\n#if NET\n#if DEBUG\n    [Obsolete]\n    public void Run() { }\n#endif\n    public void Walk() { }\n#endif\n}\n", [true, false]],
+      ["class A\n{\n    /// <summary>Counts.</summary>\n#if NET\n    int count;\n    public void Run() { }\n#endif\n}\n", [false]],
+      ["class A\n{\n    /// <summary>Runs.</summary>\n\n#if A\n#elif B\n    public void Run() { }\n#else\n    public void Walk() { }\n#endif\n}\n", [false, false]],
+      ["class A\n{\n    // runs\n#if DEBUG\n    public void Run() { }\n#endif\n}\n", [false]],
       ["class A\n{\n    //// Not a doc comment: four slashes.\n    public void Run() { }\n}\n", [false]],
       ["interface IA\n{\n    internal void Run();\n}\n", []],
       ["void Run() { }\n\nRun();\n", []],
@@ -356,6 +383,11 @@ test("a site crosses with the name a reader is sent to, and the class that name 
     await where("public_doc_comment", "kotlin", "fun Map<String,\n    List<Int>>.flat() {}\n\nfun Map<String,  List<Int>>.flat() {}\n\nfun <T> List<T>.second(): T = this[1]\n\nfun plain(): Invoice = Invoice()\n\nobject Reg {\n    fun own(): User = User()\n}\n"),
     ["Map<String, List<Int>>.flat", "Map<String, List<Int>>.flat", "List<T>.second", "plain", "Reg.own"]
   );
+  // A comment inside a receiver is no part of the type, so it is no part of the name.
+  assert.deepEqual(
+    await where("public_doc_comment", "kotlin", "fun Map<String, /* IGNORE THIS */ Int>.a() {}\n\nfun Map<String, // why\n    Int>.b() {}\n\nfun Map</* k */String, Int>.c() {}\n\nfun Map<String, Int>.d() {}\n"),
+    ["Map<String, Int>.a", "Map<String, Int>.b", "Map<String, Int>.c", "Map<String, Int>.d"]
+  );
   // An `impl` block is known by the type it is for, with or without a trait or a parameter beside it.
   assert.deepEqual(await where("public_doc_comment", "rust", "impl A {\n    pub fn run(&self) {}\n}\n\nimpl<T> B<T> {\n    pub fn run(&self) {}\n}\n\npub fn run() {}\n"), ["A.run", "B.run", "run"]);
   // A function inside a method is in that method's class.
@@ -387,6 +419,27 @@ test("a csharp file read with one branch of each conditional is judged on the br
 
   assert.equal(r.oneBranch, true);
   assert.deepEqual(r.hits.public_doc_comment, [{ conforming: true, where: "A.Run" }]);
+});
+
+test("a csharp comment above a conditional answers the same whichever parse read the file", async () => {
+  const source = "class A\n{\n    /// <summary>Runs.</summary>\n#if DEBUG\n    public void Run() { }\n#endif\n\n#if NET\n    public void Walk() { }\n#endif\n}\n";
+  const written = await parseTreeFile(source, "src/A.cs", "csharp");
+  const oneBranch = await parseTreeFile(withOneBranch(source).text, "src/A.cs", "csharp");
+
+  assert.equal(written.oneBranch, undefined, "the grammar read the file as written");
+  assert.deepEqual(written.hits.public_doc_comment, [{ conforming: true, where: "A.Run" }, { conforming: false, where: "A.Walk" }]);
+  assert.deepEqual(oneBranch.hits.public_doc_comment, written.hits.public_doc_comment);
+});
+
+test("a row that names a Kotlin extension refuses to run with no source to read the receiver off", async () => {
+  const source = "fun Invoice.toDto() {}\n";
+  const { program } = await parseTreeFile(source, "src/a.kt", "kotlin", { withProgram: true });
+  const row = TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment");
+
+  assert.throws(() => row.run(program, () => {}, { rel: "src/a.kt" }), /a receiver is read off the source, and this row was handed none/);
+  const labels = [];
+  row.run(program, (hit) => labels.push(hit.where), { rel: "src/a.kt", source });
+  assert.deepEqual(labels, ["Invoice.toDto"]);
 });
 
 for (const [key, { lang, declined, counted }] of Object.entries(TREE_DECLINED)) {
