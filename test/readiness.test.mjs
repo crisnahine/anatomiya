@@ -43,6 +43,13 @@ test("the node engine's remedy spells the directory to run it in", () => {
   assert.doesNotMatch(remedy, /npm/);
 });
 
+test("the node engine's remedy spells a directory as it is named, whatever characters the name holds", () => {
+  for (const dir of ["/tmp/a$&b", "/tmp/a$$b", "/tmp/a$1b", "/tmp/a$`b", "/tmp/a$'b"]) {
+    const remedy = remedyFor("oxc", dir);
+    assert.ok(remedy.endsWith(` in ${dir}`), `${dir}: ${remedy}`);
+  }
+});
+
 test("the interpreter engine's remedy names the interpreter and never npm", () => {
   // Measured: a scan with no ruby on PATH exited 1 with `spawn ruby ENOENT` and
   // told the reader to run npm, which cannot install an interpreter.
