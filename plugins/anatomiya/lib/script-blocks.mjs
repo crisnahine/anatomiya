@@ -64,16 +64,19 @@ function openTag(source, lt) {
   }
 }
 
-// Vue's raw text ends at `</name` in any letter case, then `>` or whitespace.
+// Vue's raw text ends at `</name`, then `>` or whitespace, where each character
+// is held with its case bit set against the name as the caller hands it: a
+// lower-case name ends in any letter case, and one holding an upper-case letter
+// or `_` ends nowhere, which takes the rest of the file as the compiler does.
 // The name is held against each `</` one character at a time: a name has no
 // `/`, so no character is read twice and a long name costs nothing extra.
-function rawEnd(source, from, lower) {
+function rawEnd(source, from, name) {
   for (let at = source.indexOf("</", from); at !== -1; at = source.indexOf("</", at + 2)) {
     let k = 0;
-    while (k < lower.length && source[at + 2 + k]?.toLowerCase() === lower[k]) k++;
+    while (k < name.length && (source.charCodeAt(at + 2 + k) | 0x20) === name.charCodeAt(k)) k++;
     const stop = at + 2 + k;
     const c = source[stop];
-    if (k === lower.length && (c === ">" || isSpace(c))) {
+    if (k === name.length && (c === ">" || isSpace(c))) {
       const gt = source.indexOf(">", stop);
       return { end: at, after: gt === -1 ? source.length : gt + 1 };
     }
@@ -94,8 +97,24 @@ function exactEnd(source, from, name) {
 
 const RAW_IN_TEMPLATE = new Set(["script", "style", "textarea", "title"]);
 
+// Where the markup Vue's tokenizer reads to its own end stops, whatever it
+// holds: a comment at `-->`, CDATA at `]]>`, a processing instruction and any
+// other `<!` at the first `>`, which is never the character that picked the
+// state. -1 where it never ends, and null where `lt` opens none of them.
+function passedOver(source, lt) {
+  const past = (end, from) => {
+    const close = source.indexOf(end, from);
+    return close === -1 ? -1 : close + end.length;
+  };
+  if (source.startsWith("<!--", lt)) return past("-->", lt + 4);
+  if (source.startsWith("<![CDATA[", lt)) return past("]]>", lt + 9);
+  if (source[lt + 1] === "?") return past(">", lt + 2);
+  if (source[lt + 1] === "!") return past(">", lt + (source[lt + 2] === "-" ? 4 : 3));
+  return null;
+}
+
 // The end of an html `<template>`: nested templates are counted, and comments,
-// `{{ }}` and the raw text elements are passed over whole.
+// CDATA, processing instructions, `{{ }}` and the raw text elements are passed over whole.
 function templateEnd(source, from) {
   const n = source.length;
   let depth = 1;
@@ -112,10 +131,10 @@ function templateEnd(source, from) {
       i = close + 2;
       continue;
     }
-    if (source.startsWith("<!--", lt)) {
-      const close = source.indexOf("-->", lt + 4);
-      if (close === -1) return null;
-      i = close + 3;
+    const passed = passedOver(source, lt);
+    if (passed === -1) return null;
+    if (passed !== null) {
+      i = passed;
       continue;
     }
     if (source[lt + 1] === "/") {
@@ -156,10 +175,10 @@ function vue(source) {
   while (i < n) {
     const lt = source.indexOf("<", i);
     if (lt === -1) break;
-    if (source.startsWith("<!--", lt)) {
-      const close = source.indexOf("-->", lt + 4);
-      if (close === -1) break;
-      i = close + 3;
+    const passed = passedOver(source, lt);
+    if (passed === -1) break;
+    if (passed !== null) {
+      i = passed;
       continue;
     }
     if (!isLetter(source[lt + 1])) {
@@ -177,7 +196,7 @@ function vue(source) {
       ? { end: tag.end, after: tag.end }
       : html
         ? templateEnd(source, tag.end)
-        : rawEnd(source, tag.end, tag.lower);
+        : rawEnd(source, tag.end, tag.name);
     if (!close) {
       unterminated = tag.name === "script";
       break;
