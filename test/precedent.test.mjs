@@ -453,6 +453,10 @@ test("a notice answered from a worktree's main checkout says where it was counte
   const said = noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots }, { from: "/work/app" });
   assert.match(said, /\n  Counted from this repository's main checkout at \/work\/app, not this worktree\.$/);
   assert.doesNotMatch(noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots }), /main checkout/);
+
+  // The path is the machine's, and names the checkout to open: each character that prints nothing is a space, and nothing else moves.
+  const hidden = noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots }, { from: "/work/proj\u202e\u0007gpj\u200b plain/日本語の長いディレクトリ" });
+  assert.ok(hidden.endsWith("\n  Counted from this repository's main checkout at /work/proj  gpj  plain/日本語の長いディレクトリ, not this worktree."), JSON.stringify(hidden));
 });
 
 test("the principle and the finding read the same namesake floor", () => {

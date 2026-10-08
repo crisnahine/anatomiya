@@ -38,7 +38,7 @@ import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
-import { byCode } from "./paths.mjs";
+import { byCode, dirOf } from "./paths.mjs";
 
 /**
  * The check phase: which of the conventions the map stated did this branch
@@ -291,18 +291,35 @@ export async function check(cwd, { baseRef = null } = {}) {
   // holding a test and a file no test could be written for, which is the
   // layout's own question: an empty index, a declaration file, a story, the
   // file a runner loads. Read by its path where this run parsed no head of it.
-  const broughtSource = (dir, family) =>
-    arrived.some((c) => c.path.startsWith(`${dir}/`) && familyOf(language(c.path)) === family &&
-      isProducer({ rel: c.path, lang: language(c.path), facets: headFacets.get(c.path) ?? null }, placed));
+  // Every directory above each such file, with its family: asked once for each finding and each directory it turns on.
+  const sourced = new Set();
+  for (const { path } of arrived) {
+    const lang = language(path);
+    if (!isProducer({ rel: path, lang, facets: headFacets.get(path) ?? null }, placed)) continue;
+    for (let dir = dirname(path); dir !== "."; dir = dirname(dir)) sourced.add(`${familyOf(lang)}\0${dir}`);
+  }
+  const broughtSource = (dir, family) => sourced.has(`${family}\0${dir}`);
   // A finding does not stand where the change made a directory its test is
   // under and put source there, which the merge base says: one listing, and
   // none where no finding was about to be stated or the change put no source
   // under any of them.
-  const stated = precedentFindings(arrived, roots, asked);
-  const filled = (turnsOn) => turnsOn.filter(({ dir, family }) => broughtSource(dir, family)).map(({ dir }) => dir);
-  const absent = await absentAt(root, base.mergeBase, [...new Set(stated.flatMap((f) => filled(f.turnsOn)))]);
-  for (const { turnsOn, ...finding } of stated) {
-    if (!filled(turnsOn).some((dir) => absent.has(dir))) findings.push(finding);
+  const stated = precedentFindings(arrived, roots, asked).map(({ turnsOn, ...finding }) => ({
+    finding,
+    under: turnsOn.filter(({ dir, family }) => broughtSource(dir, family)).map(({ dir }) => dir),
+  }));
+  const absent = await absentAt(root, base.mergeBase, [...new Set(stated.flatMap(({ under }) => under))]);
+  // A listing that failed says nothing of any directory, so a finding that turns on one is declined, and said (C33).
+  let declined = 0;
+  for (const { finding, under } of stated) {
+    if (absent === null && under.length > 0) declined += 1;
+    else if (!under.some((dir) => absent.has(dir))) findings.push(finding);
+  }
+  if (declined > 0) {
+    caveat(
+      caveats,
+      CAVEATS.BASE_UNREADABLE,
+      `the merge base could not be asked which directories it held, so ${declined} ${declined === 1 ? "test" : "tests"} under a directory this change put source in drew no placement finding`
+    );
   }
 
   findings.sort(
@@ -683,21 +700,43 @@ async function trackedTests(root) {
   return found;
 }
 
+// The most bytes of directory names one listing is handed. A Windows command line holds 32,767 characters, the
+// shortest of the three platforms' bounds, and half of it leaves the other half for the quoting a name can need.
+// Past a bound the call fails outright: 20,000 names of 50 bytes drew `spawn E2BIG` on macOS.
+const LISTING_ARG_BYTES = 16_000;
+
 /**
- * Which of `dirs` the merge base does not hold.
+ * Which of `dirs` the merge base does not hold, or null where a listing failed.
  *
- * None where there is no merge base to ask. A listing that failed names no
- * directory, so each reads as absent and its finding is not stated: what
- * decides whether one prints is a fact this could not read (C33).
+ * None where there is no merge base to ask. Null and never a set from the calls
+ * that did answer: a failed listing names no directory, and read as an answer
+ * every directory it was asked of would be absent (C33).
  */
 async function absentAt(root, mergeBase, dirs) {
   if (!mergeBase || dirs.length === 0) return new Set();
   // Spelled literal, since a name is the repository's: git reads a leading colon as pathspec magic and lists nothing for `:top`.
-  const named = dirs.map((dir) => `:(literal)${dir}`);
-  const listed = await gitBuffered(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...named], { timeout: GIT.checkTimeoutMs });
-  // Asked of a directory and of one inside it, git lists the inner one alone.
-  const held = listed.stdout.split("\0");
-  return new Set(dirs.filter((dir) => !held.some((entry) => entry === dir || entry.startsWith(`${dir}/`))));
+  const calls = [];
+  let room = 0;
+  for (const dir of dirs) {
+    const named = `:(literal)${dir}`;
+    const bytes = Buffer.byteLength(named) + 1;
+    if (calls.length === 0 || room < bytes) {
+      calls.push([]);
+      room = LISTING_ARG_BYTES;
+    }
+    calls.at(-1).push(named);
+    room -= bytes;
+  }
+  // Asked of a directory and of one inside it, git lists what the outer one holds and not the outer one, so every directory above an entry is held too.
+  const held = new Set();
+  for (const named of calls) {
+    const listed = await gitBuffered(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...named], { timeout: GIT.checkTimeoutMs });
+    if (!listed.ok) return null;
+    for (const entry of listed.stdout.split("\0")) {
+      for (let at = entry; at !== "" && !held.has(at); at = dirOf(at)) held.add(at);
+    }
+  }
+  return new Set(dirs.filter((dir) => !held.has(dir)));
 }
 
 /**
