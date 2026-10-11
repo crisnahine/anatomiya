@@ -321,53 +321,52 @@ A scan that refuses leaves nothing behind. Every refusal above is decided while 
 before a directory is created or a byte is written, and a dry run refuses the same way; the
 `.claude/rules` map is not written either. A target directory that cannot be written refuses only a
 scan that names the target: a plain scan and a refresh write the `.claude/rules` map, leave that
-directory as it is and say `.cursor/rules could not be written`, with the remedy. A failure after the writes began puts back every file
-already replaced, in every directory, removes the temporary files, and removes a Cursor or Copilot
-directory this run made if it is empty. A map file that is locked or read-only (`EPERM`, `EACCES`
-or `EBUSY` from the rename or the removal) is such a failure in `.claude/rules`, in
-`.claude/anatomiya`, and in a Cursor or Copilot directory the scan named: the scan names the file
-and says to close what holds it or change its mode. In a Cursor or Copilot directory the scan did
-not name, it stops that directory alone. The record is written a second time, naming for that
-directory the files it held before, then what was replaced there is put back and the temporary
-files staged for it are removed. The `.claude/rules` map and the other directory are written, the exit is 0,
-and the scan says `.cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could
-not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change
-its mode, then scan again`. That directory reads `unknown` in `--format json`. A refresh that
-leaves a directory this way names it under `stopped` in `refresh.json`, and a refresh started
-more than 30 minutes later scans the same checkout again, for as long as a directory stays stopped
-and no more often. A directory with no write permission is named there too, so while it stays that
-way a refresh scans the checkout again once each 30 minutes: with `.cursor/rules` at mode 555 and
-the target on, four refreshes 31 minutes apart ran four scans. Each is a whole scan, the type
-checker included unless the last verdict was degraded and is carried, and the `SessionStart` hook
-says nothing of it. Fixing the directory's mode ends it at the next of those scans, which writes
-the directory. A scan run by hand prints the reason and ends it until the checkout moves. Turning
-the target off does not: `scan --targets claude` refuses with
-`.cursor/rules is not writable, so the map could not be written: fix its permissions and scan again`
-while the directory cannot be written. A directory that
-refuses a new file (the same three codes when a temporary file is created in it) is the same case
-one step sooner, before anything is replaced: in `.claude/rules`, in `.claude/anatomiya` and in a
-directory the scan named, the scan refuses with `a file could not be created in .claude/rules
-(EACCES), so nothing was written: fix its permissions and scan again`, and no path of a temporary
-file is printed. In a Cursor or Copilot directory the scan did not name, the temporary files
-already created there are removed, the record is written once, naming for that directory the files
-it held before, and the scan says `.cursor/rules could not be written (a file could not be created
-in .cursor/rules (EACCES)), so nothing there was written or removed: fix its permissions, then scan
-again`. A temporary file an
-earlier scan left there, removed before the locked file was met, stays removed. Where the put-back
-or the second record write fails, the scan refuses whole and everything is put back. A dry run
-renames nothing, so past a locked file it says `would write`. The second record write comes
-before the put-back, so a process killed while that directory is put back, or after, leaves a
-record that names the map files the directory holds: the next scan writes the directory, removes
-what went stale and counts no entry left there. Killed before that write, the record the scan renamed first already names, for each directory, the
-map files that scan was about to remove, under `removing`. The next plain scan removes a file at
-such a name that still carries the key and that it does not write itself, so an area file the
-killed scan had not yet removed does not stay on disk under a name no record holds. Until then
-`check` lists such a file as one the map does not name and says the next scan removes it, and
-`doctor` counts it apart from the entries a scan leaves. Measured on a scan of all three directories
-that replaced one area with another, killed after each of its 16 renames and removals: the next
-plain scan healed every one. A keyed file at a name no record planned to remove is still left and
-reported. Once its removals have landed, the scan writes the record again without those names, so
-a file someone puts at one of them later is not removed. On a repository with no map yet, a failure at that stage can
+directory as it is and say `.cursor/rules could not be written`, with the remedy. A failure after
+the writes began puts back every file already replaced, in every directory, removes the temporary
+files, and removes a Cursor or Copilot directory this run made if it is empty. A map file that is
+locked or read-only (`EPERM`, `EACCES` or `EBUSY` from the rename or the removal) is such a failure
+in `.claude/rules`, in `.claude/anatomiya`, and in a Cursor or Copilot directory the scan named: the
+scan names the file and says to close what holds it or change its mode. In a Cursor or Copilot
+directory the scan did not name, it stops that directory alone. The record is written a second time,
+naming for that directory the files it held before, then what was replaced there is put back and the
+temporary files staged for it are removed. The `.claude/rules` map and the other directory are
+written, the exit is 0, and the scan says `.cursor/rules could not be written
+(.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was written
+or removed: close what holds it or change its mode, then scan again`. That directory reads `unknown`
+in `--format json`. A refresh that leaves a directory this way names it under `stopped` in
+`refresh.json`, and a refresh started more than 30 minutes later scans the same checkout again, for
+as long as a directory stays stopped and no more often. A directory with no write permission is
+named there too, so while it stays that way a refresh scans the checkout again once each 30 minutes:
+with `.cursor/rules` at mode 555 and the target on, four refreshes 31 minutes apart ran four scans.
+Each is a whole scan, the type checker included unless the last verdict was degraded and is carried,
+and the `SessionStart` hook says nothing of it. Fixing the directory's mode ends it at the next of
+those scans, which writes the directory. A scan run by hand prints the reason and ends it until the
+checkout moves. Turning the target off does not: `scan --targets claude` refuses with `.cursor/rules
+is not writable, so the map could not be written: fix its permissions and scan again` while the
+directory cannot be written. A directory that refuses a new file (the same three codes when a
+temporary file is created in it) is the same case one step sooner, before anything is replaced: in
+`.claude/rules`, in `.claude/anatomiya` and in a directory the scan named, the scan refuses with `a
+file could not be created in .claude/rules (EACCES), so nothing was written: fix its permissions and
+scan again`, and no path of a temporary file is printed. In a Cursor or Copilot directory the scan
+did not name, the temporary files already created there are removed, the record is written once,
+naming for that directory the files it held before, and the scan says `.cursor/rules could not be
+written (a file could not be created in .cursor/rules (EACCES)), so nothing there was written or
+removed: fix its permissions, then scan again`. A temporary file an earlier scan left there, removed
+before the locked file was met, stays removed. Where the put-back or the second record write fails,
+the scan refuses whole and everything is put back. A dry run renames nothing, so past a locked file
+it says `would write`. The second record write comes before the put-back, so a process killed while
+that directory is put back, or after, leaves a record that names the map files the directory holds:
+the next scan writes the directory, removes what went stale and counts no entry left there. Killed
+before that write, the record the scan renamed first already names, for each directory, the map
+files that scan was about to remove, under `removing`. The next plain scan removes a file at such a
+name that still carries the key and that it does not write itself, so an area file the killed scan
+had not yet removed does not stay on disk under a name no record holds. Until then `check` lists
+such a file as one the map does not name and says the next scan removes it, and `doctor` counts it
+apart from the entries a scan leaves. Measured on a scan of all three directories that replaced one
+area with another, killed after each of its 16 renames and removals: the next plain scan healed
+every one. A keyed file at a name no record planned to remove is still left and reported. Once its
+removals have landed, the scan writes the record again without those names, so a file someone puts
+at one of them later is not removed. On a repository with no map yet, a failure at that stage can
 leave `.claude/rules` and `.claude/anatomiya` behind, empty.
 
 One window is left. The last look at a directory and the `rename` or `unlink` that follows it are
@@ -408,12 +407,12 @@ lose, and it is replaced without being read or put back. The scan says so once,
 `".claude/anatomiya/facts.json" was 73400320 bytes, past the 64 MiB any command reads of a record,
 so it was replaced without being read`, and the scan after it is quiet. Refusing there would refuse
 every scan, the background refresh's included, until someone deleted the file by hand. Every hook,
-scan and check reads nothing of a record past the bound: it asks the size first, so a committed
-600 MB `facts.json` costs a tool call no read. 64 MiB is more than six times the largest file a
-scan of the 60-repository corpus writes, microsoft/vscode's 9.7 MiB `facts.json`. Measured with a
-600 MB file at `.claude/rules/anatomiya-overview.md`, a scan's peak resident memory was 682 MB on
-0.14.0 and is 116 MB with the refusal, against 109 MB with no such file; with a 600 MB `facts.json`
-it is 117 MB, replaced unread. Nothing read this way is written anywhere but back to the path it came
+scan and check reads nothing of a record past the bound: it asks the size first, so a committed 600
+MB `facts.json` costs a tool call no read. 64 MiB is more than six times the largest file a scan of
+the 60-repository corpus writes, microsoft/vscode's 9.7 MiB `facts.json`. Measured with a 600 MB
+file at `.claude/rules/anatomiya-overview.md`, a scan's peak resident memory was 682 MB on 0.14.0
+and is 116 MB with the refusal, against 109 MB with no such file; with a 600 MB `facts.json` it is
+117 MB, replaced unread. Nothing read this way is written anywhere but back to the path it came
 from.
 
 ### The one place a hook writes outside the repository
@@ -439,18 +438,18 @@ deliver there.
 
 ### A committed record or pin is input too
 
-`facts.json`, `layout.json` and `baseline.json` can be committed, so every reader holds what it takes
-from them to what this tool could have written. Each is read only as a regular file of at most
+`facts.json`, `layout.json` and `baseline.json` can be committed, so every reader holds what it
+takes from them to what this tool could have written. Each is read only as a regular file of at most
 64 MiB. A slot's `scope`, the extensions a claim's `, in .ts files` clause names, is kept, written
 and read only as at most 16 entries, each an extension or a whole file name of up to 64 letters,
 digits, `_`, `+` or `-`, and any other value is no scope. The clause is built once per area and
-slot, so a record cannot make `check` slow with it or put text of its own into a finding: 30
-findings over a forged record of a million names took 208 seconds before the bound and no
-measurable time after it. A pin's area `ceiling` is read only as a count above the plain ceiling
-for the pin's own corpus, at most twice that, and at most the number of areas the pin lists. Any
-other value makes the pin unreadable, as any malformed field does, so a hand-edited pin cannot lift
-the map past 1,000 areas. A co-change claim read back is held to the shapes the walk writes, and no
-reader takes more than the first 100 of each kind.
+slot, so a record cannot make `check` slow with it, and the most it can put into a finding is 16
+bare names of its own, never a sentence: 30 findings over a forged record of a million names took
+208 seconds before the bound and no measurable time after it. A pin's area `ceiling` is read only as
+a count above the plain ceiling for the pin's own corpus, at most twice that, and at most the number
+of areas the pin lists. Any other value makes the pin unreadable, as any malformed field does, so a
+hand-edited pin cannot lift the map past 1,000 areas. A co-change claim read back is held to the
+shapes the walk writes, and no reader takes more than the first 100 of each kind.
 
 ### Parser crashes are contained by a process boundary
 
