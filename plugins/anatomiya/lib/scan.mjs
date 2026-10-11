@@ -1,12 +1,13 @@
 import { collect, gitRoot, countUntrackedSource, frameworksIn, langsIn } from "./corpus.mjs";
 import { embeddedIn, langHas } from "./langs.mjs";
-import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
+import { discover, areaFloor, areaCeiling, areaIndex, dirCount } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
 import { defaultPoolSize } from "./pool.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { checkerBlocked, failuresIn, runSemantic, semanticOver, standsIn, verdictStamp } from "./semantic.mjs";
-import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
+import { authorsRequired, blockOf, reduceArea, verdictFor } from "./reduce.mjs";
+import { cochangeRecord, startCochange } from "./cochange-walk.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
 import { resolve as resolveBaseline, measure as measureBaseline } from "./baseline.mjs";
@@ -90,7 +91,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   const stateRun = resolveState(root);
   stateRun.catch(() => {});
 
-  let state, frameworks, head, headRun;
+  let state, frameworks, head, headRun, cochangeRun;
   try {
     // A claim that belongs to a framework cannot be judged without knowing the
     // repository uses it, and one file never says. Read from the corpus, so a
@@ -100,6 +101,10 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     headRun.catch(() => {});
 
     state = await stateRun;
+    // The walk stops at the pin, so it starts once the pin has answered, and
+    // like the history read it needs nothing the parse makes.
+    cochangeRun = startCochange(root, state);
+    cochangeRun.catch(() => {});
     head = await headRun;
   } catch (err) {
     // Otherwise the process stays up until a checker nobody will read finishes.
@@ -320,6 +325,19 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     });
   }
 
+  // A claim belongs to the one area every producer at the tip sits in, and only
+  // to one whose file this scan writes.
+  const areaFor = areaIndex(areas);
+  const written = new Set(out.map((a) => a.path));
+  const cochange = cochangeRecord(await cochangeRun, {
+    required: authorsRequired(repoAuthors, { shallow }),
+    shallow: shallow !== null,
+    areaOf: (rel) => {
+      const owner = areaFor(rel);
+      return owner && written.has(owner.path) ? owner.path : null;
+    },
+  });
+
   // Off the corpus and not off what parsed, so the count holds on a busy machine.
   const scriptOnly = tally(files.filter((f) => embeddedIn(f.lang)).map((f) => extOf(f.rel)));
 
@@ -408,7 +426,8 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     // arbitrary subset and rendering it like a complete scan is worse than
     // reporting nothing.
     suppressAll: truncated,
-    layout,
+    // What ships together rides in the layout, which the hooks already read.
+    layout: { ...layout, cochange },
     areas: out,
   };
 }
