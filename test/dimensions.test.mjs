@@ -762,7 +762,7 @@ test("a let const could have held is still a violation", () => {
 
 test("a member assignment does not excuse the binding that shares its name", () => {
   // `obj.x = 1` writes a property, not the binding, which is the distinction
-  // `usesParam` already draws for a catch parameter.
+  // `swallowed_error` draws for a caught error.
   assert.deepEqual(counts("module_state_const", `let x = 1\nobj.x = 1`), { candidates: 1, conforming: 0 });
 });
 

@@ -109,11 +109,11 @@ export function declaredParents({ path, lang, frameworks, capabilities, rows, he
  * Every function and class body inside the node reads as `{}`: a row that
  * reports a whole declaration would otherwise give it a new identity for any
  * line added to its body, and the untouched declaration came back as new.
- * `text` is the revision's reader, which a caller judging many sites of one
- * file passes so the file is read once.
+ * `reader` is the revision as `readerOf` reads it, which a caller judging many
+ * sites of one file passes so the file is read once.
  */
-export function siteIdentity(keyPath, key, node, source, text = readerOf(source)) {
-  return fingerprint(keyPath, key, node.type, (located(node) ? text.withoutBodies(node) : "") || node.name || "");
+export function siteIdentity(keyPath, key, node, source, reader = readerOf(source)) {
+  return fingerprint(keyPath, key, node.type, (located(node) ? reader.withoutBodies(node) : "") || node.name || "");
 }
 
 /** Whether the parser reported offsets for a node; prism reports none (B5). */
@@ -138,9 +138,8 @@ function readerOf(source, program = null) {
   let at = null;
   let bodies = null;
   let inTree = null;
-  // The collapsed text of [start, end): where each offset lands in the source
-  // with every run of whitespace written as one space, so the slice is
-  // `normalise` of the same range before its trim.
+  // The text of [start, end) with every run of whitespace written as one space:
+  // `at` holds where each source offset lands in that flattened copy.
   const collapsed = (start, end) => {
     end = Math.min(end, source.length);
     if (end <= start) return "";
