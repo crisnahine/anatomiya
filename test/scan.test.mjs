@@ -1991,3 +1991,32 @@ test("a Go test beside a Python file of its stem is no test of the Python file",
   const [shop] = result.layout.roots;
   assert.deepEqual([shop.companions.with, shop.companions.of, shop.companions.ext], [0, 3, ".py"]);
 });
+
+test("at the ceiling, a crate that counts nothing takes no place from an area that counts", async (t) => {
+  // 120 three-file areas sit exactly at the ceiling of 120. The crate is the
+  // largest area, so the fold takes a three-file one for it, and then the crate
+  // is dropped for counting nothing.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let a = 0; a < 120; a++) for (let i = 0; i < 3; i++) write(`m${String(a).padStart(3, "0")}/f${i}.ts`, moduleSource(i));
+    for (let i = 0; i < 20; i++) write(`crate/src/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const first = await scan(dir);
+  assert.equal(first.areas.length, 120);
+  assert.equal(first.corpus.orphaned, 0, "no area is folded for the crate");
+  assert.ok(!first.areas.some((a) => a.path.startsWith("crate")));
+  assert.deepEqual(stable(await scan(dir)), stable(first));
+
+  // A pin records the fold without asking what counts, and a given-back area
+  // split out of a pinned host would read as a population change on both sides,
+  // so a pinned scan keeps the fold the pin holds.
+  const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
+  await runPin(dir);
+  const pinned = await scan(dir);
+  assert.equal(pinned.baseline.status, "ok");
+  assert.equal(pinned.areas.length, 119);
+  assert.equal(pinned.corpus.orphaned, 3);
+  assert.ok(pinned.areas.every((a) => a.baseline.status === "ok"), "every area reads the population its pin holds");
+});
