@@ -431,8 +431,9 @@ export function putBack(path, previous, was) {
   else atomic(path, previous);
 }
 
-// The most a scan reads whole to put a file back: ten times the largest file a scan of the corpus writes (9.7 MiB, vscode's facts.json), as a power of two.
-export const PUT_BACK_MOST = 128 * 2 ** 20;
+// A scan reads whole to put back no more than any command reads of a record: 64 MiB, over six times
+// the largest file a scan of the corpus writes (9.7 MiB, vscode's facts.json).
+export const PUT_BACK_MOST = RECORD_MOST;
 
 /**
  * The size of a regular file at `path` past `PUT_BACK_MOST`, or null: what a
