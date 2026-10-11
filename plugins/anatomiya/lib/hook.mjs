@@ -20,10 +20,10 @@
  * lives: yours, on this machine, not committed.
  */
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
+import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTailOf, realpathOrNull, resolveInside } from "./rules.mjs";
 import { locator } from "./encode.mjs";
 import { FACTS_PATH, readLayout, readRecord, schemaProblem } from "./facts.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
@@ -475,12 +475,22 @@ export function targetIn(payload, root, from) {
 }
 
 /**
- * How far back a delivery still counts as recent, in transcript bytes.
+ * How far back a delivery still counts as recent, in bytes of the transcript
+ * records the model reads (A92).
  *
- * 219 local sessions wrote a median 9.0 transcript bytes per context token, so
- * this is about 29k tokens between two copies of one map (A92).
+ * 34 sessions on 2.1.292 to 2.1.296 wrote a median 6.6 such bytes per context
+ * token, so this is about 40k tokens between two copies of one map.
  */
 export const ECHO_WINDOW_BYTES = 256 * 1024;
+
+// How much transcript is read to find a window's worth of those records: a
+// prompt snapshot alone runs to 130 KB. Past it the window counts as run out.
+const ECHO_READ_MOST = 4 * ECHO_WINDOW_BYTES;
+
+// A claim this old is no batch's: its delivery has reached the transcript.
+const CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
+const CLAIM_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+)?$/;
+const CLAIMS_LISTED_MOST = 4096;
 
 /**
  * The map as a hook would deliver it, or null where there is none to deliver or
@@ -489,7 +499,7 @@ export const ECHO_WINDOW_BYTES = 256 * 1024;
  * Null rather than a note about the absence: a repository nobody has scanned is
  * the ordinary case, and saying so on every tool call is worse than silence.
  */
-export function echoContext(root, { now = new Date(), transcript = null } = {}) {
+export function echoContext(root, { now = new Date(), transcript = null, data = null } = {}) {
   const found = ownMap(root);
   if (found === null) return null;
 
@@ -510,7 +520,9 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
   const failed = refreshFailed(found.from ?? found.root);
   if (failed) hash.update("\0refresh-failed");
   const digest = hash.digest("hex").slice(0, 12);
-  if (heldIn(transcript, digest)) return null;
+  const tail = readTailOf(transcript, ECHO_READ_MOST);
+  if (heldIn(tail, digest)) return null;
+  if (!claimed(claimPath(data, transcript, digest), tail, digest)) return null;
 
   // The remedy is the plugin's own command, which is the one spelling a model
   // can run: the binary is `anatomiya.mjs` under a directory only the plugin
@@ -608,29 +620,128 @@ function inWorkflowRun(workflows, file) {
  */
 export function echoEvent(line) {
   if (!line.includes("compact_boundary") && !line.includes("hook_additional_context")) return null;
-  let entry;
+  return eventOf(parsed(line));
+}
+
+/**
+ * The bytes one transcript line adds to the window: the whole line where the
+ * model reads it, none where the build wrote it for itself.
+ *
+ * A user or assistant message is read, and an attachment is read where it
+ * carries `rendered`, which the build sets only on one that converts into a
+ * message. A prompt snapshot, a hook's stdout and every bookkeeping line carry
+ * none, and counted they pushed a delivery out within one tool call.
+ */
+export function windowBytes(line) {
+  return readByModel(parsed(line)) ? Buffer.byteLength(line) + 1 : 0;
+}
+
+function parsed(line) {
   try {
-    entry = JSON.parse(line);
+    return JSON.parse(line);
   } catch {
     return null;
   }
+}
+
+function eventOf(entry) {
   if (entry?.type === "system" && entry.subtype === "compact_boundary") return "compact";
   if (entry?.type !== "attachment" || entry.attachment?.type !== "hook_additional_context") return null;
   return [].concat(entry.attachment.content ?? []).filter((text) => typeof text === "string");
 }
 
-/** Whether the transcript's tail holds a delivery of this map with no compaction after it. */
-function heldIn(transcript, digest) {
-  const tail = readTail(transcript, ECHO_WINDOW_BYTES);
+const readByModel = (entry) => entry?.type === "user" || entry?.type === "assistant" || (entry?.type === "attachment" && Array.isArray(entry.rendered));
+
+/**
+ * Whether the window holds a delivery of this map with no compaction after it,
+ * or a claim at offset `claimAt` that stands in for one not written yet.
+ */
+function heldIn(tail, digest, claimAt = null) {
   if (tail === null) return false;
   const mark = `digest="${digest}"`;
-  const lines = tail.split("\n");
+  const lines = tail.text.split("\n");
+  let end = tail.end;
+  let counted = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
-    const event = echoEvent(lines[i]);
+    if (claimAt !== null && end <= claimAt) return true;
+    const bytes = Buffer.byteLength(lines[i]) + (i < lines.length - 1 ? 1 : 0);
+    end -= bytes;
+    const entry = parsed(lines[i]);
+    const event = eventOf(entry);
     if (event === "compact") return false;
     if (event?.some((text) => text.includes(mark))) return true;
+    if (readByModel(entry)) counted += bytes;
+    if (counted > ECHO_WINDOW_BYTES) return false;
   }
-  return false;
+  return claimAt !== null && end <= claimAt;
+}
+
+/** Where this window's claim on this map is kept, or null where the plugin names no data directory. */
+function claimPath(data, transcript, digest) {
+  if (typeof data !== "string" || !isAbsolute(data) || typeof transcript !== "string") return null;
+  return join(data, "echo", `${createHash("sha256").update(transcript).digest("hex").slice(0, 16)}-${digest}`);
+}
+
+/**
+ * Whether this call is the one in its batch that delivers.
+ *
+ * The calls of a parallel batch run their hooks before any of their records
+ * reach the transcript, so each would read the window as empty. The first to
+ * create the claim delivers; the claim names the transcript offset it read up
+ * to, and the others read it as a delivery made there, so it holds them only
+ * while that offset is inside the window. Anything that cannot be written or
+ * read answers as the transcript alone does. A stale claim is moved aside
+ * before it is replaced, so only one caller replaces it; a third caller
+ * interleaving with both can still deliver one copy more.
+ */
+function claimed(path, tail, digest) {
+  if (path === null || tail === null) return true;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      const fd = openSync(path, "wx");
+      try {
+        writeSync(fd, `${tail.end}\n`);
+      } finally {
+        closeSync(fd);
+      }
+      sweep(dirname(path), path);
+      return true;
+    } catch (err) {
+      if (err?.code !== "EEXIST") return true;
+    }
+    const entry = readHead(path, 32);
+    const at = entry.kind === "file" && /^\d+\n$/.test(entry.head) ? Number(entry.head) : null;
+    if (at !== null && at <= tail.end && heldIn(tail, digest, at)) return false;
+    const aside = `${path}.${process.pid}`;
+    try {
+      renameSync(path, aside);
+      unlinkSync(aside);
+    } catch {
+      // Another call moved it first; the next attempt reads what it left.
+    }
+  }
+  return true;
+}
+
+/** Takes out claims older than a day, so they stay bounded however many sessions run. */
+function sweep(dir, kept) {
+  let names;
+  try {
+    names = readdirSync(dir).slice(0, CLAIMS_LISTED_MOST);
+  } catch {
+    return;
+  }
+  const before = Date.now() - CLAIM_KEPT_MS;
+  for (const name of names) {
+    const path = join(dir, name);
+    if (path === kept || !CLAIM_NAME.test(name)) continue;
+    try {
+      if (lstatSync(path).mtimeMs < before) unlinkSync(path);
+    } catch {
+      // Gone already, or not ours to read.
+    }
+  }
 }
 
 /**

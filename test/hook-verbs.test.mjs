@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -446,6 +446,140 @@ test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", n
 
   assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(200 * 1024) }), {});
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(256 * 1024) }).hookSpecificOutput.additionalContext, /<repository-map /);
+});
+
+// What 2.1.296 writes for itself between two calls: a snapshot of the system
+// prompt, a bookkeeping line, and a hook's own stdout. None carries `rendered`.
+const own = (bytes) => [
+  { type: "attachment", attachment: { type: "prompt_snapshot", systemPrompt: ["x".repeat(bytes)] } },
+  { type: "queue-operation", operation: "enqueue", content: "x".repeat(bytes) },
+  { type: "attachment", attachment: { type: "hook_success", stdout: "x".repeat(bytes) } },
+];
+const shown = (bytes) => ({ type: "attachment", attachment: { type: "instructions" }, rendered: [{ content: "x".repeat(bytes) }] });
+
+test("records the build writes for itself do not push a delivery out of the window", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const call = (entries) => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: transcript(t, [delivered(first), ...entries]) });
+
+  assert.deepEqual(call([...own(300 * 1024), filler(100 * 1024)]), {});
+  assert.match(call([shown(300 * 1024)]).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "an attachment the model reads counts");
+});
+
+/** The plugin's data directory as Claude Code names it to a plugin's hooks, for one test. */
+function pluginData(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-plugin-data-"));
+  const before = process.env.CLAUDE_PLUGIN_DATA;
+  process.env.CLAUDE_PLUGIN_DATA = dir;
+  t.after(() => {
+    if (before === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = before;
+    rmSync(dir, { recursive: true, force: true });
+  });
+  return dir;
+}
+
+const append = (path, entries) => writeFileSync(path, `${readFileSync(path, "utf8")}${entries.map((e) => `${JSON.stringify(e)}\n`).join("")}`);
+
+test("the calls of one batch deliver one copy between them, before any of them is in the transcript", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const data = pluginData(t);
+  const path = transcript(t, [delivered(first), filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "due by the window");
+  assert.deepEqual(call(), {}, "a sibling");
+  assert.deepEqual(call(), {}, "another sibling");
+  assert.equal(readdirSync(join(data, "echo")).length, 1, "one claim per transcript and map");
+
+  // A sibling whose result alone outruns the window is owed a copy the claim must not hold back.
+  append(path, [filler(300 * 1024)]);
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "due again");
+  assert.deepEqual(call(), {});
+  assert.equal(readdirSync(join(data, "echo")).length, 1, "the claim was replaced, not added to");
+
+  // The same records and a little more, so a claim at this window's offset would sit inside it.
+  const other = transcript(t, [delivered(first), filler(300 * 1024), filler(300 * 1024), filler(20 * 1024)]);
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: other }).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "another window's claim holds nothing here");
+});
+
+test("a window's first batch delivers once, before anything is in its transcript", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  pluginData(t);
+  const path = transcript(t, []);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
+  append(path, [filler(100)]);
+  assert.deepEqual(call(), {});
+});
+
+test("a claim after a compaction holds nothing", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  pluginData(t);
+  const path = transcript(t, [filler(10)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
+  append(path, [compact()]);
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
+});
+
+test("with nowhere to keep a claim, every call of a batch answers as it would alone", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const path = transcript(t, [filler(10)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  const data = pluginData(t);
+  const blocked = join(data, "file");
+  writeFileSync(blocked, "");
+
+  const relative = `anatomiya-relative-${process.pid}`;
+  t.after(() => rmSync(relative, { recursive: true, force: true }));
+  for (const [what, value] of [["unset", undefined], ["relative", relative], ["a file", blocked], ["below a file", join(blocked, "x")]]) {
+    if (value === undefined) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = value;
+    for (let i = 0; i < 2; i++) assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, what);
+  }
+  assert.equal(existsSync(relative), false, "a relative name is not resolved against the cwd");
+});
+
+test("claims older than a day are swept when a new one is made", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  mkdirSync(join(data, "echo"));
+  const old = join(data, "echo", "0000000000000000-000000000000");
+  writeFileSync(old, "0\n");
+  const twoDays = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+  utimesSync(old, twoDays, twoDays);
+  const recent = join(data, "echo", "1111111111111111-000000000000");
+  writeFileSync(recent, "0\n");
+  const foreign = join(data, "echo", "notes.txt");
+  writeFileSync(foreign, "");
+  utimesSync(foreign, twoDays, twoDays);
+
+  runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: transcript(t, [filler(10)]) });
+
+  assert.equal(existsSync(old), false);
+  assert.equal(existsSync(recent), true);
+  assert.equal(existsSync(foreign), true, "only a name a claim has");
+  assert.equal(readdirSync(join(data, "echo")).length, 3);
+});
+
+test("a claim that is not one this hook wrote is replaced rather than believed", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  pluginData(t);
+  const path = transcript(t, [filler(10)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
+  const [name] = readdirSync(join(process.env.CLAUDE_PLUGIN_DATA, "echo"));
+  const claim = join(process.env.CLAUDE_PLUGIN_DATA, "echo", name);
+
+  for (const content of ["", "12", "nonsense\n", "999999999\n"]) {
+    writeFileSync(claim, content);
+    assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, JSON.stringify(content));
+    assert.deepEqual(call(), {}, `${JSON.stringify(content)} replaced`);
+  }
 });
 
 test("a re-scan that changes the map on disk is delivered on the next call", needsRuby, async (t) => {
