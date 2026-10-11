@@ -297,6 +297,11 @@ test("a site that is or opens an arrow's expression body keeps its text, so an e
   assert.deepEqual(judged("nullish_default", "export const g = (a) => a.x || 1;\n", "export const g = (a) => a.y || 2;\n"), ["1:a.y || 2"]);
   assert.deepEqual(judged("nullish_default", "export const g = (a) => a.x || 1 ? b : c;\n", "export const g = (a) => a.y || 2 ? b : c;\n"), ["1:a.y || 2"], "a site opening a longer body");
   assert.deepEqual(
+    judged("route_logging", "export const h = (e) => console.log?.(e);\n", "export const h = (e) => console.warn?.(e);\n"),
+    ["1:console.warn?.(e)"],
+    "a site inside a body of the same span"
+  );
+  assert.deepEqual(
     judged("optional_chaining", "export const f = () => {\n  return props.a;\n};\n", "export const f = () => {\n  return props.b;\n};\n"),
     ["2:props.b"],
     "and in a block body"
