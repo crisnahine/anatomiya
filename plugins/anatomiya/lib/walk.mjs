@@ -98,10 +98,12 @@ const AROUND = new WeakMap();
 const HOLDER = new WeakMap();
 const OWNER = new WeakMap();
 
-// What an object literal passes through on its way to a binding: `{ methods: { run } }` and
-// `defineComponent({ ... })` both hold `run` under the binding, not under `methods`.
+// What an object literal passes through on its way to a binding: `{ methods: { run } }`,
+// `defineComponent({ ... })` and `base || { ... }` all hold `run` under the binding, not under `methods`.
 const THROUGH = new Set([
   "ObjectExpression",
+  "ConditionalExpression",
+  "LogicalExpression",
   "Property",
   "CallExpression",
   "NewExpression",
@@ -119,8 +121,14 @@ const objectBinding = (parent, above) => {
 
 function bind(node, holder) {
   const child = node.value ?? node.init;
-  if (!child || typeof child !== "object" || !isFn(child)) return;
+  if (!child || typeof child !== "object") return;
   const name = declName(node);
+  // `const X = class { m() {} }` is the class `X` its twin `class X { m() {} }` names.
+  if (child.type === "ClassExpression") {
+    if (name) NAMED.set(child, name);
+    return;
+  }
+  if (!isFn(child)) return;
   if (name) NAMED.set(child, name);
   if (holder) HOLDER.set(child, holder);
 }
@@ -208,7 +216,8 @@ export function walk(program, visit) {
 
     if (isDecl) {
       const up = ctx.enclosing;
-      OWNER.set(node, up === null ? null : isClass(up) && declName(up) ? declName(up) : OWNER.get(up));
+      // Only a class's own members carry its name: a function declared inside a method is its own.
+      OWNER.set(node, up === null ? null : isClass(up) ? declName(up) ?? OWNER.get(up) : MEMBERS.has(up.type) ? OWNER.get(up) : null);
       if (declName(node) === null) {
         AROUND.set(node, up === null ? null : declName(up) === null ? AROUND.get(up) ?? null : whereOf(up, ctx));
       }
@@ -279,6 +288,8 @@ const isFn = (n) =>
   n.type === "ArrowFunctionExpression";
 
 const isClass = (n) => n.type === "ClassDeclaration" || n.type === "ClassExpression";
+
+const MEMBERS = new Set(["MethodDefinition", "PropertyDefinition", "AccessorProperty"]);
 
 export const isFunctionLike = isFn;
 

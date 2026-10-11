@@ -253,9 +253,13 @@ test("a site's name carries the named class around its declaration, and only one
 
   assert.deepEqual(names(`class A { run() { try {} catch {} } }`), ["A.run"]);
   assert.deepEqual(names(`class A { run = () => { try {} catch {} } }`), ["A.run"]);
-  assert.deepEqual(names(`class A { run() { function inner() { try {} catch {} } } }`), ["A.inner"]);
+  assert.deepEqual(names(`class A { run() { function inner() { try {} catch {} } } }`), ["inner"], "only a class's own members carry its name");
+  assert.deepEqual(names(`class A { run() { const inner = () => { try {} catch {} } } }`), ["inner"]);
+  assert.deepEqual(names(`class A { run = () => { function inner() { try {} catch {} } } }`), ["inner"]);
   assert.deepEqual(names(`function run() { try {} catch {} }`), ["run"]);
-  assert.deepEqual(names(`const A = class { run() { try {} catch {} } }`), ["run"], "an unnamed class names nothing");
+  assert.deepEqual(names(`const A = class { run() { try {} catch {} } }`), ["A.run"], "a class expression bound to a name is that name");
+  assert.deepEqual(names(`const A = class { static { try {} catch {} } }`), ["A"]);
+  assert.deepEqual(names(`list.push(class { run() { try {} catch {} } })`), ["run"], "an unbound class names nothing");
   assert.deepEqual(names(`class A { static { try {} catch {} } }`), ["A"], "the class is the declaration, not its own owner");
   assert.deepEqual(names(`class O { m() { class I { run() { try {} catch {} } } } }`), ["I.run"], "the innermost class");
   assert.deepEqual(names(`function f() { class C {} try {} catch {} }`), ["f"], "a class closed before the site is not around it");
@@ -290,6 +294,10 @@ test("a method of an object literal bound to a name carries that name, through a
   assert.deepEqual(names(`const api = make(() => ({ run() { try {} catch {} } }))`), ["run"], "a function between them breaks the binding");
   assert.deepEqual(names(`const vm = new Vue({ methods: { run() { try {} catch {} } } })`), ["vm.run"]);
   assert.deepEqual(names(`const api = await make({ run() { try {} catch {} } })`), ["api.run"]);
+  assert.deepEqual(names(`const api = cond ? { run() { try {} catch {} } } : null`), ["api.run"], "through a conditional, as through a call");
+  assert.deepEqual(names(`const api = base || { run() { try {} catch {} } }`), ["api.run"]);
+  assert.deepEqual(names(`const api = base ?? { run() { try {} catch {} } }`), ["api.run"]);
+  assert.deepEqual(names(`const api = ok && { run() { try {} catch {} } }`), ["api.run"]);
 });
 
 test("a site's name costs the same at any depth of nested callbacks", () => {
@@ -313,7 +321,7 @@ test("a site's name costs the same at any depth of every nesting shape", () => {
   const shapes = {
     alternating: [(n) => "const f = () => { g(() => {\n".repeat(n) + "}) }".repeat(n) + "\n", "ArrowFunctionExpression", "f", 2],
     named: [(n) => "function f() {\n".repeat(n) + "}".repeat(n) + "\n", "FunctionDeclaration", "f", 1],
-    classes: [(n) => "export const X = " + "class extends B { m() { return 0,\n".repeat(n) + "1" + " } }".repeat(n) + ";\n", "FunctionExpression", "m", 1],
+    classes: [(n) => "export default " + "class extends B { m() { return 0,\n".repeat(n) + "1" + " } }".repeat(n) + ";\n", "FunctionExpression", "m", 1],
     objects: [(n) => "const api = " + "{ m() {}, c:\n".repeat(n) + "1" + "}".repeat(n) + ";\n", "FunctionExpression", "api.m", 1],
     calls: [(n) => "const api = " + "make({ m() {}, c:\n".repeat(n) + "1" + "})".repeat(n) + ";\n", "FunctionExpression", "api.m", 1],
   };

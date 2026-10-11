@@ -145,8 +145,10 @@ version, with times and build digests masked
   `run`: `check` matches a site to its own method where two classes in one file each have one of
   that name and a branch adds a site above the old one, and reports the new site's line. A site in
   a callback takes the nearest named declaration around it, and a method of an object literal
-  bound to a name is `api.run`, through nested literals, call and `new` arguments, `await`, `as`,
-  `satisfies` and parentheses.
+  bound to a name is `api.run`, through nested literals, conditionals, `||`, `&&` and `??`, call and
+  `new` arguments, `await`, `as`, `satisfies` and parentheses. `const X = class { m() {} }` is
+  `X.m`, as `class X` is, and a function declared inside a method is its own name, `helper`, not
+  `A.helper`.
 - A parse child loads its own engine's rows and no other engine's. A JavaScript child adds 1.42 MB
   at load where it added 1.92, and a tree-sitter child 1.50 MB where it added 1.94, in each of up
   to eight children. Maps are byte-identical.
