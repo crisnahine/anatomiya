@@ -7,6 +7,206 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+A scan reads the default branch's history and states what ships together: a change that adds a new
+cop also edits `config/default.yml`, and the area file, the notice before a write and `check` say
+so. Parallel tool calls carry one copy of the map between them, and the end-of-turn reuse check asks
+only about files the session's own tool calls wrote. A map written by 0.14.0 changes on its first
+scan in 22 of 60 measured repositories.
+
+After updating, a map refreshes itself on the next session or HEAD move, as before, and a committed
+map is never refreshed: scan it by hand and commit the result. A repository at the 500-area
+ceiling whose pin 0.14.0 took keeps that pin's partition, with no area read as a population change,
+until a pin is next taken, by the refresh or by `/anatomiya:pin`; the places of areas that count
+nothing come back then. What ships together needs the history: a shallow clone states none, and so
+does a git older than 2.31. Nothing needs installing.
+
+### What changes in an existing map
+
+A scan of this version writes every map file as 0.14.0 wrote it in 38 of the 60 measured
+repositories. The counts in this list are from one run: a copy of each of the 35 corpus
+repositories and the 25 of the seven languages, scanned by 0.14.0 and by this version, with times
+and build digests masked.
+
+- The record. `facts.json` and `layout.json` differ in all 60: they carry the co-change record,
+  `layout.cochange`, empty where nothing was mined.
+- The overview differs in 20 of 60. Area files: 8,011 identical, 161 changed, 4 added and none
+  removed.
+- Support files under a test tree leave the test counts in 13 repositories: whitehall, appsmith,
+  cal.diy, discourse, element-plus, forem, canvas-lms, openproject, prisma, react, rubocop,
+  storybook and vitepress.
+- The sibling-module count moves in 14: Ghost, angular, appsmith, backstage, cal.diy, element-plus,
+  react-front-end, vscode, prisma, react, storybook, supabase, next.js and webpack. next.js's
+  `test` root loses its whole helper clause, `2767 sibling modules ...; 736 of 6989 JSX files
+  inline a helper`, since no module there is one a test could be written for.
+- The seven dotted test kinds move vscode and webpack.
+- Co-change blocks are added to 13 area files in 7 repositories: whitehall, consul, forem,
+  canvas-lms, mastodon, rubocop and supabase. No directive line moves in any of them. In one
+  supabase area four count lines give way and fold into `and 4 more not shown here, all of them
+  counts`.
+- The claims line. It moves with the printed co-change claims: whitehall `61 of 292` to `63 of
+  294`, consul `87 of 289` to `88 of 290`, forem `145 of 823` to `147 of 825`, mastodon `236 of
+  1189` to `237 of 1190`, rubocop `33 of 104` to `40 of 111` and supabase `927 of 7288` to `929 of
+  7290`. backstage and discourse state claims that print in no area file, so their lines do not
+  move. hugo, ktor, okhttp and serde state nothing and read `, they print as counts` where 0.14.0
+  printed `, the rest print as counts`.
+- The 500-area ceiling. next.js holds 500 areas where it held 497, the three added holding 11 files
+  each, and its claims line reads `423 of 6030 claims stated, 723 match the model default` for
+  `423 of 5993`, `719`. canvas-lms holds 498 where it held 497 and reads `968 of 7662 claims stated,
+  737 match the model default` for `962 of 7654`, `732`: of the six more stated, five come from the
+  give-back and one is a co-change claim.
+- Nothing moves for quoted names, since no directory name in the 60 that reaches a map holds a
+  space, and nothing for the family hold or `Class.method`, which are `check`'s. 22 repositories'
+  records gain `scope` on their slots, and no rule file moves for it.
+
+### Added
+
+- What ships together. A scan reads the newest 20,000 first-parent changes of the default branch up
+  to the pin, and for a kind of file those changes added at least 35 times it states the one file
+  they also edited, or the kind of file they also added. On rubocop:
+
+  ```
+  a .rb file added to "lib/rubocop/cop/style" ships with an edit to "config/default.yml"
+    100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here arrived that way
+  ```
+
+  A file's class is its directory and its kind (`lib/rubocop/cop/style/*.rb`), or the same kind one
+  directory up. Each class is judged on its newest 100 additions, and a claim states only past the
+  ratio and Wilson bound every claim faces, the author bar, and three gates of its own: the
+  companion is touched at twice its base rate, it and a producer exist at the tip, and the newest
+  fifth of the additions conforms. Tests are neither side, a change past 40 files is not counted,
+  and the map's own files are no part of a change. It needs no parser, so any language can get
+  one. Over 60 repositories a scan states 25 claims in 9, 16 of them in an area file. Mined on the
+  older four fifths of 44 repositories' changes and held out on the newest fifth, 1,563 of 1,633
+  held-out additions came with their companion (95.7%). The record keeps it under
+  `layout.cochange`, at most 100 stated claims and 100 near misses.
+- The block prints in the area file that holds the producers, after the directives, and gives way
+  before any directive, so no directive line moves for it. A claim whose producers sit in no one
+  area, or in one whose patterns do not reach them, is printed nowhere and still reaches the notice
+  and `check`. A printed claim counts as stated in the claims line and the overview's `N stated`:
+  rubocop reads `40 of 111 claims stated`.
+- The notice before a write speaks for a new file of a producer class, one line per claim, and says
+  to make the companion change in the same change or say why this file does not need it: `A .rb
+  file added here ships with an edit to "config/default.yml": 100 of the last 100 changes that
+  added one.`
+- `check` reports a branch that adds a producer without its companion, one finding per claim on the
+  first such file, as `dimension: "cochange"`. MUST-FIX only where the history was read up to a pin
+  and every counted change conformed; FIX where it was read from a base branch or HEAD, where no
+  one area file carries the claim, where its block was dropped, where the branch touches more than
+  40 files, or where the record was not perfect.
+- `check` and `doctor` say which of the files the map does not name the next scan removes: `the
+  next scan removes "anatomiya-area-<id>.md", which the scan that wrote the map was about to
+  remove`. `check --format json` lists them under `removing` beside `unknown`, only where there is
+  one. `doctor` counts them on a line of their own, apart from the entries a scan leaves alone.
+
+### Changed
+
+- A file in a `__tests__` directory, or one under a test tree that mirrors a source path, is not a
+  test where its parse shows it exports something or, in Ruby, declares no case. Across 60
+  repositories those two rules took 645 files, and 339 of them were fixtures, helpers, mocks,
+  configs and Ruby support files; no real test is lost, and eslint's 294 mirrored rule tests stay.
+  Such a file is neither a test nor a source file in any count. vitepress's `docs` read `3 of 11
+  have a namesake test` and reads `0 of 11`. A file the parse could not read keeps the path rule.
+- The sibling-module count beside a root's components counts only the files a test could be
+  written for, the namesake count's own definition, so helpers and fixtures under a test tree and
+  empty files leave it. next.js's `test` root loses the clause, and vscode's `extensions` reads
+  2256 for 2621.
+- Seven kinds of test spelled as a dotted segment of the name make a test file: `.unittest.`,
+  `.basictest.`, `.longtest.`, `.spectest.`, `.stest.`, `.integrationTest.` and `.releaseTest.`.
+  Across 60 repositories 235 names carry a dotted segment ending in `test` that the name rule
+  missed; these seven take all 226 real tests among them and none of the other 9. vscode's
+  `src/vs` reads 1720 test files where it read 1669, and webpack's `test` 163 where it read 159.
+- `check` and the notice answer a new test only from a source root of its own family: a
+  `_spec.rb` under a directory of `.js` files is not told those files have no namesake test.
+  Asked of every one of the 46,820 tests the 60 repositories track, as if each were new, the rule
+  gives the same 5 findings with that hold as without it.
+- A directory name that holds a space or a double quote prints quoted, as JSON quotes it, wherever
+  the map names it: the root lines, the `under` clauses, the tests line, an area file's heading, the
+  Areas listing, the notice and `check`, so a name that is a sentence opens a bullet as a name.
+  102 tracked directory names in the 60 repositories hold a space, and none reaches a map, so no
+  map line moves. A directory named `the repository root` prints as `"the repository root"`.
+- A NIT on a slot the map left unstated prints the line the area file prints for that slot, in its
+  words, with its scope clause and its gate: on fastapi, a typed function added in
+  `docs_src/security` reads `functions declare no return type: no convention. 62 of 70 sites
+  (ratio)` where it read `functions declare no return type`, which read as advice to drop the
+  annotation. The text report prints no reason line under such a NIT, since the claim already
+  names the gate, and the GitHub annotation carries the claim as its message with no title. JSON
+  keeps every field. Each slot of the record keeps the extensions its clause names, as `scope`.
+- The scan's claims line says what is left exactly: no clause where nothing is, `, the other prints
+  as a count` or `, it prints as a count` for one, and `, the rest print as counts` or `, they
+  print as counts` for more. It said `the rest print as counts` at none and at one.
+- The echo measures its window in what the model reads: user and assistant messages and the
+  attachments the build renders, 192 KiB of them, about 29.9k tokens at the 6.57 bytes per token
+  measured on Claude Code 2.1.292 to 2.1.296. It counted every transcript byte, so a prompt
+  snapshot of up to 130 KB pushed a delivery out within one tool call. The CLAUDE.md files count for
+  nothing, since the build places them at the head of the context. Replayed over 4,328 local
+  transcripts, it keeps 9,267 of 46,370 deliveries.
+- A finding names the method it sits in under its class in JavaScript too, `B.run`, where it named
+  `run`: `check` matches a site to its own method where two classes in one file each have one of
+  that name and a branch adds a site above the old one, and reports the new site's line. A site in
+  a callback takes the nearest named declaration around it, and a method of an object literal
+  bound to a name is `api.run`, through nested literals, call and `new` arguments, `await`, `as`,
+  `satisfies` and parentheses.
+- A parse child loads its own engine's rows and no other engine's. A JavaScript child adds 1.42 MB
+  at load where it added 1.92, and a tree-sitter child 1.50 MB where it added 1.94, in each of up
+  to eight children. Maps are byte-identical.
+- Byte bounds in messages are named in MiB: `past the 64 MiB this reads`.
+- `npm run check:docs` holds a bare `.mjs` name in a `DECISIONS.md` done cell to the files the tree
+  holds, so a renamed module named bare fails it, and reads a count written as a word, from
+  zero to ninety-nine, `twenty-three` whole, as it reads digits.
+- Two questions were measured and not built. A type-checker program per package `tsconfig.json`
+  lifts no measured repository past the 0.80 floor: Ghost goes from 54.9% to 63.3% at 2.49 times
+  the time, react from 60.2% to 62.4%, prisma and eslint not at all, since most of each population
+  is untyped JavaScript (`docs/measurements/2026-10-11-per-package-tsconfig.md`). Of 95 written
+  inputs the Java, C#, Rust and Kotlin compilers reject, the grammars read 37 clean, and in the 60
+  repositories 2 more files of 3,384, both test fixtures that give no row a site
+  (`docs/measurements/2026-10-11-invalid-inputs.md`), so nothing was added for them.
+
+### Fixed
+
+- Parallel tool calls each delivered a copy of the map. The calls of one batch run their hooks
+  before any of their records reaches the transcript, so each read the window as empty: a session
+  started above a checkout got one copy per call of its first batch. Where Claude Code names the
+  plugin a data directory, the calls of this version share a claim per transcript and map under
+  `${CLAUDE_PLUGIN_DATA}/echo/`, taken under a lock, and one of them delivers. Started 3 and 8 at
+  once for 20 rounds each, the echo delivered once in every round. Without that directory each
+  call answers alone, as before.
+- The end-of-turn reuse check asked about a file another session or an editor saved during the
+  session. A file is the turn's work only when it was last written during one of the session's own
+  tool calls, from its call to its result and a second either side, whatever the tool, and a call
+  run in the background runs on to its completion record. A commit counts the same way, so a
+  subagent's commit is the session's.
+- A scan killed between two of its renames could leave an area file no record named, which every
+  later scan left alone and reported. The record a scan renames first names the
+  files that scan was about to remove, and the next plain scan removes them. Killed after each of
+  its 16 renames and removals, a scan of all three directories was healed by the next scan every
+  time, where 0.14.0 failed at the first.
+- A scan read whole, with no bound, every file it was about to replace or remove, to put it back on
+  a failure. A 600 MB file at `.claude/rules/anatomiya-overview.md` took one scan, and every
+  background refresh, to 682 MB resident. In this version such a file past 64 MiB refuses the scan,
+  at 116 MB:
+  `".claude/rules/anatomiya-overview.md" is 629145600 bytes, past the 64 MiB a scan reads to put a
+  file back, so nothing was written: move or delete it and scan again`. In a Cursor or Copilot
+  directory the scan did not name, that directory is left alone instead. A `facts.json` or
+  `layout.json` past 64 MiB, which no command reads, is replaced without being read and said once,
+  and no hook reads any of a record that size: each read 64 MB of it on every tool call.
+- At the 500-area ceiling, an area that counts nothing took a place from one that counts. The fold
+  runs before anything is counted, so next.js and canvas-lms each lost three. Their places go
+  back to the largest areas the fold took, in the scan and in the pin: next.js holds 500 areas where it held 497, and canvas-lms 498. A pin of a
+  repository at the ceiling parses it once, without the checker, which took next.js from 8.1 to 14.5
+  seconds.
+- At the area ceiling an edit that made an area count nothing moved the partition, and unrelated
+  areas read as population changes until the next pin. A pin records the ceiling its give-back
+  settled on, and a scan under it folds there and gives nothing back. A pin's ceiling is read only
+  up to twice the plain one, so a hand-edited pin cannot lift the map past 1,000 areas.
+- Callbacks, catches and classes nested deep cost the square of the depth in the JavaScript rows:
+  at 800 to 1,600 levels each doubling cost about four times. In this version every row and every site name
+  takes one pass however deep a file nests, and ordinary code runs its JavaScript rows 1% to 7%
+  faster.
+- A record could make `check` slow and put its own text into a finding through the extensions a
+  slot names. 30 findings over a forged record of a million names took 208 seconds. `scope` is
+  kept and read only as at most 16 extensions or file names, and its clause is built once per area
+  and slot.
+
 ## [0.14.0] - 2026-10-11
 
 Seven more languages are read, through tree-sitter as a third parser engine: Python, PHP, Go, Java,
