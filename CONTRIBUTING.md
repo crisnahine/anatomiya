@@ -1,8 +1,8 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 319 numbered rows, each one a measurement or a review finding reduced
-to the decision it forces on the code. It is the build contract, and most questions you will have
-about why something is shaped the way it is are answered there in one line.
+Read `DECISIONS.md` first. It is 319 numbered rows, each one a measurement or a review finding
+reduced to the decision it forces on the code. It is the build contract, and most questions you will
+have about why something is shaped the way it is are answered there in one line.
 
 ## Setup and tests
 
@@ -283,14 +283,14 @@ in cases the parser cannot see, for example a `throw` inside a helper the caller
 dangerous direction, so a `partial` dimension can never reach top severity. Guessing `precise` to get
 a stronger directive is the worst thing you can do here.
 
-`run` calls `add({ node, conforming, where })` once per site. `where` names the site's place, used to
-make an exception readable and to tell two alike sites apart in `check`. A JavaScript row takes it
-from `whereOf` in `walk.mjs`: the declaration's name under the nearest named class around it,
+`run` calls `add({ node, conforming, where })` once per site. `where` names the site's place, used
+to make an exception readable and to tell two alike sites apart in `check`. A JavaScript row takes
+it from `whereOf` in `walk.mjs`: the declaration's name under the nearest named class around it,
 `Class.method`, or under the name an object literal holding it is bound to, `api.run`, and for an
 unnamed function the place of the nearest named declaration around it (F28). The tree rows give
-`A.run` from `ownerOf` and the Ruby rows `A#run`. Never `declName` of the function alone. A file that produces no hits is not applicable and drops
-out of `applicability` on its own, which is why `run` must not `add` for files where the construct
-never appears.
+`A.run` from `ownerOf` and the Ruby rows `A#run`. Never `declName` of the function alone. A file
+that produces no hits is not applicable and drops out of `applicability` on its own, which is why
+`run` must not `add` for files where the construct never appears.
 
 Then register it so `dimensionsFor()` returns it for the languages it claims, and add tests. A new
 oxc table is registered twice: in `ALL_DIMENSIONS` in `dimensions.mjs`, and in `ROWS` in
@@ -489,10 +489,10 @@ order:
    writes it for you. It starts as `planned` and has to read `shipped` by the time the code does: the
    checker reports a missing row and an unshipped row as two different things, and a key shipping
    under a `planned` row is a decision nobody recorded
-2. `plugins/anatomiya/lib/dimensions-base.mjs`, or the file for the row's language, and the list that file exports. The
-   key, the claim, the counter-claim or an explicit `null`, the precision, the applicability
-   predicate. A new table goes into `ALL_DIMENSIONS` in `dimensions.mjs` and into its engine body's
-   own list (`ROWS` in `parse-file.mjs` for oxc), in the same order
+2. `plugins/anatomiya/lib/dimensions-base.mjs`, or the file for the row's language, and the list
+   that file exports. The key, the claim, the counter-claim or an explicit `null`, the precision,
+   the applicability predicate. A new table goes into `ALL_DIMENSIONS` in `dimensions.mjs` and into
+   its engine body's own list (`ROWS` in `parse-file.mjs` for oxc), in the same order
 3. `test/applicability.test.mjs` the witness pair: the sources your `sites` sentence says are
    applicable, and the neighbouring construct that must not count
 4. the test file beside the one that declares the row: a conforming case, a violating case, and one
