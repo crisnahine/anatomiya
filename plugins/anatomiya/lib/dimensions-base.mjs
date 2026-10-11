@@ -1,10 +1,9 @@
 import { walk, isFunctionLike, declName, value, boundNames, optionalChain, whereOf } from "./walk.mjs";
 
 /**
- * The five base oxc rows, and the selection every engine's rows go through.
- *
- * Apart from `dimensions.mjs`, which composes every engine's tables, so a parse
- * child loads its own engine's rows and the selection, and nothing else.
+ * The five base oxc rows. They live apart from `dimensions.mjs`, which composes
+ * every engine's tables, so a parse child loads its own engine's rows and
+ * nothing else; the selection they go through is `dimensionsFor` in `walk.mjs`.
  */
 
 const isThrow = (n) => n.type === "ThrowStatement";
