@@ -17,8 +17,8 @@ After updating, a map refreshes itself on the next session or HEAD move, as befo
 map is never refreshed: scan it by hand and commit the result. A repository at the 500-area
 ceiling whose pin 0.14.0 took keeps that pin's partition, with no area read as a population change,
 until a pin is next taken, by the refresh or by `/anatomiya:pin`; the places of areas that count
-nothing come back then. What ships together needs the history: a shallow clone states none, and so
-does a git older than 2.31. Nothing needs installing.
+nothing come back then. What ships together needs the history: a shallow clone at depth one states
+none, and so does a git older than 2.31. Nothing needs installing.
 
 ### What changes in an existing map
 
