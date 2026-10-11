@@ -412,11 +412,11 @@ export function cochangePlan(facts) {
   return { producer: claim.producer, path, body: "" };
 }
 
-/** The co-change column: the claim a finding named the probe for, that none did, or that the map states none. */
+/** The co-change column: the severity and claim a finding named the probe at, that none did, or that the map states none. */
 export function cochangeCell(plan, report = null) {
   if (!plan) return "n.a. (no claim stated)";
-  const named = (report?.findings ?? []).some((f) => f.dimension === "cochange" && f.path === plan.path);
-  return named ? `yes ${plan.producer}` : "no";
+  const named = (report?.findings ?? []).find((f) => f.dimension === "cochange" && f.path === plan.path);
+  return named ? `yes ${named.severity} ${plan.producer}` : "no";
 }
 
 /** The paths the report's findings name, and nothing off the rest of it. */
