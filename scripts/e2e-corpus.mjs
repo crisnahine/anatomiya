@@ -796,16 +796,16 @@ async function runRepo(name, source, scratchDir, targets) {
 
     /*
      * One file on a branch of its own from the pin, and the check's record on
-     * it: null where the check printed none, and undefined where the file is
-     * already there. The clone is a copy, but the probe body is not this
-     * repository's code and overwriting a real file would measure the tool
-     * against a file it wrote.
+     * it, as `{ report, clash }`: the report null where the check printed none,
+     * and `clash` true, with no report, where the file is already there. The
+     * clone is a copy, but the probe body is not this repository's code and
+     * overwriting a real file would measure the tool against a file it wrote.
      */
     const probeOn = (branch, path, body, what) => {
       if (git(["checkout", "-q", "-b", branch, sha], clone).status !== 0) fail(`could not branch the clone for the ${what}`);
       if (existsSync(join(clone, path))) {
         fail(`${path} already exists, so the ${what} would overwrite real code`);
-        return undefined;
+        return { report: null, clash: true };
       }
       mkdirSync(dirname(join(clone, path)), { recursive: true });
       writeFileSync(join(clone, path), body);
@@ -816,15 +816,15 @@ async function runRepo(name, source, scratchDir, targets) {
       if (asked.status !== 0) fail(`check exited ${asked.status} on the ${what} branch: ${asked.err.split("\n")[0]}`);
       const report = readJson(asked.out);
       if (report === null) fail(`the check printed no record on the ${what} branch`);
-      return report;
+      return { report, clash: false };
     };
 
     /* 6: one file built to break a row the map stated. */
     const mapped = JSON.parse(readFileSync(factsFile, "utf8"));
     const plan = probePlan(mapped);
     const probePath = plan ? plan.path : "e2e-probe.md";
-    const probeReport = probeOn("e2e/probe", probePath, plan ? plan.body : "e2e probe\n", "probe");
-    if (probeReport === undefined) return { row, problems, head, summary };
+    const { report: probeReport, clash } = probeOn("e2e/probe", probePath, plan ? plan.body : "e2e probe\n", "probe");
+    if (clash) return { row, problems, head, summary };
     const named = probeReport ? findingPaths(probeReport) : [];
     row.probe = probeCell(plan, mapped, named.includes(probePath));
     if (plan) {
@@ -835,9 +835,9 @@ async function runRepo(name, source, scratchDir, targets) {
     const shipped = cochangePlan(mapped);
     row.cochange = cochangeCell(shipped);
     if (shipped) {
-      const report = probeOn("e2e/cochange", shipped.path, shipped.body, "co-change probe");
-      if (report === undefined) return { row, problems, head, summary };
-      row.cochange = cochangeCell(shipped, report);
+      const probed = probeOn("e2e/cochange", shipped.path, shipped.body, "co-change probe");
+      if (probed.clash) return { row, problems, head, summary };
+      row.cochange = cochangeCell(shipped, probed.report);
       if (row.cochange === "no") fail(`no co-change finding names ${shipped.path}, and the map states ${shipped.producer} ships with a companion`);
     }
     return { row, problems, head, summary };

@@ -1020,8 +1020,7 @@ async function collect(root, run) {
           line: f.line,
           area: area ? area.path : null,
           dimension: f.dimension,
-          claim: own ? spokenClaim(f.claim, area, own) : f.claim,
-          ...(own && unstated(own) ? { toldInClaim: true } : {}),
+          ...(own ? spokenClaim(f.claim, area, own) : { claim: f.claim }),
           precision: f.precision,
           where: f.where,
           companion: null,
@@ -1246,11 +1245,10 @@ function cappedAway(verdict, away, area, path) {
 // An area as the map names it, quoted where the map quotes it.
 const areaName = (path) => areaLabel(path, (p) => nameText(sanitisePath(p)));
 
-const unstated = (dim) => statedSide(dim).states === null;
-
 // A slot no gate stated speaks as the count its area file prints for it: the majority's sentence alone reads as advice.
 // That line ends on the gate, so its finding carries `toldInClaim` and no writer repeats the NIT's reason under it.
-const spokenClaim = (claim, area, dim) => (unstated(dim) ? unstatedLine(area, dim, claim) : claim);
+const spokenClaim = (claim, area, dim) =>
+  statedSide(dim).states === null ? { claim: unstatedLine(area, dim, claim), toldInClaim: true } : { claim };
 
 // A slot whose scope names the kinds it was counted over was never counted over
 // a file of another kind, so it raises nothing there at any severity.
@@ -1318,8 +1316,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
     dimension: row.key,
     // Worded by the row's owner, which also knows the kind the narrowing left
     // out and the two rules the template alone cannot carry.
-    claim: spokenClaim(claimFor(row, nameDim.learned, nameDim.narrowed === true ? nameDim.learnedKind : undefined), area, nameDim),
-    ...(unstated(nameDim) ? { toldInClaim: true } : {}),
+    ...spokenClaim(claimFor(row, nameDim.learned, nameDim.narrowed === true ? nameDim.learnedKind : undefined), area, nameDim),
     precision: nameDim.precision ?? "precise",
     where: null,
     companion: null,

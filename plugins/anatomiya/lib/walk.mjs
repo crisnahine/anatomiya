@@ -588,8 +588,8 @@ export function componentProps(program, rel) {
  *
  * A dimension carries `framework` when its claim is a framework's and it cannot
  * see from one file which framework it is standing in. `zone_aware_time` is the
- * case: `Time.now` is a drifting timestamp under Rails and correct in plain
- * Ruby, and with no counterClaim it can never state either side off-Rails, so
+ * case: `Time.now` is a drifting timestamp under Rails and correct without it,
+ * and with no counterClaim it can never state either side off-Rails, so
  * it emits a line that can only ever read zero. `model_callbacks` and the
  * migrations are not marked, because they already gate on an ActiveRecord
  * superclass and find nothing off-Rails on their own.

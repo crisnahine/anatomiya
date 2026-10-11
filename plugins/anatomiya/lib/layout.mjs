@@ -278,9 +278,9 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // it says otherwise. One that exports is what the tests import: 328 of the
   // 645 files the two claims below took across 60 repositories, every one a
   // fixture, helper, mock or config, and none of eslint's 294 mirrored rule
-  // tests. A language with no import graph has no export to show, and Ruby's
-  // parse names every runner here, so a file it read with no case is support:
-  // 11 of 11, page objects, factories and helpers.
+  // tests. A language with no import graph has no export to show, and where its
+  // parse names every runner, a file it read with no case is support: 11 of 11,
+  // page objects, factories and helpers.
   if (facets && !facets.unread && (!langHas(lang, "importGraph") || facets.exports?.length > 0)) return false;
   if (mirrored?.has(rel)) return true;
   return dir !== "" && dir.split("/").some((seg) => TEST_DIRS.has(seg));
