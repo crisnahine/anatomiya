@@ -107,6 +107,7 @@ not a claim that it is built: three rows below are marked where the two differ.
 | The `typescript@5` checker ran 26x the parse (a whole scan with it later measured about 3x a plain one), is whole-program (narrowing the file set drove unresolved types from 3.1% to 36.2%), and bought 5 additional entries | A semantic tier runs only where the repository's own dependencies are on disk so its types can resolve, and `typescript` is an optional dependency | B7 |
 | A tracked file named `--instruction-file-path=.git/config` exfiltrated a secret through a subprocess argv | Every subprocess: `execFile`, arguments after `--`, reject paths starting with `-`. **Partial:** no path reaches a positional argument today, but the rule is not applied at every call site | F5 |
 | `execFile` threw `RangeError: Invalid string length` from inside Node's own exit handler, with `maxBuffer` set far above the output size | Subprocess output is streamed, never buffered. **Partial:** every read that grows with the repository streams; the ones that ask for a single blob or ref still buffer | F6 |
+| No count over the tree sees that a new cop ships with an entry in `config/default.yml`, or a component with a changeset: the evidence is which files changed together. Mined on the older four fifths of each repository's first-parent changes and tested on the newest fifth, 24 claims in 11 of 44 repositories held 1,563 of 1,633 held-out additions (95.7%) | What ships together is read from the default branch's history up to the pin, and a claim states only past the same ratio and Wilson bound as every other, plus gates of its own | C55, D14 |
 | 18 of 85 areas in one measured repository were fixture directories | Fixture, vendor, dist and build directories are excluded from the corpus | see `plugins/anatomiya/lib/corpus.mjs` |
 | Bidi controls and zero-width joiners are Unicode category Cf, so they pass an ASCII control filter, and `JSON.stringify` does not escape them either | One encoder, allowlist not denylist, applied to every repository-controlled value | F3, F4 |
 | A hook was measured being flagged as prompt injection | No hook is the delivery channel: the always-loaded file carries the map, and the hooks add recency, a write-time notice, a reuse check and a background refresh beside it | see `DECISIONS.md` (A24, A95) |
@@ -166,5 +167,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 297 numbered decisions with the finding
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 319 numbered decisions with the finding
 behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.
