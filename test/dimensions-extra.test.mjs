@@ -251,6 +251,11 @@ test("an unnamed function in a class field is reported under the class and the f
   assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["K.x", false]]);
 });
 
+test("an unnamed callback inside a method is reported under the method around it", () => {
+  const h = hits("absent_is_null", `class A { m() { list.map(() => { return undefined; }) } }`);
+  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["A.m", false]]);
+});
+
 test("a value returned by a nested callback does not make the outer function value-returning", () => {
   const r = counts(
     "absent_is_null",
