@@ -237,12 +237,13 @@ export function scanLines(s) {
     lines.push(
       `${untrackedSentence(s.untracked)}. The corpus is tracked files only, so nothing there was counted`
     );
+  const rest = s.claims.total - s.claims.stated - s.claims.matchingDefault;
   lines.push(
     `${s.claims.stated} of ${plural(s.claims.total, "claim")} stated` +
       (s.claims.matchingDefault
         ? `, ${s.claims.matchingDefault} ${s.claims.matchingDefault === 1 ? "matches" : "match"} the model default`
         : "") +
-      ", the rest print as counts"
+      (rest === 1 ? ", the other prints as a count" : rest > 1 ? ", the rest print as counts" : "")
   );
   // Beside the claims line, which is the count it explains: a tier that
   // answered nothing is why those slots print as counts.
