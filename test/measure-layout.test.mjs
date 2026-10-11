@@ -465,3 +465,18 @@ test("a corpus directory that cannot be listed is refused by name, not with a st
   assert.match(run.stderr.split("\n")[0], /anatomiya-no-such-corpus cannot be listed/);
   assert.doesNotMatch(run.stderr, /\n\s+at /, "no stack trace");
 });
+
+test("the recount holds sibling modules to the producers, so a fixture under a test tree is in neither count", (t) => {
+  const component = (name) => `export default function ${name}() {\n  return <div />;\n}\n`;
+  const run = recountOf(t, {
+    "ui/C0.tsx": component("C0"),
+    "ui/C1.tsx": component("C1"),
+    "ui/C2.tsx": component("C2"),
+    "ui/types.ts": "export type T = string;\n",
+    "ui/__tests__/fixtures.ts": "export const data = 1;\n",
+    "ui/__tests__/C0.test.tsx": 'describe("C0", () => {\n  it("renders", () => {});\n});\n',
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- ui: .*; 1 sibling module\b/m);
+});

@@ -541,10 +541,9 @@ const helperFacet = (own, jsxFiles, mirrored) => {
   // absence as "not a component" charged the sentence with unread files. A
   // story with no JSX in it is not a private helper either, or storybook's own
   // `input.stories.ts`, repeated once per package, tallied as the sentence's
-  // top stem.
-  const modules = own.filter(
-    (f) =>
-      f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && !isTestFile(f, mirrored) && !isStoryFile(f.rel));
+  // top stem. Held to the namesake count's producers, so a fixture under a test
+  // tree, which is no test, is no module beside the components either.
+  const modules = own.filter((f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && isProducer(f, mirrored));
   if (modules.length === 0) return null;
   return {
     siblingModules: modules.length,
