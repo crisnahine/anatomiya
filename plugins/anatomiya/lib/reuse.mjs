@@ -518,8 +518,8 @@ export function toolCalls(transcriptPath) {
     const notice =
       entry.type === "queue-operation" ? entry.content : entry.attachment?.type === "queued_command" ? entry.attachment.prompt : entry.type === "user" ? content : null;
     // A prompt typed or pasted is queued and recorded the same way, and may quote any call's id.
-    const id = typeof notice === "string" && notice.startsWith(NOTIFICATION) ? notice.match(FINISHED_CALL)?.[1] : undefined;
-    if (id !== undefined) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
+    const id = typeof notice === "string" && notice.startsWith(NOTIFICATION) ? (notice.match(FINISHED_CALL)?.[1] ?? null) : null;
+    if (id !== null) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
   }
   return [...started].flatMap(([id, from]) => (returned.has(id) ? [{ from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));
 }

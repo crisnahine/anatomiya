@@ -508,17 +508,17 @@ test("the calls of one batch deliver one copy between them, before any of them i
   assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "due by the window");
   assert.deepEqual(call(), {}, "a sibling");
   assert.deepEqual(call(), {}, "another sibling");
-  assert.equal(readdirSync(join(data, "echo")).length, 1, "one claim per transcript and map");
+  assert.equal(readdirSync(join(data, "echo")).length, 1, "one batch claim per transcript and map");
 
-  // A sibling whose result alone outruns the window is owed a copy the claim must not hold back.
+  // A sibling whose result alone outruns the window is owed a copy the batch claim must not hold back.
   append(path, [filler(300 * 1024)]);
   assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "due again");
   assert.deepEqual(call(), {});
-  assert.equal(readdirSync(join(data, "echo")).length, 1, "the claim was replaced, not added to");
+  assert.equal(readdirSync(join(data, "echo")).length, 1, "the batch claim was replaced, not added to");
 
-  // The same records and a little more, so a claim at this window's offset would sit inside it.
+  // The same records and a little more, so a batch claim at this window's offset would sit inside it.
   const other = transcript(t, [delivered(first), filler(300 * 1024), filler(300 * 1024), filler(20 * 1024)]);
-  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: other }).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "another window's claim holds nothing here");
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: other }).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "another window's batch claim holds nothing here");
 });
 
 const BIN = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
@@ -539,7 +539,7 @@ async function batch(dir, data, path, n, nodeArgs = []) {
   return outs.filter((out) => out.includes("<repository-map ")).length;
 }
 
-test("echo processes started together deliver one copy per batch, with no claim on disk and with a stale one", needsRuby, async (t) => {
+test("echo processes started together deliver one copy per batch, with no batch claim on disk and with a stale one", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -548,7 +548,7 @@ test("echo processes started together deliver one copy per batch, with no claim 
   const claim = join(data, "echo", name);
 
   for (const n of [3, 8]) {
-    for (const [what, reset] of [["no claim", () => rmSync(claim, { force: true })], ["a stale claim", () => writeFileSync(claim, "0\n")]]) {
+    for (const [what, reset] of [["no batch claim", () => rmSync(claim, { force: true })], ["a stale batch claim", () => writeFileSync(claim, "0\n")]]) {
       for (let round = 0; round < 20; round++) {
         reset();
         assert.equal(await batch(dir, data, path, n), 1, `${what}, ${n} at once, round ${round}`);
@@ -574,7 +574,7 @@ test("a lock held by another call holds this one, and a lock older than the hook
   assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock past the timeout");
   assert.equal(existsSync(lock), false, "released after the delivery");
   assert.deepEqual(readdirSync(join(data, "echo")), [name], "nothing left of the lock it broke");
-  assert.deepEqual(call(), {}, "the claim it wrote holds");
+  assert.deepEqual(call(), {}, "the batch claim it wrote holds");
 
   writeFileSync(join(data, "echo", name), "0\n");
   writeFileSync(lock, "");
@@ -641,7 +641,7 @@ test("three and eight calls that find a dead lock deliver one copy per batch and
       const dead = new Date(Date.now() - 60_000);
       utimesSync(lock, dead, dead);
       assert.equal(await batch(dir, data, path, n), 1, `${n} at once, round ${round}`);
-      assert.deepEqual(readdirSync(join(data, "echo")), [name], `${n} at once, round ${round}: nothing but the claim`);
+      assert.deepEqual(readdirSync(join(data, "echo")), [name], `${n} at once, round ${round}: nothing but the batch claim`);
     }
   }
 });
@@ -744,7 +744,7 @@ test("a dead lock released before the call could break it is taken", needsRuby, 
   assert.deepEqual(readdirSync(join(data, "echo")), [name], "no lock and no token left");
 });
 
-test("a claim write that fails partway leaves the claim it replaces whole", needsRuby, async (t) => {
+test("a batch claim write that fails partway leaves the batch claim it replaces whole", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -764,11 +764,11 @@ test("a claim write that fails partway leaves the claim it replaces whole", need
   }, call);
 
   assert.equal(failed, true);
-  assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a claim that cannot be written answers as the transcript alone");
+  assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a batch claim that cannot be written answers as the transcript alone");
   assert.equal(readFileSync(claim, "utf8"), before);
 });
 
-test("a claim from later in the same transcript holds a sibling that read an earlier, shorter snapshot", needsRuby, async (t) => {
+test("a batch claim from later in the same transcript holds a sibling that read an earlier, shorter snapshot", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -779,7 +779,7 @@ test("a claim from later in the same transcript holds a sibling that read an ear
   for (const [what, after, held] of [["inside the window", 100, true], ["pushed out of the window since", 300 * 1024, false]]) {
     const claimedAt = statSync(path).size + Buffer.byteLength(`${JSON.stringify(filler(100))}\n`);
     writeFileSync(join(data, "echo", name), `${claimedAt}\n`);
-    // The transcript grows after this call read it and before it reads the claim, as a sibling's record would.
+    // The transcript grows after this call read it and before it reads the batch claim, as a sibling's record would.
     const mkdir = fs.mkdirSync;
     let grew = false;
     fs.mkdirSync = (...args) => {
@@ -812,7 +812,7 @@ test("a window's first batch delivers once, before anything is in its transcript
   assert.deepEqual(call(), {});
 });
 
-test("a claim after a compaction holds nothing", needsRuby, async (t) => {
+test("a batch claim after a compaction holds nothing", needsRuby, async (t) => {
   const dir = await railsish(t);
   pluginData(t);
   const path = transcript(t, [filler(10)]);
@@ -823,7 +823,7 @@ test("a claim after a compaction holds nothing", needsRuby, async (t) => {
   assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
 });
 
-test("with nowhere to keep a claim, every call of a batch answers as it would alone", needsRuby, async (t) => {
+test("with nowhere to keep a batch claim, every call of a batch answers as it would alone", needsRuby, async (t) => {
   const dir = await railsish(t);
   const path = transcript(t, [filler(10)]);
   const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
@@ -841,7 +841,7 @@ test("with nowhere to keep a claim, every call of a batch answers as it would al
   assert.equal(existsSync(relative), false, "a relative name is not resolved against the cwd");
 });
 
-test("claims older than a day are swept when a new one is made", needsRuby, async (t) => {
+test("batch claims older than a day are swept when a new one is made", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   mkdirSync(join(data, "echo"));
@@ -867,11 +867,11 @@ test("claims older than a day are swept when a new one is made", needsRuby, asyn
   assert.equal(existsSync(lock), false, "a lock left by a call that died");
   assert.equal(existsSync(token), false, "a token a call died holding");
   assert.equal(existsSync(recent), true);
-  assert.equal(existsSync(foreign), true, "only a name a claim has");
+  assert.equal(existsSync(foreign), true, "only a name a batch claim has");
   assert.equal(readdirSync(join(data, "echo")).length, 3);
 });
 
-test("a claim that is not one this hook wrote is replaced rather than believed", needsRuby, async (t) => {
+test("a batch claim that is not one this hook wrote is replaced rather than believed", needsRuby, async (t) => {
   const dir = await railsish(t);
   pluginData(t);
   const path = transcript(t, [filler(10)]);
