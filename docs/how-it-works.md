@@ -2265,7 +2265,7 @@ the walk states nothing there either.
 Measured with the build's own walk and gates on 44 repositories, mined on the older four fifths of
 each one's changes and held out on the newest fifth: 24 claims in 11 repositories, and 1,563 of the
 1,633 held-out additions came with their companion (95.7%). Mined over every change read, as a scan
-does, 23 claims in 8; over the 60 corpus repositories a scan states those 23, 16 of them in an area
+does, 25 claims in 9; over the 60 corpus repositories a scan states those 25, 16 of them in an area
 file. The walk and the tip's tree took 3.35 seconds at most, on opf/openproject, and 34.7 over all
 44 (`docs/measurements/2026-10-11-cochange.md`).
 

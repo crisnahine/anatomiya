@@ -46,9 +46,9 @@ and build digests masked.
 - The claims line. It moves with the printed co-change claims: whitehall `61 of 292` to `63 of
   294`, consul `87 of 289` to `88 of 290`, forem `145 of 823` to `147 of 825`, mastodon `236 of
   1189` to `237 of 1190`, rubocop `33 of 104` to `40 of 111` and supabase `927 of 7288` to `929 of
-  7290`. discourse states a claim that prints in no area file, so its line does not move. hugo,
-  ktor, okhttp and serde state nothing and read `, they print as counts` where 0.14.0 printed `,
-  the rest print as counts`.
+  7290`. backstage and discourse state claims that print in no area file, so their lines do not
+  move. hugo, ktor, okhttp and serde state nothing and read `, they print as counts` where 0.14.0
+  printed `, the rest print as counts`.
 - The 500-area ceiling. next.js holds 500 areas where it held 497, the three added holding 11 files
   each, and its claims line reads `423 of 6030 claims stated, 723 match the model default` for
   `423 of 5993`, `719`. canvas-lms holds 498 where it held 497 and reads `968 of 7662 claims stated,
@@ -75,7 +75,7 @@ and build digests masked.
   companion is touched at twice its base rate, it and a producer exist at the tip, and the newest
   fifth of the additions conforms. Tests are neither side, a change past 40 files is not counted,
   and the map's own files are no part of a change. It needs no parser, so any language can get
-  one. Over 60 repositories a scan states 23 claims in 8, 16 of them in an area file. Mined on the
+  one. Over 60 repositories a scan states 25 claims in 9, 16 of them in an area file. Mined on the
   older four fifths of 44 repositories' changes and held out on the newest fifth, 1,563 of 1,633
   held-out additions came with their companion (95.7%). The record keeps it under
   `layout.cochange`, at most 100 stated claims and 100 near misses.
