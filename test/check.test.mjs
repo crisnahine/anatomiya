@@ -6530,3 +6530,13 @@ test("the map a scan wrote is no part of the change, left untracked or rewritten
   const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
   assert.equal(f.severity, "MUST-FIX", f.reason);
 });
+
+test("a companion the branch deleted is no companion touched", async (t) => {
+  const dir = shipping(t, ({ git, write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    git("rm", "-q", "src/registry.ts");
+    commit("service, and the registry gone");
+  });
+  const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.equal(f?.path, "src/services/b.ts");
+});
