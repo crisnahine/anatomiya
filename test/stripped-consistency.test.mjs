@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 import stripFlow from "flow-remove-types";
 
-import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 
 /**
@@ -115,7 +116,7 @@ test("only the dimensions marked blind answer differently once the types are str
   const after = parseSync("f.tsx", blanked, { sourceType: "module" });
   assert.equal(after.errors.length, 0, `the blanked fixture no longer parses: ${after.errors[0]?.message}`);
 
-  const dims = dimensionsFor(["js"]);
+  const dims = dimensionsFor(["js"], { rows: ALL_DIMENSIONS });
   const a = shape(before.program, dims);
   const b = shape(after.program, dims);
 
@@ -146,13 +147,13 @@ test("the same holds for the rows only a JSX file carries", () => {
   const after = parseSync("f.tsx", blanked, { sourceType: "module" });
   assert.equal(after.errors.length, 0, `the blanked fixture no longer parses: ${after.errors[0]?.message}`);
 
-  const dims = dimensionsFor(["jsx"], { frameworks: ["react"] });
+  const dims = dimensionsFor(["jsx"], { rows: ALL_DIMENSIONS, frameworks: ["react"] });
   const a = shape(before.program, dims);
   const b = shape(after.program, dims);
 
   // Without this the fixture could stop reaching these rows and the test would
   // still pass, which is how a comparison test quietly becomes a no-op.
-  const jsOnly = new Set(dimensionsFor(["js"]).map((d) => d.key));
+  const jsOnly = new Set(dimensionsFor(["js"], { rows: ALL_DIMENSIONS }).map((d) => d.key));
   for (const d of dims.filter((x) => !jsOnly.has(x.key))) {
     assert.notEqual(a.get(d.key), "0 sites / 0 conforming", `the fixture no longer reaches ${d.key}`);
   }

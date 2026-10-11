@@ -38,7 +38,8 @@ import { fileURLToPath } from "node:url";
 
 import { createPool, defaultPoolSize } from "./pool.mjs";
 import { parseRuby } from "./ruby.mjs";
-import { dimensionsFor } from "./dimensions.mjs";
+import { ALL_DIMENSIONS } from "./dimensions.mjs";
+import { dimensionsFor } from "./dimensions-base.mjs";
 import { declOf, ENGINES, LANGUAGES } from "./langs.mjs";
 
 /**
@@ -162,7 +163,7 @@ async function runPrism(files, { withProgram, guards, frameworks }) {
     // whole corpus at once. A caller that reports line numbers wants the tree
     // and walks it itself. The dimension list is the batch's own languages',
     // so no language is named here.
-    dimensions: withProgram ? [] : dimensionsFor(langs, { frameworks }),
+    dimensions: withProgram ? [] : dimensionsFor(langs, { frameworks, rows: ALL_DIMENSIONS }),
     ...(guards ? { guards } : {}),
   });
   return { results: out.results, truncated: out.truncated, version: out.version, stalled: out.stalled };

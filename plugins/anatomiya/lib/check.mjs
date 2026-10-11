@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { dirname } from "node:path/posix";
 
 import { parseAll } from "./parse.mjs";
-import { dimensionsFor } from "./dimensions.mjs";
+import { ALL_DIMENSIONS } from "./dimensions.mjs";
+import { dimensionsFor } from "./dimensions-base.mjs";
 import { GATES, wilsonLower } from "./gates.mjs";
 import {
   collect as collectCorpus,
@@ -793,7 +794,7 @@ async function collect(root, run) {
   // no blob at either revision.
   const claimed = examined
     .map((file) => ({ file, lang: language(file.path) }))
-    .filter(({ lang }) => dimensionsFor([lang], { frameworks, capabilities }).length > 0);
+    .filter(({ lang }) => dimensionsFor([lang], { frameworks, capabilities, rows: ALL_DIMENSIONS }).length > 0);
 
   const headWanted = new Map();
   const baseWanted = new Map();

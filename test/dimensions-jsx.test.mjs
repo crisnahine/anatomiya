@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { parseSync } from "oxc-parser";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { calleeName, JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
-import { ALL_DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 
 const dim = (key) => JSX_DIMENSIONS.find((d) => d.key === key);
@@ -323,11 +324,11 @@ test("every JSX dimension is reachable from the one registry the scan selects wi
   const all = ALL_DIMENSIONS.map((d) => d.key);
   for (const d of JSX_DIMENSIONS) assert.ok(all.includes(d.key), `${d.key} is not registered`);
 
-  const jsx = dimensionsFor(["jsx"]).map((d) => d.key);
+  const jsx = dimensionsFor(["jsx"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const d of JSX_DIMENSIONS) assert.ok(jsx.includes(d.key), `${d.key} is not selected for jsx`);
 
   for (const lang of ["js", "ruby"]) {
-    const selected = dimensionsFor([lang]).map((d) => d.key);
+    const selected = dimensionsFor([lang], { rows: ALL_DIMENSIONS }).map((d) => d.key);
     for (const d of JSX_DIMENSIONS) {
       assert.ok(!selected.includes(d.key), `${d.key} would run over a ${lang} area`);
     }

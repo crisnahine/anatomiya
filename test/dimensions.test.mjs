@@ -3,9 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { parseSync } from "oxc-parser";
 import {
-  DIMENSIONS,
   ALL_DIMENSIONS,
-  dimensionsFor,
   assertPrecision,
   assertApplicability,
   assertClaimIsNotAVerdict,
@@ -17,6 +15,7 @@ import {
   PRECISIONS,
   walkFor,
 } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
 import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
@@ -259,7 +258,7 @@ test("every JS row reads a deeply nested file in time linear in its depth", () =
     functions: (n) => "export const x = " + "() => ".repeat(n) + "1;\n",
     blocks: (n) => "{ throw e; let v = 1; interface I {}\n".repeat(n) + "}".repeat(n) + "\n",
   };
-  const rows = dimensionsFor(["js", "jsx"]);
+  const rows = dimensionsFor(["js", "jsx"], { rows: ALL_DIMENSIONS });
   for (const [name, source] of Object.entries(shapes)) {
     const read = (n) => {
       const { program, errors } = parseSync("f.tsx", source(n), { sourceType: "module" });
@@ -322,14 +321,14 @@ test("dimension keys are unique across the whole registry", () => {
 });
 
 test("a Ruby area never selects a dimension that walks an oxc tree", () => {
-  const rb = dimensionsFor(["ruby"]);
+  const rb = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS });
   assert.ok(rb.length > 0);
   for (const d of rb) assert.ok(!d.langs.includes("js"), `${d.key} would run on a prism tree`);
-  for (const d of dimensionsFor(["js"])) {
+  for (const d of dimensionsFor(["js"], { rows: ALL_DIMENSIONS })) {
     assert.ok(!d.langs.includes("ruby"), `${d.key} would run on an oxc tree`);
   }
-  assert.equal(dimensionsFor([]).length, 0);
-  assert.equal(dimensionsFor(["cobol"]).length, 0);
+  assert.equal(dimensionsFor([], { rows: ALL_DIMENSIONS }).length, 0);
+  assert.equal(dimensionsFor(["cobol"], { rows: ALL_DIMENSIONS }).length, 0);
 });
 
 test("an empty program yields no candidates rather than throwing", () => {
@@ -348,8 +347,8 @@ test("a dimension a framework owns is not offered to a repository without it", (
   // Homebrew (123 sites), puppet (197), fastlane (97) and chef (96), and as a
   // NIT that check delivers onto a branch: "the current time is read through
   // the application time zone" on a repository with no Rails in it.
-  const withRails = dimensionsFor(["ruby"], { frameworks: ["rails"] }).map((d) => d.key);
-  const without = dimensionsFor(["ruby"], { frameworks: [] }).map((d) => d.key);
+  const withRails = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS, frameworks: ["rails"] }).map((d) => d.key);
+  const without = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS, frameworks: [] }).map((d) => d.key);
 
   assert.ok(withRails.includes("zone_aware_time"));
   assert.ok(withRails.includes("record_lookup"));
@@ -368,7 +367,7 @@ test("a caller that names no frameworks is offered everything", () => {
   // The parse worker has no repository to ask. It computes hits the reducer may
   // never read, which costs a walk and keeps the framework set out of every
   // parse job; the reducer is what decides which dimensions get a slot.
-  const all = dimensionsFor(["ruby"]).map((d) => d.key);
+  const all = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   assert.ok(all.includes("zone_aware_time"), "no answer is not the same as the answer 'none'");
 });
 
@@ -603,12 +602,12 @@ test("every registry row declares a tier, and an unknown one refuses to load", (
 test("the default caller is offered the syntactic tier only", () => {
   // A caller that forgets to ask for the semantic tier must not get a claim
   // that needs a checker nobody ran.
-  const keys = dimensionsFor(["js"]).map((d) => d.key);
+  const keys = dimensionsFor(["js"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const d of SEMANTIC_DIMENSIONS) assert.equal(keys.includes(d.key), false, `${d.key} leaked into the default set`);
 });
 
 test("asking for all tiers returns the semantic rows too", () => {
-  const keys = dimensionsFor(["js"], { tier: "all" }).map((d) => d.key);
+  const keys = dimensionsFor(["js"], { rows: ALL_DIMENSIONS, tier: "all" }).map((d) => d.key);
   for (const d of SEMANTIC_DIMENSIONS) assert.ok(keys.includes(d.key), `${d.key} is missing from the deep set`);
 });
 

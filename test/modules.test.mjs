@@ -91,8 +91,8 @@ function reachedFrom(entry, edges = graph()) {
 const WORKERS = ["parse-worker.mjs", "tree-sitter-worker.mjs"];
 
 test("no module the parse worker reaches imports node:child_process", () => {
-  // Every JS parse child loads `dimensions.mjs` for the registry, and the two
-  // Ruby dimension files took their walkers from `ruby.mjs`, the module that
+  // A parse child loading every engine's rows reaches the two Ruby dimension
+  // files, and those took their walkers from `ruby.mjs`, the module that
   // spawns Ruby. That put the spawn machinery and the inline prism script into
   // all eight forked workers, which is the exact cost `langs.mjs` and
   // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
@@ -240,6 +240,13 @@ test("a Ruby shard thread loads the prism rows and no other engine's", () => {
   // `dimensions.mjs` is loaded with every engine's rows, 7.43 MB with the prism tables alone.
   const loaded = reachedFrom("ruby-shard.mjs", graph(LIB, { dynamic: false }));
   assert.deepEqual([...TREE_SITTER_ONLY, "dimensions.mjs"].filter((file) => loaded.has(file)), []);
+});
+
+test("a JavaScript parse child loads the oxc rows and no tree-sitter module or prism row", () => {
+  const loaded = reachedFrom("parse-worker.mjs", graph(LIB, { dynamic: false }));
+  const others = [...TREE_SITTER_ONLY, "dimensions.mjs", "dimensions-ruby.mjs", "dimensions-rails.mjs"];
+  assert.deepEqual(others.filter((file) => loaded.has(file)), []);
+  assert.ok(loaded.has("dimensions-base.mjs"));
 });
 
 test("a parse child that reads no component loads no component scanner, and no child loads another engine's body", () => {

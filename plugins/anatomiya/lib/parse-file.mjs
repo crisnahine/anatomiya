@@ -8,7 +8,11 @@
  * a stripped file answers, was reachable only through a fork before, and four
  * measured incidents lived in it untested.
  */
-import { dimensionsFor } from "./dimensions.mjs";
+import { DIMENSIONS, dimensionsFor } from "./dimensions-base.mjs";
+import { EXTRA_DIMENSIONS } from "./dimensions-extra.mjs";
+import { JSX_DIMENSIONS } from "./dimensions-jsx.mjs";
+import { NAMING_AST } from "./dimensions-naming.mjs";
+import { CAPABILITY_DIMENSIONS } from "./dimensions-capability.mjs";
 import { collectHits } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
@@ -42,6 +46,11 @@ function withoutTopLevelReturns(source, errors) {
 
 /** The engine this body runs. The shell names it on its ready message, so a version has an owner. */
 export const ENGINE = ENGINES.oxc.id;
+
+/**
+ * The oxc row tables, in the registry's order. The semantic rows need a checker no child runs.
+ */
+export const ROWS = [...DIMENSIONS, ...EXTRA_DIMENSIONS, ...JSX_DIMENSIONS, ...NAMING_AST, ...CAPABILITY_DIMENSIONS];
 
 /**
  * Which parser is installed, read from its own manifest.
@@ -237,7 +246,7 @@ function record(tree, facets, { source, parsedSource, rel, lang, stripped, withP
   // file carries the annotation the extension says it cannot. The JSX rows are
   // chosen off the tree the same way, since a `.js` component holds JSX its
   // extension says nothing about.
-  const dims = dimensionsFor(spokenIn(lang, facets)).filter(
+  const dims = dimensionsFor(spokenIn(lang, facets), { rows: ROWS }).filter(
     (d) => (!stripped || !d.blindWhenStripped) && (holdsTypeSyntax(rel, facets) || !d.needsTypeSyntax)
   );
 

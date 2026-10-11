@@ -10,7 +10,8 @@
  */
 import { createHash } from "node:crypto";
 
-import { dimensionsFor } from "./dimensions.mjs";
+import { ALL_DIMENSIONS } from "./dimensions.mjs";
+import { dimensionsFor } from "./dimensions-base.mjs";
 import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
@@ -85,7 +86,7 @@ export function newlyIntroduced({
  */
 export function declaredParents({ path, lang, frameworks, capabilities, rows, head }) {
   const out = new Map();
-  for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows })) {
+  for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows: rows ?? ALL_DIMENSIONS })) {
     if (!dim.learnedClasses || dim.groupedSites) continue;
     const parents = new Map();
     try {
@@ -239,7 +240,7 @@ function breakingSites(program, source, lang, keyPath, { polarity, copies = new 
   // this has to agree, or the map and the check disagree about the same file.
   // The rows are the ones the scan ran on this file, JSX rows included where
   // the head's tree holds JSX under a `.js` name.
-  for (const dim of dimensionsFor(spokenIn(lang, facets), { frameworks, capabilities, rows })) {
+  for (const dim of dimensionsFor(spokenIn(lang, facets), { frameworks, capabilities, rows: rows ?? ALL_DIMENSIONS })) {
     if (stripped && dim.blindWhenStripped) continue;
     // A plain JavaScript file cannot carry a type annotation, so the scan left
     // it out of this row's population and the check has to leave it out of the
