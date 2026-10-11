@@ -147,7 +147,8 @@ test("a parent class covering a tenth more candidates than its directory's own i
     changes.push({ author: `p${i % 2}@t.test`, added: [json, `.changeset/c${i}.md`], touched: [json, `.changeset/c${i}.md`] });
   }
   for (let i = 0; i < 100; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
-  const tree = new Set(["plugins/one/f0.json", "plugins/p40/package.json", ".changeset/c0.md"]);
+  // Every plugin still there, so the parent's history is the tree's.
+  const tree = new Set(["plugins/one/f0.json", ".changeset/c0.md", ...Array.from({ length: 20 }, (_, i) => `plugins/p${40 + i}/package.json`)]);
   const { claims } = mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree });
 
   const changeset = claims.filter((c) => c.companion.path === ".changeset/*.md");
@@ -155,10 +156,10 @@ test("a parent class covering a tenth more candidates than its directory's own i
   assert.equal(changeset.find((c) => c.producer === "plugins/one/*.json").gate, "pair");
 });
 
-test("a parent class states only from two child directories, one of them still holding a producer at the tip", () => {
+test("a parent class states only from two child directories, nine tenths of its candidates from ones still holding a producer at the tip", () => {
   const spread = (dirOf) => {
     const changes = [];
-    for (let i = 0; i < 40; i++) {
+    for (let i = 39; i >= 0; i--) {
       const file = `lib/${dirOf(i)}/f${i}.rb`;
       changes.push({ author: `p${i % 3}@t.test`, added: [file], touched: [file, "reg.yml"] });
     }
@@ -170,8 +171,17 @@ test("a parent class states only from two child directories, one of them still h
   // Every candidate came from lib/x, which is gone: an unrelated sibling at the tip is no evidence.
   assert.equal(gateOf(spread(() => "x"), ["reg.yml", "lib/y/f0.rb"]), "exists");
   assert.equal(gateOf(spread(() => "x"), ["reg.yml", "lib/y/f0.rb"], "lib/x/*.rb"), "exists");
-  // Two children, one of them still there.
-  assert.equal(gateOf(spread((i) => (i % 2 ? "x" : "y")), ["reg.yml", "lib/y/f0.rb"]), null);
+  // Two children, both still there.
+  assert.equal(gateOf(spread((i) => (i % 2 ? "x" : "y")), ["reg.yml", "lib/x/f1.rb", "lib/y/f0.rb"]), null);
+  // Two children, one of them still there, and half the history from the one that is gone.
+  assert.equal(gateOf(spread((i) => (i % 2 ? "x" : "y")), ["reg.yml", "lib/y/f0.rb"]), "exists");
+  // 39 of 40 from a gone child: one more candidate elsewhere is no evidence either.
+  assert.equal(gateOf(spread((i) => (i === 0 ? "y" : "x")), ["reg.yml", "lib/y/f0.rb"]), "exists");
+  // A renamed directory: 38 in the old one, gone, and the newest 2 in the new one.
+  assert.equal(gateOf(spread((i) => (i >= 38 ? "new" : "old")), ["reg.yml", "lib/new/f39.rb"]), "exists");
+  // 36 of 40 from a live child is nine tenths, and 35 is under it.
+  assert.equal(gateOf(spread((i) => (i < 4 ? "x" : "y")), ["reg.yml", "lib/y/f4.rb"]), null);
+  assert.equal(gateOf(spread((i) => (i < 5 ? "x" : "y")), ["reg.yml", "lib/y/f5.rb"]), "exists");
   // Two children, neither there, and a third the history never added to.
   assert.equal(gateOf(spread((i) => (i % 2 ? "x" : "y")), ["reg.yml", "lib/z/f0.rb"]), "exists");
 });

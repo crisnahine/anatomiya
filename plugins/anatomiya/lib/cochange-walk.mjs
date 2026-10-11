@@ -286,13 +286,15 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
     }
   }
   // A spanning class speaks for its children only where the history it was
-  // counted over came from two of them and one is still there: one child's
-  // habit, gone at the tip, is no evidence for a sibling the tree still holds.
+  // counted over came from two of them, nine tenths of it from ones still there:
+  // one child's habit, gone at the tip, is no evidence for a sibling the tree still holds.
   const producerExists = (producer) => {
     if (!classParts(producer).spans) return atTip.get(producer)[1] > 0;
-    const from = new Set(candidatesOf.get(producer).flatMap((i) => changes[i].added.filter((p) => classes(p).includes(producer)).map(dirOf)));
-    const held = dirsAtTip.get(producer);
-    return from.size >= 2 && [...from].some((d) => held?.has(d));
+    const candidates = candidatesOf.get(producer);
+    const dirsOf = (i) => changes[i].added.filter((p) => classes(p).includes(producer)).map(dirOf);
+    const held = dirsAtTip.get(producer) ?? new Set();
+    const live = candidates.filter((i) => dirsOf(i).some((d) => held.has(d))).length;
+    return new Set(candidates.flatMap(dirsOf)).size >= 2 && live / candidates.length >= GATES.minRatio;
   };
 
   const keysAt = new Map();
