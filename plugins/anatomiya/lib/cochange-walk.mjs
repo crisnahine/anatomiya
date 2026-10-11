@@ -36,12 +36,11 @@ export const COCHANGE = {
   // import or a rename sweep says nothing about what ships together.
   changeMost: 40,
   // The bound's own floor, and 0.90 of it, so no pair that could state is
-  // left uncounted. Measured: 9,300 pair keys at most, against 593,687 unpruned.
+  // left uncounted, and a near miss on the record has at least this many too.
+  // Measured: 9,300 pair keys at most, against 593,687 unpruned.
   minCandidates: 35,
   minTouched: 32,
   keysMost: 100_000,
-  // Near misses kept on the record for audit, never rendered (D7).
-  nearMiss: 10,
   lift: 2,
   // A change deleting more than this is bulk too, so its deletions stay bounded.
   goneMost: 10_000,
@@ -266,7 +265,7 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
       const target = companion.edits ?? companion.adds;
       if (isTestSide(sample(t)) || isTestSide(companion.edits ?? sample(target))) continue;
       if (companion.adds !== undefined && (classParts(target).spans || target === t || upOf(t) === target || upOf(target) === t)) continue;
-      if (of < COCHANGE.nearMiss || n / of < GATES.minRatio) continue;
+      if (n / of < GATES.minRatio) continue;
       kept.push({ t, k, n, of, companion });
     }
   }
