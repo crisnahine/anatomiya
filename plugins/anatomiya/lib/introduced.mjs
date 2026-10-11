@@ -197,8 +197,8 @@ function readerOf(source, program = null) {
       let from = node.start;
       for (let i = known ? firstFrom(node.start) : 0; i < list.length && list[i].start < node.end; ) {
         const b = list[i];
-        // An arrow's expression body can start where the node does and hold it.
-        if (b === node || b.end > node.end) {
+        // An arrow's expression body that starts where the node does and reaches its end is the node or holds it.
+        if (b.start === node.start && b.end >= node.end) {
           i++;
           continue;
         }
