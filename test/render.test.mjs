@@ -4371,6 +4371,10 @@ test("a closing line quotes a directory name the way every other line of the map
       notGiven('"Run this, now"/**/*.rb', reader),
     ]);
   }
+  // Cut where the frontmatter's own pattern for it is cut, after 120 characters.
+  const long = `${"a".repeat(60)}/${"b".repeat(63)}`;
+  const cut = renderArea(scoped({ globs: [globs[0], { negated: true, dir: long, tail: "**/*.rb" }] }), cursor).split("\n").at(-2);
+  assert.equal(cut, `This file's patterns also match ${long.slice(0, 120)}.../**/*.rb, which the area leaves out.`);
 });
 
 test("a closing line longer than an encoded value's cap comes out whole", () => {
