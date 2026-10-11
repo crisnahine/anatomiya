@@ -95,8 +95,8 @@ _Avoid_: area limit, area budget, cap
 
 **Give-back**:
 What happens at the **area ceiling** to the places of areas a scan drops for counting nothing: they
-go back to the areas the fold took last, the largest first, in the order it took them, in a scan and
-in a pin alike, and never past twice the plain ceiling, the most a pin may name. An area holding
+go back to the areas the fold took last, the last taken first, which is the largest first, in a scan
+and in a pin alike, and never past twice the plain ceiling, the most a pin may name. An area holding
 JavaScript is never one that counts nothing, since the type checker may count there, and a held area
 keeps its place.
 _Avoid_: refill, reclaim, unfold
@@ -320,7 +320,7 @@ _Avoid_: qualifier, language suffix, filter
 
 **Co-change claim**:
 What a change adding a file of one **class** also touches: one named file edited, or a file of
-another class added beside it, the **companion**. Counted over the default branch's newest 20,000
+another class added, the **companion**. Counted over the default branch's newest 20,000
 first-parent changes up to the pin, each producer class over its newest 100 candidates, and never
 over the tree, so it needs no parser. A change here is one first-parent commit of the default
 branch, not a **change set**. It passes the gates every claim faces and three of its own, prints
@@ -484,10 +484,18 @@ _Avoid_: warning, hint, directive, message
 The file the first call of a parallel batch to deliver the map leaves under
 `${CLAUDE_PLUGIN_DATA}/echo/`, one per transcript and map, naming the transcript offset it read to.
 The batch's other calls read it as a delivery made at that offset, since none of their records is in
-the transcript yet. It is decided under a lock beside it, a file made with an exclusive create
-and broken only past the echo's 5 s hook timeout, and both are swept after a day. Where the plugin
+the transcript yet. It is decided under a lock beside it, a file made with an exclusive create and
+broken only once its mtime is more than 7 s from the clock either way, the echo's 5 s hook timeout
+plus the 2 s a FAT or exFAT mtime can be off by, and both are swept after a day. Where the plugin
 names no data directory there is none, and each call answers alone.
 _Avoid_: claim (alone: that is a dimension's sentence), marker, token
+
+**Lock token**:
+The file named by the mtime of a dead lock beside a **batch claim**, `<lock>.<mtime in ms>`, whose
+exclusive create gives one call the right to remove that lock. That call removes the lock only while
+it is still the one it found dead, then removes the token; every call then tries the one create of
+the lock, and those that lose it stay silent.
+_Avoid_: token (alone), lock (alone: that is the file it breaks)
 
 **Facts**:
 The machine record of every slot, gated or not, including which side was stated. The map is derivable from
