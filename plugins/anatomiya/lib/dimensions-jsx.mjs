@@ -1,4 +1,4 @@
-import { walk, isFunctionLike, declName, value, boundNames, whereOf } from "./walk.mjs";
+import { walk, ownNodes, isFunctionLike, declName, value, boundNames, whereOf } from "./walk.mjs";
 
 /**
  * JSX dimensions, same contract as `dimensions.mjs`: one claim, one `add` per
@@ -195,9 +195,8 @@ const ELEMENT_NAMES = new WeakMap();
 export function yieldsJsx(fn) {
   if (!fn || !fn.body) return false;
   const handed = fn.body.type === "BlockStatement" ? [] : [fn.body];
-  walk(fn.body, (n, c) => {
-    if (c.fn || !n.argument) return;
-    if (n.type === "ReturnStatement" || n.type === "YieldExpression") handed.push(n.argument);
+  ownNodes(fn.body, (n) => {
+    if (n.argument && (n.type === "ReturnStatement" || n.type === "YieldExpression")) handed.push(n.argument);
   });
   return handed.some(isElement);
 }
@@ -301,9 +300,8 @@ function loadsModule(arg) {
   const fn = value(arg);
   if (!fn || !isFunctionLike(fn) || !fn.body) return false;
   const handed = fn.body.type === "BlockStatement" ? [] : [fn.body];
-  walk(fn.body, (n, c) => {
-    if (c.fn || !n.argument) return;
-    if (n.type === "ReturnStatement") handed.push(n.argument);
+  ownNodes(fn.body, (n) => {
+    if (n.argument && n.type === "ReturnStatement") handed.push(n.argument);
   });
   return handed.some((h) => {
     let n = value(h);

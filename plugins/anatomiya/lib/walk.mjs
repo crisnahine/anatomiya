@@ -86,19 +86,17 @@ export function whereOf(decl, ctx) {
   if (name === null) return AROUND.get(decl) ?? null;
   const holder = HOLDER.get(decl);
   if (holder) return `${holder}.${name}`;
-  // From below the declaration itself, so a site whose declaration is the class reports the class alone.
-  const at = ctx.stack.lastIndexOf(decl);
-  for (let i = (at === -1 ? ctx.stack.length : at) - 1; i >= 0; i--) {
-    const owner = isClass(ctx.stack[i]) ? declName(ctx.stack[i]) : null;
-    if (owner) return `${owner}.${name}`;
-  }
-  return name;
+  const owner = OWNER.get(decl);
+  return owner ? `${owner}.${name}` : name;
 }
 
-// Both kept per node as the walk passes: a site rescanning its ancestors is
-// quadratic in a callback nested a thousand deep.
+// Kept per node as the walk passes: a site rescanning its ancestors is
+// quadratic in a callback nested a thousand deep. OWNER is the innermost named
+// class strictly around a declaration, so a site whose declaration is the class
+// reports the class alone.
 const AROUND = new WeakMap();
 const HOLDER = new WeakMap();
+const OWNER = new WeakMap();
 
 // What an object literal passes through on its way to a binding: `{ methods: { run } }` and
 // `defineComponent({ ... })` both hold `run` under the binding, not under `methods`.
@@ -106,25 +104,24 @@ const THROUGH = new Set([
   "ObjectExpression",
   "Property",
   "CallExpression",
+  "NewExpression",
+  "AwaitExpression",
   "TSAsExpression",
   "TSSatisfiesExpression",
   "ParenthesizedExpression",
 ]);
 
-/** The name a variable binds the object literal a member sits in to, or null; `ancestors` end at the member's parent. */
-function objectBinding(ancestors) {
-  let i = ancestors.length - 1;
-  while (i >= 0 && THROUGH.has(ancestors[i].type)) i--;
-  const d = ancestors[i];
-  return d?.type === "VariableDeclarator" ? (d.id.name ?? null) : null;
-}
+/** The name a variable binds the object literal a node sits in to, or null; `above` is the parent's own answer. */
+const objectBinding = (parent, above) => {
+  if (THROUGH.has(parent.type)) return above;
+  return parent.type === "VariableDeclarator" ? (parent.id.name ?? null) : null;
+};
 
-function bind(node, ancestors) {
+function bind(node, holder) {
   const child = node.value ?? node.init;
   if (!child || typeof child !== "object" || !isFn(child)) return;
   const name = declName(node);
   if (name) NAMED.set(child, name);
-  const holder = objectBinding(ancestors);
   if (holder) HOLDER.set(child, holder);
 }
 
@@ -146,6 +143,9 @@ function bind(node, ancestors) {
 export function walk(program, visit) {
   const stack = [];
   const ancestors = [];
+  // objectBinding per ancestor, indexed as `ancestors` is, so a member finds its
+  // literal's binding without climbing the chain. Set only where it is read.
+  const holders = [];
   // Kept on enter and leave so no visitor rescans the ancestors per node: that
   // made a 30,000-operand chain take 12 seconds.
   const fns = [];
@@ -192,7 +192,11 @@ export function walk(program, visit) {
     if (typeof node.type !== "string") continue;
 
     const isDecl = DECL.has(node.type);
-    if (BINDS.has(node.type)) bind(node, ancestors);
+    const depth = ancestors.length;
+    const binds = BINDS.has(node.type);
+    const reads = depth > 0 && (binds || THROUGH.has(node.type));
+    holders[depth] = reads ? objectBinding(ancestors[depth - 1], holders[depth - 1]) : null;
+    if (binds) bind(node, holders[depth]);
     const ctx = {
       stack,
       ancestors,
@@ -202,9 +206,12 @@ export function walk(program, visit) {
       within,
     };
 
-    if (isDecl && declName(node) === null) {
+    if (isDecl) {
       const up = ctx.enclosing;
-      AROUND.set(node, up === null ? null : declName(up) === null ? AROUND.get(up) ?? null : whereOf(up, ctx));
+      OWNER.set(node, up === null ? null : isClass(up) && declName(up) ? declName(up) : OWNER.get(up));
+      if (declName(node) === null) {
+        AROUND.set(node, up === null ? null : declName(up) === null ? AROUND.get(up) ?? null : whereOf(up, ctx));
+      }
     }
 
     visit(node, ctx);
@@ -237,6 +244,28 @@ export function walk(program, visit) {
       const child = node[keys[i]];
       if (child) work.push(child);
     }
+  }
+}
+
+/**
+ * Visits `root` and the nodes under it that belong to it, in walk order: each
+ * declaration nested inside is visited but not entered, so asking this of every
+ * function costs one pass over the file however deep they nest.
+ */
+export function ownNodes(root, visit) {
+  const work = [root];
+  while (work.length) {
+    const node = work.pop();
+    if (!node || typeof node !== "object") continue;
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i--) work.push(node[i]);
+      continue;
+    }
+    if (typeof node.type !== "string") continue;
+    visit(node);
+    if (DECL.has(node.type)) continue;
+    const keys = CHILD_KEYS[node.type] ?? Object.keys(node).filter((k) => !SKIP.has(k));
+    for (let i = keys.length - 1; i >= 0; i--) work.push(node[keys[i]]);
   }
 }
 
