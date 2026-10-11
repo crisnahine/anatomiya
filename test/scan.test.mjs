@@ -2158,15 +2158,16 @@ test("a pin counts an area whose only row is a pairing, as the scan does", needs
 /* --- what the default branch's changes touched together --- */
 
 /** Forty services, each landed with an entry in the registry by one of two people, between ten README edits. */
-function shippingHistory(t, { pinned = false, notes = false } = {}) {
+function shippingHistory(t, { pinned = false, notes = false, solo = false } = {}) {
   return repo(t, (dir, { git, write, author, pin }) => {
     git("checkout", "-q", "-b", "main");
+    if (solo) author("a@t.test");
     write("README.md", "# r\n");
     write("src/registry.ts", "export const all = []\n");
     git("add", "-A");
     git("commit", "-qm", "root");
     for (let i = 0; i < 40; i++) {
-      author(i % 2 ? "b@t.test" : "a@t.test");
+      author(i % 2 && !solo ? "b@t.test" : "a@t.test");
       write(`src/services/s${i}.ts`, `export const s${i} = ${i}\n`);
       if (notes) write(`src/services/n${i}.md`, `# ${i}\n`);
       write("src/registry.ts", `export const all = [${i}]\n`);
@@ -2229,6 +2230,25 @@ test("a claim whose producers the area's globs never reach is carried by no area
   const body = readFileSync(join(dir, ".claude/rules", file), "utf8");
   assert.doesNotMatch(body, /\.md file added/, body);
   assert.match(body, /^a \.ts file added to "src\/services"/m, body);
+});
+
+test("a repository one person wrote holds a claim to that one person's hands", async (t) => {
+  const [claim] = (await scan(shippingHistory(t, { solo: true }))).layout.cochange.claims.filter((c) => c.producer === "src/services/*.ts");
+  assert.deepEqual([claim.authors, claim.authorsRequired, claim.directive], [1, 1, true]);
+});
+
+test("a claim whose producers sit in an area this scan writes no file for has no area", async (t) => {
+  const dir = shippingHistory(t, { pinned: true });
+  // The pin keeps the area, and nothing read from its files leaves it nothing to say.
+  const parseFiles = async (files, options) => {
+    const parsed = await parseAll(files, options);
+    for (const rel of [...parsed.records.keys()]) if (rel.startsWith("src/services/")) parsed.records.delete(rel);
+    return parsed;
+  };
+  const result = await scan(dir, { parseFiles });
+  assert.equal(result.areas.some((a) => a.path === "src/services"), false);
+  const [claim] = result.layout.cochange.claims.filter((c) => c.producer === "src/services/*.ts");
+  assert.deepEqual([claim.directive, claim.area], [true, null]);
 });
 
 test("a pinned scan walks from the pin, and two scans of one history write one map", async (t) => {
