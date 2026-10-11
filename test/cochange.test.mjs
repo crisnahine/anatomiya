@@ -42,6 +42,8 @@ test("a file's kind runs from the first dot, past any segment a version number s
   assert.equal(suffixOf(".gitignore"), null);
   assert.equal(suffixOf("Gemfile"), null);
   assert.equal(suffixOf("trailing."), null);
+  assert.equal(suffixOf("a..rb"), null);
+  assert.equal(suffixOf("a.rb."), null);
   // Ruby's test suffixes are kinds of their own.
   assert.equal(suffixOf("user_spec.rb"), "_spec.rb");
   assert.equal(suffixOf("user_test.rb"), "_test.rb");
@@ -131,6 +133,14 @@ test("a forged claim whose producer or companion is no class or plain path is no
     claim({ companion: { kind: "edits", path: "../outside.yml" } }),
     claim({ companion: { kind: "edits", path: "/etc/passwd" } }),
     claim({ companion: { kind: "edits", path: "a//b.yml" } }),
+    // Classes no file name gives: an empty segment, a trailing dot, a suffix no test name spells, a version segment.
+    claim({ producer: "lib/*..rb" }),
+    claim({ producer: "lib/*.rb." }),
+    claim({ producer: "lib/*_x" }),
+    claim({ producer: "lib/*.1.gem" }),
+    claim({ companion: { kind: "adds", path: "changelog/*..md" } }),
+    // An area the record could not have written counts nowhere.
+    claim({ area: 3 }),
   ];
   assert.deepEqual(statedClaims({ claims: forged }), []);
   const fine = [claim({ producer: "plugins/*/*.json" }), claim({ producer: "*.md" }), claim({ producer: "spec/*_spec.rb" }), claim({ companion: { kind: "adds", path: "*.txt" } })];

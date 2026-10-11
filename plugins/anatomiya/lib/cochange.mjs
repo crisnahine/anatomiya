@@ -107,12 +107,12 @@ const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
 // A repository-relative path git could have printed: no empty, `.` or `..` segment.
 const isPlainPath = (p) => typeof p === "string" && p.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
 
-// A class this module could have built: a plain directory and a kind it would read.
+// A class this module could have built: a plain directory and a kind a file name gives.
 function isClass(cls) {
   if (typeof cls !== "string") return false;
   const { dir, spans, suffix } = classParts(cls);
   const built = dir === null ? `*${suffix}` : spans ? `${dir}/*/*${suffix}` : `${dir}/*${suffix}`;
-  return built === cls && /^[._]/.test(suffix) && KIND.test(suffix) && (dir === null || isPlainPath(dir));
+  return built === cls && suffixOf(`x${suffix}`) === suffix && (dir === null || isPlainPath(dir));
 }
 
 // The record is committed, so a hand edit reaches every reader: a claim that is
