@@ -734,6 +734,75 @@ test("a lock token that cannot be removed leaves the call to the lock's one crea
   assert.equal(readFileSync(lock, "utf8"), "live", "the call that took the lock holds it");
 });
 
+/** Runs `call` with the first `times` exclusive creates of a path `refused` names answering EPERM, as Windows answers one for a name another process is deleting. */
+function createRefused(refused, times, call) {
+  let left = times;
+  return stubbed("openSync", (real, p, flags, ...rest) => {
+    if (flags === "wx" && refused(String(p)) && left > 0) {
+      left--;
+      throw Object.assign(new Error(`EPERM: operation not permitted, open '${p}'`), { code: "EPERM" });
+    }
+    return real(p, flags, ...rest);
+  }, call);
+}
+
+test("a lock create refused while another process deletes the name is tried again, and the batch claim answers", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+
+  assert.deepEqual(createRefused((p) => p === lock, 2, call), {}, "held by the batch claim the first call wrote");
+  assert.deepEqual(readdirSync(join(data, "echo")), [name]);
+});
+
+test("a lock create refused for longer than a deletion takes answers as the transcript alone does", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+
+  // Past nine tries the stub stops answering EPERM, so a retry that never ends fails here instead of hanging.
+  let tries = 0;
+  const started = Date.now();
+  const answer = stubbed("openSync", (real, p, flags, ...rest) => {
+    if (flags === "wx" && String(p) === lock) {
+      tries++;
+      throw Object.assign(new Error(`open '${p}'`), { code: tries > 9 ? "ESTOPPED" : "EPERM" });
+    }
+    return real(p, flags, ...rest);
+  }, call);
+  assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
+  assert.equal(tries, 8, "the first try and seven more");
+  assert.ok(Date.now() - started < 2000, `answered after ${Date.now() - started}ms`);
+});
+
+test("a lock token create refused while its name is being deleted is tried again, and the dead lock is broken", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const claim = join(data, "echo", name);
+  const lock = `${claim}.lock`;
+  writeFileSync(claim, "0\n");
+  writeFileSync(lock, "");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  assert.match(createRefused((p) => p.startsWith(`${lock}.`), 1, call).hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
+  assert.deepEqual(readdirSync(join(data, "echo")), [name], "the dead lock and its lock token both gone");
+  assert.notEqual(readFileSync(claim, "utf8"), "0\n", "and the batch claim written");
+});
+
 test("a dead lock that cannot be removed holds the call, and the next call breaks it", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);

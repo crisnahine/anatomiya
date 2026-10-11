@@ -1215,15 +1215,17 @@ plus the 2 seconds FAT and exFAT round an mtime to. No call moves or removes a l
 live: the call that creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while
 it is still the one found dead, and every call then goes to the one create of the lock, where the
 losers stay silent. A removal the system refuses, as Windows refuses one of a file another process
-holds, leaves the file for that create to find. Batch claims, locks and lock tokens older than a day
-are swept, at most 4,096 names read. Started 3 and 8 at once, 20 rounds each, with no batch claim
-and with a stale one, the echo delivered once in every round, and 50 rounds each over a dead lock
-delivered once and left no lock or lock token. Without that directory, or where it cannot be
-written, the worst case is one copy per call. Inside a mapped checkout the prompt has already
-delivered the map before the first batch, and the batch adds none. `scripts/measure-echo.mjs`
-replays the rule over a transcript store: on 4,328 local transcripts on 2026-10-11 it kept 9,267 of
-46,370 deliveries. The hook reads back at most 1 MiB and parses each line of it. The measurements
-behind the rule are in `docs/research/what-a-repeated-hook-context-costs.md` and
+holds, leaves the file for that create to find. An exclusive create Windows refuses with EPERM, its
+answer for a name another process is still deleting, is tried again for up to 127 ms before the call
+answers alone. Batch claims, locks and lock tokens older than a day are swept, at most 4,096 names
+read. Started 3 and 8 at once, 20 rounds each, with no batch claim and with a stale one, the echo
+delivered once in every round, and 50 rounds each over a dead lock delivered once and left no lock
+or lock token. Without that directory, or where it cannot be written, the worst case is one copy per
+call. Inside a mapped checkout the prompt has already delivered the map before the first batch, and
+the batch adds none. `scripts/measure-echo.mjs` replays the rule over a transcript store: on 4,328
+local transcripts on 2026-10-11 it kept 9,267 of 46,370 deliveries. The hook reads back at most 1
+MiB and parses each line of it. The measurements behind the rule are in
+`docs/research/what-a-repeated-hook-context-costs.md` and
 `docs/research/what-a-2-1-296-transcript-holds.md`. There is still no flag for it: nothing a scan
 takes tunes a hook.
 

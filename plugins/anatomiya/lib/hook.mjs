@@ -741,28 +741,41 @@ function batchClaimed(path, transcript, tail, digest) {
  */
 function locked(lock) {
   for (let broken = false; ; broken = true) {
-    try {
-      closeSync(openSync(lock, "wx"));
-      return true;
-    } catch (err) {
-      if (err?.code !== "EEXIST") throw err;
-    }
+    if (createdAlone(lock)) return true;
     if (broken) return false;
     const found = lstatOf(lock);
     if (found === null) continue;
     if (Math.abs(Date.now() - found.mtimeMs) <= LOCK_HELD_MOST_MS + LOCK_MTIME_SLACK_MS) return false;
     const token = `${lock}.${Math.round(found.mtimeMs)}`;
-    try {
-      closeSync(openSync(token, "wx"));
-    } catch (err) {
-      if (err?.code !== "EEXIST") throw err;
-      continue;
-    }
+    if (!createdAlone(token)) continue;
     const now = lstatOf(lock);
     if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) removeQuietly(lock);
     removeQuietly(token);
   }
 }
+
+/**
+ * Creates `path` with an exclusive create: true where this call made it, false where a file holds the name.
+ *
+ * Windows answers EPERM, not EEXIST, for a name another process is still deleting, which frees in
+ * milliseconds; a refusal that outlasts the backoff is thrown, and the call answers alone.
+ */
+function createdAlone(path) {
+  for (let tries = 0; ; tries++) {
+    try {
+      closeSync(openSync(path, "wx"));
+      return true;
+    } catch (err) {
+      if (err?.code === "EEXIST") return false;
+      if (err?.code !== "EPERM" || tries === DELETING_RETRIES) throw err;
+    }
+    Atomics.wait(PAUSE, 0, 0, 2 ** tries);
+  }
+}
+
+// Seven waits doubling from 1 ms, 127 ms in all.
+const DELETING_RETRIES = 7;
+const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
 /** Removes a lock or a lock token; one Windows refuses to remove stays, and the next exclusive create of the lock answers for it. */
 function removeQuietly(path) {
