@@ -9,7 +9,7 @@ import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, factsJson, schemaProblem, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { atomic, factsJson, schemaProblem, writeFacts, readFacts, readLayout, readRecord, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { knownNames } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 
@@ -703,6 +703,20 @@ test("a record past the size cap is named as unread, not taken for a repository 
   const { facts, unreadable } = readFacts(dir);
   assert.equal(facts, null);
   assert.match(unreadable ?? "", /64 MB/);
+});
+
+test("a record of exactly the size cap is read, and one byte more is not", (t) => {
+  const dir = root(t);
+  const path = join(dir, "record.json");
+  const padded = (size) => {
+    const bytes = Buffer.alloc(size, 0x20);
+    bytes.write("{}");
+    return bytes;
+  };
+  writeFileSync(path, padded(64 * 2 ** 20));
+  assert.deepEqual(readRecord(path), { record: {}, oversize: false });
+  writeFileSync(path, padded(64 * 2 ** 20 + 1));
+  assert.deepEqual(readRecord(path), { record: null, oversize: true });
 });
 
 test("a record past the size cap is told by its size before a byte of it is read", (t) => {
