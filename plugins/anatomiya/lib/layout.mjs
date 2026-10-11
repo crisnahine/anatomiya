@@ -281,7 +281,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // tests. A language with no import graph has no export to show, and Ruby's
   // parse names every runner here, so a file it read with no case is support:
   // 11 of 11, page objects, factories and helpers.
-  if (facets && (!langHas(lang, "importGraph") || facets.exports?.length > 0)) return false;
+  if (facets && !facets.unread && (!langHas(lang, "importGraph") || facets.exports?.length > 0)) return false;
   if (mirrored?.has(rel)) return true;
   return dir !== "" && dir.split("/").some((seg) => TEST_DIRS.has(seg));
 }
