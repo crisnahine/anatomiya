@@ -466,6 +466,9 @@ scanned by 0.13.4 and by this version.
   checker took 5.6 to 5.7 seconds against 1.3 without it, about 4.5 times, taken at a load of 3.8
   to 4.5. 0.13.4 said about 5x on a 3,800-file repository and about 10x on a 2,600-file
   one. The second of those was a private repository and was not measured again.
+- The measurement harness takes `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL` out of a trial's
+  environment with the other model variables: Claude Code 2.1.296 runs a workflow's agents on the
+  model it names, over the one the script asks for.
 - A repository that commits its map sees "What lives where" change once, on its first scan with
   this version: the map's own files are left out of it, which is the Fixed entry that opens `The
   layout counted the map`.
