@@ -161,7 +161,8 @@ rules do not state.
 | a combination the parser checks after it builds the node: repeated modifier, `var` limits, varargs last, record field, chained comparison, qualifier order, a cast before `<` | 5 | 0 | 3 | 0 | no rule states the combination |
 | a file-level order or a preprocessor rule: two `package` lines, `using` after a member, `#define` after a token, an unclosed `#region`, `#error`, a bad `#line` or `#if` | 1 | 6 | 0 | 0 | directives are trivia, and the order of top-level items is free |
 
-`adjacent-strings` and `println(1)` in a `.kt` file count under place: the grammar takes `"b"` for a second top-level item, and a call for one. `goto;` and `return return;` count there for C#.
+`adjacent-strings` and `println(1)` in a `.kt` file count under place: the grammar takes `"b"` for a
+second top-level item, and a call for one. `goto;` and `return return;` count there for C#.
 
 ## Accepted by the parser, left out
 
@@ -261,7 +262,7 @@ rustc at edition 2024 and left unread by the Rust grammar. 7 of the 22 hold a `l
 
 ## Reproducing
 
-Everything lives in the worker's scratch directory, outside the repository: `gen.mjs` writes the
+Everything lives in a scratch directory outside the repository: `gen.mjs` writes the
 inputs, `grammar.mjs <worktree>` the grammar's verdicts, the four drivers are the 2026-10-08
 file's, `survey.mjs <worktree> <out> <repo>...` lists and reads a repository's files, and
 `shapes.sh` holds the text searches.

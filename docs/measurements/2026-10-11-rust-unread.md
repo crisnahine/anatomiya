@@ -49,8 +49,8 @@ and v0.24.2 were downloaded and loaded by `web-tree-sitter` 0.27.0.
 ### The corpus
 
 Every Rust file `collect` in `corpus.mjs` returns, in every repository of both corpora that holds
-one: microsoft/vscode, react, supabase and vercel/next.js of `anatomiya-corpus`, ripgrep, ktor, serde
-and tokio of `anatomiya-corpus-langs`. 2,357 files. Each was handed to `parseTreeFile` with
+one: microsoft/vscode, react, supabase and vercel/next.js of `anatomiya-corpus`, ripgrep, ktor,
+serde and tokio of `anatomiya-corpus-langs`. 2,357 files. Each was handed to `parseTreeFile` with
 `withProgram` set, once per grammar, and the two records compared as JSON text: verdict, hits,
 facets and the copied tree.
 
@@ -143,13 +143,14 @@ v0.25.1 `clone` with arguments; neither was measured here. Rust:
   scanner. v0.24.2 is the head of the default branch.
 
 The npm job of the publish workflow failed for both tags (runs 23306701973, 23307534441 and
-23667504319), and upstream issue tree-sitter/tree-sitter-rust#318, open since 2026-09-26, says 0.24.2
-has not been published. Each release carries `tree-sitter-rust.wasm` as an asset; the source
+23667504319), and upstream issue tree-sitter/tree-sitter-rust#318, open since 2026-09-26, says
+0.24.2 has not been published. Each release carries `tree-sitter-rust.wasm` as an asset; the source
 tarball and the git tree hold no wasm. Both assets report ABI 15 and load in `web-tree-sitter`
 0.27.0. The vendored 0.24.0 wasm reports ABI 14 (B61).
 
 Neither `box` patterns nor attributes on pattern fields are in the grammar at v0.24.2. Two open pull
-requests add the second (#301 from 2026-02-06 and #319 from 2026-10-05); nothing open adds the first.
+requests add the second (#301 from 2026-02-06 and #319 from 2026-10-05); nothing open adds the
+first.
 
 ## v0.24.2 over the corpus
 
@@ -166,8 +167,8 @@ requests add the second (#301 from 2026-02-06 and #319 from 2026-10-05); nothing
 | **all eight** | 2,357 | 693,575 | 24 | 30,691 | 19 | 26,602 |
 
 v0.24.1 gives the same verdict as v0.24.2 on every file. vscode's other unread file is the
-colouriser fixture `test-6611.rs`, which rustc rejects (`2026-10-11-invalid-inputs.md`), and it stays
-unread. next.js goes from 9.71% of its Rust lines unread to 8.88%.
+colouriser fixture `test-6611.rs`, which rustc rejects (`2026-10-11-invalid-inputs.md`), and it
+stays unread. next.js goes from 9.71% of its Rust lines unread to 8.88%.
 
 Five files become read, the five of the `raw` and `unsafe extern` classes: vscode's
 `agent_host_registry.rs`, and next.js's `sst_inspect.rs`, `event.rs`, `vc/mod.rs` and
@@ -194,12 +195,12 @@ two builds whatever they read. vscode and next.js, apart from that stamp:
 | next.js | `anatomiya/facts.json` | `syntaxErrors` 29 to 25, `rejections.grammar` 22 to 18; the rows above, and `langFileCount` of `turbo-persistence/src` 27 to 28; `priorBound` and `counterPriorBound` of `public_doc_comment` in 25 other areas |
 | next.js | `anatomiya/layout.json` | `record.size` |
 
-Every moved line has one cause: a file became read. Each area whose own counts moved holds one of the five
-files. The count of files that hold their own tests rises by one in the three areas whose newly read
-file holds a `#[cfg(test)]` module, the five files' facets say so, and the namesake denominator falls
-by the same one. The `priorBound` lines are the repository's prior for the doc comment row, which
-every area of the repository shares, so new sites in one area move it in all. The areas,
-`stated` and `orphaned` and `barren` counts of all eight repositories are unchanged.
+Every moved line has one cause: a file became read. Each area whose own counts moved holds one of
+the five files. The count of files that hold their own tests rises by one in the three areas whose
+newly read file holds a `#[cfg(test)]` module, the five files' facets say so, and the namesake
+denominator falls by the same one. The `priorBound` lines are the repository's prior for the doc
+comment row, which every area of the repository shares, so new sites in one area move it in all. The
+areas, `stated` and `orphaned` and `barren` counts of all eight repositories are unchanged.
 
 ## What this pass does not show
 
@@ -217,8 +218,8 @@ every area of the repository shares, so new sites in one area move it in all. Th
 
 ## Reproducing
 
-In the worker's scratch directory, outside the repository: `errs.mjs` lists ERROR and MISSING nodes
-per file, `classify.mjs` applies the rewrites, `survey.mjs` reads every Rust file of the corpus with
-each grammar directory, `same.mjs` compares the records whole, `drive.mjs` and `run.sh` scan the
-copies with both builds, `rc/` holds the rustc inputs and `rc/out/rustc.tsv` its verdicts, and
-`rel/` the two release assets.
+In a scratch directory outside the repository: `errs.mjs` lists ERROR and MISSING nodes per file,
+`classify.mjs` applies the rewrites, `survey.mjs` reads every Rust file of the corpus with each
+grammar directory, `same.mjs` compares the records whole, `drive.mjs` and `run.sh` scan the copies
+with both builds, `rc/` holds the rustc inputs and `rc/out/rustc.tsv` its verdicts, and `rel/` the
+two release assets.

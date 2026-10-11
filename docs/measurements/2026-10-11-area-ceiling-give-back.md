@@ -35,11 +35,11 @@ Four of 60, all in the first corpus.
 | openproject | 13,044 | 672 | 500 | 500 | 597 | 597 | 533 | 0 |
 
 Claims stated is the summary's `claims.stated`, from a scan with no pin. Files in no area
-(`orphaned`) and in dropped areas (`barren`) move on none of the four: every area given back came out
-of a kept host.
+(`orphaned`) and in dropped areas (`barren`) move on none of the four: every area given back came
+out of a kept host.
 
-- next.js: `examples/with-sfcc`, `examples/with-storybook` and `examples/with-supabase/app` (11 files
-  each) leave `examples` (1,113 to 1,080). Directives in the facts record go from 746 to 748.
+- next.js: `examples/with-sfcc`, `examples/with-storybook` and `examples/with-supabase/app` (11
+  files each) leave `examples` (1,113 to 1,080). Directives in the facts record go from 746 to 748.
 - canvas-lms: `ui/features/eportfolio/react/__tests__` (11) leaves its parent. Three areas are
   dropped and only one place comes back: the other two dropped areas hold `js` files, which the
   give-back never counts as empty, so two places stay empty. Directives go from 1,267 to 1,275.
@@ -55,8 +55,8 @@ of a kept host.
 | openproject | 5.4s | 10.5s | 500 (identical) | 500 | |
 
 A pin at the ceiling parses every source file once without the checker; vscode and openproject pay
-the parse and give nothing back. On next.js and canvas-lms the areas a scan with no pin lists are the
-areas a scan under the pin lists, in the same order, every one of them pinned and `ok`.
+the parse and give nothing back. On next.js and canvas-lms the areas a scan with no pin lists are
+the areas a scan under the pin lists, in the same order, every one of them pinned and `ok`.
 
 ## Every other repository
 

@@ -1,8 +1,8 @@
 # Test kinds spelled as a dotted segment of their own
 
 Measured 2026-10-11 over both corpora, 60 repositories (35 in `anatomiya-corpus`, 25 in
-`anatomiya-corpus-langs`), by `git ls-files` on every repository and by `isTestFile` on copies of the
-four that hold a candidate.
+`anatomiya-corpus-langs`), by `git ls-files` on every repository and by `isTestFile` on copies of
+the four that hold a candidate.
 
 ## The population
 
@@ -54,4 +54,5 @@ Scanned base and new build on the four copies, written files compared with times
   `devContainerConfigGenerator.ts`, `gitCommitMessageGenerator.ts`,
   `settingsEditorSearchResultsSelector.ts` (their `.stest.ts`); `findFilesTool.tsx` gains one in the
   JSX clause.
-- The other 56 repositories hold no tracked file the new alternatives match, so their maps cannot move.
+- The other 56 repositories hold no tracked file the new alternatives match, so their maps cannot
+  move.

@@ -11,7 +11,7 @@ A fresh `node --expose-gc` process per sample imports one engine body and nothin
 minus the heap used before, and the heap used after. Base and head alternate, 25 samples each per
 body. The figures are medians.
 
-The machine was shared with other workers: the one-minute load stayed above 12 for the 20 minutes
+The machine was shared with other jobs: the one-minute load stayed above 12 for the 20 minutes
 waited, and was 21.4 at the start and 25.0 at the end. The times move with that load; the heap
 figures do not.
 
@@ -27,8 +27,8 @@ figures do not.
 A JavaScript child holds 0.50 MB less after load and a tree-sitter child 0.44 MB less. Neither loads
 `dimensions.mjs`, so neither loads the other engines' rows or their walks.
 
-At the 0.15.0 train's head `dimensionsFor` sits in `walk.mjs`, beside the walk, and not in
-`dimensions-base.mjs`. Every child loads `walk.mjs` already, through the rows it runs, so the head's
+In 0.15.0 `dimensionsFor` sits in `walk.mjs`, beside the walk, and not in
+`dimensions-base.mjs`. Every child loads `walk.mjs` already, through the rows it runs, so 0.15.0's
 children load the same modules as 2900857's. DECISIONS B69 cites these figures.
 
 ## Maps

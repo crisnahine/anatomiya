@@ -36,6 +36,6 @@ None of the 102 names with a space reaches a map: each sits under a fixture tree
 
 ## Identity
 
-Base and branch wrote 8,231 files each (7,979 rule files, 200,276 lines). With `scannedAt`, `at`,
-`stamp`, `mtimeMs`, `measuredAt` and `measuredUnder` masked, every file is byte-identical in all 60
-repositories.
+Base and branch wrote 8,231 files each (7,979 overview and area files, 200,276 lines). With
+`scannedAt`, `at`, `stamp`, `mtimeMs`, `measuredAt` and `measuredUnder` masked, every file is
+byte-identical in all 60 repositories.

@@ -4,16 +4,16 @@
 
 The echo's window counts the bytes of records the model reads after a delivery: `user` and
 `assistant` records, and attachments carrying `rendered` other than `instructions`, the CLAUDE.md
-files the build places at the head of the context (`windowBytes` in
-`plugins/anatomiya/lib/hook.mjs`). A92's 9.0 bytes per token counted every record, so the unit moved
-and the ratio was taken again.
+files one session's context held at its head, seen there and not traced in the bundle (`windowBytes`
+in `plugins/anatomiya/lib/hook.mjs`). A92's 9.0 bytes per token counted every record, so the unit
+moved and the ratio was taken again.
 
 ## Method
 
 `bytesPerToken` as `scripts/measure-echo.mjs` defines it: transcript bytes between the first and the
 last main-thread assistant turn, over the growth in input plus cache tokens across them. Taken over
-main-thread transcripts modified in the last 30 days whose every record is 2.1.292 or later and whose
-context grew by at least 50k tokens: 34 sessions. Both counts on the same 34.
+main-thread transcripts modified in the last 30 days whose every record is 2.1.292 or later and
+whose context grew by at least 50k tokens: 34 sessions. Both counts on the same 34.
 
 ## Result
 
@@ -31,15 +31,16 @@ about 40k and 46k.
 
 ## A delivery the old count re-sent
 
-One subagent session on 2.1.296 (this train's hooks worker): the first delivery ended at offset
-267,197, and the hook at offset 569,042 delivered again, 301,845 bytes on. 78,191 of them were one
-`prompt_snapshot`. The window's count of the same stretch is under 223,654, so it holds.
+One subagent session on 2.1.296: the first delivery ended at offset 267,197, and the hook at offset
+569,042 delivered again, 301,845 bytes on. 78,191 of them were one `prompt_snapshot`. The window's
+count of the same stretch is under 223,654, so the echo stays silent.
 
 ## The replay over the whole store
 
 `node scripts/measure-echo.mjs ~/.claude/projects`, run with the base build (c4fa060), with the
 branch's first commit, and with the branch's head. 4,327 transcripts holding 46,351 deliveries
-(40,860 repeats of the one before); the head's run, a few minutes later, saw 4,328, 46,370 and 40,870:
+(40,860 repeats of the one before); the head's run, a few minutes later, saw 4,328, 46,370 and
+40,870:
 
 | Build | Deliveries the rule keeps | Bytes per token, p10 | median | sessions |
 |---|---|---|---|---|
