@@ -20,7 +20,7 @@
  * lives: yours, on this machine, not committed.
  */
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTailOf, realpathOrNull, resolveInside } from "./rules.mjs";
@@ -758,12 +758,18 @@ function locked(lock) {
       if (err?.code !== "EEXIST") throw err;
       continue;
     }
-    try {
-      const now = lstatOf(lock);
-      if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) rmSync(lock, { force: true });
-    } finally {
-      rmSync(token, { force: true });
-    }
+    const now = lstatOf(lock);
+    if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) removeQuietly(lock);
+    removeQuietly(token);
+  }
+}
+
+/** Removes a lock or a lock token; one Windows refuses to remove stays, and the next exclusive create of the lock answers for it. */
+function removeQuietly(path) {
+  try {
+    unlinkSync(path);
+  } catch {
+    // Still there, or gone already.
   }
 }
 
