@@ -3,10 +3,10 @@
  * belongs to, the sentence a claim is said in, and which claims a branch owes.
  *
  * Apart from the walk that mines the claims (`cochange-walk.mjs`), because the
- * notice runs on a write and the check at review time, and neither has history
- * to read: both ask only which class a path is in and what a stored claim says.
- * One rule for all three, so the class a claim was counted over is the class it
- * is enforced on.
+ * notice runs on a write and the check at review time, and neither reads
+ * history: both ask only which class a path is in, what a stored claim says,
+ * and the bounds it was counted under. One rule for all three, so the class a
+ * claim was counted over is the class it is enforced on.
  */
 import { encode, encodePath } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
@@ -15,6 +15,11 @@ import { RUBY_TEST_NAME } from "./test-shape.mjs";
 // The record keeps at most this many stated claims and this many near misses,
 // and a reader takes no more than this many of either from it.
 export const CLAIMS_MOST = 100;
+
+// Past this many added or modified files a change is bulk: a vendored import or
+// a rename sweep says nothing about what ships together, so the walk counts no
+// such change and the check holds no such branch to a claim at MUST-FIX.
+export const CHANGE_MOST = 40;
 
 // A kind is printed in a sentence, so it holds nothing a sentence could be built from.
 const KIND = /^[\w.-]+$/;

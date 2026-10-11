@@ -16,7 +16,7 @@
  */
 import { GATES, wilsonLower } from "./gates.mjs";
 import { isPerson } from "./authors.mjs";
-import { CLAIMS_MOST, classesOf, classParts } from "./cochange.mjs";
+import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts } from "./cochange.mjs";
 import { commitAt, filesAt, gitStreamed, isSha, resolveBaseRef } from "./git.mjs";
 import { ownOutput } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
@@ -32,9 +32,6 @@ export const COCHANGE = {
   // style cops ship with `config/default.yml` 76 of 76 times in the newest
   // 4,000 changes and 200 of 334 over all of them.
   perClass: 100,
-  // Past this many added or modified files a change is bulk: a vendored
-  // import or a rename sweep says nothing about what ships together.
-  changeMost: 40,
   // The bound's own floor, and 0.90 of it, so no pair that could state is
   // left uncounted, and a near miss on the record has at least this many too.
   // Measured: 9,300 pair keys at most, against 593,687 unpruned.
@@ -111,7 +108,7 @@ export function changeReader(onChange, own = () => false) {
     const list = letter === "A" ? change.added : letter === "M" || letter === "T" ? change.modified : null;
     if (list === null) return;
     list.push(one(path));
-    if (change.added.length + change.modified.length > COCHANGE.changeMost) change.bulk = true;
+    if (change.added.length + change.modified.length > CHANGE_MOST) change.bulk = true;
   };
 
   const read = (field) => {
