@@ -1108,6 +1108,31 @@ test("a component is never a test, wherever it sits, whatever it is named and wh
   assert.equal(isTestFile(file("src/__tests__/Foo.tsx", "jsx", {})), true, "a module there is one");
 });
 
+test("a module that publishes something is what a test imports, wherever it sits, unless its name says test", () => {
+  const exporting = { exports: ["default"] };
+  const corpus = [
+    ...["config", "theme/index", "home", "nav"].map((s) => file(`docs/.site/${s}.ts`, "js", exporting)),
+    file("__tests__/e2e/.site/config.ts", "js", exporting),
+    file("__tests__/e2e/.site/theme/index.ts", "js", exporting),
+    file("__tests__/e2e/home.test.ts", "js", { testRunner: "vitest", testCalls: true }),
+  ];
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  assert.deepEqual(facts.tests.map((t) => [t.runner, t.files]), [["vitest", 1]]);
+  assert.deepEqual(facts.roots.find((r) => r.dir === "docs/.site").companions, { with: 0, of: 4, root: null, ext: ".ts" });
+
+  // A mirror that publishes nothing is still a test: eslint drives RuleTester at the top of the file.
+  const eslint = [file("lib/rules/no-var.js", "js", exporting), file("tests/lib/rules/no-var.js", "js", { exports: [] })];
+  assert.equal(isTestFile(eslint[1], mirroredTests(eslint)), true);
+  assert.equal(isTestFile(file("src/__tests__/Foo.ts", "js", { exports: [] })), true);
+  // A test name still wins, export or not, and a file nobody parsed is read by its path as before.
+  assert.equal(isTestFile(file("src/__tests__/Foo.test.ts", "js", exporting)), true);
+  assert.equal(isTestFile(file("src/__tests__/Foo.ts", "js")), true);
+  // A Ruby file the parse read declares its runner's cases or none: a page object or factory mirroring the app is support.
+  const ruby = [file("app/models/topic.rb", "ruby", {}), file("spec/models/topic.rb", "ruby", { testRunner: null, testCalls: false })];
+  assert.equal(isTestFile(ruby[1], mirroredTests(ruby)), false);
+  assert.equal(isTestFile(file("spec/models/topic.rb", "ruby"), mirroredTests(ruby)), true);
+});
+
 test("a component in a tests directory is in neither number of the namesake count, and owns no test", () => {
   const corpus = [
     ...files(3, (i) => file(`pkg/src/C${i}.vue`, "vue", { embedded: "vue" })),
