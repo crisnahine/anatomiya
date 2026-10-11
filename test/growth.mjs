@@ -19,15 +19,20 @@ export function doublingRatio(make, n, { rounds = 3 } = {}) {
   // none or rounds by a whole step. Each side runs long enough that a step is noise.
   // Sized from warmed calls: the first runs unoptimised, measured at twice a
   // warm one, which left each side at half the time it was meant to run.
+  // Sized on CPU time, which a stall does not add to: on the wall clock one
+  // paused call made every call look long, and both sides read as none.
   const probe = make(n);
   probe();
   let calls = 0;
-  const warm = process.hrtime.bigint();
+  let sizing = 0;
+  const warm = process.cpuUsage();
   do {
     probe();
     calls++;
-  } while (Number(process.hrtime.bigint() - warm) < CALIBRATE_NS);
-  const each = Number(process.hrtime.bigint() - warm) / calls;
+    const used = process.cpuUsage(warm);
+    sizing = (used.user + used.system) * 1000;
+  } while (sizing < CALIBRATE_NS);
+  const each = sizing / calls;
   const reps = Math.max(1, Math.ceil(MIN_SPENT_NS / Math.max(1, each)));
   const best = [Infinity, Infinity];
   for (let r = 0; r < rounds; r++) {
@@ -44,7 +49,8 @@ export function doublingRatio(make, n, { rounds = 3 } = {}) {
 }
 
 const MIN_SPENT_NS = 250e6;
-const CALIBRATE_NS = 20e6;
+// Over three of Windows' CPU steps, so the size read off them is off by a third at most.
+const CALIBRATE_NS = 50e6;
 
 // cpuUsage counts the collector's own threads, so garbage left by building the
 // input would be charged to the work, more of it on the larger side.
