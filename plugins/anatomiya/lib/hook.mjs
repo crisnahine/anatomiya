@@ -20,7 +20,7 @@
  * lives: yours, on this machine, not committed.
  */
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, linkSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTailOf, realpathOrNull, resolveInside } from "./rules.mjs";
@@ -731,8 +731,9 @@ function claimed(path, transcript, tail, digest) {
 /**
  * Takes the lock, breaking it once where it outlived any hook; false where another call holds it.
  *
- * A break moves the lock to a name only this call uses and reads the age of what it moved, so two
- * calls that both read one lock as dead cannot both take out the live lock one of them made since.
+ * A lock that may be live is never moved or removed: the right to remove one dead generation goes
+ * to whichever call creates the token named by its mtime, and that call removes it only while the
+ * lock is still that generation. Every other call goes to the one create, and the losers hold.
  */
 function locked(lock) {
   for (let broken = false; ; broken = true) {
@@ -743,34 +744,29 @@ function locked(lock) {
       if (err?.code !== "EEXIST") throw err;
     }
     if (broken) return false;
-    const age = ageOf(lock);
-    if (age !== null && age <= LOCK_HELD_MOST_MS) return false;
-    if (age === null) continue;
-    const moved = `${lock}.${process.pid}`;
+    const dead = statOf(lock);
+    if (dead === null) continue;
+    if (Math.abs(Date.now() - dead.mtimeMs) <= LOCK_HELD_MOST_MS) return false;
+    const token = `${lock}.${Math.round(dead.mtimeMs)}`;
     try {
-      renameSync(lock, moved);
-    } catch {
-      // Broken or released by another call: the next create may take it.
+      closeSync(openSync(token, "wx"));
+    } catch (err) {
+      if (err?.code !== "EEXIST") throw err;
       continue;
     }
-    const was = ageOf(moved);
-    if (was !== null && was <= LOCK_HELD_MOST_MS) {
-      try {
-        linkSync(moved, lock);
-      } catch {
-        // A newer lock took the name; it holds the others as this one would have.
-      }
-      rmSync(moved, { force: true });
-      return false;
+    try {
+      const now = statOf(lock);
+      if (now !== null && now.ino === dead.ino && now.mtimeMs === dead.mtimeMs) rmSync(lock, { force: true });
+    } finally {
+      rmSync(token, { force: true });
     }
-    rmSync(moved, { force: true });
   }
 }
 
-/** How long ago a lock was made, or null where it is gone. */
-function ageOf(path) {
+/** A lock's stat, or null where it is gone. */
+function statOf(path) {
   try {
-    return Math.abs(Date.now() - lstatSync(path).mtimeMs);
+    return lstatSync(path);
   } catch {
     return null;
   }
