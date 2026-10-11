@@ -52,7 +52,17 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * A failed run's verdict is carried from its second failure under one stamp
  * (`standsIn`): handed the first, the checker runs and the scan records the count.
  */
-export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null } = {}) {
+export async function scan(cwd, options = {}) {
+  // A scan that fails anywhere stops the walk, rather than leave `git log` running behind the error.
+  const stopWalk = new AbortController();
+  try {
+    return await scanning(cwd, options, stopWalk.signal);
+  } finally {
+    stopWalk.abort();
+  }
+}
+
+async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null }, walkSignal) {
   const started = Date.now();
   const scannedAt = new Date().toISOString();
   const root = await gitRoot(cwd);
@@ -103,7 +113,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     state = await stateRun;
     // The walk stops at the pin, so it starts once the pin has answered, and
     // like the history read it needs nothing the parse makes.
-    cochangeRun = startCochange(root, state);
+    cochangeRun = startCochange(root, state, { signal: walkSignal });
     cochangeRun.catch(() => {});
     head = await headRun;
   } catch (err) {
