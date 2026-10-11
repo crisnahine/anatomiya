@@ -473,10 +473,10 @@ the text that reaches the agent says so.
 _Avoid_: parent repo, primary checkout, origin
 
 **Notice**:
-The one sentence handed to the agent before a file is written, saying where that kind of file's tests
-already go, or, for a path a stated **co-change claim**'s producer class holds, what a change adding
-that kind of file has shipped with, one line per claim. No scan wrote it: it is composed for the path
-in hand, and no area file carries it.
+The one sentence handed to the agent before a file is written, saying where that kind of file's
+tests already go, or, for a path a stated **co-change claim**'s producer class holds, what a change
+adding that kind of file has shipped with, one line per claim. No scan wrote it: it is composed for
+the path in hand, and no area file carries it.
 _Avoid_: warning, hint, directive, message
 
 **Batch claim**:
