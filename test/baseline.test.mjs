@@ -1277,6 +1277,8 @@ test("a pinned area ceiling no give-back could have settled on is not a pin", as
     assert.equal(read.pin, null, JSON.stringify(ceiling));
     assert.match(read.unreadable, /ceiling/, JSON.stringify(ceiling));
   }
+  writeFileSync(join(dir, PIN_PATH), JSON.stringify(good));
+  assert.equal(loadPin(dir).ceiling, 122, "a give-back's own pin names its whole count");
   writeFileSync(join(dir, PIN_PATH), JSON.stringify({ ...good, ceiling: 121 }));
   assert.equal(loadPin(dir).ceiling, 121);
   assert.equal((await resolve(dir, { baseRef: "main" })).ceiling, 121);
@@ -1285,4 +1287,23 @@ test("a pinned area ceiling no give-back could have settled on is not a pin", as
 
   assert.equal((await resolve(dir, { pin: { ...good, ceiling: -1 }, baseRef: "main" })).ceiling, null);
   assert.equal(buildPin(areas, { sha, corpus: 122 }).ceiling, undefined, "no give-back names no ceiling");
+});
+
+test("a pinned area ceiling is bounded by twice the plain one, whatever the pin lists", async (t) => {
+  // The pin lists its own areas and sizes its own corpus, so only the plain
+  // ceiling of that corpus, itself clamped, may bound what a pin can lift.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  const pinOf = (n, corpus) => buildPin(Array.from({ length: n }, (_, i) => area(`zz${i}`, [`zz${i}/a.ts`])), { sha, corpus, ceiling: n });
+  // 1080 files: a plain ceiling of 120, and 80 forged areas on 120 real ones.
+  for (const [n, corpus, ok] of [[200, 1080, true], [240, 1080, true], [241, 1080, false], [1000, 1e9, true], [1001, 1e9, false]]) {
+    writeFileSync(join(dir, PIN_PATH), JSON.stringify(pinOf(n, corpus)));
+    const read = readPin(dir);
+    assert.equal(read.pin?.ceiling ?? null, ok ? n : null, `${n} areas on ${corpus} files`);
+    if (!ok) assert.match(read.unreadable, /ceiling/);
+  }
 });
