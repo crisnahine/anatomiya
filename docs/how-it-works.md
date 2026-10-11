@@ -2312,10 +2312,12 @@ report a whole declaration: a line added inside a function body is not a new `fu
 `explicit_return_type` or `doc_comment_style` site on the declaration that holds it. An edit to the
 signature still is. Copies that share a fingerprint are matched by their own text first, then by the
 lines around them, then by the function they sit in, and only what is left is matched by count.
-That function is named by its nearest named owner, in every language: `Class.method` inside a
-named class, `api.run` for a method of an object literal bound to `api`, through nested literals,
-call and `new` arguments, `await`, `as`, `satisfies` and parentheses, and for an unnamed function,
-a callback, the name of the nearest named declaration around it. So a site added in a same-named
+That function is named by its nearest named owner, in every language: `Class.method` for a member
+of a named class, `const X = class {}` named `X` as `class X {}` is, `api.run` for a method of an
+object literal bound to `api`, through nested literals, conditionals, `||`, `&&` and `??`, call and
+`new` arguments, `await`, `as`, `satisfies` and parentheses, and for an unnamed function, a
+callback, the name of the nearest named declaration around it. A named function declared inside a
+method is its own name, since only a class's own members carry the class's. So a site added in a same-named
 method of another class, or above an old one in another callback, is matched to its own and
 reported on its own line. A static and an instance method of one name in one class share a name,
 and are matched in source order. Each name is worked out once per node on the way into the tree,
