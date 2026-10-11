@@ -1,7 +1,7 @@
 import { lstatSync, mkdirSync, renameSync, rmdirSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, writePair, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, tooLargeSentence, tooLargeToPutBack, writePair, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   REFRESH_STATE,
@@ -16,6 +16,7 @@ import {
   knownNames,
   leafReplaceable,
   outsideClaude,
+  pendingNames,
   resolveInside,
   resolveRulesDir,
   resolveTargetDir,
@@ -57,6 +58,8 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     if (!leafReplaceable(join(storeDir, basename(leaf)))) {
       throw new Error(`${leaf} is not a file, so the map could not be written: remove it and scan again`);
     }
+    const size = tooLargeToPutBack(join(storeDir, basename(leaf)));
+    if (size !== null) throw tooLarge(leaf, size);
   }
   // The facts on disk are the third fact ownership needs, and the record a held
   // area's file was derived from. Read before the new record replaces them, and
@@ -149,7 +152,10 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     result: described,
     // The same fields for each other directory, and why one was left alone.
     targets: Object.fromEntries(
-      rest.map((o) => [o.target.id, untouched(o) ? untouchedPlan(o, recorded(previous, o.target)) : targetPlan(o, described, files, claudeFiles, recorded(previous, o.target))])
+      rest.map((o) => {
+        const was = { was: recorded(previous, o.target), pending: [...pendingNames(previous, o.target)].sort() };
+        return [o.target.id, untouched(o) ? untouchedPlan(o, was) : targetPlan(o, described, files, claudeFiles, was)];
+      })
     ),
   };
 }
@@ -221,7 +227,10 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     if (!isGeneratedName(name, target)) throw new Error(`refusing to write outside ${target.dir}: ${name}`);
   }
 
-  const audit = auditRules(root, knownNames(previous, target), target);
+  // A name the record was about to remove is still ours: a scan killed before the removal left it there.
+  const known = knownNames(previous, target);
+  const pending = pendingNames(previous, target);
+  const audit = auditRules(root, pending.size ? new Set([...(known ?? []), ...pending]) : known, target);
   // Cursor's and Copilot's directories are where people write rules by hand, so
   // a file there that does not say this tool wrote it is never written over,
   // whatever its name. Named, the target cannot be written as asked and the
@@ -295,6 +304,15 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     const blocked = blockedOnTheWay(root, target.dir);
     if (blocked !== null) return { blocked };
   }
+  // Each file replaced or removed is read whole first, to be put back if the write fails.
+  const sized = audit.dir === null ? [] : [...names, ...stale].map((n) => [n, tooLargeToPutBack(join(audit.dir, n))]);
+  const big = sized.find(([, size]) => size !== null);
+  if (big !== undefined) {
+    const [at, size] = [`${target.dir}/${big[0]}`, big[1]];
+    if (isClaude(target)) throw tooLarge(at, size);
+    if (explicit) throw new Error(`${tooLargeSentence(at, size)}, so ${target.dir} could not be written and nothing was written anywhere: ${MOVE_IT} and scan again`);
+    return { blocked: { sentence: tooLargeSentence(at, size), remedy: MOVE_IT } };
+  }
 
   return {
     filed,
@@ -359,7 +377,7 @@ function renderTarget(target, laid, described, files, claudeFiles = overviewFile
   return bodies;
 }
 
-function targetPlan({ target, state, reason, on, explicit, ...laid }, described, files, claudeFiles, was) {
+function targetPlan({ target, state, reason, on, explicit, ...laid }, described, files, claudeFiles, { was, pending }) {
   const bodies = renderTarget(target, laid, described, files, claudeFiles);
   return {
     dir: target.dir,
@@ -381,13 +399,15 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
     unfiled: bodies.size ? described.areas.filter((a) => !hasFile(a, target)).map((a) => a.path) : [],
     // Every file of ours the directory holds once this is committed, for the record.
     names: [...laid.names, ...laid.kept].sort(),
+    // What the record on disk was about to remove there, for a record that removes nothing there to go on naming.
+    pending,
   };
 }
 
 // The record goes on naming what it named, or none of it could be removed once the directory reads again.
-function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritable }, was) {
+function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritable }, { was, pending }) {
   const none = { first: false, write: [], remove: [], foreign: [], unknown: [], unreadableRules: [], unfiled: [] };
-  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...(unwritable ? { unwritable } : {}), ...none, names: was };
+  return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...(unwritable ? { unwritable } : {}), ...none, names: was, pending };
 }
 
 // The files of ours the record on disk names in one directory, sorted.
@@ -440,7 +460,8 @@ const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
  * byte is written to a temporary file before anything is replaced, the facts
  * are replaced first and orphans removed last, and a failure part way puts
  * back what was there. A process killed between two renames can still leave
- * both, which is the one window left.
+ * both, and the record it renamed first names the orphans it had yet to
+ * remove, so the next scan removes them.
  */
 export function commitMap(root, plan) {
   // One root or none. The record is written under this one and stamped with the
@@ -493,7 +514,16 @@ export function commitMap(root, plan) {
     const others = all.filter((t) => !refused.has(t.id));
 
     const names = Object.fromEntries(Object.entries(plan.targets).map(([id, t]) => [id, refused.has(id) ? t.was : t.names]));
-    const recordTemp = stage(factsPath, factsJson(plan.result, names), STORE_DIR);
+    // Every map file this scan removes, by directory, so a scan killed after the record's rename has them finished by the next.
+    // A directory it removes nothing from goes on naming what the record on disk had left there.
+    const carried = (id, stopped) => untouched(plan.targets[id]) || refused.has(id) || stopped.has(id);
+    const removing = (stopped, done = false) =>
+      Object.fromEntries([
+        ["claude", done ? [] : plan.remove],
+        ...Object.entries(plan.targets).map(([id, t]) => [id, carried(id, stopped) ? t.pending : done ? [] : t.remove.filter((n) => isMapName(n, TARGETS[id]))]),
+      ]);
+    const holding = (stopped) => Object.fromEntries(Object.entries(names).map(([id, now]) => [id, stopped.has(id) ? plan.targets[id].was : now]));
+    const recordTemp = stage(factsPath, factsJson(plan.result, names, removing(new Set())), STORE_DIR);
     staged.push([recordTemp, factsPath]);
     // In the order they are renamed: the record, its layout file, then each directory in turn.
     staged.push([stage(join(storeDir, basename(LAYOUT_PATH)), stampedLayout(plan.result.layout, recordTemp), STORE_DIR), join(storeDir, basename(LAYOUT_PATH))]);
@@ -530,16 +560,21 @@ export function commitMap(root, plan) {
       return t !== undefined && !t.named ? t : null;
     };
     // The record once more, naming in each such directory the files it held and is about to hold again.
-    const settle = (stopped) => {
-      const kept = Object.fromEntries(Object.entries(names).map(([id, now]) => [id, stopped.has(id) ? plan.targets[id].was : now]));
-      writePair(storeDir, factsJson(plan.result, kept), plan.result.layout);
-    };
+    const settle = (stopped) => writePair(storeDir, factsJson(plan.result, holding(stopped), removing(stopped)), plan.result.layout);
     const left = [];
     const stopped = replaceAll([...staged, ...theirs], removals, { record: factsPath, was: readLayout(root), leftover, left, spared, settle }, stillOwn, said);
+    // Removed, so the names go: a keyed file somebody puts at one of them later is not this scan's to remove.
+    if (JSON.stringify(removing(stopped)) !== JSON.stringify(removing(stopped, true))) {
+      try {
+        writePair(storeDir, factsJson(plan.result, holding(stopped), removing(stopped, true)), plan.result.layout);
+      } catch {
+        // The map is whole either way, and the names left in the record are files no longer there.
+      }
+    }
     if (stopped.size === 0 && refused.size === 0 && left.length === 0) return plan;
     const leftIn = (dir) => left.filter((path) => dirname(path) === dir).map((path) => basename(path));
     const without = (names, gone) => names.filter((name) => !gone.includes(name));
-    const unwritten = (remedy) => ([id, reason]) => [id, untouchedPlan({ target: TARGETS[id], state: "unknown", reason, remedy, on: false, unwritable: true }, plan.targets[id].was)];
+    const unwritten = (remedy) => ([id, reason]) => [id, untouchedPlan({ target: TARGETS[id], state: "unknown", reason, remedy, on: false, unwritable: true }, plan.targets[id])];
     // A leftover that would not go is one more entry the directory holds that this scan neither wrote nor removed.
     const littered = others
       .filter((t) => !stopped.has(t.id) && leftIn(t.at).length > 0)
@@ -645,7 +680,7 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
   // Read before the first rename, so the window between the facts and the last
   // file holds renames and nothing else.
   const kept = removals.filter((path) => !pair.leftover.has(path));
-  const before = new Map([...staged.map(([, path]) => path), ...kept].map((p) => [p, previousBytes(p)]));
+  const before = new Map([...staged.map(([, path]) => path), ...kept].map((p) => [p, bytesToPutBack(p, said)]));
   const undo = [];
   const stopped = new Map();
   const past = (path) => stopped.has(pair.spared(path)?.id);
@@ -726,6 +761,19 @@ function replaceAll(staged, removals, pair, stillOwn, said) {
     throw err;
   }
 }
+
+// `previousBytes`, with a file grown past the bound since the plan refused by the repository's spelling of it.
+function bytesToPutBack(path, said) {
+  try {
+    return previousBytes(path);
+  } catch (err) {
+    if (err.tooLarge === undefined) throw err;
+    throw tooLarge(said(path), err.tooLarge);
+  }
+}
+
+const MOVE_IT = "move or delete it";
+const tooLarge = (at, size) => new Error(`${tooLargeSentence(at, size)}, so nothing was written: ${MOVE_IT} and scan again`);
 
 // Whether a process is there to be signalled. One this user may not signal is there.
 function running(pid) {
