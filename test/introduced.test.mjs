@@ -92,6 +92,13 @@ test("a site's identity is the node type and the normalised slice, never the lin
   );
 });
 
+test("a node outside the parsed tree reads its nested bodies as one cut body", () => {
+  const fn = (src) => parseSync("f.ts", src, { sourceType: "module" }).program.body[0];
+  const nested = "function f() { function g() { a() } return () => { b() } }";
+  const flat = "function f() { c() }";
+  assert.equal(siteIdentity("src/a.ts", "function_style", fn(nested), nested), siteIdentity("src/a.ts", "function_style", fn(flat), flat));
+});
+
 test("a node reporting no offsets is identified by its name, whatever line it sits on", () => {
   // prism reports no byte offsets (B5), so a Ruby site has only its name.
   const at = (line) => siteIdentity("app/w.rb", "class_base", { type: "ConstantReadNode", name: "Base", line }, "class X < Base\nend\n");

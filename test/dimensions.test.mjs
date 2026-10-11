@@ -1097,6 +1097,8 @@ test("a nested binding of the same name does not use the caught error", () => {
     `try { a() } catch (e) { items.forEach(function (e) { log(e) }) }`,
     `try { a() } catch (e) { function f(e) { log(e) } f(1) }`,
     `try { a() } catch (e) { { const e = 1; log(e) } }`,
+    `try { a() } catch (e) { for (let e = 0; e < 1; e++) log(e) }`,
+    `try { a() } catch (e) { class K { static { let e = 1; log(e) } } }`,
   ]) {
     assert.deepEqual(counts("swallowed_error", src), { candidates: 1, conforming: 0 }, src);
   }
