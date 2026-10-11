@@ -6,7 +6,7 @@
  * `config/default.yml` or that a component ships with a changeset, and no count
  * over the tree sees it: the evidence is which files changed together. Measured
  * on 44 repositories, mined on the older four fifths of the changes and held
- * out on the newest fifth: 25 claims in 11 repositories, 1,568 of 1,639
+ * out on the newest fifth: 24 claims in 11 repositories, 1,563 of 1,633
  * held-out candidates conformed.
  *
  * The unit is one first-parent change, because a branch lands on the default
@@ -16,7 +16,7 @@
  */
 import { GATES, wilsonLower } from "./gates.mjs";
 import { isPerson } from "./authors.mjs";
-import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts } from "./cochange.mjs";
+import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts, companionKey } from "./cochange.mjs";
 import { commitAt, filesAt, gitStreamed, isSha, resolveBaseRef } from "./git.mjs";
 import { ownOutput } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
@@ -75,7 +75,7 @@ export async function cochangeTip(root, state) {
 export function changeReader(onChange, own = () => false) {
   const canon = new Map();
   // One copy of each path for the whole walk, however many changes name it.
-  const one = (p) => canon.get(p) ?? (canon.set(p, p), p);
+  const one = (p) => getOrSet(canon, p, () => p);
   let change = null;
   let status = null;
 
@@ -196,7 +196,10 @@ const upOf = (cls) => {
   return `${dir.slice(0, dir.lastIndexOf("/"))}/*/*${suffix}`;
 };
 
-const companionOf = (key) => (key[0] === "e" ? { edits: key.slice(2) } : { adds: key.slice(2) });
+const companionOf = (key) => {
+  const at = key.indexOf("\0");
+  return { kind: key.slice(0, at), path: key.slice(at + 1) };
+};
 
 /**
  * The gates in order, each pair's first failure recorded: test and shape and
@@ -206,69 +209,69 @@ const companionOf = (key) => (key[0] === "e" ? { edits: key.slice(2) } : { adds:
 export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
   const changes = walk.changes;
   const classCache = new Map();
-  const classes = (p) => classCache.get(p) ?? (classCache.set(p, classesOf(p)), classCache.get(p));
-  const keysOf = (c) => {
+  const classes = (p) => getOrSet(classCache, p, () => classesOf(p));
+  const keysOf = (change) => {
     const keys = new Set();
-    for (const p of c.touched) keys.add(`e\0${p}`);
-    for (const p of c.added) for (const k of classes(p)) keys.add(`a\0${k}`);
+    for (const p of change.touched) keys.add(companionKey({ kind: "edits", path: p }));
+    for (const p of change.added) for (const cls of classes(p)) keys.add(companionKey({ kind: "adds", path: cls }));
     return keys;
   };
 
   // First pass: each class's newest candidates, and how often each companion is touched at all.
-  const seen = new Map();
+  const timesAdded = new Map();
   const candidatesOf = new Map();
-  const base = new Map();
-  const live = [];
+  const touches = new Map();
+  const countedIn = [];
   const added = new Set();
-  for (const [i, c] of changes.entries()) {
-    for (const k of keysOf(c)) base.set(k, (base.get(k) ?? 0) + 1);
+  for (const [i, change] of changes.entries()) {
+    for (const key of keysOf(change)) touches.set(key, (touches.get(key) ?? 0) + 1);
     const counted = [];
-    for (const t of new Set(c.added.flatMap(classes))) {
-      const n = seen.get(t) ?? 0;
-      seen.set(t, n + 1);
-      if (n >= COCHANGE.perClass) continue;
-      counted.push(t);
-      if (n === 0) candidatesOf.set(t, []);
-      candidatesOf.get(t).push(i);
+    for (const producer of new Set(change.added.flatMap(classes))) {
+      const before = timesAdded.get(producer) ?? 0;
+      timesAdded.set(producer, before + 1);
+      if (before >= COCHANGE.perClass) continue;
+      counted.push(producer);
+      getOrSet(candidatesOf, producer, () => []).push(i);
     }
-    live.push(counted);
-    for (const p of c.added) added.add(p);
+    countedIn.push(counted);
+    for (const p of change.added) added.add(p);
   }
-  const support = (t) => candidatesOf.get(t)?.length ?? 0;
+  const support = (producer) => candidatesOf.get(producer)?.length ?? 0;
 
   // Second pass: pairs, only where the bound could ever be met.
   const together = new Map();
-  let keys = 0;
-  for (const [i, c] of changes.entries()) {
-    const producers = live[i].filter((t) => support(t) >= COCHANGE.minCandidates);
+  let pairKeys = 0;
+  for (const [i, change] of changes.entries()) {
+    const producers = countedIn[i].filter((producer) => support(producer) >= COCHANGE.minCandidates);
     if (producers.length === 0) continue;
-    const companions = [...keysOf(c)].filter((k) => base.get(k) >= COCHANGE.minTouched);
-    for (const t of producers) {
-      const row = together.get(t) ?? (together.set(t, new Map()), together.get(t));
-      for (const k of companions) {
-        if (k === `a\0${t}`) continue;
-        const n = row.get(k);
-        if (n === undefined && ++keys > COCHANGE.keysMost) return { claims: [], truncated: true };
-        row.set(k, (n ?? 0) + 1);
+    const companions = [...keysOf(change)].filter((key) => touches.get(key) >= COCHANGE.minTouched);
+    for (const producer of producers) {
+      const row = getOrSet(together, producer, () => new Map());
+      const own = companionKey({ kind: "adds", path: producer });
+      for (const key of companions) {
+        if (key === own) continue;
+        const conforming = row.get(key);
+        if (conforming === undefined && ++pairKeys > COCHANGE.keysMost) return { claims: [], truncated: true };
+        row.set(key, (conforming ?? 0) + 1);
       }
     }
   }
 
   const kept = [];
-  for (const [t, row] of together) {
-    const of = support(t);
-    for (const [k, n] of row) {
-      const companion = companionOf(k);
-      const target = companion.edits ?? companion.adds;
-      if (isTestSide(sample(t)) || isTestSide(companion.edits ?? sample(target))) continue;
-      if (companion.adds !== undefined && (classParts(target).spans || target === t || upOf(t) === target || upOf(target) === t)) continue;
-      if (n / of < GATES.minRatio) continue;
-      kept.push({ t, k, n, of, companion });
+  for (const [producer, row] of together) {
+    const candidates = support(producer);
+    for (const [key, conforming] of row) {
+      const companion = companionOf(key);
+      const adds = companion.kind === "adds";
+      if (isTestSide(sample(producer)) || isTestSide(adds ? sample(companion.path) : companion.path)) continue;
+      if (adds && (classParts(companion.path).spans || companion.path === producer || upOf(producer) === companion.path || upOf(companion.path) === producer)) continue;
+      if (conforming / candidates < GATES.minRatio) continue;
+      kept.push({ producer, key, conforming, candidates, companion });
     }
   }
 
   // The tip's tree, asked only about the classes a kept pair names.
-  const asked = new Set(kept.flatMap(({ t, companion }) => [t, ...(companion.adds ? [companion.adds] : [])]));
+  const asked = new Set(kept.flatMap(({ producer, companion }) => [producer, ...(companion.kind === "adds" ? [companion.path] : [])]));
   const atTip = new Map([...asked].map((cls) => [cls, [0, 0]]));
   const dirOf = (p) => p.slice(0, p.lastIndexOf("/"));
   // The child directories a spanning class still holds a file in at the tip.
@@ -285,57 +288,53 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
   // A spanning class speaks for its children only where the history it was
   // counted over came from two of them and one is still there: one child's
   // habit, gone at the tip, is no evidence for a sibling the tree still holds.
-  const producerExists = (t) => {
-    if (!classParts(t).spans) return atTip.get(t)[1] > 0;
-    const from = new Set(candidatesOf.get(t).flatMap((i) => changes[i].added.filter((p) => classes(p).includes(t)).map(dirOf)));
-    const held = dirsAtTip.get(t);
+  const producerExists = (producer) => {
+    if (!classParts(producer).spans) return atTip.get(producer)[1] > 0;
+    const from = new Set(candidatesOf.get(producer).flatMap((i) => changes[i].added.filter((p) => classes(p).includes(producer)).map(dirOf)));
+    const held = dirsAtTip.get(producer);
     return from.size >= 2 && [...from].some((d) => held?.has(d));
   };
 
   const keysAt = new Map();
-  const keysOfAt = (i) => keysAt.get(i) ?? (keysAt.set(i, keysOf(changes[i])), keysAt.get(i));
-  const claims = kept.map(({ t, k, n, of, companion }) => {
-    const flags = candidatesOf.get(t).map((i) => keysOfAt(i).has(k));
-    const hands = new Set();
-    for (const [j, i] of candidatesOf.get(t).entries()) if (flags[j] && isPerson(changes[i].author)) hands.add(changes[i].author);
-    const lift = n / of / (base.get(k) / changes.length);
+  const claims = kept.map(({ producer, key, conforming, candidates, companion }) => {
+    const flags = candidatesOf.get(producer).map((i) => getOrSet(keysAt, i, () => keysOf(changes[i])).has(key));
+    const authors = new Set();
+    for (const [j, i] of candidatesOf.get(producer).entries()) if (flags[j] && isPerson(changes[i].author)) authors.add(changes[i].author);
+    const lift = conforming / candidates / (touches.get(key) / changes.length);
     // A fifth of at least 35 candidates is at least 7, past the design's floor of 5.
-    const recent = Math.ceil(of / 5);
+    const recent = Math.ceil(candidates / 5);
     const met = flags.slice(0, recent).filter(Boolean).length;
-    const exists = (companion.edits !== undefined ? tree?.has(companion.edits) : atTip.get(companion.adds)[1] > 0) && producerExists(t);
+    const exists = (companion.kind === "edits" ? tree?.has(companion.path) : atTip.get(companion.path)[1] > 0) && producerExists(producer);
     const gate =
-      wilsonLower(n, of) < GATES.minRatio ? "evidence"
-        : hands.size < required ? "authors"
+      wilsonLower(conforming, candidates) < GATES.minRatio ? "evidence"
+        : authors.size < required ? "authors"
           : lift < COCHANGE.lift ? "lift"
             : !exists ? "exists"
               : met / recent < GATES.minRatio ? "recency"
                 : null;
     return {
-      producer: t,
+      producer,
       companion,
-      candidates: of,
-      conforming: n,
+      candidates,
+      conforming,
       newest: [met, recent],
-      authors: hands.size,
+      authors: authors.size,
       authorsRequired: required,
       lift: Math.round(lift * 100) / 100,
-      files: atTip.get(t),
+      files: atTip.get(producer),
       area: null,
       gate,
       directive: gate === null,
     };
   });
   onePerPair(claims);
+  const byPair = (a, b) => byCode(a.producer, b.producer) || byCode(companionKey(a.companion), companionKey(b.companion));
   const strongest = (stated) => claims
     .filter((c) => c.directive === stated)
-    .sort((a, b) => b.candidates - a.candidates || byCode(a.producer, b.producer) || byCode(keyText(a), keyText(b)))
+    .sort((a, b) => b.candidates - a.candidates || byPair(a, b))
     .slice(0, CLAIMS_MOST);
-  const stored = [...strongest(true), ...strongest(false)];
-  stored.sort((a, b) => byCode(a.producer, b.producer) || byCode(keyText(a), keyText(b)));
-  return { claims: stored, truncated: false };
+  return { claims: [...strongest(true), ...strongest(false)].sort(byPair), truncated: false };
 }
-
-const keyText = (c) => (c.companion.edits !== undefined ? `e\0${c.companion.edits}` : `a\0${c.companion.adds}`);
 
 /**
  * One statement per pair, the other recorded under the gate `pair`. A class and
@@ -349,15 +348,16 @@ function onePerPair(claims) {
     c.directive = false;
     c.gate = "pair";
   };
-  const same = (a, b) => keyText(a) === keyText(b);
+  const same = (a, b) => companionKey(a.companion) === companionKey(b.companion);
   for (const parent of stated.filter((c) => classParts(c.producer).spans)) {
     const children = stated.filter((c) => same(c, parent) && upOf(c.producer) === parent.producer);
     if (children.length === 0) continue;
     if (!children.every((c) => parent.candidates >= 1.1 * c.candidates)) drop(parent);
     else for (const c of children) drop(c);
   }
-  for (const a of stated.filter((c) => c.companion.adds !== undefined)) {
-    const b = stated.find((c) => c.directive && c.producer === a.companion.adds && c.companion.adds === a.producer);
+  const adds = (c, path) => c.companion.kind === "adds" && c.companion.path === path;
+  for (const a of stated.filter((c) => c.companion.kind === "adds")) {
+    const b = stated.find((c) => c.directive && c.producer === a.companion.path && adds(c, a.producer));
     if (!a.directive || !b) continue;
     const aWins = a.candidates !== b.candidates ? a.candidates > b.candidates : byCode(a.producer, b.producer) < 0;
     drop(aWins ? b : a);

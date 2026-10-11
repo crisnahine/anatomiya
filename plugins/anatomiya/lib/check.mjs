@@ -1181,7 +1181,7 @@ function addCochangeFindings(root, findings, { rows = [], pending, areas, capped
     findings.push({
       severity: verdict.severity,
       reason: verdict.reason,
-      companion: claim.companion.edits ?? claim.companion.adds,
+      companion: claim.companion.path,
       path,
       oldPath: null,
       line: 1,

@@ -6364,7 +6364,7 @@ test("a file that stops being a test file by what it holds is not charged the si
 
 const shipsWith = (o = {}) => ({
   producer: "src/services/*.ts",
-  companion: { edits: "src/registry.ts" },
+  companion: { kind: "edits", path: "src/registry.ts" },
   candidates: 100,
   conforming: 100,
   newest: [20, 20],
@@ -6439,14 +6439,14 @@ test("a companion touched anywhere in the change, committed or still in the tree
   const md = shipping(t, ({ write, commit }) => {
     write("src/services/b.ts", "export const b = 1\n");
     commit("service");
-  }, { claim: shipsWith({ companion: { edits: "CHANGELOG.md" } }), pending: ({ write }) => write("CHANGELOG.md", "# changes\n- b\n") });
+  }, { claim: shipsWith({ companion: { kind: "edits", path: "CHANGELOG.md" } }), pending: ({ write }) => write("CHANGELOG.md", "# changes\n- b\n") });
   assert.deepEqual(cochangeOf(await check(md, { baseRef: "main" })), []);
 
   const added = shipping(t, ({ write, commit }) => {
     write("src/services/b.ts", "export const b = 1\n");
     write("changelog/b.md", "b\n");
     commit("service and its note");
-  }, { claim: shipsWith({ companion: { adds: "changelog/*.md" } }) });
+  }, { claim: shipsWith({ companion: { kind: "adds", path: "changelog/*.md" } }) });
   assert.deepEqual(cochangeOf(await check(added, { baseRef: "main" })), []);
 });
 

@@ -288,7 +288,7 @@ test("an area whose dominant extension the check would not read is not where the
 
 const shipsWith = (o = {}) => ({
   producer: "lib/rubocop/cop/style/*.rb",
-  companion: { edits: "config/default.yml" },
+  companion: { kind: "edits", path: "config/default.yml" },
   candidates: 100, conforming: 100, newest: [20, 20], authors: 22, authorsRequired: 2, lift: 9.5,
   files: [266, 299], area: "lib/rubocop/cop", gate: null, directive: true,
   ...o,
