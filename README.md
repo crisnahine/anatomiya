@@ -501,8 +501,8 @@ area has no file there.
 
 You pass the flag once. A target stays on while its `anatomiya-overview` file is in its directory,
 so every later scan, and the background refresh, keeps writing it. Nothing else remembers the
-choice. A scan stopped part way through turning a target off still leaves it off: the next scan
-removes what that one left. The flag names the whole set: `--targets cursor` drops Copilot, and
+choice. A scan stopped part way through turning a target off still leaves it off: the next scan without
+`--targets` removes what that one left. The flag names the whole set: `--targets cursor` drops Copilot, and
 `--targets claude` turns both off and removes the files this tool wrote there. A scan that drops a
 target says so: `removed 4 files under .github/instructions`, then `.github/instructions is off
 now`. Deleting a target's overview file by hand turns it off as well, and the next scan removes the
