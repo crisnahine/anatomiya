@@ -1133,6 +1133,18 @@ test("a module that publishes something is what a test imports, wherever it sits
   assert.equal(isTestFile(file("spec/models/topic.rb", "ruby"), mirroredTests(ruby)), true);
 });
 
+test("a support file under a test tree is neither a test nor a sibling module", () => {
+  const corpus = [
+    ...files(3, (i) => file(`ui/feature/C${i}.tsx`, "jsx", { jsx: true, exports: ["default"] })),
+    file("ui/feature/types.ts", "js", { exports: ["T"] }),
+    file("ui/feature/__tests__/fixtures.ts", "js", { exports: ["data"] }),
+    file("ui/feature/__tests__/C0.test.tsx", "jsx", { testRunner: "jest", testCalls: true }),
+  ];
+  const [record] = layoutFacts(corpus, { minFiles: 3 }).roots;
+  assert.equal(record.helpers.siblingModules, 1);
+  assert.deepEqual(record.tests, [{ runner: "jest", files: 1, sub: "__tests__", under: 1 }]);
+});
+
 test("a component in a tests directory is in neither number of the namesake count, and owns no test", () => {
   const corpus = [
     ...files(3, (i) => file(`pkg/src/C${i}.vue`, "vue", { embedded: "vue" })),
