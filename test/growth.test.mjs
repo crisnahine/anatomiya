@@ -18,8 +18,9 @@ test("a stall while the timed sides are sized leaves each side long enough to re
         stalls--;
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
       }
+      // Kept to 32 bits: a sum past them leaves small-integer arithmetic and slows the larger side.
       let sum = 0;
-      for (let i = 0; i < n * 1000; i++) sum += i;
+      for (let i = 0; i < n * 1000; i++) sum = (sum + i) | 0;
       return sum;
     }, 50);
     assert.ok(Number.isFinite(ratio) && ratio < LINEAR, `twice the work read ${ratio} times as long`);

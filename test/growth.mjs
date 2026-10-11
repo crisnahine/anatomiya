@@ -19,20 +19,17 @@ export function doublingRatio(make, n, { rounds = 3 } = {}) {
   // none or rounds by a whole step. Each side runs long enough that a step is noise.
   // Sized from warmed calls: the first runs unoptimised, measured at twice a
   // warm one, which left each side at half the time it was meant to run.
-  // Sized on CPU time, which a stall does not add to: on the wall clock one
-  // paused call made every call look long, and both sides read as none.
   const probe = make(n);
   probe();
   let calls = 0;
-  let sizing = 0;
-  const warm = process.cpuUsage();
+  const warm = process.hrtime.bigint();
   do {
     probe();
     calls++;
-    const used = process.cpuUsage(warm);
-    sizing = (used.user + used.system) * 1000;
-  } while (sizing < CALIBRATE_NS);
-  let reps = Math.max(1, Math.ceil(MIN_SPENT_NS / Math.max(1, sizing / calls)));
+  } while (Number(process.hrtime.bigint() - warm) < CALIBRATE_NS);
+  const each = Number(process.hrtime.bigint() - warm) / calls;
+  let reps = Math.max(1, Math.ceil(MIN_SPENT_NS / Math.max(1, each)));
+  let enough = READABLE_NS;
   for (let timed = 1; ; timed++) {
     const best = [Infinity, Infinity];
     for (let r = 0; r < rounds; r++) {
@@ -45,19 +42,22 @@ export function doublingRatio(make, n, { rounds = 3 } = {}) {
         best[side] = Math.min(best[side], spent.user + spent.system);
       }
     }
-    // User and system time each read a step off, so a sizing taken off them can come out
-    // short: a side that ran short is timed again, for as long as it should have run.
-    if (best[0] * 1000 >= SHORT_NS || timed === TIMINGS) return best[1] / best[0];
+    // A stall while sizing made every call look long, and the sides then ran too short for
+    // Windows' steps to read: they are timed again, scaled to as long as they should have run.
+    if (best[0] * 1000 >= enough || timed === TIMINGS) return best[1] / best[0];
+    enough = SHORT_NS;
     reps = Math.ceil((reps * MIN_SPENT_NS) / Math.max(best[0] * 1000, WINDOWS_STEP_NS));
   }
 }
 
 const MIN_SPENT_NS = 250e6;
+const CALIBRATE_NS = 20e6;
+// Four of Windows' CPU steps: a side under it reads as none, or off by half.
+const READABLE_NS = 62.4e6;
+// A side timed again runs close to as long as it should, where two steps off is noise.
 const SHORT_NS = 200e6;
-const TIMINGS = 3;
+const TIMINGS = 6;
 const WINDOWS_STEP_NS = 15.6e6;
-// Over three of Windows' CPU steps, so the size read off them is off by a third at most.
-const CALIBRATE_NS = 50e6;
 
 // cpuUsage counts the collector's own threads, so garbage left by building the
 // input would be charged to the work, more of it on the larger side.
