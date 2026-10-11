@@ -14,8 +14,8 @@ only about files the session's own tool calls wrote. A map written by 0.14.0 cha
 scan in 22 of 60 measured repositories.
 
 After updating, a map refreshes itself on the next session or HEAD move, as before, and a committed
-map is never refreshed: scan it by hand and commit the result. A repository at the 500-area
-ceiling whose pin 0.14.0 took keeps that pin's partition, with no area read as a population change,
+map is never refreshed: scan it by hand and commit the result. A repository at the area ceiling
+whose pin 0.14.0 took keeps that pin's partition, with no area read as a population change,
 until a pin is next taken, by the refresh or by `/anatomiya:pin`; the places of areas that count
 nothing come back then. What ships together needs the history: a shallow clone at depth one states
 none, and so does a git older than 2.31. Nothing needs installing.
@@ -49,7 +49,7 @@ and build digests masked.
   7290`. backstage and discourse state claims that print in no area file, so their lines do not
   move. hugo, ktor, okhttp and serde state nothing and read `, they print as counts` where 0.14.0
   printed `, the rest print as counts`.
-- The 500-area ceiling. next.js holds 500 areas where it held 497, the three added holding 11 files
+- The area ceiling. next.js holds 500 areas where it held 497, the three added holding 11 files
   each, and its claims line reads `423 of 6030 claims stated, 723 match the model default` for
   `423 of 5993`, `719`. canvas-lms holds 498 where it held 497 and reads `968 of 7662 claims stated,
   737 match the model default` for `962 of 7654`, `732`: of the six more stated, five come from the
@@ -189,19 +189,20 @@ and build digests masked.
   directory the scan did not name, that directory is left alone instead. A `facts.json` or
   `layout.json` past 64 MiB, which no command reads, is replaced without being read and said once,
   and no hook reads any of a record that size: each read 64 MB of it on every tool call.
-- At the 500-area ceiling, an area that counts nothing took a place from one that counts. The fold
-  runs before anything is counted, so next.js and canvas-lms each lost three. Their places go
-  back to the largest areas the fold took, in the scan and in the pin: next.js holds 500 areas where it held 497, and canvas-lms 498. A pin of a
-  repository at the ceiling parses it once, without the checker, which took next.js from 8.1 to 14.5
-  seconds.
+- At the area ceiling, an area that counts nothing took a place from one that counts. The fold
+  runs before anything is counted, so next.js and canvas-lms each lost three. Their places go back
+  to the largest areas the fold took, in the scan and in the pin: next.js holds 500 areas where it
+  held 497, and canvas-lms 498. A pin of a repository at the ceiling parses it once, without the
+  checker, which took next.js from 8.1 to 14.5 seconds.
 - At the area ceiling an edit that made an area count nothing moved the partition, and unrelated
   areas read as population changes until the next pin. A pin records the ceiling its give-back
-  settled on, and a scan under it folds there and gives nothing back. A pin's ceiling is read only
-  up to twice the plain one, so a hand-edited pin cannot lift the map past 1,000 areas.
+  settled on, and a scan under it folds there and gives nothing back. A pin naming a ceiling past
+  twice the plain one is refused as malformed, so a hand-edited pin cannot lift the map past 1,000
+  areas.
 - Callbacks, catches and classes nested deep cost the square of the depth in the JavaScript rows:
-  at 800 to 1,600 levels each doubling cost about four times. In this version every row and every site name
-  takes one pass however deep a file nests, and ordinary code runs its JavaScript rows 1% to 7%
-  faster.
+  at 800 to 1,600 levels each doubling cost about four times. In this version every row and every
+  site name takes one pass however deep a file nests, and ordinary code runs its JavaScript rows 1%
+  to 7% faster.
 - A record could make `check` slow and put its own text into a finding through the extensions a
   slot names. 30 findings over a forged record of a million names took 208 seconds. `scope` is
   kept and read only as at most 16 extensions or file names, and its clause is built once per area

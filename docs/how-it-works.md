@@ -97,10 +97,10 @@ sits inside`, though the root area's count was not taken over that directory and
 delivered there.
 
 Above the ceiling the smallest areas fold into the nearest ancestor that is itself an area, smallest
-first, until the count fits. A tie in size folds by the area's first file. Where no ancestor is an area, which happens whenever a directory holds
-only subdirectories, the parent is created rather than the files dropped: leaving it alone orphaned
-76,000 of 100,000 files on a measured repository. The repository root is still never a target,
-whether or not it is an area.
+first, until the count fits. A tie in size folds by the area's first file. Where no ancestor is an
+area, which happens whenever a directory holds only subdirectories, the parent is created rather
+than the files dropped: leaving it alone orphaned 76,000 of 100,000 files on a measured repository.
+The repository root is still never a target, whether or not it is an area.
 
 The fold runs before anything is counted, so an area it keeps can turn out to count nothing, and
 the scan drops such an area. Its place goes back: the fold is run again with the ceiling raised by
@@ -109,12 +109,13 @@ area given back counts nothing too. The fold is the same sequence at any ceiling
 replays a prefix of it. A pin records the same partition: where the fold folded anything it parses
 without the checker to learn which areas count nothing, and records the ceiling it settled on where
 that rose past the plain one. An area that holds JavaScript or TypeScript is never one that counts
-nothing, since a pin cannot know whether the checker will run there and count rows. Measured on the
-two corpus repositories that reach the ceiling: next.js holds 500 areas where it held 497, and
-canvas-lms 498 where it held 497. A pin of next.js took 14.5
-seconds where it took 8.1, and canvas-lms 20.3 where it took 6.5, at a load of 13 to 28. Under a pin
-an area that starts counting after the pin is not folded for it, so the areas that count can pass
-500 by at most the places the pin gave back, 3 on next.js and 4 on canvas-lms, until a pin is next taken.
+nothing, since a pin cannot know whether the checker will run there and count rows. Of the four
+corpus repositories that reach the ceiling, two give places back: next.js holds 500 areas where it
+held 497, and canvas-lms 498 where it held 497. A pin of next.js took 14.5 seconds where it took
+8.1, and canvas-lms 20.3 where it took 6.5; vscode and openproject pay the same parse and get
+nothing back, 9.4 to 14.3 and 5.4 to 10.5, at a load of 13 to 28. Under a pin an area that starts
+counting after the pin is not folded for it, so the areas that count can pass 500 by at most the
+places the pin gave back, 3 on next.js and 1 on canvas-lms, until a pin is next taken.
 Given up: an area that counts but states nothing keeps its place, since ranking by stated claims
 would move the partition with every commit, and so does an area holding JavaScript that counts
 nothing.

@@ -5,7 +5,7 @@ drops the areas that count nothing. From this build the places those areas held 
 the fold took last (`giveBack` in `plugins/anatomiya/lib/areas.mjs`), in every scan and every pin.
 "Counts nothing" is read off the parse without the checker (`countsNothingIn` in `scan.mjs`): an
 area holding a language the checker reads (`js`, `jsx`) is never one, nor is an area held for a
-language no file of which was read. DECISIONS A107 and A111 cite these numbers, and A112 the pins.
+language no file of which was read. DECISIONS A111 cites these numbers, and A112 the pins.
 
 ## Method
 
