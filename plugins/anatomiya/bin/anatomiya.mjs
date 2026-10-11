@@ -32,7 +32,7 @@ const USAGE = [
   "scan also reads the default branch's newest 20,000 first-parent changes, up",
   "to the pin where there is one, to say what a change adding one kind of file",
   "also touches. It needs git 2.31 or newer and the history itself: an older",
-  "git, or a shallow clone, states nothing.",
+  "git, or a shallow clone at depth one, states nothing.",
   "",
   "--format is text by default. json prints the same answer as a record, for a",
   "reader that is not a terminal. github prints one annotation per finding and",
