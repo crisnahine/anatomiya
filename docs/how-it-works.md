@@ -907,7 +907,8 @@ it and decide nothing, or an agent that adds conforming sites raises the bar it 
 `anatomiya pin` writes `.claude/anatomiya/baseline.json`: the commit, the file list each area held
 at that commit, the corpus size, and the area ceiling where giving places back raised it (section
 2). A ceiling that is not a count, is above the areas the pin lists, is at or below the plain
-ceiling for the pin's corpus, or is above twice that makes the pin unreadable, as any malformed
+ceiling for the pin's corpus, or is above twice that, or a ceiling in a pin that names no corpus
+size, makes the pin unreadable, as any malformed
 field does, so no pin can lift the map past 1,000 areas. The file list is the whole point. A
 baseline recomputed by running today's glob against the old commit re-selects only the files that
 are still there, so moving the violating files into a new directory lifts the ratio to 1.00 with
