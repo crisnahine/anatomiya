@@ -459,6 +459,28 @@ test("two copies alike for longer than a finding quotes are still told apart by 
   assert.deepEqual(found.map((f) => [f.line, f.text.length]), [[1, 4097]]);
 });
 
+test("a catch rewritten past the length a finding quotes is matched by its whole text, not its quote", () => {
+  const pad = "pad(); ".repeat(700);
+  const c = (end) => `try {\n  x()\n} catch (e) {\n  later(() => { ${pad}${end} })\n}\n`;
+  const judged = (base, head) =>
+    only("swallowed_error", newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) }));
+
+  assert.deepEqual(judged(c("a();") + c("b();"), c("c();")).map((f) => f.line), [3], "two copies replaced by a third that differs from both");
+});
+
+test("a quote is cut on a whole character, and a slice past the end of the source is the source", () => {
+  const head = revision(`function f() { "${"a".repeat(4079)}😀" }\n`, { file: "f.ts" });
+  const counter = area(stated("function_style", { states: "counter", counterClaim: functionStyle.counterClaim }));
+  const [one] = only("function_style", newlyIntroduced({ area: counter, path: "src/a.ts", lang: "js", head }));
+
+  assert.equal(one.text.length, 4096);
+  assert.match(one.text, /a…$/);
+  assert.equal(
+    siteIdentity("src/a.ts", "hook_call_style", { type: "Identifier", start: 0, end: 99 }, "useState"),
+    siteIdentity("src/a.ts", "hook_call_style", { type: "Identifier", start: 0, end: 8 }, "useState")
+  );
+});
+
 
 test("on the counter side the conforming sites are the findings, and the sentence is the counter-claim", () => {
   const counter = area(stated("function_style", { states: "counter", counterClaim: functionStyle.counterClaim }));
