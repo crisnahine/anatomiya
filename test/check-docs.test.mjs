@@ -534,7 +534,7 @@ test("no, none and zero are counts of nothing", (t) => {
   }
 });
 
-test("a count word opening a sentence is the same count", (t) => {
+test("a count word written with a capital is the same count", (t) => {
   const { status, output } = miscount(t, "README.md", "3 for PHP", "Four for PHP");
 
   assert.equal(status, 1);

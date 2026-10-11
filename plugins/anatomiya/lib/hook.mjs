@@ -682,7 +682,7 @@ function batchClaimPath(data, transcript, digest) {
   return join(data, "echo", `${createHash("sha256").update(transcript).digest("hex").slice(0, 16)}-${digest}`);
 }
 
-/** A hook is killed at its 5 s timeout (hooks.json), so a lock older than that was left by a call that died holding it. */
+/** A hook is killed at its 5 s timeout (hooks.json), so this is the longest a live call holds the lock. */
 export const LOCK_HELD_MOST_MS = 5000;
 
 // FAT and exFAT keep a file's mtime to 2 s, so a live lock can read that much older or newer than it is.

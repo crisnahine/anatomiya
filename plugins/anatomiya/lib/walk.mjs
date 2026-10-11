@@ -514,8 +514,7 @@ export function optionalChain(node, ancestors) {
   return answer;
 }
 
-// Every link of a chain has its outermost node's answer, so one climb answers
-// them all: asked per `!`, re-climbing made a chain of them quadratic.
+// Every climbed link keeps the answer, so a chain is climbed once whatever order its links are asked in.
 const CHAINS = new WeakMap();
 
 // The type and paren wrappers around a value. They sit inside a member or call
