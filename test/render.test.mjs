@@ -4529,6 +4529,37 @@ test("co-change blocks change no directive's fate, and drop before any directive
   }
 });
 
+test("a co-change block moves no directive at the exact fit, nor at any body height from 0 to 45", () => {
+  const ex = (n) => Array.from({ length: n }, (_, i) => ({ path: `src/services/x${i}.ts`, count: 1 }));
+  const fate = (slots, a) => a.dimensions.filter((d) => d.directive).map((d) => slots.get(d.key) ?? "kept");
+  // The input the exact fit was found on: ten directives, the first with two exceptions.
+  const exact = area({ dimensions: Array.from({ length: 10 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}`, exceptions: i === 0 ? ex(2) : [] })) });
+  assert.deepEqual(fate(droppedSlots(exact, [shipsWith()]), exact), fate(droppedSlots(exact), exact));
+  assert.match(renderArea(exact, TARGETS.claude, [shipsWith()]), /^claim number 9$/m);
+
+  for (let height = 0; height <= 45; height++) {
+    // Three lines a directive, the rest as exceptions on the first, or as one-line counts.
+    const n = Math.floor(height / 3);
+    for (const rest of ["exceptions", "counts"]) {
+      if (n === 0 && rest === "exceptions" && height % 3) continue;
+      const dims = Array.from({ length: n }, (_, i) =>
+        dim({ key: `k${i}`, claim: `claim number ${i}`, exceptions: i === 0 && rest === "exceptions" ? ex(height % 3) : [] }));
+      if (rest === "counts") for (let i = 0; i < height % 3; i++) dims.push(dim({ key: `u${i}`, claim: `count ${i}`, directive: false, gate: "evidence" }));
+      const plain = area({ dimensions: dims });
+      for (const blocks of [1, 2, 3, 14]) {
+        const claims = Array.from({ length: blocks }, (_, i) => shipsWith({ companion: { edits: `src/r${i}.ts` } }));
+        const at = `${height} lines, ${rest}, ${blocks} blocks`;
+        assert.deepEqual(fate(droppedSlots(plain, claims), plain), fate(droppedSlots(plain), plain), at);
+        const out = renderArea(plain, TARGETS.claude, claims);
+        const lines = (o) => o.split("\n").filter((l) => /^(claim number|  except)/.test(l));
+        assert.deepEqual(lines(out), lines(renderArea(plain)), at);
+        const length = (o) => o.trimEnd().split("\n").length;
+        assert.ok(length(out) <= Math.max(MAX_LINES, length(renderArea(plain))), at);
+      }
+    }
+  }
+});
+
 test("a co-change block that did not fit is counted as stated in the notice", () => {
   const dims = Array.from({ length: 11 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` }));
   const claims = Array.from({ length: 3 }, (_, i) => shipsWith({ companion: { edits: `src/r${i}.ts` } }));
