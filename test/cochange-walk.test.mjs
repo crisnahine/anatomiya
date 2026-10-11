@@ -184,6 +184,21 @@ test("a parent class states only from two child directories, nine tenths of its 
   assert.equal(gateOf(spread((i) => (i < 5 ? "x" : "y")), ["reg.yml", "lib/y/f5.rb"]), "exists");
   // Two children, neither there, and a third the history never added to.
   assert.equal(gateOf(spread((i) => (i % 2 ? "x" : "y")), ["reg.yml", "lib/z/f0.rb"]), "exists");
+  // A change adding to a gone child and a live one counts as the live one's: the parent passes,
+  // and gives way to the live child's own class.
+  const both = spread(() => "x");
+  for (const [i, c] of both.changes.entries()) if (c.added.length) c.added.push(`lib/y/g${i}.rb`);
+  assert.equal(gateOf(both, ["reg.yml", "lib/y/g0.rb"]), "pair");
+});
+
+test("claims are stored in producer then companion order, whatever their candidates", () => {
+  const changes = [];
+  for (let i = 0; i < 45; i++) changes.push({ author: `p${i % 2}@t.test`, added: [`lib/b/f${i}.rb`], touched: [`lib/b/f${i}.rb`, "reg.yml"] });
+  for (let i = 0; i < 36; i++) changes.push({ author: `p${i % 2}@t.test`, added: [`lib/a/f${i}.rb`], touched: [`lib/a/f${i}.rb`, "reg.yml"] });
+  for (let i = 0; i < 100; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+  const tree = new Set(["reg.yml", "lib/a/f0.rb", "lib/b/f0.rb"]);
+  const { claims } = mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree });
+  assert.deepEqual(claims.map((c) => [c.producer, c.candidates, c.gate]), [["lib/*/*.rb", 81, null], ["lib/a/*.rb", 36, "pair"], ["lib/b/*.rb", 45, "pair"]]);
 });
 
 test("each gate past the ratio is the one a table built to fail it alone records", () => {
@@ -346,6 +361,18 @@ test("the git runner's allowlist hands git the walk's own depth", async (t) => {
   const fields = [];
   await gitStreamed(dir, ["log", `--max-count=${COCHANGE.depth}`, "--format=%H", "-z"], (f) => fields.push(f), { terminated: false });
   assert.equal(fields.length, 1);
+});
+
+test("a stopped signal stops both the walk and the tip's tree", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("a.rb");
+    commit("one");
+  });
+  const stopped = await startCochange(dir, { status: "unpinned" }, { signal: AbortSignal.abort() });
+  assert.match(stopped.walk.error, /stopped by its caller$/);
+  assert.equal(stopped.tree, null);
+  // A stopped tree is not remembered as the answer for the next caller.
+  assert.deepEqual([...(await startCochange(dir, { status: "unpinned" })).tree], ["a.rb"]);
 });
 
 test("no commit is no walk", async (t) => {

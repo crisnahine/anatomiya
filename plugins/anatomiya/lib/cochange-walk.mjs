@@ -162,11 +162,11 @@ export async function walkCochange(root, tip, { signal } = {}) {
   return { changes, read, bulk, error: null };
 }
 
-/** The walk and the tip's tree, started together once the pin is known; `signal` stops the walk. */
+/** The walk and the tip's tree, started together once the pin is known; `signal` stops both. */
 export async function startCochange(root, state, { signal } = {}) {
   const at = await cochangeTip(root, state);
   if (at === null) return { tip: null, from: null, walk: { changes: [], read: 0, bulk: 0, error: null }, tree: null };
-  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal }), filesAt(root, at.tip)]);
+  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal }), filesAt(root, at.tip, { signal })]);
   return { ...at, walk, tree };
 }
 
