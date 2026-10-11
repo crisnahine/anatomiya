@@ -100,6 +100,7 @@ export function encodeReport(report) {
     semantic: { ...report.semantic },
     foreign: report.foreign.map(locator),
     unknown: report.unknown.map(locator),
+    ...(report.removing ? { removing: report.removing.map(locator) } : {}),
     rules: { ...report.rules, unreadable: report.rules.unreadable.map(locator) },
     ...(report.targets ? { targets: Object.fromEntries(Object.entries(report.targets).map(([id, t]) => [id, encodeTarget(t)])) } : {}),
   };
@@ -109,11 +110,12 @@ const encodeTarget = (t) => ({
   ...t,
   foreign: t.foreign.map(locator),
   unknown: t.unknown.map(locator),
+  ...(t.removing ? { removing: t.removing.map(locator) } : {}),
   rules: { ...t.rules, unreadable: t.rules.unreadable.map(locator) },
 });
 
 // The Claude Code directory, whose lists sit at the top of the record, then each other one on it.
-const directories = (r) => [{ dir: RULES_DIR, foreign: r.foreign, unknown: r.unknown }, ...Object.values(r.targets ?? {})];
+const directories = (r) => [{ dir: RULES_DIR, foreign: r.foreign, unknown: r.unknown, removing: r.removing }, ...Object.values(r.targets ?? {})];
 
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -204,7 +206,8 @@ export function formatReportGithub(report) {
       annotation(
         "rules",
         `${d.foreign.length} file(s) in ${d.dir} this tool did not write, ` +
-          `${d.unknown.length} the map on disk does not name`
+          `${d.unknown.length} the map on disk does not name` +
+          (d.removing?.length ? `, ${d.removing.length} of them the next scan removes` : "")
       )
     );
   }
@@ -286,6 +289,11 @@ function renderText(report) {
     // somebody else's context to read, the other is this tool's own output from a
     // scan whose record is gone, and re-scanning is what clears it.
     listRules(lines, d.dir, d.unknown, "the map on disk does not name");
+    if (d.removing?.length) {
+      const { shown, rest } = listSome(d.removing, LISTED.report);
+      const names = [...shown.map(quotePath), ...(rest ? [`and ${rest} more`] : [])].join(", ");
+      lines.push(`the next scan removes ${names}, which the scan that wrote the map was about to remove`);
+    }
   }
 
   return lines.join("\n") + "\n";

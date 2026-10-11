@@ -13,7 +13,7 @@ import { caseMagic, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
-import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
+import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, pendingNames, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
@@ -256,10 +256,16 @@ async function targetLines(cwd) {
     // the files and not the record, and there the key and a name a scan gives
     // a file are all there is to go on.
     const { ours, unknown, foreign, occupied, listed } = auditRules(root, known, target);
-    const mine = known === null ? unknown.filter((name) => isMapName(name, target)) : ours;
+    // A name the record was about to remove is neither: the next scan removes it.
+    const going = pendingNames(facts, target);
+    const removing = unknown.filter((name) => going.has(name)).length;
+    const mine = known === null ? unknown.filter((name) => isMapName(name, target) && !going.has(name)) : ours;
     lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);
-    const others = unknown.length - (known === null ? mine.length : 0) + foreign.length + occupied.length;
+    const others = unknown.length - (known === null ? mine.length : 0) - removing + foreign.length + occupied.length;
     if (others > 0) lines.push(`${otherEntries(target.dir, others)} that a scan neither writes nor removes`);
+    if (removing > 0) {
+      lines.push(`${otherEntries(target.dir, removing)} that the next scan removes, since the scan that wrote the map was about to remove ${removing === 1 ? "it" : "them"}`);
+    }
   }
   return lines;
 }

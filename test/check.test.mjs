@@ -1368,6 +1368,33 @@ test("the report names what each other target's directory holds, under that dire
   assert.deepEqual(JSON.parse(formatReportJson(r)).targets, r.targets);
 });
 
+test("a file the map does not name at a name the record was about to remove is said to go with the next scan", async (t) => {
+  const dir = await mappedFor(t, ["claude", "cursor"]);
+  const record = join(dir, ".claude", "anatomiya", "facts.json");
+  const facts = JSON.parse(readFileSync(record, "utf8"));
+  writeFileSync(record, JSON.stringify({ ...facts, removing: { claude: ["anatomiya-area-99999999.md"], cursor: ["anatomiya-area-99999999.mdc"] } }));
+  writeFileSync(join(dir, ".claude", "rules", "anatomiya-area-99999999.md"), "---\ngenerator: anatomiya\n---\n\nstale\n");
+  writeFileSync(join(dir, ".claude", "rules", "anatomiya-area-aaaaaaaa.md"), "---\ngenerator: anatomiya\n---\n\nstale\n");
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-area-99999999.mdc"), KEYED);
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.unknown, ["anatomiya-area-99999999.md", "anatomiya-area-aaaaaaaa.md"], "the map still does not name it, and it still loads");
+  assert.deepEqual(r.removing, ["anatomiya-area-99999999.md"]);
+  assert.deepEqual(r.targets.cursor.removing, ["anatomiya-area-99999999.mdc"]);
+  const rendered = formatReport(r);
+  assert.ok(
+    rendered.includes(
+      '\n2 file(s) in .claude/rules the map on disk does not name:\n  "anatomiya-area-99999999.md"\n  "anatomiya-area-aaaaaaaa.md"\n' +
+        'the next scan removes "anatomiya-area-99999999.md", which the scan that wrote the map was about to remove\n'
+    ),
+    rendered
+  );
+  assert.ok(rendered.includes('the next scan removes "anatomiya-area-99999999.mdc", which the scan that wrote the map was about to remove\n'), rendered);
+  const json = JSON.parse(formatReportJson(r));
+  assert.deepEqual([json.removing, json.targets.cursor.removing], [r.removing, r.targets.cursor.removing]);
+});
+
 test("a target that is off is not audited, so a check with none on reports what it did", async (t) => {
   const dir = await mappedFor(t, ["claude"]);
   mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });

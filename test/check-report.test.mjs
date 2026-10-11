@@ -564,6 +564,20 @@ test("a name in another target's directory reaches the record as a locator", () 
   assert.deepEqual({ foreign: out.foreign, unknown: out.unknown, unreadable: out.rules.unreadable }, { foreign: located, unknown: located, unreadable: located });
 });
 
+test("the files the next scan removes are named once under the list they sit in, and counted for a job", () => {
+  const r = bare({ unknown: ["anatomiya-area-11111111.md", "anatomiya-area-22222222.md"], removing: ["anatomiya-area-11111111.md", "anatomiya-ev‮li.md"] });
+
+  assert.ok(formatReport(r).endsWith('the next scan removes "anatomiya-area-11111111.md", "anatomiya-ev li.md", which the scan that wrote the map was about to remove\n'), formatReport(r));
+  assert.deepEqual(formatReportGithub(r).split("\n")[0], "::warning title=rules::0 file(s) in .claude/rules this tool did not write, 2 the map on disk does not name, 2 of them the next scan removes");
+  assert.deepEqual(JSON.parse(formatReportJson(r)).removing, ["anatomiya-area-11111111.md", "anatomiya-ev li.md"]);
+  const cursor = { dir: ".cursor/rules", state: "on", foreign: [], unknown: ["anatomiya-ev\u202eli.mdc"], removing: ["anatomiya-ev\u202eli.mdc"], rules: { escaped: false, listed: true, unreadable: [] } };
+  assert.deepEqual(JSON.parse(formatReportJson(bare({ targets: { cursor } }))).targets.cursor.removing, ["anatomiya-ev li.mdc"]);
+  assert.equal(formatReport(bare({ unknown: ["anatomiya-area-11111111.md"] })).includes("next scan"), false);
+  assert.equal("removing" in JSON.parse(formatReportJson(bare())), false, "no key where nothing is going");
+  const many = Array.from({ length: 22 }, (_, i) => `anatomiya-area-${String(i).padStart(8, "0")}.md`);
+  assert.ok(formatReport(bare({ unknown: many, removing: many })).endsWith('"anatomiya-area-00000019.md", and 2 more, which the scan that wrote the map was about to remove\n'));
+});
+
 test("the rule files nobody here wrote are counted, since only the text writer lists them", () => {
   const out = formatReportGithub(bare({ foreign: ["house.md", "team.md"], unknown: ["stale.md"] }));
 
