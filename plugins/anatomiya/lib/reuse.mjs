@@ -324,7 +324,7 @@ export async function pendingChange(root, { since = null, turnStart = null, call
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
     if (since !== null && entry.mtimeMs < since) continue;
-    if (calls !== null && !calls.some((c) => c.from <= entry.mtimeMs && entry.mtimeMs <= c.to)) continue;
+    if (calls !== null && !inCall(calls, entry.mtimeMs)) continue;
     const added =
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
@@ -364,7 +364,7 @@ async function gitDir(root) {
  * are its own, since each of those brings in work nobody in this session
  * wrote. A first commit has no parent to diff from and a merge commit holds
  * the other side's work, so either ends the run the way a move does, and so
- * does a commit made outside every Bash call of the session's, which the
+ * does a commit made outside every tool call of the session's, which the
  * reflog cannot tell from one another session made.
  *
  * Read off the file where there is one, which costs no git read. The reftable
@@ -375,14 +375,11 @@ async function gitDir(root) {
 async function committedSince(root, gitdir, turnStart, calls) {
   const entries = headMoves(gitdir) ?? (await headMovesFromGit(root));
   if (entries === null) return null;
-  // Widened a second each side: the reflog keeps whole seconds.
-  const shell = calls?.filter((c) => c.name === "Bash");
-  const inShell = (ms) => shell === undefined || shell.some((c) => c.from - 1000 <= ms && ms <= c.to + 1000);
   let run = null;
   for (const { from, to, seconds, message } of entries) {
     // A second the reflog recorded is the turn's if any part of it is.
     if ((seconds + 1) * 1000 <= turnStart) continue;
-    if (!OWN_COMMIT.test(message) || !inShell(seconds * 1000)) run = null;
+    if (!OWN_COMMIT.test(message) || (calls !== null && !inCall(calls, seconds * 1000))) run = null;
     else if (from === null || run === null || run.to !== from) run = from === null ? null : { from, to };
     else run.to = to;
   }
@@ -475,6 +472,12 @@ export function turnStart(transcriptPath) {
   return null;
 }
 
+/**
+ * Whether a moment falls inside one of the session's calls, widened a second
+ * each side: some filesystems and the reflog keep whole seconds.
+ */
+const inCall = (calls, ms) => calls.some((c) => c.from - 1000 <= ms && ms <= c.to + 1000);
+
 // The completion of a call run in the background names the call it ends.
 const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
 
@@ -506,7 +509,7 @@ export function toolCalls(transcriptPath) {
     if (!Number.isFinite(ms)) continue;
     const content = entry.message?.content;
     for (const part of Array.isArray(content) ? content : []) {
-      if (part?.type === "tool_use" && typeof part.id === "string") started.set(part.id, { name: part.name, from: ms });
+      if (part?.type === "tool_use" && typeof part.id === "string") started.set(part.id, ms);
       if (part?.type === "tool_result" && typeof part.tool_use_id === "string") returned.set(part.tool_use_id, ms);
     }
     const notice =
@@ -514,7 +517,7 @@ export function toolCalls(transcriptPath) {
     if (typeof notice !== "string") continue;
     for (const [, id] of notice.matchAll(FINISHED_CALL)) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
   }
-  return [...started].flatMap(([id, { name, from }]) => (returned.has(id) ? [{ name, from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));
+  return [...started].flatMap(([id, from]) => (returned.has(id) ? [{ from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));
 }
 
 /**
