@@ -179,8 +179,8 @@ Where the code goes:
   battery, and each row's walk (`WALKS`, `walkFor`)
 - `plugins/anatomiya/lib/walk.mjs` `dimensionsFor()`, the selection: the tree rows of the list its
   caller names, by language, tier, framework and capability. A parse child names its own engine's
-  tables: `ROWS` in `parse-file.mjs` for oxc, `TREE_DIMENSIONS` in `tree-sitter-file.mjs`, and the
-  prism tables in `ruby-shard.mjs`
+  tables: `ROWS` in `parse-file.mjs` for oxc, `TREE_DIMENSIONS` from `dimensions-tree.mjs` in
+  `tree-sitter-file.mjs`, and the prism tables in `ruby-shard.mjs`
 - `plugins/anatomiya/lib/dimensions-extra.mjs` the rest of the JS and TS set
 - `plugins/anatomiya/lib/dimensions-jsx.mjs` the React surface, `langs: ["jsx"]` only
 - `plugins/anatomiya/lib/dimensions-ruby.mjs` Ruby, walking prism nodes through `walkRuby`
