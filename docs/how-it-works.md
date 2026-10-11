@@ -105,10 +105,11 @@ The repository root is still never a target, whether or not it is an area.
 The fold runs before anything is counted, so an area it keeps can turn out to count nothing, and
 the scan drops such an area. Its place goes back: the fold is run again with the ceiling raised by
 the places those areas held, which undoes its last folds, the largest areas, and again while an
-area given back counts nothing too. The fold is the same sequence at any ceiling, so a higher one
-replays a prefix of it. A pin records the same partition: where the fold folded anything it parses
-without the checker to learn which areas count nothing, and records the ceiling it settled on where
-that rose past the plain one. An area that holds JavaScript or TypeScript is never one that counts
+area given back counts nothing too. It stops at twice the plain ceiling, the most a pin may name,
+so a pin never records a ceiling its own next read refuses. The fold is the same sequence at any
+ceiling, so a higher one replays a prefix of it. A pin records the same partition: where the fold
+folded anything it parses without the checker to learn which areas count nothing, and records the
+ceiling it settled on where that rose past the plain one. An area that holds JavaScript or TypeScript is never one that counts
 nothing, since a pin cannot know whether the checker will run there and count rows. Of the four
 corpus repositories that reach the ceiling, two give places back: next.js holds 500 areas where it
 held 497, and canvas-lms 498 where it held 497. A pin of next.js took 14.5 seconds where it took

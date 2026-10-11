@@ -747,14 +747,15 @@ function capCount(areas, maxAreas, twins) {
  * hold, so the last folds, the largest areas, are the ones undone. The fold is
  * the same sequence whatever its ceiling, so a higher one replays a prefix of
  * it. Repeated, since an area given back may count nothing too, and stepped
- * down where giving back would hold more counted areas than the ceiling.
+ * down where giving back would hold more counted areas than the ceiling. It
+ * stops at twice the ceiling, the most a pin of the corpus may name.
  */
 function giveBack(areas, maxAreas, twins, countsNothing) {
   const countedIn = (set) => set.filter((a) => !countsNothing(a)).length;
   let best = capCount(areas, maxAreas, twins);
   let room = maxAreas - countedIn(best);
   while (room > 0) {
-    const next = capCount(areas, best.length + room, twins);
+    const next = capCount(areas, Math.min(best.length + room, 2 * maxAreas), twins);
     const over = countedIn(next) - maxAreas;
     if (over > 0) {
       room -= over;

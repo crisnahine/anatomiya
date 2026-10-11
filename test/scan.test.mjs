@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFil
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { countsNothingIn, scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { collect as collectCorpus } from "../plugins/anatomiya/lib/corpus.mjs";
@@ -18,7 +19,7 @@ import { echoContext, holdsTestIn, ownLayout } from "../plugins/anatomiya/lib/ho
 import { isTestPath, noticeFor } from "../plugins/anatomiya/lib/precedent.mjs";
 import { runNotice } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
-import { buildPin, PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
+import { buildPin, PIN_PATH, PIN_SCHEMA, readPin, resolve as resolveBaseline, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { defaultPoolSize } from "../plugins/anatomiya/lib/pool.mjs";
@@ -2117,6 +2118,40 @@ test("a pin that names no ceiling is read at the plain ceiling, so one taken bef
   assert.equal(result.baseline.status, "ok");
   assert.deepEqual(statuses(result), { ok: result.areas.length });
   assert.ok(!result.areas.some((a) => a.path === "pkg/m000"), "the area folded at the pin stays folded");
+});
+
+test("a pin given back past twice its plain ceiling is one the next scan and check still read", async (t) => {
+  // 1,518 files: floor 6, plain ceiling 120. 200 of the 244 areas hold only
+  // constants, so the give-back would hand back all 244, past the 240 a pin may name.
+  const dir = repo(t, (d, { git, write }) => {
+    git("checkout", "-q", "-b", "main");
+    for (let a = 0; a < 200; a++) for (let i = 0; i < 6; i++) write(`c${String(a).padStart(3, "0")}/x${i}.py`, `X${i} = ${i}\n`);
+    for (let a = 0; a < 43; a++) for (let i = 0; i < 6; i++) write(`k${String(a).padStart(2, "0")}/m${i}.py`, `def run${i}(a):\n    return go(a)\n`);
+    for (let i = 0; i < 60; i++) write(`core/m${String(i).padStart(2, "0")}.py`, `def run${i}(a):\n    return go(a)\n\n\ndef pick${i}(a):\n    return a\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  // A child with a deadline, so a give-back that never settles fails here instead of hanging the run.
+  const bin = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "pin"], { cwd: dir, stdio: "pipe", timeout: 60_000 });
+
+  const { pin, unreadable } = readPin(dir);
+  assert.equal(unreadable ?? null, null);
+  assert.deepEqual([pin.corpus, pin.ceiling, pin.areas.length], [1518, 240, 240]);
+
+  const { runScan } = await import("../plugins/anatomiya/lib/commands.mjs");
+  const { result } = await runScan(dir);
+  assert.equal(result.baseline.status, "ok");
+
+  git("checkout", "-q", "-b", "work");
+  writeFileSync(join(dir, "core", "typed.py"), "def typed(a) -> int:\n    return a\n");
+  git("add", "core/typed.py");
+  git("commit", "-qm", "typed");
+  const { check } = await import("../plugins/anatomiya/lib/check.mjs");
+  const report = await check(dir, { baseRef: "main" });
+  assert.equal(report.staleReason, null);
+  assert.deepEqual(report.findings.map((f) => [f.path, f.severity]), [["core/typed.py", "MUST-FIX"]]);
 });
 
 test("an area's answer is asked again at each size a fold gives it", async (t) => {
