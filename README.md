@@ -233,7 +233,7 @@ map is not refreshed, so scan it by hand and commit the result. Expect:
   five more;
 - a co-change block in an area file, counted in the claims line, where the repository's history
   states one;
-- at the 500-area ceiling, a few more areas, given back by areas that count nothing, and under a
+- at the area ceiling, a few more areas, given back by areas that count nothing, and under a
   pin 0.14.0 took, only once a pin is next taken;
 - a directory name that holds a space or a double quote printed in quotes.
 
@@ -746,13 +746,13 @@ on the repository the overview comes from, and the overview says so on every sca
 companions somewhere unusual scores zero against a habit it plainly has, which is why the count of
 companions found elsewhere prints beside the ratio.
 
-**At the 500-area ceiling, a place goes to an area that counts something.** The fold that keeps a
-large repository under 500 areas gives the places of areas that count nothing back to the largest
-areas it folded. An area that counts but states nothing still takes a place, and so does one
+**At the area ceiling, a place goes to an area that counts something.** The fold that keeps a
+large repository under its area ceiling gives the places of areas that count nothing back to the
+largest areas it folded. An area that counts but states nothing still takes a place, and so does one
 holding JavaScript or TypeScript that counts nothing, since whether the type checker will count
 there is not known when a pin is taken. A pin of a repository at the ceiling parses it once to
-learn which areas count nothing, which took 6 to 14 seconds more on the two corpus repositories
-that reach it. Under a pin the partition holds still until a pin is next taken.
+learn which areas count nothing, which took 5 to 14 seconds more on the four corpus repositories
+that reach it, two of which get places back. Under a pin the partition holds still until a pin is next taken.
 
 **What ships together needs history.** The co-change claims are read from the default branch's
 first-parent changes, so a shallow clone, such as a CI checkout at depth one, states none, and a git
