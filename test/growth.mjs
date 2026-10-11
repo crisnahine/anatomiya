@@ -32,23 +32,30 @@ export function doublingRatio(make, n, { rounds = 3 } = {}) {
     const used = process.cpuUsage(warm);
     sizing = (used.user + used.system) * 1000;
   } while (sizing < CALIBRATE_NS);
-  const each = sizing / calls;
-  const reps = Math.max(1, Math.ceil(MIN_SPENT_NS / Math.max(1, each)));
-  const best = [Infinity, Infinity];
-  for (let r = 0; r < rounds; r++) {
-    for (const [side, size] of [[0, n], [1, 2 * n]]) {
-      const work = make(size);
-      collect();
-      const started = process.cpuUsage();
-      for (let i = 0; i < reps; i++) work();
-      const spent = process.cpuUsage(started);
-      best[side] = Math.min(best[side], spent.user + spent.system);
+  let reps = Math.max(1, Math.ceil(MIN_SPENT_NS / Math.max(1, sizing / calls)));
+  for (let timed = 1; ; timed++) {
+    const best = [Infinity, Infinity];
+    for (let r = 0; r < rounds; r++) {
+      for (const [side, size] of [[0, n], [1, 2 * n]]) {
+        const work = make(size);
+        collect();
+        const started = process.cpuUsage();
+        for (let i = 0; i < reps; i++) work();
+        const spent = process.cpuUsage(started);
+        best[side] = Math.min(best[side], spent.user + spent.system);
+      }
     }
+    // User and system time each read a step off, so a sizing taken off them can come out
+    // short: a side that ran short is timed again, for as long as it should have run.
+    if (best[0] * 1000 >= SHORT_NS || timed === TIMINGS) return best[1] / best[0];
+    reps = Math.ceil((reps * MIN_SPENT_NS) / Math.max(best[0] * 1000, WINDOWS_STEP_NS));
   }
-  return best[1] / best[0];
 }
 
 const MIN_SPENT_NS = 250e6;
+const SHORT_NS = 200e6;
+const TIMINGS = 3;
+const WINDOWS_STEP_NS = 15.6e6;
 // Over three of Windows' CPU steps, so the size read off them is off by a third at most.
 const CALIBRATE_NS = 50e6;
 
