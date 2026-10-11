@@ -2,8 +2,8 @@
 
 Measured 2026-10-11 on copies of both corpora (`anatomiya-corpus`, 35 repositories, and
 `anatomiya-corpus-langs`, 25), base eac5b08 against the build that reads support files under a test
-tree and holds a root to the test's own family, with the same parse and the same layout functions the
-scan uses. DECISIONS H53, H54 and H55 cite these numbers.
+tree and holds a root to the test's own family, with the same parse and the same layout functions
+the scan uses. DECISIONS H53, H54 and H55 cite these numbers.
 
 ## Files a test only by a `__tests__` segment or by the mirror
 
@@ -44,16 +44,18 @@ files, 1 shim and 1 build script.
 
 Every namesake count that moved, all of them false credits from a support file:
 
-- alphagov/whitehall `features`: 2 of 96 to 0 of 96 (`test/support/configurable_document_type_helper.rb`
-  and `i18n_helpers.rb` mirrored `features/support`)
-- vuejs/vitepress `docs`: 3 of 11 to 0 of 11, and `template`: 2 of 2 to 0 of 2 (the e2e site's
+- alphagov/whitehall `features`: 2 of 96 to 0 of 96
+  (`test/support/configurable_document_type_helper.rb` and `i18n_helpers.rb` mirrored
+  `features/support`)
+- vuejs/vitepress `docs`: 3 of 10 to 0 of 10, and `template`: 2 of 2 to 0 of 2 (the e2e site's
   `.vitepress/config.ts` and `theme/index.ts`)
 
 Other moves are the tests line and runner groups by the counts above. The sibling-module count is
 held to the namesake count's producers, so the support files leave it too (canvas-lms `ui` stays at
 2332); holding it there also drops every empty file and every file under a test tree it held on
-base, which moves 27 roots in 14 repositories. react's `packages/react-devtools-shared/src/hooks/__tests__/__source__/__compiled__`
-line reads `144 .js, 67 .map` for `144 test files and 67 other`.
+base, which moves 27 roots in 14 repositories. react's
+`packages/react-devtools-shared/src/hooks/__tests__/__source__/__compiled__` line reads `144 .js, 67
+.map` for `144 test files and 67 other`.
 
 Every sibling-module count that moved, base to the producer definition, each cause counted file by
 file (the old definition over the new build, less `isProducer`). "Net" rows: the support rule had

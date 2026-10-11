@@ -1,10 +1,11 @@
 # The largest file a scan writes, and the bound on what it reads to put back
 
-Date: 2026-10-11. `PUT_BACK_MOST` in `plugins/anatomiya/lib/facts.mjs` is the most a scan reads whole
-to put a file back if its write fails. It is 64 MiB, the bound every command reads a record to
-(`RECORD_MOST`), so a scan reads whole no more than any command reads. A rule file or another tool's
-file past it refuses the scan; the store's `facts.json` and `layout.json` past it are replaced without
-being read and never put back, since no command reads such a record. DECISIONS A113 cites this file.
+Date: 2026-10-11. `PUT_BACK_MOST` in `plugins/anatomiya/lib/facts.mjs` is the most a scan reads
+whole to put a file back if its write fails. It is 64 MiB, the bound every command reads a record to
+(`RECORD_MOST`), so a scan reads whole no more than any command reads. A file past it at a name the
+map writes or removes refuses the scan; the store's `facts.json` and `layout.json` past it are
+replaced without being read and never put back, since no command reads such a record. DECISIONS A113
+cites this file.
 
 ## Method
 
@@ -22,7 +23,7 @@ builds, so it was scanned once more with `--targets copilot` to measure it.
 |---|---|---|
 | `facts.json` | 10,197,729 (9.73 MiB) | microsoft/vscode |
 | `layout.json` | 7,781 | TryGhost/Ghost |
-| a rule file, any of the three directories | 151,986 | vercel/next.js (`.github/instructions`) |
+| an overview or area file, any of the three directories | 151,986 | vercel/next.js (`.github/instructions`) |
 
 The bound, 64 MiB, is more than six times the largest file the corpus writes. The last column of
 the next table was taken with a bound of 128 MiB, ten times 9.73 MiB rounded up to a power of two,
@@ -46,7 +47,7 @@ then a plain scan (`/usr/bin/time -l`, one run each, a loaded machine):
 | `.claude/anatomiya/facts.json` | 807 MB, replaces it | 100 MB, refuses |
 | `.claude/anatomiya/layout.json` | 807 MB, replaces it | 96 MB, refuses |
 
-## The same, with the bound at 64 MiB (the 0.15.0 train head, 195f620)
+## The same, with the bound at 64 MiB (build 195f620)
 
 A git repository made from the head's own tree, scanned once to write a map, then a 600 MB sparse
 file at one name and a plain scan under `/usr/bin/time -l`, one run each, at a load of 11 to 13:

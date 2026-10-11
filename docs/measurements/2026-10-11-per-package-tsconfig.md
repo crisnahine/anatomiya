@@ -42,7 +42,7 @@ installed `node_modules` included, and measured one at a time, each mode in its 
 | Ghost | 44 | 54.9%, 21.1s, 2,484 MB | 44, 63.3%, 52.7s, 2,382 MB | 2.49x | 14.2, 14.9 |
 | eslint | 4 | 60.9%, 4.1s, 788 MB | 5, 60.9%, 4.6s, 1,139 MB | 1.12x | 15.6, 16.6 |
 
-The root rates agree with the ones the issue reports (65.9%, 60.2%, 54.9%, 60.9%). The largest used
+The root rates are 65.9%, 60.2%, 54.9% and 60.9%. The largest used
 heap after any program was 2,329 MB (prisma, per package) and 2,769 MB (Ghost, root program), both
 inside 4,144 MB, and no run ran out. A first prisma root run at a load of 39 to 70 took 63.9s of
 wall time for 31s of CPU and was discarded; the figures above are the rerun.
@@ -58,8 +58,9 @@ cannot reach the JavaScript that holds most of the population:
 | eslint | 840 files: 60.6%, 60.6% | 13 files: 99.8%, 99.8% |
 
 In Ghost and react the files under no package config, and the JavaScript inside packages, are what
-holds the rate down: react's 1,986 files under no package, its Flow packages among them, resolve 55.3%, and Ghost's 790
-under no package resolve 27.7%. Ghost would clear 0.80 only if every JavaScript file did too.
+holds the rate down: react's 1,986 files under no package, its Flow packages among them, resolve
+55.3%, and Ghost's 790 under no package resolve 27.7%. Ghost would clear 0.80 only if every
+JavaScript file did too.
 
 prisma does not move at all, because its gap is not configuration. Its packages import each other
 by name (`@internal/contract/types`), each name links to the package's directory, and the package's

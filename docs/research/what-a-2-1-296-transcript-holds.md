@@ -18,10 +18,10 @@ Every record is one JSON line. Two families, told apart by their first key:
   2.1.296 sessions of the last three days.
 
 Among attachments, the build itself says which the model reads. In the bundle, `r7` computes
-`rendered` for an attachment by converting it to messages and sets it only when the conversion yields
-some (`if(n===void 0)return{}`); `renderedRole` is `user` or `system` beside it. A second set, `jUn`,
-names the attachments the build strips from the message list before a forked agent sees it:
-`prompt_snapshot`, `prompt_render_point`, `deferred_tools_record`.
+`rendered` for an attachment by converting it to messages and sets it only when the conversion
+yields some (`if(n===void 0)return{}`); `renderedRole` is `user` or `system` beside it. A second
+set, `jUn`, names the attachments the build strips from the message list before a forked agent sees
+it: `prompt_snapshot`, `prompt_render_point`, `deferred_tools_record`.
 
 Counted over 14 days of transcripts (4,376 files):
 
@@ -45,9 +45,9 @@ A rendered attachment holds its text twice, once under `attachment` and once und
 
 The CLAUDE.md files are an `instructions` attachment with `renderedRole: "user"`, written after the
 prompt they precede. In this session's own transcript the prompt is record 0 and `instructions`
-record 7, while in the context the model was handed the CLAUDE.md text came before the prompt. So the
-build places user-role attachments ahead of the turn's prompt when it renders: the 129 KB the issue
-counts after the prompt's delivery sits before it in the window. Seen in one session's context, not
+record 7, while in the context the model was handed the CLAUDE.md text came before the prompt. So
+the build places user-role attachments ahead of the turn's prompt when it renders: a 129 KB record
+written after the prompt's delivery sits before it in the window. Seen in one session's context, not
 traced in the bundle.
 
 ## A delivery pushed out by a snapshot, on 2.1.296
@@ -67,8 +67,8 @@ and whose context grew by 50k tokens or more, from the last 30 days:
 | every record | 6.75 | 8.70 | 13.10 |
 | user, assistant and rendered attachments | 5.69 | 6.57 | 10.79 |
 
-A92's 9.0 was every record. Counting only what the model reads, 256 KiB would be about 40k tokens at the
-median and 46k at the p10.
+A92's 9.0 was every record. Counting only what the model reads, 256 KiB would be about 40k tokens at
+the median and 46k at the p10.
 
 ## Tool calls carry timestamps, one call per record
 
