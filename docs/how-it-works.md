@@ -1208,10 +1208,12 @@ made with an exclusive create, writes the transcript offset it read to, by a ren
 the others read that offset as a delivery made there and stay silent. A claim holds only while its
 offset is inside the window, judged against the transcript as it is when the claim is read. A call
 that finds the lock taken stays silent. A lock older than the hook's 5 second timeout was left by a
-call that died holding it, and is broken once: the call moves it to a name of its own, reads the
-age of what it moved, and puts it back where it turns out fresh. Claims and locks older than a day
-are swept, at most 4,096 names read. Started 3 and 8 at once, 20 rounds each, with no claim and with
-a stale one, the echo delivered once in every round. Without that directory, or where it cannot be
+call that died holding it. No call moves or removes a lock that may be live: the call that creates
+the token `<lock>.<its mtime in ms>` removes that lock, only while it is still the one found dead,
+and every call then goes to the one create of the lock, where the losers stay silent. Claims, locks
+and tokens older than a day are swept, at most 4,096 names read. Started 3 and 8 at once, 20 rounds
+each, with no claim and with a stale one, the echo delivered once in every round, and 50 rounds each
+over a dead lock delivered once and left no lock or token. Without that directory, or where it cannot be
 written, the worst case is one copy per call. Inside a mapped checkout the prompt has already
 delivered the map before the first batch, and the batch adds none.
 `scripts/measure-echo.mjs` replays the rule over a transcript store: on 4,328 local transcripts on

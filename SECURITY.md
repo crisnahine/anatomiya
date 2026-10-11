@@ -424,17 +424,19 @@ SHA-256 of the transcript's path, a dash, and the 12 hex digits that name the de
 path, file name or transcript text reaches a name. A batch claim holds the transcript offset
 its maker had read to. The calls of one parallel batch decide under `<claim>.lock`, made with an
 exclusive create, and a call that finds the lock taken delivers nothing. A lock more than 5 seconds
-old, the echo hook's timeout, was left by a call that died holding it: a call renames it to
-`<claim>.lock.<pid>`, reads the age of what it moved, and puts it back with a hard link where it
-turns out fresh. A claim is written to `<claim>.<pid>` and renamed over the claim, so no reader sees
+old, the echo hook's timeout, was left by a call that died holding it. No call moves or removes a
+lock that may be live: the right to remove a dead one goes to the call that creates
+`<claim>.lock.<its mtime in ms>` with an exclusive create, which removes the lock only while it is
+still the one it found dead, then removes that token. Every call then tries the one create of the
+lock, and those that lose it deliver nothing. A claim is written to `<claim>.<pid>` and renamed over the claim, so no reader sees
 one half written. After each claim it writes, the hook lists at most 4,096 names in that directory
 and removes those of these shapes last written more than a day ago; a name of any other shape is
 never touched. So the directory holds one small file per window and map of the last day. The
 transcript itself is read back from its end, at most 1 MiB per call. With no data directory, a
 relative one, or one that cannot be written or read, nothing is written and each call answers from
-the transcript alone, which can deliver one copy per call of a batch. On a filesystem with no hard
-links, FAT or exFAT, a live lock moved aside cannot be put back, so two calls of one batch can both
-deliver there.
+the transcript alone, which can deliver one copy per call of a batch. A call killed while it holds a
+token leaves that dead lock in place, so the echo for that window and map stays silent until a claim
+another window or map makes there a day or more later sweeps both.
 
 ### A committed record or pin is input too
 
