@@ -4536,6 +4536,9 @@ test("a co-change block moves no directive at the exact fit, nor at any body hei
   const exact = area({ dimensions: Array.from({ length: 10 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}`, exceptions: i === 0 ? ex(2) : [] })) });
   assert.deepEqual(fate(droppedSlots(exact, [shipsWith()]), exact), fate(droppedSlots(exact), exact));
   assert.match(renderArea(exact, TARGETS.claude, [shipsWith()]), /^claim number 9$/m);
+  // With no room left even for the drop line, the block goes unsaid, and the check is told so.
+  assert.equal(droppedSlots(exact, [shipsWith()]).get("cochange\0src/services/*.ts\0edits\0src/registry.ts"), "unnamed");
+  assert.doesNotMatch(renderArea(exact, TARGETS.claude, [shipsWith()]), /not shown here/);
 
   for (let height = 0; height <= 45; height++) {
     // Three lines a directive, the rest as exceptions on the first, or as one-line counts.
@@ -4585,7 +4588,8 @@ test("a co-change block that did not fit is counted as stated in the notice", ()
   const dropped = [...droppedSlots(area({ dimensions: dims }), claims).keys()];
 
   assert.ok(dropped.some((k) => k.startsWith("cochange\0")), out);
-  assert.match(out, /^and \d+ more not shown here, all of them stated/m, out);
+  // Every directive that went and every block, in one count.
+  assert.match(out, new RegExp(`^and ${dropped.length} more not shown here, all of them stated`, "m"), out);
 });
 
 test("a model-default slot's counts line can give way to a co-change block, and this build says so", () => {
