@@ -17,7 +17,8 @@ Run the readiness probe and report what it said.
    repository, it also prints one line for each Cursor or Copilot target that is on there,
    `.cursor/rules: on, 5 files`, and a second where that directory holds other entries named
    `anatomiya-*` (`.cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor
-   removes`). Run anywhere else it prints none. In a clone that holds a target's files and no
+   removes`), and a third for entries a killed scan was about to remove, which the next scan
+   removes. Run anywhere else it prints none. In a clone that holds a target's files and no
    record yet, the count is of the files named as a scan names them that carry its key, so it can
    differ from what the first scan there prints, and it moves once, after that scan.
 

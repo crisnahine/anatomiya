@@ -17,7 +17,9 @@ hand.
    node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" pin .
    ```
 
-   Add `--dry-run` to print the delta and write nothing.
+   Add `--dry-run` to print the delta and write nothing. On a repository at the 500-area ceiling the
+   pin parses the tree once, without the type checker, to learn which areas count nothing, so it
+   takes seconds longer there.
 
 2. Report what came back:
    - the repository root it pinned, from the `wrote` line: a path inside a repository pins the whole

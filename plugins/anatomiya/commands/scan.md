@@ -28,7 +28,9 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    the whole set: `--targets cursor` leaves Copilot out, and `--targets claude` turns both off and
    removes the files this tool wrote there. Pass it only when the user asks for a target to be
    added or dropped. If the scan refuses over a file or a link in one of those directories, show
-   the sentence and stop: it wrote nothing anywhere.
+   the sentence and stop: it wrote nothing anywhere. The same holds for a file past 64 MiB at a
+   name the map writes in `.claude/rules` or in a directory the scan named: the scan will not read
+   it whole to put it back, so it refuses until the file is moved or deleted.
 
 2. Report what came back, in this order:
    - how many files and areas, and how long it took
@@ -50,6 +52,7 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    - a language it read no file of, with the reason and the remedy on the line after it. The rest
      of the map is still written, and the areas holding that language keep what the last scan that
      could read it wrote
+   - a record past 64 MiB that it replaced without reading, which it says once
    - how many files it wrote, or would write, and how many area files it removed
    - one group of lines per other directory, where one is involved: how many files it wrote under
      `.cursor/rules` or `.github/instructions`, how many it removed there, that the directory is
