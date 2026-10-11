@@ -10,22 +10,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 A scan reads the default branch's history and states what ships together: a change that adds a new
 cop also edits `config/default.yml`, and the area file, the notice before a write and `check` say
 so. Parallel tool calls carry one copy of the map between them, and the end-of-turn reuse check asks
-only about files the session's own tool calls wrote. A map written by 0.14.0 changes on its first
-scan in 22 of 60 measured repositories.
+only about files the session's own tool calls wrote. A map written by 0.14.0 gets a new record on
+its first scan, and its overview or area files change in 22 of 60 measured repositories.
 
 After updating, a map refreshes itself on the next session or HEAD move, as before, and a committed
 map is never refreshed: scan it by hand and commit the result. A repository at the area ceiling
-whose pin 0.14.0 took keeps that pin's partition, with no area read as a population change,
-until a pin is next taken, by the refresh or by `/anatomiya:pin`; the places of areas that count
-nothing come back then. What ships together needs the history: a shallow clone at depth one states
-none, and so does a git older than 2.31. Nothing needs installing.
+whose pin 0.14.0 took keeps that pin's partition, with no area read as a population change, until a
+pin is next taken, by the refresh or by `/anatomiya:pin`; the places of areas that count nothing
+come back then. What ships together needs the history: a shallow clone at depth one states none, and
+so does a git older than 2.31. Nothing needs installing.
 
 ### What changes in an existing map
 
-A scan of this version writes every map file as 0.14.0 wrote it in 38 of the 60 measured
-repositories. The counts in this list are from one run: a copy of each of the 35 corpus
-repositories and the 25 of the seven languages, scanned by 0.14.0 and by this version, with times
-and build digests masked.
+A scan of this version writes every rule file as 0.14.0 wrote it in 38 of the 60 measured
+repositories, and its record differs in all 60. The counts in this list are from one run: a copy of
+each of the 35 corpus repositories and the 25 of the seven languages, scanned by 0.14.0 and by this
+version, with times and build digests masked.
 
 - The record. `facts.json` and `layout.json` differ in all 60: they carry the co-change record,
   `layout.cochange`, empty where nothing was mined.
