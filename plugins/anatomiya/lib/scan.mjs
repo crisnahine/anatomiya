@@ -1,6 +1,6 @@
 import { collect, gitRoot, countUntrackedSource, frameworksIn, langsIn } from "./corpus.mjs";
 import { embeddedIn, langHas } from "./langs.mjs";
-import { discover, areaFloor, areaCeiling, areaIndex, dirCount } from "./areas.mjs";
+import { discover, areaFloor, areaCeiling, areaIndex, dirCount, globsReach } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
 import { defaultPoolSize } from "./pool.mjs";
@@ -326,7 +326,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   }
 
   // A claim belongs to the one area every producer at the tip sits in, and only
-  // to one whose file this scan writes.
+  // to one whose file this scan writes and loads for a producer.
   const areaFor = areaIndex(areas);
   const written = new Set(out.map((a) => a.path));
   const cochange = cochangeRecord(await cochangeRun, {
@@ -336,6 +336,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       const owner = areaFor(rel);
       return owner && written.has(owner.path) ? owner.path : null;
     },
+    reaches: (rel) => globsReach(areaFor(rel).globs, rel),
   });
 
   // Off the corpus and not off what parsed, so the count holds on a busy machine.
