@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, fork } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { once } from "node:events";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { needsSymlinks } from "./platform.mjs";
@@ -394,6 +395,23 @@ test("a tree too deep to send back is charged as a crash, not as a file that cou
 
   assert.equal(counted.records.get("deep.js").kind, "ok");
   assert.equal(tree.records.get("deep.js").kind, "crashed");
+});
+
+test("a tree that cannot be sent for a reason other than its depth reports that reason, not a crash", async (t) => {
+  // The retry's writer is made to refuse with a TypeError, so only the depth's RangeError is charged as a crash.
+  const d = dir(t);
+  const abs = join(d, "big.js");
+  writeFileSync(abs, "export const n = 1n;\n");
+  const refuse = 'const s = JSON.stringify; JSON.stringify = (v, r, ...a) => { if (r) throw new TypeError("refused"); return s(v, r, ...a); };';
+  const child = fork(fileURLToPath(new URL("../plugins/anatomiya/lib/parse-worker.mjs", import.meta.url)), [], {
+    execArgv: [`--import=data:text/javascript,${encodeURIComponent(refuse)}`],
+  });
+  t.after(() => child.kill());
+  await once(child, "message");
+  child.send({ rel: "big.js", abs, lang: "js", withProgram: true });
+  const [reply] = await once(child, "message");
+
+  assert.deepEqual([reply.ok, reply.error, reply.crashed], [false, "refused", undefined]);
 });
 
 test("a file over the size cap is named apart from one that failed", async (t) => {
