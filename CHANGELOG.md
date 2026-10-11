@@ -208,6 +208,14 @@ version, with times and build digests masked
   slot names. 30 findings over a forged record of a million names took 208 seconds. `scope` is
   kept and read only as at most 16 extensions or file names, and its clause is built once per area
   and slot.
+- `check` cost the square of the depth on a site holding sites, since each one walked everything
+  under it for the bodies its identity leaves out and copied all of its text: 2,000 catches nested
+  in catch bodies took 15 seconds per row against a base. Each file's bodies and collapsed text are
+  read once, a finding quotes at most 4,096 characters of its site, and the same file takes 0.1
+  seconds.
+- `check` said a file nested about 2,000 levels deep `could not be parsed`, though the scan reads
+  it: its tree overflows the stack the parser child sends it back with. It says the file crashed
+  the parser, as for any file this tool could not finish.
 - `check` held a `.ts` file to a claim counted over `.js` files and quoted the clause that left it
   out: `module-level bindings are const, in .js files: no convention.` on `added_ts.ts`. A slot
   whose scope names the kinds it was counted over now raises nothing on a file of another kind,
