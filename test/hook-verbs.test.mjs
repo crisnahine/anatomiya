@@ -527,7 +527,8 @@ const BIN = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", impo
 async function batch(dir, data, path, n, nodeArgs = []) {
   const runs = [];
   for (let i = 0; i < n; i++) {
-    const child = spawn(process.execPath, [...nodeArgs, BIN, "echo", dir], { env: { ...process.env, CLAUDE_PLUGIN_DATA: data } });
+    // Killed, so delivering nothing, where its lock never comes to an end.
+    const child = spawn(process.execPath, [...nodeArgs, BIN, "echo", dir], { env: { ...process.env, CLAUDE_PLUGIN_DATA: data }, timeout: 60_000 });
     let out = "";
     child.stdout.on("data", (chunk) => (out += chunk));
     runs.push({ child, done: new Promise((done) => child.on("close", () => done(out))) });
@@ -557,31 +558,55 @@ test("echo processes started together deliver one copy per batch, with no batch 
   }
 });
 
-test("a lock held by another call holds this one, and a lock older than the hook timeout is broken", needsRuby, async (t) => {
+test("a lock held by another call holds this one, and a lock a minute old or a minute ahead is broken", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
-  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
-  call();
+  const echo = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  echo();
   const [name] = readdirSync(join(data, "echo"));
   const lock = join(data, "echo", `${name}.lock`);
+  // Stamped as the call first reads the lock's age, so a slow runner moves no age across the bound.
+  const held = (ms) => {
+    writeFileSync(join(data, "echo", name), "0\n");
+    writeFileSync(lock, "");
+    let stamped = false;
+    return lockEnds(() =>
+      stubbed("lstatSync", (real, p, ...rest) => {
+        if (p === lock && !stamped) {
+          stamped = true;
+          const at = new Date(Date.now() + ms);
+          utimesSync(lock, at, at);
+        }
+        return real(p, ...rest);
+      }, echo)
+    );
+  };
 
-  writeFileSync(join(data, "echo", name), "0\n");
-  writeFileSync(lock, "");
-  assert.deepEqual(call(), {}, "a fresh lock");
-  const sixSeconds = new Date(Date.now() - 6000);
-  utimesSync(lock, sixSeconds, sixSeconds);
-  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock past the timeout");
+  assert.deepEqual(held(0), {}, "a fresh lock");
+  // Past the 5 s hook timeout, inside the 2 s a FAT or exFAT mtime can be off by.
+  assert.deepEqual(held(-6500), {}, "a lock 6.5 s old");
+  assert.deepEqual(held(6500), {}, "a lock 6.5 s ahead");
+
+  assert.match(held(-60_000).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock a minute old");
   assert.equal(existsSync(lock), false, "released after the delivery");
   assert.deepEqual(readdirSync(join(data, "echo")), [name], "nothing left of the lock it broke");
-  assert.deepEqual(call(), {}, "the batch claim it wrote holds");
+  assert.deepEqual(lockEnds(echo), {}, "the batch claim it wrote holds");
 
-  writeFileSync(join(data, "echo", name), "0\n");
-  writeFileSync(lock, "");
-  const ahead = new Date(Date.now() + 6000);
-  utimesSync(lock, ahead, ahead);
-  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock stamped past the timeout ahead of the clock");
+  assert.match(held(60_000).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock a minute ahead");
+  assert.match(held(-8000).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock 8 s old, past the slack");
 });
+
+/** Runs `call` and fails where a lock loop goes on past the few exclusive creates one call makes. */
+function lockEnds(call) {
+  let creates = 0;
+  const answer = stubbed("openSync", (real, p, flags, ...rest) => {
+    if (flags === "wx" && ++creates > 8) throw new Error("the lock loop did not end");
+    return real(p, flags, ...rest);
+  }, call);
+  assert.ok(creates <= 8, `the lock loop ended, after ${creates} exclusive creates`);
+  return answer;
+}
 
 /** Runs one echo call with `fs[name]` replaced by `stub`, which is handed the real one. */
 function stubbed(name, stub, call) {
@@ -650,7 +675,7 @@ test("a dead lock replaced by a live one before it is broken holds the call, and
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
-  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
   call();
   const [name] = readdirSync(join(data, "echo"));
   const lock = join(data, "echo", `${name}.lock`);
@@ -680,7 +705,7 @@ test("a call that broke a dead lock and finds a live one in its place holds", ne
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
-  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
   call();
   const [name] = readdirSync(join(data, "echo"));
   const lock = join(data, "echo", `${name}.lock`);
@@ -704,7 +729,7 @@ test("a dead lock whose token another call holds is left to that call", needsRub
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
-  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
   call();
   const [name] = readdirSync(join(data, "echo"));
   const lock = join(data, "echo", `${name}.lock`);
@@ -723,7 +748,7 @@ test("a dead lock released before the call could break it is taken", needsRuby, 
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
-  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
   call();
   const [name] = readdirSync(join(data, "echo"));
   const lock = join(data, "echo", `${name}.lock`);
