@@ -421,7 +421,7 @@ test("every registry count is read in words as well as digits", (t) => {
       ["24 for Svelte", "twenty for Svelte"],
       ["JSX total 33 rather than 28", "JSX total twenty rather than 28"],
     ],
-    "README.md": [["One of the 61", "One of the twenty"], ["319 numbered decisions", "twenty numbered decisions"]],
+    "README.md": [["One of the 61", "One of the twenty"], [/\d+ numbered decisions/, "twenty numbered decisions"]],
   };
   for (const [rel, pairs] of Object.entries(swaps)) {
     edit(join(dir, ...rel.split("/")), (text) => pairs.reduce((out, [from, to]) => out.replace(from, to), text));
