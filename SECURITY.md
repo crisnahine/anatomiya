@@ -444,7 +444,7 @@ another window or map makes there a day or more later sweeps both.
 `facts.json`, `layout.json` and `baseline.json` can be committed, so every reader holds what it
 takes from them to what this tool could have written. Each is read only as a regular file of at most
 64 MiB. A slot's `scope`, the extensions a claim's `, in .ts files` clause names, is kept, written
-and read only as at most 16 entries, each an extension or a whole file name of up to 64 letters,
+and read only as at most 16 entries, each an extension or a whole file name of up to 64 ASCII letters,
 digits, `_`, `+` or `-`, and any other value is no scope. The clause is built once per area and
 slot, so a record cannot make `check` slow with it, and the most it can put into a finding is 16
 bare names of its own, never a sentence: 30 findings over a forged record of a million names took
