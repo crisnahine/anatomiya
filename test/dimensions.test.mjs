@@ -292,8 +292,9 @@ test("every JS row reads a deeply nested file in time linear in its depth", () =
       assert.deepEqual(errors, [], name);
       return () => collectHits(program, rows, { comments: [], source: "", rel: "f.tsx" });
     };
-    // The parser's own stack ends a little past 1,600 levels of these.
-    const ratio = doublingRatio(read, name === "chain" || name === "nonNull" ? 4000 : NESTED.has(name) ? 800 : 1500);
+    // The parser's own stack ends between 2,000 and 2,400 levels of callbacks and classes on macOS.
+    // Below 1,200 the quadratic object literals read under 3 through every row; they parse to 4,000.
+    const ratio = doublingRatio(read, name === "chain" || name === "nonNull" ? 4000 : name === "objects" ? 1200 : NESTED.has(name) ? 600 : 1500);
     assert.ok(ratio < LINEAR, `${name}: twice the depth took ${ratio.toFixed(2)} times as long`);
   }
 });

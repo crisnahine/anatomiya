@@ -386,10 +386,10 @@ test("a Ruby tree survives for the caller that asked for one", needsRuby, async 
 
 test("a tree too deep to send back is charged as a crash, not as a file that could not be read", async () => {
   // The scan asks for counts and reads this file; the check asks for the tree,
-  // which overflows the stack JSON is written with near 2,000 levels, and the
-  // check told the reader their file could not be parsed.
+  // which overflows the stack JSON is written with past 1,500 levels on macOS,
+  // and the check told the reader their file could not be parsed.
   let source = "a();";
-  for (let i = 0; i < 3000; i++) source = `try {} catch (e) {\n${source}\n}`;
+  for (let i = 0; i < 2500; i++) source = `try {} catch (e) {\n${source}\n}`;
   const counted = await parseAll([{ rel: "deep.js", source, lang: "js" }]);
   const tree = await parseAll([{ rel: "deep.js", source, lang: "js" }], { withProgram: true });
 

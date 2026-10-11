@@ -315,7 +315,7 @@ test("a site's name costs the same at any depth of nested callbacks", () => {
       assert.equal(named, n);
     };
   };
-  const ratio = doublingRatio(read, 800);
+  const ratio = doublingRatio(read, 600);
   assert.ok(ratio < LINEAR, `twice the depth took ${ratio.toFixed(2)} times as long`);
 });
 
@@ -340,7 +340,8 @@ test("a site's name costs the same at any depth of every nesting shape", () => {
         assert.equal(named, per * n, shape);
       };
     };
-    const ratio = doublingRatio(read, 800);
+    // \`alternating\` nests two functions a level, and the parser's own stack ends short of 2,000 of its levels on macOS.
+    const ratio = doublingRatio(read, 600);
     assert.ok(ratio < LINEAR, `${shape}: twice the depth took ${ratio.toFixed(2)} times as long`);
   }
 });
