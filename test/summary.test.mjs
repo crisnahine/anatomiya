@@ -631,10 +631,10 @@ const plan = (o = {}) => ({
 
 test("a stated co-change claim an area file prints counts as a stated claim, and one printed nowhere does not", () => {
   const claim = (o = {}) => ({
-    producer: "src/*.ts", companion: { edits: "src/index.ts" }, candidates: 40, conforming: 40, newest: [8, 8],
+    producer: "src/*.ts", companion: { kind: "edits", path: "src/index.ts" }, candidates: 40, conforming: 40, newest: [8, 8],
     authors: 2, authorsRequired: 2, lift: 3, files: [40, 40], area: "src", gate: null, directive: true, ...o,
   });
-  const cochange = { from: "pin", claims: [claim(), claim({ companion: { edits: "a.yml" }, area: null }), claim({ companion: { edits: "b.yml" }, gate: "evidence", directive: false })] };
+  const cochange = { from: "pin", claims: [claim(), claim({ companion: { kind: "edits", path: "a.yml" }, area: null }), claim({ companion: { kind: "edits", path: "b.yml" }, gate: "evidence", directive: false })] };
   const s = scanSummary(result({ layout: { roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false, cochange } }), plan());
   assert.deepEqual(s.claims, { stated: 2, matchingDefault: 1, total: 4 });
 });

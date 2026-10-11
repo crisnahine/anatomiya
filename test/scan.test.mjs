@@ -2197,7 +2197,7 @@ test("a scan states what a class's additions ship with, and the area file says i
   assert.equal(cochange.shallow, false);
   const stated = cochange.claims.filter((c) => c.directive);
   assert.deepEqual(stated.map((c) => [c.producer, c.companion, c.candidates, c.conforming, c.authors, c.area]), [
-    ["src/services/*.ts", { edits: "src/registry.ts" }, 40, 40, 2, "src/services"],
+    ["src/services/*.ts", { kind: "edits", path: "src/registry.ts" }, 40, 40, 2, "src/services"],
   ]);
 
   writeMap(result, {});
@@ -2220,7 +2220,7 @@ test("a scan states what a class's additions ship with, and the area file says i
 test("a claim whose producers the area's globs never reach is carried by no area file", async (t) => {
   const dir = shippingHistory(t, { notes: true });
   const result = await scan(dir);
-  const stated = result.layout.cochange.claims.filter((c) => c.directive && c.companion.edits === "src/registry.ts");
+  const stated = result.layout.cochange.claims.filter((c) => c.directive && c.companion.path === "src/registry.ts");
   assert.deepEqual(stated.map((c) => [c.producer, c.area]), [
     ["src/services/*.md", null],
     ["src/services/*.ts", "src/services"],

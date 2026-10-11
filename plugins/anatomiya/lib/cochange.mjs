@@ -74,8 +74,8 @@ const producerText = (cls) => {
 };
 
 const companionText = (companion) => {
-  if (companion.edits !== undefined) return `an edit to ${encodePath(companion.edits)}`;
-  const { dir, suffix } = classParts(companion.adds);
+  if (companion.kind === "edits") return `an edit to ${encodePath(companion.path)}`;
+  const { dir, suffix } = classParts(companion.path);
   const kind = `a new ${encode(suffix)} file`;
   return dir === null ? `${kind} at the repository root` : `${kind} in ${encodePath(dir)}`;
 };
@@ -96,9 +96,11 @@ export function noticeLine(claim) {
   return `  A ${encode(suffix)} file added here ships with ${companionText(claim.companion)}: ${changesPhrase(claim)}.`;
 }
 
+/** A companion as one string: an edit to a named file and an added file of a class never spell the same. */
+export const companionKey = (companion) => `${companion.kind}\0${companion.path}`;
+
 /** The key a claim's block is dropped under, which no dimension key can spell. */
-export const claimKey = (claim) =>
-  `cochange\0${claim.producer}\0${claim.companion.edits !== undefined ? `edits\0${claim.companion.edits}` : `adds\0${claim.companion.adds}`}`;
+export const claimKey = (claim) => `cochange\0${claim.producer}\0${companionKey(claim.companion)}`;
 
 const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
 
@@ -118,8 +120,7 @@ function isClass(cls) {
 function isWhole(c) {
   if (!c || typeof c !== "object" || !isClass(c.producer)) return false;
   const { companion } = c;
-  const named = companion && (typeof companion.edits === "string") !== (typeof companion.adds === "string")
-    && (companion.edits === undefined ? isClass(companion.adds) : isPlainPath(companion.edits));
+  const named = companion && (companion.kind === "edits" ? isPlainPath(companion.path) : companion.kind === "adds" && isClass(companion.path));
   return Boolean(named)
     && isCount(c.candidates) && isCount(c.conforming) && isCount(c.authors)
     && Array.isArray(c.files) && c.files.length === 2 && c.files.every(isCount)
@@ -150,8 +151,7 @@ export const claimsFor = (rel, record) => {
 export function owedBy(claim, { added, touched }) {
   const producers = added.filter((p) => classesOf(p).includes(claim.producer));
   if (producers.length === 0) return [];
-  const met = claim.companion.edits !== undefined
-    ? touched.includes(claim.companion.edits)
-    : added.some((p) => classesOf(p).includes(claim.companion.adds));
+  const { kind, path } = claim.companion;
+  const met = kind === "edits" ? touched.includes(path) : added.some((p) => classesOf(p).includes(path));
   return met ? [] : producers.sort(byCode);
 }

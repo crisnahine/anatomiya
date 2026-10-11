@@ -305,7 +305,7 @@ export function noticeFor(rel, layout, { holdsTest, from = null } = {}) {
     ...shipped.map(noticeLine),
     ...(shipped.length === 0 ? [] : [shipped.length > 1
       ? "  Make those changes in the same change, or say why this file does not need them."
-      : shipped[0].companion.edits !== undefined
+      : shipped[0].companion.kind === "edits"
         ? "  Make that edit in the same change, or say why this file does not need it."
         : "  Add that file in the same change, or say why this file does not need it."]),
     // A worktree with no map of its own is answered from its main checkout's, named as the path it is opened by.

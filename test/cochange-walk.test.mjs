@@ -15,6 +15,7 @@ import {
   startCochange,
   walkCochange,
 } from "../plugins/anatomiya/lib/cochange-walk.mjs";
+import { gitStreamed } from "../plugins/anatomiya/lib/git.mjs";
 
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cochange-"));
@@ -114,14 +115,14 @@ function history({ adds = 40, misses = [], quiet = 40, companion = "config/defau
 
 const TREE = new Set(["lib/cops/c0.rb", "config/default.yml", "README.md"]);
 const pair = (claims, producer = "lib/cops/*.rb", edits = "config/default.yml") =>
-  claims.find((c) => c.producer === producer && c.companion.edits === edits);
+  claims.find((c) => c.producer === producer && c.companion.kind === "edits" && c.companion.path === edits);
 
 test("a class added with one companion every time states it, and its parent class says nothing twice", () => {
   const { claims, truncated } = mineCochange(history(), { tree: TREE, required: 2 });
 
   assert.equal(truncated, false);
   const stated = claims.filter((c) => c.directive);
-  assert.deepEqual(stated.map((c) => [c.producer, c.companion]), [["lib/cops/*.rb", { edits: "config/default.yml" }]]);
+  assert.deepEqual(stated.map((c) => [c.producer, c.companion]), [["lib/cops/*.rb", { kind: "edits", path: "config/default.yml" }]]);
   const [c] = stated;
   assert.equal(c.candidates, 40);
   assert.equal(c.conforming, 40);
@@ -149,7 +150,7 @@ test("a parent class covering a tenth more candidates than its directory's own i
   const tree = new Set(["plugins/one/f0.json", "plugins/p40/package.json", ".changeset/c0.md"]);
   const { claims } = mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree });
 
-  const changeset = claims.filter((c) => c.companion.adds === ".changeset/*.md");
+  const changeset = claims.filter((c) => c.companion.path === ".changeset/*.md");
   assert.deepEqual(changeset.filter((c) => c.directive).map((c) => c.producer), ["plugins/*/*.json"]);
   assert.equal(changeset.find((c) => c.producer === "plugins/one/*.json").gate, "pair");
 });
@@ -207,7 +208,7 @@ test("a pair under the ratio, against a test class, or of a class and its own pa
   assert.equal(pair(helper.claims, "lib/cops/*.rb", "spec/spec_helper.rb"), undefined);
 
   const shaped = mineCochange(history(), { tree: TREE }).claims;
-  assert.equal(shaped.some((c) => c.companion.adds === "lib/*/*.rb" || c.companion.adds === "lib/cops/*.rb"), false);
+  assert.equal(shaped.some((c) => c.companion.kind === "adds" && (c.companion.path === "lib/*/*.rb" || c.companion.path === "lib/cops/*.rb")), false);
 });
 
 test("each class is judged on its newest hundred candidates, so a habit that started late still speaks", () => {
@@ -229,8 +230,8 @@ test("two classes each shipping with the other added state once, on the side wit
     const tree = new Set(["app/a/x0.ts", "app/b/y0.ts"]);
     return mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree }).claims;
   };
-  const sides = (claims) => claims.filter((c) => c.directive).map((c) => [c.producer, c.companion.adds]);
-  const gateOf = (claims, producer) => claims.find((c) => c.producer === producer && c.companion.adds !== undefined)?.gate;
+  const sides = (claims) => claims.filter((c) => c.directive).map((c) => [c.producer, c.companion.path]);
+  const gateOf = (claims, producer) => claims.find((c) => c.producer === producer && c.companion.kind === "adds")?.gate;
 
   // 98 of the 100 that add an `a` add a `b`, and every `b` came with an `a`: both clear, `a` has more.
   const larger = both(100, 2);
@@ -272,7 +273,7 @@ test("the record keeps the hundred stated claims and the hundred near misses wit
   assert.equal(near.length, 100);
   // The near misses kept are the ones counted over the most candidates.
   assert.ok(near.every((c) => c.producer === "lib/*/*.rb" && c.candidates === 85), near.map((c) => c.producer).join());
-  assert.deepEqual(stated.map((c) => c.companion.edits), companions.slice(0, 100));
+  assert.deepEqual(stated.map((c) => c.companion.path), companions.slice(0, 100));
 });
 
 test("a pair count past its cap stops and states nothing", (t) => {
@@ -324,6 +325,17 @@ test("the walk reads one change per first-parent commit, a merged branch as one"
   assert.equal(walk.read, 3);
   // The root's diff is every file the repository started with, and says nothing.
   assert.deepEqual(walk.changes.map((c) => c.added), [["docs/x.md"], ["config/default.yml", "lib/cops/a.rb"]]);
+});
+
+test("the git runner's allowlist hands git the walk's own depth", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("a.rb");
+    commit("one");
+  });
+  // The allowlist spells the count as a literal, so a depth it does not spell is refused before git runs.
+  const fields = [];
+  await gitStreamed(dir, ["log", `--max-count=${COCHANGE.depth}`, "--format=%H", "-z"], (f) => fields.push(f), { terminated: false });
+  assert.equal(fields.length, 1);
 });
 
 test("no commit is no walk", async (t) => {
