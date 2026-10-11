@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { execFileSync, spawnSync } from "node:child_process";
 import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
@@ -701,6 +703,30 @@ test("a record past the size cap is named as unread, not taken for a repository 
   const { facts, unreadable } = readFacts(dir);
   assert.equal(facts, null);
   assert.match(unreadable ?? "", /64 MB/);
+});
+
+test("a record past the size cap is told by its size before a byte of it is read", (t) => {
+  // Every hook reads a record, so one committed past the cap cost each tool call a 64 MB read.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), "");
+  truncateSync(join(dir, FACTS_PATH), 600 * 1024 * 1024);
+  let read = 0;
+  const real = fs.readSync;
+  fs.readSync = (...args) => {
+    const n = real(...args);
+    read += n;
+    return n;
+  };
+  syncBuiltinESMExports();
+  try {
+    assert.match(readFacts(dir).unreadable ?? "", /64 MB/);
+  } finally {
+    fs.readSync = real;
+    syncBuiltinESMExports();
+  }
+  assert.equal(read, 0);
 });
 
 test("a record is measured by its bytes on disk, not by its decoded length", (t) => {
