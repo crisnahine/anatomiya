@@ -9,7 +9,7 @@ import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
 import { byCode } from "./paths.mjs";
 import { frontmatter, isClaude, readsEveryPattern, spelledGlobs, TARGETS } from "./targets.mjs";
-import { changesPhrase, claimKey, claimSentence } from "./cochange.mjs";
+import { changesPhrase, claimKey, claimSentence, claimsIn } from "./cochange.mjs";
 
 /**
  * The line bound every generated file is held to.
@@ -898,7 +898,7 @@ export function renderOverview(result, files, target = TARGETS.claude, claudeFil
   // Not covered lines, and an empty repository has none of them.
   const listed = (areas, none, reader) =>
     result.areas.length
-      ? areaListing(areas, none, Math.max(1, room - theirs.length), reader)
+      ? areaListing(areas, none, Math.max(1, room - theirs.length), reader, result.layout?.cochange)
       : ["No directory became an area, so nothing here states a claim."];
   const listing = listed(filed, unfiled, target);
   // A directory's own listing of other files takes the lines Claude Code's
@@ -985,11 +985,11 @@ function overviewHead(result, target) {
  * 5,489-file Rails repository, 143 of 151 areas stated nothing and 89% of an
  * always-loaded file went on their names.
  */
-function areaListing(areas, unfiled, budget, target) {
+function areaListing(areas, unfiled, budget, target, cochange) {
   // The same partition the area file makes: a slot the model writes by default
   // is a counts line there, so it must not earn the area a name here.
   const stated = (a) =>
-    a.dimensions.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true).length;
+    a.dimensions.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true).length + claimsIn(cochange, a.path).length;
   const eligible = areas.filter((a) => stated(a) > 0);
 
   // A trailing count is owed unless every area is named, and an area the budget

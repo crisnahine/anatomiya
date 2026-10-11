@@ -4560,6 +4560,24 @@ test("a co-change block moves no directive at the exact fit, nor at any body hei
   }
 });
 
+test("the overview counts a co-change claim an area file prints as stated there, and one printed nowhere nowhere", () => {
+  const layout = (claims) => ({ roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false, cochange: { from: "pin", claims } });
+  const claims = [
+    shipsWith(),
+    shipsWith({ producer: "src/silent/*.ts", area: "src/silent" }),
+    shipsWith({ companion: { edits: "a.yml" }, area: null }),
+  ];
+  const out = renderOverview(
+    result({
+      areas: [area({ id: "a1" }), area({ id: "a2", path: "src/silent", dimensions: [dim({ directive: false })] })],
+      layout: layout(claims),
+    }),
+    { uncovered: 0 }
+  );
+  assert.match(out, /^- src\/services — 40 files, 2 stated$/m, out);
+  assert.match(out, /^- src\/silent — 40 files, 1 stated$/m, out);
+});
+
 test("a co-change block that did not fit is counted as stated in the notice", () => {
   const dims = Array.from({ length: 11 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` }));
   const claims = Array.from({ length: 3 }, (_, i) => shipsWith({ companion: { edits: `src/r${i}.ts` } }));

@@ -6,6 +6,7 @@ import { unreadReasons } from "./readiness.mjs";
 import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
 import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
+import { statedClaims } from "./cochange.mjs";
 
 /**
  * What a command answered, and the lines that say it.
@@ -50,6 +51,8 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
   const authorGated = slots.filter((d) => statedSide(d).gate === "authors").length;
   const stated = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true);
   const matching = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault === true);
+  // A co-change claim an area file carries is stated there; one no area file carries is said by the notice alone.
+  const shipped = statedClaims(result.layout?.cochange).filter((c) => c.area !== null).length;
   const targets = targetSummaries(result, plan);
 
   return {
@@ -58,7 +61,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     durationMs: result.durationMs,
     root: result.root,
     untracked: result.corpus.untracked,
-    claims: { stated: stated.length, matchingDefault: matching.length, total: slots.length },
+    claims: { stated: stated.length + shipped, matchingDefault: matching.length, total: slots.length + shipped },
     // Which engines ran and what they are, so a map that moved under unchanged
     // source has somewhere to look before anyone reads the counts.
     engines: result.parse.engines ?? null,
