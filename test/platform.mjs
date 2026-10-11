@@ -38,6 +38,10 @@ export const needsPosixPaths = WINDOWS
   ? { skip: "Windows does not allow a newline in a filename, so the fixture cannot exist" }
   : {};
 
+export const needsColonInNames = WINDOWS
+  ? { skip: "Windows refuses a colon in a file name, so the fixture cannot exist" }
+  : {};
+
 export const needsShebang = WINDOWS
   ? { skip: "Windows does not execute a shebang, so the stub interpreter cannot run" }
   : {};

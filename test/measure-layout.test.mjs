@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { needsColonInNames } from "./platform.mjs";
 
 import {
   LEARNED_ROWS,
@@ -445,7 +446,7 @@ test("a root label the renderer printed reads back to the path it was printed fr
   );
 });
 
-test("the recount reads a root whose name is quoted, a separator inside the quotes included", (t) => {
+test("the recount reads a root whose name is quoted, a separator inside the quotes included", needsColonInNames, (t) => {
   const node = (name) => `import { test } from "node:test";\ntest("${name}", () => {});\n`;
   const run = recountOf(t, {
     ...Object.fromEntries([0, 1, 2, 3].map((i) => [`a: b/m${i}.js`, `export const m${i} = ${i};\n`])),
