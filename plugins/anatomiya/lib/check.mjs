@@ -22,7 +22,7 @@ import {
 import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
 import { isProducer, placedTests } from "./layout.mjs";
 import { areaIndex, areaLabel, globsReach, underArea } from "./areas.mjs";
-import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
+import { droppedSlots, scopeOf, unexaminedPhrase, unstatedLine } from "./render.mjs";
 import { auditRules, isLink, knownNames, pendingAmong, readHead, resolveInside, targetStatus } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
@@ -41,7 +41,7 @@ import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
-import { byCode, dirOf } from "./paths.mjs";
+import { byCode, dirOf, extOrName } from "./paths.mjs";
 import { CHANGE_MOST, claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
 
 /**
@@ -988,6 +988,7 @@ async function collect(root, run) {
         const up = !own && area ? ancestorSlot(ancestorsOf, area, f.dimension) : null;
         const dim = own ?? up?.dim;
         if (area && !dim) continue;
+        if (dim && outsideScope(area, dim, path)) continue;
         // Capped at FIX, whatever the ancestor's own baseline says. MUST-FIX
         // means the map told this file's author and they are the first to break
         // it; the ancestor's area file is not delivered to this directory, so
@@ -1251,6 +1252,10 @@ const unstated = (dim) => statedSide(dim).states === null;
 // That line ends on the gate, so its finding carries `toldInClaim` and no writer repeats the NIT's reason under it.
 const spokenClaim = (claim, area, dim) => (unstated(dim) ? unstatedLine(area, dim, claim) : claim);
 
+// A slot whose scope names the kinds it was counted over was never counted over
+// a file of another kind, so it raises nothing there at any severity.
+const outsideScope = (area, dim, path) => scopeOf(area, dim)?.includes(extOrName(path)) === false;
+
 /** How an area's file dropped this slot, `named` or `unnamed`, or false where it printed it. */
 function droppedOf(droppedIn, area, key) {
   return (area && droppedIn?.get(area.path)?.get(key)) || false;
@@ -1266,6 +1271,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
   const path = job.file.path;
   const nameDim = area && (area.dimensions || []).find((d) => d.key === row.key);
   if (!nameDim || typeof nameDim.learned !== "string" || !CLASSES.includes(nameDim.learned)) return null;
+  if (outsideScope(area, nameDim, path)) return null;
   // The class was learned over one kind of file, so the other kind expressed no
   // opinion about it. A file this run could not read carries no facets, and its
   // kind is unknown rather than the one an absent facet spells: reading it as a
