@@ -204,6 +204,15 @@ test("a component and the test file beside it are one engine, whatever the exten
   assert.equal(namesakeCompanions(src, [file("spec/components/Button.spec.rb")], "packages/ui/src/components").with, 0);
 });
 
+test("a TypeScript test mirrors a Vue component of the same stem", () => {
+  // The family and not the language: a component's test is a plain `.ts` file
+  // in every Vue and Svelte repository, and the two are different languages.
+  const src = [file("packages/ui/src/components/Foo.vue")];
+
+  assert.equal(namesakeCompanions(src, [file("spec/components/Foo.spec.ts")], "packages/ui/src/components").with, 1);
+  assert.equal(namesakeCompanions(src, [file("spec/components/Foo.spec.rb")], "packages/ui/src/components").with, 0);
+});
+
 test("the reversed mirror is refused across an engine, whichever way it is asked", () => {
   // mastodon keeps `app/javascript/mastodon/models/account.ts` beside
   // `app/models/account.rb`, and `spec/models/account_spec.rb` covers the Ruby
@@ -294,7 +303,7 @@ test("namesakeIndex builds the stem map namesakeCompanions is handed", () => {
   const index = namesakeIndex([file("spec/models/foo_spec.rb")]);
 
   assert.deepEqual(index.get("foo"), [
-    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set(), owner: null },
+    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set(), owner: null, componentOwner: null, paired: null },
   ]);
 });
 
@@ -805,4 +814,322 @@ test("one stem holding two languages decides each against its own sources", () =
 
   assert.equal(owners["spec/models/nested/foo_spec.rb"], "app/models/nested/foo.rb");
   assert.equal(owners["test/nested/foo.test.js"], "src/nested/foo.js");
+});
+
+test("a spec importing a component by its full name covers it", () => {
+  // Nested under a flat test tree, so no path shape answers and only the
+  // import can.
+  for (const ext of ["vue", "svelte"]) {
+    const source = [file(`pkg/src/Foo.${ext}`)];
+    const tests = [imports("test/Foo.spec.ts", [`../pkg/src/Foo.${ext}`])];
+
+    assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 1, ext);
+  }
+});
+
+test("a bare stem does not resolve to a component", () => {
+  // A bundler needs the extension spelled, and `./Foo.vue.js` is another file.
+  for (const ext of ["vue", "svelte"]) {
+    const source = [file(`pkg/src/Foo.${ext}`)];
+    for (const spec of ["../pkg/src/Foo", `../pkg/src/Foo.${ext}.js`, `../pkg/src/Foo.${ext}.ts`]) {
+      const tests = [imports("test/Foo.spec.ts", [spec])];
+
+      assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 0, spec);
+    }
+  }
+});
+
+test("a loader query on a component names the file it names on any other", () => {
+  const source = [file("pkg/src/Foo.vue"), file("pkg/src/worker.ts")];
+  const tests = [
+    imports("test/Foo.spec.ts", ["../pkg/src/Foo.vue?raw"]),
+    imports("test/worker.spec.ts", ["../pkg/src/worker.ts?raw"]),
+  ];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 2);
+});
+
+test("a component with a test of its name beside it reads as a .tsx file there does", () => {
+  // Neither test imports anything: the directory the two share is the evidence.
+  const beside = (ext) => {
+    const source = [file(`src/components/Bar.${ext}`), file(`src/components/Baz.${ext}`)];
+    const tests = [imports("src/components/Bar.test.ts", [])];
+    return namesakeCompanions(source, tests, "src/components", namesakeIndex(tests, source));
+  };
+
+  assert.deepEqual(beside("tsx"), { with: 1, of: 2, root: null });
+  assert.deepEqual(beside("vue"), beside("tsx"));
+  assert.deepEqual(beside("svelte"), beside("tsx"));
+});
+
+test("a component with a same-stem test in an unrelated directory reads as a .tsx file there does", () => {
+  const apart = (ext) => {
+    const source = [file(`apps/www/Page0.${ext}`)];
+    const tests = [imports("test/Page0.test.ts", [])];
+    return namesakeCompanions(source, tests, "apps/www", namesakeIndex(tests, source));
+  };
+
+  assert.deepEqual(apart("tsx"), { with: 0, of: 1, root: null });
+  assert.deepEqual(apart("vue"), apart("tsx"));
+});
+
+test("each of the seven languages pairs a test with the file its own spelling names", () => {
+  const pairs = [
+    ["pkg/auth.go", "pkg/auth_test.go", "pkg"],
+    ["fastapi/routing.py", "tests/test_routing.py", "fastapi"],
+    ["app/models/user.py", "tests/models/test_user.py", "app/models"],
+    ["Slim/Routing/Route.php", "tests/Routing/RouteTest.php", "Slim/Routing"],
+    ["src/Composer/Util/Git.php", "tests/Composer/Test/Util/GitTest.php", "src/Composer/Util"],
+    ["src/main/java/org/a/StringUtils.java", "src/test/java/org/a/StringUtilsTest.java", "src/main/java/org/a"],
+    ["m/src/main/java/org/a/OrFilter.java", "m/src/test/java/org/a/OrFilterTests.java", "m/src/main/java/org/a"],
+    ["m/src/main/java/org/a/Graal.java", "m/src/test/java/org/a/GraalIT.java", "m/src/main/java/org/a"],
+    ["core/commonMain/src/k/Tuples.kt", "core/commonTest/src/k/TuplesTest.kt", "core/commonMain/src/k"],
+    ["core/commonMain/src/k/Tuples.kt", "core/jvmTest/src/k/TuplesTest.kt", "core/commonMain/src/k"],
+    ["okcurl/src/main/kotlin/okhttp3/curl/Main.kt", "okcurl/src/test/kotlin/okhttp3/curl/MainTest.kt", "okcurl/src/main/kotlin/okhttp3/curl"],
+    ["src/Serilog/Core/Logger.cs", "test/Serilog.Tests/Core/LoggerTests.cs", "src/Serilog/Core"],
+    ["Src/Newtonsoft.Json/Bson/BsonReader.cs", "Src/Newtonsoft.Json.Tests/Bson/BsonReaderTests.cs", "Src/Newtonsoft.Json/Bson"],
+    ["Jellyfin.Api/Auth/Handler.cs", "tests/Jellyfin.Api.Tests/Auth/HandlerTest.cs", "Jellyfin.Api/Auth"],
+    ["tokio-util/src/codec/framed.rs", "tokio-util/tests/codec/framed.rs", "tokio-util/src/codec"],
+  ];
+  for (const [source, spec, root] of pairs) {
+    assert.equal(namesakeCompanions([file(source)], [file(spec)], root).with, 1, `${spec} covers ${source}`);
+  }
+});
+
+test("a test in another directory shape, or wearing another family's spelling, covers nothing", () => {
+  const strangers = [
+    // The same stem in a package the test does not sit in.
+    ["src/main/java/org/a/StringUtils.java", "src/test/java/org/b/StringUtilsTest.java", "src/main/java/org/a"],
+    ["src/Serilog/Core/Logger.cs", "test/Serilog.Tests/Events/LoggerTests.cs", "src/Serilog/Core"],
+    ["src/Composer/Util/Git.php", "tests/Composer/Test/Json/GitTest.php", "src/Composer/Util"],
+    // A spelling the family does not have.
+    ["pkg/auth.go", "pkg/test_auth.go", "pkg"],
+    ["pkg/auth.go", "pkg/AuthTest.go", "pkg"],
+    ["src/main/java/org/a/Foo.java", "src/test/java/org/a/FooSpec.java", "src/main/java/org/a"],
+    ["src/main/java/org/a/Foo.java", "src/test/java/org/a/Foo_test.java", "src/main/java/org/a"],
+    ["src/main/java/org/a/Con.java", "src/test/java/org/a/Contest.java", "src/main/java/org/a"],
+    ["src/main/java/org/a/Aud.java", "src/test/java/org/a/Audit.java", "src/main/java/org/a"],
+    ["src/Serilog/Core/Logger.cs", "test/Serilog.Tests/Core/LoggerIT.cs", "src/Serilog/Core"],
+    ["fastapi/routing.py", "tests/RoutingTest.py", "fastapi"],
+    // A Gradle source set is only a tree word for the JVM.
+    ["core/commonMain/src/k/tuples.py", "core/commonTest/src/k/test_tuples.py", "core/commonMain/src/k"],
+  ];
+  for (const [source, spec, root] of strangers) {
+    assert.equal(namesakeCompanions([file(source)], [file(spec)], root).with, 0, `${spec} does not cover ${source}`);
+  }
+});
+
+test("a test of one of the seven languages is no namesake of a file in another", () => {
+  const crossed = [
+    ["pkg/auth.py", "pkg/auth_test.go"],
+    ["pkg/auth.go", "pkg/test_auth.py"],
+    ["pkg/auth.go", "pkg/auth_test.py"],
+    ["pkg/Auth.java", "pkg/AuthTest.kt"],
+    ["pkg/Auth.kt", "pkg/AuthTest.java"],
+    ["pkg/Auth.cs", "pkg/AuthTest.java"],
+    ["pkg/auth.rb", "pkg/auth_test.go"],
+    ["pkg/auth.ts", "pkg/auth_test.go"],
+    ["pkg/auth.go", "pkg/auth_test.rb"],
+    ["pkg/auth.rs", "pkg/auth_test.go"],
+  ];
+  for (const [source, spec] of crossed) {
+    assert.equal(namesakeCompanions([file(source)], [file(spec)], "pkg").with, 0, `${spec} and ${source}`);
+  }
+});
+
+test("a family's own test tree names the tree a mirror crossed", () => {
+  const sources = ["BsonReader", "BsonWriter"].map((s) => file(`Src/Newtonsoft.Json/Bson/${s}.cs`));
+  const tests = ["BsonReader", "BsonWriter"].map((s) => file(`Src/Newtonsoft.Json.Tests/Bson/${s}Tests.cs`));
+  assert.deepEqual(namesakeCompanions(sources, tests, "Src"), { with: 2, of: 2, root: "Src/Newtonsoft.Json.Tests" });
+  // And a Gradle source set does, for the JVM.
+  const common = ["Tuples", "Tagged"].map((s) => file(`core/commonMain/src/k/${s}.kt`));
+  const jvm = ["Tuples", "Tagged"].map((s) => file(`core/jvmTest/src/k/${s}Test.kt`));
+  assert.deepEqual(namesakeCompanions(common, jvm, "core"), { with: 2, of: 2, root: "core/jvmTest" });
+});
+
+test("a Python package under src is at the top of the tree its tests are at the top of", () => {
+  // flask: `src/flask/cli.py` is `flask.cli` to every import, and `tests/test_cli.py` covers it.
+  const sources = ["cli", "config", "helpers"].map((s) => file(`src/flask/${s}.py`));
+  const tests = ["cli", "config"].map((s) => file(`tests/test_${s}.py`));
+  assert.deepEqual(namesakeCompanions(sources, tests, "src/flask"), { with: 2, of: 3, root: "tests" });
+  // One directory deeper is a subpackage, and a flat test of the same stem says nothing about it.
+  assert.equal(namesakeCompanions([file("src/flask/json/cli.py")], tests, "src/flask/json").with, 0);
+  // The shell is Python packaging's, and no other family's.
+  assert.equal(namesakeCompanions([file("src/flask/cli.rb")], [file("tests/cli_test.rb")], "src/flask").with, 0);
+  assert.equal(namesakeCompanions([file("src/flask/cli.ts")], [file("tests/cli.test.ts")], "src/flask").with, 0);
+});
+
+test("a Java or Kotlin test covers the class of its package, whatever the source set or module is called", () => {
+  // okhttp names a source set `commonJvmAndroid`, and junit keeps a module's tests in the module beside it.
+  const pairs = [
+    ["okhttp/src/commonJvmAndroid/kotlin/okhttp3/Cache.kt", "okhttp/src/jvmTest/kotlin/okhttp3/CacheTest.kt", "okhttp/src/commonJvmAndroid/kotlin/okhttp3"],
+    ["junit-jupiter-api/src/main/java/org/junit/jupiter/api/Assumptions.java", "jupiter-tests/src/test/java/org/junit/jupiter/api/AssumptionsTests.java", "junit-jupiter-api/src/main/java/org/junit/jupiter/api"],
+    ["gson/src/main/java/com/google/gson/Gson.java", "gson/src/test/java/com/google/gson/GsonTest.java", "gson/src/main"],
+    ["gson/src/main/java/com/google/gson/Gson.java", "gson/src/test/java/com/google/gson/GsonTest.java", "gson"],
+    // fastlane writes a package as one dotted directory on one side and a directory per name on the other.
+    ["lib/src/main/java/tools.fastlane.screengrab/locale/LocaleUtil.java", "lib/src/test/java/tools/fastlane/screengrab/locale/LocaleUtilTest.java", "lib"],
+  ];
+  for (const [source, spec, root] of pairs) {
+    assert.equal(namesakeCompanions([file(source)], [file(spec)], root).with, 1, `${spec} covers ${source} at ${root}`);
+  }
+  // Another package is another class, in the same module or out of it.
+  const other = file("jupiter-tests/src/test/java/org/junit/jupiter/engine/AssumptionsTests.java");
+  assert.equal(namesakeCompanions([file(pairs[1][0])], [other], pairs[1][2]).with, 0);
+  // The source root is the JVM's, and a Python file under a `java` directory is not in a package.
+  assert.equal(namesakeCompanions([file("a/src/x/java/p/cart.py")], [file("b/src/y/java/p/test_cart.py")], "a/src/x/java/p").with, 0);
+});
+
+test("a Python test below the top of its test tree answers only the path it mirrors", () => {
+  // fastapi: `tests/test_telemetry/test_exceptions.py` tests OpenTelemetry spans, not `fastapi/exceptions.py`.
+  const source = [file("fastapi/exceptions.py")];
+  const count = (spec) => namesakeCompanions(source, [file(spec)], "fastapi").with;
+  assert.equal(count("tests/test_exceptions.py"), 1);
+  assert.equal(count("tests/fastapi/test_exceptions.py"), 1);
+  assert.equal(count("tests/test_telemetry/test_exceptions.py"), 0);
+  // A JavaScript test tree that files by type still answers a flat script.
+  assert.equal(namesakeCompanions([file("scripts/seed.mjs")], [file("test/unit/seed.test.mjs")], "scripts").with, 1);
+});
+
+test("a Python tests directory beside a package mirrors that package", () => {
+  // flask: `examples/tutorial/tests/test_auth.py` covers `examples/tutorial/flaskr/auth.py`.
+  const sources = ["__init__", "auth", "blog", "db"].map((s) => file(`examples/tutorial/flaskr/${s}.py`));
+  const tests = ["auth", "blog", "db", "factory"].map((s) => file(`examples/tutorial/tests/test_${s}.py`));
+  const count = (src, specs, root) => namesakeCompanions(src, specs, root, namesakeIndex(specs, src));
+  assert.deepEqual(count(sources, tests, "examples"), { with: 3, of: 4, root: "examples/tutorial/tests" });
+  // A subpackage is mirrored under the tests directory, and a flat test says nothing about it.
+  const nested = [file("examples/tutorial/flaskr/api/tokens.py")];
+  assert.equal(count(nested, [file("examples/tutorial/tests/api/test_tokens.py")], "examples").with, 1);
+  assert.equal(count(nested, [file("examples/tutorial/tests/test_tokens.py")], "examples").with, 0);
+  // The packaging shell is no package: `src/task_app` is the package beside `tests`.
+  assert.equal(count([file("examples/celery/src/task_app/tasks.py")], [file("examples/celery/tests/test_tasks.py")], "examples").with, 1);
+  // Another project's tests are not beside this package.
+  assert.equal(count(sources, [file("examples/javascript/tests/test_auth.py")], "examples").with, 0);
+  // Two packages beside one tests directory share the stem, and the stem cannot say which.
+  const two = [file("site/shop/models.py"), file("site/blog/models.py")];
+  assert.equal(count(two, [file("site/tests/test_models.py")], "site").with, 0);
+  // Python's layout, and no other family's.
+  assert.equal(count([file("examples/tutorial/flaskr/auth.go")], [file("examples/tutorial/tests/auth_test.go")], "examples").with, 0);
+});
+
+test("a test in a paired project covers the one source of its stem there, at any depth", () => {
+  const count = (src, specs, root) => namesakeCompanions(src, specs, root, namesakeIndex(specs, src)).with;
+  // serilog: `test/Serilog.Tests/Core/SafeAggregateSinkTests.cs` for a class two directories further down.
+  const sink = file("src/Serilog/Core/Sinks/SafeAggregateSink.cs");
+  const sinkTests = [file("test/Serilog.Tests/Core/SafeAggregateSinkTests.cs")];
+  assert.equal(count([sink], sinkTests, "src/Serilog"), 1);
+  // Another project is not the one `Serilog.Tests` is named for.
+  assert.equal(count([file("src/Serilog.Sinks.File/Core/Sinks/SafeAggregateSink.cs")], sinkTests, "src"), 0);
+  // Two classes of one stem in the project, and the stem cannot say which: only the mirrored one is answered.
+  const two = [file("src/Serilog/Core/Logger.cs"), file("src/Serilog/Events/Logger.cs")];
+  assert.equal(count(two, [file("test/Serilog.Tests/LoggerTests.cs")], "src/Serilog"), 0);
+  assert.equal(count(two, [file("test/Serilog.Tests/Core/LoggerTests.cs")], "src/Serilog"), 1);
+
+  // gson keeps the tests of `com.google.gson.JsonArray` in the `functional` package of the same module.
+  const array = [file("gson/src/main/java/com/google/gson/JsonArray.java")];
+  assert.equal(count(array, [file("gson/src/test/java/com/google/gson/functional/JsonArrayTest.java")], "gson/src/main/java/com/google/gson"), 1);
+  assert.equal(count(array, [file("extras/src/test/java/com/google/gson/functional/JsonArrayTest.java")], "gson/src/main/java/com/google/gson"), 0);
+  // A Gradle source set pairs with the sets beside it.
+  assert.equal(count([file("core/commonMain/src/k/Json.kt")], [file("core/jvmTest/src/k/features/JsonTest.kt")], "core/commonMain/src/k"), 1);
+  // ktor's flat `<module>/test` is no pairing, and about half its stem matches are another class's.
+  assert.equal(count([file("ktor-utils/jvm/src/io/ktor/util/Pipeline.kt")], [file("ktor-utils/jvm/test/io/ktor/tests/PipelineTest.kt")], "ktor-utils"), 0);
+
+  // Laravel's `tests` beside `src`, and an application's beside `app`.
+  const seeder = [file("src/Illuminate/Database/Console/Seeds/SeederMakeCommand.php")];
+  assert.equal(count(seeder, [file("tests/Integration/Generators/SeederMakeCommandTest.php")], "src/Illuminate"), 1);
+  assert.equal(count([file("app/Models/User.php")], [file("tests/Unit/UserTest.php")], "app"), 1);
+  // A test named `<Directory><Class>` covers a class of that directory, never one of the joined name elsewhere.
+  const store = file("src/Illuminate/Session/Store.php");
+  const cacheStore = [file("src/Illuminate/Cache/SessionStore.php"), store];
+  assert.equal(count(cacheStore, [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 0);
+  assert.equal(count([file("src/Illuminate/Session/Stores/SessionStore.php")], [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 1);
+  // Two of the stem, one in the directory the test is named for: that one.
+  const both = [...cacheStore, file("src/Illuminate/Session/Stores/SessionStore.php")];
+  assert.equal(count(both, [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 1);
+  // Named for its directory and no more: Laravel's `tests/Cookie/CookieTest.php` tests `CookieJar`, not the facade.
+  const facade = [file("src/Illuminate/Support/Facades/Cookie.php"), file("src/Illuminate/Cookie/CookieJar.php")];
+  assert.equal(count(facade, [file("tests/Cookie/CookieTest.php")], "src/Illuminate"), 0);
+  // The hold mirrors at any depth of the test tree: `tests/Integration/Database` is `src/Illuminate/Database`.
+  const lock = [file("src/Illuminate/Cache/DatabaseLock.php"), file("src/Illuminate/Database/Connection.php")];
+  assert.equal(count(lock, [file("tests/Integration/Database/DatabaseLockTest.php")], "src/Illuminate"), 0);
+  // `tests/Unit`, `tests/Feature` and `tests/Integration` mirror no source directory, so the name holds a test to nothing.
+  assert.equal(count([file("app/Services/UnitConverter.php")], [file("tests/Unit/UnitConverterTest.php")], "app"), 1);
+  assert.equal(count([file("app/Models/FeatureFlag.php")], [file("tests/Feature/FeatureFlagTest.php")], "app"), 1);
+  assert.equal(count([file("src/Acme/IntegrationManager.php")], [file("tests/Integration/IntegrationManagerTest.php")], "src/Acme"), 1);
+  // Slim keeps its classes in `Slim`, which is no half of a pair.
+  assert.equal(count([file("Slim/Routing/Route.php")], [file("tests/Deep/RouteTest.php")], "Slim"), 0);
+
+  // The place is the one the mirrored tests name, where the test of a paired test project sits inside it.
+  const sources = [file("src/Serilog/Core/Pipeline.cs"), file("src/Serilog/Events/LogEvent.cs"), sink];
+  const specs = [file("test/Serilog.Tests/Core/PipelineTests.cs"), file("test/Serilog.Tests/Events/LogEventTests.cs"), ...sinkTests];
+  assert.deepEqual(namesakeCompanions(sources, specs, "src/Serilog", namesakeIndex(specs, sources)), { with: 3, of: 3, root: "test/Serilog.Tests" });
+});
+
+test("a TypeScript test is owned by the component it imports, so a component elsewhere of the same stem is not credited", () => {
+  // element-plus: `packages/components/autocomplete/__tests__/autocomplete.test.tsx`
+  // imports `../src/autocomplete.vue`, and `docs/examples/autocomplete/autocomplete.vue`
+  // read as tested by it.
+  for (const [ext, test] of [["svelte", "widget.test.ts"], ["vue", "widget.test.tsx"], ["ts", "widget.test.ts"]]) {
+    const own = file(`packages/core/widget/src/widget.${ext}`);
+    const docs = [file(`docs/ui/widget/widget.${ext}`), file(`docs/ui/badge.${ext}`)];
+    const tests = [imports(`packages/core/widget/__tests__/${test}`, [`../src/widget.${ext}`])];
+    const byStem = namesakeIndex(tests, [own, ...docs]);
+
+    assert.equal(byStem.get("widget")[0][ext === "ts" ? "owner" : "componentOwner"], own.rel, ext);
+    assert.deepEqual(namesakeCompanions(docs, tests, "docs/ui", byStem), { with: 0, of: 2, root: null }, ext);
+    assert.equal(namesakeCompanions([own], tests, "packages/core/widget", byStem).with, 1, ext);
+  }
+});
+
+test("a test covers a component and the module of its name beside it, and each is asked on its own", () => {
+  // element-plus keeps `button.vue` beside `button.ts`, and one `button.test.tsx` covers the pair.
+  const pair = [file("packages/button/src/button.vue"), file("packages/button/src/button.ts")];
+  const docs = [file("docs/examples/button/button.vue"), file("docs/examples/button/other.vue")];
+  const tests = [imports("packages/button/__tests__/button.test.ts", ["../src/button.vue", "../src/button"])];
+  const byStem = namesakeIndex(tests, [...pair, ...docs]);
+
+  assert.equal(namesakeCompanions(pair, tests, "packages/button", byStem).with, 2);
+  assert.equal(namesakeCompanions(docs, tests, "docs/examples", byStem).with, 0);
+});
+
+test("a component under the test's own directory owns it where nothing is imported by name", () => {
+  // shadcn-svelte: `message-scroller.test.ts` imports its fixtures and sits one
+  // directory above the component, and two docs copies share its last segment.
+  const own = file("packages/primitives/src/lib/scroller/components/scroller.svelte");
+  const docs = [file("docs/src/lib/registry/ui/scroller/scroller.svelte"), file("docs/src/lib/registry/examples/scroller/scroller.svelte")];
+  for (const dir of ["packages/primitives/src/lib/scroller", "packages/primitives/src/lib/scroller/__tests__"]) {
+    const tests = [imports(`${dir}/scroller.test.ts`, ["./fixtures/host.svelte"])];
+    const byStem = namesakeIndex(tests, [own, ...docs]);
+
+    assert.equal(byStem.get("scroller")[0].componentOwner, own.rel, dir);
+    assert.equal(namesakeCompanions(docs, tests, "docs/src/lib/registry", byStem).with, 0, dir);
+    assert.equal(namesakeCompanions([docs[0]], tests, "docs/src/lib/registry/ui", byStem).with, 0, dir);
+  }
+});
+
+test("a Python package's own file answers as the module its directory is", () => {
+  const count = (src, specs, root) => namesakeCompanions(src, specs, root, namesakeIndex(specs, src)).with;
+  // flask: `src/flask/json/__init__.py` is `flask.json`, and `tests/test_json.py` covers it.
+  const json = [file("src/flask/json/__init__.py"), file("src/flask/json/tag.py"), file("src/flask/json/provider.py")];
+  const tests = [file("tests/test_json.py"), file("tests/test_cli.py")];
+  assert.equal(count(json, tests, "src/flask"), 1);
+  // Counted as its own root, the package is still the one file a flat test names.
+  assert.equal(count(json, tests, "src/flask/json"), 1);
+  // Nobody writes `test___init__.py`, and a file of that name credits nothing it did not before.
+  assert.equal(count([file("src/flask/__init__.py")], [file("tests/test___init__.py")], "src/flask"), 0);
+  // A package at the top of the tree has no directory above it to be a module of.
+  assert.equal(count([file("__init__.py")], [file("tests/test___init__.py")], ""), 1);
+  // The name is Python's: a JavaScript `__init__.js` is a file like any other.
+  assert.equal(count([file("src/app/json/__init__.js")], [file("tests/json.test.js")], "src/app"), 0);
+});
+
+test("a test its build pairs with one source answers no other source of that name", () => {
+  const count = (src, specs, root) => namesakeCompanions(src, specs, root, namesakeIndex(specs, [...a, ...b])).with;
+  // Two Maven modules keep one package and each a `Foo`: the test in the first was written for the first.
+  const a = ["Foo", "A"].map((s) => file(`mod-a/src/main/java/com/x/${s}.java`));
+  const b = ["Foo", "C"].map((s) => file(`mod-b/src/main/java/com/x/${s}.java`));
+  const tests = [file("mod-a/src/test/java/com/x/FooTest.java")];
+  assert.equal(count(a, tests, "mod-a/src/main/java/com/x"), 1);
+  assert.equal(count(b, tests, "mod-b/src/main/java/com/x"), 0);
+  // With no source list the build pairs nothing, and the mirror answers as it always did.
+  assert.equal(namesakeCompanions(b, tests, "mod-b/src/main/java/com/x").with, 1);
 });

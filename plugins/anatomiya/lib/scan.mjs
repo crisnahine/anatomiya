@@ -1,17 +1,18 @@
 import { collect, gitRoot, countUntrackedSource, frameworksIn, langsIn } from "./corpus.mjs";
-import { langHas } from "./langs.mjs";
+import { embeddedIn, langHas } from "./langs.mjs";
 import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
 import { defaultPoolSize } from "./pool.mjs";
-import { checkerBlocked, runSemantic, semanticOver } from "./semantic.mjs";
+import { buildVersion } from "./readiness.mjs";
+import { checkerBlocked, failuresIn, runSemantic, semanticOver, standsIn, verdictStamp } from "./semantic.mjs";
 import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
 import { resolve as resolveBaseline, measure as measureBaseline } from "./baseline.mjs";
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
-import { extOf } from "./paths.mjs";
+import { extOf, extOrName } from "./paths.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 
 /**
@@ -42,10 +43,16 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * this is one test and not the way that branch is covered. `runChecker` is the
  * seam that shows a failed scan stops the checker running beside it, and
  * `resolveState` and `parseFiles` the two that show the baseline and the parse
- * run side by side.
+ * run side by side. `carried` is a degraded verdict measured by an earlier run
+ * (`carriedVerdict`): where the checker could run it is not run, and the verdict
+ * is recorded as carried. No type-checked row is counted then, since the counts
+ * are the checker's, and none is kept from a run that measures the tier degraded.
+ * A failed run's verdict is carried from its second failure under one stamp
+ * (`standsIn`): handed the first, the checker runs and the scan records the count.
  */
-export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll } = {}) {
+export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null } = {}) {
   const started = Date.now();
+  const scannedAt = new Date().toISOString();
   const root = await gitRoot(cwd);
 
   const { files, others, uncounted, truncated: corpusTruncated, dropped } = await collect(root);
@@ -59,11 +66,16 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // driving unresolved types from 3.1% to 36.2%. Its verdict is taken once the
   // fold below knows which areas the map describes.
   const checked = files.filter((f) => langHas(f.lang, "semantic"));
+  const kept = carried !== null && standsIn(carried) ? carried : null;
   const stopChecker = new AbortController();
   const startChecker = async () => {
     const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checkedRels: checked.map((f) => f.rel) });
-    if (offReason || stopChecker.signal.aborted) return { offReason, whole: null };
-    return { offReason, whole: await runChecker(root, checked, { signal: stopChecker.signal }) };
+    if (offReason || kept !== null || stopChecker.signal.aborted) return { offReason, whole: null, measuredUnder: null };
+    // Read before the checker starts, so a config edited under a long run is
+    // not recorded as the one it measured, and only where it runs: a scan that
+    // leaves the checker off reads no config.
+    const measuredUnder = verdictStamp(root, buildVersion());
+    return { offReason, whole: await runChecker(root, checked, { signal: stopChecker.signal }), measuredUnder };
   };
   // Neither needs the parse, so both start first; the checker only with a core
   // to spare, or it slows the parse's one worker. The catches are for a throw below.
@@ -108,7 +120,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     await headRun?.catch(() => {});
     throw err;
   }
-  const { offReason, whole } = await (semanticRun ?? startChecker());
+  const { offReason, whole, measuredUnder } = await (semanticRun ?? startChecker());
   // Which routing claims this repository can be asked at all: at least three
   // files already routing through a wrapper is what makes the habit real (C14).
   const capabilities = adoptedCapabilities(head.records);
@@ -168,6 +180,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // area is held rather than described from half its files, because
   // describing it would write over claims this run had no way to measure.
   const unreadable = unreadableLangs(files, head.records);
+  const unanswered = unansweredFiles(files, head.records);
   const held = areas.filter((a) => a.langs.some((l) => unreadable.includes(l)));
   const heldIds = new Set(held.map((a) => a.id));
 
@@ -209,9 +222,16 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     ? areaFiles
     : files.map((f) => f.rel).filter((rel) => !inArea.has(rel));
   const semantic = semanticOver(whole, counted);
+  // A checker that resolved too few types counted nothing to print, so its
+  // rows leave the fold here, as they never enter it where the verdict is
+  // carried: the two scans write the same map.
+  const described =
+    semantic?.status === "degraded"
+      ? folded.map((f) => ({ ...f, dims: f.dims.filter((d) => d.tier !== "semantic") })).filter((f) => f.dims.length > 0)
+      : folded;
 
   const pool = new Map();
-  for (const { dims, measuredArea } of folded) {
+  for (const { dims, measuredArea } of described) {
     for (const d of dims) {
       const baselineDim = measuredArea.dims.find((b) => b.key === d.key) || null;
       // Only slots nothing else has closed. A greenfield area's population is
@@ -236,7 +256,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // everything counts the same way, so the priors every other area borrows do
   // not move with the machine the scan ran on.
   const out = [];
-  for (const { area, areaParsed, dims, measuredArea } of folded) {
+  for (const { area, areaParsed, dims, measuredArea } of described) {
     if (heldIds.has(area.id)) continue;
     // A language with no static import surface is asked neither question: an
     // empty roster there would read as a measured "imports nothing". Ruby
@@ -277,6 +297,11 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       baseline: measuredArea.population,
       // The same counts a root line carries, over this area's own files.
       kinds: kinds(area),
+      // For the renderer alone, which says where an area holds files a claim's
+      // row is never asked of. Not in the record: the map is written from this
+      // object, and nothing reads the scope back.
+      extsByLang: extsByLang(area.files),
+      filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))),
       // What a new file in here would import, and what to check for before
       // writing one. Read at HEAD like the roster: both are counts, and neither
       // is a claim anything is gated against.
@@ -287,6 +312,9 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       dimensions: gated,
     });
   }
+
+  // Off the corpus and not off what parsed, so the count holds on a busy machine.
+  const scriptOnly = tally(files.filter((f) => embeddedIn(f.lang)).map((f) => extOf(f.rel)));
 
   return {
     root,
@@ -299,9 +327,15 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
           status: semantic.status,
           reason: semantic.reason,
           typedResolutionRate: semantic.typedResolutionRate,
+          carried: false,
+          measuredAt: scannedAt,
+          measuredUnder,
+          failures: failuresIn(semantic, carried, measuredUnder),
         }
-      : { ran: false, status: null, reason: offReason, typedResolutionRate: null },
-    scannedAt: new Date().toISOString(),
+      : kept !== null && offReason === null
+        ? { ran: false, ...kept, carried: true }
+        : { ran: false, status: null, reason: offReason, typedResolutionRate: null, carried: false, measuredAt: null, measuredUnder: null, failures: 0 },
+    scannedAt,
     durationMs: Date.now() - started,
     // `orphaned` is the files discovery found nowhere to put. The rest of the
     // uncovered count is files whose area was discovered and then dropped for
@@ -320,23 +354,34 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // roster prints a root's top two and folds the rest away, so the row
       // naming an unread language cannot be counted back off it.
       otherExts: tally(others.map((o) => extOf(o.rel))),
+      // Absent where there is none, so a repository with no component keeps its record.
+      ...(scriptOnly.length > 0 ? { scriptOnly } : {}),
     },
     authors: { files: authors.size, error: authorsError, repo: repoAuthors, shallow },
     parse: {
       parsed: head.records.size,
-      crashed: head.tallies.crashed,
+      // Less the files no engine or grammar was there for: those are counted under `unanswered`, by the language that went unread.
+      crashed: head.tallies.crashed - unanswered.charged.crashed,
       skipped: head.tallies.oversize,
-      failed: head.tallies.unreadable,
+      failed: head.tallies.unreadable - unanswered.charged.unreadable,
       syntaxErrors: head.tallies.rejected,
+      // Only where a rejection means something other than the file's own
+      // syntax, so the record of a run no grammar read for is unchanged.
+      ...(Object.keys(head.rejections ?? {}).some((means) => means !== "syntax") ? { rejections: head.rejections } : {}),
       // Which engine read this repository and at what version, and which one
       // was not there at all. The remedy differs per engine, and the summary
       // names the version so a map that moved under unchanged source has
       // somewhere to look first.
       engines: head.engines,
       missingEngines: head.missingEngines,
+      // Only where one did not load, so the record of a healthy run is unchanged.
+      ...(head.missingGrammars.length ? { missingGrammars: head.missingGrammars } : {}),
       missingParser: head.missingParser,
       missingStripper: head.missingStripper,
+      // Only where a file was read that way, so the record of a run that read every file whole is unchanged.
+      ...(head.oneBranch ? { oneBranch: head.oneBranch } : {}),
       unreadable,
+      ...(Object.keys(unanswered.byLang).length ? { unanswered: unanswered.byLang } : {}),
     },
     // The areas the writer leaves as they are, and whether this run read any
     // file at all. Beside the record rather than in it: both say what this run
@@ -359,6 +404,13 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     layout,
     areas: out,
   };
+}
+
+/** Each language's extensions among these files, and the whole name of a file that has none. */
+function extsByLang(files) {
+  const out = {};
+  for (const f of files) (out[f.lang] ??= new Set()).add(extOrName(f.rel));
+  return Object.fromEntries(Object.entries(out).map(([lang, exts]) => [lang, [...exts]]));
 }
 
 /** Distinct authors over the files carrying one side's sites (D4). */
@@ -409,6 +461,19 @@ function unreadableLangs(files, parsed) {
     if (r && (r.crashed || r.missingParser)) unanswered.set(f.lang, (unanswered.get(f.lang) || 0) + 1);
   }
   return [...total.keys()].filter((lang) => unanswered.get(lang) === total.get(lang)).sort();
+}
+
+/** The files no engine or grammar was there for, per language and by the outcome their bridge charged them as, so each is counted once. */
+function unansweredFiles(files, parsed) {
+  const byLang = {};
+  const charged = { crashed: 0, unreadable: 0 };
+  for (const f of files) {
+    const r = parsed.get(f.rel);
+    if (!r?.missingParser || !(r.kind in charged)) continue;
+    byLang[f.lang] = (byLang[f.lang] ?? 0) + 1;
+    charged[r.kind]++;
+  }
+  return { byLang, charged };
 }
 
 /**

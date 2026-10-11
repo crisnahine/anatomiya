@@ -654,5 +654,35 @@
       "samples": null,
       "sideCounts": null
     }
+  },
+  "caught_error_used": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "public_doc_comment": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "declared_return_type": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
   }
 }

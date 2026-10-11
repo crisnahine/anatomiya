@@ -23,24 +23,37 @@ import { join, resolve } from "node:path";
 
 import { checkOutput, invokedAs, readArgv, selectRepos } from "./entry.mjs";
 import { corpusRepos, semanticCell } from "./e2e-corpus.mjs";
-import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
+import { namesakeCompanions } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
+  isProducer,
   isStoryFile,
   isTestFile,
+  layoutIndexes,
   majorityDir,
   mirroredTests,
+  printedExtensions,
   MODULE_EXTS,
   runnerOf,
   tally,
-  underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
-import { namesakeClause, ROOT_LABEL, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS, TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
+import {
+  extNoun,
+  namesakeClause,
+  pathOfRootLabel,
+  ROOT_LABEL,
+  runnerCount,
+  RUNNERS_SHOWN,
+  specCount,
+  spokenCounts,
+  TESTS_GROUPS,
+  TRUNCATED_LAYOUT,
+} from "../plugins/anatomiya/lib/render-layout.mjs";
 import { statedSide, writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -67,7 +80,7 @@ const isTest = (f) => isTestFile(f, mirrored);
 const runner = (f) => runnerOf(f.rel, f.facets);
 
 // What the renderer calls a flat repository's one root, read back to the path.
-const pathOf = (label) => (label === ROOT_LABEL ? "." : label);
+const pathOf = (label) => (label === ROOT_LABEL ? "." : pathOfRootLabel(label));
 
 /** The files a printed root path stands for, by the rule that selected it. */
 function filesUnder(path, corpus) {
@@ -114,13 +127,14 @@ function recountRoot(path, corpus, testFiles, byStem) {
   const dir = path.endsWith(LEVEL_SUFFIX) ? path.slice(0, -LEVEL_SUFFIX.length) : path === "." ? "" : path;
   const tests = own.filter(isTest);
   const jsxFiles = own.filter((f) => f.facets?.jsx);
-  const exts = tally(own.map((f) => extOf(f.rel))).slice(0, 2);
-  // The first shown extension any source file wears, not simply the first: a
-  // root whose bulk is screenshots or markdown has real producers under the
-  // second one, and reading only exts[0] counts every one of them as zero.
-  const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
-  const producers = own.filter(
-    (f) => f.lang && extOf(f.rel) === producerExt && !f.facets?.empty && !isTest(f) && !isStoryFile(f.rel));
+  // Which extensions print and are counted, and which files a test could be
+  // written for, are the layout's own answers: a second spelling of either here
+  // measures the two spellings against each other and not the count.
+  const { exts: printed, counted: [producerExt, otherExt] } = printedExtensions(own, mirrored);
+  const exts = printed.map(([ext]) => [ext, own.filter((f) => extOf(f.rel) === ext).length]);
+  const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
+  const producers = producersOf(producerExt);
+  const others = producersOf(otherExt);
   const stories = own.filter((f) => isStoryFile(f.rel));
 
   const jsxByExt = new Map(tally(jsxFiles.map((f) => extOf(f.rel))));
@@ -136,8 +150,12 @@ function recountRoot(path, corpus, testFiles, byStem) {
     tests: testGroupsOf(own, dir),
     testRoot: tests.length * 2 > own.length,
     companions:
-      producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)
+      producers.length > 0 && testFiles.length > 0
         ? { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt }
+        : null,
+    otherCompanions:
+      others.length > 0 && testFiles.length > 0
+        ? { ...namesakeCompanions(others, testFiles, dir, byStem), ext: otherExt }
         : null,
     helpers: null,
   };
@@ -239,6 +257,9 @@ export function foldCounts(line) {
 
 const otherText = (n) => (n ? ` and ${n} other` : "");
 
+// As many printed clauses as the expected text holds: a namesake clause is two where files hold their own tests.
+const take = (clauses, expected) => clauses.splice(0, expected.split("; ").length).join("; ");
+
 /**
  * The printed clauses of one root line, as numbers and labels.
  *
@@ -287,15 +308,15 @@ function checkSection(section, corpus, root, recordRoots) {
   if (section.includes(TRUNCATED_LAYOUT)) return { roots: 0, folded: 0, principles: 0, truncated: true };
 
   const bullets = section.filter((l) => l.startsWith("- "));
-  const rootLines = bullets.filter((l) => !l.startsWith("- tests: ") && !l.startsWith("- and "));
+  // The same indexes the scan hands its roots, over the same corpus: the
+  // sources are what decide ownership and what a second spelling is learned
+  // from, and an index built from the test files alone answers a narrower question.
+  const { testFiles, byStem } = layoutIndexes(corpus, mirrored);
+  // The tests line is the last bullet of a repository that has tests. A root named `tests` prints `- tests/: `.
+  const testsLine = testFiles.length > 0 && bullets.at(-1)?.startsWith("- tests: ") ? bullets.at(-1) : undefined;
+  const rootLines = bullets.slice(0, testsLine ? -1 : undefined).filter((l) => !l.startsWith("- and "));
   if (rootLines.length === 0) fail(`${HEADING} printed no root line`);
 
-  const testFiles = corpus.filter(isTest);
-  // The same index the scan hands its roots, over the same corpus: the sources
-  // are what decide ownership and what a second spelling is learned from, and
-  // an index built from the test files alone answers a narrower question.
-  const sources = corpus.filter((f) => f.lang && !f.facets?.empty && !isTest(f) && !isStoryFile(f.rel));
-  const byStem = namesakeIndex(testFiles, sources);
   let printedFiles = 0;
 
   for (const line of rootLines) {
@@ -342,10 +363,16 @@ function checkSection(section, corpus, root, recordRoots) {
       if (clause !== expected) fail(`${parsed.label} tests clause: printed "${clause}", recount "${expected}"`);
     }
 
-    if (counted.companions) {
-      const clause = clauses.shift();
-      const expected = namesakeClause(counted.companions);
+    const [first, also] = spokenCounts(counted);
+    if (first) {
+      const expected = namesakeClause(first, also ? extNoun(first) : null);
+      const clause = take(clauses, expected);
       if (clause !== expected) fail(`${parsed.label} namesake clause: printed "${clause}", recount "${expected}"`);
+    }
+    if (also) {
+      const expected = namesakeClause(also, extNoun(also));
+      const clause = take(clauses, expected);
+      if (clause !== expected) fail(`${parsed.label} second namesake clause: printed "${clause}", recount "${expected}"`);
     }
 
     if (counted.helpers) {
@@ -384,7 +411,7 @@ function checkSection(section, corpus, root, recordRoots) {
     );
   }
 
-  checkTestsLine(bullets.find((l) => l.startsWith("- tests: ")), corpus, recordRoots, testFiles, byStem);
+  checkTestsLine(testsLine, corpus, recordRoots, testFiles, byStem);
 
   const principles = section.filter((l) => l !== "" && !l.startsWith("- ") && l !== HEADING).length;
   return { roots: rootLines.length, folded, principles, truncated: false };
@@ -417,9 +444,17 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
   // are recounted here like every other.
   const top = topNamesakeRoot(recordRoots, corpus, testFiles, byStem);
   if (top) {
-    const clause = clauses.shift();
-    const expected = namesakeClause({ ...top.companions, root: null }, `${top.companions.ext} file`, top.dir && top.path);
-    if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
+    const [first, also] = spokenCounts(top);
+    if (first) {
+      const expected = namesakeClause({ ...first, root: null }, extNoun(first), top.dir && top.path);
+      const clause = take(clauses, expected);
+      if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
+    }
+    if (also) {
+      const want = namesakeClause({ ...also, root: null }, extNoun(also), top.dir && top.path);
+      const second = take(clauses, want);
+      if (second !== want) fail(`tests line second namesake clause: printed "${second}", recount "${want}"`);
+    }
   }
   if (clauses.length) fail(`tests line carries a clause the recount has no ground for: ${clauses[0]}`);
 }

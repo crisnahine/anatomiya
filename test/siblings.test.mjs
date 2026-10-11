@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile } from "../plugins/anatomiya/lib/siblings.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const isRelative = (m) => m.startsWith("./") || m.startsWith("../") || m === "." || m === "..";
 
@@ -359,4 +360,259 @@ test("five files outside the area is five importers", () => {
   assert.deepEqual(mostImported(area, records, rels), [
     { name: "fullName", file: "src/utils/user.ts", importers: 5 },
   ]);
+});
+
+test("a specifier spelling a component's extension names that file", () => {
+  const rels = corpus("src/components/Foo.vue", "src/lib/Bar.svelte", "src/app.ts");
+
+  assert.equal(specifierToFile("./Foo.vue", "src/components/List.vue", rels), "src/components/Foo.vue");
+  assert.equal(specifierToFile("../lib/Bar.svelte", "src/components/List.vue", rels), "src/lib/Bar.svelte");
+  assert.equal(specifierToFile("@/components/Foo.vue", "src/app.ts", rels), "src/components/Foo.vue");
+  assert.equal(specifierToFile("~/lib/Bar.svelte", "src/app.ts", rels), "src/lib/Bar.svelte");
+});
+
+test("a bare stem does not resolve to a component", () => {
+  const rels = corpus("src/components/Foo.vue", "src/lib/Bar.svelte", "src/widgets/index.vue", "src/app.ts");
+
+  assert.equal(specifierToFile("./Foo", "src/components/List.vue", rels), null);
+  assert.equal(specifierToFile("../lib/Bar", "src/components/List.vue", rels), null);
+  assert.equal(specifierToFile("@/components/Foo", "src/app.ts", rels), null, "through an alias too");
+  assert.equal(specifierToFile("~/lib/Bar", "src/app.ts", rels), null);
+  assert.equal(specifierToFile("./widgets", "src/app.ts", rels), null, "a directory is not its index component");
+  assert.equal(specifierToFile("./widgets/", "src/app.ts", rels), null);
+  assert.equal(specifierToFile("@/src/widgets", "src/app.ts", rels), null);
+  assert.equal(specifierToFile("@/src/widgets/", "src/app.ts", rels), null);
+});
+
+test("a compiled spelling of a component's name is another file", () => {
+  const rels = corpus("src/components/Foo.vue", "src/app.ts");
+
+  assert.equal(specifierToFile("./Foo.vue.js", "src/components/List.vue", rels), null);
+  assert.equal(specifierToFile("@/components/Foo.vue.js", "src/app.ts", rels), null);
+  assert.equal(specifierToFile("./Foo.vue?raw", "src/components/List.vue", rels), null, "a query names no file here, on any extension");
+
+  const both = corpus("src/components/Foo.vue", "src/components/Foo.vue.ts", "src/app.ts");
+  assert.equal(specifierToFile("@/components/Foo.vue", "src/app.ts", both), "src/components/Foo.vue", "the file spelled wins");
+  assert.equal(specifierToFile("@/components/Foo.vue.js", "src/app.ts", both), "src/components/Foo.vue.ts");
+});
+
+test("a component beside a module of its name takes nothing from the module", () => {
+  // Sharing a tail made the two ambiguous, and the module stopped resolving.
+  const rels = corpus("src/components/Foo.vue", "src/components/Foo.ts", "src/app.ts");
+
+  assert.equal(specifierToFile("@/components/Foo", "src/app.ts", rels), "src/components/Foo.ts");
+  assert.equal(specifierToFile("./Foo", "src/components/List.vue", rels), "src/components/Foo.ts");
+  assert.equal(specifierToFile("@/components/Foo.vue", "src/app.ts", rels), "src/components/Foo.vue");
+});
+
+test("a component's importers are counted where they spell its name", () => {
+  const rels = corpus("src/components/Foo.vue", "src/app.ts");
+  const records = new Map();
+  for (let i = 0; i < 3; i++) {
+    records.set(`src/pages/p${i}.vue`, record(`src/pages/p${i}.vue`, ["../components/Foo.vue"]));
+  }
+  for (let i = 0; i < 3; i++) {
+    records.set(`src/other/o${i}.ts`, record(`src/other/o${i}.ts`, ["../components/Foo"]));
+  }
+
+  assert.deepEqual(mostImported(new Set(["src/components/Foo.vue"]), records, rels), [
+    { name: "Foo (default)", file: "src/components/Foo.vue", importers: 3 },
+  ]);
+});
+
+test("SvelteKit's $lib names a file under src/lib, as the other root prefixes name theirs", () => {
+  const rels = corpus("src/lib/utils.ts", "src/lib/components/ui/button/index.ts", "src/lib/Card.svelte", "src/routes/+page.svelte");
+
+  assert.equal(specifierToFile("$lib/utils", "src/routes/+page.svelte", rels), "src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/utils.js", "src/routes/+page.svelte", rels), "src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/components/ui/button", "src/routes/+page.svelte", rels), "src/lib/components/ui/button/index.ts");
+  assert.equal(specifierToFile("$lib/components/ui/button/", "src/routes/+page.svelte", rels), "src/lib/components/ui/button/index.ts");
+  assert.equal(specifierToFile("$lib/Card.svelte", "src/routes/+page.svelte", rels), "src/lib/Card.svelte");
+  assert.equal(specifierToFile("$lib/Card", "src/routes/+page.svelte", rels), null, "a bare stem is no component here either");
+});
+
+test("$lib is the importer's own project's src/lib, in a repository holding two", () => {
+  const rels = corpus(
+    "apps/a/src/lib/utils.ts",
+    "apps/a/src/lib/ui/button/index.ts",
+    "apps/a/src/lib/Card.svelte",
+    "apps/a/src/lib/count.svelte.ts",
+    "apps/b/src/lib/utils.ts",
+    "apps/b/src/lib/only-b.ts"
+  );
+  const fromA = (spec, importer = "apps/a/src/routes/+page.svelte") => specifierToFile(spec, importer, rels);
+
+  assert.equal(fromA("$lib/utils"), "apps/a/src/lib/utils.ts");
+  assert.equal(fromA("$lib/utils.js"), "apps/a/src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/utils", "apps/b/src/routes/blog/+page.ts", rels), "apps/b/src/lib/utils.ts");
+  assert.equal(fromA("$lib/utils", "apps/a/src/lib/ui/button/button.svelte"), "apps/a/src/lib/utils.ts", "from inside src/lib too");
+  assert.equal(fromA("$lib/ui/button"), "apps/a/src/lib/ui/button/index.ts");
+  assert.equal(fromA("$lib/ui/button/index.js"), "apps/a/src/lib/ui/button/index.ts");
+  assert.equal(fromA("$lib/ui/button/"), "apps/a/src/lib/ui/button/index.ts");
+  assert.equal(fromA("$lib/Card.svelte"), "apps/a/src/lib/Card.svelte");
+  assert.equal(fromA("$lib/count.svelte"), "apps/a/src/lib/count.svelte.ts");
+  assert.equal(fromA("$lib/count.svelte.js"), "apps/a/src/lib/count.svelte.ts");
+  assert.equal(fromA("$lib/only-b"), null, "another app's file is not this one's");
+});
+
+test("$lib names nothing outside a src/lib above the importer", () => {
+  const page = "app/src/routes/+page.svelte";
+
+  assert.equal(specifierToFile("$lib/x", page, corpus("tools/lib/x.ts")), null, "a lib with no src");
+  assert.equal(specifierToFile("$lib/x", page, corpus("app/src/lib/sub/lib/x.ts")), null, "a lib nested in the real one");
+  assert.equal(specifierToFile("$lib/x", page, corpus("app/src/components/x.ts")), null);
+  assert.equal(specifierToFile("$lib/x", "scripts/build.ts", corpus("site/src/lib/x.ts")), null, "no src/lib above the importer");
+  assert.equal(specifierToFile("$lib/x", "site/src/routes/+page.svelte", corpus("site/src/lib/x.ts", "tools/lib/x.ts")), "site/src/lib/x.ts");
+  assert.equal(specifierToFile("@/components/x", page, corpus("app/src/components/x.ts")), "app/src/components/x.ts", "the root prefixes read as they did");
+});
+
+test("an alias a component writes names a file of its own project, and no other package's", () => {
+  const rels = corpus(
+    "apps/lib/components/ui/button.tsx",
+    "blocks/vue/components/ui/Button.vue",
+    "blocks/vue/components/ui/card/index.ts",
+    "blocks/vue/src/composables/use-user.ts",
+    "blocks/vue/lib/utils.ts"
+  );
+  const form = "blocks/vue/forms/nuxtjs/app/form.vue";
+
+  assert.equal(specifierToFile("@/components/ui/button", form, rels), null, "the React file in the other package");
+  assert.equal(specifierToFile("~/components/ui/button", form, rels), null);
+  assert.equal(specifierToFile("@/components/ui/Button.vue", form, rels), "blocks/vue/components/ui/Button.vue");
+  assert.equal(specifierToFile("@/components/ui/card", form, rels), "blocks/vue/components/ui/card/index.ts");
+  assert.equal(specifierToFile("@/components/ui/card/", form, rels), "blocks/vue/components/ui/card/index.ts");
+  assert.equal(specifierToFile("~/lib/utils.js", form, rels), "blocks/vue/lib/utils.ts");
+  assert.equal(specifierToFile("@/composables/use-user", form, rels), "blocks/vue/src/composables/use-user.ts", "a root under src");
+  assert.equal(specifierToFile("@/ui/button", "apps/lib/pages/page.svelte", rels), null, "a tail is not a place in the project");
+  assert.equal(specifierToFile("@/components/ui/button", "apps/lib/pages/page.tsx", rels), "apps/lib/components/ui/button.tsx");
+});
+
+test("the nearest project above a component answers its alias", () => {
+  const rels = corpus("apps/a/src/lib/utils.ts", "apps/b/src/lib/utils.ts", "apps/b/src/lib/only-b.ts");
+
+  assert.equal(specifierToFile("@/lib/utils", "apps/a/src/pages/Home.vue", rels), "apps/a/src/lib/utils.ts");
+  assert.equal(specifierToFile("@/lib/utils", "apps/b/src/pages/Home.vue", rels), "apps/b/src/lib/utils.ts");
+  assert.equal(specifierToFile("@/lib/only-b", "apps/a/src/pages/Home.vue", rels), null, "another app's file is not this one's");
+  assert.equal(specifierToFile("@/lib/utils", "apps/a/src/pages/home.ts", rels), null, "a module's alias is matched as a tail, which two files answer");
+});
+
+test("an alias two directories above a component both answer names neither file", () => {
+  // The root the alias means is one of them and no path says which: a feature's own directory is not it.
+  const button = corpus("src/features/cart/CartPage.vue", "src/features/cart/components/Button.vue", "src/components/Button.vue");
+  assert.equal(specifierToFile("@/components/Button.vue", "src/features/cart/CartPage.vue", button), null);
+  const format = corpus("src/features/cart/Cart.vue", "src/features/cart/utils/format.ts", "src/utils/format.ts");
+  assert.equal(specifierToFile("@/utils/format", "src/features/cart/Cart.vue", format), null);
+  assert.equal(specifierToFile("$lib/utils", "apps/a/src/routes/+page.svelte", corpus("apps/a/src/lib/utils.ts", "src/lib/utils.ts")), null);
+
+  // One file reached from two directories, as `src/components` and as `components` under `src`, is one answer.
+  assert.equal(specifierToFile("@/components/Button.vue", "src/pages/Home.vue", corpus("src/components/Button.vue")), "src/components/Button.vue");
+  assert.equal(specifierToFile("@/components/Button.vue", "src/features/cart/CartPage.vue", corpus("src/components/Button.vue")), "src/components/Button.vue");
+});
+
+test("a component's alias import credits no file of another package", () => {
+  const rels = corpus("apps/lib/components/ui/button.tsx", "blocks/vue/components/ui/Button.vue");
+  const records = new Map();
+  for (let i = 0; i < 6; i++) records.set(`apps/lib/pages/p${i}.tsx`, record(`apps/lib/pages/p${i}.tsx`, [{ module: "@/components/ui/button", names: ["Button"] }]));
+  for (let i = 0; i < 5; i++) records.set(`blocks/vue/forms/f${i}.vue`, record(`blocks/vue/forms/f${i}.vue`, [{ module: "@/components/ui/button", names: ["Button"] }]));
+
+  assert.deepEqual(mostImported(new Set(["apps/lib/components/ui/button.tsx"]), records, rels), [
+    { name: "Button", file: "apps/lib/components/ui/button.tsx", importers: 6 },
+  ]);
+});
+
+test("SvelteKit's virtual modules name no file", () => {
+  // Every place a prefix read as an alias could land.
+  const rels = corpus(
+    "src/app/navigation.ts",
+    "src/lib/app/navigation.ts",
+    "src/lib/navigation.ts",
+    "src/lib/state.ts",
+    "src/env/static/public.ts",
+    "src/lib/env/static/public.ts",
+    "src/lib/static/public.ts",
+    "src/lib/dynamic/private.ts",
+    "src/service-worker.ts",
+    "src/lib/service-worker/index.ts"
+  );
+
+  for (const spec of ["$app/navigation", "$app/state", "$env/static/public", "$env/dynamic/private", "$service-worker"]) {
+    assert.equal(specifierToFile(spec, "src/routes/+page.svelte", rels), null, spec);
+  }
+});
+
+// The clock bound is sized against a walk that builds every candidate path under
+// every directory above the importer for every import, which takes over 30,000 ms
+// on these inputs; a lookup that does not grow with the path takes under 100 ms.
+test("an alias import from a deep directory resolves in time that does not grow with the path", () => {
+  const dir = "a/".repeat(400);
+  const half = "a/".repeat(200);
+  const rels = corpus(`${dir}X.svelte`, `${half}src/lib/p/q0.ts`, `${half}src/lib/p/dir/index.ts`, `${half}p/v0.ts`);
+
+  const before = performance.now();
+  for (let i = 1; i <= 4000; i++) assert.equal(specifierToFile(`$lib/p/q${i}`, `${dir}X.svelte`, rels), null);
+  for (let i = 1; i <= 4000; i++) assert.equal(specifierToFile(`@/p/v${i}`, `${dir}X.svelte`, rels), null);
+  for (let i = 1; i <= 4000; i++) assert.equal(specifierToFile(`$lib/${"../".repeat(i % 400)}..`, `${dir}X.svelte`, rels), null);
+  const took = performance.now() - before;
+
+  assert.equal(specifierToFile("$lib/p/q0", `${dir}X.svelte`, rels), `${half}src/lib/p/q0.ts`);
+  assert.equal(specifierToFile("$lib/p/dir/", `${dir}X.svelte`, rels), `${half}src/lib/p/dir/index.ts`);
+  assert.equal(specifierToFile("@/p/v0", `${dir}X.svelte`, rels), `${half}p/v0.ts`);
+  assert.ok(took < 5000, `12,000 alias imports took ${Math.round(took)} ms`);
+});
+
+// A specifier is the repository's text, and a pattern that strips its trailing
+// slashes tries every start in a run of them that is not at the end: twice the
+// run then costs four times as long, 213 ms at 20,000 and 3,375 ms at 80,000.
+test("a specifier holding a long run of slashes resolves in time linear in the run", () => {
+  const rels = corpus("a/b/Page.ts", "x/y.ts");
+  const resolve = (run) => {
+    const spec = `x${"/".repeat(run)}y`;
+    return () => assert.equal(specifierToFile(spec, "a/b/Page.ts", rels), null);
+  };
+
+  const ratio = doublingRatio(resolve, 20_000);
+
+  assert.ok(ratio < LINEAR, `twice the slashes took ${ratio.toFixed(2)} times as long`);
+  assert.equal(specifierToFile("x/y///", "a/b/Page.ts", rels), null, "a trailing run still asks for an index alone");
+  assert.equal(specifierToFile("@/x/y///", "a/b/Page.vue", corpus("x/y/index.ts")), "x/y/index.ts");
+});
+
+// The other half of the walk the deep-importer test holds: a walk over every
+// directory a tail sits under takes over 14,000 ms on these inputs, and one over
+// the importer's own three takes under 300 ms.
+test("an alias import of a tail tens of thousands of files share resolves in time that does not grow with them", () => {
+  const shared = Array.from({ length: 50_000 }, (_, i) => `d${i}/src/lib/p/q.ts`);
+  const rels = corpus(...shared, "a/src/lib/p/q.ts", "a/b/X.svelte");
+
+  const before = performance.now();
+  for (let i = 0; i < 8000; i++) assert.equal(specifierToFile("$lib/p/q", "a/b/X.svelte", rels), "a/src/lib/p/q.ts");
+  const took = performance.now() - before;
+
+  assert.ok(took < 5000, `8,000 alias imports took ${Math.round(took)} ms`);
+});
+
+test("an alias that climbs out of its root names what the path names from each directory above the importer", () => {
+  const page = "apps/web/src/routes/+page.svelte";
+
+  assert.equal(specifierToFile("$lib/../util", page, corpus("apps/web/src/util.ts")), "apps/web/src/util.ts");
+  assert.equal(specifierToFile("$lib/../../../shared/x", page, corpus("apps/shared/x.ts")), "apps/shared/x.ts", "from two directories up");
+  assert.equal(specifierToFile("$lib/../../../shared/x", page, corpus("apps/web/src/routes/shared/x.ts")), null, "never under the importer's own directory");
+  assert.equal(specifierToFile("$lib/../../../../../../x/y", page, corpus("x/y.ts")), "x/y.ts", "from the repository's top");
+  assert.equal(specifierToFile("$lib/../../../../../../../x/y", page, corpus("x/y.ts")), null, "past the repository's top");
+  assert.equal(specifierToFile("$lib/../..", page, corpus("apps/web.ts")), "apps/web.ts", "a path that is a directory above the importer");
+  assert.equal(specifierToFile("$lib/../..", page, corpus("apps/web/src/index.ts")), "apps/web/src/index.ts");
+  assert.equal(specifierToFile("$lib/../../", page, corpus("apps/web.ts", "apps/web/index.ts")), "apps/web/index.ts", "a trailing slash asks for the index alone");
+  assert.equal(specifierToFile("$lib/../..", page, corpus("apps/web.ts", "apps/index.ts")), null, "two directories answer");
+  assert.equal(specifierToFile("$lib/../../..", page, corpus("apps/web/src/routes.ts")), null, "the walk starts above the importer's directory");
+  assert.equal(specifierToFile("$lib/../../..", page, corpus("apps/web/src/routes.ts", "apps/web/src.ts")), "apps/web/src.ts");
+  assert.equal(specifierToFile("$lib/../..", "a/X.svelte", corpus(".ts", "index.ts")), null, "the repository's top is no file's name");
+  assert.equal(specifierToFile("@//components/./Button.vue", "src/pages/Home.vue", corpus("src/components/Button.vue")), "src/components/Button.vue");
+});
+
+test("an alias names the first spelling each directory holds, however many directories end in the path", () => {
+  const apps = ["a", "b", "c", "d", "e"].flatMap((app) => [`apps/${app}/src/lib/utils.ts`, `apps/${app}/src/lib/utils/index.ts`]);
+
+  assert.equal(specifierToFile("$lib/utils", "apps/c/x.svelte", corpus(...apps)), "apps/c/src/lib/utils.ts");
+  assert.equal(specifierToFile("$lib/utils", "x.svelte", corpus(...apps)), null);
+  assert.equal(specifierToFile("$lib/utils", "apps/c/x.svelte", corpus(...apps, "apps/src/lib/utils.js")), null);
 });

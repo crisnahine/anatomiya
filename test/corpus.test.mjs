@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -72,6 +72,95 @@ test("collect lists non-source tracked files as others", async (t) => {
   const { files, others } = await collect(dir);
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
   assert.deepEqual(others.map((f) => f.rel).sort(), ["README.md", "docs/x.md"]);
+});
+
+test("collect leaves the map's own files out of others, by the names a scan gives them", async (t) => {
+  const own = [
+    ".claude/rules/anatomiya-overview.md", ".claude/rules/anatomiya-area-0123abcd.md",
+    ".cursor/rules/anatomiya-overview.mdc", ".cursor/rules/anatomiya-area-0123abcd.mdc",
+    ".github/instructions/anatomiya-overview.instructions.md", ".github/instructions/anatomiya-area-0123abcd.instructions.md",
+    ".claude/anatomiya/facts.json", ".claude/anatomiya/layout.json",
+  ];
+  const theirs = [
+    ".claude/rules/team.md", ".cursor/rules/team.mdc", ".github/instructions/review.instructions.md", ".github/workflows/ci.yml",
+    // The prefix alone, an id that is not eight hex digits, and the other target's extension.
+    ".cursor/rules/anatomiya-notes.mdc", ".github/instructions/anatomiya-notes.instructions.md", ".claude/rules/anatomiya-notes.md",
+    ".cursor/rules/anatomiya-area-0123.mdc", ".cursor/rules/anatomiya-overview.md",
+    // The same names anywhere but a target's own directory.
+    "docs/anatomiya-overview.mdc", "docs/anatomiya-area-0123abcd.instructions.md", "anatomiya-overview.md",
+    ".cursor/rules/deep/anatomiya-overview.mdc", "packages/a/.github/instructions/anatomiya-overview.instructions.md",
+  ];
+  const dir = repo(t, (d, { write, git }) => {
+    write("src/a.ts");
+    for (const rel of [...own, ...theirs]) write(rel, "x\n");
+    git("add", "-A"); git("commit", "-qm", "init");
+  });
+
+  const { others } = await collect(dir);
+
+  assert.deepEqual(others.map((f) => f.rel).sort(), [...theirs].sort());
+});
+
+test("collect leaves the map's own files out under a target directory spelled in another case, where the repository folds case", needsFoldingFilesystem, async (t) => {
+  const own = [".Cursor/Rules/anatomiya-overview.mdc", ".GitHub/Instructions/anatomiya-area-0123abcd.instructions.md"];
+  // A name in another case is somebody's file on any volume: the writer never puts one there.
+  const theirs = [".Cursor/Rules/team.mdc", ".Cursor/Rules/Anatomiya-Area-0123abcd.mdc"];
+  let git;
+  const dir = repo(t, (d, made) => {
+    git = made.git;
+    made.write("src/a.ts");
+    for (const rel of [...own, ...theirs]) made.write(rel, "x\n");
+    git("add", "-A"); git("commit", "-qm", "init");
+  });
+  assert.equal(String(git("config", "core.ignorecase")).trim(), "true", "the control: git saw this volume fold");
+
+  assert.deepEqual((await collect(dir)).others.map((f) => f.rel).sort(), [...theirs].sort());
+
+  // Told the volume keeps case, `.Cursor/Rules` is a directory this tool does not write.
+  git("config", "core.ignorecase", "false");
+  assert.deepEqual((await collect(dir)).others.map((f) => f.rel).sort(), [...own, ...theirs].sort());
+});
+
+test("collect asks git whether the repository folds case only for a path that needs the answer", async (t) => {
+  const asked = async (paths) => {
+    const dir = repo(t, (d, { write, git }) => {
+      write("src/a.ts");
+      for (const rel of paths) write(rel, "x\n");
+      git("add", "-A"); git("commit", "-qm", "init");
+    });
+    const trace = `${dir}.trace`;
+    t.after(() => rmSync(trace, { force: true }));
+    process.env.GIT_TRACE2_EVENT = trace;
+    try {
+      await collect(dir);
+    } finally {
+      delete process.env.GIT_TRACE2_EVENT;
+    }
+    const started = readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.event === "start");
+    return started.filter((e) => e.argv.includes("core.ignorecase")).length;
+  };
+
+  // The map's own directories as a scan spells them, and somebody's file beside them: nothing to ask.
+  assert.equal(await asked([".cursor/rules/anatomiya-overview.mdc", ".cursor/rules/team.mdc", "README.md"]), 0);
+  // A map name under a directory in another letter case is this tool's only where the repository folds.
+  assert.equal(await asked([".Cursor/Rules/anatomiya-overview.mdc"]), 1);
+  // Another case and no map name: somebody's file whatever git answers.
+  assert.equal(await asked([".Cursor/Rules/team.mdc"]), 0);
+});
+
+test("collect follows a .claude/rules link to where git tracks the map, and nowhere else", needsSymlinks, async (t) => {
+  const named = ["agents/rules/anatomiya-overview.md", "agents/rules/anatomiya-area-0123abcd.md"];
+  const build = (link) => repo(t, (d, { write, mkdir, git }) => {
+    write("src/a.ts");
+    for (const rel of ["agents/rules/team.md", ...named]) write(rel, "x\n");
+    if (link) { mkdir(".claude"); symlinkSync("../agents/rules", join(d, ".claude", "rules"), "dir"); }
+    else write(".claude/rules/team.md", "x\n");
+    git("add", "-A"); git("commit", "-qm", "init");
+  });
+  const under = async (dir) => (await collect(dir)).others.map((f) => f.rel).filter((rel) => rel.startsWith("agents/")).sort();
+
+  assert.deepEqual(await under(build(true)), ["agents/rules/team.md"]);
+  assert.deepEqual(await under(build(false)), [...named, "agents/rules/team.md"].sort());
 });
 
 test("a tracked .env contributes nothing even though git lists it", async (t) => {
@@ -817,6 +906,111 @@ test("files at the repository root never form an area", () => {
   assert.equal(areas.orphaned.length, 9, "a root glob would render every claim over every area");
 });
 
+const goFiles = (paths) => fakeFiles(paths, "go");
+const rootGo = (n) => goFiles(Array.from({ length: n }, (_, i) => `g${i}.go`));
+
+test("a package at the repository root is an area of the files directly there", () => {
+  const files = [...rootGo(5), ...goFiles(Array.from({ length: 5 }, (_, i) => `binding/b${i}.go`))];
+  const areas = discover(files, { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => [a.path, a.fileCount, a.langs]), [[".", 5, ["go"]], ["binding", 5, ["go"]]]);
+  assert.equal(areas[0].id, areaId("."));
+  assert.deepEqual(areas[0].files.map((f) => f.rel), ["g0.go", "g1.go", "g2.go", "g3.go", "g4.go"]);
+  assert.deepEqual(areas.orphaned, []);
+});
+
+test("a root package under the floor is uncovered like any directory under it", () => {
+  const areas = discover([...rootGo(4), ...goFiles(Array.from({ length: 5 }, (_, i) => `binding/b${i}.go`))], { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => a.path), ["binding"]);
+  assert.deepEqual(areas.orphaned.map((f) => f.rel), ["g0.go", "g1.go", "g2.go", "g3.go"]);
+});
+
+test("the floor a root package clears is counted over its own language's files alone", () => {
+  // Four of the nine root files are the package. The other five are whatever
+  // a root collects, and they neither make the area nor join it.
+  const others = fakeFiles(Array.from({ length: 5 }, (_, i) => `conf${i}.ts`));
+  const under = discover([...rootGo(4), ...others], { minFiles: 5 });
+  assert.deepEqual(under.map((a) => a.path), []);
+  assert.equal(under.orphaned.length, 9);
+
+  const over = discover([...rootGo(5), ...others], { minFiles: 5 });
+  assert.deepEqual(over.map((a) => [a.path, a.fileCount, a.langs]), [[".", 5, ["go"]]]);
+  assert.deepEqual(over.orphaned.map((f) => f.rel), others.map((f) => f.rel));
+});
+
+test("a root package takes no file from a directory below it", () => {
+  // `tiny` and `deep/er` are under the floor and fold toward the root, where
+  // they have nothing in common with the package and stay uncovered.
+  const folded = goFiles(["tiny/t0.go", "tiny/t1.go", "deep/er/d0.go"]);
+  const files = [...rootGo(6), ...folded, ...goFiles(Array.from({ length: 5 }, (_, i) => `render/r${i}.go`))];
+  const areas = discover(files, { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => [a.path, a.fileCount]), [[".", 6], ["render", 5]]);
+  assert.deepEqual(areas.orphaned.map((f) => f.rel).sort(), folded.map((f) => f.rel).sort());
+  const root = areas[0];
+  for (const f of files) assert.equal(matches(root.globs, f.rel), !f.rel.includes("/"), f.rel);
+  for (const f of files) assert.equal(areaLib.globsReach(root.globs, f.rel), !f.rel.includes("/"), f.rel);
+});
+
+test("a repository of nothing but a root package still gets a pattern that stops at the root", () => {
+  // One recursive pattern is the shorter cover of a subtree an area wholly
+  // owns, and here it would hand the package's claims to every directory added later.
+  const areas = discover(rootGo(8), { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => a.path), ["."]);
+  assert.deepEqual(areas[0].globs, [{ negated: false, dir: "", tail: "*.go" }]);
+  assert.deepEqual(areas[0].globs.map((g) => globText(g)), ["/*.go"]);
+  assert.equal(matches(areas[0].globs, "g0.go"), true);
+  assert.equal(matches(areas[0].globs, "later/x.go"), false);
+});
+
+test("the root package's pattern is anchored where Claude Code reads it", () => {
+  // The reader's own rule: a pattern with no slash matches at every depth, and
+  // one that starts with a slash matches from the root alone.
+  assert.equal(claudeCodeReaches(["*.go"], "binding/x.go"), true);
+  for (const [rel, reached] of [["gin.go", true], ["binding/x.go", false], ["a/b/c.go", false], ["gin.py", false]]) {
+    assert.equal(claudeCodeReaches(["/*.go"], rel), reached, rel);
+    assert.equal(matches([globEntry(".", ["go"], { recursive: false })], rel), reached, rel);
+  }
+  assert.equal(globText(globEntry(".", ["go"], { recursive: false })), "/*.go");
+  assert.equal(globText(globEntry(".", ["go"])), "**/*.go", "a recursive pattern from the root needs no anchor");
+  assert.equal(globText({ negated: true, dir: "", tail: "gen.go" }), "!/gen.go", "the negation marker stays in front");
+  assert.equal(globText(globEntry("lib", ["go"], { recursive: false })), "lib/*.go");
+});
+
+test("a root package's pattern leaves out the root files its counts left out", () => {
+  const uncounted = goFiles(["zz_generated.go", "binding/gen.go", "weird[1].go"]);
+  const areas = discover([...rootGo(5), ...goFiles(Array.from({ length: 5 }, (_, i) => `binding/b${i}.go`))], { minFiles: 5, uncounted });
+  const root = areas.find((a) => a.path === ".");
+
+  // A name that is glob syntax cannot be cut out, and one file reached is less than every directory reached.
+  assert.deepEqual(root.globs.map((g) => globText(g)), ["/*.go", "!/zz_generated.go"]);
+  assert.equal(matches(root.globs, "zz_generated.go"), false);
+  assert.equal(matches(root.globs, "g0.go"), true);
+  assert.equal(matches(root.globs, "binding/gen.go"), false);
+});
+
+test("the ceiling never folds an area into the root package", () => {
+  const files = [
+    ...rootGo(9),
+    ...["a", "b", "c"].flatMap((d) => goFiles(Array.from({ length: 5 }, (_, i) => `${d}/f${i}.go`))),
+  ];
+  const areas = discover(files, { minFiles: 5, maxAreas: 2 });
+
+  assert.equal(areas.length, 2);
+  assert.deepEqual(areas.find((a) => a.path === ".").files.map((f) => f.rel).filter((r) => r.includes("/")), []);
+  assert.equal(areas.reduce((n, a) => n + a.fileCount, 0) + areas.orphaned.length, files.length);
+});
+
+test("a root package is discovered the same whatever order the files arrived in", () => {
+  const files = [...rootGo(7), ...fakeFiles(["a.ts", "b.ts"]), ...goFiles(Array.from({ length: 6 }, (_, i) => `x/f${i}.go`))];
+  const shape = (areas) => JSON.stringify([areas.map((a) => [a.path, a.files.map((f) => f.rel).sort(), a.globs]), areas.orphaned.map((f) => f.rel).sort()]);
+
+  assert.equal(shape(discover([...files].reverse(), { minFiles: 5 })), shape(discover(files, { minFiles: 5 })));
+  assert.deepEqual(discover(files, { minFiles: 5 }).map((a) => a.path), [".", "x"]);
+});
+
 test("an empty corpus discovers nothing and still carries an orphan list", () => {
   const areas = discover([]);
 
@@ -998,7 +1192,7 @@ test("mixed languages produce a brace-expanded extension list", () => {
 });
 
 test("a glob over no known language throws instead of matching nothing", () => {
-  assert.throws(() => glob("src", ["python"]), /no known extensions/);
+  assert.throws(() => glob("src", ["swift"]), /no known extensions/);
   assert.throws(() => glob("src", []), /no known extensions/);
 });
 
@@ -1041,11 +1235,15 @@ test("a sibling sharing a name prefix does not own the path", () => {
   assert.equal(areaLib.areaOwner("app/models/user.rb", ["app/model"]), null);
 });
 
-test("the repository root owns a path only when nothing deeper does", () => {
-  // "." contains every path without being a prefix of any of them, and it is
-  // the least specific answer there is.
+test("the repository root owns the files directly in it and none below", () => {
+  // "." is a prefix of no path. It is the package at the root, so it holds what
+  // sits there, and a directory below it is another area's or nobody's.
   assert.equal(areaLib.areaOwner("lib/a.ts", [".", "lib"]), "lib");
   assert.equal(areaLib.areaOwner("a.ts", ["."]), ".");
+  assert.equal(areaLib.areaOwner("a.ts", ["lib", "."]), ".");
+  assert.equal(areaLib.areaOwner("tiny/a.go", [".", "lib"]), null, "an uncovered directory stays uncovered");
+  assert.equal(areaLib.areaOwner("lib/deep/a.go", [".", "lib"]), "lib");
+  assert.equal(areaLib.areaOwner("lib/a.go", ["."]), null);
 });
 
 test("an area carries its globs as structure, so nothing has to read the pattern back", () => {

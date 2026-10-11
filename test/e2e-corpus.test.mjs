@@ -22,6 +22,8 @@ import {
   findingPaths,
   overviewProblems,
   parseArgs,
+  probeBody,
+  probeCell,
   probePlan,
   readJson,
   rootsColumn,
@@ -232,6 +234,12 @@ test("the probe breaks the learned naming class the map actually stated", () => 
   assert.match(plan.body, /^#/);
 });
 
+test("a probe for an area at the repository root is a file at the root", () => {
+  const plan = probePlan({ areas: [{ ...rubyArea([dim("file_naming_case")]), path: "." }] });
+
+  assert.equal(plan.path.includes("/"), false, plan.path);
+});
+
 test("the probe spells the other class in each direction the learning can go", () => {
   const at = (learned) => probePlan({ areas: [rubyArea([dim("file_naming_case", { learned })])] }).path;
 
@@ -302,13 +310,19 @@ test("the table prints one row per repository, in the order they ran", () => {
 });
 
 test("the arguments name a corpus and a scratch directory, and refuse anything else", () => {
-  assert.deepEqual(parseArgs(["/corpus", "/scratch"]), { corpus: "/corpus", scratch: "/scratch", only: null });
+  assert.deepEqual(parseArgs(["/corpus", "/scratch"]), { corpus: "/corpus", scratch: "/scratch", only: null, targets: null });
   assert.deepEqual(parseArgs(["/corpus", "/scratch", "--only", "a,b"]).only, "a,b");
   assert.match(parseArgs(["/corpus"]).error, /scratch directory/);
   assert.match(parseArgs([]).error, /corpus directory/);
   assert.equal(parseArgs(["--wat", "/c", "/s"]).code, "ERR_PARSE_ARGS_UNKNOWN_OPTION");
   // A third path was dropped without a word.
   assert.match(parseArgs(["/c", "/s", "/x"]).error, /two directories/);
+});
+
+test("--targets is handed to the first scan as written, and a name no scan takes is refused before any clone", () => {
+  assert.equal(parseArgs(["/corpus", "/scratch", "--targets", "cursor,copilot"]).targets, "cursor,copilot");
+  assert.match(parseArgs(["/corpus", "/scratch", "--targets", "windsurf"]).error, /unknown target: windsurf/);
+  assert.match(parseArgs(["/corpus", "/scratch", "--targets"]).error, /--targets/);
 });
 
 test("--only with nothing after it is an error, not a run of everything", () => {
@@ -429,7 +443,7 @@ test("what a scan wrote is held to the count it printed and to every rule the co
 
   const good = writtenProblems(repo, 2);
   assert.deepEqual(good.problems, []);
-  assert.deepEqual([...good.written.keys()], ["anatomiya-area-1.md", "anatomiya-overview.md"]);
+  assert.deepEqual([...good.written.keys()], [".claude/rules/anatomiya-area-1.md", ".claude/rules/anatomiya-overview.md"]);
   assert.equal(good.facts.schema, FACTS_SCHEMA);
 
   assert.match(writtenProblems(repo, 3).problems.join("\n"), /says it wrote 3 files/);
@@ -439,6 +453,49 @@ test("what a scan wrote is held to the count it printed and to every rule the co
   assert.deepEqual(writtenProblems(repo, 2).problems, [`no readable ${FACTS_PATH} was written`]);
   rmSync(join(repo, ".claude/rules/anatomiya-overview.md"));
   assert.match(writtenProblems(repo, 1).problems.join("\n"), /no anatomiya-overview\.md was written/);
+});
+
+test("what a scan wrote for Cursor and Copilot is listed and held to the same rules, once the scan says the target is on", (t) => {
+  const repo = mkdtempSync(join(tmpdir(), "e2e-written-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const put = (rel, lines) => {
+    mkdirSync(join(repo, rel, ".."), { recursive: true });
+    writeFileSync(join(repo, rel), lines.join("\n"));
+  };
+  const key = ["---", "generator: anatomiya"];
+  put(".claude/rules/anatomiya-overview.md", [...front, "## What lives where"]);
+  put(".cursor/rules/anatomiya-overview.mdc", [...key, "alwaysApply: true", "---", "", "## What lives where"]);
+  put(".cursor/rules/anatomiya-area-0123abcd.mdc", [...key, "globs: lib/**/*.ts", "alwaysApply: false", "---", "", "# lib"]);
+  put(".cursor/rules/team.mdc", ["# the team's own"]);
+  put(".github/instructions/anatomiya-overview.instructions.md", [...key, 'applyTo: "**"', "---", "", "## What lives where"]);
+  put(".github/instructions/anatomiya-area-0123abcd.instructions.md", [...key, 'applyTo: "lib/**/*.ts"', "---", "", "# lib"]);
+  put(FACTS_PATH, [JSON.stringify(facts())]);
+  const on = { cursor: { state: "on", wrote: 2 }, copilot: { state: "on", wrote: 2 } };
+
+  const good = writtenProblems(repo, 1, on);
+  assert.deepEqual(good.problems, []);
+  assert.deepEqual([...good.written.keys()], [
+    ".claude/rules/anatomiya-overview.md",
+    ".cursor/rules/anatomiya-area-0123abcd.mdc",
+    ".cursor/rules/anatomiya-overview.mdc",
+    ".github/instructions/anatomiya-area-0123abcd.instructions.md",
+    ".github/instructions/anatomiya-overview.instructions.md",
+  ]);
+
+  // A target the scan did not report on is listed for the comparison and held to nothing.
+  put(".github/instructions/anatomiya-area-89abcdef.instructions.md", [...key, 'applyTo: "**"', "---", "", "# app"]);
+  assert.deepEqual(writtenProblems(repo, 1).problems, []);
+  assert.deepEqual(writtenProblems(repo, 1, { ...on, copilot: { state: "off", wrote: 0 } }).problems, []);
+  assert.equal(writtenProblems(repo, 1).written.size, 6);
+
+  const copilot = writtenProblems(repo, 1, on).problems.join("\n");
+  assert.match(copilot, /wrote 2 files and \.github\/instructions\/ holds 3 generated files/);
+  assert.match(copilot, /"anatomiya-area-89abcdef\.instructions\.md" does not carry the scope GitHub Copilot matches an area file by/);
+
+  put(".cursor/rules/anatomiya-area-0123abcd.mdc", [...key, "alwaysApply: true", "---", "", "# lib"]);
+  assert.match(writtenProblems(repo, 1, on).problems.join("\n"), /"anatomiya-area-0123abcd\.mdc" does not carry the scope Cursor matches/);
+  rmSync(join(repo, ".cursor/rules/anatomiya-overview.mdc"));
+  assert.match(writtenProblems(repo, 1, on).problems.join("\n"), /no anatomiya-overview\.mdc was written/);
 });
 
 test("the semantic column says whether the checker ran, what it answered and why not", () => {
@@ -607,4 +664,97 @@ test("a detached checkout is based on its commit, and only a repository with non
   const sha = git(dir, "rev-parse", "HEAD").toString().trim();
   git(dir, "checkout", "-q", "--detach");
   assert.equal(baseOf(dir), sha);
+});
+
+test("a probe in each of the seven languages is a file its own grammar reads whole", async () => {
+  const { parseTreeFile } = await import("../plugins/anatomiya/lib/tree-sitter-file.mjs");
+  const { LANGUAGES } = await import("../plugins/anatomiya/lib/langs.mjs");
+  const seven = LANGUAGES.filter((l) => l.engine === "tree-sitter");
+  assert.equal(seven.length, 7);
+  for (const { id, exts } of seven) {
+    for (const key of ["file_naming_case", "class_base"]) {
+      const body = probeBody(`.${exts[0]}`, key);
+      if (body === null) continue;
+      const read = await parseTreeFile(body, `src/zzprobe.${exts[0]}`, id);
+      assert.equal(read.ok, true, `${id} ${key}: ${JSON.stringify(body)}`);
+    }
+    assert.equal(typeof probeBody(`.${exts[0]}`, "file_naming_case"), "string", id);
+  }
+  // A comment in the language's own character, never JavaScript's where the language has another.
+  assert.match(probeBody(".py", "file_naming_case"), /^# e2e probe/);
+  assert.match(probeBody(".php", "file_naming_case"), /^<\?php\n/);
+  assert.match(probeBody(".go", "file_naming_case"), /^package \w+$/m);
+  assert.match(probeBody(".py", "class_base"), /^class ZzProbe\(NotTheBase\):/);
+  assert.match(probeBody(".cs", "class_base"), /^class ZzProbe : NotTheBase\b/);
+  // Neither language has a class to give the wrong base.
+  assert.equal(probeBody(".go", "class_base"), null);
+  assert.equal(probeBody(".rs", "extends_base"), null);
+});
+
+test("the JavaScript and Ruby probes are the bodies they always were", () => {
+  assert.equal(probeBody(".ts", "file_naming_case"), "// e2e probe\n");
+  assert.equal(probeBody(".vue", "file_naming_case"), "// e2e probe\n");
+  assert.equal(probeBody(".tsx", "file_naming_case", "jsx"), "// e2e probe\nexport const ZzProbeElement = () => <div />\n");
+  assert.equal(probeBody(".rb", "file_naming_case", "jsx"), "# e2e probe\n");
+  assert.equal(probeBody(".ts", "extends_base"), "class ZzProbe extends NotTheBase {}\n");
+  assert.equal(probeBody(".rb", "class_base"), "class ZzProbe < NotTheBase\nend\n");
+});
+
+/* --- the seven languages' own rows --- */
+
+const SEVEN_EXT = { python: ".py", php: ".php", go: ".go", java: ".java", csharp: ".cs", rust: ".rs", kotlin: ".kt" };
+const areaOf = (ext, dimensions, path = "src/shop") => ({ id: "a1", path, kinds: { exts: [[ext, 12]] }, imports: null, reused: null, dimensions });
+const row = (key, over = {}) => ({ key, states: "claim", directive: "x", candidates: 40, conforming: 40, ...over });
+const inverse = (key, counterClaim) => row(key, { states: "counter", counterClaim, conforming: 0 });
+
+test("where no naming or base row is stated, the probe breaks a row its language's own grammar is asked", async () => {
+  const { parseTreeFile } = await import("../plugins/anatomiya/lib/tree-sitter-file.mjs");
+  const { rowByKey } = await import("../plugins/anatomiya/lib/registry.mjs");
+  const sitesOf = async (plan, lang, key) => {
+    const read = await parseTreeFile(plan.body, plan.path, lang);
+    assert.equal(read.ok, true, `${plan.path}: ${JSON.stringify(plan.body)}`);
+    return (read.hits[key] ?? []).map((h) => h.conforming);
+  };
+  for (const [lang, ext] of Object.entries(SEVEN_EXT)) {
+    for (const key of ["public_doc_comment", "declared_return_type", "caught_error_used"]) {
+      const { langs, claim, counterClaim } = rowByKey(key);
+      const stated = probePlan({ areas: [areaOf(ext, [row(key)])] });
+      if (!langs.includes(lang)) {
+        assert.equal(stated, null, `${key} is never asked of ${lang}`);
+        continue;
+      }
+      assert.deepEqual([stated.dimension, stated.learned, stated.path], [key, claim, `src/shop/zzprobe${ext}`]);
+      // Through the grammar: the file holds one site of the row, and it breaks the sentence the area states.
+      assert.deepEqual(await sitesOf(stated, lang, key), [false], `${lang} ${key}`);
+      if (typeof counterClaim !== "string") continue;
+      const other = probePlan({ areas: [areaOf(ext, [inverse(key, counterClaim)])] });
+      assert.deepEqual([other.dimension, other.learned], [key, counterClaim]);
+      assert.deepEqual(await sitesOf(other, lang, key), [true], `${lang} ${key}, the inverse`);
+    }
+  }
+});
+
+test("a naming or base row is tried before a row of the seven, and a row nothing states breaks nothing", () => {
+  // An area holding TypeScript beside Python states a row of each, and the older probe is the one it gets.
+  const both = { ...areaOf(".ts", [row("public_doc_comment"), dim("file_naming_case")]), kinds: { exts: [[".ts", 8], [".py", 6]] } };
+  assert.deepEqual([probePlan({ areas: [both] }).dimension, probePlan({ areas: [both] }).path], ["file_naming_case", "src/shop/ZzProbeFile.ts"]);
+  // The filename row is not asked of the seven, so stated beside one of their rows it is passed over.
+  const python = probePlan({ areas: [areaOf(".py", [dim("file_naming_case"), row("public_doc_comment")])] });
+  assert.deepEqual([python.dimension, python.path], ["public_doc_comment", "src/shop/zzprobe.py"]);
+  // Counted and not stated, a default the model already writes, or stated where the area's files are another language's.
+  const quiet = [
+    areaOf(".py", [row("public_doc_comment", { states: null, directive: null, candidates: 10, conforming: 5 })]),
+    areaOf(".py", [row("public_doc_comment", { matchesDefault: true })]),
+    areaOf(".md", [row("public_doc_comment")]),
+    areaOf(".go", [row("declared_return_type")]),
+  ];
+  for (const area of quiet) assert.equal(probePlan({ areas: [area] }), null, JSON.stringify(area.dimensions));
+  // The first area that states one is where the probe goes.
+  assert.equal(probePlan({ areas: [...quiet, areaOf(".rs", [row("public_doc_comment")], "crates/core/src")] }).path, "crates/core/src/zzprobe.rs");
+});
+
+test("a repository with nothing to probe says which kind of nothing", () => {
+  assert.equal(probeCell(null, { areas: [] }), "n.a. (no area)");
+  assert.equal(probeCell(null, { areas: [areaOf(".go", [row("public_doc_comment", { states: null, directive: null })])] }), "n.a. (no claim stated)");
+  assert.equal(probeCell(null, { areas: [areaOf(".ts", [row("swallowed_error")])] }), "n.a. (no stated row one file breaks)");
 });

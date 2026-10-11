@@ -9,11 +9,11 @@ import { pathToFileURL } from "node:url";
 import { needsRuby } from "./ruby-available.mjs";
 import { needsShebang, needsSymlinks } from "./platform.mjs";
 import { installWithoutStripper } from "./no-stripper.mjs";
-import { installWithoutDependencies } from "./plugin-install.mjs";
+import { installLacking, installWithoutDependencies } from "./plugin-install.mjs";
 import { ANATOMIYA, BINARY, REL, ROOT, installed } from "../scripts/plugins.mjs";
 import { ENGINES } from "../plugins/anatomiya/lib/langs.mjs";
 import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
-import { installProblem, pluginRoot, readiness, readinessAfresh, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
+import { GRAMMAR_REMEDY, couldNotRead, installProblem, lostGrammar, pluginRoot, readiness, readinessAfresh, readinessLines, remedyFor, remedyForMissing, unreadReasons } from "../plugins/anatomiya/lib/readiness.mjs";
 import { olderThan } from "../plugins/anatomiya/lib/version.mjs";
 
 /** A directory on PATH holding one stub interpreter, so a probe meets a Ruby that is not this one. */
@@ -41,6 +41,13 @@ test("the node engine's remedy spells the directory to run it in", () => {
   // make that install safe live in one place and are not a person's to retype.
   assert.match(remedy, /bin\/anatomiya\.mjs setup/);
   assert.doesNotMatch(remedy, /npm/);
+});
+
+test("the node engine's remedy spells a directory as it is named, whatever characters the name holds", () => {
+  for (const dir of ["/tmp/a$&b", "/tmp/a$$b", "/tmp/a$1b", "/tmp/a$`b", "/tmp/a$'b"]) {
+    const remedy = remedyFor("oxc", dir);
+    assert.ok(remedy.endsWith(` in ${dir}`), `${dir}: ${remedy}`);
+  }
 });
 
 test("the interpreter engine's remedy names the interpreter and never npm", () => {
@@ -84,6 +91,215 @@ test("an engine's extras are probed the same way and reported apart from it", as
   assert.equal(stripper.present, true);
   assert.equal(stripper.ok, true);
   assert.equal(stripper.remedy, remedyFor("oxc"));
+});
+
+test("the tree-sitter engine answers with its version and how many of its grammars load", async () => {
+  const rows = await readiness({ engines: ["tree-sitter"] });
+
+  assert.equal(rows.length, 1, "its grammars are the engine's own row, not rows of their own");
+  const [row] = rows;
+  assert.equal(row.engine, "tree-sitter");
+  assert.equal(row.present, true);
+  assert.match(row.version, /^\d+\.\d+\.\d+/);
+  assert.equal(row.ok, true);
+  assert.equal(row.reason, "grammars: 7 of 7");
+  assert.deepEqual(readinessLines(rows), [`tree-sitter ${row.version} ok (grammars: 7 of 7)`]);
+});
+
+test("a grammar that does not load is named on the engine's row, with the remedy no install is", needsSymlinks, (t) => {
+  const home = installLacking(t, { grammars: ["kotlin", "go"] });
+  const script = `
+    import { readiness, readinessLines } from ${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)};
+    const rows = await readiness({ engines: ["tree-sitter"] });
+    process.stdout.write(JSON.stringify({ rows, lines: readinessLines(rows) }));
+  `;
+
+  const { rows, lines } = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+
+  const [row] = rows;
+  assert.equal(row.present, true, "the runtime is there");
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "grammars: 5 of 7, go.wasm and kotlin.wasm did not load");
+  assert.equal(row.remedy, GRAMMAR_REMEDY);
+  assert.deepEqual(row.lostGrammars, ["go", "kotlin"]);
+  assert.equal(lostGrammar(row), true);
+  // The row says it, and no sentence is compared: a reworded remedy loses nothing.
+  assert.equal(lostGrammar({ ...row, remedy: "another sentence" }), true);
+  assert.equal(lostGrammar({ ...row, lostGrammars: [] }), false);
+  assert.equal(lostGrammar({ engine: "oxc", remedy: GRAMMAR_REMEDY }), false, "a row from before the field");
+  assert.deepEqual(lines, [`tree-sitter ${row.version}: grammars: 5 of 7, go.wasm and kotlin.wasm did not load, ${GRAMMAR_REMEDY}`]);
+});
+
+/** The tree-sitter row and its doctor line, asked by a node started on an install copy. */
+function treeSitterRowOf(home) {
+  const script = `
+    import { readiness, readinessLines } from ${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)};
+    const rows = await readiness({ engines: ["tree-sitter"] });
+    process.stdout.write(JSON.stringify({ row: rows[0], lines: readinessLines(rows) }));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+}
+
+test("a grammar file that loads and is not the one the plugin shipped is named on the engine's row", needsSymlinks, (t) => {
+  // Measured with java.wasm copied over kotlin.wasm: the file loads, the row read
+  // `grammars: 7 of 7`, and a scan then called 720 Kotlin files unreadable and said they may be fine.
+  const home = installLacking(t);
+  cpSync(join(home, "grammars", "java.wasm"), join(home, "grammars", "kotlin.wasm"));
+
+  const { row, lines } = treeSitterRowOf(home);
+
+  assert.equal(row.present, true);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "grammars: 6 of 7, kotlin.wasm is not the file this plugin shipped");
+  assert.equal(row.remedy, GRAMMAR_REMEDY);
+  assert.deepEqual(row.lostGrammars, ["kotlin"]);
+  assert.deepEqual(lines, [`tree-sitter ${row.version}: grammars: 6 of 7, kotlin.wasm is not the file this plugin shipped, ${GRAMMAR_REMEDY}`]);
+});
+
+test("a file that does not load and files that are not the plugin's own are each said in their own words", needsSymlinks, (t) => {
+  const home = installLacking(t, { grammars: ["go"] });
+  cpSync(join(home, "grammars", "java.wasm"), join(home, "grammars", "kotlin.wasm"));
+  cpSync(join(home, "grammars", "java.wasm"), join(home, "grammars", "rust.wasm"));
+
+  const { row } = treeSitterRowOf(home);
+
+  assert.equal(row.reason, "grammars: 4 of 7, go.wasm did not load, rust.wasm and kotlin.wasm are not the files this plugin shipped");
+  assert.deepEqual(row.lostGrammars, ["go", "rust", "kotlin"]);
+});
+
+/**
+ * An install whose runtime is a later one: the real runtime behind a package of
+ * the same name that refuses a grammar under language version 15, in the words
+ * `setLanguage` refuses one in.
+ */
+function installWithNewerRuntime(t) {
+  const home = installLacking(t, { modules: ["web-tree-sitter"] });
+  const real = import.meta.resolve("web-tree-sitter");
+  const dir = join(home, "node_modules", "web-tree-sitter");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "web-tree-sitter", version: "0.99.0", type: "module", main: "index.js" }));
+  writeFileSync(
+    join(dir, "index.js"),
+    `import { Parser as Real } from ${JSON.stringify(real)};
+export * from ${JSON.stringify(real)};
+export class Parser extends Real {
+  setLanguage(language) {
+    if (language.abiVersion < 15) throw new Error(\`Incompatible language version \${language.abiVersion}. Compatibility range 15 through 16.\`);
+    return super.setLanguage(language);
+  }
+}
+`
+  );
+  return home;
+}
+
+test("a grammar the runtime refuses by its language version is said as a mismatch, with both versions", needsSymlinks, (t) => {
+  const { row, lines } = treeSitterRowOf(installWithNewerRuntime(t));
+
+  assert.equal(row.present, true);
+  assert.equal(row.version, "0.99.0");
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "grammars: 4 of 7, java.wasm and rust.wasm and kotlin.wasm are language version 14 and this runtime reads 15 through 16");
+  // A reinstall brings back the runtime the plugin locks beside its grammars, so the remedy is the one every lost grammar has.
+  assert.equal(row.remedy, GRAMMAR_REMEDY);
+  assert.deepEqual(row.lostGrammars, ["java", "rust", "kotlin"]);
+  assert.deepEqual(lines, [`tree-sitter 0.99.0: ${row.reason}, ${GRAMMAR_REMEDY}`]);
+  assert.doesNotMatch(row.reason, /did not load/, "nothing failed to load: the runtime turned the files away");
+});
+
+test("a refused grammar beside one that is missing keeps each in its own words", needsSymlinks, (t) => {
+  const home = installWithNewerRuntime(t);
+  rmSync(join(home, "grammars", "go.wasm"));
+  rmSync(join(home, "grammars", "rust.wasm"));
+  rmSync(join(home, "grammars", "kotlin.wasm"));
+
+  const { row } = treeSitterRowOf(home);
+
+  assert.equal(row.reason, "grammars: 3 of 7, go.wasm and rust.wasm and kotlin.wasm did not load, java.wasm is language version 14 and this runtime reads 15 through 16");
+  assert.equal(row.remedy, GRAMMAR_REMEDY);
+  assert.deepEqual(row.lostGrammars, ["go", "java", "rust", "kotlin"]);
+});
+
+test("with no manifest to hold a grammar file to, none is counted", needsSymlinks, (t) => {
+  // Three ways to have none: the file gone, a file that is not JSON, and one that names no hash for a grammar.
+  const all = ["csharp", "go", "java", "kotlin", "php", "python", "rust"];
+  const manifests = [
+    (path) => rmSync(path),
+    (path) => writeFileSync(path, "not a manifest"),
+    (path) => writeFileSync(path, JSON.stringify(JSON.parse(readFileSync(path, "utf8")).filter((entry) => entry.id !== "go"))),
+    (path) => writeFileSync(path, JSON.stringify(JSON.parse(readFileSync(path, "utf8")).map(({ sha256, ...entry }) => entry))),
+  ];
+  for (const spoil of manifests) {
+    const home = installLacking(t);
+    spoil(join(home, "grammars", "grammars.json"));
+
+    const { row, lines } = treeSitterRowOf(home);
+
+    assert.equal(row.ok, false);
+    assert.equal(row.reason, "grammars: 0 of 7, grammars.json is missing or is not the file this plugin shipped");
+    assert.deepEqual([...row.lostGrammars].sort(), all);
+    assert.deepEqual(lines, [`tree-sitter ${row.version}: ${row.reason}, ${GRAMMAR_REMEDY}`]);
+  }
+});
+
+test("an install older than the tree-sitter runtime reads as that engine absent, and says how to install it", needsSymlinks, (t) => {
+  const home = installLacking(t, { modules: ["web-tree-sitter"] });
+  const script = `
+    import { readiness } from ${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)};
+    process.stdout.write(JSON.stringify(await readiness({ engines: ["oxc", "tree-sitter"] })));
+  `;
+
+  const rows = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+
+  const row = rows.find((r) => r.engine === "tree-sitter");
+  assert.equal(row.present, false);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "web-tree-sitter did not load");
+  assert.match(row.remedy, /bin\/anatomiya\.mjs setup/);
+  assert.equal(rows.find((r) => r.engine === "oxc" && r.extra === null).ok, true, "and the parser beside it is untouched");
+});
+
+test("the remedy for a grammar file is a reinstall, and never the command that installs packages", () => {
+  // No install writes a grammar: they ship in the plugin's own directory.
+  assert.match(GRAMMAR_REMEDY, /^reinstall /);
+  assert.doesNotMatch(GRAMMAR_REMEDY, /setup|npm/);
+
+  assert.equal(remedyForMissing({ missingEngines: [], missingGrammars: ["kotlin"] }), GRAMMAR_REMEDY);
+  assert.equal(remedyForMissing({ missingEngines: ["tree-sitter"], missingGrammars: [] }), remedyFor("tree-sitter"));
+  assert.equal(remedyForMissing({ missingEngines: ["prism"] }), remedyFor("prism"), "a record written before grammars were named");
+  // An engine that is absent is the larger loss, and its remedy is the next move.
+  assert.equal(remedyForMissing({ missingEngines: ["oxc"], missingGrammars: ["kotlin"] }), remedyFor("oxc"));
+});
+
+test("a language is one a parse could not read where its engine was absent, or its own grammar was", () => {
+  const parse = { missingEngines: ["prism"], missingGrammars: ["kotlin"] };
+
+  assert.equal(couldNotRead(parse, "ruby"), true);
+  assert.equal(couldNotRead(parse, "kotlin"), true);
+  assert.equal(couldNotRead(parse, "python"), false, "the same engine as Kotlin, and its own grammar loaded");
+  assert.equal(couldNotRead(parse, "js"), false);
+  assert.equal(couldNotRead({ missingEngines: ["tree-sitter"] }, "go"), true, "a record written before grammars were named");
+});
+
+test("the languages a run read none of are explained per cause: a grammar apart from its engine", () => {
+  const parse = { engines: { "tree-sitter": { version: "0.27.0" }, prism: { version: null } }, missingGrammars: ["kotlin"] };
+
+  assert.deepEqual(unreadReasons(["kotlin", "python", "ruby"], parse, "/plugin"), [
+    { langs: ["kotlin"], why: `the plugin's kotlin grammar did not load: ${GRAMMAR_REMEDY}` },
+    { langs: ["python"], why: "tree-sitter 0.27.0 ran and answered for none of them" },
+    { langs: ["ruby"], why: `prism reported no version: ${remedyFor("prism")}` },
+  ]);
+  assert.deepEqual(unreadReasons(["python", "go"], { engines: { "tree-sitter": { version: null } } }, "/plugin"), [
+    { langs: ["python", "go"], why: "tree-sitter reported no version: run node bin/anatomiya.mjs setup in /plugin" },
+  ]);
+  assert.deepEqual(unreadReasons(["python"], { engines: { "tree-sitter": { version: null } } }, null), [
+    { langs: ["python"], why: `tree-sitter reported no version: run ${ENGINES["tree-sitter"].remedy}` },
+  ]);
+  assert.equal(remedyFor("oxc", null), "run node bin/anatomiya.mjs setup in the plugin directory", "with no directory to name, the table's own words");
+  assert.deepEqual(unreadReasons(["go", "kotlin"], { engines: {}, missingGrammars: ["kotlin", "go"] }), [
+    { langs: ["go", "kotlin"], why: `the plugin's go and kotlin grammars did not load: ${GRAMMAR_REMEDY}` },
+  ]);
+  assert.deepEqual(unreadReasons([], parse), []);
 });
 
 test("an extra that is not installed is the row that says so, and the engine still answers", (t) => {
@@ -141,6 +357,7 @@ test("an interpreter that is not on PATH is absent, and carries the remedy that 
     ok: false,
     reason: "ruby is not on PATH",
     remedy: remedyFor("prism"),
+    lostGrammars: [],
   });
 });
 

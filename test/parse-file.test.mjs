@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 
 import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { scriptBlocks } from "../plugins/anatomiya/lib/script-blocks.mjs";
 
 // Linux is where a child's address space can be capped from a shell: macOS
 // refuses `ulimit -v` outright, and Windows never asks for the raw transfer.
@@ -226,4 +228,298 @@ test("a file's own facets choose its rows before any row walks", async (t) => {
   assert.equal(r.ok, true);
   assert.equal(r.facets.jsx, false);
   assert.equal(asked.mock.callCount(), 0, "a JSX row was never made for a file holding no JSX");
+});
+
+test("a Vue component answers an ok record with its script's facets", async () => {
+  const source = [
+    "<template>",
+    "  <button @click=\"n++\">{{ n }}</button>",
+    "</template>",
+    "",
+    "<script setup>",
+    "import { ref } from \"vue\";",
+    "import { clamp } from \"./clamp.js\";",
+    "const n = ref(clamp(0));",
+    "</script>",
+    "",
+  ].join("\n");
+
+  const r = await parseFile(source, "src/components/Counter.vue", "vue");
+
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual(r.facets.imports.map((i) => i.module), ["vue", "./clamp.js"]);
+  assert.equal(r.facets.embedded, "vue");
+  assert.equal(r.facets.empty, undefined);
+  assert.equal(r.errors, 0);
+  // Blanking the markup is not the Flow strip, and no row goes blind for it.
+  assert.equal(r.stripped, false);
+  assert.equal(r.length, source.length);
+  assert.ok(r.hits && typeof r.hits === "object");
+  assert.equal(r.program, undefined, "counts mode does not promise a tree");
+});
+
+test("two blocks are one program", async () => {
+  const source = [
+    "<script>",
+    "// plain",
+    "import a from \"./a.js\";",
+    "export const shared = a;",
+    "</script>",
+    "<template><p>{{ shared }}</p></template>",
+    "<script setup>",
+    "/* setup */",
+    "import b from \"./b.js\";",
+    "export { b as renamed };",
+    "</script>",
+    "",
+  ].join("\n");
+
+  const r = await parseFile(source, "src/Two.vue", "vue", { withProgram: true });
+
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.program.start, 0);
+  assert.equal(r.program.end, source.length);
+  // File order, and every offset the file's own: a node sliced out of the
+  // file text is the statement as written.
+  assert.deepEqual(
+    r.program.body.map((n) => source.slice(n.start, n.end)),
+    ['import a from "./a.js";', "export const shared = a;", 'import b from "./b.js";', "export { b as renamed };"]
+  );
+  assert.deepEqual(
+    r.comments.map((c) => source.slice(c.start, c.end)),
+    ["// plain", "/* setup */"]
+  );
+  assert.deepEqual(r.facets.imports.map((i) => i.module), ["./a.js", "./b.js"]);
+  assert.deepEqual(r.facets.exports, ["shared", "renamed"]);
+});
+
+test("the same binding imported by both blocks is not a syntax error", async () => {
+  // Both frameworks allow it, and read as one module it is a redeclaration.
+  const source = '<script>\nimport { ref } from "vue";\nexport const a = ref(0);\n</script>\n<script setup>\nimport { ref } from "vue";\nconst b = ref(1);\n</script>\n';
+
+  const r = await parseFile(source, "src/Twice.vue", "vue");
+
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.facets.imports.length, 2);
+});
+
+test("a block with lang ts is parsed as TypeScript, and one with none is not", async () => {
+  // `<string>y` is a cast in TypeScript and the start of an element everywhere else.
+  const typed = await parseFile('<script lang="ts">\nconst x = <string>y;\n</script>\n', "src/A.vue", "vue");
+  assert.equal(typed.ok, true, typed.error);
+
+  const plain = await parseFile("<script>\nconst x = <string>y;\n</script>\n", "src/B.vue", "vue");
+  assert.equal(plain.ok, false);
+  assert.ok(plain.errors >= 1);
+  assert.equal(plain.hits, undefined);
+});
+
+test("a block with no lang is read as a .js file is: an annotation parses, and the tree says it is typed", async () => {
+  // An annotation is what the JSX-only grammar rejects, and what no tag declared.
+  const r = await parseFile("<script>\nexport const x: number = 1;\n</script>\n", "src/A.vue", "vue");
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.facets.typed, true);
+});
+
+test("a block with lang tsx holds JSX", async () => {
+  // An element is what the TypeScript grammar reads as a cast and rejects.
+  const r = await parseFile('<script setup lang="tsx">\nconst el = <div />;\n</script>\n', "src/A.vue", "vue");
+  assert.equal(r.ok, true, r.error);
+});
+
+test("a comment on a script's last line ends where the script does", async () => {
+  // The end tag is blanked to spaces, which a line comment runs on through.
+  for (const [rel, lang] of [["src/A.vue", "vue"], ["src/A.svelte", "svelte"]]) {
+    const source = "<script>\nconst a = 1; // why</script>\n<p>markup</p>\n";
+    const [block] = scriptBlocks(source, lang).blocks;
+
+    const r = await parseFile(source, rel, lang, { withProgram: true });
+
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.comments.map((c) => [source.slice(c.start, c.end), c.value]), [["// why", " why"]], rel);
+    for (const c of r.comments) assert.ok(c.end <= block.end, rel);
+  }
+});
+
+test("a tag's lang marks the file typed before any annotation exists", async () => {
+  const ts = await parseFile('<script lang="ts">\nexport const a = 1;\n</script>\n', "src/A.vue", "vue");
+  assert.equal(ts.facets.typed, true);
+
+  const tsx = await parseFile('<script setup lang="tsx">\nconst a = 1;\n</script>\n', "src/B.vue", "vue");
+  assert.equal(tsx.facets.typed, true);
+
+  const js = await parseFile("<script>\nexport const a = 1;\n</script>\n", "src/C.vue", "vue");
+  assert.equal(js.facets.typed, false);
+
+  const svelte = await parseFile('<script lang="ts">\nexport const a = 1;\n</script>\n', "src/D.svelte", "svelte");
+  assert.equal(svelte.facets.typed, true);
+});
+
+test("one typed block of two marks the file typed", async () => {
+  const source = '<script>\nexport const a = 1;\n</script>\n<script setup lang="ts">\nconst b = 2;\n</script>\n';
+  const r = await parseFile(source, "src/A.vue", "vue");
+  assert.equal(r.facets.typed, true);
+});
+
+test("a component with no script is empty, not rejected", async () => {
+  const sources = {
+    "src/Plain.vue": "<template>\n  <p>hello</p>\n</template>\n<style>p { color: red }</style>\n",
+    "src/Plain.svelte": "<p>hello</p>\n",
+    // A language nobody here reads holds no script this tool can count.
+    "src/Coffee.vue": '<script lang="coffee">\nx = -> 1\n</script>\n',
+    "src/Nothing.vue": "",
+  };
+
+  for (const [rel, source] of Object.entries(sources)) {
+    const lang = rel.endsWith(".vue") ? "vue" : "svelte";
+    const r = await parseFile(source, rel, lang, { withProgram: true });
+    assert.equal(r.ok, true, rel);
+    assert.deepEqual(r.hits, {}, rel);
+    assert.equal(r.facets.empty, true, rel);
+    assert.equal(r.facets.embedded, lang, rel);
+    assert.equal(r.facets.testRunner, null, rel);
+    assert.equal(r.facets.testCalls, false, rel);
+    assert.equal(r.errors, 0, rel);
+    assert.equal(r.stripped, false, rel);
+    assert.equal(r.length, source.length, rel);
+    assert.deepEqual(r.program.body, [], rel);
+    assert.equal(r.program.end, source.length, rel);
+  }
+});
+
+test("an unterminated script is rejected", async () => {
+  const vue = await parseFile("<template><p/></template>\n<script setup>\nconst a = 1;\n", "src/A.vue", "vue");
+  assert.equal(vue.ok, false);
+  assert.ok(vue.errors >= 1);
+  assert.equal(vue.hits, undefined);
+
+  const svelte = await parseFile("<script>\nlet a = 1;\n", "src/A.svelte", "svelte");
+  assert.equal(svelte.ok, false);
+  assert.ok(svelte.errors >= 1);
+});
+
+test("a script that never ends rejects the file even after one that did", async () => {
+  // The block found first parses clean, and half a component is not the file.
+  const source = "<script>\nexport const a = 1;\n</script>\n<script setup>\nconst b = 2;\n";
+  const r = await parseFile(source, "src/A.vue", "vue");
+  assert.equal(r.ok, false);
+  assert.ok(r.errors >= 1);
+});
+
+test("a syntax error in either block rejects the file", async () => {
+  const first = await parseFile("<script>\nfunction f( {\n</script>\n<script setup>\nconst b = 2;\n</script>\n", "src/A.vue", "vue");
+  assert.equal(first.ok, false);
+  assert.ok(first.errors >= 1);
+
+  const second = await parseFile("<script>\nexport const a = 1;\n</script>\n<script setup>\nfunction f( {\n</script>\n", "src/B.vue", "vue");
+  assert.equal(second.ok, false);
+  assert.ok(second.errors >= 1);
+});
+
+test("a Svelte 5 component with runes parses", async () => {
+  const source = [
+    '<script lang="ts">',
+    "  let { step = 1 }: { step?: number } = $props();",
+    "  let count = $state(0);",
+    "  const double = $derived(count * 2);",
+    "  $effect(() => { console.log(double); });",
+    "</script>",
+    "",
+    "<button onclick={() => (count += step)}>{double}</button>",
+    "",
+  ].join("\n");
+
+  const r = await parseFile(source, "src/lib/Counter.svelte", "svelte");
+
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.facets.embedded, "svelte");
+  assert.equal(r.facets.typed, true);
+});
+
+test("a Svelte 4 component with export let and a reactive label parses", async () => {
+  const source = [
+    '<script context="module">',
+    '  import { writable } from "svelte/store";',
+    "  export const total = writable(0);",
+    "</script>",
+    "",
+    "<script>",
+    '  import { onMount } from "svelte";',
+    "  export let name = \"world\";",
+    "  let count = 0;",
+    "  $: doubled = count * 2;",
+    "  $: if (count > 10) count = 0;",
+    "  onMount(() => { $total += 1; });",
+    "</script>",
+    "",
+    "<h1>Hello {name} {doubled}</h1>",
+    "",
+  ].join("\n");
+
+  const r = await parseFile(source, "src/lib/Hello.svelte", "svelte");
+
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual(r.facets.imports.map((i) => i.module), ["svelte/store", "svelte"]);
+  assert.deepEqual(r.facets.exports, ["total", "name"]);
+});
+
+test("line numbers are the file's", async () => {
+  // CRLF markup and a BOM above the script: the offset a node carries indexes
+  // the string the caller holds, so the line a check reports is the file's own.
+  const markup = Array.from({ length: 10 }, (_, i) => `  <p>line ${i} é 𝒳</p>`);
+  const source = "﻿" + ["<template>", ...markup, "</template>", "<script setup>", "const first = 1;", "</script>", ""].join("\r\n");
+  const at = source.indexOf("const first = 1;");
+
+  const r = await parseFile(source, "src/A.vue", "vue", { withProgram: true });
+
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.program.body[0].start, at);
+  assert.equal(source.slice(0, r.program.body[0].start).split("\n").length, 14);
+  assert.equal(r.length, source.length);
+});
+
+test("a row asked of a component is handed the file's own text", async (t) => {
+  // A row slices between offsets, and the check hands the same rows the file
+  // as the caller holds it: the two must be one string, markup and all.
+  const row = ALL_DIMENSIONS.find((d) => d.key === "doc_comment_style");
+  const langs = row.langs;
+  row.langs = [...langs, "vue"];
+  t.after(() => {
+    row.langs = langs;
+  });
+  const asked = t.mock.method(row, "visitor");
+  const source = "<template><p/></template>\n<script>\nexport const a = 1;\n</script>\n<script setup>\nconst b = 2;\n</script>\n";
+
+  const r = await parseFile(source, "src/A.vue", "vue");
+
+  assert.equal(r.ok, true, r.error);
+  assert.equal(asked.mock.callCount(), 1);
+  const [program, , extra] = asked.mock.calls[0].arguments;
+  assert.equal(extra.source, source);
+  assert.equal(extra.rel, "src/A.vue");
+  assert.equal(program.body.length, 2);
+});
+
+test("a component's rows are chosen for its own language and no other", async () => {
+  // No blanket mapping onto the JavaScript rows: a row answers a component
+  // only once it lists the language, and the const row lists neither.
+  const r = await parseFile("<script>\nlet a = 1;\ntry { f(); } catch (e) {}\n</script>\n", "src/A.vue", "vue");
+  assert.equal(r.ok, true);
+  assert.deepEqual(Object.keys(r.hits), ["swallowed_error"]);
+});
+
+test("a .svelte.ts module is plain TypeScript, read whole", async () => {
+  const rel = "src/state.svelte.ts";
+  const r = await parseFile("export const count = $state(0);\n", rel, language(rel));
+  assert.equal(r.ok, true);
+  assert.equal(r.facets.embedded, undefined);
+  assert.deepEqual(r.facets.exports, ["count"]);
+});
+
+test("a megabyte of markup around a two-line script parses inside the per-file clock", async () => {
+  const source = "<template>\n" + "<div>x</div>\n".repeat(70_000) + "</template>\n<script setup>\nconst a = 1;\n</script>\n";
+  const from = performance.now();
+  const r = await parseFile(source, "src/Big.vue", "vue");
+  assert.equal(r.ok, true);
+  assert.ok(performance.now() - from < 2_000, "linear in the file");
 });

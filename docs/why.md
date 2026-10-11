@@ -136,7 +136,7 @@ each of which is now a numbered decision:
 - It defined the three counts and never said which population the gate reads, current or baseline.
   Those give different answers whenever the agent has been editing (D6).
 - It claimed the parsing libraries read no repository configuration. Its own evidence section
-  falsified that: the semantic tier reads the repository's `tsconfig.json` (B9).
+  falsified that: the semantic tier reads the repository's `tsconfig.json`, or its `tsconfig.base.json` (B9).
 - It dropped symlink confinement to one sentence about symlinked *directories*, which exempts
   symlinked files (F2).
 - It suggested re-pinning the baseline at the moment a branch is under review, which is the moment a
@@ -166,5 +166,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 263 numbered decisions with the finding
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 297 numbered decisions with the finding
 behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

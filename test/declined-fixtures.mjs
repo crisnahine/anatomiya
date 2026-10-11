@@ -11,7 +11,8 @@
  * Apart from either test file because three parsers answer for these rows and
  * one of them may be absent. `test/dimensions.test.mjs` runs the JS and the
  * path-only rows and holds every clause to having an entry here at all;
- * `test/dimensions-rails.test.mjs` runs the Ruby ones and skips where prism is.
+ * `test/dimensions-rails.test.mjs` runs the Ruby ones and skips where prism is,
+ * and `test/dimensions-tree.test.mjs` the ones a tree-sitter grammar answers for.
  * The coverage check has to run either way, or a row could grow a clause on a
  * machine with no Ruby and nothing would ask for its fixture.
  */
@@ -43,6 +44,8 @@ export const JS_DECLINED = {
       'import a from "./dir/";',
       'import a from "./dir/..";',
       'import a from "./old.coffee";',
+      'import Card from "./Card.vue";',
+      'import Card from "./Card.svelte";',
     ],
     counted: 'import a from "./utils";',
   },
@@ -135,3 +138,12 @@ export const RUBY_DECLINED = {
     },
   },
 };
+
+/**
+ * Rows a tree-sitter grammar answers for. A source is its entry's own language unless it names another.
+ *
+ * None states a clause: a clause is one line printed under every language its
+ * row lists, and what such a row declines differs by language, so it is said
+ * in `sites` and held by the row's own tests.
+ */
+export const TREE_DECLINED = {};

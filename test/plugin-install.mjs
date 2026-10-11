@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, cpSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ANATOMIYA } from "../scripts/plugins.mjs";
+import { ANATOMIYA, installed } from "../scripts/plugins.mjs";
 
 /**
  * The plugin's own code with no `node_modules` beside it, which is what a
@@ -22,7 +22,25 @@ export function installWithoutDependencies(t) {
 
   // The plugin's own directory is what the marketplace copies, so the fixture
   // copies out of there rather than out of the repository around it.
-  for (const part of ["lib", "bin"]) cpSync(join(ANATOMIYA, part), join(dir, part), { recursive: true });
+  for (const part of ["lib", "bin", "grammars"]) cpSync(join(ANATOMIYA, part), join(dir, part), { recursive: true });
   cpSync(join(ANATOMIYA, "package.json"), join(dir, "package.json"));
+  return dir;
+}
+
+/**
+ * The plugin installed, less the named packages and the named grammar files.
+ *
+ * Both are real install shapes: a `node_modules` older than a dependency holds
+ * everything but that dependency, and a grammar is a file of the plugin's own
+ * that a partial copy can lose. Built as a real directory for the reason
+ * `no-stripper.mjs` gives: what is under test is what resolves.
+ */
+export function installLacking(t, { modules = [], grammars = [] } = {}) {
+  const dir = installWithoutDependencies(t);
+  mkdirSync(join(dir, "node_modules"));
+  for (const dep of readdirSync(installed())) {
+    if (!modules.includes(dep)) symlinkSync(join(installed(), dep), join(dir, "node_modules", dep));
+  }
+  for (const id of grammars) rmSync(join(dir, "grammars", `${id}.wasm`));
   return dir;
 }

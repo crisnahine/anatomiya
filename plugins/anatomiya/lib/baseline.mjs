@@ -4,12 +4,12 @@ import {
 import { existsSync, mkdirSync } from "node:fs";
 import { basename, join, dirname } from "node:path";
 
-import { areaOwner, dirCount } from "./areas.mjs";
+import { areaLabel, areaOwner, dirCount } from "./areas.mjs";
 import { langsIn } from "./corpus.mjs";
 import { language } from "./langs.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { plural } from "./render-layout.mjs";
-import { encodePath } from "./encode.mjs";
+import { encodePath, quotePath, sanitisePath } from "./encode.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { atomic, readRecord } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
@@ -257,7 +257,8 @@ export function formatDelta(delta) {
       a.movedIn?.length ? `${a.movedIn.length} moved in` : null,
       a.movedOut?.length ? `${a.movedOut.length} moved out` : null,
     ].filter(Boolean);
-    lines.push(`${encodePath(a.path)}${tag}  +${a.added.length} -${a.removed.length}${moved.map((m) => `, ${m}`).join("")}`);
+    // Named as the overview names it. The record keeps each path, which the pin is keyed by.
+    lines.push(`${quotePath(areaLabel(a.path, sanitisePath))}${tag}  +${a.added.length} -${a.removed.length}${moved.map((m) => `, ${m}`).join("")}`);
     for (const f of a.removed.slice(0, 5)) lines.push(`  - ${encodePath(f)}`);
     if (a.removed.length > 5) lines.push(`  - and ${a.removed.length - 5} more`);
   }

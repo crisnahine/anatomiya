@@ -7,7 +7,7 @@
  * asks for these lines; nothing here knows what an area or a directive is.
  */
 import { encode, encodePath } from "./encode.mjs";
-import { PRINCIPLES } from "./principles.mjs";
+import { PRECEDENT_FLOOR, PRINCIPLES } from "./principles.mjs";
 import { RUNNER_LABELS, UNNAMED_RUNNER } from "./test-shape.mjs";
 
 /**
@@ -31,13 +31,16 @@ export const plural = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
  *
  * A name the encoder empties, `###` or a setext underline, would render as
  * `- : 30 .ts`, which is a bullet about nothing.
+ *
+ * Exported because the notice names a path and a root in the overview's spelling.
  */
-const pathText = (p) => (p === "." ? ROOT_LABEL : JSON.parse(encodePath(p)) || "(unnamed)");
+export const pathText = (p) => (p === "." ? ROOT_LABEL : JSON.parse(encodePath(p)) || "(unnamed)");
 
 // What a flat repository's one root is called, since "." reads as punctuation.
 export const ROOT_LABEL = "(repository root)";
 
-const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
+// A record is read off the disk, where a repository can commit one, so a runner outside the table is its text and not this tool's.
+const runnerLabel = (runner) => (Object.hasOwn(RUNNER_LABELS, runner) ? RUNNER_LABELS[runner] : encode(runner));
 
 /**
  * A runner group's count with its noun: `4 RSpec specs`, or `4 test files`
@@ -89,15 +92,53 @@ const namesakeVerb = (withTest) => (withTest === 1 ? "has" : "have");
  * Exported for the same reason `plural` is: the corpus harness reads this
  * clause back off the printed line, and its own copy of the verb went stale.
  */
-export const namesakeClause = ({ with: withTest, of, root, under }, noun = null, over = null) =>
-  `${withTest} of ${noun === null ? of : plural(of, noun)}` +
+export const namesakeClause = ({ with: withTest, of, root, under, inline = 0 }, noun = null, over = null) => {
   // Which directory the denominator was counted over. Only the tests line asks
   // for it: that line speaks for the whole repository, and `1046 of 1575 .rb
   // files have a namesake test` read repository-wide when 1575 was `app/services`
   // alone.
-  (over ? ` under ${pathText(over)}` : "") +
-  ` ${namesakeVerb(withTest)} a namesake test` +
-  (root ? `${under !== undefined && under !== withTest ? `, ${under}` : ""} under ${pathText(root)}` : "");
+  const place = over ? ` under ${pathText(over)}` : "";
+  // A file that holds its own tests is in neither number, so the line says how many there are.
+  const held = (subject) => `${subject} ${inline === 1 ? "holds its" : "hold their"} own tests`;
+  if (of === 0 && inline > 0) return held(`${noun === null ? inline : plural(inline, noun)}${place}`);
+  return (
+    `${withTest} of ${noun === null ? of : plural(of, noun)}${place}` +
+    ` ${namesakeVerb(withTest)} a namesake test` +
+    (root ? `${under !== undefined && under !== withTest ? `, ${under}` : ""} under ${pathText(root)}` : "") +
+    (inline > 0 ? `; ${held(inline)}` : "")
+  );
+};
+
+/** The noun of a namesake count over one extension. Exported because `scripts/measure-layout.mjs` rebuilds the clause it reads back. */
+export const extNoun = (c) => `${encode(c.ext)} file`;
+
+/**
+ * The namesake counts of a root that get a clause, the first extension's then
+ * the other's, null for one that gets none.
+ *
+ * The smaller of two populations is spoken of from the floor the precedent gate
+ * reads a directory at: 28 of shadcn-svelte's 88 area files read `0 of 1 .ts
+ * file have a namesake test` for a lone `index.ts` beside its components.
+ * Under the floor a test that credits one of its files earns the clause, since that count is a fact and not an absence.
+ *
+ * Exported because `scripts/measure-layout.mjs` reads the clauses back.
+ */
+export const spokenCounts = (r) => {
+  const first = r.companions ?? null;
+  const also = r.otherCompanions ?? null;
+  if (first === null || also === null) return [first, also];
+  const spoken = (c) => (c.of >= PRECEDENT_FLOOR || c.with > 0 ? c : null);
+  return also.of <= first.of ? [first, spoken(also)] : [spoken(first), also];
+};
+
+// Two counts on one line each name their extension; the first alone stays bare.
+const namesakeParts = (r, place = {}) => {
+  const [first, also] = spokenCounts(r);
+  return [
+    ...(first ? [namesakeClause({ ...first, ...place }, also ? extNoun(first) : null)] : []),
+    ...(also ? [namesakeClause({ ...also, ...place }, extNoun(also))] : []),
+  ];
+};
 
 // The leftover past the two printed extensions rides along with them, so a
 // root line and an area's kinds line spell "and N other" off one expression.
@@ -136,7 +177,7 @@ export function kindsLine(kinds) {
   // its own files are tests; above zero it names the runner the way a root
   // line does, rather than summing every group into one bare "test file".
   parts.push(...(kinds.tests.length === 0 ? [plural(0, "test file")] : testsParts(kinds.tests)));
-  if (kinds.companions) parts.push(namesakeClause({ ...kinds.companions, root: null }));
+  parts.push(...namesakeParts(kinds, { root: null }));
   return `kinds: ${parts.join("; ")}`;
 }
 
@@ -155,6 +196,21 @@ export const TRUNCATED_LAYOUT = "layout: not counted, the scan was truncated";
  */
 export const RUNNERS_SHOWN = 2;
 
+const TESTS_LABEL = "tests";
+
+// A root named exactly what the tests line is labelled prints as the directory it is, so no two bullets share a label.
+const rootLabel = (r) => {
+  const said = pathText(r.path);
+  return said === TESTS_LABEL ? `${said}/` : said;
+};
+
+/**
+ * The path a root line's label names: the label, less the slash that keeps a
+ * root named `tests` apart from the tests line. Exported because
+ * `scripts/measure-layout.mjs` reads the label back.
+ */
+export const pathOfRootLabel = (label) => (label === `${TESTS_LABEL}/` ? TESTS_LABEL : label);
+
 /** One directory: what it holds, what tests it holds, what has a namesake. */
 function rootLine(r) {
   // More than half of it is tests, so its extension counts are the specs
@@ -169,11 +225,11 @@ function rootLine(r) {
     const shown = r.tests.slice(0, RUNNERS_SHOWN);
     const rest = r.files - shown.reduce((n, t) => n + t.files, 0);
     const named = shown.map((t) => specCount(t.files, t.runner)).join(", ");
-    return `- ${pathText(r.path)}: ${named}${rest ? ` and ${rest} other` : ""}`;
+    return `- ${rootLabel(r)}: ${named}${rest ? ` and ${rest} other` : ""}`;
   }
 
   const parts = [extText(r), ...storiesPart(r), ...testsParts(r.tests)];
-  if (r.companions) parts.push(namesakeClause(r.companions));
+  parts.push(...namesakeParts(r));
   if (r.helpers) {
     const { siblingModules, stems, inlineFiles } = r.helpers;
     const named = stems.length > 0 ? ` named ${stems.map((s) => encode(s)).join("/")}` : "";
@@ -181,7 +237,7 @@ function rootLine(r) {
     // Only the JSX files are asked, so they are the denominator.
     parts.push(`${inlineFiles} of ${plural(r.jsx, "JSX file")} inline${inlineFiles === 1 ? "s" : ""} a helper`);
   }
-  return `- ${pathText(r.path)}: ${parts.join("; ")}`;
+  return `- ${rootLabel(r)}: ${parts.join("; ")}`;
 }
 
 /**
@@ -223,9 +279,11 @@ function testsLineText(layout) {
     // lib" read as the whole subtree two lines below `lib/sub: 0 of 4`. The
     // repository root as a root has an empty `dir` and no clause, as before.
     const ext = top.companions.ext ?? top.exts[0][0];
-    parts.push(namesakeClause({ ...top.companions, root: null }, `${encode(ext)} file`, top.dir && top.path));
+    const [first, also] = spokenCounts(top);
+    if (first) parts.push(namesakeClause({ ...first, root: null }, `${encode(ext)} file`, top.dir && top.path));
+    if (also) parts.push(namesakeClause({ ...also, root: null }, extNoun(also), top.dir && top.path));
   }
-  return `- tests: ${parts.join("; ")}`;
+  return `- ${TESTS_LABEL}: ${parts.join("; ")}`;
 }
 
 const directories = (n) => `${n} ${n === 1 ? "directory" : "directories"}`;
@@ -290,11 +348,11 @@ const LAYOUT_FRAME = 3;
  * It sits above the area listing because a directory that already holds 504
  * components is what decides where the next one goes, and the names of the
  * areas are the part of this file already established as the one to squeeze.
- * It is still not worth the bound, so it gives way in the order it is read
- * backwards: root lines fold into the count that was already there, then that
- * count goes, and the tests line and the sentences it grounds are what a
- * squeezed section still says. A root line names one directory; the tests line
- * is the denominator for all of them.
+ * It is still not worth the bound, so it gives way: every sentence goes at
+ * once where the budget cannot hold them beside the tests line, then the
+ * tests line, and what is left is spent on root lines, the ones with no room
+ * folding into the count that was already there. A sentence only a root with
+ * no line arms goes too, and gives its line to a root.
  *
  * Counts over an arbitrary subset rendered as a description of the tree is the
  * failure the truncation rule exists for, so a truncated scan says so and
@@ -309,26 +367,43 @@ export function renderLayout(layout, budget = Infinity) {
   if (layout.roots.length === 0 && layout.tests.length === 0) return [];
 
   // The record stores the keys; the sentences live where their gates do.
-  const sentence = new Map(PRINCIPLES.map((p) => [p.key, p.sentence]));
-  let said = (layout.principles ?? []).map((k) => sentence.get(k)).filter(Boolean);
-  let tests = testsLineText(layout);
-
-  const owed = () => LAYOUT_FRAME + (tests ? 1 : 0) + (said.length > 0 ? 1 + said.length : 0);
-  if (owed() > budget) said = [];
-  if (owed() > budget) tests = null;
-  if (owed() > budget) return [];
-
-  // A root line each, and the line that counts what did not get one.
-  const room = budget - owed();
+  const principle = new Map(PRINCIPLES.map((p) => [p.key, p]));
+  const stored = (layout.principles ?? []).map((k) => principle.get(k)).filter(Boolean);
   const floor = layout.more.floor ?? null;
-  // Every population the fold line can carry, because the line is reserved on
-  // this and a term left out is invisible while any other term is non-zero: a
-  // repository whose whole remainder sits at its root lost the sentence
-  // outright at the budget that leaves room for exactly its roots.
-  const already =
-    layout.more.roots > 0 || layout.more.files > 0 || (floor?.files ?? 0) > 0 || (floor?.root ?? 0) > 0;
-  const whole = layout.roots.length + (already ? 1 : 0);
-  const shown = layout.roots.slice(0, whole <= room ? layout.roots.length : Math.max(0, room - 1));
+
+  // What the budget leaves once these sentences have their lines, or null where nothing fits.
+  const fit = (sentences) => {
+    let said = sentences;
+    let tests = testsLineText(layout);
+    const owed = () => LAYOUT_FRAME + (tests ? 1 : 0) + (said.length > 0 ? 1 + said.length : 0);
+    if (owed() > budget) said = [];
+    if (owed() > budget) tests = null;
+    if (owed() > budget) return null;
+
+    // A root line each, and the line that counts what did not get one.
+    const room = budget - owed();
+    // Every population the fold line can carry, because the line is reserved on
+    // this and a term left out is invisible while any other term is non-zero: a
+    // repository whose whole remainder sits at its root lost the sentence
+    // outright at the budget that leaves room for exactly its roots.
+    const already =
+      layout.more.roots > 0 || layout.more.files > 0 || (floor?.files ?? 0) > 0 || (floor?.root ?? 0) > 0;
+    const whole = layout.roots.length + (already ? 1 : 0);
+    const shown = layout.roots.slice(0, whole <= room ? layout.roots.length : Math.max(0, room - 1));
+    return { said, tests, room, shown };
+  };
+
+  let page = fit(stored);
+  if (page === null) return [];
+  // A sentence the printed roots do not arm holds no line, so the roots are fitted
+  // without it, up to the first that would arm it: the two cannot both have the line.
+  const unarmed = stored.filter((p) => p.onPage && !p.onPage(page.shown));
+  if (unarmed.length > 0) {
+    const without = fit(stored.filter((p) => !unarmed.includes(p)));
+    const arms = without.shown.findIndex((_, i) => unarmed.some((p) => p.onPage(without.shown.slice(0, i + 1))));
+    page = { ...without, shown: arms === -1 ? without.shown : without.shown.slice(0, arms) };
+  }
+  const { tests, room, shown } = page;
   const gaveWay = layout.roots.slice(shown.length);
 
   const lines = [LAYOUT_HEADING, ""];
@@ -343,6 +418,7 @@ export function renderLayout(layout, budget = Infinity) {
   if (fold && shown.length < room) lines.push(fold);
 
   if (tests) lines.push(tests);
+  const said = page.said.map((p) => p.sentence);
   if (said.length > 0) lines.push("", ...said);
 
   lines.push("");

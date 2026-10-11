@@ -9,6 +9,11 @@ tracked source, counts conventions per directory, and writes the result into `.c
 overview that loads on every turn, and one file per directory that loads when the agent opens a
 file there. `anatomiya check` then tells a branch which of those counted conventions it broke.
 
+It reads JavaScript, TypeScript and Ruby in depth, the script blocks of Vue and Svelte files, and
+Python, PHP, Go, Java, C#, Rust and Kotlin for one to three dimensions each.
+[What it measures](#what-it-measures) counts the dimensions per language, and [Limits](#limits)
+says what each language gets and what is not read.
+
 It does not write opinions. Every line it emits is a count with a denominator, taken from your own
 code, and it only states a rule when the count clears every gate. When a count fails a gate, the
 count still prints and the rule does not.
@@ -31,7 +36,9 @@ and out of how many.
 
 Needs Node 22 or newer: on an older one `/anatomiya:doctor` names the version it found, every
 other command refuses with the same sentence before it does any work, and the hooks answer with
-nothing, so the map is neither delivered nor refreshed but no session is interrupted. Ruby dimensions also want
+nothing, so the map is neither delivered nor refreshed but no session is interrupted.
+
+Ruby dimensions also want
 `ruby` on `PATH` with `prism` 1.x: Ruby 3.4 or newer ships it, and on an older Ruby (2.7 or newer)
 `gem install prism` adds it, which the parser then loads in place of the older default. That
 `ruby` is whichever answers first in `PATH`'s absolute directories (an empty or relative entry
@@ -57,10 +64,21 @@ error in the PowerShell Claude Code falls back to on Windows without Git Bash, w
 /plugin install anatomiya@crisnahine
 ```
 
-The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`, and `/plugin
+The scanner has three runtime dependencies, `oxc-parser`, `flow-remove-types` and
+`web-tree-sitter`, and `/plugin
 install` installs them for you: Claude Code runs `npm ci --ignore-scripts` in a plugin's own
 directory when it finds a lockfile there, and this plugin ships one. There is no setup step in the
 ordinary case.
+
+`web-tree-sitter` is the WebAssembly runtime for the seven grammars the plugin carries as `.wasm`
+files under `plugins/anatomiya/grammars/`: Python, PHP, Go, Java, C#, Rust and Kotlin. Nothing is downloaded for them, and none of the seven
+needs its own toolchain on your machine: Node runs all of them.
+Each file is a copy of the one in its grammar's npm package, and `plugins/anatomiya/grammars/grammars.json` records
+the package, the version and the SHA-256 of each. `/anatomiya:doctor` loads them, hashes each
+against that record, and prints how many passed on its `tree-sitter` line, `grammars: 7 of 7`; one
+that does not load, that the runtime turns away by its language version, or that is not the file
+the plugin shipped, is named there, and the fix is to reinstall the plugin, since no package install
+writes a grammar file.
 
 When nothing was installed, `/anatomiya:doctor` says so in its first line. When an install ran and
 stopped short, its engine lines say which one did not load. One command answers both:
@@ -80,7 +98,7 @@ Or skip the plugin and run it from a clone:
 
 ```
 git clone https://github.com/crisnahine/anatomiya
-cd anatomiya && npm install
+cd anatomiya && npm install --ignore-scripts
 node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo
 ```
 
@@ -92,7 +110,10 @@ Then, in the repository you want mapped:
 
 It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
 `.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan
-without writing anything.
+without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
+as well, which is [Other tools](#other-tools). The one other file a scan can change is
+`.claude/settings.local.json`: where it still holds the hook entry versions 0.2.4 to 0.2.6 put
+there, the scan takes that entry out.
 
 To keep the map out of git:
 
@@ -100,7 +121,12 @@ To keep the map out of git:
 exclude="$(git rev-parse --git-common-dir)/info/exclude"
 echo '.claude/rules/anatomiya-*.md' >> "$exclude"
 echo '.claude/anatomiya/' >> "$exclude"
+echo '.cursor/rules/anatomiya-*.mdc' >> "$exclude"
+echo '.github/instructions/anatomiya-*.instructions.md' >> "$exclude"
 ```
+
+The last two lines match files that exist only when the Cursor and Copilot targets are turned on,
+and do nothing otherwise.
 
 Where `.claude/rules` is a link to a shared directory, such as `.claude/rules -> ../agents/rules`, the
 map is written through it, and git sees those files only under the link's target. Name the target in
@@ -130,21 +156,36 @@ its worktree checks as if nothing had been pinned. That copy is a snapshot
 of the main checkout taken at that moment, with nothing saying so, where the hooks' borrowed map
 carries its source. `docs/research/why-a-worktree-got-no-map.md` has the sources for both.
 
-The two exclude lines, with the first naming a linked rules directory's target, are everything a scan
-leaves behind. Four hooks are declared by the plugin, in its own
-`hooks/hooks.json`, so nothing is written into your settings. The refresh keeps the map current, and
-is described under [Staying current](#staying-current). The echo re-delivers the map after a turn or
-a tool call when the context window does not already hold that same map. The notice runs before a
-`Write`, an `Edit` or a `NotebookEdit`, and speaks only for a path where a test is going into a
-directory whose kind of file has no test of its own anywhere: silent on every other write, which is
-nearly all of them. It informs and never refuses. The reuse check runs when a turn ends, and only after a turn that added source
-code: it asks, once per change, for one subagent to look for an existing function the new code could
-call instead, and a session with no subagent tool to run that search itself. A migration, a schema
-dump such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function could be written with
-are not asked about. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
-through 0.2.6 did write one into `.claude/settings.local.json`, where the plugin path it names is never
-substituted and Claude Code refuses the hook by name on every prompt; a scan takes that entry out when
-it finds one, and leaves everything else in the file alone.
+A Cursor or Copilot target is on per checkout, so a worktree that arrives without that target's
+overview file starts with it off. To carry one in, add its line:
+
+```
+**/.cursor/rules/anatomiya-*.mdc
+**/.github/instructions/anatomiya-*.instructions.md
+```
+
+The four exclude lines under [Quick start](#quick-start), with the first naming a linked rules
+directory's target, cover everything a scan leaves behind: the first two on every scan, the last two
+only where a target is on.
+
+Four hooks are declared by the plugin, in its own `hooks/hooks.json`, so a scan adds nothing to your
+settings. Versions 0.2.4 through 0.2.6 did write a hook entry into `.claude/settings.local.json`,
+where the plugin path it names is never substituted and Claude Code refuses the hook by name on
+every prompt; a scan takes that entry out when it finds one, and leaves everything else in the file
+alone. What the four do:
+
+- **The refresh** keeps the map current, and is described under [Staying current](#staying-current).
+- **The echo** re-delivers the map after a turn or a tool call when the context window does not
+  already hold that same map.
+- **The notice** runs before a `Write`, an `Edit` or a `NotebookEdit`, and speaks only for a path
+  where a test is going into a directory whose kind of file has no test of its own anywhere: silent
+  on every other write, which is nearly all of them. It informs and never refuses. `check` asks the
+  same question of a whole branch, as `test_precedent`.
+- **The reuse check** runs when a turn ends, and only after a turn that added source code: it asks,
+  once per change, for one subagent to look for an existing function the new code could call
+  instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
+  such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
+  could be written with are not asked about.
 
 > [!NOTE]
 > A session that is already running holds the overview it started with, and gets a changed one
@@ -156,16 +197,39 @@ it finds one, and leaves everything else in the file alone.
 After the first `/anatomiya:scan` in a checkout, you do not run it again. At the start of every
 session, and whenever HEAD moves (a checkout, a commit, a pull, a merge, a reset), the plugin starts
 a background refresh that rescans only when something the map depends on changed: the commit, the
-tracked files, the pin, this plugin's version, whether the repository holds packages, or where
-`typescript` resolves. It watches the reflog, or, where there is none, the reftable backend's table
+tracked files and what is staged, the pin, this plugin's version, whether the repository holds
+packages, which root config the type checker reads (`tsconfig.json`, `tsconfig.base.json` or
+neither), or where `typescript` resolves and at what version. It watches the reflog, or, where there is none, the reftable backend's table
 list or the index, so a repository created without a reflog or on reftable refreshes on every move
 too. The hook returns at once and the scan runs detached, so nothing waits on it. Each rescan
-decides on its own whether to run the type checker, the same way `/anatomiya:scan` does. It leaves
+decides on its own whether to run the type checker, the same way `/anatomiya:scan` does, with one
+exception: where the last scan measured the checker as degraded and nothing it reads has changed
+since, the rescan keeps that verdict and does not run it. After a failed run of the checker the
+next rescan runs it again, and from the second failed run in a row it keeps that verdict the same
+way. It leaves
 alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
-failed until one succeeds. A committed map's `.claude/anatomiya/layout.json` comes along but does
+failed until one succeeds. A Cursor or Copilot directory a rescan could not write, for a locked file
+or a missing write permission, is tried again each half hour for as long as it stays so. A scan run
+by hand prints why and ends that retry until the checkout moves. A committed map's `.claude/anatomiya/layout.json` comes along but does
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
+
+A map written by 0.13.4 or earlier is rewritten by the first scan or refresh of 0.14.0, and it
+will differ. A committed map is not refreshed, so scan it by hand and commit the result. Expect:
+
+- one more "Not covered" line, or a longer one, for files in a language the map does not read
+  (`.erb`, `.haml`, `.scss`), and often one or two root lines fewer to make room for it;
+- a smaller `N of M` in a root's namesake count, where the root holds a test directory of its own:
+  the helpers and fixtures under it are not files a test could be written for, so they left M;
+- `, in .rb files` or the like on a claim line, where the area holds three or more files the claim
+  is never asked of;
+- areas, test counts and claims for Python, PHP, Go, Java, C#, Rust and Kotlin, and for the script
+  blocks of `.vue` and `.svelte` files, where the repository holds any;
+- no count line for the type-checked claim where the checker reads `degraded`;
+- at the 500-area ceiling, small areas giving their place to larger ones of a newly read language.
+
+The 0.14.0 section of [CHANGELOG.md](CHANGELOG.md) has the counts, measured on 35 repositories.
 
 A session started in the directory that holds your checkouts, which has no map of its own, refreshes
 and watches each mapped checkout directly below it, and the reuse check reads each one's change,
@@ -198,7 +262,8 @@ pin of its own reads its main checkout's.
 ## What it prints
 
 A first run against [excalidraw](https://github.com/excalidraw/excalidraw) at `438d898`, a public
-React and TypeScript repository, on a 4-CPU Linux container, with the root path shortened:
+React and TypeScript repository, on a 4-CPU Linux container, with the root path shortened. The
+build that became 0.11.0 printed it, so the engine version and the counts are that build's:
 
 ```
 693 files, 38 areas, 3409ms, root /Users/me/code/excalidraw
@@ -342,10 +407,19 @@ spends no directive line; `check` still enforces it at full severity. A partial 
 its `(partial: ...)` warning on either kind of line. A claim reading `files here are named kebab-case` learned its class from the area's own
 files, so the same row states a different sentence in a different repository.
 
+A claim ending `, in .ts files` was counted over those files alone. The area also holds three or
+more files the dimension is never asked of, `.vue` components or Ruby files, and the area file
+loads for them too, so the line says which files it speaks for. One or two such files earn no
+clause.
+
 ## What it measures
 
-58 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. Each is one claim about
-one area, with a precision marker where the predicate cannot see every site. Among them:
+61 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby, and one more for
+JavaScript and JSX that needs the type checker. A Vue or Svelte script
+block is asked most of the JavaScript ones: 24 for Vue, 24 for Svelte. Three are asked of the
+languages a tree-sitter grammar reads, each where measured repositories differ on it: 2 for
+Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for Rust, 1 for Kotlin. Each is one claim
+about one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
   translation calls, Rails migrations and callbacks, and the rest of the registry in
@@ -368,11 +442,11 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 
 | Command | What it does |
 |---|---|
-| `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. |
+| `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. With `--targets cursor,copilot` it writes the same map for those tools too ([Other tools](#other-tools)). |
 | `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
 | `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Exits 0 either way. |
-| `/anatomiya:setup` | Installs the node-hosted engine's dependencies in the plugin's own directory. The only command that installs anything or reaches a package registry, and no other one runs it. On Windows it prints the command to run by hand. |
+| `/anatomiya:setup` | Installs the packages the two node-hosted engines load, in the plugin's own directory. The grammar files are not packages: they ship in the plugin, and a damaged one is fixed by reinstalling the plugin. The only command that installs anything or reaches a package registry, and no other one runs it. On Windows it prints the command to run by hand. |
 
 The three that read a repository take `--format json`, which prints the same answer as a record
 rather than as lines, for a CI job or another tool to read. `check` also takes `--format github`,
@@ -383,6 +457,135 @@ so this branch is the first. Severity caps at FIX whenever the map is stale, the
 partial, there was no merge base, or the area file never delivered the claim to that file in full,
 so a clean run under a cap is a weaker signal rather than a clean bill. Each finding says which cap
 applied.
+
+## Other tools
+
+The same map can be written for Cursor and for GitHub Copilot. It is off until a scan is asked for
+it, or a clone brings a committed overview file with it. To ask:
+
+```
+node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo --targets cursor,copilot
+```
+
+Inside Claude Code, ask `/anatomiya:scan` for the Cursor or Copilot map and it passes the flag. The
+scan then writes two more copies, an overview and one file per area in each, with the frontmatter
+that tool reads: `.cursor/rules/anatomiya-*.mdc` for Cursor and
+`.github/instructions/anatomiya-*.instructions.md` for Copilot. Name one of the two to get one.
+
+```
+wrote 4 files
+wrote 4 files under .cursor/rules for Cursor
+wrote 4 files under .github/instructions for GitHub Copilot
+```
+
+The three copies hold one body: the same directories, sentences, areas and counts. A Cursor or
+Copilot overview is two lines longer than the `.claude/rules` one, 42 where that one is 40, for the
+line that makes it load on every turn and the line saying a scanner wrote it, and three where an
+area has no file there.
+
+You pass the flag once. A target stays on while its `anatomiya-overview` file is in its directory,
+so every later scan, and the background refresh, keeps writing it. Nothing else remembers the
+choice. The flag names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns
+both off and removes the files this tool wrote there. A scan that drops a target says so:
+`removed 4 files under .github/instructions`, then `.github/instructions is off now`. Deleting a target's overview file by hand
+turns it off as well, and the next scan removes the area files beside it. The two directories stay,
+holding none of this tool's files. In a clone that brings a committed overview file, the first scan
+says on that directory's line which file switched the target on and what switches it off:
+
+```
+wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-overview.mdc switched on: `scan --targets claude` switches it off
+```
+
+`/anatomiya:doctor`, run inside the repository, prints a line for
+each target that is on, and a second where its directory holds other entries named `anatomiya-*`.
+
+Both directories are ones people write rules in, so a scan is strict there. It never writes over a
+file it did not write: where one sits at a name the map needs, a scan that names the target refuses,
+writes nothing anywhere, and says which file to move. It writes through no link: `.cursor`,
+`.cursor/rules`, `.github` and `.github/instructions` each have to be a real directory of the
+repository, or not exist yet. Your own rule files there are not opened and not reported. Only
+entries named `anatomiya-*` are looked at.
+
+A target that is on and whose directory cannot be written does not stop a scan that did not name
+it. The scan writes the `.claude/rules` map, leaves that directory as it is and says so:
+
+```
+.cursor/rules could not be written (.cursor/rules is not writable), so nothing there was written or removed: fix its permissions, then scan again
+```
+
+A scan that names the target refuses.
+
+A file there that is locked or read-only is the same case one level down. A scan that did not name
+the target puts back what it had replaced in that directory, writes the `.claude/rules` map and the
+other copy, exits 0 and says:
+
+```
+.cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change its mode, then scan again
+```
+
+A scan that names the target stops there and puts back every file it had replaced. A locked file in
+`.claude/rules` stops any scan the same way.
+
+The last two exclude lines under [Quick start](#quick-start) keep both copies out of git. To commit
+one instead, leave its exclude line out and commit its files. GitHub's documentation says the cloud
+agent and code review on GitHub.com read `.github/instructions` from the repository. Nothing here
+observed that.
+
+What the background refresh does then depends on which files git tracks:
+
+- **A target's overview file.** The refresh leaves that target's files as the commit has them and
+  keeps the other copies current.
+- **A target's area files and not its overview.** The refresh rewrites them, so `git status` shows a
+  change nobody made. Commit the overview with them.
+- **The `.claude/rules` map.** The refresh leaves the repository alone: nothing is rewritten, the
+  Cursor and Copilot copies included, whether git tracks those or not.
+
+A scan you run by hand rewrites every copy that is on.
+
+A teammate's clone of a repository that commits a copy holds the files and no record of them: the
+record is in `.claude/anatomiya/`, which the exclude lines keep out of git. A plain scan removes an
+area file only where the record names it. So in that clone the file of an area that has since gone
+stays in the directory as a rule file, and every scan counts it:
+
+```
+.cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was left as it is
+```
+
+To clear it, run `scan --targets claude`, which removes every file of this tool from both
+directories, then name the targets again.
+
+What a Cursor or Copilot user gets is the map's files, and not the rest of this tool.
+
+**No hooks.** The four hooks are Claude Code's. In Cursor and Copilot nothing hands the overview
+back during a long run, nothing speaks before a test is written where none belongs, nothing asks
+about reuse when a turn ends, and nothing rescans. Those copies change when a Claude Code session's
+refresh, or a scan by hand, rewrites them. Each overview there says under its heading that the code
+is right where the two disagree.
+
+**The patterns are looser.** Neither reader that was run takes a pattern that leaves a subtree out,
+and the other Copilot surfaces document none, so an area file's patterns can match files the area
+excluded, such as a `fixtures` directory under `test`, and its last lines say which. VS Code also
+matches a pattern under any parent directory. An area under a directory name one of the tools
+cannot be given, one holding a double quote for instance, has no file there, and the scan says how
+many areas have none:
+
+```
+1 area has no pattern Cursor can be given, so no file under .cursor/rules covers it
+```
+
+**VS Code is offered each area twice with the Copilot target on.** VS Code already reads
+`.claude/rules/`, so its agent is offered the `.claude/rules` file and the `.github/instructions`
+file for the same area. The Copilot target is for the Copilot surfaces that read only
+`.github/instructions`.
+
+**Delivery is not measured.** For Cursor it was read from the code of the 3.20.21 app, where an
+area's rule goes to the agent the first time it reads a matching file, and it was not watched in a
+running Cursor. For Copilot the generated files were run through the parser and matcher of VS Code
+1.140.0, and no other Copilot surface was read or run. Both copies are files in the right place and
+the right shape. Only the channel into Claude Code is measured.
+
+**Codex is not written for.** By its documentation it reads one `AGENTS.md` per directory, with no
+path scoping and 32 KiB for all of them by default, so an area file has no place there.
 
 ## How it is tested
 
@@ -437,17 +640,87 @@ preventable by a conventions map. Any claim that this finds bugs earlier is fals
 writes blocks a commit, a push, or a merge, and `check` reports rather than fails. If your linter
 already enforces a rule, the map restating it is waste, not defence in depth.
 
-**JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
-with a layout section and no claims in it. One of the 58 needs the type checker and is the only
+**JavaScript, TypeScript and Ruby are read in depth, and seven more languages for one to three
+dimensions each.** Python, PHP, Go, Java, C#, Rust and Kotlin are read through the seven grammars the plugin
+carries. Each gets the layout section, its test files and namesake tests by the language's own
+naming, and the rows counted under [What it measures](#what-it-measures). A map of one of them
+mostly prints counts and states a claim only where a directory is consistent: a scan of fastapi
+states 1 of 82 claims, hugo 0 of 103, ktor 0 of 133 and tokio 14 of 33. A Go package that sits at the
+repository root, which is how a Go library is laid out, is an area of its own, named `the repository
+root`, whose pattern (`/*.go`) matches the root's `.go` files and none below: gin's map has 4 areas,
+40 files in the root one, and its overview says `53 at the repository root` and `2 source files sit
+in no area (at the repository root, under the per-directory floor, or under a name no glob can
+spell)`. No other language gets one. With `scan --targets cursor,copilot`, Cursor gets that area as
+`*.go`, and Copilot gets no file for it, since VS Code matches such a pattern at every depth: the
+Copilot overview says `1 area has no pattern GitHub Copilot can be given, so no file here covers it:
+the repository root.` None of the seven gets the
+type checker, the "most imported from here" lines or the end-of-turn reuse check. The notice before
+a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of the seven. Neither says anything of a Go, Java,
+Kotlin or C# test that sits in the one place its language's tool reads it from. No `.rs` file is
+asked, since cargo collects by place and a Rust test has no name. A file of any other language is not read: "What lives where" counts it, and
+"Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
+
+Each of the seven gets its test files and the layout section. None gets a naming row or an imports
+row. A row is asked of a language only where three measured repositories of it differ. For Java,
+C#, Rust and Kotlin each language's own parser was run in a container over the same three
+repositories: every file a grammar could not read in those four is one its compiler accepts, and no
+file a grammar read is one its compiler rejects (`docs/measurements/2026-10-08-reference-parsers.md`,
+`DECISIONS.md` B60, B63):
+
+| Language | A test file is | Rows asked | Measured or weighed, and not asked |
+|---|---|---|---|
+| Python | `test_*.py`, `*_test.py`, `conftest.py` | doc comments, return types | handlers (1.0000 in all three); naming (0.99 to 1.00); imports (a default) |
+| PHP | `*Test.php` under a test tree | doc comments, return types, handlers | naming (1.00); imports (the language has no wildcard form) |
+| Go | `_test.go` | doc comments | naming (a name's case is its visibility); imports (a dot import is 1 of 9,863 lines) |
+| Java | `*Test`, `*Tests`, `*IT` under a test tree | doc comments, handlers | naming (1.0000 in all three); imports (a default) |
+| C# | `*Tests`, `*Test` under a test tree | doc comments | handlers (repositories differ by 0.10); naming (1.0000); imports (no wildcard form) |
+| Rust | a `.rs` file directly under a crate's `tests`; one holding a `#[test]` with a `tests` directory anywhere above it, or named `tests.rs` | doc comments | naming (the compiler lints it); imports (repositories differ by 0.10) |
+| Kotlin | `*Test`, `*Tests`, `*IT` under a test tree | doc comments | handlers (repositories differ by 0.12); naming (0.95 to 1.00); imports (ktlint's default rule) |
+
+The bar is one repository under 0.90 and a spread of 0.15. No filename claim is asked of any of the
+seven, for the same reason. `DECISIONS.md` rows C50 to C54 and H52 hold the numbers.
+
+**A grammar reads less than its language.** A file a grammar cannot read is left out of every
+count, and the scan and the overview say how many there were: `82 files could not be read by this
+tool's grammar` on ktor. Measured on three repositories per language, that is under 1% of the
+lines of every Python, PHP, Go, Java and Rust one, 4.35% of serilog's C#, and 1.32% to 7.88% of the
+three Kotlin ones, where the grammar misses new syntax (context parameters, `$$` strings) and some
+old (a local named `in1`, `get(` on the line after a `val`). A C# file with `#if` inside an
+expression is read with the first branch of each conditional kept, and the scan counts those files
+too. A Python stub (`.pyi`) is not read.
+
+One of the 61 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
-as no dependencies), and the repository has a root `tsconfig.json` or a TypeScript source file that
-is not a declaration file, and leaves it off otherwise. Plain JavaScript run on the compiler's
+as no dependencies), and the repository has a root `tsconfig.json`, a root `tsconfig.base.json`
+where there is none, or a TypeScript source file that is not a declaration file, and leaves it off
+otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
-`jsconfig.json` does not count. It costs: a scan with it measured about 5x a plain one on a
-3,800-file repository and about 10x on a 2,600-file one, and the checker is whole-program, so it
-cannot be narrowed to the files you changed. The map says when the checker answered badly.
+`jsconfig.json` does not count.
+
+It costs: on typeorm, where a scan reads 3,347 files, a scan with the checker took 5.6 to 5.7
+seconds against 1.3 without it, about 4.5 times, and the checker is whole-program, so it
+cannot be narrowed to the files you changed. The map says when the checker answered badly, and
+prints no count for this claim then. While that answer stands and the plugin version, the root
+config, and the size and modification time of `node_modules` and of the install record in it are
+unchanged, a background refresh keeps the answer without running the checker; `/anatomiya:scan` always runs it.
+A failed run, such as a checker whose child aborted, is followed by one more run on the next
+refresh, and its answer is kept the same way from the second failed run in a row.
+An edit to a config the root config extends or references does not end a carried verdict.
+An install starts no refresh by itself, so after one the checker is measured by the next refresh a
+commit, a checkout or a pull starts, or by a scan you run. On four repositories that read degraded, that
+took a refresh from 4.4s to 21.2s down to 1.2s to 3.8s.
+
+**A Vue or Svelte file is read for its script block, never its template.** The `<script>` blocks
+of a `.vue` or `.svelte` file go through the same parser as a `.ts` file, and the lines `check`
+reports are the file's own. Three dimensions whose answer is in the template are left out for both:
+`module-level bindings are const`, `optional values are read with ?.` and `imports used only as
+types are marked import type`. `failure is returned, not thrown` is left out for Vue, and `a module
+that exports a hook exports one` for Svelte. The five JSX dimensions and the type-checked one are
+never asked of a component. Nothing is counted about markup: its directives, its event bindings, or
+which components it renders. The overview says so for any repository that holds a `.vue` or `.svelte` file:
+`of 17 .vue and .svelte files only the script block is read; the template is not`.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
 files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 205 of 2,468
@@ -467,7 +740,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 263 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 297 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
@@ -477,8 +750,8 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 ## Development
 
 ```
-npm install
+npm install --ignore-scripts
 node --test 'test/**/*.test.mjs'
 ```
 
-ES modules, `.mjs`, Node 22 or newer, two runtime dependencies.
+ES modules, `.mjs`, Node 22 or newer, three runtime dependencies.

@@ -17,7 +17,8 @@
 import { posix } from "node:path";
 
 import { SOURCE_OF } from "./companions.mjs";
-import { extOf, withoutExtension, byCode } from "./paths.mjs";
+import { embeddedIn, language } from "./langs.mjs";
+import { dirOf, extOf, withoutExtension, byCode } from "./paths.mjs";
 
 /**
  * The packages a JSX area cannot be written without, so importing one says
@@ -49,6 +50,9 @@ const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"
 // The prefixes a repository points at its own root with. Stripped before the
 // tail match, or `@/utils/user` looks for a directory literally called `@`.
 const ALIASES = ["~/", "@/", "#/", "src/"];
+
+// SvelteKit's alias for the `src/lib` of the importer's own project. A `svelte.config.js` that repoints it is not read.
+const LIB_ALIAS = "$lib/";
 
 /**
  * The modules most files in an area import, top three.
@@ -109,22 +113,32 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   // is never `base.ts`.
   const dirOnly = spec.endsWith("/");
   if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
-    const at = posix.join(posix.dirname(importerRel), spec).replace(/\/+$/, "");
-    const indexes = EXTENSIONS.map((e) => `${at}/index${e}`);
-    const candidates = dirOnly ? indexes : [at, ...emittedFrom(at), ...EXTENSIONS.map((e) => at + e), ...indexes];
-    for (const candidate of candidates) {
-      if (corpusRels.has(candidate)) return candidate;
-    }
-    return null;
+    return fileAt(posix.join(posix.dirname(importerRel), spec), dirOnly, corpusRels);
+  }
+
+  if (spec.startsWith(LIB_ALIAS)) {
+    // Never the tail match below: two apps each hold a `src/lib/utils.ts`,
+    // and a `tools/lib` is nobody's `$lib`.
+    return inProject(importerRel, [posix.join("src/lib", spec.slice(LIB_ALIAS.length))], dirOnly, corpusRels);
   }
 
   const alias = ALIASES.find((a) => spec.startsWith(a));
-  const tail = (alias ? spec.slice(alias.length) : spec).replace(/\/+$/, "");
+  const tail = withoutTrailingSlashes(alias ? spec.slice(alias.length) : spec);
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
-  const index = tailIndex(corpusRels);
+  // A component's package keeps its components under the names another
+  // package's modules have, and a component answers no bare tail: the tail
+  // match below would hand its import to the one file left, in the other
+  // package. A module's alias stays a tail, since a root such as `~/` for
+  // `modules/` sits beside its importers and above none of them.
+  if (alias && embeddedIn(language(importerRel)) !== null) {
+    return inProject(importerRel, [tail, posix.join("src", tail)], dirOnly, corpusRels);
+  }
+  const { stems: index, spelled } = tailIndex(corpusRels);
   if (dirOnly) return index.get(`/${tail}/index`) ?? null;
+  const named = spelled.get(`/${tail}`);
+  if (named !== undefined) return named;
   const whole = index.get(`/${tail}`);
   if (whole !== undefined) return whole;
   // The index is keyed without extensions, so a tail that writes one is looked
@@ -133,6 +147,131 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   const ext = extOf(tail);
   const found = index.get(`/${withoutExtension(tail)}`) ?? null;
   return found !== null && [ext, ...(SOURCE_OF[ext] ?? [])].includes(extOf(found)) ? found : null;
+}
+
+/**
+ * A path with the slashes it ends in taken off, by a walk from its end: a
+ * pattern anchored there tries every start in a run of slashes elsewhere in a
+ * specifier as written, and 80,000 of them held one import for 3.4 seconds.
+ */
+function withoutTrailingSlashes(path) {
+  let end = path.length;
+  while (end > 0 && path[end - 1] === "/") end -= 1;
+  return path.slice(0, end);
+}
+
+/**
+ * The one file `paths` name under a directory above the importer, or null.
+ *
+ * Null where two directories answer with different files: the alias means one
+ * root and no path says which, and the nearest is a feature's own
+ * `components` as often as it is the project's.
+ *
+ * Asked of an index of path tails, never by building each path under each
+ * directory: that cost grows with the square of the importer's depth, and one
+ * component 400 directories down holds a scan for 33 seconds on 4,000 imports.
+ */
+function inProject(importerRel, paths, dirOnly, corpusRels) {
+  const index = projectIndex(corpusRels);
+  const above = directoriesAbove(posix.dirname(importerRel), index);
+  const found = new Set();
+  for (const path of paths) {
+    // What `posix.join` makes of the path under any directory: the steps it climbs, then the rest.
+    const segments = withoutTrailingSlashes(posix.join(".", path)).split("/");
+    const climbs = segments.filter((segment) => segment === "..").length;
+    const rest = segments.slice(climbs).join("/");
+    const named = rest === "" || rest === "." ? directoriesNamed(above, climbs, dirOnly, corpusRels) : tailsNamed(rest, above, climbs, dirOnly, index);
+    for (const file of named) found.add(file);
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
+
+/** The files `rest` names under each directory at least `climbs` steps above the importer's: the first spelling each directory holds. */
+function tailsNamed(rest, above, climbs, dirOnly, index) {
+  const named = [];
+  const answered = new Set();
+  for (const candidate of candidatesAt(rest, dirOnly)) {
+    const held = index.tails.get(candidate);
+    if (held === undefined) continue;
+    const alone = typeof held === "string";
+    // The shorter of the two is walked, so neither a deep importer nor a tail a thousand files end in sets the cost alone.
+    const fewer = alone ? [held] : held.size <= above.steps.size ? held.keys() : above.steps.keys();
+    for (const prefix of fewer) {
+      if (!(alone || held.has(prefix)) || !(above.steps.get(prefix) >= climbs) || answered.has(prefix)) continue;
+      answered.add(prefix);
+      named.push(prefix === "" ? candidate : `${prefix}/${candidate}`);
+    }
+  }
+  return named;
+}
+
+/** The files a path that is itself a directory above the importer names: `a/b` as `a/b.ts` or `a/b/index.ts`. */
+function directoriesNamed(above, climbs, dirOnly, corpusRels) {
+  let files = above.named.get(dirOnly);
+  if (files === undefined) {
+    files = above.dirs.map((dir) => (dir === "" ? null : fileAt(dir, dirOnly, corpusRels)));
+    above.named.set(dirOnly, files);
+  }
+  const named = new Set();
+  for (let step = climbs; step < files.length; step++) if (files[step] !== null) named.add(files[step]);
+  return named;
+}
+
+/** Every directory above one, nearest first and the repository's top last as `""`, built once for each importer's directory. */
+function directoriesAbove(dir, index) {
+  const cached = index.above.get(dir);
+  if (cached) return cached;
+
+  const dirs = [];
+  for (let at = dir === "." ? "" : dir; at !== ""; at = dirOf(at)) dirs.push(at);
+  dirs.push("");
+  const built = { dirs, steps: new Map(dirs.map((at, step) => [at, step])), named: new Map() };
+  index.above.set(dir, built);
+  return built;
+}
+
+/**
+ * Every whole tail of every path in the corpus, extension kept, and the
+ * directories each sits under. Built on the first alias `inProject` answers, so
+ * a repository with none pays nothing, and memoised on the set as the tail
+ * index below is.
+ *
+ * A tail one directory holds is kept with that directory as itself, and with a
+ * set from the second: most tails are one file's, and a set for each retained
+ * 195 MB on 100,000 files eight segments deep.
+ */
+const PROJECT_INDEX = new WeakMap();
+
+function projectIndex(corpusRels) {
+  const cached = PROJECT_INDEX.get(corpusRels);
+  if (cached) return cached;
+
+  const tails = new Map();
+  for (const rel of corpusRels) {
+    for (let cut = -1, last = false; !last; cut = rel.indexOf("/", cut + 1)) {
+      const tail = rel.slice(cut + 1);
+      const prefix = rel.slice(0, Math.max(cut, 0));
+      const held = tails.get(tail);
+      if (held === undefined) tails.set(tail, prefix);
+      else if (typeof held === "string") tails.set(tail, new Set([held, prefix]));
+      else held.add(prefix);
+      last = !tail.includes("/");
+    }
+  }
+  const built = { tails, above: new Map() };
+  PROJECT_INDEX.set(corpusRels, built);
+  return built;
+}
+
+/** The file a path names as written, through an extension it leaves off or emits, or as a directory's index. */
+function fileAt(path, dirOnly, corpusRels) {
+  return candidatesAt(withoutTrailingSlashes(path), dirOnly).find((candidate) => corpusRels.has(candidate)) ?? null;
+}
+
+/** Every spelling of the file a path names, in the order a bundler tries them. */
+function candidatesAt(at, dirOnly) {
+  const indexes = EXTENSIONS.map((e) => `${at}/index${e}`);
+  return dirOnly ? indexes : [at, ...emittedFrom(at), ...EXTENSIONS.map((e) => at + e), ...indexes];
 }
 
 /** The TypeScript sources a path spelled with an emitted extension is compiled from. */
@@ -153,15 +292,23 @@ function tailIndex(corpusRels) {
   if (cached) return cached;
 
   const index = new Map();
+  // A component answers only a tail that spells its extension, as a bundler
+  // resolves it; answering by its stem makes the module of its name beside it ambiguous.
+  const spelled = new Map();
   for (const rel of corpusRels) {
+    if (embeddedIn(language(rel)) !== null) {
+      register(spelled, rel, rel);
+      continue;
+    }
     const path = withoutExtension(rel);
     register(index, path, rel);
     // A directory resolves through its index file, so the directory's own tails
     // name it too.
     if (path.endsWith("/index")) register(index, path.slice(0, -"/index".length), rel);
   }
-  TAIL_INDEX.set(corpusRels, index);
-  return index;
+  const built = { stems: index, spelled };
+  TAIL_INDEX.set(corpusRels, built);
+  return built;
 }
 
 /**

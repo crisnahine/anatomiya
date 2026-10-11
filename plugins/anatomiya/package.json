@@ -1,6 +1,6 @@
 {
   "name": "anatomiya",
-  "version": "0.13.4",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "description": "Counts what your code already does, directory by directory, and writes those counts into .claude/rules/ where a coding agent picks them up when it reads a file there",
@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "flow-remove-types": "^2.333.0",
-    "oxc-parser": "^0.151.0"
+    "oxc-parser": "^0.151.0",
+    "web-tree-sitter": "^0.27.0"
   },
   "optionalDependencies": {
     "typescript": "^5.9.3"
@@ -19,6 +20,7 @@
     ".claude-plugin/plugin.json",
     "bin/",
     "commands/",
+    "grammars/",
     "hooks/",
     "lib/",
     "LICENSE",

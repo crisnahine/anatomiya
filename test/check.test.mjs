@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsUnreadableDirs } from "./platform.mjs";
-import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import { needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import fs, { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -21,6 +21,8 @@ import { renderArea } from "../plugins/anatomiya/lib/render.mjs";
 import { buildPin, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
+import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { runNotice } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 
 // The area record carries a glob in the two halves it is composed from.
 const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
@@ -190,6 +192,198 @@ test("a test added where its own siblings have none is a finding, and one added 
   assert.equal(found[0].severity, "FIX");
   assert.match(found[0].reason, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
 });
+
+// One tested directory and one bare one per language, each in the layout that language's repositories keep, and each a
+// root of its own: a module per directory where the build has modules, a project where it has projects.
+const PLACED = {
+  python: { source: (d, n) => [`src/${d}/m${n}.py`, `def f${n}():\n    return ${n}\n`], spec: (d, n) => [`src/${d}/test_m${n}.py`, `def test_f${n}():\n    assert True\n`] },
+  go: { source: (d, n) => [`${d}/m${n}.go`, `package ${d}\n\nfunc F${n}() int { return ${n} }\n`], spec: (d, n) => [`${d}/m${n}_test.go`, `package ${d}\n\nimport "testing"\n\nfunc TestF${n}(t *testing.T) {}\n`] },
+  java: {
+    source: (d, n) => [`${d}/src/main/java/shop/${d}/M${n}.java`, `package shop.${d};\n\nclass M${n} {\n}\n`],
+    spec: (d, n) => [`${d}/src/test/java/shop/${d}/M${n}Test.java`, `package shop.${d};\n\nimport org.junit.jupiter.api.Test;\n\nclass M${n}Test {\n    @Test\n    void runs() {}\n}\n`],
+  },
+  kotlin: {
+    source: (d, n) => [`${d}/src/main/kotlin/shop/${d}/M${n}.kt`, `package shop.${d}\n\nclass M${n}\n`],
+    spec: (d, n) => [`${d}/src/test/kotlin/shop/${d}/M${n}Test.kt`, `package shop.${d}\n\nimport kotlin.test.Test\n\nclass M${n}Test {\n    @Test\n    fun runs() {\n    }\n}\n`],
+  },
+  csharp: {
+    source: (d, n) => [`src/${d}/M${n}.cs`, `namespace Shop;\n\npublic class M${n}\n{\n}\n`],
+    spec: (d, n) => [`test/${d}.Tests/M${n}Tests.cs`, `namespace Shop.Tests;\n\npublic class M${n}Tests\n{\n    [Fact]\n    public void Runs() {}\n}\n`],
+  },
+  php: {
+    source: (d, n) => [`src/${d}/M${n}.php`, `<?php\n\nclass M${n}\n{\n}\n`],
+    spec: (d, n) => [`tests/${d}/M${n}Test.php`, `<?php\n\nclass M${n}Test extends TestCase\n{\n    public function testRuns(): void\n    {\n    }\n}\n`],
+  },
+};
+
+// Where the language's own tool fixes the one place a test sits, and the fixture's layout is that place.
+const FIXED = new Set(["go", "java", "kotlin", "csharp"]);
+
+for (const [lang, { source, spec }] of Object.entries(PLACED)) {
+  const title = FIXED.has(lang)
+    ? `${lang}: a first test added in the one place its tool reads it from is no finding`
+    : `${lang}: a test added where its own siblings have none is a finding, and one added beside theirs is not`;
+  test(title, async (t) => {
+    const dir = repo(t, ({ write, commit }) => {
+      for (let n = 0; n < 5; n++) {
+        write(...source("tested", n));
+        write(...spec("tested", n));
+        write(...source("bare", n));
+      }
+      commit("init");
+    });
+    writeMap(await scan(dir), {});
+    const { files } = await collect(dir);
+    writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+    const base = sha(dir);
+    for (const [rel, body] of [spec("tested", 9), spec("bare", 9)]) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), body);
+    }
+    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+    execFileSync("git", ["commit", "-qm", "two tests"], { cwd: dir, stdio: "pipe" });
+
+    const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+    if (FIXED.has(lang)) return assert.deepEqual(found, []);
+    assert.deepEqual(found.map((f) => [f.path, f.severity]), [[spec("bare", 9)[0], "FIX"]], JSON.stringify(found));
+    assert.match(found[0].reason, /holds no other test; .*bare: 0 of 5 \.\w+ files have a namesake test$/);
+  });
+}
+
+const five = (make, ...at) => [0, 1, 2, 3, 4].map((n) => make(...at, n));
+const goIn = (d, n) => [`${d}/m${n}.go`, `package ${d.split("/").at(-1)}\n\nfunc F${n}() int { return ${n} }\n`];
+const goTestIn = (d, n) => [`${d}/m${n}_test.go`, `package ${d.split("/").at(-1)}\n\nimport "testing"\n\nfunc TestF${n}(t *testing.T) {}\n`];
+const pyIn = (d, n) => [`${d}/m${n}.py`, `def f${n}():\n    return ${n}\n`];
+const pyTestIn = (d, n) => [`${d}/test_m${n}.py`, `def test_f${n}():\n    assert True\n`];
+const rustIn = (crate, n) => [`${crate}/src/m${n}.rs`, `pub fn f${n}() -> i32 { ${n} }\n`];
+const PY_TEST = "def test_x():\n    assert True\n";
+const rbIn = (d, n) => [`${d}/m${n}.rb`, `class M${n}\n  def run\n    ${n}\n  end\nend\n`];
+const rbSpecIn = (d, n) => [`${d}/m${n}_spec.rb`, `RSpec.describe M${n} do\n  it "runs" do\n  end\nend\n`];
+const jsIn = (d, n) => [`${d}/m${n}.js`, `export function f${n}() {\n  return ${n};\n}\n`];
+const jsTestIn = (d, n) => [`${d}/m${n}.test.js`, `import { test } from "node:test";\ntest("f${n}", () => {});\n`];
+const tsIn = (d, n) => [`${d}/m${n}.ts`, `export function f${n}(): number {\n  return ${n};\n}\n`];
+const tsTestIn = (d, n) => [`${d}/m${n}.test.ts`, `import { test } from "node:test";\ntest("f${n}", () => {});\n`];
+const RB_TREE = [...five(rbIn, "app/tested"), ...five(rbSpecIn, "spec/tested"), ...five(rbIn, "app/bare")];
+const JS_TREE = [...five(jsIn, "src/tested"), ...five(jsTestIn, "src/tested"), ...five(jsIn, "src/bare")];
+const TS_TREE = [...five(tsIn, "src/tested"), ...five(tsTestIn, "src/tested"), ...five(tsIn, "src/bare")];
+const PY_TREE = [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare")];
+const PHP_TREE = [...five(PLACED.php.source, "Tested"), ...five(PLACED.php.spec, "Tested"), ...five(PLACED.php.source, "Bare"), ["composer.json", "{}\n"]];
+const MAVEN_TREE = [...five(PLACED.java.source, "tested"), ...five(PLACED.java.spec, "tested"), ...five(PLACED.java.source, "bare"), ["pom.xml", "<project/>\n"]];
+const four = (make, ...at) => [0, 1, 2, 3].map((n) => make(...at, n));
+const paths = (files) => files.map(([rel]) => rel);
+
+// A first test, in the shapes a corpus of existing tests cannot hold: [name, the base tree, what the branch adds, the paths found].
+const FIRST_TESTS = [
+  ["Go: the first test of a package whose sibling package has its own",
+    [...five(goIn, "tested"), ...five(goTestIn, "tested"), ...five(goIn, "bare"), ["go.mod", "module x\n"]], [goTestIn("bare", 0)], []],
+  ["Go: a new package below an untested one, with its source and its test",
+    [...five(goIn, "tested"), ...five(goTestIn, "tested"), ...five(goIn, "bare"), ["go.mod", "module x\n"]], [goIn("bare/fresh", 0), goTestIn("bare/fresh", 0)], []],
+  ["Go: a new package below a directory that folds a tested one",
+    [...five(goIn, "pkg/tested"), ...five(goTestIn, "pkg/tested"), ...five(goIn, "pkg/bare"), ["go.mod", "module x\n"]], [goIn("pkg/fresh", 0), goTestIn("pkg/fresh", 0)], []],
+  ["Maven: a module's first src/test", [...five(PLACED.java.source, "tested"), ...five(PLACED.java.spec, "tested"), ...five(PLACED.java.source, "bare"), ["pom.xml", "<project/>\n"]], [PLACED.java.spec("bare", 0)], []],
+  ["C#: a project's first test project",
+    [...five(PLACED.csharp.source, "Tested"), ...five(PLACED.csharp.spec, "Tested"), ...five(PLACED.csharp.source, "Bare")], [PLACED.csharp.spec("Bare", 0), ["test/Bare.Tests/Bare.Tests.csproj", "<Project/>\n"]], []],
+  ["Python: a first test beside untested code, where the tested package keeps its tests beside its own",
+    [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare")], [pyTestIn("src/bare", 0)], ["src/bare/test_m0.py"]],
+  ["Python: a package's own tests directory, where tests live in a top-level tree",
+    [...five(pyIn, "pkga"), ...five(pyIn, "pkgb"), ...five(pyTestIn, "tests"), ["pkga/__init__.py", ""], ["pkgb/__init__.py", ""]], [["pkgb/tests/test_m0.py", PY_TEST]], []],
+  ["Python: one more test in the top-level tree",
+    [...five(pyIn, "pkga"), ...five(pyIn, "pkgb"), ...five(pyTestIn, "tests"), ["pkga/__init__.py", ""], ["pkgb/__init__.py", ""]], [["tests/test_other.py", PY_TEST]], []],
+  ["Rust: a crate's first tests directory",
+    [["Cargo.toml", `[workspace]\nmembers=["a","b"]\n`], ["a/Cargo.toml", `[package]\nname="a"\n`], ["b/Cargo.toml", `[package]\nname="b"\n`], ...five(rustIn, "a"), ...five(rustIn, "b"), ...[0, 1, 2, 3, 4].map((n) => [`a/tests/t${n}.rs`, `#[test]\nfn t${n}() {}\n`])],
+    [["b/tests/first.rs", "#[test]\nfn first() {}\n"]], []],
+  // The directory the test is about arrives with it, so the untested directory above has said nothing about it.
+  ["Python: a new package below an untested one, with its source and its test",
+    [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare")], [pyIn("src/bare/fresh", 0), pyTestIn("src/bare/fresh", 0)], [], ["src/bare/fresh/test_m0.py"]],
+  ["Python: a first test in a package the base already held below an untested one",
+    [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, "src/bare"), pyIn("src/bare/old", 9)], [pyTestIn("src/bare/old", 9)], ["src/bare/old/test_m9.py"]],
+  // A directory holding nothing but the tests the change wrote was made for them, and is the directory this asks about.
+  // The notice speaks of the first alone: once that one is written the directory holds a test.
+  ["Ruby: four specs in a directory the change invented, with no source directory of its name",
+    RB_TREE, four(rbSpecIn, "spec/bare/fresh"), paths(four(rbSpecIn, "spec/bare/fresh")), ["spec/bare/fresh/m0_spec.rb"]],
+  ["JavaScript: four tests in a directory the change invented, with no source beside them",
+    JS_TREE, four(jsTestIn, "src/bare/fresh/__tests__"), paths(four(jsTestIn, "src/bare/fresh/__tests__")), ["src/bare/fresh/__tests__/m0.test.js"]],
+  ["JavaScript: a test and its helper in a directory the change invented",
+    JS_TREE, [jsTestIn("src/bare/fresh/__tests__", 0), jsIn("src/bare/fresh/__tests__", 1)], ["src/bare/fresh/__tests__/m0.test.js"]],
+  // Beside the test, a file no test could be written for: the directory was still made for the test.
+  ["JavaScript: a test beside an empty index in a directory the change invented",
+    JS_TREE, [jsTestIn("src/bare/fresh", 0), ["src/bare/fresh/index.js", ""]], ["src/bare/fresh/m0.test.js"]],
+  ["JavaScript: a test beside a file in no language this reads, in a directory the change invented",
+    JS_TREE, [jsTestIn("src/bare/fresh", 0), ["src/bare/fresh/README.md", "# fresh\n"]], ["src/bare/fresh/m0.test.js"]],
+  ["JavaScript: a test beside a declaration file in a directory the change invented",
+    JS_TREE, [jsTestIn("src/bare/fresh", 0), ["src/bare/fresh/types.d.ts", "export declare const n: number;\n"]], ["src/bare/fresh/m0.test.js"]],
+  ["JavaScript: a test beside a story in a directory the change invented",
+    JS_TREE, [jsTestIn("src/bare/fresh", 0), ["src/bare/fresh/m0.stories.js", "export default { title: \"m0\" };\n"]], ["src/bare/fresh/m0.test.js"]],
+  ["Python: a test beside the file its runner loads, in a directory the change invented",
+    PY_TREE, [pyTestIn("src/bare/fresh", 0), ["src/bare/fresh/conftest.py", "import pytest\n\n@pytest.fixture\ndef client():\n    return 1\n"]], ["src/bare/fresh/test_m0.py"]],
+  ["Python: a test alone in a directory the change invented", PY_TREE, [pyTestIn("src/bare/fresh", 0)], ["src/bare/fresh/test_m0.py"]],
+  ["PHP: a test for a source directory that exists nowhere", PHP_TREE, [PLACED.php.spec("Bare/Fresh", 0)], ["tests/Bare/Fresh/M0Test.php"]],
+  ["Java: a test in a flat directory the build pairs with nothing",
+    MAVEN_TREE, [["bare/test/shop/bare/M0Test.java", PLACED.java.spec("bare", 0)[1]]], ["bare/test/shop/bare/M0Test.java"]],
+  ["Ruby: a first spec for a directory the base already held", [...RB_TREE, rbIn("app/bare/old", 9)], [rbSpecIn("spec/bare/old", 9)], ["spec/bare/old/m9_spec.rb"]],
+  ["Ruby: a new directory with its source and its spec",
+    RB_TREE, [rbIn("app/bare/fresh", 0), rbSpecIn("spec/bare/fresh", 0)], [], ["spec/bare/fresh/m0_spec.rb"]],
+  ["JavaScript: a new directory with its source and its test",
+    JS_TREE, [jsIn("src/bare/fresh", 0), jsTestIn("src/bare/fresh/__tests__", 0)], [], ["src/bare/fresh/__tests__/m0.test.js"]],
+  ["Python: a test in a directory the change invented, beside a file of another language and with source added elsewhere",
+    PY_TREE, [pyTestIn("src/bare/fresh", 0), jsIn("src/bare/fresh", 1), pyIn("src/tested", 7)], ["src/bare/fresh/test_m0.py"]],
+  // git lists the inner directory alone when asked of both, and the outer one is still the base's.
+  ["Python: tests for a package the base held and for one inside it, with source added to both",
+    [...PY_TREE, pyIn("src/bare/old", 9), pyIn("src/bare/old/deep", 8)],
+    [pyIn("src/bare/old", 7), pyIn("src/bare/old/deep", 6), pyTestIn("src/bare/old", 9), pyTestIn("src/bare/old/deep", 8)],
+    ["src/bare/old/deep/test_m8.py", "src/bare/old/test_m9.py"], ["src/bare/old/test_m9.py", "src/bare/old/deep/test_m8.py"]],
+  // A package's own test directory holds no source, so the base is asked of the package above it.
+  ...["test", "tests", "spec", "e2e"].flatMap((own) => [
+    [`JavaScript: a new package with its source and its test in its own ${own}`,
+      JS_TREE, [jsIn("src/bare/fresh", 0), jsTestIn(`src/bare/fresh/${own}`, 0)], [], [`src/bare/fresh/${own}/m0.test.js`]],
+    [`TypeScript: a new package with its source and its test in its own ${own}`,
+      TS_TREE, [tsIn("src/bare/fresh", 0), tsTestIn(`src/bare/fresh/${own}`, 0)], [], [`src/bare/fresh/${own}/m0.test.ts`]],
+    [`Ruby: a new package with its source and its spec in its own ${own}`,
+      RB_TREE, [rbIn("app/bare/fresh/lib", 0), rbSpecIn(`app/bare/fresh/${own}`, 0)], [], [`app/bare/fresh/${own}/m0_spec.rb`]],
+  ]),
+  ["JavaScript: a new package with its source, and its test two directories below it",
+    JS_TREE, [jsIn("src/bare/fresh", 0), jsTestIn("src/bare/fresh/sub/tests", 0)], [], ["src/bare/fresh/sub/tests/m0.test.js"]],
+  ["JavaScript: a new package inside one the base already held, with its source and its test in its own tests",
+    [...JS_TREE, jsIn("src/bare/old", 9)], [jsIn("src/bare/old/fresh", 0), jsTestIn("src/bare/old/fresh/tests", 0)], [], ["src/bare/old/fresh/tests/m0.test.js"]],
+  ["JavaScript: four tests in a tests directory the change invented, with source added elsewhere",
+    JS_TREE, [...four(jsTestIn, "src/bare/fresh/tests"), jsIn("src/tested", 7)], paths(four(jsTestIn, "src/bare/fresh/tests")), ["src/bare/fresh/tests/m0.test.js"]],
+  ["JavaScript: a test in a directory the change invented inside a package the base already held, with source added to the package",
+    [...JS_TREE, jsIn("src/bare/old", 9)], [jsIn("src/bare/old", 7), jsTestIn("src/bare/old/tests", 9)], ["src/bare/old/tests/m9.test.js"]],
+  ["Ruby: a spec in a directory the change invented inside a package the base already held, with source added to the package",
+    [...RB_TREE, rbIn("app/bare/old/lib", 9)], [rbIn("app/bare/old/lib", 7), rbSpecIn("app/bare/old/spec", 9)], ["app/bare/old/spec/m9_spec.rb"]],
+  ["JavaScript: a new package holding an empty index and a test in its own tests",
+    JS_TREE, [["src/bare/fresh/index.js", ""], jsTestIn("src/bare/fresh/tests", 0)], ["src/bare/fresh/tests/m0.test.js"]],
+];
+
+for (const [name, tree, added, found, noticed = found] of FIRST_TESTS) {
+  test(`a first test: ${name}`, name.startsWith("Ruby") ? needsRuby : {}, async (t) => {
+    const dir = repo(t, ({ write, commit }) => {
+      for (const [rel, body] of tree) write(rel, body);
+      commit("init");
+    });
+    writeMap(await scan(dir), {});
+    const { files } = await collect(dir);
+    writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+    const base = sha(dir);
+
+    // The notice is asked before each file exists, in the order a session writes them.
+    const said = [];
+    for (const [rel, body] of added) {
+      const write = { hook_event_name: "PreToolUse", tool_name: "Write", cwd: dir, tool_input: { file_path: join(dir, rel) } };
+      if ((await runNotice(dir, write)).hookSpecificOutput) said.push(rel);
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), body);
+    }
+    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+    execFileSync("git", ["commit", "-qm", "a first test"], { cwd: dir, stdio: "pipe" });
+
+    const report = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+    assert.deepEqual(report.map((f) => [f.path, f.severity]), found.map((rel) => [rel, "FIX"]), JSON.stringify(report));
+    assert.deepEqual(said, noticed, "the notice before the write");
+  });
+}
 
 test("a test still sitting in the working tree is asked the same question as a committed one", needsRuby, async (t) => {
   // The whole reason this reads the tree: the answer is wanted before the
@@ -1133,6 +1327,100 @@ test("our frontmatter with no map naming it is reported apart from a foreign fil
   const rendered = formatReport(r);
   assert.ok(rendered.includes("the map on disk does not name"));
   assert.ok(rendered.includes("anatomiya-area-99999999.md"));
+});
+
+/** One area, scanned for real and written to the targets named, with a branch to check. */
+async function mappedFor(t, targets) {
+  const dir = repo(t, ({ write, commit }) => {
+    for (let i = 0; i < 8; i++) write(`src/f${i}.ts`, clean(2));
+    commit("init");
+  });
+  writeMap(await scan(dir), { targets });
+  execFileSync("git", ["checkout", "-q", "-b", "work"], { cwd: dir, stdio: "pipe" });
+  return dir;
+}
+
+const KEYED = "---\ngenerator: anatomiya\nalwaysApply: false\n---\n\nstale\n";
+
+test("the report names what each other target's directory holds, under that directory's name", async (t) => {
+  const dir = await mappedFor(t, ["claude", "cursor"]);
+  const at = join(dir, ".cursor", "rules");
+  writeFileSync(join(at, "anatomiya-area-deadbeef.mdc"), "# hand-written, our name\n");
+  writeFileSync(join(at, "anatomiya-area-99999999.mdc"), KEYED);
+  writeFileSync(join(at, "team.mdc"), "# a rule of the team's own\n");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.foreign, [], "the Claude directory's own lists are still its own");
+  assert.deepEqual(r.targets, {
+    cursor: {
+      dir: ".cursor/rules",
+      state: "on",
+      foreign: ["anatomiya-area-deadbeef.mdc"],
+      unknown: ["anatomiya-area-99999999.mdc"],
+      rules: { escaped: false, listed: true, unreadable: [] },
+    },
+  });
+  const rendered = formatReport(r);
+  assert.ok(rendered.includes('\n1 file(s) in .cursor/rules this tool did not write:\n  "anatomiya-area-deadbeef.mdc"\n'), rendered);
+  assert.ok(rendered.includes('\n1 file(s) in .cursor/rules the map on disk does not name:\n  "anatomiya-area-99999999.mdc"\n'), rendered);
+  assert.equal(rendered.includes("team.mdc"), false, "a rule under another name is that tool's own");
+  assert.deepEqual(JSON.parse(formatReportJson(r)).targets, r.targets);
+});
+
+test("a target that is off is not audited, so a check with none on reports what it did", async (t) => {
+  const dir = await mappedFor(t, ["claude"]);
+  mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-area-deadbeef.mdc"), "# hand-written, our name\n");
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "# hand-written too, so the target is off\n");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal("targets" in r, false);
+  assert.equal(formatReport(r).includes(".cursor"), false);
+  assert.equal(formatReportJson(r).includes("targets"), false);
+});
+
+test("a file that could not be read in another target's directory is a caveat naming that directory", needsPosixPermissions, async (t) => {
+  const dir = await mappedFor(t, ["claude", "copilot"]);
+  const locked = join(dir, ".github", "instructions", "anatomiya-area-deadbeef.instructions.md");
+  writeFileSync(locked, KEYED);
+  chmodSync(locked, 0o000);
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    r.caveats.filter((c) => c.code === CAVEATS.RULES_UNREADABLE),
+    [{ code: "rules-unreadable", message: "1 file(s) in .github/instructions could not be read, so whose they are is unknown" }]
+  );
+  assert.deepEqual(r.targets.copilot.rules.unreadable, ["anatomiya-area-deadbeef.instructions.md"]);
+});
+
+test("a target the record names files for and nobody can read now is a caveat naming it and why", needsSymlinks, async (t) => {
+  const dir = await mappedFor(t, ["claude", "cursor"]);
+  const moved = join(dir, "elsewhere");
+  fs.renameSync(join(dir, ".cursor"), moved);
+  symlinkSync(moved, join(dir, ".cursor"));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    r.caveats.filter((c) => c.code === CAVEATS.RULES_UNLISTED),
+    [{ code: "rules-unlisted", message: ".cursor/rules could not be read (.cursor is a link), so nothing there was examined" }]
+  );
+  assert.deepEqual(r.targets, {
+    cursor: { dir: ".cursor/rules", state: "unknown", reason: ".cursor is a link", foreign: [], unknown: [], rules: { escaped: false, listed: false, unreadable: [] } },
+  });
+});
+
+test("a target nobody can read that no record names files for is not the check's to mention", needsSymlinks, async (t) => {
+  const dir = await mappedFor(t, ["claude"]);
+  symlinkSync(join(dir, "src"), join(dir, ".cursor"));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal("targets" in r, false);
+  assert.deepEqual(r.caveats.filter((c) => c.code === CAVEATS.RULES_UNLISTED), []);
 });
 
 test("a file edited since its commit is read as it stands, not as it was committed", async (t) => {
@@ -2285,6 +2573,17 @@ test("a file the check could not read names its own cause, in the singular", () 
   assert.equal(unreadReason(null), "could not be parsed", "no record at all is the same as unreadable");
 });
 
+test("a file a grammar could not read is not blamed on the branch's syntax", () => {
+  // The record says what its engine's rejection means, so a `.cs` and a `.ts`
+  // file in one diff each get their own sentence under the one code.
+  const cs = { kind: "rejected", rejects: "grammar" };
+  const ts = { kind: "rejected", rejects: "syntax" };
+  assert.equal(unreadReason(cs), "could not be read by this tool's grammar");
+  assert.equal(unreadReason(ts), "holds syntax the parser rejected");
+  assert.equal(unreadCode(cs), unreadCode(ts));
+  assert.equal(unreadReason({ kind: "crashed", rejects: "grammar" }), "crashed the parser", "only a rejection has two meanings");
+});
+
 test("the four causes carry four codes, so nothing has to read the sentence", () => {
   // The sentence above keeps them apart for a human. One code for all four put
   // every other reader back to matching that prose, which is the substring
@@ -2809,6 +3108,22 @@ test("a bare body added above two others is the one reported", needsRuby, async 
 
   assert.equal(found.length, 1, JSON.stringify(r.findings));
   assert.equal(found[0].where, "NewWorker", "the body this branch added, not the one it sat above");
+});
+
+test("a rescue written above an old one, in a method of the same name in another class, is reported on the line the branch wrote", needsRuby, async (t) => {
+  const cls = (name) => `class ${name}\n  def run\n    go\n  rescue StandardError\n    nil\n  end\nend\n`;
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/a.rb", cls("A"));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/a.rb", `${cls("B")}\n${cls("A")}`);
+    commit("a second class, written first");
+  });
+  facts(dir, { sha: sha(dir, "main"), path: "app/models", dimensions: [dim({ key: "rescue_uses_error" })] });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "rescue_uses_error").map((f) => [f.line, f.where]), [[4, "B#run"]]);
 });
 
 test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {
@@ -4354,8 +4669,8 @@ test("a sibling whose path merely starts with another area's is not inside it", 
 });
 
 test("the repository root is an ancestor of everything and is asked last", async (t) => {
-  // "." contains every path without being a prefix of any of them, the same
-  // rule `areaOwner` already carries.
+  // "." is a prefix of no path and still sits above every area. It owns only
+  // the files directly in it, and what it states is asked of an area below last.
   const dir = repo(t, ({ git, write, commit }) => {
     write("root.ts", clean(2));
     write("src/api/b.ts", `export const b = 1;\n`);
@@ -4377,7 +4692,7 @@ test("the repository root is an ancestor of everything and is asked last", async
   const hits = forKey(r, "swallowed_error");
 
   assert.equal(hits.length, 1, JSON.stringify(r.findings));
-  assert.match(hits[0].reason, /counted in \./, hits[0].reason);
+  assert.equal(hits[0].reason, "counted in the repository root, which this directory sits inside");
 });
 
 test("the nearest ancestor that states wins over a further one", async (t) => {
@@ -5201,6 +5516,114 @@ test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, asyn
   assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
 });
 
+test("a merge base that cannot say whether it held a directory states no finding about a test for it, and says it could not", needsShebang, async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    for (const [rel, body] of [...PY_TREE, pyIn("src/bare/old", 9)]) write(rel, body);
+    commit("init");
+  });
+  writeMap(await scan(dir), {});
+  const { files } = await collect(dir);
+  writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+  execFileSync("git", ["checkout", "-q", "-b", "feature"], { cwd: dir, stdio: "pipe" });
+  for (const [rel, body] of [pyIn("src/bare/old", 7), pyTestIn("src/bare/old", 9)]) writeFileSync(join(dir, rel), body);
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "source and a test"], { cwd: dir, stdio: "pipe" });
+  const placement = "ls-tree -z --name-only";
+
+  const answered = await checkThroughShim(t, dir);
+  assert.equal(answered.calls.filter((c) => c.startsWith(placement)).length, 1, answered.calls.join("\n"));
+  assert.deepEqual(forKey(answered.report, "test_precedent").map((f) => f.path), ["src/bare/old/test_m9.py"]);
+
+  // Declined the way an index that cannot be listed is, and said: the fact that decides the finding was not read (C33).
+  const unanswered = (await checkThroughShim(t, dir, { fail: placement })).report;
+  assert.deepEqual(forKey(unanswered, "test_precedent"), []);
+  assert.deepEqual(unanswered.caveats, [
+    ...answered.report.caveats,
+    { code: "base-unreadable", message: "the merge base could not be asked which directories it held, so 1 test under a directory this change put source in drew no placement finding" },
+  ]);
+});
+
+test("more directories than one call's arguments hold are asked of the merge base in a second call, and each answer is read", needsShebang, async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    for (const [rel, body] of [...JS_TREE, jsIn("src/bare/aaa-old", 9), jsIn("src/bare/zzz-old", 9)]) write(rel, body);
+    commit("init");
+  });
+  writeMap(await scan(dir), {});
+  const { files } = await collect(dir);
+  writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+  execFileSync("git", ["checkout", "-q", "-b", "feature"], { cwd: dir, stdio: "pipe" });
+  // One hundred new packages, each named in 200 characters, and a first test in each of two the base held.
+  const fresh = Array.from({ length: 100 }, (_, i) => `src/bare/p${String(i).padStart(3, "0")}${"x".repeat(196)}`);
+  const added = [
+    ...fresh.flatMap((at) => [jsIn(at, 0), jsTestIn(`${at}/tests`, 0)]),
+    ...["src/bare/aaa-old", "src/bare/zzz-old"].flatMap((at) => [jsIn(at, 7), jsTestIn(`${at}/tests`, 9)]),
+    // And one whose finding turns on no directory, so no listing decides it.
+    jsTestIn("src/bare/lonely/tests", 0),
+  ];
+  for (const [rel, body] of added) {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), body);
+  }
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "a hundred packages"], { cwd: dir, stdio: "pipe" });
+
+  const { report, calls } = await checkThroughShim(t, dir);
+  const listings = calls.filter((c) => c.startsWith("ls-tree -z --name-only"));
+  assert.equal(listings.length, 2, `${listings.length} listings`);
+  assert.ok(listings.every((c) => c.length < 32_767), "each fits the shortest command line a platform takes");
+  assert.deepEqual(forKey(report, "test_precedent").map((f) => f.path), ["src/bare/aaa-old/tests/m9.test.js", "src/bare/lonely/tests/m0.test.js", "src/bare/zzz-old/tests/m9.test.js"]);
+
+  // The second call alone fails: no finding is stated off the half that answered.
+  const failed = await checkThroughShim(t, dir, { fail: "(literal)src/bare/zzz-old" });
+  assert.equal(failed.calls.filter((c) => c.startsWith("ls-tree -z --name-only") && !c.includes("zzz-old")).length, 1, "the first call ran and answered");
+  const half = failed.report;
+  assert.deepEqual(forKey(half, "test_precedent").map((f) => f.path), ["src/bare/lonely/tests/m0.test.js"]);
+  assert.deepEqual(half.caveats.filter((c) => c.code === "base-unreadable").map((c) => c.message), [
+    "the merge base could not be asked which directories it held, so 102 tests under a directory this change put source in drew no placement finding",
+  ]);
+});
+
+for (const top of [":top", "*"]) {
+  test(`a directory the base held under a top-level directory named ${top} is asked of the base by that name`, needsPosixPaths, async (t) => {
+    // git reads a leading colon as pathspec magic, and lists nothing for the directory it names.
+    const dir = repo(t, ({ write, commit }) => {
+      for (const [rel, body] of [...five(pyIn, "src/tested"), ...five(pyTestIn, "src/tested"), ...five(pyIn, top), pyIn(`${top}/old`, 9)]) write(rel, body);
+      commit("init");
+    });
+    writeMap(await scan(dir), {});
+    const { files } = await collect(dir);
+    writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+    const base = sha(dir);
+    for (const [rel, body] of [pyIn(`${top}/old`, 7), pyTestIn(`${top}/old`, 9)]) writeFileSync(join(dir, rel), body);
+    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+    execFileSync("git", ["commit", "-qm", "source and a test"], { cwd: dir, stdio: "pipe" });
+
+    const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+    assert.deepEqual(found.map((f) => f.path), [`${top}/old/test_m9.py`], JSON.stringify(found));
+  });
+}
+
+test("a change that puts no source under a directory asks the merge base nothing about it", needsShebang, async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    for (const [rel, body] of PY_TREE) write(rel, body);
+    commit("init");
+  });
+  writeMap(await scan(dir), {});
+  const { files } = await collect(dir);
+  writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+  execFileSync("git", ["checkout", "-q", "-b", "feature"], { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src/bare/fresh"));
+  writeFileSync(join(dir, "src/bare/fresh/test_m0.py"), PY_TEST);
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "a test alone"], { cwd: dir, stdio: "pipe" });
+
+  const { report, calls } = await checkThroughShim(t, dir);
+
+  assert.deepEqual(calls.filter((c) => c.startsWith("ls-tree -z")), []);
+  assert.deepEqual(forKey(report, "test_precedent").map((f) => f.path), ["src/bare/fresh/test_m0.py"]);
+});
+
 test("each read that runs beside the others still reports its own failure", needsShebang, async (t) => {
   // F15: reading the diff, the pending edits and the rest at once must not
   // let one failure stand for another, or go unsaid.
@@ -5239,4 +5662,498 @@ test("with no merge base, the added lines and the oldest commit are read at HEAD
   assert.ok(calls.some((c) => c.startsWith("rev-list --max-parents=0 ")), calls.join("\n"));
   assert.ok(calls.some((c) => c.includes("--unified=0")), "the added ranges were read");
   assert.deepEqual(namingHead(calls), ["rev-parse --verify --quiet HEAD^{commit}"], calls.join("\n"));
+});
+
+/* --- a changed component is read the way a changed module is --- */
+
+const COMPONENT_NAMES = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
+
+const componentArea = (dimensions, ext = "vue") => [{
+  id: "aaaaaaaa",
+  path: "src/components",
+  globs: [{ negated: false, dir: "src/components", tail: `**/*.${ext}` }],
+  fileCount: 8,
+  dimensions,
+}];
+
+const vueComponent = (script) => `<template>\n  <div />\n</template>\n\n<script setup>\n${script}</script>\n`;
+
+test("a component named against the others is a finding at the file", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (const name of COMPONENT_NAMES) write(`src/components/${name}.vue`, vueComponent("const a = 1;\n"));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/user_card.vue", vueComponent("const a = 1;\n"));
+    write("src/components/PlainBanner.vue", "<template>\n  <p>hello</p>\n</template>\n");
+    write("src/components/plain_footer.vue", "<template>\n  <p>bye</p>\n</template>\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: componentArea([dim({ key: "file_naming_case", learned: "PascalCase", learnedKind: "component" })]),
+  });
+
+  const report = await check(dir);
+
+  assertExamined(report, "src/components/user_card.vue");
+  const found = forKey(report, "file_naming_case");
+  assert.deepEqual(found.map((f) => [f.path, f.line]), [
+    ["src/components/plain_footer.vue", 1],
+    ["src/components/user_card.vue", 1],
+  ], "a component of markup alone is named like any other");
+  assert.equal(found[0].claim, "files here are named PascalCase");
+  assert.equal(found[1].severity, "MUST-FIX");
+});
+
+test("a component is not judged by the filename class the modules beside it learned", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/format-date.ts", "export const a = 1;\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/UserCard.vue", vueComponent("const a = 1;\n"));
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: componentArea([dim({ key: "file_naming_case", learned: "kebab-case", learnedKind: "module" })]),
+  });
+
+  const report = await check(dir);
+
+  assertExamined(report, "src/components/UserCard.vue");
+  assert.deepEqual(forKey(report, "file_naming_case"), []);
+});
+
+for (const [ext, open] of [["vue", "<script setup>"], ["svelte", "<script>"]]) {
+  test(`a swallowed error added to a .${ext} script is reported at the file's own line`, async (t) => {
+    // CRLF throughout and markup above the block: the line is the file's, not the script's.
+    const component = (body) =>
+      ["<!-- card -->", "<div>", "  <span>one</span>", "</div>", "", open, 'import { load } from "./load";', "", "function first() {", "  return load(1);", "}", "", ...body, "</script>", ""].join("\r\n");
+    const dir = repo(t, ({ git, write, commit }) => {
+      write(`src/components/Card.${ext}`, component(["function second() {", "  return load(2);", "}"]));
+      commit("init");
+      git("checkout", "-q", "-b", "work");
+      write(`src/components/Card.${ext}`, component(["function second() {", "  try { load(2) } catch (e) { }", "}"]));
+      commit("swallow");
+    });
+    facts(dir, { sha: sha(dir, "main"), areas: componentArea([dim()], ext) });
+
+    const report = await check(dir);
+
+    assertExamined(report, `src/components/Card.${ext}`);
+    const found = forKey(report, "swallowed_error");
+    assert.deepEqual(found.map((f) => [f.path, f.line, f.severity]), [[`src/components/Card.${ext}`, 14, "MUST-FIX"]]);
+    assert.equal(found[0].where, "second");
+  });
+}
+
+test("a component whose script the parser rejects is named unchecked, in a module's own words", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/UserCard.vue", vueComponent("const a = 1;\n"));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/broken.ts", "export const = ;\n");
+    write("src/components/Broken.vue", vueComponent("const = ;\n"));
+    write("src/components/Open.svelte", "<script>\n  let a = 1;\n\n<p>never closed</p>\n");
+    commit("broken");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: componentArea([dim()]) });
+
+  const report = await check(dir);
+
+  assert.deepEqual(notes(report).sort(), [
+    "src/components/Broken.vue holds syntax the parser rejected, so it was not checked",
+    "src/components/Open.svelte holds syntax the parser rejected, so it was not checked",
+    "src/components/broken.ts holds syntax the parser rejected, so it was not checked",
+  ]);
+  assert.deepEqual([...new Set(report.caveats.map((c) => c.code))], [CAVEATS.HEAD_REJECTED]);
+  assert.deepEqual(report.findings, []);
+});
+
+test("an edit to a component's markup alone is read and reports nothing", async (t) => {
+  const script = "function go() {\n  try { run() } catch (e) { }\n}\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/UserCard.vue", `<template>\n  <div />\n</template>\n\n<script setup>\n${script}</script>\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/UserCard.vue", `<template>\n  <div>\n    <p>more</p>\n  </div>\n</template>\n\n<script setup>\n${script}</script>\n`);
+    commit("markup");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: componentArea([dim()]) });
+
+  const report = await check(dir);
+
+  // The swallowed error predates the branch and moved two lines down with the markup.
+  assertExamined(report, "src/components/UserCard.vue");
+  assert.deepEqual(report.findings, []);
+  assert.deepEqual(report.caveats, []);
+});
+
+test("a C# file read with one branch of each conditional says so, and one read whole says nothing", async (t) => {
+  const whole = (name) => `class ${name}\n{\n    public void F(string s)\n    {\n    }\n}\n`;
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/A.cs", whole("A"));
+    write("src/B.cs", whole("B"));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/A.cs", "class A\n{\n#if SPAN\n    public void F(System.ReadOnlySpan<char> s)\n#else\n    public void F(string s)\n#endif\n    {\n    }\n}\n");
+    write("src/B.cs", whole("B").replace("string s", "int n"));
+    commit("a signature per target");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.examined.map((e) => e.path).sort(), ["src/A.cs", "src/B.cs"]);
+  // The findings on such a file are about the branch that was read, and a reader has to be told the rest was not.
+  assert.deepEqual(r.caveats.filter((c) => c.code === CAVEATS.HEAD_ONE_BRANCH), [
+    { code: "head-one-branch", message: "src/A.cs was read with one branch of each #if, so its other branches were not checked" },
+  ]);
+});
+
+const perTarget = (signature) => `class A\n{\n    /// <summary>Loads.</summary>\n${signature}\n    {\n    }\n}\n`;
+const SPLIT = "#if NET8_0\n    public void Load(string path, int extra)\n#else\n    public void Load(string path)\n#endif";
+
+test("a C# file read with one branch is judged on the text its tree was read from, as the scan judged it", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/A.cs", perTarget("    public void Load(string path)"));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/A.cs", perTarget(SPLIT));
+    commit("a signature per target");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: componentArea([dim({ key: "public_doc_comment", precision: "partial" })], "cs") });
+
+  const scanned = await parseTreeFile(perTarget(SPLIT), "src/components/A.cs", "csharp");
+  assert.equal(scanned.oneBranch, true);
+  assert.deepEqual(scanned.hits.public_doc_comment, [{ conforming: true, where: "A.Load" }]);
+
+  const report = await check(dir, { baseRef: "main" });
+
+  // The doc comment sits above the #if. In the file as written that line is in the gap, and in the text the tree was read from it is blank.
+  assert.deepEqual(report.examined.map((e) => e.path), ["src/components/A.cs"]);
+  assert.deepEqual(report.caveats.map((c) => c.code), [CAVEATS.HEAD_ONE_BRANCH]);
+  assert.deepEqual(forKey(report, "public_doc_comment"), []);
+});
+
+test("the base side of such a file is read from its own tree's text too, so what it already held is not charged to the branch", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/components/A.cs", perTarget(SPLIT));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/components/A.cs", perTarget(SPLIT).replace("    {\n    }", "    {\n        Run();\n    }"));
+    commit("a body");
+  });
+  const undocumented = counterDim({ key: "public_doc_comment", precision: "partial", claim: "public functions carry a doc comment", counterClaim: "public functions carry no doc comment" });
+  facts(dir, { sha: sha(dir, "main"), areas: componentArea([undocumented], "cs") });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  // Where the area documents nothing, the documented function is the one that breaks, and it was there before the branch.
+  assert.deepEqual(report.examined.map((e) => e.path), ["src/components/A.cs"]);
+  assert.deepEqual(report.caveats.map((c) => c.code), [CAVEATS.HEAD_ONE_BRANCH]);
+  assert.deepEqual(forKey(report, "public_doc_comment"), []);
+});
+
+test("a test file pytest collects by its directory is a test file to the check on both sides, as it is to the scan", async (t) => {
+  // No runner is imported and the name is not a test's: only the path says pytest collects this.
+  const cases = "def test_total():\n    assert 1 == 1\n";
+  const helper = "\n\ndef build_order():\n    return 1\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("tests/tests.py", cases + helper);
+    write("tests/more.py", cases);
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("tests/tests.py", cases + helper.replace("return 1", "return 2"));
+    write("tests/more.py", cases + helper);
+    commit("a helper");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "tests", globs: [{ negated: false, dir: "tests", tail: "**/*.py" }], fileCount: 8, dimensions: [documented] }] });
+
+  assert.deepEqual((await parseTreeFile(cases + helper, "tests/more.py", "python")).hits.public_doc_comment, undefined, "the scan counts nothing here");
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.examined.map((e) => e.path).sort(), ["tests/more.py", "tests/tests.py"]);
+  assert.deepEqual(report.caveats, []);
+  assert.deepEqual(report.findings, []);
+});
+
+for (const [lang, rel, glob, old, added, line, where] of [
+  ["Python", "src/py/views.py", "**/*.py", "class A:\n    def run(self):\n        return 1\n", "class B:\n    def run(self):\n        return 2\n\n\n", 2, "B.run"],
+  ["Java", "src/java/Views.java", "**/*.java", "class A {\n    public void run() {}\n}\n", "class B {\n    public void run() {}\n}\n\n", 2, "B.run"],
+  ["Go", "src/go/views.go", "**/*.go", "package views\n\nfunc (a A) Run() {}\n", "package views\n\nfunc (b B) Run() {}\n", 3, "B.Run"],
+  ["Rust", "src/rs/views.rs", "**/*.rs", "struct A;\n\nimpl A {\n    pub fn run(&self) {}\n}\n", "struct B;\n\nimpl B {\n    pub fn run(&self) {}\n}\n\n", 4, "B.run"],
+  // An extension function is written on a type and inside no class.
+  ["Kotlin", "src/kt/Mappers.kt", "**/*.kt", "fun User.toDto(): UserDto {\n    return UserDto(name)\n}\n", "fun Invoice.toDto(): InvoiceDto {\n    return InvoiceDto(total)\n}\n\n", 1, "Invoice.toDto"],
+  // Written inside a class, it is that class's, and the receiver as written tells two of one type's name apart.
+  ["Kotlin, inside a class", "src/kt/Mappers.kt", "**/*.kt", "class A {\n    fun User.show(): String {\n        return name\n    }\n}\n", "package shop\n\nclass B {\n    fun User.show(): String {\n        return name\n    }\n}\n\n", 4, "B.User.show"],
+  ["Kotlin, a type argument", "src/kt/Mappers.kt", "**/*.kt", "fun List<User>.toDtos(): Int {\n    return size\n}\n", "fun List<Invoice>.toDtos(): Int {\n    return size\n}\n\n", 1, "List<Invoice>.toDtos"],
+  ["Kotlin, a nullable receiver", "src/kt/Mappers.kt", "**/*.kt", "fun User.label(): String {\n    return name\n}\n", "fun User?.label(): String {\n    return \"\"\n}\n\n", 1, "User?.label"],
+  ["Kotlin, a function type", "src/kt/Mappers.kt", "**/*.kt", "fun (() -> Int).twice(): Int {\n    return this() + this()\n}\n", "fun ((Int) -> Int).twice(): Int {\n    return 0\n}\n\n", 1, "((Int) -> Int).twice"],
+  ["Kotlin, a qualified receiver", "src/kt/Mappers.kt", "**/*.kt", "fun java.util.Date.iso(): String {\n    return toString()\n}\n", "fun java.sql.Date.iso(): String {\n    return toString()\n}\n\n", 1, "java.sql.Date.iso"],
+]) {
+  test(`${lang}: a method written above an old one of its name, in another class, is reported on the line the branch wrote`, async (t) => {
+    const dir = repo(t, ({ git, write, commit }) => {
+      write(rel, old);
+      commit("base");
+      git("checkout", "-q", "-b", "work");
+      // Go's package clause stays the file's first line.
+      write(rel, lang === "Go" ? `${added}\n${old.replace("package views\n\n", "")}` : added + old);
+      commit("a second class");
+    });
+    const documented = dim({ key: "public_doc_comment", precision: "partial" });
+    const at = dirname(rel);
+    facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: at, globs: [{ negated: false, dir: at, tail: glob }], fileCount: 8, dimensions: [documented] }] });
+
+    const report = await check(dir, { baseRef: "main" });
+
+    assert.deepEqual(report.caveats, []);
+    assert.deepEqual(forKey(report, "public_doc_comment").map((f) => [f.line, f.where]), [[line, where]]);
+  });
+}
+
+const rootPackage = (dimensions) => ({ id: "aaaaaaaa", path: ".", globs: [{ negated: false, dir: "", tail: "*.go" }], fileCount: 8, dimensions });
+const undocumented = (pkg, name) => `package ${pkg}\n\nfunc ${name}() {}\n`;
+
+test("a file added to the root package is held to the claim the root area states, and one in an uncovered directory is not", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("gin.go", "package gin\n\n// Run runs.\nfunc Run() {}\n");
+    write("binding/json.go", "package binding\n\n// Bind binds.\nfunc Bind() {}\n");
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("context.go", undocumented("gin", "Next"));
+    write("tiny/helper.go", undocumented("tiny", "Help"));
+    write("binding/xml.go", undocumented("binding", "Decode"));
+    commit("three files");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      rootPackage([documented]),
+      { id: "bbbbbbbb", path: "binding", globs: [{ negated: false, dir: "binding", tail: "**/*.go" }], fileCount: 8, dimensions: [documented] },
+    ],
+  });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.caveats, []);
+  for (const path of ["context.go", "tiny/helper.go", "binding/xml.go"]) assertExamined(report, path);
+  assert.deepEqual(
+    forKey(report, "public_doc_comment").map((f) => [f.path, f.line, f.area, f.where]).sort(),
+    // Outside every area the file is asked what a model writes by default, and no area's claim.
+    [["binding/xml.go", 3, "binding", "Decode"], ["context.go", 3, ".", "Next"], ["tiny/helper.go", 3, null, "Help"]]
+  );
+  assert.equal(report.findings.find((f) => f.path === "tiny/helper.go").severity, "NIT");
+});
+
+test("a root package's own file is asked the root area's claim at the severity its pattern earns", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("gin.go", "package gin\n\n// Run runs.\nfunc Run() {}\n");
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("context.go", undocumented("gin", "Next"));
+    commit("one file");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: [rootPackage([dim({ key: "public_doc_comment", precision: "precise" })])] });
+
+  const [finding] = forKey(await check(dir, { baseRef: "main" }), "public_doc_comment");
+
+  assert.equal(finding.severity, "MUST-FIX", "the root area's pattern reaches a file at the root, so the map told its author");
+  assert.equal(finding.area, ".");
+});
+
+test("a filename claim inherited from the root area says where it was counted in the area's name", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("user-profile.ts", `export const a = 1;\n`);
+    write("src/keep-me.ts", `export const k = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/OrderList.ts", `export const o = 1;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: ".", globs: [{ negated: false, dir: "", tail: "*.ts" }], fileCount: 8, dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })] },
+      { id: "bbbbbbbb", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const found = forKey(await check(dir), "file_naming_case");
+
+  assert.deepEqual(found.map((f) => [f.path, f.severity, f.reason]), [
+    ["src/OrderList.ts", "FIX", "counted in the repository root, which this directory sits inside"],
+  ]);
+});
+
+test("a directory named as the root area is named is said as a path in a finding's reason", async (t) => {
+  const named = "the repository root";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write(`${named}/one.ts`, `export const one = 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write(`${named}/nested/deep.ts`, `let two = 2\nexport { two }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{ id: "aaaaaaaa", path: named, globs: [{ negated: false, dir: named, tail: "*.ts" }], fileCount: 8, dimensions: [dim({ key: "module_state_const" })] }],
+  });
+
+  const found = forKey(await check(dir), "module_state_const");
+
+  assert.deepEqual(found.map((f) => f.reason), ["counted in ./the repository root, which this directory sits inside"]);
+});
+
+test("a root file the root area's pattern does not reach is told so in the area's name, never as a dot", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("gin.go", "package gin\n\n// Run runs.\nfunc Run() {}\n");
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("setup.py", "def run():\n    return 1\n");
+    commit("another language at the root");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: [rootPackage([dim({ key: "public_doc_comment", precision: "precise" })])] });
+
+  const [finding] = forKey(await check(dir, { baseRef: "main" }), "public_doc_comment");
+
+  assert.equal(finding.severity, "FIX");
+  assert.equal(finding.reason, "the area file for the repository root does not reach .py files, so this claim was never delivered here");
+  assert.equal(finding.area, ".", "the record keeps the path the facts are keyed by");
+});
+
+test("a handler written above an old one of its text, in a method of the same name in another class, is reported on the line the branch wrote", async (t) => {
+  const cls = (name) => `class ${name} {\n    void run() {\n        try { go(); } catch (E e) { }\n    }\n}\n`;
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/java/Views.java", cls("A"));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/java/Views.java", `${cls("B")}\n${cls("A")}`);
+    commit("a second class");
+  });
+  facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "src/java", globs: [{ negated: false, dir: "src/java", tail: "**/*.java" }], fileCount: 8, dimensions: [dim({ key: "caught_error_used", precision: "partial" })] }] });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(report, "caught_error_used").map((f) => [f.line, f.where]), [[3, "B.run"]]);
+});
+
+test("a file renamed from a name that is no source into a language is new, and every site in it with it", async (t) => {
+  const python = "def legacy(request):\n    return 1\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(1));
+    write("src/notes.txt", swallow(1));
+    write("src/py/a.py", 'def a():\n    """A."""\n');
+    write("src/py/notes.txt", python);
+    // The control: a source file renamed with nothing changed brings no site the base did not hold.
+    write("src/old.ts", swallow(2));
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "src/notes.txt", "src/notes.ts");
+    git("mv", "src/py/notes.txt", "src/py/notes.py");
+    git("mv", "src/old.ts", "src/moved.ts");
+    commit("renamed, nothing edited");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim()] },
+      { id: "bbbbbbbb", path: "src/py", globs: [{ negated: false, dir: "src/py", tail: "**/*.py" }], fileCount: 8, dimensions: [dim({ key: "public_doc_comment", precision: "partial" })] },
+    ],
+  });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.caveats, []);
+  assert.deepEqual(report.examined.map((e) => e.path).sort(), ["src/moved.ts", "src/notes.ts", "src/py/notes.py"]);
+  assert.deepEqual(report.findings.map((f) => [f.path, f.line, f.dimension]), [
+    ["src/notes.ts", 1, "swallowed_error"],
+    ["src/py/notes.py", 1, "public_doc_comment"],
+  ]);
+});
+
+test("a Rust file cargo builds as a test by where it sits is a test file to the check, a case in it or none", async (t) => {
+  const helper = "pub fn setup() {}\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("Cargo.toml", '[package]\nname = "shop"\n');
+    write("tests/util.rs", helper);
+    // The same file where no crate holds the directory, which is source.
+    write("notes/tests/util.rs", helper);
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    for (const at of ["tests", "notes/tests"]) write(`${at}/util.rs`, `${helper}\npub fn teardown() {}\n`);
+    commit("one more helper");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  const area = (id, path) => ({ id, path, globs: [{ negated: false, dir: path, tail: "**/*.rs" }], fileCount: 8, dimensions: [documented] });
+  facts(dir, { sha: sha(dir, "main"), areas: [area("aaaaaaaa", "tests"), area("bbbbbbbb", "notes/tests")] });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.examined.map((e) => e.path).sort(), ["notes/tests/util.rs", "tests/util.rs"]);
+  assert.deepEqual(report.caveats, []);
+  assert.deepEqual(forKey(report, "public_doc_comment").map((f) => [f.path, f.line]), [["notes/tests/util.rs", 3]]);
+});
+
+for (const [side, facts_, reported] of [
+  ["no return type", () => counterDim({ key: "declared_return_type", claim: "functions declare what they return", counterClaim: "functions declare no return type" }), "typed"],
+  ["a return type", () => dim({ key: "declared_return_type" }), "untyped"],
+]) {
+  test(`where an area's functions declare ${side}, a new function written the other way is the finding and one written that way is none`, async (t) => {
+    const dir = repo(t, ({ git, write, commit }) => {
+      write("src/py/a.py", "def a():\n    return 1\n");
+      commit("base");
+      git("checkout", "-q", "-b", "work");
+      write("src/py/a.py", "def a():\n    return 1\n\n\ndef typed() -> int:\n    return 1\n\n\ndef untyped():\n    return 1\n");
+      commit("two functions");
+    });
+    facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "src/py", globs: [{ negated: false, dir: "src/py", tail: "**/*.py" }], fileCount: 8, dimensions: [facts_()] }] });
+
+    const report = await check(dir, { baseRef: "main" });
+
+    assert.deepEqual(forKey(report, "declared_return_type").map((f) => [f.line, f.claim]), [
+      reported === "typed" ? [5, "functions declare no return type"] : [9, "functions declare what they return"],
+    ]);
+  });
+}
+
+test("a file renamed out of a test tree is not charged the sites it already held", async (t) => {
+  // Under tests/ pytest collects it and the row counts nothing in it; under src/ it is source. Nothing in it changed.
+  const source = "def test_data():\n    assert 1 == 1\n\n\ndef load_tools(path):\n    return path\n\n\ndef save_tools(path):\n    return path\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("tests/tools.py", source);
+    write("src/py/a.py", "def a():\n    \"\"\"A.\"\"\"\n");
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "tests/tools.py", "src/py/tools.py");
+    commit("move it");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "src/py", globs: [{ negated: false, dir: "src/py", tail: "**/*.py" }], fileCount: 8, dimensions: [documented] }] });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.examined.map((e) => e.path), ["src/py/tools.py"]);
+  assert.deepEqual(report.findings, []);
+});
+
+test("a file that stops being a test file by what it holds is not charged the sites it already held", async (t) => {
+  const source = "import pytest\n\n\ndef load_tools(path):\n    return path\n\n\ndef test_data():\n    assert 1 == 1\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/py/tools.py", source);
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/py/tools.py", source.replace("import pytest\n\n\n", "").replace("def test_data():\n    assert 1 == 1\n", "def data():\n    \"\"\"Data.\"\"\"\n"));
+    commit("no longer a test");
+  });
+  const documented = dim({ key: "public_doc_comment", precision: "partial" });
+  facts(dir, { sha: sha(dir, "main"), areas: [{ id: "aaaaaaaa", path: "src/py", globs: [{ negated: false, dir: "src/py", tail: "**/*.py" }], fileCount: 8, dimensions: [documented] }] });
+
+  const report = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.examined.map((e) => e.path), ["src/py/tools.py"]);
+  assert.deepEqual(forKey(report, "public_doc_comment").map((f) => f.line), []);
 });

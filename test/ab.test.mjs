@@ -575,6 +575,8 @@ test("everything the build reads to decide a model, an effort or a context windo
     // 2.1.257: a forced subagent model, and the served catalog that now
     // replaces the compiled model list, with the switch and the URL that feed it.
     "CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_MODEL_CATALOG_URL", "CLAUDE_CODE_MODEL_CATALOG",
+    // 2.1.296: the model a workflow's agents run on, over the one the script asks for.
+    "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
   ]) {
     assert.equal(overridesEngine(name), true, `${name} can move the engine and has to go`);
   }

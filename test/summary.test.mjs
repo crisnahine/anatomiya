@@ -258,7 +258,7 @@ test("the author-gate count is taken on the side the map prints", () => {
   );
 
   assert.equal(s.authorGated, 1);
-  assert.ok(s.historyTruncated.endsWith("and 1 claim print as counts on the author gate"), s.historyTruncated);
+  assert.ok(s.historyTruncated.endsWith("and 1 claim prints as counts on the author gate"), s.historyTruncated);
 });
 
 test("a history that could not be read at all says that, and not that it was a window", () => {
@@ -310,6 +310,47 @@ test("the tail of every rule file listing agrees with its count", () => {
     tail({ replaced: names(22) }),
     "and 2 more files in .claude/rules/ that held a name this scan writes, so they were replaced"
   );
+});
+
+test("temporary files an earlier scan left are counted apart from the area files that went", () => {
+  const one = scanSummary(result(), plan({ staged: ["anatomiya-overview.md.tmp-1-0123456789abcdef"] }));
+  assert.equal(one.stagedRemoved, 1);
+  assert.equal(one.removed, 0);
+  assert.ok(scanLines(one).includes("1 temporary file an earlier scan left in .claude/rules was removed"), scanLines(one).join("\n"));
+  const many = scanSummary(result(), plan({ staged: ["a", "b"], remove: ["anatomiya-area-1.md"] }), { dryRun: true });
+  assert.ok(scanLines(many).includes("2 temporary files an earlier scan left in .claude/rules would be removed"));
+  assert.ok(scanLines(many).includes("1 area file would be removed: its area is gone or states nothing"));
+  assert.ok(scanLines({ ...many, dryRun: false }).includes("2 temporary files an earlier scan left in .claude/rules were removed"));
+  // None left, none said, and the record has no key for it.
+  assert.equal("stagedRemoved" in scanSummary(result(), plan()), false);
+  assert.equal("stagedRemoved" in scanSummary(result(), plan({ staged: [] })), false);
+});
+
+test("temporary files left in the store are counted apart from the ones left beside the map", () => {
+  const one = scanSummary(result(), plan({ staged: ["a", "b"], storeStaged: ["facts.json.tmp-1-0123456789abcdef"] }));
+  assert.deepEqual([one.stagedRemoved, one.storeStagedRemoved], [2, 1]);
+  assert.ok(scanLines(one).includes("1 temporary file an earlier scan left in .claude/anatomiya was removed"), scanLines(one).join("\n"));
+  assert.ok(scanLines(one).includes("2 temporary files an earlier scan left in .claude/rules were removed"));
+  const many = scanSummary(result(), plan({ storeStaged: ["a", "b"] }), { dryRun: true });
+  assert.ok(scanLines(many).includes("2 temporary files an earlier scan left in .claude/anatomiya would be removed"));
+  assert.equal("stagedRemoved" in many, false);
+  assert.equal("storeStagedRemoved" in scanSummary(result(), plan()), false);
+  assert.equal("storeStagedRemoved" in scanSummary(result(), plan({ storeStaged: [] })), false);
+});
+
+test("a temporary file that could not be removed is counted as left, apart from the ones that went", () => {
+  const one = scanSummary(result(), plan({ staged: ["a"], stagedLeft: ["anatomiya-overview.md.tmp-1-0123456789abcdef"], storeStagedLeft: ["b", "c"] }));
+  assert.deepEqual([one.stagedRemoved, one.stagedLeft, one.storeStagedLeft, "storeStagedRemoved" in one], [1, 1, 2, false]);
+  const lines = scanLines(one);
+  assert.ok(lines.includes("1 temporary file an earlier scan left in .claude/rules was removed"), lines.join("\n"));
+  assert.ok(lines.includes("1 temporary file an earlier scan left in .claude/rules could not be removed, so it was left as it is"), lines.join("\n"));
+  assert.ok(lines.includes("2 temporary files an earlier scan left in .claude/anatomiya could not be removed, so they were left as they are"), lines.join("\n"));
+  // None left, none said, and the record has no key for it.
+  for (const key of ["stagedLeft", "storeStagedLeft"]) {
+    assert.equal(key in scanSummary(result(), plan()), false);
+    assert.equal(key in scanSummary(result(), plan({ [key]: [] })), false);
+  }
+  assert.equal(scanLines(scanSummary(result(), plan({ staged: ["a"] }))).some((line) => line.includes("could not be removed")), false);
 });
 
 test("one removed area file and one default-matching claim read at one", () => {
@@ -421,6 +462,36 @@ test("an engine its own clock stopped before it answered is not called a missing
 
   assert.equal(lines.at(-1), "oxc was stopped by its own clock before it answered: no ready answer in 20000ms");
   assert.ok(!lines.some((l) => l.includes("setup")), lines.join("\n"));
+});
+
+test("a run that read no file of a language for want of its grammar says to reinstall, not to set up", () => {
+  const lines = scanLines(
+    summary({ uncounted: ["kotlin"], held: 1, engines: { "tree-sitter": { version: "0.27.0" } }, missingGrammars: ["kotlin"] })
+  );
+
+  const at = lines.indexOf("read no kotlin file at all, so none was counted and 1 area holding one was left as the last scan wrote it");
+  assert.ok(at !== -1, lines.join("\n"));
+  assert.match(lines[at + 1], /^the plugin's kotlin grammar did not load: reinstall /);
+  assert.ok(!lines.some((l) => l.includes("setup") || l.includes("ran and answered")), lines.join("\n"));
+});
+
+test("the files of a language no engine or grammar was there for are counted on the line that says why", () => {
+  const lines = scanLines(
+    summary({
+      uncounted: ["js", "kotlin", "ruby"],
+      engines: { oxc: { version: "0.151.0" }, "tree-sitter": { version: "0.27.0" }, prism: { version: null } },
+      missingGrammars: ["kotlin"],
+      unanswered: { kotlin: 1, ruby: 9 },
+    })
+  );
+
+  const at = lines.indexOf("read no js or kotlin or ruby file at all, so none was counted");
+  assert.deepEqual(lines.slice(at + 1, at + 4), [
+    "1 file: the plugin's kotlin grammar did not load: reinstall this plugin, which ships its grammar files in its own directory",
+    // The JavaScript files crashed a parser that was there, and are counted on that line.
+    "oxc 0.151.0 ran and answered for none of them",
+    "9 files: prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH",
+  ]);
 });
 
 test("a run blind to two languages names both", () => {
@@ -604,6 +675,32 @@ test("the parse tallies reach the summary as the sentences the overview uses", (
   assert.deepEqual(s.unexamined, ["2 files crashed the parser", "1 file holds syntax the parser rejected"]);
 });
 
+test("a grammar's unread files reach the summary and its JSON under the grammar's own sentence", () => {
+  const note = "That is a syntax error or syntax the grammar does not cover; the files may be fine.";
+  const of = (parse) => scanSummary(result({ parse: { crashed: 0, failed: 0, skipped: 0, ...parse } }), plan());
+
+  const serilog = of({ syntaxErrors: 18, rejections: { grammar: 18 } });
+  assert.deepEqual(serilog.unexamined, [`18 files could not be read by this tool's grammar. ${note}`]);
+  assert.ok(scanLines(serilog).includes(`18 files could not be read by this tool's grammar. ${note}`));
+  assert.deepEqual(JSON.parse(scanJson(serilog)).unexamined, serilog.unexamined);
+
+  const older = of({ syntaxErrors: 2 });
+  assert.deepEqual(older.unexamined, ["2 files hold syntax the parser rejected"]);
+  assert.ok(!scanLines(older).some((line) => /grammar/.test(line)));
+
+  const mixed = of({ syntaxErrors: 3, rejections: { grammar: 2, syntax: 1 } });
+  assert.deepEqual(mixed.unexamined, ["1 file holds syntax the parser rejected", `2 files could not be read by this tool's grammar. ${note}`]);
+});
+
+test("files read with one branch of their conditionals reach the summary and its JSON", () => {
+  const s = scanSummary(result({ parse: { crashed: 0, failed: 0, skipped: 0, syntaxErrors: 0, oneBranch: 7 } }), plan());
+  const line = "7 files were read with one branch of each #if; the other branches were not read";
+
+  assert.deepEqual(s.unexamined, [line]);
+  assert.ok(scanLines(s).includes(line));
+  assert.deepEqual(JSON.parse(scanJson(s)).unexamined, [line]);
+});
+
 test("the summary and its lines agree on a whole scan", () => {
   const s = scanSummary(
     result({
@@ -627,6 +724,254 @@ test("the summary and its lines agree on a whole scan", () => {
     "wrote 2 files",
     RUNNING_SESSION,
   ]);
+});
+
+/* --- the other directories the map goes to --- */
+
+const COPILOT_DIR = ".github/instructions";
+
+/** One other target on the plan, off and untouched, so a case names only what it changes. */
+const target = (o = {}) => ({
+  dir: ".cursor/rules",
+  state: "off",
+  reason: null,
+  on: false,
+  write: [],
+  remove: [],
+  foreign: [],
+  unknown: [],
+  replaced: [],
+  unreadableRules: [],
+  listed: true,
+  unfiled: [],
+  names: [],
+  ...o,
+});
+const files = (n) => Array.from({ length: n }, (_, i) => ({ name: `anatomiya-${i}`, body: "" }));
+const others = (cursor = {}, copilot = {}) => ({ targets: { cursor: target(cursor), copilot: target({ dir: COPILOT_DIR, ...copilot }) } });
+
+// Captured from the build before any target reached the summary.
+const BEFORE_LINES = [
+  "40 files, 1 area, 12ms, root /repo",
+  "engines: oxc 0.144.0",
+  "1 of 3 claims stated, 1 matches the model default, the rest print as counts",
+  UNPINNED,
+  "wrote 2 files",
+  RUNNING_SESSION,
+];
+const BEFORE_JSON =
+  '{\n  "schema": 2,\n  "files": 40,\n  "areas": 1,\n  "durationMs": 12,\n  "root": "/repo",\n  "untracked": 0,\n  "claims": {\n    "stated": 1,\n    "matchingDefault": 1,\n    "total": 3\n  },\n  "engines": {\n    "oxc": {\n      "version": "0.144.0"\n    }\n  },\n  "layoutLine": null,\n  "baseline": {\n    "status": "unpinned",\n    "sha": null,\n    "drift": null,\n    "baseRef": null,\n    "countsOnly": true,\n    "unreadable": null\n  },\n  "hookRemoved": false,\n  "hookRefused": null,\n  "truncated": false,\n  "orphaned": 0,\n  "barren": 0,\n  "unreadFiles": 0,\n  "unexamined": [],\n  "semantic": null,\n  "historyError": null,\n  "historyTruncated": null,\n  "authorGated": 0,\n  "rules": {\n    "foreign": [],\n    "unknown": [],\n    "unreadable": [],\n    "listed": true,\n    "replaced": []\n  },\n  "removed": 0,\n  "wrote": 2,\n  "blind": [],\n  "uncounted": [],\n  "held": 0,\n  "dryRun": false\n}\n';
+
+test("with no other target on and none asked for, the lines and the record are what they were", () => {
+  // Off and never asked for, or unread with no file recorded there: whatever the directory holds is not this scan's to say.
+  const strangers = others(
+    { foreign: ["anatomiya-overview.mdc"], unknown: ["anatomiya-area-deadbeef.mdc"], unreadableRules: ["anatomiya-area-0badf00d.mdc"] },
+    { state: "unknown", reason: ".github is a link", listed: false }
+  );
+  for (const p of [plan(), plan(others()), plan(strangers)]) {
+    const s = scanSummary(result(), p);
+
+    assert.deepEqual(scanLines(s), BEFORE_LINES);
+    assert.equal(scanJson(s), BEFORE_JSON);
+  }
+});
+
+test("each other target that was written says how many files, where, and for which tool", () => {
+  // Cursor named on this scan, Copilot on from an earlier one: the same line.
+  const s = scanSummary(result(), plan(others({ on: true, write: files(2) }, { state: "on", on: true, write: files(1) })));
+
+  assert.deepEqual(s.targets, {
+    cursor: { state: "on", dir: ".cursor/rules", wrote: 2, removed: 0, unfiled: 0, foreign: 0 },
+    copilot: { state: "on", dir: COPILOT_DIR, wrote: 1, removed: 0, unfiled: 0, foreign: 0 },
+  });
+  assert.deepEqual(scanLines(s), [
+    ...BEFORE_LINES.slice(0, -1),
+    "wrote 2 files under .cursor/rules for Cursor",
+    "wrote 1 file under .github/instructions for GitHub Copilot",
+    RUNNING_SESSION,
+  ]);
+});
+
+test("a target a plain scan writes for the first time says which file switched it on and what switches it off", () => {
+  const first = others({ state: "on", on: true, first: true, write: files(3) }, { state: "on", on: true, first: false, write: files(1) });
+  const s = scanSummary(result(), plan(first));
+  const clause = ", which .cursor/rules/anatomiya-overview.mdc switched on: `scan --targets claude` switches it off";
+
+  assert.deepEqual(s.targets.cursor, { state: "on", dir: ".cursor/rules", wrote: 3, removed: 0, unfiled: 0, foreign: 0, switchedOnBy: ".cursor/rules/anatomiya-overview.mdc" });
+  assert.equal("switchedOnBy" in s.targets.copilot, false);
+  assert.deepEqual(scanLines(s).slice(-3), [
+    `wrote 3 files under .cursor/rules for Cursor${clause}`,
+    "wrote 1 file under .github/instructions for GitHub Copilot",
+    RUNNING_SESSION,
+  ]);
+  assert.equal(JSON.parse(scanJson(s)).targets.cursor.switchedOnBy, ".cursor/rules/anatomiya-overview.mdc");
+  assert.equal(scanLines(scanSummary(result(), plan(first), { dryRun: true })).at(-2), `would write 3 files under .cursor/rules for Cursor${clause}`);
+  // A blind run writes nothing there, so it has nothing to explain.
+  assert.equal("switchedOnBy" in scanSummary(result(), plan(others({ state: "on", on: true, first: true, names: ["a"], remove: ["b"] }))).targets.cursor, false);
+});
+
+test("a target turned off says what was removed and that it is off", () => {
+  const s = scanSummary(result(), plan(others({ state: "on", remove: ["a", "b", "c"] })));
+
+  assert.deepEqual(s.targets, { cursor: { state: "off", dir: ".cursor/rules", wrote: 0, removed: 3, unfiled: 0, foreign: 0 } });
+  assert.deepEqual(scanLines(s).slice(-3), ["removed 3 files under .cursor/rules", ".cursor/rules is off now", RUNNING_SESSION]);
+});
+
+test("a target that stays on and lost an area's file is not called off", () => {
+  const s = scanSummary(result(), plan(others({}, { state: "on", on: true, write: files(2), remove: ["a"] })));
+
+  assert.deepEqual(scanLines(s).slice(-3), [
+    "wrote 2 files under .github/instructions for GitHub Copilot",
+    "removed 1 file under .github/instructions",
+    RUNNING_SESSION,
+  ]);
+});
+
+test("a dry run says what it would do in each other directory", () => {
+  const p = plan(others({ on: true, write: files(3) }, { state: "on", remove: ["a"] }));
+  const lines = scanLines(scanSummary(result(), p, { dryRun: true }));
+
+  assert.deepEqual(lines.slice(-4), [
+    "would write 2 files",
+    "would write 3 files under .cursor/rules for Cursor",
+    "would remove 1 file under .github/instructions",
+    ".github/instructions would be off",
+  ]);
+});
+
+test("the areas a target has no file for are counted, and only the ones that have one elsewhere", () => {
+  // An area that states nothing has no file in any directory.
+  const two = result({ areas: [...result().areas, { path: "lib", dimensions: [dim()] }, { path: "docs", dimensions: [] }] });
+  const many = scanSummary(two, plan(others({ state: "on", on: true, write: files(1), unfiled: ["docs", "lib", "src"] })));
+  const one = scanSummary(two, plan(others({}, { state: "on", on: true, write: files(2), unfiled: ["docs", "lib"] })));
+
+  assert.equal(many.targets.cursor.unfiled, 2);
+  assert.ok(scanLines(many).includes("2 areas have no pattern Cursor can be given, so no file under .cursor/rules covers them"));
+  assert.ok(
+    scanLines(one).includes("1 area has no pattern GitHub Copilot can be given, so no file under .github/instructions covers it")
+  );
+  const none = scanSummary(two, plan(others({ state: "on", on: true, write: files(3), unfiled: ["docs"] })));
+  assert.equal(scanLines(none).some((l) => l.includes("no pattern")), false);
+});
+
+test("files under this tool's names that it did not write are counted where they were left", () => {
+  const one = scanSummary(result(), plan(others({ state: "on", on: true, write: files(2), foreign: ["a"] })));
+  const on = scanSummary(result(), plan(others({ state: "on", on: true, write: files(2), foreign: ["a"], unknown: ["b"] })));
+  // Turned off by this scan, so it is said once more on the way out.
+  const off = scanSummary(result(), plan(others({ state: "on", remove: ["c"], foreign: ["a"] })));
+
+  assert.equal(one.targets.cursor.foreign, 1);
+  assert.deepEqual(scanLines(one).slice(-3), [
+    "wrote 2 files under .cursor/rules for Cursor",
+    ".cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was left as it is",
+    RUNNING_SESSION,
+  ]);
+  assert.ok(scanLines(on).includes(".cursor/rules holds 2 entries named anatomiya-* that this scan neither wrote nor removed; they were left as they are"));
+  assert.ok(scanLines(off).includes(".cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was left as it is"));
+});
+
+test("a file that could not be read in a target this scan wrote is named under that directory, as one in .claude/rules is", () => {
+  const names = ["anatomiya-area-0badf00d.mdc", "anatomiya-area-deadbeef.mdc"];
+  const s = scanSummary(result(), plan({ unreadableRules: ["anatomiya-area-1.md"], ...others({ state: "on", on: true, write: files(2), unreadableRules: names }) }));
+
+  assert.deepEqual(s.targets.cursor, { state: "on", dir: ".cursor/rules", wrote: 2, removed: 0, unfiled: 0, foreign: 0, unreadable: names });
+  assert.deepEqual(scanLines(s).slice(-4), [
+    "wrote 2 files under .cursor/rules for Cursor",
+    '"anatomiya-area-0badf00d.mdc" in .cursor/rules/ could not be read, so whose it is was not established',
+    '"anatomiya-area-deadbeef.mdc" in .cursor/rules/ could not be read, so whose it is was not established',
+    RUNNING_SESSION,
+  ]);
+  assert.ok(scanLines(s).includes('"anatomiya-area-1.md" in .claude/rules/ could not be read, so whose it is was not established'));
+  const crafted = scanSummary(result(), plan(others({ state: "on", on: true, write: files(2), unreadableRules: ["anatomiya-ev\u202eli.mdc"] })));
+  assert.doesNotMatch(JSON.parse(scanJson(crafted)).targets.cursor.unreadable[0], /\u202e/);
+});
+
+test("a target that was on and could not be read says why, and one never written says nothing", () => {
+  const unread = { state: "unknown", reason: ".cursor is a link", remedy: "make .cursor a directory of this repository", listed: false };
+  const was = scanSummary(result(), plan(others({ ...unread, names: ["anatomiya-overview.mdc"] })));
+  const never = scanSummary(result(), plan(others(unread)));
+
+  assert.deepEqual(was.targets, {
+    cursor: { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: ".cursor is a link", remedy: unread.remedy },
+  });
+  // The record says what to do about it beside why, as the line does.
+  assert.deepEqual(JSON.parse(scanJson(was)).targets, was.targets);
+  assert.deepEqual(scanLines(was).slice(-3), [
+    "wrote 2 files",
+    ".cursor/rules could not be read (.cursor is a link), so nothing there was written or removed: make .cursor a directory of this repository, then scan again",
+    RUNNING_SESSION,
+  ]);
+  assert.deepEqual(scanLines(never), BEFORE_LINES);
+});
+
+test("a target one locked file stopped says which file, and what to do about it", () => {
+  const locked = { state: "unknown", reason: ".cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)", remedy: "close what holds it or change its mode", unwritable: true };
+  const s = scanSummary(result(), plan(others(locked)));
+
+  assert.ok(
+    scanLines(s).includes(
+      ".cursor/rules could not be written (.cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)), so nothing there was written or removed: close what holds it or change its mode, then scan again"
+    ),
+    scanLines(s).join("\n")
+  );
+  assert.deepEqual(JSON.parse(scanJson(s)).targets.cursor, { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, ...locked });
+});
+
+test("a target that was on and could not be written says so whatever the record names, with the remedy", () => {
+  const locked = { state: "unknown", reason: ".cursor/rules is not writable", remedy: "fix its permissions", unwritable: true };
+  // A clone that brought a committed overview has no record of a file there.
+  const s = scanSummary(result(), plan(others(locked)));
+
+  assert.deepEqual(s.targets, {
+    cursor: { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: locked.reason, remedy: locked.remedy, unwritable: true },
+  });
+  assert.deepEqual(scanLines(s).slice(-3), [
+    "wrote 2 files",
+    ".cursor/rules could not be written (.cursor/rules is not writable), so nothing there was written or removed: fix its permissions, then scan again",
+    RUNNING_SESSION,
+  ]);
+  assert.deepEqual(JSON.parse(scanJson(s)).targets, s.targets);
+});
+
+test("a target that could not be read says the remedy its reason came with, and no other", () => {
+  const unread = { state: "unknown", reason: ".cursor could not be read", listed: false, names: ["anatomiya-overview.mdc"] };
+  const line = ".cursor/rules could not be read (.cursor could not be read), so nothing there was written or removed";
+  // Not one this module could have worked out from the reason.
+  const given = scanSummary(result(), plan(others({ ...unread, remedy: "ask whoever owns it" }, { ...unread, remedy: "make it readable", unreadableRules: ["anatomiya-area-0badf00d.instructions.md"] })));
+  assert.ok(scanLines(given).includes(`${line}: ask whoever owns it, then scan again`), scanLines(given).join("\n"));
+  assert.ok(scanLines(given).includes(`${COPILOT_DIR} could not be read (.cursor could not be read), so nothing there was written or removed: make it readable, then scan again`));
+
+  // A reason that came with none prints alone.
+  const bare = scanSummary(result(), plan(others(unread, { ...unread, unreadableRules: ["anatomiya-area-0badf00d.instructions.md"] })));
+  assert.ok(scanLines(bare).includes(line), scanLines(bare).join("\n"));
+  assert.equal("remedy" in JSON.parse(scanJson(bare)).targets.cursor, false);
+  // A record read back carries each remedy, so its lines are the ones the scan printed.
+  const read = JSON.parse(scanJson(given));
+  assert.deepEqual([read.targets.cursor.remedy, read.targets.copilot.remedy], ["ask whoever owns it", "make it readable"]);
+  assert.deepEqual(scanLines(read).filter((l) => l.includes("could not be read (")), scanLines(given).filter((l) => l.includes("could not be read (")));
+});
+
+test("a target the scan was told to leave alone says nothing, whatever the record names there", () => {
+  const left = scanSummary(result(), plan(others({ state: "on", leftAlone: true, names: ["anatomiya-overview.mdc"] })));
+
+  assert.deepEqual(scanLines(left), BEFORE_LINES);
+  assert.equal(scanJson(left), BEFORE_JSON);
+});
+
+test("a run that wrote nothing leaves a target as it found it", () => {
+  const s = scanSummary(result(), plan({ blind: true, unreadable: ["ruby"], ...others({ on: true }, { state: "on", on: true }) }));
+
+  assert.equal(s.targets.cursor.state, "off");
+  assert.equal(s.targets.copilot.state, "on");
+  assert.equal(scanLines(s).some((l) => l.includes(".cursor/rules") || l.includes(COPILOT_DIR)), false);
+});
+
+test("the record carries each target's counts, and the schema it had", () => {
+  const s = JSON.parse(scanJson(scanSummary(result(), plan(others({ on: true, write: files(2) })))));
+
+  assert.equal(s.schema, 2);
+  assert.deepEqual(s.targets, { cursor: { state: "on", dir: ".cursor/rules", wrote: 2, removed: 0, unfiled: 0, foreign: 0 } });
+  assert.deepEqual(Object.keys(s).slice(-2), ["dryRun", "targets"]);
 });
 
 /* --- the pin --- */
@@ -662,6 +1007,31 @@ test("a pin that would write says so and sends nobody off to scan", () => {
 
   assert.deepEqual(pinLines(s).slice(-2), ["", "would write .claude/anatomiya/baseline.json"]);
   assert.ok(!pinLines(s).includes(RUNNING_SESSION));
+});
+
+test("a pin that gains a root area names it in words, and a directory of that name as a path", () => {
+  const previous = pinFor(["lib"]);
+  const rootAt = (path) => ({ id: "root", path, files: [{ rel: "a.go" }, { rel: "b.go" }] });
+  const next = buildPin(
+    [
+      { id: "id0", path: "lib", files: [{ rel: "lib/a.js" }, { rel: "lib/b.js" }] },
+      rootAt("."),
+      { ...rootAt("the repository root"), id: "named" },
+      // The encoder prints two spaces as one, so this name reads as the root's words too.
+      { id: "spaced", path: "the  repository root", files: [{ rel: "c.go" }] },
+    ],
+    { sha: "abcdef1234567890abcdef1234567890abcdef12", corpus: 7 }
+  );
+  const s = pinSummary({ previous, next, delta: pinDelta(previous, next), path: PIN_PATH, dryRun: true });
+  const lines = pinLines(s);
+
+  assert.ok(lines.includes('"the repository root" (new area)  +2 -0'), lines.join("\n"));
+  assert.ok(lines.includes('"./the repository root" (new area)  +2 -0'), lines.join("\n"));
+  assert.ok(lines.includes('"./the repository root" (new area)  +1 -0'), lines.join("\n"));
+  assert.equal(lines.filter((l) => l.startsWith('"the repository root"')).length, 1, lines.join("\n"));
+  assert.ok(!lines.some((l) => l.startsWith('"."')), lines.join("\n"));
+  // The record keeps the path, which is what the pin and the facts are keyed by.
+  assert.deepEqual(JSON.parse(pinJson(s)).delta.areas.map((a) => a.path).sort(), [".", "the  repository root", "the repository root"]);
 });
 
 test("the pin summary carries the shas either side of the delta", () => {
@@ -831,11 +1201,11 @@ test("a degraded semantic tier is on the summary, not only in the map", () => {
   // all said so; the terminal the caller was watching was the one surface that
   // did not.
   const lines = scanLines(
-    summary({ semantic: "type-checked claims are counts only: 15% of type lookups resolved (low-resolution)" })
+    summary({ semantic: "type-checked claims are not counted: 15% of type lookups resolved (low-resolution)" })
   );
 
   assert.ok(
-    lines.includes("type-checked claims are counts only: 15% of type lookups resolved (low-resolution)"),
+    lines.includes("type-checked claims are not counted: 15% of type lookups resolved (low-resolution)"),
     lines.join("\n")
   );
 });

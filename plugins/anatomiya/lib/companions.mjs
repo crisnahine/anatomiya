@@ -22,19 +22,38 @@
  * evidence has to come from the file rather than from where it sits.
  */
 
-import { engineOf, language } from "./langs.mjs";
+import { embeddedIn, familyOf, language } from "./langs.mjs";
 import { byCode, dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
 import {
+  FAMILY_TEST_NAMES,
+  FAMILY_TREES,
+  FEATURE_TREES,
   LEARNED_SUFFIX_FLOOR,
   LEARNED_SUFFIX_SHARE,
   NAMESAKE_SUFFIXES,
+  PACKAGE_FILE,
+  PACKAGE_SHELL,
+  coveredStem,
+  pairedWith,
   startsAtSeparator,
   TEST_TREES,
   TREE,
+  withoutTree,
 } from "./test-shape.mjs";
+
+const familyAt = (rel) => familyOf(language(rel));
+
+// The path a source file answers a test by: a package's own file answers as the module its directory is.
+const answersAs = (rel) => {
+  const dir = dirOf(rel);
+  return dir !== "" && stemOf(rel) === PACKAGE_FILE[familyAt(rel)] ? `${dir}${extOf(rel)}` : rel;
+};
 
 const namesakeStem = (rel) => {
   const stem = stemOf(rel);
+  // A family with a spelling of its own is read by it alone: `FooTest.java` covers `Foo`, and `foo_spec.py` covers nothing.
+  const family = familyAt(rel);
+  if (FAMILY_TEST_NAMES[family]) return coveredStem(stem, family) ?? stem;
   for (const suffix of NAMESAKE_SUFFIXES) {
     if (stem.length > suffix.length && stem.endsWith(suffix)) return stem.slice(0, -suffix.length);
   }
@@ -49,8 +68,6 @@ const tailOf = (rel, rootPath) => {
   if (dir === rootPath) return "";
   return dir.startsWith(`${rootPath}/`) ? dir.slice(rootPath.length + 1) : dir;
 };
-
-const withoutTree = (dir) => dir.split("/").filter((seg) => !TREE.has(seg)).join("/");
 
 /**
  * The repository-relative path a relative import names, spelled exactly as the
@@ -162,12 +179,13 @@ const wholeRoot = (dir, tail) =>
  * names `src/vs/base/test`. Null where the two part on an ordinary name, since
  * a vote for that directory would name a place neither side keeps tests in.
  */
-function mirrorRoot(sourceDir, testDir) {
+function mirrorRoot(sourceDir, testDir, family) {
   const source = sourceDir.split("/");
   const test = testDir.split("/");
   let i = 0;
   while (i < source.length && i < test.length && source[i] === test[i]) i++;
-  return i < test.length && TREE.has(test[i]) ? test.slice(0, i + 1).join("/") : null;
+  const tree = i < test.length && (TREE.has(test[i]) || FAMILY_TREES[family]?.test.test(test[i]) === true);
+  return tree ? test.slice(0, i + 1).join("/") : null;
 }
 
 /**
@@ -187,7 +205,7 @@ function mirrorRoot(sourceDir, testDir) {
 function learnStemExtras(byStem, sourceFiles) {
   // Keyed by language as well as by name: `index.js` and `index_spec.rb` share
   // a stem and nothing else, and a Ruby spec is not a JavaScript module's test.
-  const stems = new Set(sourceFiles.map((f) => `${language(f.rel)}\u0000${stemOf(f.rel)}`));
+  const stems = new Set(sourceFiles.map((f) => `${language(f.rel)}\u0000${stemOf(answersAs(f.rel))}`));
   const perDir = new Map();
   const dirTotals = new Map();
   for (const candidates of byStem.values()) {
@@ -252,55 +270,99 @@ function sharedTail(a, b) {
  * than broken on a name, which is the posture `companionRoot` already takes.
  * Unowned is what every candidate is when no source list is handed in, so a
  * caller that has no corpus asks exactly the question it used to.
+ *
+ * Asked twice per test, once among the sources of its own language and once
+ * among the components of its family, because one test covers `button.vue` and
+ * the `button.ts` beside it: asked once over both, 47 of the 85 `.ts` files
+ * credited under element-plus's `packages/components` lose the test to the
+ * component of their name.
  */
 function assignOwners(byStem, sourceFiles) {
   // Keyed by language as well as by name, the way `learnStemExtras` is: a Ruby
   // spec is not a JavaScript module's test, and letting one own the other's
   // stem took the spec off the file it was structurally written for.
-  const sourcesByStem = new Map();
-  for (const f of sourceFiles) {
-    const key = `${language(f.rel)}\u0000${stemOf(f.rel)}`;
-    if (!sourcesByStem.has(key)) sourcesByStem.set(key, []);
-    sourcesByStem.get(key).push(f);
-  }
+  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${ownerGroup(f.rel)}\u0000${stemOf(answersAs(f.rel))}`);
 
   for (const [stem, candidates] of byStem) {
     for (const t of candidates) {
       // Per candidate, not per bucket: one stem holds every language that
       // spells it, so `foo_spec.rb` and `foo.test.js` sit together and each has
       // to be read against the sources of its own language.
-      const sources = sourcesByStem.get(`${language(t.rel)}\u0000${stem}`);
-      if (!sources || sources.length < 2) continue;
-      // Structure decides, the import edge breaks a tie, and where the two
-      // disagree nothing is decided.
-      //
-      // Both orders were tried and each has a counter-example the other gets
-      // right. Taken outright the edge moved a spec off the file in its own
-      // directory onto a same-stem module it named as a stub; used only as a
-      // tiebreak it discarded an explicit import whenever any structural noise
-      // separated the candidates. The corpus settles neither: no repository in
-      // it holds the shape. So the disagreement is left unowned, which is this
-      // file's posture everywhere else, and costs at worst the false positive
-      // the whole pass exists to remove rather than the false negative that
-      // would retire a real test.
-      let best = -1;
-      let winners = [];
-      for (const f of sources) {
-        const n = sharedTail(t.bare, withoutTree(dirOf(f.rel)));
-        if (n > best) {
-          best = n;
-          winners = [f.rel];
-        } else if (n === best) winners.push(f.rel);
-      }
-      const imported = sources
-        .filter((f) => t.covers.has(f.rel) || t.covers.has(withoutExtension(f.rel)))
-        .map((f) => f.rel);
-      if (winners.length === 1) {
-        // A test that imports one file and mirrors another has said two things.
-        if (imported.length === 0 || imported.includes(winners[0])) t.owner = winners[0];
-        continue;
-      }
-      if (imported.length === 1 && winners.includes(imported[0])) t.owner = imported[0];
+      t.owner = ownerAmong(t, sourcesByStem.get(`${language(t.rel)}\u0000${stem}`));
+      const components = sourcesByStem.get(`${componentsOf(familyAt(t.rel))}\u0000${stem}`);
+      // A component under the test's own directory is nearer than any mirror:
+      // shadcn-svelte's `message-scroller.test.ts` sits one level above the
+      // component and shares one trailing segment with each of two docs copies.
+      const home = homeOf(t.dir);
+      const held = home === "" ? [] : (components ?? []).filter((f) => `${dirOf(f.rel)}/`.startsWith(`${home}/`));
+      t.componentOwner = ownerAmong(t, components, held.length > 0 ? held : components);
+    }
+  }
+}
+
+const componentsOf = (family) => `${family} component`;
+const ownerGroup = (rel) => (embeddedIn(language(rel)) === null ? language(rel) : componentsOf(familyAt(rel)));
+
+// The directory a test is filed for: its own, less the test tree words it ends in.
+const homeOf = (dir) => {
+  const segments = dir.split("/");
+  while (segments.length > 0 && TEST_TREES.has(segments.at(-1))) segments.pop();
+  return segments.join("/");
+};
+
+/** The one of `sources` this test answers, looked for by structure among `near`, or null. */
+function ownerAmong(t, sources, near = sources) {
+  if (!sources || sources.length < 2) return null;
+  // Structure decides, the import edge breaks a tie, and where the two
+  // disagree nothing is decided.
+  //
+  // Both orders were tried and each has a counter-example the other gets
+  // right. Taken outright the edge moved a spec off the file in its own
+  // directory onto a same-stem module it named as a stub; used only as a
+  // tiebreak it discarded an explicit import whenever any structural noise
+  // separated the candidates. The corpus settles neither: no repository in
+  // it holds the shape. So the disagreement is left unowned, which is this
+  // file's posture everywhere else, and costs at worst the false positive
+  // the whole pass exists to remove rather than the false negative that
+  // would retire a real test.
+  let best = -1;
+  let winners = [];
+  for (const f of near) {
+    const n = sharedTail(t.bare, withoutTree(dirOf(answersAs(f.rel)), familyAt(f.rel)));
+    if (n > best) {
+      best = n;
+      winners = [f.rel];
+    } else if (n === best) winners.push(f.rel);
+  }
+  const imported = sources
+    .filter((f) => t.covers.has(f.rel) || t.covers.has(withoutExtension(f.rel)))
+    .map((f) => f.rel);
+  // A test that imports one file and mirrors another has said two things.
+  if (winners.length === 1) return imported.length === 0 || imported.includes(winners[0]) ? winners[0] : null;
+  return imported.length === 1 && winners.includes(imported[0]) ? imported[0] : null;
+}
+
+/**
+ * The one source file each test file's own project holds under the stem the
+ * test names, where the family's layout pairs the test's directory with a
+ * project at all.
+ *
+ * Two sources of one stem in the project decide nothing: the stem alone
+ * cannot say which the test was written for.
+ */
+function assignPairs(byStem, sourceFiles) {
+  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${familyAt(f.rel)}\u0000${stemOf(answersAs(f.rel))}`);
+  const dirsOf = new Map();
+  for (const [family, files] of Map.groupBy(sourceFiles, (f) => familyAt(f.rel))) {
+    dirsOf.set(family, [...new Set(files.map((f) => dirOf(answersAs(f.rel))))]);
+  }
+  for (const [stem, candidates] of byStem) {
+    for (const t of candidates) {
+      const family = familyAt(t.rel);
+      const inProject = pairedWith(t.dir, family, stem, dirsOf.get(family));
+      if (inProject === null) continue;
+      const held = (sourcesByStem.get(`${family}\u0000${stem}`) ?? []).filter((f) => inProject(dirOf(answersAs(f.rel))));
+      if (held.length === 1) t.paired = held[0].rel;
     }
   }
 }
@@ -359,14 +421,18 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
     const dir = dirOf(t.rel);
     // `owner` is null until the corpus decides one, never absent: an absent key
     // would make "nobody asked" and "nobody owns it" the same reading.
-    byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir), covers: coversOf(t), owner: null });
+    byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir, familyAt(t.rel)), covers: coversOf(t), owner: null, componentOwner: null, paired: null });
   }
   if (sourceFiles !== null) registerLearnedSpellings(byStem, sourceFiles);
   // This order picks the root that gets rendered.
   for (const candidates of byStem.values()) candidates.sort((a, b) => byCode(a.rel, b.rel));
   if (sourceFiles !== null) assignOwners(byStem, sourceFiles);
+  if (sourceFiles !== null) assignPairs(byStem, sourceFiles);
   return byStem;
 }
+
+/** Orders `[name, votes]` pairs, most votes first. Code units on a tie, not locale: the tie decides a rendered root, and ICU differs by machine. */
+export const byVotes = (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
 
 /**
  * `{ with, of, root }`: how many of the root's source files have a namesake
@@ -383,9 +449,21 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
 export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem = namesakeIndex(testFiles)) {
   const votes = new Map();
   let answered = 0;
+  // A file holding its own tests has no other file to carry its stem, so it is
+  // neither credited nor owed one, and is counted apart.
+  let inline = 0;
+  // A paired match shares no path with its source, so where it votes is settled once the mirrors have voted.
+  const pairedAt = [];
   for (const f of sourceFiles) {
-    const fDir = dirOf(f.rel);
-    const tail = tailOf(f.rel, rootPath);
+    if (f.facets?.inlineTests === true) {
+      inline++;
+      continue;
+    }
+    const answers = answersAs(f.rel);
+    const fDir = dirOf(answers);
+    const family = familyAt(f.rel);
+    const component = embeddedIn(language(f.rel)) !== null;
+    const tail = tailOf(answers, rootPath);
     // The tail with the tree words dropped, falling back to the whole
     // directory's when that leaves nothing. A tail that is only tree words is
     // the most ordinary layout there is: at `packages/foo` the tail of
@@ -393,7 +471,7 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // want of a shape read the package 0 of 2 where `packages` above it and
     // `packages/foo/src` below it both read 2 of 2. One file, three roots,
     // three answers, and the middle one wrong.
-    const bare = withoutTree(tail) || withoutTree(dirOf(f.rel));
+    const bare = withoutTree(tail, family) || withoutTree(fDir, family);
     // An empty tail has no suffix to mirror, so the root's own directory
     // stands in for it: a candidate still has to mirror that, or both sides
     // have to sit at the top of the tree. That second half is the flat
@@ -405,8 +483,10 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // where `apps/www` answered by a repository-wide `test/`, or a top-level
     // script answered by one package's own tests, is the shape a monorepo
     // keeps beside the package instead.
-    const rootBare = tail === "" ? withoutTree(fDir) : null;
-    const flatPair = tail === "" && !fDir.includes("/");
+    const rootBare = tail === "" ? withoutTree(fDir, family) : null;
+    const shell = PACKAGE_SHELL[family];
+    const top = shell && fDir.startsWith(`${shell}/`) ? fDir.slice(shell.length + 1) : fDir;
+    const flatPair = tail === "" && !top.includes("/");
     // The two spellings an import may use for this file: with its extension, and
     // without, which is how TypeScript and every bundler write it. Split once
     // here rather than once per candidate that shares the stem.
@@ -431,10 +511,14 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // one inside the root. The corpus holds no case, so this changes no line it
     // prints and settles a shape it does not contain.
     let kept = null;
-    for (const t of byStem.get(stemOf(f.rel)) ?? []) {
+    let pair = null;
+    for (const t of byStem.get(stemOf(answers)) ?? []) {
+      // A test its build pairs with one source was written for that one, whatever else its path lines up with.
+      if (t.paired !== null && t.paired !== f.rel) continue;
       // Another source in the corpus is the one this test was written for, so
       // it is not evidence about this file however the two paths line up.
-      if (t.owner !== null && t.owner !== f.rel) continue;
+      const owner = component ? t.componentOwner : t.owner;
+      if (owner !== null && owner !== f.rel) continue;
       // Two files at the top of the tree share a stem and nothing else, so this
       // branch asks the one question the nested path never had to: the
       // directories part first there, and here they do not. A JS script is not
@@ -448,14 +532,19 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // `app/javascript/mastodon/models` read 8 of 17 off the Ruby specs, and
       // `app/models` read the TypeScript tests.
       //
-      // The engine and not the language, which is finer than the question:
+      // The family and not the language, which is finer than the question:
       // `language` separates `.tsx` from `.ts` because that is the grammar the
       // parser is asked for, and a component tested by a plain `.ts` file is
       // the ordinary shape in every React repository there is. This branch
       // keeps asking `language`, because a bare basename at the top of two
       // trees is the one match with no structure behind it at all.
-      if (engineOf(language(t.rel)) !== engineOf(language(f.rel))) continue;
-      const topLevel = flatPair && TREE.has(t.dir.split("/")[0]) && language(t.rel) === language(f.rel);
+      if (familyAt(t.rel) !== family) continue;
+      const topLevel =
+        flatPair &&
+        TREE.has(t.dir.split("/")[0]) &&
+        language(t.rel) === language(f.rel) &&
+        // A tree that files by feature answers a flat package from its own top level only.
+        (!FEATURE_TREES.has(family) || !t.dir.includes("/"));
       // The same mirror, asked the other way round. `mirrors` is one-directional
       // and the empty-tail arm only ever asked whether the candidate ends in the
       // root, so a root whose tree-less form is longer than the test tree's
@@ -485,21 +574,23 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
         !whole &&
         (t.covers.has(f.rel) || (RESOLVABLE.has(extOf(f.rel)) && t.covers.has(noExtension)));
       const mirrored = !whole && bare !== "" && mirrors(t.bare, bare);
-      if (!whole && !mirrored && !covered) continue;
+      const paired = t.paired === f.rel;
+      if (!whole && !mirrored && !covered && !paired) continue;
       matched = true;
       // The first candidate that names a place, not the first that matches: a
       // mirror parting on an ordinary name names none, and stopping there threw
       // away a vote the next candidate was going to cast.
       if (whole || mirrored) {
-        const named = whole ? wholeRoot(t.dir, tail) : mirrorRoot(fDir, t.dir);
-        if (named !== null) {
+        const place = whole ? wholeRoot(t.dir, tail) : mirrorRoot(fDir, t.dir, family);
+        if (place !== null) {
           structural = true;
-          if (named) {
-            prefix = named;
+          if (place) {
+            prefix = place;
             break;
           }
         }
-      } else if (kept === null || (!inside(kept, rootPath) && inside(t.dir, rootPath))) kept = t.dir;
+      } else if (paired) pair = { dir: t.dir, crossed: mirrorRoot(fDir, t.dir, family) };
+      else if (kept === null || (!inside(kept, rootPath) && inside(t.dir, rootPath))) kept = t.dir;
     }
     if (!matched) continue;
     // One vote per answered source file, so the top vote and the count it is
@@ -508,15 +599,23 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     answered++;
     // Structure that named nothing has still answered, so the edge does not get
     // to name a place in its stead.
+    if (prefix === null && !structural && pair !== null) pairedAt.push(pair);
     const vote = prefix ?? (structural ? null : kept);
+    if (vote !== null) votes.set(vote, (votes.get(vote) ?? 0) + 1);
+  }
+
+  // The place the mirrored tests named, where a test of a paired test project sits inside one, and the tree it crossed
+  // otherwise: serilog's 10 such tests are all under the `test/Serilog.Tests` its 18 mirrored ones name.
+  const ranked = [...votes].sort(byVotes);
+  for (const { dir, crossed } of pairedAt) {
+    const vote = ranked.find(([place]) => dir === place || dir.startsWith(`${place}/`))?.[0] ?? crossed;
     if (vote !== null) votes.set(vote, (votes.get(vote) ?? 0) + 1);
   }
 
   // Null where the votes name the repository root, and null where they split:
   // "under ." is not a place and neither is a directory most of the matches
   // disagree with, so the renderer drops the clause rather than print one.
-  // Code units, not locale: the tie decides a rendered root, and ICU differs by machine.
-  const [top] = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const [top] = [...votes].sort(byVotes);
   // One answered file agrees with itself, so the half rule cannot refuse it and
   // the name is whatever that file happens to touch: react's one answered file
   // named a compiled fixture bundle. The counts stay, the place goes.
@@ -525,5 +624,5 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
   // Half the matches name the place, so the count there travels with it the
   // way a runner group's `under` does. Absent where every match sits there.
   const under = root !== null && top[1] !== answered ? { under: top[1] } : {};
-  return { with: answered, of: sourceFiles.length, root, ...under };
+  return { with: answered, of: sourceFiles.length - inline, root, ...under, ...(inline > 0 ? { inline } : {}) };
 }

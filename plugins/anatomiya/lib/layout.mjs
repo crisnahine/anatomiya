@@ -11,8 +11,19 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
+import { embeddedIn, familyOf, language, placeTestsOf } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
-import { TEST_DIRS, TEST_NAME, RUBY_TEST_NAME, TEST_ROOTS, TEST_TREES, UNNAMED_RUNNER } from "./test-shape.mjs";
+import { PRECEDENT_FLOOR } from "./principles.mjs";
+import {
+  FAMILY_TEST_NAMES,
+  TEST_DIRS,
+  TEST_NAME,
+  RUBY_TEST_NAME,
+  TEST_ROOTS,
+  UNNAMED_RUNNER,
+  isTestTree,
+  namesATest,
+} from "./test-shape.mjs";
 
 /**
  * The floor rises with the corpus, so a directory earns a line by holding a
@@ -38,10 +49,14 @@ const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel
  * `decidim-dev/lib/decidim/dev/test` scanned 46 files of shared RSpec tooling
  * as application code, both by this exact route.
  *
- * Exported because `scripts/measure-layout.mjs` recounts the printed line and
- * a second copy of this rule there would measure the disagreement.
+ * `family` adds the names one language's own build gives a test tree, for a
+ * file or a root of that language and no other: `commonTest` is a Gradle
+ * source set and an ordinary directory name in a JavaScript repository.
+ *
+ * Exported for its own test.
  */
-export const underTestTree = (dir) => dir !== "" && dir.split("/").some((seg) => TEST_TREES.has(seg));
+export const underTestTree = (dir, family = null) =>
+  dir !== "" && dir.split("/").some((seg) => isTestTree(seg, family));
 
 /**
  * What a root's label carries when its record covers one level and not the
@@ -68,8 +83,12 @@ export const LEVEL_ONLY_LABEL = " (files at this level)";
  *
  * Computed once over the whole layout corpus, because the question is about the
  * corpus and asking it per file walks it again.
+ *
+ * A language with a test name of its own takes no mirror, and the set holds
+ * the one place such a language's tool collects by instead: `placedTests`.
  */
 export function mirroredTests(files) {
+  const named = (f) => FAMILY_TEST_NAMES[familyOf(f.lang)] !== undefined;
   const outside = new Set();
   for (const f of files) {
     if (!f.lang || inTestRoot(f.rel)) continue;
@@ -77,13 +96,126 @@ export function mirroredTests(files) {
     for (let i = 0; i < segments.length; i++) outside.add(segments.slice(i).join("/"));
   }
 
-  const mirrored = new Set();
+  const mirrored = placedTests(files);
   for (const f of files) {
-    if (!f.lang || !inTestRoot(f.rel)) continue;
+    if (!f.lang || named(f) || !inTestRoot(f.rel)) continue;
     const under = withoutExtension(f.rel).slice(f.rel.indexOf("/") + 1);
     if (under.includes("/") && outside.has(under)) mirrored.add(f.rel);
   }
   return mirrored;
+}
+
+/**
+ * The files a language's tool builds as tests by where they sit: every one
+ * directly in the declared directory of a project, whatever it holds. A
+ * project is a directory with the declared manifest or source directory in
+ * it. A file one level deeper is a module those targets include, and is a test
+ * only by its own facets.
+ *
+ * No manifest is read, so a crate that sets `autotests = false` is counted by
+ * cargo's default too: ripgrep builds one target, and the 10 files counted
+ * under its `tests` are that target and its 9 modules.
+ *
+ * Asked of paths and languages alone, so it is answered before any file is
+ * parsed and handed to the parse: a row that leaves test files out leaves
+ * these out.
+ */
+export function placedTests(files) {
+  const out = new Set();
+  const places = new Set(files.map((f) => (f.lang ? placeTestsOf(f.lang) : null)).filter(Boolean));
+  for (const place of places) {
+    const projects = new Set();
+    for (const { rel } of files) {
+      if (baseOf(rel) === place.manifest) projects.add(dirOf(rel));
+      const dirs = dirOf(rel).split("/");
+      for (let i = 0; i < dirs.length; i++) if (dirs[i] === place.sources) projects.add(dirs.slice(0, i).join("/"));
+    }
+    for (const f of files) {
+      if (!f.lang || placeTestsOf(f.lang) !== place || baseOf(dirOf(f.rel)) !== place.dir) continue;
+      if (projects.has(dirOf(dirOf(f.rel)))) out.add(f.rel);
+    }
+  }
+  return out;
+}
+
+// A component with no script still holds its markup, which is the file.
+const holdsNothing = (facets) => facets?.empty === true && !facets.embedded;
+
+const isComponent = (lang) => Boolean(lang) && embeddedIn(lang) !== null;
+
+// A component in a `__tests__` directory is what the tests there mount, so no test is owed it.
+const isFixture = (f) => isComponent(f.lang) && dirOf(f.rel).split("/").some((seg) => TEST_DIRS.has(seg));
+
+// A file a test can be about. A helper under a test tree has tests of its own
+// name, so it keeps them: left out, a fixture's test goes to whichever source
+// file elsewhere shares its stem.
+const answersATest = (f, mirrored) =>
+  Boolean(f.lang) && !holdsNothing(f.facets) && !isTestFile(f, mirrored) && !isStoryFile(f.rel) && !isFixture(f);
+
+/**
+ * A file a test could be written for: source this tool reads that holds
+ * something, and is not a test, a story, a declaration file, a file a runner
+ * loads for its own use, or anything under a test tree of its family.
+ *
+ * A runner's own file is one by the parse, which names its runner. What sits
+ * under a test tree is what the tests run on, whatever root it is counted in:
+ * Newtonsoft.Json's `Src` read `63 of 631` with 388 of the 631 under
+ * `Src/Newtonsoft.Json.Tests`, and kit's `packages/adapter-vercel` read
+ * `0 of 13` over the 13 files of its test apps alone. The cost is a library
+ * whose own source sits under such a name, which the root rule already paid:
+ * storybook's `code/core/src/test`, 6 files of 2,053, and django's `django/test`, 7 of 755.
+ *
+ * `f.facets` is null where the caller holds no parse, and the file is then
+ * read by its path alone. Asked by a root's namesake count, by the placement
+ * finding of what a change put in a directory, and by
+ * `scripts/measure-layout.mjs`, so the three cannot differ on it.
+ */
+export const isProducer = (f, mirrored = null) =>
+  answersATest(f, mirrored) && !extOf(f.rel).startsWith(".d.") && !underTestTree(dirOf(f.rel), familyOf(f.lang));
+
+/**
+ * The extensions a root's line prints with their counts, and the ones its
+ * namesake counts are taken over: the commonest printed that holds a file a
+ * test could be written for, and the other this tool reads where either is a
+ * component's. Null for one the root has none of.
+ *
+ * The two commonest print. Where neither is an extension this tool reads, the
+ * commonest it does read prints after them, or the line says nothing
+ * of the source: django's own package read `1226 .mo, 1226 .po and 1164 other`
+ * with 907 `.py` files inside the 1164. Only from the floor a test precedent
+ * is read at: flask's `docs` is 76 `.rst`, 5 `.png` and one `conf.py`, which
+ * is not that root's source, and `0 of 1 have a namesake test` says nothing.
+ * The floor is asked of each read extension in turn, commonest first: five
+ * `.d.ts` beside four `.js` named neither, the declarations holding nothing a
+ * test could be written for.
+ *
+ * Over an extension that holds one, not the first this tool reads: webpack's
+ * `schemas/plugins` is 39 `.d.ts` beside 39 `.js`, and the count was taken
+ * over the declarations.
+ *
+ * Exported because `scripts/measure-layout.mjs` recounts the printed line and
+ * a second copy of this rule there would measure the disagreement.
+ */
+export function printedExtensions(own, mirrored = null) {
+  const all = tally(own.map((f) => extOf(f.rel)));
+  const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
+  const producers = (ext) => own.filter((f) => extOf(f.rel) === ext && isProducer(f, mirrored)).length;
+  const exts = all.slice(0, 2);
+  if (!exts.some(([ext]) => read(ext))) {
+    const source = all.find(([ext]) => read(ext) && producers(ext) >= PRECEDENT_FLOOR);
+    if (source) exts.push(source);
+  }
+  // The denominator has to be a number the line already printed: one of the
+  // printed extensions, not always the first of them. supabase's own
+  // marketing site prints more screenshots than components, and matching
+  // only exts[0] read every producer there as zero instead of naming its
+  // `.tsx` files.
+  const first = exts.find(([ext]) => producers(ext) > 0)?.[0] ?? null;
+  // Where one of the two printed extensions is a component's the other is counted too, and apart:
+  // summed into the first, the denominator is a number the line never printed.
+  const component = (ext) => own.some((f) => isComponent(f.lang) && extOf(f.rel) === ext);
+  const other = exts.find(([ext]) => ext !== first && read(ext) && (component(ext) || component(first)))?.[0] ?? null;
+  return { exts, counted: [first, other] };
 }
 
 /**
@@ -105,9 +237,12 @@ export function mirroredTests(files) {
  * A file in no language this tool parses is never one of them. Twenty
  * screenshots under `cypress/` are not twenty specs, and counting them made the
  * tests line the roster exists to be a denominator read 24 over 4.
+ *
+ * Neither is a component, which no runner collects: vitepress keeps its e2e
+ * site's 5 theme components under `__tests__`.
  */
 export function isTestFile({ rel, lang, facets }, mirrored = null) {
-  if (!lang) return false;
+  if (!lang || isComponent(lang)) return false;
   if (facets?.testRunner || facets?.testCalls) return true;
   // A file the parse read and found no statement in declares nothing at all, so
   // there is nothing in it for a runner to collect and the three claims below
@@ -119,10 +254,15 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // holds code declares its cases in whatever vocabulary its runner spells them,
   // and reading that absence as "not a test" costs vscode 1,864 of its 2,366
   // (`test` nested inside `suite`) and this client's whole Cypress suite.
-  if (facets?.empty) return false;
+  if (facets?.empty === true) return false;
   const base = baseOf(rel);
-  if (TEST_NAME.test(base)) return true;
   const dir = dirOf(rel);
+  // A language with a test name of its own answers by it and by nothing
+  // written for another: no dotted form, no mirror, no `__tests__`.
+  const family = familyOf(lang);
+  const names = FAMILY_TEST_NAMES[family];
+  if (names) return mirrored?.has(rel) === true || namesATest(rel, family);
+  if (TEST_NAME.test(base)) return true;
   // The Ruby form is the one a non-test file wears in earnest, so it is the one
   // that has to be corroborated by where the file sits. `software_spec.rb` is
   // Homebrew's `SoftwareSpec` class and has its own `software_spec_spec.rb`
@@ -159,6 +299,9 @@ export const isStoryFile = (rel) => STORY_NAME.test(baseOf(rel));
  */
 export function runnerOf(rel, facets) {
   if (facets?.testRunner) return facets.testRunner;
+  // A tool that collects by place alone is its language's one runner.
+  const byPlace = placeTestsOf(language(rel))?.runner;
+  if (byPlace) return byPlace;
   return dirOf(rel).split("/").includes("cypress") ? "cypress" : UNNAMED_RUNNER;
 }
 
@@ -422,8 +565,7 @@ export function layoutIndexes(files, mirrored = mirroredTests(files)) {
   // a producer, so no root would ever count it, and letting it win ownership
   // retires the spec outright: the real file elsewhere in the tree then reads
   // untested and the roster loses the place along with the count.
-  const sources = files.filter(
-    (f) => f.lang && !f.facets?.empty && !isTestFile(f, mirrored) && !isStoryFile(f.rel));
+  const sources = files.filter((f) => answersATest(f, mirrored));
   return { testFiles, mirrored, byStem: namesakeIndex(testFiles, sources) };
 }
 
@@ -441,13 +583,7 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   const own = root.files;
   const tests = own.filter((f) => isTestFile(f, mirrored));
   const jsxFiles = own.filter((f) => f.facets?.jsx);
-  const exts = tally(own.map((f) => extOf(f.rel))).slice(0, 2);
-  // The denominator has to be a number the line already printed: one of the
-  // top two extensions, not always the first of them. supabase's own
-  // marketing site prints more screenshots than components, and matching
-  // only exts[0] read every producer there as zero instead of naming its
-  // `.tsx` files.
-  const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
+  const { exts, counted: [producerExt, otherExt] } = printedExtensions(own, mirrored);
   // Neither source to imitate nor a test, so a story never fills the
   // namesake question: storybook's `.stories.tsx` is literal JSX and would
   // otherwise stand for the component beside it.
@@ -455,13 +591,9 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   // test could be written for either, so it belongs in neither side of the
   // pair. Left in, a commented-out spec was counted twice against the
   // repository: once as the source that lost its test, once as a new producer.
-  const producers = own.filter(
-    (f) =>
-      f.lang &&
-      extOf(f.rel) === producerExt &&
-      !f.facets?.empty &&
-      !isTestFile(f, mirrored) &&
-      !isStoryFile(f.rel));
+  const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
+  const producers = producersOf(producerExt);
+  const others = producersOf(otherExt);
   const stories = own.filter((f) => isStoryFile(f.rel));
 
   const record = {
@@ -482,9 +614,12 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
     testRoot: tests.length * 2 > own.length,
   };
   if (stories.length > 0) record.stories = stories.length;
-  if (producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)) {
+  if (producers.length > 0 && testFiles.length > 0) {
     // The extension the count is over, which is not always the root's first.
     record.companions = { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt };
+  }
+  if (others.length > 0 && testFiles.length > 0) {
+    record.otherCompanions = { ...namesakeCompanions(others, testFiles, dir, byStem), ext: otherExt };
   }
   const helpers = helperFacet(own, jsxFiles, mirrored);
   if (helpers !== null) record.helpers = helpers;

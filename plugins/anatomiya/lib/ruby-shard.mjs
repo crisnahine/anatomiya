@@ -16,11 +16,15 @@ import { EventEmitter } from "node:events";
 import { StringDecoder } from "node:string_decoder";
 import { parentPort, workerData } from "node:worker_threads";
 
-import { ALL_DIMENSIONS } from "./dimensions.mjs";
+import { RAILS_DIMENSIONS } from "./dimensions-rails.mjs";
+import { RUBY_DIMENSIONS } from "./dimensions-ruby.mjs";
 import { parseBatch } from "./ruby.mjs";
 
 const { files, keys, ...job } = workerData;
-const byKey = new Map(ALL_DIMENSIONS.map((d) => [d.key, d]));
+// The prism tables alone, not the list they are part of: the heap hold is
+// sized over what this thread's modules hold, and `dimensions.mjs` brings
+// every other engine's rows, which no Ruby file is asked.
+const byKey = new Map([...RUBY_DIMENSIONS, ...RAILS_DIMENSIONS].map((d) => [d.key, d]));
 const dimensions = keys.map((key) => {
   if (!byKey.has(key)) throw new Error(`no row named ${key}`);
   return byKey.get(key);

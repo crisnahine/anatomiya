@@ -23,10 +23,20 @@
  * `parse.mjs`. The remedy lives here rather than at the printer that needed
  * one, because there were three printers and two of them said npm, which
  * cannot install an interpreter.
+ *
+ * `rejects` is what it means when the engine rejects a file.
+ * oxc and prism are their languages' own parsers, so it is the file's syntax.
+ * A tree-sitter grammar covers less than its language: measured, it rejects a
+ * correct Kotlin file with a `when` guard in it, so it is the grammar's reach.
+ *
+ * `grammars` is every grammar name the engine reads, which is what a
+ * declaration's `grammars` may name. Null for tree-sitter: its grammars are
+ * files, one named after each language it hosts.
  */
 export const ENGINES = Object.freeze({
-  oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory" },
-  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH" },
+  oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "syntax", grammars: ["js", "jsx", "ts", "tsx"] },
+  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH", rejects: "syntax", grammars: ["rb"] },
+  "tree-sitter": { id: "tree-sitter", host: "node", module: "web-tree-sitter", remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "grammar", grammars: null },
 });
 
 const STRIPPER = ENGINES.oxc.extras.find((e) => e.role === "stripper");
@@ -46,6 +56,11 @@ const js = {
   // it, stated here so it is a decision rather than a dangling else.
   fallback: true,
   engine: "oxc",
+  // What a test of this language may be written in. Finer than the engine,
+  // which hosts a family only until it hosts two.
+  family: "js",
+  embedded: null,
+  markup: null,
   exts: ["ts", "mts", "cts", "js", "mjs", "cjs"],
   filenames: [],
   scratchExt: "ts",
@@ -66,6 +81,9 @@ const js = {
   // two apart, and a row whose whole question is the annotation would count a
   // confident zero on every plain JavaScript file.
   typed: { exts: ["ts", "mts", "cts"] },
+  directives: null,
+  placeTests: null,
+  rootPackage: false,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -74,6 +92,9 @@ const jsx = {
   id: "jsx",
   fallback: false,
   engine: "oxc",
+  family: "js",
+  embedded: null,
+  markup: null,
   exts: ["tsx", "jsx"],
   filenames: [],
   scratchExt: "tsx",
@@ -83,14 +104,52 @@ const jsx = {
   // never the CommonJS wrapper's own dialect.
   commonjs: null,
   typed: { exts: ["tsx"] },
+  directives: null,
+  placeTests: null,
+  rootPackage: false,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
+
+// A component file: markup holding at most two script blocks, which are all
+// that is read. `embedded` names whose rules find them. The grammar is the
+// block's own `lang` and the type syntax is the tag's to say, so no extension
+// routes either, and the checker is handed paths it could not open. `markup`
+// is what the part nobody reads changes about the script, one of `MARKUP`:
+// `export let` declares a prop a parent passes in, or the template mounts a
+// function under its own name.
+const component = (id, markup) => ({
+  id,
+  fallback: false,
+  engine: "oxc",
+  family: "js",
+  embedded: id,
+  markup,
+  exts: [id],
+  filenames: [],
+  scratchExt: id,
+  grammars: { byExtension: {}, default: "tsx" },
+  dialect: null,
+  commonjs: null,
+  typed: null,
+  directives: null,
+  placeTests: null,
+  rootPackage: false,
+  capabilities: { semantic: false, importGraph: true },
+  positions: { offsets: "utf16", lines: false },
+});
+
+const MARKUP = ["propsByExportLet", "mountsByName"];
+const vue = component("vue", "mountsByName");
+const svelte = component("svelte", "propsByExportLet");
 
 const ruby = {
   id: "ruby",
   fallback: false,
   engine: "prism",
+  family: "ruby",
+  embedded: null,
+  markup: null,
   exts: ["rb", "rake", "gemspec", "jbuilder"],
   // Ruby whose filename does not carry the language, matched whole so a
   // Gemfile.lock is not a Gemfile. `.rbi` is deliberately absent: a Sorbet
@@ -101,9 +160,51 @@ const ruby = {
   dialect: null,
   commonjs: null,
   typed: null,
+  directives: null,
+  placeTests: null,
+  rootPackage: false,
   capabilities: { semantic: false, importGraph: false },
   positions: { offsets: null, lines: true },
 };
+
+// A language tree-sitter reads whole, through the one grammar file named after
+// its id. The family is its own: a Go test is no test of a Python file.
+const grammar = (id, exts) => ({
+  id,
+  fallback: false,
+  engine: "tree-sitter",
+  family: id,
+  embedded: null,
+  markup: null,
+  exts,
+  filenames: [],
+  scratchExt: exts[0],
+  grammars: { byExtension: {}, default: id },
+  dialect: null,
+  commonjs: null,
+  typed: null,
+  directives: null,
+  placeTests: null,
+  rootPackage: false,
+  capabilities: { semantic: false, importGraph: false },
+  positions: { offsets: "utf16", lines: false },
+});
+
+// `.pyi` is deliberately absent, as `.rbi` is: a stub describes types rather
+// than anything anyone wrote.
+const python = grammar("python", ["py"]);
+const php = grammar("php", ["php"]);
+// The go tool builds every directory as one package and the module root as one like any other:
+// gin holds 40 of its 98 files there and caddy 39.
+const go = { ...grammar("go", ["go"]), rootPackage: true };
+const java = grammar("java", ["java"]);
+// The grammar reads `#if` around whole statements and members only, so a file
+// it rejects is read again with one branch of each conditional (`csharp-directives.mjs`).
+const csharp = { ...grammar("csharp", ["cs"]), directives: { exts: ["cs"] } };
+// cargo builds every file directly under a crate's `tests` as a test, whatever it holds, so the place alone names the runner.
+// A crate is the directory holding the manifest or the source directory.
+const rust = { ...grammar("rust", ["rs"]), placeTests: { dir: "tests", runner: "cargo test", manifest: "Cargo.toml", sources: "src" } };
+const kotlin = grammar("kotlin", ["kt", "kts"]);
 
 const freeze = (decl) => {
   Object.freeze(decl.exts);
@@ -122,17 +223,26 @@ const freeze = (decl) => {
     Object.freeze(decl.typed.exts);
     Object.freeze(decl.typed);
   }
+  if (decl.directives) {
+    Object.freeze(decl.directives.exts);
+    Object.freeze(decl.directives);
+  }
+  if (decl.placeTests) Object.freeze(decl.placeTests);
   Object.freeze(decl.capabilities);
   Object.freeze(decl.positions);
   return Object.freeze(decl);
 };
 
-export const LANGUAGES = Object.freeze([js, jsx, ruby].map(freeze));
+/** The script extractors there are, which is what `embedded` may name. `script-blocks.mjs` holds its scanners to this list at import. */
+export const EXTRACTORS = Object.freeze(["vue", "svelte"]);
+
+export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby, python, php, go, java, csharp, rust, kotlin].map(freeze));
 
 const BY_ID = new Map(LANGUAGES.map((l) => [l.id, l]));
 const EXT_TO_ID = new Map(LANGUAGES.flatMap((l) => l.exts.map((e) => [e, l.id])));
 const FILENAME_TO_ID = new Map(LANGUAGES.flatMap((l) => l.filenames.map((n) => [n, l.id])));
-const FALLBACK = LANGUAGES.find((l) => l.fallback).id;
+// Null with none declared, which `assertRegistry` refuses below in its own words.
+const FALLBACK = LANGUAGES.find((l) => l.fallback)?.id ?? null;
 
 /** The declaration behind an id. An unknown id past the corpus is a bug, so it throws by name. */
 export function declOf(id) {
@@ -144,6 +254,39 @@ export function declOf(id) {
 /** The engine a language routes to. A name, never an import: the child reads this too. */
 export function engineOf(id) {
   return declOf(id).engine;
+}
+
+/** The family a language belongs to: what a test of it may be written in. */
+export const familyOf = (id) => declOf(id).family;
+
+/** Whose rules find a language's script blocks, or null where the file is the script. */
+export const embeddedIn = (id) => declOf(id).embedded;
+
+/**
+ * The directory a language's tool collects every file of as a test, what that tool is called, and the manifest and source
+ * directory that mark the directory holding it, or null where no tool collects by place.
+ */
+export const placeTestsOf = (id) => declOf(id).placeTests;
+
+const ROOT_PACKAGES = new Set(LANGUAGES.filter((l) => l.rootPackage).map((l) => l.id));
+
+/** Whether a language's build makes a directory a package and the repository root one like any other. */
+export const rootIsPackage = (id) => ROOT_PACKAGES.has(id);
+
+/** The ids of the languages one engine hosts, in the registry's order. */
+export const hostedBy = (engineId) => LANGUAGES.filter((l) => l.engine === engineId).map((l) => l.id);
+
+/**
+ * Refuse a table keyed by language that has no entry for an id in `required`,
+ * or holds a key outside `allowed`.
+ *
+ * Called where each such table loads. A missing entry otherwise throws a
+ * TypeError on the first file of that language, in the middle of a scan, or
+ * answers with another language's rule and says nothing.
+ */
+export function assertKeyed(name, table, required, allowed = required) {
+  for (const id of required) if (!Object.hasOwn(table, id)) throw new Error(`${name} has no entry for ${id}`);
+  for (const id of Object.keys(table)) if (!allowed.includes(id)) throw new Error(`${name} holds ${id}, which nothing asks it about`);
 }
 
 export const EXT_BY_LANG = Object.freeze(Object.fromEntries(LANGUAGES.map((l) => [l.id, l.exts])));
@@ -210,6 +353,22 @@ const MAY_BE_COMMONJS = new RegExp(`\\.(${COMMONJS_EXT.join("|")})$`);
  */
 export const mayBeCommonJS = (path) => MAY_BE_COMMONJS.test(path);
 
+const DIRECTIVE_EXT = LANGUAGES.filter((l) => l.directives).flatMap((l) => l.directives.exts);
+const MAY_HOLD_DIRECTIVES = new RegExp(`\\.(${DIRECTIVE_EXT.join("|")})$`);
+
+/**
+ * Whether a file its grammar rejected is worth reading again with one branch
+ * of each conditional, derived from the declarations' own `directives` lists
+ * the way `mayHoldFlow` is.
+ */
+export const mayHoldDirectives = (path) => MAY_HOLD_DIRECTIVES.test(path);
+
+/** Whether `export let` at the top of this file declares a prop a parent passes in, where a module's is an export. */
+export const exportLetIsProp = (path) => declOf(language(path)).markup === "propsByExportLet";
+
+/** Whether a capitalised function in this file is a component its template mounts under that name. */
+export const templateMountsByName = (path) => declOf(language(path)).markup === "mountsByName";
+
 const TYPED_EXT = LANGUAGES.filter((l) => l.typed).flatMap((l) => l.typed.exts);
 const CARRIES_TYPES = new RegExp(`\\.(${TYPED_EXT.join("|")})$`);
 
@@ -268,9 +427,33 @@ export function assertRegistry(langs) {
     if (!ENGINES[decl.engine]) {
       throw new Error(`${decl.id} names no declared engine: ${decl.engine}`);
     }
+    if (typeof decl.family !== "string" || !decl.family) throw new Error(`${decl.id} names no family`);
+    if (decl.embedded !== null && !EXTRACTORS.includes(decl.embedded)) {
+      throw new Error(`${decl.id} names no script extractor: ${decl.embedded}`);
+    }
+    if (decl.embedded && decl.engine !== ENGINES.oxc.id) {
+      throw new Error(`${decl.id} embeds its script, which only oxc reads, and routes to ${decl.engine}`);
+    }
+    if (decl.embedded && !decl.markup) throw new Error(`${decl.id} embeds its script and does not say what its markup changes`);
+    if (!decl.embedded && decl.markup !== null) throw new Error(`${decl.id} has no markup to change its script`);
+    if (decl.embedded && !MARKUP.includes(decl.markup)) {
+      throw new Error(`${decl.id} says its markup changes its script by ${decl.markup}, which is none of ${MARKUP.join(", ")}`);
+    }
     const caps = Object.keys(decl.capabilities).sort().join(",");
     if (caps !== "importGraph,semantic") {
       throw new Error(`${decl.id} declares capabilities off the closed pair: ${caps}`);
+    }
+    for (const [name, has] of Object.entries(decl.capabilities)) {
+      // Anything but `true` reads as no, so `"yes"` would switch a capability off and say nothing.
+      if (typeof has !== "boolean") throw new Error(`${decl.id} declares the capability ${name} as ${JSON.stringify(has)}, which is no boolean`);
+    }
+    if (decl.embedded && decl.capabilities.semantic) {
+      throw new Error(`${decl.id} embeds its script, which the checker cannot open, and declares itself semantic`);
+    }
+    // A name the engine does not read rejects every file routed to it, as a syntax error in each.
+    const reads = ENGINES[decl.engine].grammars ?? langs.filter((l) => l.engine === decl.engine).map((l) => l.id);
+    for (const named of [decl.grammars.default, ...Object.values(decl.grammars.byExtension)]) {
+      if (!reads.includes(named)) throw new Error(`${decl.id} names a grammar ${decl.engine} does not read: ${named}`);
     }
     for (const ext of decl.exts) {
       if (extOwner.has(ext)) throw new Error(`.${ext} is declared by ${extOwner.get(ext)} and ${decl.id}`);
@@ -300,6 +483,22 @@ export function assertRegistry(langs) {
         if (!decl.exts.includes(ext)) throw new Error(`${decl.id} retries a commonjs wrapper for .${ext}, which it does not own`);
       }
     }
+    if (decl.directives) {
+      if (decl.engine !== ENGINES["tree-sitter"].id) {
+        throw new Error(`${decl.id} retries directives, which only tree-sitter does, and routes to ${decl.engine}`);
+      }
+      for (const ext of decl.directives.exts) {
+        if (!decl.exts.includes(ext)) throw new Error(`${decl.id} retries directives for .${ext}, which it does not own`);
+      }
+    }
+    if (decl.placeTests === undefined) throw new Error(`${decl.id} does not say whether a tool collects its tests by place`);
+    if (decl.placeTests !== null) {
+      for (const [key, what] of [["dir", "directory"], ["runner", "runner"], ["manifest", "manifest"], ["sources", "source directory"]]) {
+        if (typeof decl.placeTests[key] !== "string" || !decl.placeTests[key]) throw new Error(`${decl.id} collects tests by place and names no ${what}`);
+      }
+    }
+    // Anything but `true` reads as no, so `"yes"` would leave a root package in no area and say nothing.
+    if (typeof decl.rootPackage !== "boolean") throw new Error(`${decl.id} does not say whether the repository root is a package of its own`);
     if (decl.positions.offsets !== "utf16" && decl.positions.offsets !== null) {
       throw new Error(`${decl.id} declares offsets ${JSON.stringify(decl.positions.offsets)}, which no reader understands`);
     }

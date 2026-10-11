@@ -1,4 +1,4 @@
-import { optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
+import { componentProps, optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
 import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
@@ -406,7 +406,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file exporting at least one declaration whose name starts with use and a capital, by name or as its default, counted by name so an overload set is one hook; the module is one site, whatever the count",
       blind: "a hook re-exported through a specifier or a barrel is declared elsewhere and is not resolved to it, so a file that only re-exports several reads as exporting none",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue"],
     run(program, add) {
       const names = exportedHooks(program);
       if (!names.length) return;
@@ -428,15 +428,16 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: "module-level functions are assigned to variables, not declared with function",
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a file declaring a function at module level, either as a declaration or as a binding initialised with one; a declaration carrying TypeScript overload signatures is not one, because an overload set has no arrow form",
+      sites: "a file declaring a function at module level, either as a declaration or as a binding initialised with one; a declaration carrying TypeScript overload signatures is not one, because an overload set has no arrow form, and neither is a Svelte component's `export let`, which declares a prop and has no function form",
       blind: null,
     },
     // Measured 0.01 to 1.00 across six repositories, the widest of any
     // structural claim: one repository writes every module function as an
     // arrow const and another writes none of them that way.
-    langs: ["js", "jsx"],
-    visitor(program, add) {
+    langs: ["js", "jsx", "vue", "svelte"],
+    visitor(program, add, { rel } = {}) {
       const overloads = new Map();
+      const props = componentProps(program, rel);
       return {
         node(n, ctx) {
           noteOverloads(n, overloads);
@@ -449,7 +450,7 @@ export const EXTRA_DIMENSIONS = [
             if (overloads.has(n)) return;
             return add({ node: n, conforming: true, where: declName(n) });
           }
-          if (n.type === "VariableDeclarator" && n.init && isFunctionLike(n.init)) {
+          if (n.type === "VariableDeclarator" && n.init && isFunctionLike(n.init) && !props.has(n)) {
             add({ node: n, conforming: false, where: n.id && n.id.name });
           }
         },
@@ -466,7 +467,7 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file holding an export whose declaration is a function, or a variable declarator initialised with one; an overload implementation conforms when every signature before it declares a return type",
+      sites: "a file holding an export whose declaration is a function, or a variable declarator initialised with one; an overload implementation conforms when every signature before it declares a return type. A Svelte component's `export let` declares a prop and is not one",
       blind: "a plain JavaScript file has no annotation to find, and a typed wrapper hides the one the function has",
     },
     // The whole question is the annotation, so a tree whose annotations were
@@ -478,9 +479,10 @@ export const EXTRA_DIMENSIONS = [
     // file leaves this row's denominator rather than counting a zero nobody
     // could move, which is the same trade `blindWhenStripped` makes.
     needsTypeSyntax: true,
-    langs: ["js", "jsx"],
-    visitor(program, add) {
+    langs: ["js", "jsx", "vue", "svelte"],
+    visitor(program, add, { rel } = {}) {
       const overloads = new Map();
+      const props = componentProps(program, rel);
       return {
         node(n) {
           noteOverloads(n, overloads);
@@ -499,7 +501,7 @@ export const EXTRA_DIMENSIONS = [
           }
           if (d.type !== "VariableDeclaration") return;
           for (const v of d.declarations || []) {
-            if (!v.init || !isFunctionLike(v.init)) continue;
+            if (!v.init || !isFunctionLike(v.init) || props.has(v)) continue;
             // The annotation sits on the arrow or on the binding it is assigned
             // to, and either one states the boundary type.
             const typed = !!v.init.returnType || !!(v.id && v.id.typeAnnotation);
@@ -567,6 +569,9 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file whose static import or re-export names a file through a relative specifier, once directory and asset specifiers are dropped. A directory specifier is . or .. or one ending in /, /. or /..; an asset is a stylesheet, image, font or other format a bundler is handed whole. A dynamic import() is not a static one",
       notCounted:
         "a specifier naming a directory, an asset, or a .coffee or .es6 source, and a dynamic import()",
+      // A component is one of those assets, and the one an agent told to drop
+      // extensions would drop: `./Card` resolves to nothing.
+      componentNotCounted: "an import of a <ext> file, which is written with its extension",
       blind: null,
     },
     // A type-only import is one of these sites, and the stripper deletes the
@@ -574,7 +579,7 @@ export const EXTRA_DIMENSIONS = [
     // one carries an extension, so a stripped file would report the imports
     // that survived and read as more conformant than the file is.
     blindWhenStripped: true,
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -611,7 +616,7 @@ export const EXTRA_DIMENSIONS = [
         "a || whose left or parent is an unbracketed || or &&, which the grammar refuses ?? beside",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -651,7 +656,7 @@ export const EXTRA_DIMENSIONS = [
     // lib stated the row at 190 of 190 without a line of TypeScript in it. Such
     // a file leaves the denominator, the trade `explicit_return_type` makes.
     needsTypeSyntax: true,
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -681,7 +686,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file holding a function that returns an explicit null or undefined, from a return statement or an expression body; a React effect callback is not one, because React refuses null there",
       blind: "falling off the end of a function returns undefined with no site to count, and a function annotated `: void` still counts although `return null` there is TS2322, because the annotation is what the Flow retry blanks and reading it would make the row answer differently on a stripped tree",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -737,7 +742,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file holding a for...of statement or a .forEach called on something, other than a library's forEach that takes the collection as an argument",
       blind: "an indexed for loop is a third form the claim does not name and neither count reaches, and whether a receiver can be iterated at all is a tsconfig question (target, downlevelIteration, whether lib includes DOM.Iterable) this tier cannot see: a NodeList under an ES5 target answers TS2495 to the for...of the claim asks for",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -763,7 +768,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file calling it or test, through any chain of runner modifiers such as each, only or skip",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -789,7 +794,7 @@ export const EXTRA_DIMENSIONS = [
       sites: "a file calling expect, expect.soft, expect.poll or assert, including a member chain rooted at assert",
       blind: "an assertion behind a helper, or from a third library, carries neither name",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -830,11 +835,12 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: "code here explains itself; exported functions carry no doc comment",
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file exporting a top-level function or class, by name, as a default, or as a function-valued const; a comment opening with a tool directive or a TODO, FIXME, XXX or HACK note, and a license or copyright header, is not a doc comment on either side",
+      sites: "a file exporting a top-level function or class, by name, as a default, or as a function-valued const; a comment opening with a tool directive or a TODO, FIXME, XXX or HACK note, and a license or copyright header, is not a doc comment on either side. A Svelte component's `export let` declares a prop and is not an export",
       blind: "a doc comment on a re-export, or attached through a wrapper, is not seen",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add, extra = {}) {
+      const props = componentProps(program, extra.rel);
       // Nearest-first once per file rather than once per export: the walk above
       // steps upward through the directives it skips, so the run has to arrive
       // in the order it is walked.
@@ -855,7 +861,7 @@ export const EXTRA_DIMENSIONS = [
             const d = n.declaration;
             if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") return site(n, d.id?.name);
             const holder = d.type === "VariableDeclaration" &&
-              d.declarations.find((x) => x.init && isFunctionLike(value(x.init)));
+              d.declarations.find((x) => x.init && isFunctionLike(value(x.init)) && !props.has(x));
             if (holder) return site(n, holder.id?.name);
           }
           if (n.type === "ExportDefaultDeclaration") {

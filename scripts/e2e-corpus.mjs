@@ -35,13 +35,15 @@ import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
 import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
-import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { underArea } from "../plugins/anatomiya/lib/areas.mjs";
+import { LANGUAGES, assertKeyed, familyOf, language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, readRecord, statedSide } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
 import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { TARGETS, isClaude, overviewName, parseTargets } from "../plugins/anatomiya/lib/targets.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { formatReport } from "../plugins/anatomiya/lib/check-report.mjs";
@@ -151,6 +153,12 @@ export function overviewProblems(text) {
   return problems;
 }
 
+// What tells each reader the file is an area's: anything else is the overview's frontmatter, or none.
+const SCOPED = {
+  cursor: (head) => head.includes("alwaysApply: false"),
+  copilot: (head) => head.some((l) => /^applyTo: ".+"$/.test(l) && l !== 'applyTo: "**"'),
+};
+
 /**
  * An area file is delivered by its `paths` list, so a missing one is not a
  * formatting slip: the file loads on every turn, which is the overview's job.
@@ -158,10 +166,17 @@ export function overviewProblems(text) {
  * The list itself is exempt from the bound, because a glob dropped to save a
  * line mis-delivers the whole file. Nothing under it is.
  */
-export function areaProblems(name, text) {
+export function areaProblems(name, text, target = TARGETS.claude) {
   const problems = [];
   const lines = text.trimEnd().split("\n");
   const end = frontmatterEnd(lines);
+  if (!isClaude(target)) {
+    if (!SCOPED[target.id](lines.slice(0, end))) {
+      problems.push(`${JSON.stringify(name)} does not carry the scope ${target.reader} matches an area file by`);
+    }
+    if (lines.length - end > MAX_LINES) problems.push(`${JSON.stringify(name)} has ${lines.length - end} body lines, past ${MAX_LINES}`);
+    return problems;
+  }
   const globs = lines.filter((l) => /^ {2}- /.test(l)).length;
   const at = lines.slice(0, end).indexOf("paths:");
   if (at === -1 || globs === 0) problems.push(`${JSON.stringify(name)} has no paths pattern, so it loads on every turn`);
@@ -209,10 +224,10 @@ export const rootsColumn = (roots, roster = null) =>
   `${roots}/${roster ? roster.imports : "-"}/${roster ? roster.reused : "-"}`;
 
 /** The write line's own count, against the generated names in the directory it wrote to. */
-export function wroteProblems(wrote, names) {
+export function wroteProblems(wrote, names, dir = RULES_DIR) {
   if (wrote === names.length) return [];
   return [
-    `the scan says it wrote ${wrote} files and ${RULES_DIR}/ holds ${names.length} generated files: ${names.join(", ")}`,
+    `the scan says it wrote ${wrote} files and ${dir}/ holds ${names.length} generated files: ${names.join(", ")}`,
   ];
 }
 
@@ -230,6 +245,87 @@ const OTHER_CLASS = { snake_case: "PascalCase", "kebab-case": "PascalCase", came
 const STEM = { camelCase: "zzProbeFile", PascalCase: "ZzProbeFile", "kebab-case": "zz-probe-file", snake_case: "zz_probe_file" };
 
 const langsOf = (key) => rowByKey(key)?.langs ?? [];
+
+// Per family, a file that holds a comment and nothing else, and a class given
+// the wrong base, each one its own grammar reads whole: a JavaScript comment in
+// a `.py` file is a rejected file, and the check reads that as nothing to say.
+// Null where the language has no class to give a base.
+//
+// The seven languages tree-sitter reads state neither of those rows, so each
+// also holds one function per side of the rows it is asked: `undocumented` and
+// `documented` a public one without and with its doc comment, `untyped` and
+// `typed` one without and with a return type, `swallowed` a handler that binds
+// the error and reads nothing of it. Absent where no such row lists the language.
+const JS_PROBE = { comment: "// e2e probe\n", subclass: "class ZzProbe extends NotTheBase {}\n" };
+const PROBES = {
+  js: JS_PROBE,
+  ruby: { comment: "# e2e probe\n", subclass: "class ZzProbe < NotTheBase\nend\n" },
+  python: {
+    comment: "# e2e probe\n",
+    subclass: "class ZzProbe(NotTheBase):\n    pass\n",
+    undocumented: "def zz_probe() -> int:\n    return 1\n",
+    documented: 'def zz_probe() -> int:\n    """Probe."""\n    return 1\n',
+    untyped: 'def zz_probe():\n    """Probe."""\n    return 1\n',
+    typed: 'def zz_probe() -> int:\n    """Probe."""\n    return 1\n',
+  },
+  php: {
+    comment: "<?php\n// e2e probe\n",
+    subclass: "<?php\n\nclass ZzProbe extends NotTheBase\n{\n}\n",
+    undocumented: "<?php\n\nfunction zz_probe(): int\n{\n    return 1;\n}\n",
+    documented: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    return 1;\n}\n",
+    untyped: "<?php\n\n/** Probes. */\nfunction zz_probe()\n{\n    return 1;\n}\n",
+    typed: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    return 1;\n}\n",
+    swallowed: "<?php\n\n/** Probes. */\nfunction zz_probe(): int\n{\n    try {\n        return 1;\n    } catch (\\Exception $e) {\n        return 2;\n    }\n}\n",
+  },
+  go: {
+    comment: "// e2e probe\npackage zzprobe\n",
+    subclass: null,
+    undocumented: "package zzprobe\n\nfunc ZzProbe() {}\n",
+    documented: "package zzprobe\n\n// ZzProbe probes.\nfunc ZzProbe() {}\n",
+  },
+  java: {
+    comment: "// e2e probe\n",
+    subclass: "class ZzProbe extends NotTheBase {}\n",
+    undocumented: "public class ZzProbe {\n    public void probe() {}\n}\n",
+    documented: "public class ZzProbe {\n    /** Probes. */\n    public void probe() {}\n}\n",
+    swallowed: "class ZzProbe {\n    void probe() {\n        try {\n            run();\n        } catch (Exception e) {\n            return;\n        }\n    }\n}\n",
+  },
+  csharp: {
+    comment: "// e2e probe\n",
+    subclass: "class ZzProbe : NotTheBase {}\n",
+    undocumented: "public class ZzProbe\n{\n    public void Probe() { }\n}\n",
+    documented: "public class ZzProbe\n{\n    /// <summary>Probes.</summary>\n    public void Probe() { }\n}\n",
+  },
+  rust: {
+    comment: "// e2e probe\n",
+    subclass: null,
+    undocumented: "pub fn zz_probe() {}\n",
+    documented: "/// Probes.\npub fn zz_probe() {}\n",
+  },
+  kotlin: {
+    comment: "// e2e probe\n",
+    subclass: "class ZzProbe : NotTheBase()\n",
+    undocumented: "fun zzProbe() {}\n",
+    documented: "/** Probes. */\nfun zzProbe() {}\n",
+  },
+};
+
+// The rows a function breaks, in the order they are tried, each with the body that breaks its claim and the one that breaks its inverse.
+const SITE_PROBES = {
+  public_doc_comment: { claim: "undocumented", counter: "documented" },
+  declared_return_type: { claim: "untyped", counter: "typed" },
+  caught_error_used: { claim: "swallowed" },
+};
+
+assertKeyed("PROBES", PROBES, [...new Set(LANGUAGES.map((l) => l.family))]);
+
+/** The probe file's text for one extension and row, or null where the language cannot break that row. */
+export function probeBody(ext, key, kind = null) {
+  const probe = PROBES[familyOf(language(`f${ext}`))];
+  if (key !== "file_naming_case") return probe.subclass;
+  // Only a JavaScript file can carry the element a row narrowed to JSX asks about.
+  return kind === "jsx" && probe === JS_PROBE ? "// e2e probe\nexport const ZzProbeElement = () => <div />\n" : probe.comment;
+}
 
 /** The area's own commonest extension that the row speaks and a check opens. */
 function extFor(area, key) {
@@ -260,21 +356,44 @@ export function probePlan(facts) {
       const ext = extFor(area, key);
       if (ext === null) continue;
 
-      const ruby = language(`f${ext}`) === "ruby";
       const stem = key === "file_naming_case" ? STEM[OTHER_CLASS[d.learned]] : "zzprobe";
-      const jsxKind = d.learnedKind === "jsx" && !ruby;
-      const body =
-        key === "file_naming_case"
-          ? jsxKind
-            ? "// e2e probe\nexport const ZzProbeElement = () => <div />\n"
-            : `${ruby ? "#" : "//"} e2e probe\n`
-          : ruby
-            ? "class ZzProbe < NotTheBase\nend\n"
-            : "class ZzProbe extends NotTheBase {}\n";
-      return { area: area.path, dimension: key, learned: d.learned, path: `${area.path}/${stem}${ext}`, body };
+      const body = probeBody(ext, key, d.learnedKind ?? null);
+      if (body === null) continue;
+      return { area: area.path, dimension: key, learned: d.learned, path: underArea(area.path, `${stem}${ext}`), body };
+    }
+  }
+  return siteProbePlan(facts);
+}
+
+/**
+ * One function that breaks a row of the seven languages where an area states
+ * one, on the side it states: where functions carry a doc comment an
+ * undocumented one, and where they carry none a documented one.
+ */
+function siteProbePlan(facts) {
+  for (const area of facts.areas) {
+    for (const [key, bodies] of Object.entries(SITE_PROBES)) {
+      const d = (area.dimensions || []).find((x) => x.key === key);
+      if (!d || d.matchesDefault === true) continue;
+      const { side, states } = statedSide(d);
+      if (states === null) continue;
+      const ext = extFor(area, key);
+      if (ext === null) continue;
+      const body = PROBES[familyOf(language(`f${ext}`))][bodies[side]];
+      if (typeof body !== "string") continue;
+      const { claim, counterClaim } = rowByKey(key);
+      return { area: area.path, dimension: key, learned: side === "counter" ? counterClaim : claim, path: underArea(area.path, `zzprobe${ext}`), body };
     }
   }
   return null;
+}
+
+/** What the probe column says: the row a finding named the probe for, that none did, or why there was nothing to probe. */
+export function probeCell(plan, facts, named = false) {
+  if (plan) return named ? `yes ${plan.dimension}` : "no";
+  if (facts.areas.length === 0) return "n.a. (no area)";
+  const stated = facts.areas.some((area) => (area.dimensions || []).some((d) => statedSide(d).states !== null && d.matchesDefault !== true));
+  return stated ? "n.a. (no stated row one file breaks)" : "n.a. (no claim stated)";
 }
 
 /** The paths the report's findings name, and nothing off the rest of it. */
@@ -310,16 +429,23 @@ const USAGE = `usage: node scripts/e2e-corpus.mjs <corpusDir> <scratchDir> [opti
   <corpusDir>        a directory whose children are the repositories to run
   <scratchDir>       where each clone goes; every clone is removed again
   --only <a,b>       run these repositories rather than every child
+  --targets <list>   hand this to each repository's first scan, as cursor,copilot
 `;
 
 export function parseArgs(argv) {
-  const read = readArgv(argv, { only: { type: "string" } }, { positionals: true });
+  const read = readArgv(argv, { only: { type: "string" }, targets: { type: "string" } }, { positionals: true });
   if (read.error) return read;
   const [corpus, scratch, ...rest] = read.positionals;
   if (corpus === undefined) return { error: "the corpus directory is required" };
   if (scratch === undefined) return { error: "the scratch directory is required" };
   if (rest.length > 0) return { error: "two directories, the corpus and the scratch, not more" };
-  return { corpus, scratch, only: read.values.only ?? null };
+  const targets = read.values.targets ?? null;
+  try {
+    if (targets !== null) parseTargets(targets);
+  } catch (err) {
+    return { error: err.message };
+  }
+  return { corpus, scratch, only: read.values.only ?? null, targets };
 }
 
 // The order both measurement documents record the corpus in.
@@ -490,11 +616,17 @@ function removeTree(path) {
   }
 }
 
+/** Every generated file in every target's directory, by its path in the repository. */
 function ruleFiles(clone) {
-  const dir = join(clone, RULES_DIR);
-  if (!existsSync(dir)) return new Map();
-  const names = readdirSync(dir).filter(isGeneratedName).sort();
-  return new Map(names.map((n) => [n, readFileSync(join(dir, n), "utf8")]));
+  const out = new Map();
+  for (const target of Object.values(TARGETS)) {
+    const dir = join(clone, target.dir);
+    if (!existsSync(dir)) continue;
+    for (const n of readdirSync(dir).filter((n) => isGeneratedName(n, target)).sort()) {
+      out.set(`${target.dir}/${n}`, readFileSync(join(dir, n), "utf8"));
+    }
+  }
+  return out;
 }
 
 function sameFiles(a, b) {
@@ -508,14 +640,21 @@ function sameFiles(a, b) {
  * rule above, with the rule files and the record it read so a caller can keep
  * comparing them.
  */
-export function writtenProblems(repo, wrote) {
+export function writtenProblems(repo, wrote, targets = {}) {
   const problems = [];
-  const overview = join(repo, RULES_DIR, OVERVIEW_FILE);
-  if (!existsSync(overview)) problems.push(`no ${OVERVIEW_FILE} was written`);
-  else problems.push(...overviewProblems(readFileSync(overview, "utf8")));
   const written = ruleFiles(repo);
-  for (const [n, body] of written) if (n !== OVERVIEW_FILE) problems.push(...areaProblems(n, body));
-  problems.push(...wroteProblems(wrote, [...written.keys()]));
+  for (const target of Object.values(TARGETS)) {
+    // Another target's directory is somebody else's until the scan's own record says it is on.
+    const said = isClaude(target) ? wrote : targets[target.id]?.state === "on" ? targets[target.id].wrote : null;
+    if (said === null) continue;
+    const at = `${target.dir}/`;
+    const names = [...written.keys()].filter((k) => k.startsWith(at)).map((k) => k.slice(at.length));
+    const overview = overviewName(target);
+    if (!names.includes(overview)) problems.push(`no ${overview} was written`);
+    else problems.push(...overviewProblems(written.get(at + overview)));
+    for (const n of names) if (n !== overview) problems.push(...areaProblems(n, written.get(at + n), target));
+    problems.push(...wroteProblems(said, names, target.dir));
+  }
 
   const facts = readRecord(join(repo, FACTS_PATH)).record;
   if (facts === null) problems.push(`no readable ${FACTS_PATH} was written`);
@@ -535,7 +674,7 @@ export function baseOf(clone) {
 }
 
 /** The whole flow for one repository, on a clone that is removed either way. */
-async function runRepo(name, source, scratchDir) {
+async function runRepo(name, source, scratchDir, targets) {
   const clone = join(scratchDir, name);
   const started = Date.now();
   const problems = [];
@@ -560,7 +699,8 @@ async function runRepo(name, source, scratchDir) {
     if (deps.error) fail(deps.error);
 
     /* 1 and 2: the first scan, and what it wrote. */
-    const first = anatomiya(["scan", clone, "--format", "json"], scratchDir);
+    // The first scan alone: a target stays on for the scans after it.
+    const first = anatomiya(["scan", clone, ...(targets ? ["--targets", targets] : []), "--format", "json"], scratchDir);
     if (first.status !== 0) {
       fail(`scan exited ${first.status}: ${first.err.split("\n")[0]}`);
       return { row, problems };
@@ -582,7 +722,7 @@ async function runRepo(name, source, scratchDir) {
 
     const overview = join(clone, RULES_DIR, OVERVIEW_FILE);
     const factsFile = join(clone, FACTS_PATH);
-    const { problems: wrongs, written, facts } = writtenProblems(clone, s1.wrote);
+    const { problems: wrongs, written, facts } = writtenProblems(clone, s1.wrote, s1.targets);
     for (const p of wrongs) fail(p);
     if (facts !== null) {
       row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
@@ -631,7 +771,8 @@ async function runRepo(name, source, scratchDir) {
     const head = cleanReport ? formatReport(cleanReport).split("\n")[0] : null;
 
     /* 6: one file built to break a row the map stated. */
-    const plan = probePlan(JSON.parse(readFileSync(factsFile, "utf8")));
+    const mapped = JSON.parse(readFileSync(factsFile, "utf8"));
+    const plan = probePlan(mapped);
     const probePath = plan ? plan.path : "e2e-probe.md";
     if (git(["checkout", "-q", "-b", "e2e/probe"], clone).status !== 0) fail("could not branch the clone");
     // The clone is a copy, but the probe body is not this repository's code and
@@ -651,13 +792,10 @@ async function runRepo(name, source, scratchDir) {
     const probeReport = readJson(probed.out);
     if (probeReport === null) fail("the check printed no record on the probe branch");
     const named = probeReport ? findingPaths(probeReport) : [];
+    row.probe = probeCell(plan, mapped, named.includes(probePath));
     if (plan) {
-      row.probe = named.includes(probePath) ? `yes ${plan.dimension}` : "no";
       if (row.probe === "no") fail(`no finding names ${probePath}, and ${plan.dimension} states ${plan.learned} in ${plan.area}`);
-    } else {
-      row.probe = "n.a.";
-      if (named.length !== 0) fail(`a markdown file drew ${named.length} finding(s)`);
-    }
+    } else if (named.length !== 0) fail(`a markdown file drew ${named.length} finding(s)`);
     return { row, problems, head, summary };
   } catch (err) {
     fail(err && err.stack ? err.stack : String(err));
@@ -710,7 +848,7 @@ async function main() {
   const heads = new Map();
   const summaries = new Map();
   for (const { name, source } of selected.repos) {
-    const out = await runRepo(name, source, scratchDir);
+    const out = await runRepo(name, source, scratchDir, opts.targets);
     rows.push(out.row);
     problems.push(...out.problems);
     if (out.head) heads.set(name, out.head);

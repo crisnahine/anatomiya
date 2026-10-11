@@ -6,6 +6,8 @@ import { dirCount } from "./areas.mjs";
 import { holdsTypeSyntax, language, spokenIn } from "./langs.mjs";
 import { defaultSideFor, defaultClassFor } from "./model-defaults.mjs";
 import { GATES, wilsonLower, wilsonUpper } from "./gates.mjs";
+import { extOrName } from "./paths.mjs";
+import { byVotes } from "./companions.mjs";
 
 /**
  * How many files a dimension has to speak about before it may state.
@@ -292,6 +294,8 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // renderer prints this one only where there is something to disclose.
       ...(declined.size ? { declined: declined.size } : {}),
       files: [...perFile.keys()],
+      // For the renderer's scope clause, and left out of the record.
+      askedExts: [...new Set(examined.filter(eligible).map((e) => extOrName(e.rel)))].sort(),
       claimFiles,
       counterFiles,
       ...spread(perFile, candidates),
@@ -517,8 +521,6 @@ export function learnClass(perFile, { grouped = false } = {}) {
   if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return null;
   return [...spellings.get(ranked[0][0])].sort(byVotes)[0][0];
 }
-
-const byVotes = (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
 
 function byCountThenPath(a, b) {
   if (b.count !== a.count) return b.count - a.count;
