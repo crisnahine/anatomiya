@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 
 import { walk, collectHits, fromVisitor, whereOf } from "../plugins/anatomiya/lib/walk.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const { program } = parseSync(
   "f.ts",
@@ -258,5 +259,58 @@ test("a site's name carries the named class around its declaration, and only one
   assert.deepEqual(names(`class A { static { try {} catch {} } }`), ["A"], "the class is the declaration, not its own owner");
   assert.deepEqual(names(`class O { m() { class I { run() { try {} catch {} } } } }`), ["I.run"], "the innermost class");
   assert.deepEqual(names(`function f() { class C {} try {} catch {} }`), ["f"], "a class closed before the site is not around it");
-  assert.deepEqual(names(`class A { run() { list.map(() => { try {} catch {} }) } }`), [null], "an unnamed callback names nothing");
+  assert.deepEqual(names(`class A { run() { list.map(() => { try {} catch {} }) } }`), ["A.run"], "an unnamed callback takes the method around it");
+  assert.deepEqual(names(`function run() { go().then(function () { try {} catch {} }) }`), ["run"]);
+  assert.deepEqual(names(`list.forEach(() => { try {} catch {} })`), [null], "a callback with nothing named around it names nothing");
+});
+
+test("a method of an object literal bound to a name carries that name, through a call and a nested object", () => {
+  const names = (src) => {
+    const out = [];
+    walk(parseSync("a.ts", src, { sourceType: "module" }).program, (n, ctx) => {
+      if (n.type === "CatchClause") out.push(whereOf(ctx.enclosing, ctx));
+    });
+    return out;
+  };
+
+  assert.deepEqual(names(`const api = { run() { try {} catch {} } }`), ["api.run"]);
+  assert.deepEqual(names(`export const api = { run: () => { try {} catch {} } }`), ["api.run"]);
+  assert.deepEqual(names(`const api = { run() { list.forEach(() => { try {} catch {} }) } }`), ["api.run"]);
+  assert.deepEqual(names(`const C = defineComponent({ methods: { run() { try {} catch {} } } })`), ["C.run"]);
+  assert.deepEqual(names(`export default { methods: { run() { try {} catch {} } } }`), ["run"], "no binding, the method's own name");
+  assert.deepEqual(names(`export default defineComponent({ methods: { run() { try {} catch {} } } })`), ["run"]);
+  assert.deepEqual(names(`const api = ({ run() { try {} catch {} } }) as const`), ["api.run"]);
+  assert.deepEqual(names(`const api = { run() { try {} catch {} } } satisfies Api`), ["api.run"]);
+  assert.deepEqual(names(`const api = { [run]() { try {} catch {} } }`), [null], "a computed key names nothing");
+  assert.deepEqual(names(`const api = { run }; function run() { try {} catch {} }`), ["run"]);
+  assert.deepEqual(names(`const api = { run() { try {} catch {} } }.run`), ["run"], "a member read off the literal is not the literal");
+  assert.deepEqual(names(`const go = ({ run() { try {} catch {} } }).run()`), ["run"], "nor is a call on it");
+  assert.deepEqual(names(`const run = () => { try {} catch {} }`), ["run"], "a function bound directly is its own name");
+  assert.deepEqual(names(`class A { m() { const api = { run() { try {} catch {} } } } }`), ["api.run"], "the innermost owner");
+  assert.deepEqual(names(`const api = make(() => ({ run() { try {} catch {} } }))`), ["run"], "a function between them breaks the binding");
+});
+
+test("a site's name costs the same at any depth of nested callbacks", () => {
+  const read = (n) => {
+    const src = "class A { run() {\n" + "g(() => { try {} catch {}\n".repeat(n) + "})".repeat(n) + "\n} }\n";
+    const { program } = parseSync("a.ts", src, { sourceType: "module" });
+    return () => {
+      let named = 0;
+      walk(program, (node, ctx) => {
+        if (node.type === "CatchClause" && whereOf(ctx.enclosing, ctx) === "A.run") named++;
+      });
+      assert.equal(named, n);
+    };
+  };
+  const ratio = doublingRatio(read, 800);
+  assert.ok(ratio < LINEAR, `twice the depth took ${ratio.toFixed(2)} times as long`);
+});
+
+test("a static and an instance method of one name are one place, which is rare enough to leave", () => {
+  const out = [];
+  const src = `class A { static run() { try {} catch {} } run() { try {} catch {} } }`;
+  walk(parseSync("a.ts", src, { sourceType: "module" }).program, (n, ctx) => {
+    if (n.type === "CatchClause") out.push(whereOf(ctx.enclosing, ctx));
+  });
+  assert.deepEqual(out, ["A.run", "A.run"]);
 });

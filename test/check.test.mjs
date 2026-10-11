@@ -3149,6 +3149,33 @@ for (const [lang, file, wrap] of [
   });
 }
 
+for (const [lang, file, wrap] of [
+  ["JavaScript", "web/lib/old.js", (s) => s],
+  ["Vue", "web/lib/Old.vue", (s) => `<script>\n${s}</script>\n`],
+]) {
+  for (const [shape, holder] of [
+    ["a callback inside a method", (name) => `export class ${name} {\n  run(list) {\n    list.forEach((go) => {\n      try {\n        go();\n      } catch (error) {}\n    });\n  }\n}\n`],
+    ["an object-literal method", (name) => `export const ${name} = {\n  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  },\n};\n`],
+    ["a component's method", (name) => `const ${name} = defineComponent({\n  methods: {\n    run(go) {\n      try {\n        go();\n      } catch (error) {}\n    },\n  },\n});\n`],
+  ]) {
+    test(`${lang}: a catch in ${shape}, written above an old one of the same name under another name, is reported on the line the branch wrote`, async (t) => {
+      const dir = repo(t, ({ git, write, commit }) => {
+        write(file, wrap(holder("A")));
+        commit("init");
+        git("checkout", "-q", "-b", "work");
+        write(file, wrap(`${holder("B")}\n${holder("A")}`));
+        commit("a second holder, written first");
+      });
+      facts(dir, { sha: sha(dir, "main"), path: "web/lib", dimensions: [dim({ key: "swallowed_error" })] });
+
+      const r = await check(dir, { baseRef: "main" });
+
+      const line = wrap(holder("B")).split("\n").findIndex((l) => l.includes("catch")) + 1;
+      assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.line, f.where]), [[line, "B.run"]]);
+    });
+  }
+}
+
 test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {
   // The grouped site's identity used to be the include call's own node, which
   // is `call include` for every body in the file, so one new violating body
