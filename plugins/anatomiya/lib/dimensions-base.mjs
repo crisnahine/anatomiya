@@ -146,7 +146,7 @@ const declared = (decl, out = []) => {
  * The names this node assigns to, gathered over every node of the program.
  *
  * A member assignment binds nothing: `obj.x = 1` writes a property, which is the
- * distinction `usesParam` already draws for a catch parameter, and `boundNames`
+ * distinction `swallowed_error` draws for a caught error, and `boundNames`
  * has no member case so it falls out. A for-of or for-in head with no
  * declaration writes its target on every turn without declaring it.
  */
