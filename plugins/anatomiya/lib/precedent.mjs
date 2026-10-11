@@ -15,6 +15,7 @@ import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { namesakeClause, pathText, testsParts } from "./render-layout.mjs";
 import { encode, locator } from "./encode.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
+import { claimsFor, noticeLine } from "./cochange.mjs";
 
 /** Whether a root pairs enough of its files with tests to call that its habit. */
 function pairsTests(r) {
@@ -291,11 +292,22 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
  */
 export function noticeFor(rel, layout, { holdsTest, from = null } = {}) {
   const [finding] = precedentFindings([rel], layout?.roots ?? [], holdsTest ? { holdsTest } : {});
-  if (!finding) return null;
+  // A file of a class whose additions ship with a companion, which is decided at
+  // the moment the file is, and the area file loads too late for it (A44).
+  const shipped = claimsFor(rel, layout?.cochange);
+  if (!finding && shipped.length === 0) return null;
   return [
     `anatomiya: ${pathText(rel)}`,
-    `  ${finding.reason}.`,
-    `  ${PRECEDENT_COUNTED} Put it where the siblings put theirs, or leave it out and say which rule you followed.`,
+    ...(finding ? [
+      `  ${finding.reason}.`,
+      `  ${PRECEDENT_COUNTED} Put it where the siblings put theirs, or leave it out and say which rule you followed.`,
+    ] : []),
+    ...shipped.map(noticeLine),
+    ...(shipped.length === 0 ? [] : [shipped.length > 1
+      ? "  Make those changes in the same change, or say why this file does not need them."
+      : shipped[0].companion.edits !== undefined
+        ? "  Make that edit in the same change, or say why this file does not need it."
+        : "  Add that file in the same change, or say why this file does not need it."]),
     // A worktree with no map of its own is answered from its main checkout's, named as the path it is opened by.
     ...(from === null ? [] : [`  Counted from this repository's main checkout at ${locator(from)}, not this worktree.`]),
   ].join("\n");
