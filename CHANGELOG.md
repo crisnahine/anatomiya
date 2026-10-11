@@ -25,7 +25,8 @@ so does a git older than 2.31. Nothing needs installing.
 A scan of this version writes every rule file as 0.14.0 wrote it in 38 of the 60 measured
 repositories, and its record differs in all 60. The counts in this list are from one run: a copy of
 each of the 35 corpus repositories and the 25 of the seven languages, scanned by 0.14.0 and by this
-version, with times and build digests masked.
+version, with times and build digests masked
+(`docs/measurements/2026-10-11-what-changes-in-an-existing-map.md`).
 
 - The record. `facts.json` and `layout.json` differ in all 60: they carry the co-change record,
   `layout.cochange`, empty where nothing was mined.
