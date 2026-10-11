@@ -132,10 +132,10 @@ function copyWithNoRepository(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   const filter = REPOSITORY_FILES ? isRepositoryFile : undefined;
-  for (const part of ["plugins", "docs", "scripts", ".claude-plugin"]) {
+  // `test` whole: a status cell names a test by its bare file name, and the gate holds it to the tree.
+  for (const part of ["plugins", "docs", "scripts", "test", ".claude-plugin"]) {
     cpSync(join(ROOT, part), join(dir, part), { recursive: true, filter });
   }
-  cpSync(join(ROOT, "test", "fixtures"), join(dir, "test", "fixtures"), { recursive: true, filter });
   for (const f of readdirSync(ROOT).filter((f) => f.endsWith(".md"))) cpSync(join(ROOT, f), join(dir, f));
   // The lockfile carries the version twice, and the checker reads both.
   for (const f of ["package.json", "package-lock.json"]) cpSync(join(ROOT, f), join(dir, f));
@@ -397,6 +397,63 @@ test("the count of type-checked rows is read as a number even spelled as a word"
 
   assert.equal(status, 1);
   assert.match(output, /type-checked/);
+});
+
+test("a per-language count spelled as a word is read against the registry", (t) => {
+  const { status, output } = miscount(t, "README.md", "3 for PHP", "four for PHP");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`README.md: says "four for PHP", the registry holds 3 asked of PHP`), output);
+});
+
+test("every registry count is read in words as well as digits", (t) => {
+  // "twenty" is none of these counts, so each phrasing below has to fail on its own line.
+  const dir = repoCopy(t);
+  const swaps = {
+    "docs/how-it-works.md": [
+      ["52 ship", "twenty ship"],
+      ["28 for JavaScript", "twenty for JavaScript"],
+      ["33\nreachable in JSX", "twenty\nreachable in JSX"],
+      ["16 that speak Ruby", "twenty that speak Ruby"],
+      ["9 file-to-file obligations", "twenty file-to-file obligations"],
+      ["25 for Ruby", "twenty for Ruby"],
+      ["24\nfor Vue", "twenty\nfor Vue"],
+      ["24 for Svelte", "twenty for Svelte"],
+      ["JSX total 33 rather than 28", "JSX total twenty rather than 28"],
+    ],
+    "README.md": [["One of the 61", "One of the twenty"], ["297 numbered decisions", "twenty numbered decisions"]],
+  };
+  for (const [rel, pairs] of Object.entries(swaps)) {
+    edit(join(dir, ...rel.split("/")), (text) => pairs.reduce((out, [from, to]) => out.replace(from, to), text));
+  }
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  for (const said of ["twenty ship", "twenty for JavaScript", "twenty reachable in JSX", "twenty that speak Ruby", "twenty file-to-file obligations", "twenty for Ruby", "twenty for Vue", "twenty for Svelte", "JSX total twenty rather than 28", "One of the twenty", "twenty numbered"]) {
+    assert.ok(output.includes(`says "${said}"`), `${said}: ${output}`);
+  }
+});
+
+test("a count word past thirteen is still a count", (t) => {
+  const { status, output } = miscount(t, "SECURITY.md", /three runtime dependencies/i, "fourteen runtime dependencies");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`SECURITY.md: says "fourteen runtime dependencies", the plugin's manifest declares 3`), output);
+});
+
+test("the grammars counted as grammar files are read against the registry", (t) => {
+  const { status, output } = miscount(t, "README.md", /seven(\s+)grammars/, "eight$1grammar files");
+
+  assert.equal(status, 1);
+  assert.match(output, /README\.md: says "eight\s+grammar files", the registry routes 7 languages to tree-sitter/);
+});
+
+test("the engines counted without the word parser are read against the registry", (t) => {
+  const { status, output } = miscount(t, "docs/how-it-works.md", "drives the three parser engines", "drives the four engines");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`docs/how-it-works.md: says "the four engines", the registry declares 3`), output);
 });
 
 test("a caveat code the walkthrough does not document fails", (t) => {
@@ -843,6 +900,14 @@ test("a path outside the status cell, or in a directory this tree does not hold,
   assert.deepEqual(doneFilesGone(ROWS, new Set()), [], "and a tree git cannot list answers nothing");
 });
 
+test("a bare file name a decision row names as done is held to the names this tree holds", () => {
+  const rows = "| B4 | four | why | **done** `check-docs.mjs`, `gone.mjs`, `defaults.mjs`, `tsconfig.json` |";
+  const tracked = new Set(["scripts/check-docs.mjs"]);
+
+  assert.deepEqual(doneFilesGone(rows, tracked), [{ row: "B4", spelled: "gone.mjs" }], "an example name in prose is passed, and only .mjs names are read");
+  assert.deepEqual(doneFilesGone(rows, new Set()), [], "and a tree git cannot list answers nothing");
+});
+
 test("a row citing a number no row has is named, and a key in a code span is not a citation", () => {
   assert.deepEqual(rowsCitedMissing(ROWS), [{ row: "B2", cited: "B9" }, { row: "B2", cited: "H3" }]);
 });
@@ -855,6 +920,16 @@ test("a decision row naming a file that is gone fails the check", needsCheckout,
 
   assert.equal(status, 1, output);
   assert.match(output, /DECISIONS\.md: row B55 names `scripts\/scan-gone\.mjs` as done, and no such file is here/);
+});
+
+test("a decision row naming a bare file name that is gone fails the check", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "DECISIONS.md"), (text) => text.replace("**done** `scan.mjs` (`corpus.scriptOnly`)", "**done** `scan-gone.mjs` (`corpus.scriptOnly`)"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /DECISIONS\.md: row B55 names `scan-gone\.mjs` as done, and no such file is here/);
 });
 
 test("a decision row citing a row that does not exist fails the check", (t) => {
