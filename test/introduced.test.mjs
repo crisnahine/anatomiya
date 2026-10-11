@@ -281,6 +281,21 @@ test("an edit inside a function or class body is not a site on the declaration t
   );
 });
 
+test("a site that is or opens an arrow's expression body keeps its text, so an edit inside it is new", () => {
+  const judged = (key, base, head) =>
+    only(key, newlyIntroduced({ area: area(stated(key)), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })).map(
+      (f) => `${f.line}:${f.text}`
+    );
+  assert.deepEqual(judged("optional_chaining", "export const f = () => props.a;\n", "export const f = () => props.b;\n"), ["1:props.b"]);
+  assert.deepEqual(judged("nullish_default", "export const g = (a) => a.x || 1;\n", "export const g = (a) => a.y || 2;\n"), ["1:a.y || 2"]);
+  assert.deepEqual(judged("nullish_default", "export const g = (a) => a.x || 1 ? b : c;\n", "export const g = (a) => a.y || 2 ? b : c;\n"), ["1:a.y || 2"], "a site opening a longer body");
+  assert.deepEqual(
+    judged("optional_chaining", "export const f = () => {\n  return props.a;\n};\n", "export const f = () => {\n  return props.b;\n};\n"),
+    ["2:props.b"],
+    "and in a block body"
+  );
+});
+
 test("an edited body beside a new one of the same shape is matched by the function around it", () => {
   // Both callbacks share an identity once the body is out of it, so count
   // alone would absorb the new one in walk order and report the edited one.

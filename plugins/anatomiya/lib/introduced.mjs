@@ -198,6 +198,11 @@ function readerOf(source, program = null) {
       let from = node.start;
       for (let i = known ? firstFrom(node.start) : 0; i < list.length && list[i].start < node.end; ) {
         const b = list[i];
+        // An arrow's expression body can start where the node does and hold it.
+        if (b === node || b.end > node.end) {
+          i++;
+          continue;
+        }
         text += `${collapsed(from, b.start)}{}`;
         from = b.end;
         // The bodies inside one already cut start before its end and are passed over.
