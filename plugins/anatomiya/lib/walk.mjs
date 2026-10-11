@@ -73,6 +73,23 @@ export function declName(node) {
   return NAMED.get(node) ?? null;
 }
 
+/**
+ * The name a site inside `decl` reports: `Class.method` under the innermost
+ * named class around the declaration, the shape the tree rows give, and the
+ * bare name outside a class. Two classes each holding a `run` are two places.
+ */
+export function whereOf(decl, ctx) {
+  const name = declName(decl);
+  if (name === null) return null;
+  // From below the declaration itself, so a site whose declaration is the class reports the class alone.
+  const at = ctx.stack.lastIndexOf(decl);
+  for (let i = (at === -1 ? ctx.stack.length : at) - 1; i >= 0; i--) {
+    const owner = isClass(ctx.stack[i]) ? declName(ctx.stack[i]) : null;
+    if (owner) return `${owner}.${name}`;
+  }
+  return name;
+}
+
 function bind(node) {
   const child = node.value ?? node.init;
   if (!child || typeof child !== "object" || !isFn(child)) return;

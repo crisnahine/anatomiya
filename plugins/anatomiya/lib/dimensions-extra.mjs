@@ -1,4 +1,4 @@
-import { componentProps, optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
+import { componentProps, optionalChain, walk, isFunctionLike, declName, value, whereOf } from "./walk.mjs";
 import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
@@ -246,11 +246,10 @@ function noteMetadataReads(n, names) {
  * the `MethodDefinition` above it, not on the function it holds.
  */
 function siteName(fn, ctx) {
-  const own = declName(fn);
-  if (own) return own;
+  if (declName(fn)) return whereOf(fn, ctx);
   const e = ctx.enclosing;
   return e && (e.type === "MethodDefinition" || e.type === "PropertyDefinition")
-    ? declName(e)
+    ? whereOf(e, ctx)
     : null;
 }
 
@@ -633,7 +632,7 @@ export const EXTRA_DIMENSIONS = [
             const parent = ctx.ancestors[ctx.ancestors.length - 1];
             if (mixesWithNullish(n.left) || mixesWithNullish(parent)) return;
           }
-          add({ node: n, conforming: n.operator === "??", where: declName(ctx.fn) });
+          add({ node: n, conforming: n.operator === "??", where: whereOf(ctx.fn, ctx) });
         },
       };
     },
@@ -666,10 +665,10 @@ export const EXTRA_DIMENSIONS = [
             // tag heads a chain the grammar refuses to make optional.
             const { outer, allowed } = optionalChain(n, ctx.ancestors);
             if (outer === n || !allowed) return;
-            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+            return add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
           }
           if ((n.type === "MemberExpression" || n.type === "CallExpression") && n.optional === true) {
-            add({ node: n, conforming: true, where: declName(ctx.fn) });
+            add({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
           }
         },
       };
@@ -747,12 +746,12 @@ export const EXTRA_DIMENSIONS = [
       return {
         node(n, ctx) {
           if (n.type === "ForOfStatement") {
-            return add({ node: n, conforming: true, where: declName(ctx.fn) });
+            return add({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
           }
           if (n.type !== "CallExpression" || calleeName(n.callee) !== "forEach") return;
           if (n.callee.type !== "MemberExpression") return;
           if (!isArrayForEach(n)) return;
-          add({ node: n, conforming: false, where: declName(ctx.fn) });
+          add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
         },
       };
     },

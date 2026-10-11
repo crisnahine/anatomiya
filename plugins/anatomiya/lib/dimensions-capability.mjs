@@ -9,7 +9,7 @@
  * reducer offers a row only where at least three files already route through
  * one (C14), so no map carries a line that can only ever read zero.
  */
-import { walk, declName } from "./walk.mjs";
+import { walk, declName, whereOf } from "./walk.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 
@@ -154,10 +154,10 @@ export const CAPABILITY_DIMENSIONS = [
           if (n.type !== "CallExpression") return;
           const c = n.callee;
           if (c?.type === "MemberExpression" && c.object?.type === "Identifier" && c.object.name === "console") {
-            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+            return add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
           }
           const root = c?.type === "Identifier" ? c.name : rootName(c);
-          if (root && wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
+          if (root && wrap.has(root)) add({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
         },
       };
     },
@@ -187,12 +187,12 @@ export const CAPABILITY_DIMENSIONS = [
           if (n.type !== "CallExpression") return;
           const c = n.callee;
           if (c?.type === "Identifier" && c.name === "fetch") {
-            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+            return add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
           }
           const root = c?.type === "Identifier" ? c.name : rootName(c);
           if (!root) return;
-          if (axios.has(root)) return add({ node: n, conforming: false, where: declName(ctx.fn) });
-          if (wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
+          if (axios.has(root)) return add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
+          if (wrap.has(root)) add({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
         },
       };
     },
@@ -224,21 +224,21 @@ export const CAPABILITY_DIMENSIONS = [
           // `const { PORT } = process.env` reads one name per pattern property,
           // and missing it inflates the ratio in the dangerous direction.
           if (n.type === "VariableDeclarator" && n.id?.type === "ObjectPattern" && isProcessEnv(n.init)) {
-            for (const p of n.id.properties || []) add({ node: p, conforming: false, where: declName(ctx.fn) });
+            for (const p of n.id.properties || []) add({ node: p, conforming: false, where: whereOf(ctx.fn, ctx) });
             return;
           }
           if (n.type !== "MemberExpression") return;
           const o = n.object;
           if (o?.type === "MemberExpression" && o.object?.type === "Identifier" &&
               o.object.name === "process" && !o.computed && o.property?.name === "env") {
-            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+            return add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
           }
           // Only the outermost member of a wrapper chain is the site, or
           // config.db.host counts three times for one read.
           const parent = ctx.ancestors[ctx.ancestors.length - 1];
           if (parent?.type === "MemberExpression" && parent.object === n) return;
           const root = rootName(n);
-          if (root && wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
+          if (root && wrap.has(root)) add({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
         },
       };
     },

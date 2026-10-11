@@ -3126,6 +3126,29 @@ test("a rescue written above an old one, in a method of the same name in another
   assert.deepEqual(forKey(r, "rescue_uses_error").map((f) => [f.line, f.where]), [[4, "B#run"]]);
 });
 
+for (const [lang, file, wrap] of [
+  ["JavaScript", "web/lib/old.js", (s) => s],
+  ["Vue", "web/lib/Old.vue", (s) => `<script>\n${s}</script>\n`],
+  ["Svelte", "web/lib/Old.svelte", (s) => `<script>\n${s}</script>\n`],
+]) {
+  test(`${lang}: a catch written above an old one, in a method of the same name in another class, is reported on the line the branch wrote`, async (t) => {
+    const cls = (name) => `export class ${name} {\n  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  }\n}\n`;
+    const dir = repo(t, ({ git, write, commit }) => {
+      write(file, wrap(cls("A")));
+      commit("init");
+      git("checkout", "-q", "-b", "work");
+      write(file, wrap(`${cls("B")}\n${cls("A")}`));
+      commit("a second class, written first");
+    });
+    facts(dir, { sha: sha(dir, "main"), path: "web/lib", dimensions: [dim({ key: "swallowed_error" })] });
+
+    const r = await check(dir, { baseRef: "main" });
+
+    const line = wrap(cls("B")).split("\n").findIndex((l) => l.includes("catch")) + 1;
+    assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.line, f.where]), [[line, "B.run"]]);
+  });
+}
+
 test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {
   // The grouped site's identity used to be the include call's own node, which
   // is `call include` for every body in the file, so one new violating body
