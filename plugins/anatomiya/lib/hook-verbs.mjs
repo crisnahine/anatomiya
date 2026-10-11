@@ -43,7 +43,7 @@ export function runEcho(cwd, payload) {
   if (!event) return {};
   const root = answersFor(payload, cwd);
   if (root === null) return {};
-  const additionalContext = echoContext(root, { transcript: windowOf(payload) });
+  const additionalContext = echoContext(root, { transcript: windowOf(payload), data: process.env.CLAUDE_PLUGIN_DATA ?? null });
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }

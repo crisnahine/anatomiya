@@ -724,6 +724,11 @@ export function readHead(path, bytes = HEAD_BYTES) {
  * its reason: a fifo would block a plain open.
  */
 export function readTail(path, bytes) {
+  return readTailOf(path, bytes)?.text ?? null;
+}
+
+/** The same tail, with the offset in the file at which it ends. */
+export function readTailOf(path, bytes) {
   if (typeof path !== "string" || path === "") return null;
   let fd;
   try {
@@ -733,7 +738,7 @@ export function readTail(path, bytes) {
     const want = Math.min(bytes, stat.size);
     const buf = Buffer.alloc(want);
     const read = readSync(fd, buf, 0, want, stat.size - want);
-    return buf.subarray(0, read).toString("utf8");
+    return { text: buf.subarray(0, read).toString("utf8"), end: stat.size - want + read };
   } catch {
     return null;
   } finally {

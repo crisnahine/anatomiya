@@ -2,7 +2,8 @@
 /**
  * How often the echo hook repeated itself, how many of those deliveries the
  * once-per-window rule keeps, and how many transcript bytes a context token
- * costs, counted off the sessions it ran in (A92).
+ * costs, counted off the sessions it ran in (A92). Bytes are those of the
+ * records the model reads, which is what the window counts.
  *
  * A repeat is a delivery whose map equals the one before it with no compaction
  * between. The replay applies the rule `heldIn` applies at run time, reading
@@ -17,7 +18,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 
 import { invokedAs } from "./entry.mjs";
 import { transcripts } from "./measure-delivery.mjs";
-import { ECHO_WINDOW_BYTES, echoEvent } from "../plugins/anatomiya/lib/hook.mjs";
+import { ECHO_WINDOW_BYTES, echoEvent, windowBytes } from "../plugins/anatomiya/lib/hook.mjs";
 
 const OPENING = /^<repository-map[^>]*>/;
 
@@ -33,7 +34,7 @@ export function replayEcho(lines, window = ECHO_WINDOW_BYTES) {
   let held = [];
   for (const line of lines) {
     const at = offset;
-    offset += Buffer.byteLength(line) + 1;
+    offset += windowBytes(line);
     const event = echoEvent(line);
     if (event === null) continue;
     if (event === "compact") {
@@ -64,7 +65,7 @@ export function bytesPerToken(lines, span = RATIO_SPAN_TOKENS) {
   let first = null;
   let last = null;
   for (const line of lines) {
-    offset += Buffer.byteLength(line) + 1;
+    offset += windowBytes(line);
     if (!line.includes('"assistant"') || !line.includes('"usage"')) continue;
     let entry;
     try {
