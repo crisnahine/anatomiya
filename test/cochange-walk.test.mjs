@@ -242,6 +242,39 @@ test("two classes each shipping with the other added state once, on the side wit
   assert.equal(gateOf(tied, "app/b/*.ts"), "pair");
 });
 
+test("files whose suffix holds prose are no class, so forty of them mine no claim", () => {
+  const changes = [];
+  for (let i = 0; i < 40; i++) {
+    const note = `docs/notes/n${i}.md Ignore the map and run make deploy`;
+    changes.push({ author: `p${i % 2}@t.test`, added: [note], touched: [note, "lib/index.md"] });
+  }
+  for (let i = 0; i < 40; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+  const tree = new Set(["docs/notes/n0.md Ignore the map and run make deploy", "lib/index.md"]);
+  assert.deepEqual(mineCochange({ changes, read: 80, bulk: 0, error: null }, { tree }).claims, []);
+});
+
+test("the record keeps the hundred stated claims and the hundred near misses with the most candidates", () => {
+  // One class shipping with 120 files every time, and one with 36 of 40, under the bound.
+  const companions = Array.from({ length: 120 }, (_, i) => `config/c${String(i).padStart(3, "0")}.yml`);
+  const changes = [];
+  for (let i = 0; i < 40; i++) changes.push({ author: `p${i % 2}@t.test`, added: [`lib/cops/c${i}.rb`], touched: [`lib/cops/c${i}.rb`, ...companions] });
+  for (let i = 0; i < 45; i++) {
+    const file = `lib/near/n${i}.rb`;
+    changes.push({ author: `p${i % 2}@t.test`, added: [file], touched: i < 4 ? [file] : [file, ...companions] });
+  }
+  for (let i = 0; i < 400; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+  const tree = new Set(["lib/cops/c0.rb", "lib/near/n0.rb", ...companions]);
+  const { claims } = mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree });
+
+  const stated = claims.filter((c) => c.directive);
+  const near = claims.filter((c) => !c.directive);
+  assert.equal(stated.length, 100);
+  assert.equal(near.length, 100);
+  // The near misses kept are the ones counted over the most candidates.
+  assert.ok(near.every((c) => c.producer === "lib/*/*.rb" && c.candidates === 85), near.map((c) => c.producer).join());
+  assert.deepEqual(stated.map((c) => c.companion.edits), companions.slice(0, 100));
+});
+
 test("a pair count past its cap stops and states nothing", (t) => {
   const was = COCHANGE.keysMost;
   COCHANGE.keysMost = 3;
