@@ -1,5 +1,5 @@
 import { ALL_DIMENSIONS } from "./dimensions.mjs";
-import { dimensionsFor } from "./dimensions-base.mjs";
+import { dimensionsFor } from "./walk.mjs";
 import { pairingsFor } from "./pairing.mjs";
 import { claimFor } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";

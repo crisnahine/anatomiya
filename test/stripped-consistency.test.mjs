@@ -4,7 +4,7 @@ import { parseSync } from "oxc-parser";
 import stripFlow from "flow-remove-types";
 
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
-import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 
 /**

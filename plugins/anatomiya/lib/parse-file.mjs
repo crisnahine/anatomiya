@@ -8,12 +8,12 @@
  * a stripped file answers, was reachable only through a fork before, and four
  * measured incidents lived in it untested.
  */
-import { DIMENSIONS, dimensionsFor } from "./dimensions-base.mjs";
+import { DIMENSIONS } from "./dimensions-base.mjs";
 import { EXTRA_DIMENSIONS } from "./dimensions-extra.mjs";
 import { JSX_DIMENSIONS } from "./dimensions-jsx.mjs";
 import { NAMING_AST } from "./dimensions-naming.mjs";
 import { CAPABILITY_DIMENSIONS } from "./dimensions-capability.mjs";
-import { collectHits } from "./walk.mjs";
+import { collectHits, dimensionsFor } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
 import { ENGINES, embeddedIn, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";

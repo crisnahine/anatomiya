@@ -219,7 +219,7 @@ test("a case", () => { expect(Widget).toBeDefined(); assert.ok(1); });
 
 test("every JS row answers the same on the shared walk as walking alone, with a frozen ctx", async () => {
   const { ALL_DIMENSIONS } = await import("../plugins/anatomiya/lib/dimensions.mjs");
-  const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions-base.mjs");
+  const { dimensionsFor } = await import("../plugins/anatomiya/lib/walk.mjs");
   await import("../plugins/anatomiya/lib/registry.mjs");
   const rows = dimensionsFor(["js", "jsx"], { rows: ALL_DIMENSIONS });
   const { program, comments } = parseSync("f.tsx", ROWS_SOURCE, { sourceType: "module" });

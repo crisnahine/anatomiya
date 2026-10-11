@@ -4,7 +4,7 @@ import { parseSync } from "oxc-parser";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { EXTRA_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
-import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 
 const dim = (key) => EXTRA_DIMENSIONS.find((d) => d.key === key);
 

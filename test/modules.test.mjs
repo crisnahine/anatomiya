@@ -253,7 +253,7 @@ test("a parse child that reads no component loads no component scanner, and no c
   // Counted from each shell's static imports: what a child holds before its first file.
   const loads = (shell) => reachedFrom(shell, graph(LIB, { dynamic: false }));
   assert.deepEqual(["blank.mjs", "script-blocks.mjs", "csharp-directives.mjs", "tree-sitter-file.mjs"].filter((file) => loads("parse-worker.mjs").has(file)), []);
-  assert.deepEqual(["script-blocks.mjs", "parse-file.mjs"].filter((file) => loads("tree-sitter-worker.mjs").has(file)), []);
+  assert.deepEqual(["script-blocks.mjs", "parse-file.mjs", "dimensions-base.mjs"].filter((file) => loads("tree-sitter-worker.mjs").has(file)), []);
   // Loaded on the first component instead, by the body that reads one.
   assert.ok(reachedFrom("parse-worker.mjs").has("script-blocks.mjs"));
 });

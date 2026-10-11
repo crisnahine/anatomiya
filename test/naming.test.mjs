@@ -444,7 +444,7 @@ test("an all-capitals name is a constant or a route handler, and votes for no cl
 
 test("the naming AST rows are reachable from the registry", async () => {
   const { ALL_DIMENSIONS } = await import("../plugins/anatomiya/lib/dimensions.mjs");
-  const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions-base.mjs");
+  const { dimensionsFor } = await import("../plugins/anatomiya/lib/walk.mjs");
   const keys = dimensionsFor(["js"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const key of ["function_naming_case", "exported_symbol_case", "exported_class_case", "exported_type_case"]) {
     assert.ok(keys.includes(key), key);
@@ -986,7 +986,7 @@ end
 
 test("the five learned rows are reachable from the registry", async () => {
   const { ALL_DIMENSIONS } = await import("../plugins/anatomiya/lib/dimensions.mjs");
-  const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions-base.mjs");
+  const { dimensionsFor } = await import("../plugins/anatomiya/lib/walk.mjs");
   const js = dimensionsFor(["js"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const key of ["extends_base", "interface_prefix", "type_alias_prefix"]) {
     assert.ok(js.includes(key), `${key} is not offered to JavaScript`);

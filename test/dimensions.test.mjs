@@ -15,7 +15,8 @@ import {
   PRECISIONS,
   walkFor,
 } from "../plugins/anatomiya/lib/dimensions.mjs";
-import { DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
+import { DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-base.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";

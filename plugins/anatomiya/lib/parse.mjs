@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 import { createPool, defaultPoolSize } from "./pool.mjs";
 import { parseRuby } from "./ruby.mjs";
 import { ALL_DIMENSIONS } from "./dimensions.mjs";
-import { dimensionsFor } from "./dimensions-base.mjs";
+import { dimensionsFor } from "./walk.mjs";
 import { declOf, ENGINES, LANGUAGES } from "./langs.mjs";
 
 /**
