@@ -43,7 +43,7 @@ import {
 /** What a scan of a pinned Rails repository prints, line for line. */
 const SCAN = [
   "252 files, 32 areas, 517ms, root /tmp/e2e/errbit",
-  "0 of 71 claims stated, the rest print as counts",
+  "0 of 71 claims stated, they print as counts",
   "layout: 7 roots, 7 folded, tests: 100 rspec under spec; roster lines: 0 areas with imports, 0 with reuse",
   "baseline 4bd14f9f, 0 files changed since the pin (measured against origin/HEAD)",
   "9 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell",

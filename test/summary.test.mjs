@@ -124,7 +124,9 @@ test("the clause after the claims says what is left, at none, one and many", () 
   assert.equal(claimsLine(0, 0, 0), "0 of 0 claims stated");
   assert.equal(claimsLine(0, 0, 1), "0 of 1 claim stated, it prints as a count", "with nothing beside it there is no other");
   assert.equal(claimsLine(1, 0, 1), "1 of 1 claim stated");
-  assert.equal(claimsLine(0, 0, 2), "0 of 2 claims stated, the rest print as counts");
+  assert.equal(claimsLine(0, 0, 2), "0 of 2 claims stated, they print as counts", "nothing stated leaves no rest");
+  assert.equal(claimsLine(0, 0, 9), "0 of 9 claims stated, they print as counts");
+  assert.equal(claimsLine(1, 0, 3), "1 of 3 claims stated, the rest print as counts");
   assert.equal(claimsLine(1, 0, 2), "1 of 2 claims stated, the other prints as a count");
   assert.equal(claimsLine(0, 1, 1), "0 of 1 claim stated, 1 matches the model default");
   assert.equal(claimsLine(0, 1, 2), "0 of 2 claims stated, 1 matches the model default, the other prints as a count");
