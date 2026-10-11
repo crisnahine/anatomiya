@@ -340,6 +340,15 @@ test("temporary files an earlier scan left are counted apart from the area files
   assert.equal("stagedRemoved" in scanSummary(result(), plan({ staged: [] })), false);
 });
 
+test("a record past the bound is said once per file, in the tense of the run, and absent where there is none", () => {
+  const oversized = [{ at: ".claude/anatomiya/layout.json", size: 73400320 }];
+  const dry = scanSummary(result(), plan({ oversized }), { dryRun: true });
+  assert.ok(scanLines(dry).includes(`".claude/anatomiya/layout.json" is 73400320 bytes, past the 64 MiB any command reads of a record, so it would be replaced without being read`), scanLines(dry).join("\n"));
+  assert.deepEqual(JSON.parse(scanJson(dry)).oversized, oversized);
+  assert.equal("oversized" in scanSummary(result(), plan({ oversized: [] })), false);
+  assert.equal("oversized" in JSON.parse(scanJson(scanSummary(result(), plan()))), false);
+});
+
 test("temporary files left in the store are counted apart from the ones left beside the map", () => {
   const one = scanSummary(result(), plan({ staged: ["a", "b"], storeStaged: ["facts.json.tmp-1-0123456789abcdef"] }));
   assert.deepEqual([one.stagedRemoved, one.storeStagedRemoved], [2, 1]);

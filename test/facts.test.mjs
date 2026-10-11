@@ -863,6 +863,16 @@ test("a layout file that cannot answer for the record beside it is not read", (t
   assert.equal(readLayout(over), null, "a record past the cap");
 });
 
+test("a record past the cap is written over without being read", (t) => {
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  truncateSync(join(dir, FACTS_PATH), 70 * 2 ** 20);
+
+  writeFacts(dir, result([dim()]));
+
+  assert.equal(readFacts(dir).facts.schema, FACTS_SCHEMA);
+});
+
 test("the layout file is stamped from the record this writer renamed, not whatever is there after", async (t) => {
   // Another writer replacing the record right after this one's rename must
   // leave a layout file that refuses, so the reader goes to that writer's record.
