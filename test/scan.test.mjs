@@ -1992,16 +1992,20 @@ test("a Go test beside a Python file of its stem is no test of the Python file",
   assert.deepEqual([shop.companions.with, shop.companions.of, shop.companions.ext], [0, 3, ".py"]);
 });
 
-test("at the ceiling, a crate that counts nothing takes no place from an area that counts", async (t) => {
-  // 120 three-file areas sit exactly at the ceiling of 120. The crate is the
-  // largest area, so the fold takes a three-file one for it, and then the crate
-  // is dropped for counting nothing.
-  const dir = repo(t, (d, { git, write }) => {
+/** 120 three-file areas, exactly at the ceiling of 120, and a 20-file crate that states nothing. */
+function ceilingRepo(t) {
+  return repo(t, (d, { git, write }) => {
     for (let a = 0; a < 120; a++) for (let i = 0; i < 3; i++) write(`m${String(a).padStart(3, "0")}/f${i}.ts`, moduleSource(i));
     for (let i = 0; i < 20; i++) write(`crate/src/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
     git("add", "-A");
     git("commit", "-qm", "init");
   });
+}
+
+test("at the ceiling, a crate that counts nothing takes no place from an area that counts", async (t) => {
+  // The crate is the largest area, so the fold takes a three-file one for it,
+  // and then the crate is dropped for counting nothing.
+  const dir = ceilingRepo(t);
 
   const first = await scan(dir);
   assert.equal(first.areas.length, 120);
@@ -2019,4 +2023,20 @@ test("at the ceiling, a crate that counts nothing takes no place from an area th
   assert.equal(pinned.areas.length, 119);
   assert.equal(pinned.corpus.orphaned, 3);
   assert.ok(pinned.areas.every((a) => a.baseline.status === "ok"), "every area reads the population its pin holds");
+});
+
+test("at the ceiling, an area held for a language this run could not read keeps its place", async (t) => {
+  // Its file stays on disk as the last run wrote it, so it still takes a place
+  // in the listing although this run counted nothing in it.
+  const noRust = async (files, options) => {
+    const parsed = await parseAll(files, options);
+    for (const [rel, r] of parsed.records) if (rel.endsWith(".rs")) parsed.records.set(rel, { ...r, ok: false, crashed: true, hits: null });
+    return parsed;
+  };
+  const result = await scan(ceilingRepo(t), { parseFiles: noRust });
+
+  assert.deepEqual(result.parse.unreadable, ["rust"]);
+  assert.deepEqual(result.held.map((a) => a.path), ["crate/src"]);
+  assert.equal(result.areas.length + result.held.length, 120);
+  assert.equal(result.corpus.orphaned, 3);
 });

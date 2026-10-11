@@ -1129,6 +1129,14 @@ test("an area given back that counts nothing gives its own place back too", () =
   assert.equal(counted(areas, rustOnly), 3);
 });
 
+test("every area comes back when those counting nothing leave room for all of them", () => {
+  const files = [...filesIn("a", 3), ...filesIn("r", 10, "rust"), ...filesIn("s", 20, "rust")];
+  const areas = discover(files, { minFiles: 3, maxAreas: 2, countsNothing: rustOnly });
+
+  assert.deepEqual(areas.map((a) => a.path), ["a", "r", "s"]);
+  assert.deepEqual(areas.orphaned, []);
+});
+
 test("giving places back never holds more counted areas than the ceiling, whatever order the files came in", () => {
   // A predicate no real reduce would answer, where a smaller area can count what
   // a larger one did not, so a give-back can overshoot and has to step down.
