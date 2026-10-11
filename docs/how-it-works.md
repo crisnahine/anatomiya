@@ -1199,7 +1199,7 @@ stage is answered from its own transcript. Anything the hook cannot read answers
 
 Parallel tool calls in one batch each run before any of the batch's deliveries is written, so none
 sees the others'. Where Claude Code names the plugin a data directory, `CLAUDE_PLUGIN_DATA`, the
-calls share a claim per transcript and map under `echo/` there. The first to take the claim's lock,
+calls share a batch claim per transcript and map under `echo/` there. The first to take its lock,
 made with an exclusive create, writes the transcript offset it read to, by a rename, and delivers;
 the others read that offset as a delivery made there and stay silent. A claim holds only while its
 offset is inside the window, judged against the transcript as it is when the claim is read. A call

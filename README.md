@@ -640,10 +640,9 @@ subdirectory, nothing loads until a file under it is touched, so a subagent that
 phase of a fan-out that it costs. Started one directory up, the echo has nothing to deliver on the
 prompt either, since a prompt names no file, so the first batch of parallel tool calls into a mapped
 checkout carries the overview. It carries one copy between its calls where Claude Code gives the
-plugin a data directory (`CLAUDE_PLUGIN_DATA`): the first call to deliver leaves a claim there and
-the others read it. Without one, the batch can carry one copy per
-call, once per context window and per map. Inside the checkout the prompt delivers it first and the
-batch adds none.
+plugin a data directory (`CLAUDE_PLUGIN_DATA`): the first call to deliver leaves a batch claim there
+and the others read it. Without one, the batch can carry one copy per call, once per context window
+and per map. Inside the checkout the prompt delivers it first and the batch adds none.
 
 **The measured preventable share is 8% to 15% of human review comments.** That is from 4,616 review
 comments at one company and 3,015 from ten public repositories, hand-classified. Those are the
