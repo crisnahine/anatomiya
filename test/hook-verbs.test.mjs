@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
@@ -519,6 +520,67 @@ test("the calls of one batch deliver one copy between them, before any of them i
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: other }).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "another window's claim holds nothing here");
 });
 
+const BIN = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
+
+/** How many of `n` echo processes deliver when their payloads arrive together. */
+async function batch(dir, data, path, n) {
+  const runs = [];
+  for (let i = 0; i < n; i++) {
+    const child = spawn(process.execPath, [BIN, "echo", dir], { env: { ...process.env, CLAUDE_PLUGIN_DATA: data } });
+    let out = "";
+    child.stdout.on("data", (chunk) => (out += chunk));
+    runs.push({ child, done: new Promise((done) => child.on("close", () => done(out))) });
+  }
+  // Every process is up and blocked on stdin before any payload is written.
+  const payload = JSON.stringify({ hook_event_name: "PostToolUse", transcript_path: path, cwd: dir });
+  for (const { child } of runs) child.stdin.end(payload);
+  const outs = await Promise.all(runs.map((run) => run.done));
+  return outs.filter((out) => out.includes("<repository-map ")).length;
+}
+
+test("echo processes started together deliver one copy per batch, with no claim on disk and with a stale one", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  const [name] = readdirSync(join(data, "echo"));
+  const claim = join(data, "echo", name);
+
+  for (const n of [3, 8]) {
+    for (const [what, reset] of [["no claim", () => rmSync(claim, { force: true })], ["a stale claim", () => writeFileSync(claim, "0\n")]]) {
+      for (let round = 0; round < 20; round++) {
+        reset();
+        assert.equal(await batch(dir, data, path, n), 1, `${what}, ${n} at once, round ${round}`);
+      }
+    }
+  }
+});
+
+test("a lock held by another call holds this one, and a lock older than the hook timeout is broken", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "");
+  assert.deepEqual(call(), {}, "a fresh lock");
+  const sixSeconds = new Date(Date.now() - 6000);
+  utimesSync(lock, sixSeconds, sixSeconds);
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock past the timeout");
+  assert.equal(existsSync(lock), false, "released after the delivery");
+  assert.deepEqual(call(), {}, "the claim it wrote holds");
+
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "");
+  const ahead = new Date(Date.now() + 6000);
+  utimesSync(lock, ahead, ahead);
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock stamped past the timeout ahead of the clock");
+});
+
 test("a window's first batch delivers once, before anything is in its transcript", needsRuby, async (t) => {
   const dir = await railsish(t);
   pluginData(t);
@@ -569,6 +631,9 @@ test("claims older than a day are swept when a new one is made", needsRuby, asyn
   utimesSync(old, twoDays, twoDays);
   const recent = join(data, "echo", "1111111111111111-000000000000");
   writeFileSync(recent, "0\n");
+  const lock = join(data, "echo", "0000000000000000-000000000000.lock");
+  writeFileSync(lock, "");
+  utimesSync(lock, twoDays, twoDays);
   const foreign = join(data, "echo", "notes.txt");
   writeFileSync(foreign, "");
   utimesSync(foreign, twoDays, twoDays);
@@ -576,6 +641,7 @@ test("claims older than a day are swept when a new one is made", needsRuby, asyn
   runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: transcript(t, [filler(10)]) });
 
   assert.equal(existsSync(old), false);
+  assert.equal(existsSync(lock), false, "a lock left by a call that died");
   assert.equal(existsSync(recent), true);
   assert.equal(existsSync(foreign), true, "only a name a claim has");
   assert.equal(readdirSync(join(data, "echo")).length, 3);
