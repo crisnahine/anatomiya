@@ -515,7 +515,8 @@ wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-over
 ```
 
 `/anatomiya:doctor`, run inside the repository, prints a line for
-each target that is on, and a second where its directory holds other entries named `anatomiya-*`.
+each target that is on, or `off at the next scan` for one a killed scan was turning off, and a
+second where its directory holds other entries named `anatomiya-*`.
 
 Both directories are ones people write rules in, so a scan is strict there. It never writes over a
 file it did not write: where one sits at a name the map needs, a scan that names the target refuses,
