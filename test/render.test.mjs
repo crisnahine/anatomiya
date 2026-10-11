@@ -4470,3 +4470,86 @@ test("an overview with a root area stays inside its bound and is the same over s
     assert.equal(renderOverview(result({ areas }), { uncovered: 3 }, target), out, "and twice over is the same bytes");
   }
 });
+
+/* --- what a change adding a file here also touches --- */
+
+const shipsWith = (o = {}) => ({
+  producer: "src/services/*.ts",
+  companion: { edits: "src/registry.ts" },
+  candidates: 100,
+  conforming: 97,
+  newest: [20, 20],
+  authors: 21,
+  authorsRequired: 2,
+  lift: 9.5,
+  files: [266, 299],
+  area: "src/services",
+  gate: null,
+  directive: true,
+  ...o,
+});
+
+test("a co-change claim is three lines after the directives and before the descriptions", () => {
+  const out = renderArea(area({ imports: [{ module: "./db", files: 30, of: 40 }] }), TARGETS.claude, [shipsWith()]);
+  const lines = out.split("\n");
+  const at = lines.indexOf('a .ts file added to "src/services" ships with an edit to "src/registry.ts"');
+
+  assert.ok(at > lines.indexOf("catch blocks use the error they caught"), out);
+  assert.equal(lines[at + 1], "  97 of the last 100 changes that added one, 21 authors; 266 of 299 such files here arrived that way");
+  assert.equal(lines[at + 2], "");
+  assert.ok(lines.findIndex((l) => l.startsWith("most files here import")) > at, out);
+});
+
+test("an area with no co-change claim renders byte for byte as it did", () => {
+  const many = area({ dimensions: Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })) });
+  assert.equal(renderArea(many, TARGETS.claude, []), renderArea(many));
+  assert.deepEqual(droppedSlots(many, []), droppedSlots(many));
+});
+
+test("co-change blocks change no directive's fate, and drop before any directive", () => {
+  // A null key reserves no name line, so the cost at every directive's cut is
+  // the cost without the blocks, and an older check agrees on every directive.
+  for (const n of [3, 8, 11, 12, 13, 14, 30]) {
+    const dims = Array.from({ length: n }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` }));
+    const plain = area({ dimensions: dims });
+    const claims = Array.from({ length: 4 }, (_, i) => shipsWith({ companion: { edits: `src/r${i}.ts` } }));
+    const without = droppedSlots(plain);
+    const withBlocks = droppedSlots(plain, claims);
+    for (const [key, kind] of without) assert.equal(withBlocks.get(key), kind, `${n} directives: ${key}`);
+    for (const key of withBlocks.keys()) {
+      if (key.startsWith("k")) assert.ok(without.has(key), `${n} directives: ${key} dropped only with blocks present`);
+    }
+    // A block that went is reported, by the key the check asks for it under.
+    const out = renderArea(plain, TARGETS.claude, claims);
+    for (const c of claims) {
+      const printed = out.includes(`"${c.companion.edits}"`);
+      assert.equal(!printed, withBlocks.has(`cochange\0${c.producer}\0edits\0${c.companion.edits}`), `${n} directives: ${c.companion.edits}`);
+    }
+    if (withBlocks.size > without.size) assert.match(out, /^and \d+ more not shown here, (all of them stated|\d+ of them stated)/m, out);
+  }
+});
+
+test("a co-change block that did not fit is counted as stated in the notice", () => {
+  const dims = Array.from({ length: 11 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` }));
+  const claims = Array.from({ length: 3 }, (_, i) => shipsWith({ companion: { edits: `src/r${i}.ts` } }));
+  const out = renderArea(area({ dimensions: dims }), TARGETS.claude, claims);
+  const dropped = [...droppedSlots(area({ dimensions: dims }), claims).keys()];
+
+  assert.ok(dropped.some((k) => k.startsWith("cochange\0")), out);
+  assert.match(out, /^and \d+ more not shown here, all of them stated/m, out);
+});
+
+test("a model-default slot's counts line can give way to a co-change block, and this build says so", () => {
+  // The one cost of the null key: an older check, recomputing without the
+  // blocks, believes the line printed.
+  const dims = [
+    ...Array.from({ length: 10 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })),
+    dim({ key: "dflt", claim: "a default", matchesDefault: true }),
+  ];
+  const claims = [shipsWith({ companion: { edits: "src/a.ts" } }), shipsWith({ companion: { edits: "src/b.ts" } })];
+  const plain = area({ dimensions: dims });
+
+  assert.equal(droppedSlots(plain).has("dflt"), false);
+  assert.equal(droppedSlots(plain, claims).has("dflt"), true);
+  assert.doesNotMatch(renderArea(plain, TARGETS.claude, claims), /a default: /);
+});

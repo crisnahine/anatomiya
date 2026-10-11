@@ -9,6 +9,7 @@ import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
 import { byCode } from "./paths.mjs";
 import { frontmatter, isClaude, readsEveryPattern, spelledGlobs, TARGETS } from "./targets.mjs";
+import { changesPhrase, claimKey, claimSentence } from "./cochange.mjs";
 
 /**
  * The line bound every generated file is held to.
@@ -475,7 +476,7 @@ function rosterLines(area) {
  * and none of them is the claim text: a directive block's height is its counts
  * line, its exceptions and its blank.
  */
-function areaBlocks(area) {
+function areaBlocks(area, cochange = []) {
   // Claude Code's head, whichever target the file is for: the body is laid out
   // once, under the list of patterns that file carries, and every target gets it.
   const { head } = areaEnds(area, TARGETS.claude);
@@ -533,6 +534,23 @@ function areaBlocks(area) {
     keys.push(d.key);
     claims.push(sentence(d, s));
   }
+  const directed = blocks.length;
+
+  // What a change adding a file here also touches, after the directives and
+  // before the descriptions. Keyed null, so `settle` reserves no name line for
+  // one: its cost at every directive's cut is what it is without these blocks,
+  // and no directive's fate moves. The key it is dropped under rides beside.
+  const shipped = [];
+  for (const c of cochange) {
+    blocks.push([
+      claimSentence(c),
+      `  ${changesPhrase(c)}, ${hands(c.authors)}; ${c.files[0]} of ${c.files[1]} such ${filesOf(c.files[1])} here arrived that way`,
+      "",
+    ]);
+    keys.push(null);
+    claims.push(null);
+    shipped.push(claimKey(c));
+  }
   const stated = blocks.length;
 
   // What the area holds and what it reaches for. Counts rather than directives,
@@ -587,7 +605,7 @@ function areaBlocks(area) {
   // and a reader who has to give up two of those for the line naming what the
   // siblings do is better off by it.
   const budget = Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0);
-  return { blocks, keys, claims, stated, descriptions, kinds, budget };
+  return { blocks, keys, claims, stated, descriptions, kinds, budget, directed, shipped };
 }
 
 /**
@@ -717,21 +735,24 @@ export function droppedDirectives(area) {
  * The same slots, each marked `named` where the notice still prints its
  * sentence without counts, and `unnamed` where the file says nothing of it.
  */
-export function droppedSlots(area) {
-  const { blocks, keys, claims, budget } = areaBlocks(area);
+export function droppedSlots(area, cochange = []) {
+  const { blocks, keys, claims, budget, directed, shipped } = areaBlocks(area, cochange);
   const { kept, names } = settle(blocks, keys, claims, budget);
   // By position, never by prose: `names` runs over the hidden stated keys in
   // this order, and facts.json stores no claim-side sentence, while the scan
   // that wrote the file had one for every stated slot.
-  return new Map(keys.slice(kept).filter(Boolean).map((key, i) => [key, i < names.length ? "named" : "unnamed"]));
+  const slots = new Map(keys.slice(kept).filter(Boolean).map((key, i) => [key, i < names.length ? "named" : "unnamed"]));
+  // A co-change block is never named under the notice, so a dropped one is unnamed.
+  for (const [i, key] of shipped.entries()) if (directed + i >= kept) slots.set(key, "unnamed");
+  return slots;
 }
 
 /** Null where the target can be given none of the area's patterns. */
-export function renderArea(area, target = TARGETS.claude) {
+export function renderArea(area, target = TARGETS.claude, cochange = []) {
   const ends = areaEnds(area, target);
   if (ends === null) return null;
   const { head, closing } = ends;
-  const { blocks, keys, claims, stated, descriptions, kinds, budget } = areaBlocks(area);
+  const { blocks, keys, claims, stated, descriptions, kinds, budget, shipped } = areaBlocks(area, cochange);
   const { kept, names, unnamed } = settle(blocks, keys, claims, budget);
 
   // The frontmatter is delivery rather than content: the globs are what route
@@ -748,7 +769,7 @@ export function renderArea(area, target = TARGETS.claude) {
     // directive is a convention this file did not deliver, and a lost count is
     // a threshold nobody can audit from here. Folded into one sentence rather
     // than two lines, since the budget is why we are here.
-    const kind = droppedKind(blocks.length, keys, stated, descriptions, dropped);
+    const kind = droppedKind(blocks.length, keys, stated, descriptions, dropped, shipped.length);
     // Led by what will actually print, reserved by what was hidden. A record
     // carrying keys and no prose reserves its lines and has no sentences to put
     // in them, and a lead ending in a colon over nothing is worse than no lead.
@@ -773,7 +794,7 @@ export function renderArea(area, target = TARGETS.claude) {
  * is a convention this file did not deliver, a lost count is a threshold nobody
  * can audit from here, and a lost description is neither.
  */
-function droppedKind(total, keys, stated, described, dropped) {
+function droppedKind(total, keys, stated, described, dropped, shipped = 0) {
   const first = total - dropped;
   // Off `keys` rather than off the directive partition, because a slot the
   // model writes by default is stated too and rides with the counts: counting
@@ -781,7 +802,8 @@ function droppedKind(total, keys, stated, described, dropped) {
   // the check FIXed them off the same record, on 48 of 72 areas carrying the
   // notice on one measured repository. `droppedDirectives` reads the same
   // array, so the sentence and the enforcement cannot disagree.
-  const statedLost = keys.slice(first).filter(Boolean).length;
+  // A co-change block is stated with a null key, and sits just before the descriptions.
+  const statedLost = keys.slice(first).filter(Boolean).length + Math.max(0, Math.min(shipped, stated - first));
   const describedLost = Math.max(0, stated + described - Math.max(first, stated));
   if (statedLost === dropped) return ", all of them stated";
   if (describedLost === dropped) return ", all of them descriptions";
