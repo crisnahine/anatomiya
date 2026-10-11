@@ -794,50 +794,50 @@ async function runRepo(name, source, scratchDir, targets) {
     // encoder, which passes an encoded value through unchanged.
     const head = cleanReport ? formatReport(cleanReport).split("\n")[0] : null;
 
+    /*
+     * One file on a branch of its own from the pin, and the check's record on
+     * it: null where the check printed none, and undefined where the file is
+     * already there. The clone is a copy, but the probe body is not this
+     * repository's code and overwriting a real file would measure the tool
+     * against a file it wrote.
+     */
+    const probeOn = (branch, path, body, what) => {
+      if (git(["checkout", "-q", "-b", branch, sha], clone).status !== 0) fail(`could not branch the clone for the ${what}`);
+      if (existsSync(join(clone, path))) {
+        fail(`${path} already exists, so the ${what} would overwrite real code`);
+        return undefined;
+      }
+      mkdirSync(dirname(join(clone, path)), { recursive: true });
+      writeFileSync(join(clone, path), body);
+      git(["add", "--", path], clone);
+      const committed = git(["-c", "user.name=e2e", "-c", "user.email=e2e@local", "commit", "-qm", `e2e ${what}`], clone);
+      if (committed.status !== 0) fail(`could not commit the ${what}: ${committed.err.split("\n")[0]}`);
+      const asked = anatomiya(["check", clone, "--base", base, "--format", "json"], scratchDir);
+      if (asked.status !== 0) fail(`check exited ${asked.status} on the ${what} branch: ${asked.err.split("\n")[0]}`);
+      const report = readJson(asked.out);
+      if (report === null) fail(`the check printed no record on the ${what} branch`);
+      return report;
+    };
+
     /* 6: one file built to break a row the map stated. */
     const mapped = JSON.parse(readFileSync(factsFile, "utf8"));
     const plan = probePlan(mapped);
     const probePath = plan ? plan.path : "e2e-probe.md";
-    if (git(["checkout", "-q", "-b", "e2e/probe"], clone).status !== 0) fail("could not branch the clone");
-    // The clone is a copy, but the probe body is not this repository's code and
-    // overwriting a real file would measure the tool against a file it wrote.
-    if (existsSync(join(clone, probePath))) {
-      fail(`${probePath} already exists, so the probe would overwrite real code`);
-      return { row, problems, head, summary };
-    }
-    mkdirSync(dirname(join(clone, probePath)), { recursive: true });
-    writeFileSync(join(clone, probePath), plan ? plan.body : "e2e probe\n");
-    git(["add", "--", probePath], clone);
-    const committed = git(["-c", "user.name=e2e", "-c", "user.email=e2e@local", "commit", "-qm", "e2e probe"], clone);
-    if (committed.status !== 0) fail(`could not commit the probe: ${committed.err.split("\n")[0]}`);
-
-    const probed = anatomiya(["check", clone, "--base", base, "--format", "json"], scratchDir);
-    if (probed.status !== 0) fail(`check exited ${probed.status} on the probe branch: ${probed.err.split("\n")[0]}`);
-    const probeReport = readJson(probed.out);
-    if (probeReport === null) fail("the check printed no record on the probe branch");
+    const probeReport = probeOn("e2e/probe", probePath, plan ? plan.body : "e2e probe\n", "probe");
+    if (probeReport === undefined) return { row, problems, head, summary };
     const named = probeReport ? findingPaths(probeReport) : [];
     row.probe = probeCell(plan, mapped, named.includes(probePath));
     if (plan) {
       if (row.probe === "no") fail(`no finding names ${probePath}, and ${plan.dimension} states ${plan.learned} in ${plan.area}`);
     } else if (named.length !== 0) fail(`a markdown file drew ${named.length} finding(s)`);
 
-    /* 7: a producer of a stated co-change claim, on a branch from the pin that touches no companion. */
+    // And a producer of a stated co-change claim, on a branch that touches no companion.
     const shipped = cochangePlan(mapped);
     row.cochange = cochangeCell(shipped);
     if (shipped) {
-      if (git(["checkout", "-q", "-b", "e2e/cochange", sha], clone).status !== 0) fail("could not branch the clone for the co-change probe");
-      if (existsSync(join(clone, shipped.path))) {
-        fail(`${shipped.path} already exists, so the co-change probe would overwrite real code`);
-        return { row, problems, head, summary };
-      }
-      mkdirSync(dirname(join(clone, shipped.path)), { recursive: true });
-      writeFileSync(join(clone, shipped.path), shipped.body);
-      git(["add", "--", shipped.path], clone);
-      const made = git(["-c", "user.name=e2e", "-c", "user.email=e2e@local", "commit", "-qm", "e2e co-change probe"], clone);
-      if (made.status !== 0) fail(`could not commit the co-change probe: ${made.err.split("\n")[0]}`);
-      const asked = anatomiya(["check", clone, "--base", base, "--format", "json"], scratchDir);
-      if (asked.status !== 0) fail(`check exited ${asked.status} on the co-change branch: ${asked.err.split("\n")[0]}`);
-      row.cochange = cochangeCell(shipped, readJson(asked.out));
+      const report = probeOn("e2e/cochange", shipped.path, shipped.body, "co-change probe");
+      if (report === undefined) return { row, problems, head, summary };
+      row.cochange = cochangeCell(shipped, report);
       if (row.cochange === "no") fail(`no co-change finding names ${shipped.path}, and the map states ${shipped.producer} ships with a companion`);
     }
     return { row, problems, head, summary };
