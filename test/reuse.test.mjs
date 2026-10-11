@@ -916,7 +916,7 @@ test("a background call's writes are the session's until the transcript records 
   assert.match(answer.reason, /src\/f\.ts:1-3/, "or as a message of its own");
 });
 
-test("a commit is the turn's only inside one of the turn's Bash calls", async (t) => {
+test("a commit is the turn's only inside one of the session's tool calls", async (t) => {
   // The reflog does not say which session ran `git commit`, and records whole
   // seconds, so a call is widened by a second each side.
   for (const [what, offset, asked] of [
@@ -924,7 +924,8 @@ test("a commit is the turn's only inside one of the turn's Bash calls", async (t
     ["a second before its start", 1, true],
     ["a second past its end", 6, true],
     ["outside", 9, false],
-    ["inside another tool's call", 12, false],
+    ["inside an Agent call, where a subagent commits", 12, true],
+    ["between calls", 18, false],
   ]) {
     const r = repo(t);
     const began = Math.ceil(Date.now() / 1000) * 1000 + 1000;
@@ -944,6 +945,16 @@ test("a commit is the turn's only inside one of the turn's Bash calls", async (t
     if (asked) assert.match(answer.reason ?? "", /src\/b\.ts:1-3/, what);
     else assert.deepEqual(answer, {}, what);
   }
+});
+
+test("a file written in a call's first whole second is the session's, on a filesystem that keeps whole seconds", async (t) => {
+  const { dir, write } = repo(t);
+  const second = Math.floor(Date.now() / 1000) * 1000 - 300_000;
+  const { session } = pastSession(t, () => [call("Write", "w1", second + 500, second + 900)]);
+  write("src/b.ts", NEW_B);
+  setTime(dir, "src/b.ts", second);
+
+  assert.match((await runReuse(dir, stop(dir, { transcript_path: session }))).reason ?? "", /src\/b\.ts:1-3/);
 });
 
 test("a transcript whose calls carry no timestamps charges the session with nothing", async (t) => {
