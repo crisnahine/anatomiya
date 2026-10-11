@@ -45,7 +45,7 @@ branch's first commit, and with the branch's head. 4,327 transcripts holding 46,
 |---|---|---|---|---|
 | base, every record counted | 10,028 | 7.23 | 9.23 | 229 |
 | records the model reads, 256 KiB (first commit) | 7,878 | 5.82 | 7.16 | 229 |
-| records the model reads less `instructions`, 192 KiB (this branch) | 9,267 | 5.79 | 7.14 | 229 |
+| records the model reads less `instructions`, 192 KiB (0.15.0) | 9,267 | 5.79 | 7.14 | 229 |
 
 The store holds transcripts from every build since 2.1.233, and builds before 2.1.263 write no
 `rendered`, so their attachments count for nothing here. The replay cannot see claims: a parallel
