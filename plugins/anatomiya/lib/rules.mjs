@@ -271,6 +271,12 @@ export function pendingNames(facts, target = TARGETS.claude) {
   return new Set(Array.isArray(listed) ? listed.filter((n) => isMapName(n, target)) : []);
 }
 
+/** The names among `names` that the map on disk was about to remove from one directory. */
+export function pendingAmong(facts, target, names) {
+  const going = pendingNames(facts, target);
+  return names.filter((name) => going.has(name));
+}
+
 /**
  * Every `.md` in the rules directory, split by which of the three facts it
  * carries. In a Cursor or Copilot directory, only the names under our prefix:

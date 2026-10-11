@@ -23,7 +23,7 @@ import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs"
 import { isProducer, placedTests } from "./layout.mjs";
 import { areaIndex, areaLabel, globsReach, underArea } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
-import { auditRules, isLink, knownNames, pendingNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
+import { auditRules, isLink, knownNames, pendingAmong, readHead, resolveInside, targetStatus } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
@@ -370,8 +370,7 @@ export async function check(cwd, { baseRef = null } = {}) {
       );
     }
     // Still unnamed by the map and still loading, but a killed scan's record lists it, so the next scan removes it.
-    const going = pendingNames(facts, target);
-    const removing = unknown.filter((name) => going.has(name));
+    const removing = pendingAmong(facts, target, unknown);
     return { foreign, unknown, ...(removing.length ? { removing } : {}), rules: { escaped, listed, unreadable } };
   };
   const { foreign, unknown, removing, rules } = audited(TARGETS.claude);
