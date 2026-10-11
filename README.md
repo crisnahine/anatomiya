@@ -745,13 +745,13 @@ on the repository the overview comes from, and the overview says so on every sca
 companions somewhere unusual scores zero against a habit it plainly has, which is why the count of
 companions found elsewhere prints beside the ratio.
 
-**At the area ceiling, a place goes to an area that counts something.** The fold that keeps a
-large repository under its area ceiling gives the places of areas that count nothing back to the
-largest areas it folded. An area that counts but states nothing still takes a place, and so does one
-holding JavaScript or TypeScript that counts nothing, since whether the type checker will count
-there is not known when a pin is taken. A pin of a repository at the ceiling parses it once to
-learn which areas count nothing, which took 5 to 14 seconds more on the four corpus repositories
-that reach it, two of which get places back. Under a pin the partition holds still until a pin is next taken.
+**At the area ceiling, a place goes to an area that counts something.** The fold that keeps a large
+repository under its area ceiling gives the places of areas that count nothing back to the largest
+areas it folded. An area that counts but states nothing still takes a place, and so does one holding
+JavaScript or TypeScript that counts nothing, since whether the type checker will count there is not
+known when a pin is taken. A pin of a repository at the ceiling parses it once to learn which areas
+count nothing, which took 5 to 14 seconds more on the four corpus repositories that reach it, two of
+which get places back. Under a pin the partition holds still until a pin is next taken.
 
 **What ships together needs history.** The co-change claims are read from the default branch's
 first-parent changes, so a shallow clone, such as a CI checkout at depth one, states none, and a git
