@@ -273,7 +273,7 @@ export function readFacts(root) {
   }
   const { record: parsed, oversize } = readRecord(path);
   if (oversize) {
-    return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MB this reads, so nothing was enforced from it` };
+    return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MiB this reads, so nothing was enforced from it` };
   }
   if (parsed === null) {
     const kind = readHead(path, 0).kind;
