@@ -1023,3 +1023,27 @@ test("a directory with no record is answered before the layout file's path is re
   }
   assert.equal(resolved, 0);
 });
+
+test("what ships together rides in the layout under the same schema, and an older record states none of it", async (t) => {
+  const { statedClaims } = await import("../plugins/anatomiya/lib/cochange.mjs");
+  const claim = {
+    producer: "src/*.ts", companion: { edits: "src/index.ts" }, candidates: 40, conforming: 40, newest: [8, 8],
+    authors: 3, authorsRequired: 2, lift: 4.1, files: [40, 41], area: "src", gate: null, directive: true,
+  };
+  const cochange = { unit: "first-parent", depth: 20000, perClass: 100, tip: "a".repeat(40), from: "pin", read: 90, counted: 88, bulk: 1, shallow: false, error: null, truncated: false, claims: [claim] };
+  const layout = { roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false };
+  const dir = root(t);
+
+  writeFacts(dir, { ...result([dim()]), layout: { ...layout, cochange } });
+  const { facts } = readFacts(dir);
+  assert.equal(facts.schema, 19);
+  assert.deepEqual(facts.layout.cochange, cochange);
+  assert.deepEqual(readLayout(dir).layout.cochange, cochange);
+  assert.deepEqual(statedClaims(facts.layout.cochange), [claim]);
+
+  // A scan from before the walk wrote no member: no claim, no finding, no notice.
+  const older = root(t);
+  writeFacts(older, { ...result([dim()]), layout });
+  assert.equal(readFacts(older).facts.layout.cochange, undefined);
+  assert.deepEqual(statedClaims(readFacts(older).facts.layout.cochange), []);
+});

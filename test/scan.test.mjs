@@ -16,6 +16,7 @@ import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
 import { areaId, discover, globsReach } from "../plugins/anatomiya/lib/areas.mjs";
 import { echoContext, holdsTestIn, ownLayout } from "../plugins/anatomiya/lib/hook.mjs";
 import { isTestPath, noticeFor } from "../plugins/anatomiya/lib/precedent.mjs";
+import { runNotice } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
 import { buildPin, PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
@@ -2152,4 +2153,85 @@ test("a pin counts an area whose only row is a pairing, as the scan does", needs
   const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
   const { pin } = await runPin(dir);
   assert.deepEqual(pin.areas.map((a) => a.path).filter((p) => p !== "crate/src"), first.areas.map((a) => a.path));
+});
+
+/* --- what the default branch's changes touched together --- */
+
+/** Forty services, each landed with an entry in the registry by one of two people, between ten README edits. */
+function shippingHistory(t, { pinned = false } = {}) {
+  return repo(t, (dir, { git, write, author, pin }) => {
+    git("checkout", "-q", "-b", "main");
+    write("README.md", "# r\n");
+    write("src/registry.ts", "export const all = []\n");
+    git("add", "-A");
+    git("commit", "-qm", "root");
+    for (let i = 0; i < 40; i++) {
+      author(i % 2 ? "b@t.test" : "a@t.test");
+      write(`src/services/s${i}.ts`, `export const s${i} = ${i}\n`);
+      write("src/registry.ts", `export const all = [${i}]\n`);
+      if (i % 4 === 0) write("README.md", `# r ${i}\n`);
+      git("add", "-A");
+      git("commit", "-qm", `service ${i}`);
+    }
+    for (let i = 0; i < 40; i++) {
+      write("README.md", `# readme ${i}\n`);
+      git("add", "-A");
+      git("commit", "-qm", `readme ${i}`);
+    }
+    if (pinned) pin([{ id: areaId("src/services"), path: "src/services", files: Array.from({ length: 40 }, (_, i) => `src/services/s${i}.ts`) }]);
+  });
+}
+
+test("a scan states what a class's additions ship with, and the area file says it after the directives", async (t) => {
+  const dir = shippingHistory(t);
+  const result = await scan(dir);
+  const { cochange } = result.layout;
+
+  assert.equal(cochange.unit, "first-parent");
+  assert.equal(cochange.from, "base");
+  // The root commit is read and counts as no change.
+  assert.equal(cochange.read, 81);
+  assert.equal(cochange.counted, 80);
+  assert.equal(cochange.shallow, false);
+  const stated = cochange.claims.filter((c) => c.directive);
+  assert.deepEqual(stated.map((c) => [c.producer, c.companion, c.candidates, c.conforming, c.authors, c.area]), [
+    ["src/services/*.ts", { edits: "src/registry.ts" }, 40, 40, 2, "src/services"],
+  ]);
+
+  writeMap(result, {});
+  const file = readdirSync(join(dir, ".claude/rules")).find((n) => n !== "anatomiya-overview.md");
+  const body = readFileSync(join(dir, ".claude/rules", file), "utf8");
+  assert.match(body, /^a \.ts file added to "src\/services" ships with an edit to "src\/registry\.ts"\n {2}40 of the last 40 changes that added one, 2 authors; 40 of 40 such files here arrived that way$/m, body);
+  // The overview has no room for a per-pair line and is byte-stable without one.
+  assert.doesNotMatch(readFileSync(join(dir, ".claude/rules/anatomiya-overview.md"), "utf8"), /ships with/);
+  // The layout file carries it to the hooks.
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".claude/anatomiya/layout.json"), "utf8")).layout.cochange, JSON.parse(JSON.stringify(cochange)));
+
+  // And the notice says it before a new service is written, and nothing for one that exists.
+  const write = (rel) => ({ hook_event_name: "PreToolUse", tool_name: "Write", cwd: dir, tool_input: { file_path: join(dir, rel) } });
+  const said = (await runNotice(dir, write("src/services/new.ts"))).hookSpecificOutput.additionalContext;
+  assert.match(said, /^ {2}A \.ts file added here ships with an edit to "src\/registry\.ts": 40 of the last 40 changes that added one\.$/m);
+  assert.deepEqual(await runNotice(dir, write("src/services/s0.ts")), {});
+  assert.deepEqual(await runNotice(dir, write("src/other/new.ts")), {});
+});
+
+test("a pinned scan walks from the pin, and two scans of one history write one map", async (t) => {
+  const dir = shippingHistory(t, { pinned: true });
+  const first = await scan(dir);
+  assert.equal(first.layout.cochange.from, "pin");
+  writeMap(first, {});
+  const files = () => readdirSync(join(dir, ".claude/rules")).map((n) => readFileSync(join(dir, ".claude/rules", n), "utf8"));
+  const before = files();
+  writeMap(await scan(dir), {});
+  assert.deepEqual(files(), before);
+});
+
+test("a repository with no commit records a walk that read nothing", async (t) => {
+  const dir = repo(t, (d, { write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`);
+  });
+  const { cochange } = (await scan(dir)).layout;
+  assert.equal(cochange.read, 0);
+  assert.equal(cochange.tip, null);
+  assert.deepEqual(cochange.claims, []);
 });
