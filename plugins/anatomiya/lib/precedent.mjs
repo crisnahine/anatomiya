@@ -101,8 +101,9 @@ const countsAreNumbers = (r) =>
  * root of that project answers: a PHP `tests/Cache` is about the `src/Cache`
  * beside it, and a `Cache` in another tree is not its to answer for.
  *
- * Only a root counting the test's own family answers it: a `_spec.rb` under a
- * directory of `.js` files says nothing about whether those are tested.
+ * Only a root counting the test's own family answers it: a test of one family
+ * under a directory of another family's files says nothing about whether those
+ * are tested.
  *
  * Answered with the directories the answer turns on, each with the family its
  * root counts: a tail shortened past directories is a test of something under
