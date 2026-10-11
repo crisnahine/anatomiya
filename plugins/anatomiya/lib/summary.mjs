@@ -1,6 +1,6 @@
 import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
-import { statedSide } from "./facts.mjs";
+import { oversizedSentence, statedSide } from "./facts.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "./rules.mjs";
@@ -122,6 +122,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // And the ones that would not go: a file somebody holds, or made read-only.
     ...(plan.stagedLeft?.length ? { stagedLeft: plan.stagedLeft.length } : {}),
     ...(plan.storeStagedLeft?.length ? { storeStagedLeft: plan.storeStagedLeft.length } : {}),
+    ...(plan.oversized?.length ? { oversized: plan.oversized } : {}),
     wrote: plan.write.length,
     // A language read no file of is one of two facts, told apart by whether
     // anything else was read: `blind` is a run that wrote nothing at all, and
@@ -307,6 +308,7 @@ export function scanLines(s) {
   for (const [n, dir] of [[s.stagedLeft, RULES_DIR], [s.storeStagedLeft, STORE_DIR]]) {
     if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
   }
+  for (const record of s.oversized ?? []) lines.push(oversizedSentence(record, s.dryRun));
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.
   if (s.blind.length) {

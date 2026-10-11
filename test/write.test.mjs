@@ -4196,9 +4196,9 @@ function sizes(dir) {
 
 const refusedAsTooLarge = (at) => `"${at}" is ${TOO_LARGE} bytes, past the 64 MiB a scan reads to put a file back`;
 
-test("a file past the bound a scan would replace or remove in Claude Code's directory or the store refuses the scan whole, dry run too", (t) => {
+test("a file past the bound a scan would replace or remove in Claude Code's directory refuses the scan whole, dry run too", (t) => {
   const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
-  for (const [at, head] of [[`${RULES}/anatomiya-overview.md`, ""], [`${RULES}/${areaFilename(b)}`, OURS], [`${STORE}/facts.json`, ""], [`${STORE}/layout.json`, ""]]) {
+  for (const [at, head] of [[`${RULES}/anatomiya-overview.md`, ""], [`${RULES}/${areaFilename(b)}`, OURS]]) {
     const dir = workspace(t);
     writeMap(result(dir, [a, b]), { targets: ALL });
     tooLarge(join(dir, at), head);
@@ -4212,6 +4212,50 @@ test("a file past the bound a scan would replace or remove in Claude Code's dire
       );
     }
     assert.deepEqual(sizes(dir), before, at);
+  }
+});
+
+test("a file of exactly the bound is read and put back", async (t) => {
+  const lock = await refusing(t);
+  const [a, b] = [area("src/services"), area("src/api")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const at = join(dir, RULES, areaFilename(b));
+  writeFileSync(at, OURS);
+  truncateSync(at, PUT_BACK_MOST);
+  lock.on = (path) => (path.endsWith(`/${copilot.dir}/${overviewName(copilot)}`) ? "EPERM" : null);
+
+  assert.throws(() => writeMap(result(dir, [a, b]), { targets: ALL }), { message: /could not be replaced \(EPERM\)/ });
+
+  lock.on = null;
+  assert.equal(statSync(at).size, PUT_BACK_MOST);
+  assert.equal(readFileSync(at, "utf8").startsWith(OURS), true);
+});
+
+test("a record or its layout file past the bound is replaced without being read, and never put back", async (t) => {
+  const lock = await refusing(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  for (const leaf of ["facts.json", "layout.json"]) {
+    const at = `${STORE}/${leaf}`;
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    tooLarge(join(dir, at));
+
+    const dry = writeMap(result(dir, [a, c]), { dryRun: true });
+    assert.deepEqual(dry.oversized, [{ at, size: TOO_LARGE }], `${leaf}: a dry run says so`);
+    assert.equal(statSync(join(dir, at)).size, TOO_LARGE, `${leaf}: and leaves it`);
+
+    lock.on = (path) => (path.endsWith(`/${copilot.dir}/${overviewName(copilot)}`) ? "EPERM" : null);
+    assert.throws(() => writeMap(result(dir, [a, c]), { targets: ALL }), { message: /could not be replaced \(EPERM\)/ }, leaf);
+    lock.on = null;
+    assert.equal(existsSync(join(dir, at)), false, `${leaf}: a rollback puts back nothing there`);
+
+    tooLarge(join(dir, at));
+    const plan = writeMap(result(dir, [a, b]));
+    assert.deepEqual(plan.oversized, [{ at, size: TOO_LARGE }], leaf);
+    assert.deepEqual(listRules(dir), mapOf(claude, a, b), leaf);
+    assert.deepEqual(readLayout(dir)?.layout, readFacts(dir).layout, `${leaf}: the pair answers again`);
+    assert.equal("oversized" in writeMap(result(dir, [a, b])), false, `${leaf}: and the scan after says nothing`);
   }
 });
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, cpSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, symlinkSync, truncateSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -613,6 +613,22 @@ test("scan --targets writes the map for each tool named, and says so per directo
   assert.equal(stems.length, 2);
   assert.deepEqual(listed(repo, CURSOR), stems.map((n) => `${n}.mdc`));
   assert.deepEqual(listed(repo, COPILOT), stems.map((n) => `${n}.instructions.md`));
+});
+
+test("a record past the bound any command reads is replaced, said once, and the scan after is quiet", (t) => {
+  for (const leaf of ["facts.json", "layout.json"]) {
+    const repo = repoWithSource(t);
+    anatomiya(repo, "scan");
+    const at = join(repo, ".claude", "anatomiya", leaf);
+    truncateSync(at, 70 * 2 ** 20);
+    const said = `".claude/anatomiya/${leaf}" was ${70 * 2 ** 20} bytes, past the 64 MiB any command reads of a record, so it was replaced without being read`;
+
+    const out = anatomiya(repo, "scan");
+
+    assert.equal(out.split("\n").filter((line) => line.includes(leaf)).join("\n"), said, out);
+    assert.ok(statSync(at).size < 2 ** 20, leaf);
+    assert.doesNotMatch(anatomiya(repo, "scan"), /past the 64 MiB/, leaf);
+  }
 });
 
 test("a target stays on with no flag, and --targets claude turns the others off", (t) => {

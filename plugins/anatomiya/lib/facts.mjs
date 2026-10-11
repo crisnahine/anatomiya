@@ -402,12 +402,12 @@ export function writeFacts(root, result) {
   // The record is renamed before its layout file, so a throw at the second
   // rename has already replaced it. Put back the way the map's own write does.
   const record = join(dir, basename(FACTS_PATH));
-  const previous = previousBytes(record);
+  const previous = recordBytes(record);
   const was = previous ? readLayout(root, record) : null;
   try {
     writePair(dir, factsJson(result), result.layout);
   } catch (err) {
-    const now = previousBytes(record);
+    const now = recordBytes(record);
     // Only where the failed write replaced what was there: still the same bytes
     // leaves nothing to put back, and `putBack` leaves a record it could not read.
     if (previous === null ? now !== null : !(now && previous?.equals(now))) {
@@ -433,7 +433,7 @@ export function putBack(path, previous, was) {
 
 // A scan reads whole to put back no more than any command reads of a record: 64 MiB, over six times
 // the largest file a scan of the corpus writes (9.7 MiB, vscode's facts.json).
-export const PUT_BACK_MOST = RECORD_MOST;
+const PUT_BACK_MOST = RECORD_MOST;
 
 /**
  * The size of a regular file at `path` past `PUT_BACK_MOST`, or null: what a
@@ -450,6 +450,20 @@ export function tooLargeToPutBack(path) {
 
 /** The refusal's first half for such a file, named by the repository's spelling of it. */
 export const tooLargeSentence = (at, size) => `${encodePath(at)} is ${size} bytes, past the ${PUT_BACK_MOST / 2 ** 20} MiB a scan reads to put a file back`;
+
+/** The line a scan gives a record past the bound, which it replaces without reading. */
+export const oversizedSentence = ({ at, size }, dryRun) =>
+  `${encodePath(at)} ${dryRun ? "is" : "was"} ${size} bytes, past the ${RECORD_MOST / 2 ** 20} MiB any command reads of a record, so it ${dryRun ? "would be" : "was"} replaced without being read`;
+
+/** `previousBytes` of a record, `null` past the bound: no command reads one, so there is nothing in it to keep. */
+export function recordBytes(path) {
+  try {
+    return previousBytes(path);
+  } catch (err) {
+    if (err.tooLarge === undefined) throw err;
+    return null;
+  }
+}
 
 /**
  * A regular file's bytes, `null` where nothing is, `undefined` where they cannot
