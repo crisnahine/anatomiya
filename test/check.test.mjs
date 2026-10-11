@@ -13,7 +13,7 @@ import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
 import { renamesSkipped } from "../plugins/anatomiya/lib/changeset.mjs";
-import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
+import { formatReport, formatReportGithub, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
@@ -4663,6 +4663,7 @@ test("a slot no gate stated speaks as the count its area file prints, not as the
   assert.equal(found[0].severity, "NIT");
   assert.equal(found[0].claim, "functions declare no return type: no convention. 62 of 70 sites (ratio)");
   assert.equal(found[0].claim, unstatedLine({}, unstated), "the area file's own line for the slot");
+  assert.equal(found[0].toldInClaim, true);
 });
 
 test("a filename class no gate stated speaks as its count too", async (t) => {
@@ -4681,7 +4682,31 @@ test("a filename class no gate stated speaks as its count too", async (t) => {
   });
   const found = forKey(await check(dir), "file_naming_case");
 
-  assert.deepEqual(found.map((f) => [f.severity, f.claim]), [["NIT", "files here are named kebab-case: no convention. 50 of 60 sites (ratio)"]]);
+  assert.deepEqual(found.map((f) => [f.severity, f.claim, f.toldInClaim]), [["NIT", "files here are named kebab-case: no convention. 50 of 60 sites (ratio)", true]]);
+});
+
+test("a stated claim's finding is not taken for one whose claim told its reason", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export let a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.ts", `export let b = 2;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [
+      dim({ key: "file_naming_case", learned: "kebab-case", claim: "files here are named kebab-case", conforming: 50 }),
+      dim({ key: "module_state_const", claim: "module-level bindings are const", conforming: 50 }),
+    ],
+  });
+  const r = await check(dir);
+
+  for (const key of ["file_naming_case", "module_state_const"]) {
+    const [found] = forKey(r, key);
+    assert.ok(found, `${key}: ${JSON.stringify(r.findings)}`);
+    assert.equal("toldInClaim" in found, false, key);
+  }
 });
 
 test("a NIT says no convention and its gate once in the text, and the JSON keeps the reason", async (t) => {
@@ -4707,6 +4732,8 @@ test("a NIT says no convention and its gate once in the text, and the JSON keeps
   const [json] = JSON.parse(formatReportJson(r)).findings;
   assert.equal(json.reason, "no convention stated here (ratio)");
   assert.equal(json.claim, "files here are named kebab-case: no convention. 50 of 60 sites (ratio)");
+  const github = formatReportGithub(r);
+  assert.equal(github.match(/\(ratio\)/g)?.length, 1, github);
 });
 
 test("a slot whose area file names the files it was asked of says the same in its NIT", async (t) => {

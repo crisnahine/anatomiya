@@ -1020,6 +1020,7 @@ async function collect(root, run) {
           area: area ? area.path : null,
           dimension: f.dimension,
           claim: own ? spokenClaim(f.claim, area, own) : f.claim,
+          ...(own && unstated(own) ? { toldInClaim: true } : {}),
           precision: f.precision,
           where: f.where,
           companion: null,
@@ -1244,8 +1245,11 @@ function cappedAway(verdict, away, area, path) {
 // An area as the map names it, quoted where the map quotes it.
 const areaName = (path) => areaLabel(path, (p) => nameText(sanitisePath(p)));
 
+const unstated = (dim) => statedSide(dim).states === null;
+
 // A slot no gate stated speaks as the count its area file prints for it: the majority's sentence alone reads as advice.
-const spokenClaim = (claim, area, dim) => (statedSide(dim).states === null ? unstatedLine(area, dim, claim) : claim);
+// That line ends on the gate, so its finding carries `toldInClaim` and no writer repeats the NIT's reason under it.
+const spokenClaim = (claim, area, dim) => (unstated(dim) ? unstatedLine(area, dim, claim) : claim);
 
 /** How an area's file dropped this slot, `named` or `unnamed`, or false where it printed it. */
 function droppedOf(droppedIn, area, key) {
@@ -1309,6 +1313,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
     // Worded by the row's owner, which also knows the kind the narrowing left
     // out and the two rules the template alone cannot carry.
     claim: spokenClaim(claimFor(row, nameDim.learned, nameDim.narrowed === true ? nameDim.learnedKind : undefined), area, nameDim),
+    ...(unstated(nameDim) ? { toldInClaim: true } : {}),
     precision: nameDim.precision ?? "precise",
     where: null,
     companion: null,
