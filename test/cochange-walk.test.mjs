@@ -1,0 +1,346 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { needsPathControl, needsShebang } from "./platform.mjs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { execFileSync } from "node:child_process";
+
+import {
+  COCHANGE,
+  changeReader,
+  cochangeRecord,
+  cochangeTip,
+  mineCochange,
+  startCochange,
+  walkCochange,
+} from "../plugins/anatomiya/lib/cochange-walk.mjs";
+
+function repo(t, build) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cochange-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
+  git("init", "-q", "-b", "main");
+  author("a@t.test");
+  build({ dir, git, write, author, commit });
+  return dir;
+
+  function write(rel, body = `${rel}\n`) {
+    const abs = join(dir, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, body);
+  }
+  function author(email) {
+    git("config", "user.email", email);
+    git("config", "user.name", email.split("@")[0]);
+  }
+  function commit(message) {
+    git("add", "-A");
+    git("commit", "-qm", message);
+  }
+}
+
+const sha = (dir, ref = "HEAD") => execFileSync("git", ["rev-parse", ref], { cwd: dir, encoding: "utf8" }).trim();
+
+/** Fields as `git log -z` streams them, with the header and its first status in the shape each git prints. */
+function fields(changes, { glued = false } = {}) {
+  const out = [];
+  for (const { author, rows } of changes) {
+    if (glued && rows.length) {
+      out.push(`\x1e${author}\n${rows[0][0]}`, rows[0][1]);
+      for (const [s, p] of rows.slice(1)) out.push(s, p);
+    } else {
+      out.push(`\x1e${author}`);
+      for (const [i, [s, p]] of rows.entries()) out.push(i === 0 ? `\n${s}` : s, p);
+    }
+  }
+  return out;
+}
+
+function readAll(list) {
+  const got = [];
+  const read = changeReader((c) => got.push(c));
+  for (const f of list) read(f);
+  read.end();
+  return got;
+}
+
+test("the -z log reads the same whether git ends the header with a NUL or glues it to the first status", () => {
+  const changes = [
+    { author: "A@T.test", rows: [["A", "lib/x.rb"], ["M", "config/default.yml"], ["T", "bin/run"]] },
+    { author: "b@t.test", rows: [] },
+    { author: "b@t.test", rows: [["D", "old/x.rb"], ["A", "new/x.rb"], ["A", "new/y.rb"]] },
+  ];
+  const want = [
+    { bulk: false, author: "a@t.test", added: ["lib/x.rb"], touched: ["lib/x.rb", "config/default.yml", "bin/run"] },
+    { bulk: false, author: "b@t.test", added: [], touched: [] },
+    // A move is no new file: the basename the same change deleted makes it an edit.
+    { bulk: false, author: "b@t.test", added: ["new/y.rb"], touched: ["new/x.rb", "new/y.rb"] },
+  ];
+  assert.deepEqual(readAll(fields(changes)), want);
+  assert.deepEqual(readAll(fields(changes, { glued: true })), want);
+});
+
+test("a change deleting more than the bound is bulk too, so its deletions stay bounded", () => {
+  const rows = [["A", "lib/x.rb"], ...Array.from({ length: COCHANGE.goneMost + 1 }, (_, i) => ["D", `old/f${i}.rb`])];
+  assert.deepEqual(readAll(fields([{ author: "a@t", rows }])), [{ bulk: true }]);
+});
+
+test("a change past the bound stops being stored at its 41st file and is counted as bulk", () => {
+  const rows = (n) => Array.from({ length: n }, (_, i) => ["A", `vendor/f${i}.rb`]);
+  const [at, past] = readAll(fields([{ author: "a@t", rows: rows(40) }, { author: "a@t", rows: rows(41) }]));
+  assert.equal(at.bulk, false);
+  assert.equal(at.added.length, 40);
+  assert.deepEqual(past, { bulk: true });
+});
+
+/**
+ * Changes newest first: `adds` of them add a cop each, the first `misses` of
+ * those without touching the companion, then `quiet` changes touching only a
+ * README. Authors alternate unless one is named.
+ */
+function history({ adds = 40, misses = [], quiet = 40, companion = "config/default.yml", one = null, everywhere = false } = {}) {
+  const changes = [];
+  for (let i = 0; i < adds; i++) {
+    const cop = `lib/cops/c${i}.rb`;
+    const touched = misses.includes(i) ? [cop] : [cop, companion];
+    changes.push({ author: one ?? `p${i % 2}@t.test`, added: [cop], touched });
+  }
+  for (let i = 0; i < quiet; i++) {
+    changes.push({ author: "q@t.test", added: [], touched: everywhere ? ["README.md", companion] : ["README.md"] });
+  }
+  return { changes, read: changes.length, bulk: 0, error: null };
+}
+
+const TREE = new Set(["lib/cops/c0.rb", "config/default.yml", "README.md"]);
+const pair = (claims, producer = "lib/cops/*.rb", edits = "config/default.yml") =>
+  claims.find((c) => c.producer === producer && c.companion.edits === edits);
+
+test("a class added with one companion every time states it, and its parent class says nothing twice", () => {
+  const { claims, truncated } = mineCochange(history(), { tree: TREE, required: 2 });
+
+  assert.equal(truncated, false);
+  const stated = claims.filter((c) => c.directive);
+  assert.deepEqual(stated.map((c) => [c.producer, c.companion]), [["lib/cops/*.rb", { edits: "config/default.yml" }]]);
+  const [c] = stated;
+  assert.equal(c.candidates, 40);
+  assert.equal(c.conforming, 40);
+  assert.deepEqual(c.newest, [8, 8]);
+  assert.equal(c.authors, 2);
+  assert.equal(c.authorsRequired, 2);
+  assert.deepEqual(c.files, [1, 1]);
+  assert.equal(c.lift, 2);
+  // The parent covers no more candidates than the directory's own, so it gives way.
+  assert.equal(pair(claims, "lib/*/*.rb").gate, "pair");
+});
+
+test("a parent class covering a tenth more candidates than its directory's own is the one stated", () => {
+  const changes = [];
+  for (let i = 0; i < 60; i++) {
+    const json = i < 40 ? `plugins/one/f${i}.json` : `plugins/p${i}/package.json`;
+    changes.push({ author: `p${i % 2}@t.test`, added: [json, `.changeset/c${i}.md`], touched: [json, `.changeset/c${i}.md`] });
+  }
+  for (let i = 0; i < 100; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+  const tree = new Set(["plugins/one/f0.json", "plugins/p40/package.json", ".changeset/c0.md"]);
+  const { claims } = mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree });
+
+  const changeset = claims.filter((c) => c.companion.adds === ".changeset/*.md");
+  assert.deepEqual(changeset.filter((c) => c.directive).map((c) => c.producer), ["plugins/*/*.json"]);
+  assert.equal(changeset.find((c) => c.producer === "plugins/one/*.json").gate, "pair");
+});
+
+test("each gate past the ratio is the one a table built to fail it alone records", () => {
+  const gateOf = (walk, tree = TREE, required = 2) => pair(mineCochange(walk, { tree, required }).claims)?.gate;
+
+  assert.equal(gateOf(history({ misses: [10, 20, 30] })), "evidence");
+  assert.equal(gateOf(history({ one: "solo@t.test" })), "authors");
+  // A bot is no second pair of hands.
+  const botted = history();
+  for (const [i, c] of botted.changes.entries()) if (i % 2) c.author = "dependabot[bot]@users.noreply.github.com";
+  assert.equal(gateOf(botted), "authors");
+  // On a one-person repository the bar is one, and the same history states.
+  assert.equal(gateOf(history({ one: "solo@t.test" }), TREE, 1), null);
+  assert.equal(gateOf(history({ everywhere: true })), "lift");
+  assert.equal(gateOf(history(), new Set(["lib/cops/c0.rb"])), "exists");
+  assert.equal(gateOf(history(), new Set(["config/default.yml"])), "exists");
+  // 97 of 100 clears the bound, and all three misses in the newest fifth do not.
+  assert.equal(gateOf(history({ adds: 100, misses: [0, 1, 2], quiet: 100 })), "recency");
+  assert.equal(gateOf(history({ adds: 100, misses: [50, 60, 70], quiet: 100 })), null);
+});
+
+test("a pair under the ratio, against a test class, or of a class and its own parent is not kept at all", () => {
+  // 44 of 50 is touched often enough to be counted, and under 0.90.
+  assert.equal(pair(mineCochange(history({ adds: 50, misses: [0, 1, 2, 3, 4, 5] }), { tree: TREE }).claims), undefined);
+
+  const specs = history();
+  for (const c of specs.changes) c.added = c.added.map((p) => p.replace("lib/cops/c", "spec/cops/c").replace(".rb", "_spec.rb"));
+  for (const c of specs.changes) c.touched = c.touched.map((p) => p.replace("lib/cops/c", "spec/cops/c").replace(".rb", "_spec.rb"));
+  assert.deepEqual(mineCochange(specs, { tree: TREE }).claims, []);
+
+  const helper = mineCochange(history({ companion: "spec/spec_helper.rb" }), { tree: new Set([...TREE, "spec/spec_helper.rb"]) });
+  assert.equal(pair(helper.claims, "lib/cops/*.rb", "spec/spec_helper.rb"), undefined);
+
+  const shaped = mineCochange(history(), { tree: TREE }).claims;
+  assert.equal(shaped.some((c) => c.companion.adds === "lib/*/*.rb" || c.companion.adds === "lib/cops/*.rb"), false);
+});
+
+test("each class is judged on its newest hundred candidates, so a habit that started late still speaks", () => {
+  const walk = history({ adds: 150, misses: Array.from({ length: 50 }, (_, i) => 100 + i), quiet: 150 });
+  const c = pair(mineCochange(walk, { tree: TREE }).claims);
+  assert.equal(c.candidates, 100);
+  assert.equal(c.conforming, 100);
+  assert.equal(c.gate, null);
+});
+
+test("two classes each shipping with the other added state once, on the side with more candidates", () => {
+  const both = (n, alone) => {
+    const changes = [];
+    for (let i = 0; i < n; i++) {
+      const files = i >= n - alone ? [`app/a/x${i}.ts`] : [`app/a/x${i}.ts`, `app/b/y${i}.ts`];
+      changes.push({ author: `p${i % 3}@t.test`, added: files, touched: files });
+    }
+    for (let i = 0; i < 300; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+    const tree = new Set(["app/a/x0.ts", "app/b/y0.ts"]);
+    return mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree }).claims;
+  };
+  const sides = (claims) => claims.filter((c) => c.directive).map((c) => [c.producer, c.companion.adds]);
+  const gateOf = (claims, producer) => claims.find((c) => c.producer === producer && c.companion.adds !== undefined)?.gate;
+
+  // 98 of the 100 that add an `a` add a `b`, and every `b` came with an `a`: both clear, `a` has more.
+  const larger = both(100, 2);
+  assert.deepEqual(sides(larger), [["app/a/*.ts", "app/b/*.ts"]]);
+  assert.equal(gateOf(larger, "app/b/*.ts"), "pair");
+  // A tie goes to the side first in code order.
+  const tied = both(40, 0);
+  assert.deepEqual(sides(tied), [["app/a/*.ts", "app/b/*.ts"]]);
+  assert.equal(gateOf(tied, "app/b/*.ts"), "pair");
+});
+
+test("a pair count past its cap stops and states nothing", (t) => {
+  const was = COCHANGE.keysMost;
+  COCHANGE.keysMost = 3;
+  t.after(() => {
+    COCHANGE.keysMost = was;
+  });
+  const { claims, truncated } = mineCochange(history(), { tree: TREE });
+  assert.equal(truncated, true);
+  assert.deepEqual(claims, []);
+});
+
+test("the record says how much history was read and puts a claim in the one area its producers sit in", () => {
+  const started = { tip: "a".repeat(40), from: "pin", walk: history(), tree: new Set([...TREE, "lib/cops/c1.rb"]) };
+  const one = cochangeRecord(started, { required: 2, areaOf: (p) => (p.startsWith("lib/") ? "lib" : null) });
+  assert.equal(one.read, 80);
+  assert.equal(one.counted, 80);
+  assert.equal(one.from, "pin");
+  assert.equal(pair(one.claims).area, "lib");
+
+  const split = cochangeRecord(started, { areaOf: (p) => (p.endsWith("c0.rb") ? "lib" : "lib/cops") });
+  assert.equal(pair(split.claims).area, null);
+  assert.equal(cochangeRecord({ ...started, tree: null }).error, "the tip's tree could not be read");
+  assert.deepEqual(cochangeRecord({ ...started, tree: null }).claims, []);
+});
+
+test("the walk reads one change per first-parent commit, a merged branch as one", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("README.md");
+    commit("root");
+    git("checkout", "-q", "-b", "feature");
+    write("lib/cops/a.rb");
+    commit("cop");
+    write("config/default.yml");
+    commit("register it");
+    git("checkout", "-q", "main");
+    git("merge", "-q", "--no-ff", "feature", "-m", "merge");
+    write("docs/x.md");
+    commit("docs");
+  });
+
+  const walk = await walkCochange(dir, sha(dir));
+  assert.equal(walk.error, null);
+  assert.equal(walk.read, 3);
+  // The root's diff is every file the repository started with, and says nothing.
+  assert.deepEqual(walk.changes.map((c) => c.added), [["docs/x.md"], ["config/default.yml", "lib/cops/a.rb"]]);
+});
+
+test("no commit is no walk", async (t) => {
+  const empty = repo(t, () => {});
+  assert.equal(await cochangeTip(empty, { status: "unpinned" }), null);
+  const none = await startCochange(empty, { status: "unpinned" });
+  assert.equal(none.tip, null);
+  assert.equal(cochangeRecord(none).read, 0);
+  assert.deepEqual(cochangeRecord(none).claims, []);
+});
+
+test("a git that refuses --diff-merges is an error that states nothing", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("a.rb");
+    commit("one");
+    write("b.rb");
+    commit("two");
+  });
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-cochange-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *--diff-merges*) echo "fatal: unrecognized argument" >&2; exit 128;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    const walk = await walkCochange(dir, sha(dir));
+    assert.match(walk.error, /exited 128/);
+    assert.deepEqual(walk.changes, []);
+  } finally {
+    process.env.PATH = path;
+  }
+});
+
+test("the tip is the pin, else the fork point with the base branch, else HEAD", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("a.rb");
+    commit("one");
+    git("checkout", "-q", "-b", "feature");
+    write("b.rb");
+    commit("two");
+  });
+  const fork = sha(dir, "main");
+  assert.deepEqual(await cochangeTip(dir, { status: "ok", sha: fork }), { tip: fork, from: "pin" });
+  assert.deepEqual(await cochangeTip(dir, { status: "unpinned" }), { tip: fork, from: "base" });
+
+  const lone = repo(t, ({ git, write, commit }) => {
+    git("checkout", "-q", "-b", "trunk");
+    write("a.rb");
+    commit("one");
+  });
+  assert.deepEqual(await cochangeTip(lone, { status: "unreachable", sha: "b".repeat(40) }), { tip: sha(lone), from: "head" });
+});
+
+test("a shallow clone's walk reads the window it holds, its grafted boundary as no change", async (t) => {
+  const source = repo(t, ({ write, commit }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`lib/f${i}.rb`);
+      commit(`f${i}`);
+    }
+  });
+  const clone = mkdtempSync(join(tmpdir(), "anatomiya-cochange-shallow-"));
+  t.after(() => rmSync(clone, { recursive: true, force: true }));
+  execFileSync("git", ["clone", "-q", "--depth", "3", `file://${source}`, clone], { stdio: "pipe" });
+
+  const walk = await walkCochange(clone, sha(clone));
+  assert.equal(walk.error, null);
+  assert.equal(walk.read, 3);
+  assert.deepEqual(walk.changes.map((c) => c.added), [["lib/f5.rb"], ["lib/f4.rb"]]);
+});
+
+test("the map a scan wrote is no part of a change, so a repository that commits it mines no claim on it", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("README.md");
+    commit("root");
+    write("lib/cops/a.rb");
+    write(".claude/rules/anatomiya-area-0000000a.md");
+    write(".claude/anatomiya/facts.json", "{}\n");
+    write(".claude/rules/house-style.md");
+    commit("cop and its refreshed map");
+  });
+  const walk = await walkCochange(dir, sha(dir));
+  assert.deepEqual(walk.changes.map((c) => c.touched), [[".claude/rules/house-style.md", "lib/cops/a.rb"]]);
+});
