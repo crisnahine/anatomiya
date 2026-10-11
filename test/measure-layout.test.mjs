@@ -15,7 +15,16 @@ import {
   overviewFor,
   parseArgs,
 } from "../scripts/measure-layout.mjs";
-import { namesakeClause, renderLayout, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS } from "../plugins/anatomiya/lib/render-layout.mjs";
+import {
+  namesakeClause,
+  pathOfRootLabel,
+  renderLayout,
+  rootLabelEnd,
+  runnerCount,
+  RUNNERS_SHOWN,
+  specCount,
+  TESTS_GROUPS,
+} from "../plugins/anatomiya/lib/render-layout.mjs";
 import { UNNAMED_RUNNER } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
@@ -416,6 +425,24 @@ test("the recount counts a root named tests, which prints with a slash so it is 
   assert.match(run.section, /^- tests\/: 3 \.txt, 2 \.js; 2 node:test specs$/m);
   assert.match(run.section, /^- tests: 2 node:test specs under tests; /m);
   assert.equal(run.section.split("\n").filter((line) => line.startsWith("- tests: ")).length, 1, "one bullet carries the label");
+});
+
+test("a root label the renderer printed reads back to the path it was printed from", () => {
+  const paths = ["src", "tests", 'a "b" c: d', "lib/my pkg (files at this level)", 'x\\" y (files at this level)'];
+  const layout = {
+    size: 100,
+    minFiles: 3,
+    roots: paths.map((path) => ({ path, dir: path, files: 4, source: 4, exts: [[".js", 4]], other: 0, jsx: 0, jsxExt: null, tests: [], testRoot: false })),
+    more: { roots: 0, files: 0 },
+    tests: [],
+    principles: [],
+  };
+  const bullets = renderLayout(layout).filter((l) => l.startsWith("- "));
+
+  assert.deepEqual(
+    bullets.map((l) => pathOfRootLabel(l.slice(2, 2 + rootLabelEnd(l.slice(2))))),
+    paths
+  );
 });
 
 test("the recount reads a root whose name is quoted, a separator inside the quotes included", (t) => {
