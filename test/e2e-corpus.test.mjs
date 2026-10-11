@@ -310,8 +310,9 @@ test("a repository that states no co-change claim says so in its own column", ()
   assert.equal(cochangePlan({ layout: null }), null);
   assert.equal(cochangeCell(null), "n.a. (no claim stated)");
   const plan = cochangePlan({ layout: { cochange: { claims: [shipsWith()] } } });
-  const report = (dimension, path) => ({ findings: [{ dimension, path }] });
-  assert.equal(cochangeCell(plan, report("cochange", plan.path)), "yes lib/rubocop/cop/style/*.rb");
+  const report = (dimension, path) => ({ findings: [{ dimension, path, severity: "FIX" }] });
+  // The severity rides along, so the column shows which rung the probe landed on.
+  assert.equal(cochangeCell(plan, report("cochange", plan.path)), "yes FIX lib/rubocop/cop/style/*.rb");
   assert.equal(cochangeCell(plan, report("file_naming_case", plan.path)), "no");
   assert.equal(cochangeCell(plan, null), "no");
 });
