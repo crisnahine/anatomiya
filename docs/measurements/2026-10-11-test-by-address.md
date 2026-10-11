@@ -101,7 +101,7 @@ another tracked test in the same directory, as H38 was measured.
 
 Base: 5 findings, in 2 repositories. With roots held to the test's own family: the same 5 paths.
 None appears and none goes. One reason's count changed, from the fixture fix above, not this one:
-whitehall `features/support/govuk_test.rb` now reads `features: 0 of 96` for `2 of 96`.
+whitehall `features/support/govuk_test.rb` reads `features: 0 of 96` for `2 of 96`.
 
 So no real repository in either corpus loses a right finding or gains one; the cross-family answer
-is reached only by the issue's contrived shape.
+is reached only by a contrived shape.
