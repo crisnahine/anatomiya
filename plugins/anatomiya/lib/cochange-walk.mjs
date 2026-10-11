@@ -16,7 +16,7 @@
  */
 import { GATES, wilsonLower } from "./gates.mjs";
 import { isPerson } from "./authors.mjs";
-import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts, companionKey } from "./cochange.mjs";
+import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts, companionKey, keyCompanion } from "./cochange.mjs";
 import { commitAt, filesAt, gitStreamed, isSha, resolveBaseRef } from "./git.mjs";
 import { ownOutput } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
@@ -196,11 +196,6 @@ const upOf = (cls) => {
   return `${dir.slice(0, dir.lastIndexOf("/"))}/*/*${suffix}`;
 };
 
-const companionOf = (key) => {
-  const at = key.indexOf("\0");
-  return { kind: key.slice(0, at), path: key.slice(at + 1) };
-};
-
 /**
  * The gates in order, each pair's first failure recorded: test and shape and
  * ratio decide whether it is kept at all, and evidence, authors, lift,
@@ -261,10 +256,10 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
   for (const [producer, row] of together) {
     const candidates = support(producer);
     for (const [key, conforming] of row) {
-      const companion = companionOf(key);
-      const adds = companion.kind === "adds";
-      if (isTestSide(sample(producer)) || isTestSide(adds ? sample(companion.path) : companion.path)) continue;
-      if (adds && (classParts(companion.path).spans || companion.path === producer || upOf(producer) === companion.path || upOf(companion.path) === producer)) continue;
+      const companion = keyCompanion(key);
+      const isAdded = companion.kind === "adds";
+      if (isTestSide(sample(producer)) || isTestSide(isAdded ? sample(companion.path) : companion.path)) continue;
+      if (isAdded && (classParts(companion.path).spans || companion.path === producer || upOf(producer) === companion.path || upOf(companion.path) === producer)) continue;
       if (conforming / candidates < GATES.minRatio) continue;
       kept.push({ producer, key, conforming, candidates, companion });
     }
@@ -357,9 +352,9 @@ function onePerPair(claims) {
     if (!children.every((c) => parent.candidates >= 1.1 * c.candidates)) drop(parent);
     else for (const c of children) drop(c);
   }
-  const adds = (c, path) => c.companion.kind === "adds" && c.companion.path === path;
+  const shipsWithAdded = (c, cls) => c.companion.kind === "adds" && c.companion.path === cls;
   for (const a of stated.filter((c) => c.companion.kind === "adds")) {
-    const b = stated.find((c) => c.directive && c.producer === a.companion.path && adds(c, a.producer));
+    const b = stated.find((c) => c.directive && c.producer === a.companion.path && shipsWithAdded(c, a.producer));
     if (!a.directive || !b) continue;
     const aWins = a.candidates !== b.candidates ? a.candidates > b.candidates : byCode(a.producer, b.producer) < 0;
     drop(aWins ? b : a);

@@ -99,6 +99,12 @@ export function noticeLine(claim) {
 /** A companion as one string: an edit to a named file and an added file of a class never spell the same. */
 export const companionKey = (companion) => `${companion.kind}\0${companion.path}`;
 
+/** The companion a `companionKey` was built from. */
+export const keyCompanion = (key) => {
+  const at = key.indexOf("\0");
+  return { kind: key.slice(0, at), path: key.slice(at + 1) };
+};
+
 /** The key a claim's block is dropped under, which no dimension key can spell. */
 export const claimKey = (claim) => `cochange\0${claim.producer}\0${companionKey(claim.companion)}`;
 

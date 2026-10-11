@@ -506,23 +506,19 @@ function areaBlocks(area, cochange = []) {
   const directives = sides.filter(([d, side]) => side.states !== null && d.matchesDefault !== true);
   const counts = sides.filter(([d, side]) => side.states === null || d.matchesDefault === true);
 
-  const blocks = [];
-  // The dimension each block states, parallel to `blocks`, and null for a block
-  // that states nothing. A slot the model writes by default is stated too: it
-  // rides with the counts and the check enforces it unchanged, so a budget that
-  // drops its line leaves the agent nothing at all for a claim they are still
-  // held to. A count that states nothing is a threshold nobody can audit from
-  // here, which is a different fact with a different fix.
-  const keys = [];
-  // The sentence each block would have delivered, parallel to `keys` and non-null
-  // in exactly the same places. Kept in step with `keys` on purpose: the notice
-  // counts what it hid off `keys` and names it off this, and the two disagreeing
-  // would print "3 of them stated" above two sentences.
-  const claims = [];
-  // What each block is, for the drop line, and the key a co-change block is
-  // dropped under, both parallel to `blocks`.
-  const sorts = [];
-  const ships = [];
+  // Each block's lines, and with them:
+  // `key`, the dimension it states, or null for a block that states nothing. A
+  // slot the model writes by default is stated too: it rides with the counts and
+  // the check enforces it unchanged, so a budget that drops its line leaves the
+  // agent nothing at all for a claim they are still held to. A count that states
+  // nothing is a threshold nobody can audit from here, which is a different fact
+  // with a different fix.
+  // `claim`, the sentence it would have delivered, non-null exactly where `key`
+  // is: the notice counts what it hid off `key` and names it off this, and the
+  // two disagreeing would print "3 of them stated" above two sentences.
+  // `sort`, what it is, for the drop line, and `cochangeKey`, the key a co-change
+  // block is dropped under.
+  const rows = [];
   // The clauses this file has already printed, so a sentence shared by several
   // rows costs one line rather than one per row.
   const said = new Set();
@@ -548,27 +544,20 @@ function areaBlocks(area, cochange = []) {
     }
     if (s.more) block.push(`  and ${s.more} more`);
     block.push("");
-    blocks.push(block);
-    keys.push(d.key);
-    claims.push(sentence(d, s));
-    sorts.push("stated");
-    ships.push(null);
+    rows.push({ lines: block, key: d.key, claim: sentence(d, s), sort: "stated", cochangeKey: null });
   }
-  const directed = blocks.length;
+  const directed = rows.length;
 
   // What a change adding a file here also touches, after the directives and
   // before the descriptions. Keyed null, so `settle` reserves no name line for
   // one, and `fit` gives it only the room the directives leave.
   for (const c of cochange) {
-    blocks.push([
+    const lines = [
       claimSentence(c),
       `  ${changesPhrase(c)}, ${hands(c.authors)}; ${c.files[0]} of ${c.files[1]} such ${filesOf(c.files[1])} here arrived that way`,
       "",
-    ]);
-    keys.push(null);
-    claims.push(null);
-    sorts.push("stated");
-    ships.push(claimKey(c));
+    ];
+    rows.push({ lines, key: null, claim: null, sort: "stated", cochangeKey: claimKey(c) });
   }
 
   // What the area holds and what it reaches for. Counts rather than directives,
@@ -593,11 +582,7 @@ function areaBlocks(area, cochange = []) {
   const described = MAX_LINES - head.length - (kinds ? KINDS_LINES : 0) >= MIN_BODY_LINES;
   if (described) {
     for (const line of rosterLines(area)) {
-      blocks.push([line]);
-      keys.push(null);
-      claims.push(null);
-      sorts.push("described");
-      ships.push(null);
+      rows.push({ lines: [line], key: null, claim: null, sort: "described", cochangeKey: null });
     }
   }
 
@@ -609,15 +594,11 @@ function areaBlocks(area, cochange = []) {
   // directive is what the file exists to deliver, and a count is what makes a
   // wrong threshold auditable. Only one of those is worth the last line.
   for (const [d, s] of counts) {
-    blocks.push([
-      d.matchesDefault === true && s.states !== null
-        ? `${sentence(d, s)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)${partialNote(d)}`
-        : unstatedLine(area, d),
-    ]);
-    keys.push(s.states === null ? null : d.key);
-    claims.push(s.states === null ? null : sentence(d, s));
-    sorts.push(s.states === null ? "count" : "stated");
-    ships.push(null);
+    const line = d.matchesDefault === true && s.states !== null
+      ? `${sentence(d, s)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)${partialNote(d)}`
+      : unstatedLine(area, d);
+    const stated = s.states !== null;
+    rows.push({ lines: [line], key: stated ? d.key : null, claim: stated ? sentence(d, s) : null, sort: stated ? "stated" : "count", cochangeKey: null });
   }
 
   // Taken out of the floor as well as out of the bound, so `head + kinds + body`
@@ -626,7 +607,7 @@ function areaBlocks(area, cochange = []) {
   // and a reader who has to give up two of those for the line naming what the
   // siblings do is better off by it.
   const budget = Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0);
-  return { blocks, keys, claims, sorts, ships, kinds, budget, directed };
+  return { rows, kinds, budget, directed };
 }
 
 /**
@@ -701,15 +682,15 @@ function alsoStatedLead(named, unnamed) {
  * on that record. That is what keeps the count off the sentences and on the
  * keys.
  */
-function settle(blocks, keys, claims, budget, floor = 0) {
-  const upTo = (k) => blocks.slice(0, k).reduce((n, b) => n + b.length, 0);
-  if (upTo(blocks.length) <= budget) return { kept: blocks.length, names: [], unnamed: 0 };
+function settle(rows, budget, floor = 0) {
+  const upTo = (k) => rows.slice(0, k).reduce((n, r) => n + r.lines.length, 0);
+  if (upTo(rows.length) <= budget) return { kept: rows.length, names: [], unnamed: 0 };
 
-  // Counted off `keys` and never off the sentences. The check recomputes this
+  // Counted off each row's `key` and never off the sentences. The check recomputes this
   // from the record it stored, and that record carries every slot's key and no
   // slot's prose, so counting the sentences would have the writer reserve lines
   // the check does not and the two disagree about what the agent was handed.
-  const named = (k) => keys.flatMap((key, i) => (i >= k && key ? [claims[i] ?? null] : []));
+  const named = (k) => rows.slice(k).flatMap((r) => (r.key ? [r.claim ?? null] : []));
 
   // Half the body, no more. A sentence with no counts is a directive the reader
   // cannot audit, and an area that spent its whole budget on sentences would
@@ -722,7 +703,7 @@ function settle(blocks, keys, claims, budget, floor = 0) {
   // yesterday's. Dropping one more block frees its whole height and costs at
   // most the one line its name takes, so the cost never rises as this walks
   // down and the first fit is the best one.
-  for (let kept = blocks.length - 1; kept >= floor; kept--) {
+  for (let kept = rows.length - 1; kept >= floor; kept--) {
     const hidden = named(kept);
     const names = hidden.slice(0, cap);
     // Reserved per hidden key and rendered per hidden sentence. A record with no
@@ -746,15 +727,14 @@ function settle(blocks, keys, claims, budget, floor = 0) {
  * a block that would need the drop line where it has no room goes unsaid.
  * Either way no directive's fate depends on whether the blocks exist.
  */
-function fit({ blocks, keys, claims, sorts, ships, budget, directed }) {
-  const n = ships.filter(Boolean).length;
-  const without = (xs) => [...xs.slice(0, directed), ...xs.slice(directed + n)];
-  const plain = settle(without(blocks), without(keys), without(claims), budget);
-  const all = { blocks, keys, sorts, ships };
-  if (n === 0 || plain.kept < directed) return { ...all, ...plain };
-  const held = settle(blocks, keys, claims, budget, directed);
-  if (held) return { ...all, ...held };
-  return { blocks: without(blocks), keys: without(keys), sorts: without(sorts), ships: without(ships), ...plain, unsaid: ships.filter(Boolean) };
+function fit({ rows, budget, directed }) {
+  const shipping = rows.filter((r) => r.cochangeKey);
+  const without = rows.filter((r) => !r.cochangeKey);
+  const plain = settle(without, budget);
+  if (shipping.length === 0 || plain.kept < directed) return { rows, ...plain };
+  const held = settle(rows, budget, directed);
+  if (held) return { rows, ...held };
+  return { rows: without, ...plain, unsaid: shipping.map((r) => r.cochangeKey) };
 }
 
 /**
@@ -775,13 +755,13 @@ export function droppedDirectives(area) {
  * sentence without counts, and `unnamed` where the file says nothing of it.
  */
 export function droppedSlots(area, cochange = []) {
-  const { keys, ships, kept, names, unsaid = [] } = fit(areaBlocks(area, cochange));
+  const { rows, kept, names, unsaid = [] } = fit(areaBlocks(area, cochange));
   // By position, never by prose: `names` runs over the hidden stated keys in
   // this order, and facts.json stores no claim-side sentence, while the scan
   // that wrote the file had one for every stated slot.
-  const slots = new Map(keys.slice(kept).filter(Boolean).map((key, i) => [key, i < names.length ? "named" : "unnamed"]));
+  const slots = new Map(rows.slice(kept).filter((r) => r.key).map((r, i) => [r.key, i < names.length ? "named" : "unnamed"]));
   // A co-change block is never named under the notice, so a dropped one is unnamed.
-  for (const key of [...ships.slice(kept), ...unsaid]) if (key) slots.set(key, "unnamed");
+  for (const key of [...rows.slice(kept).map((r) => r.cochangeKey), ...unsaid]) if (key) slots.set(key, "unnamed");
   return slots;
 }
 
@@ -792,7 +772,7 @@ export function renderArea(area, target = TARGETS.claude, cochange = []) {
   const { head, closing } = ends;
   const laid = areaBlocks(area, cochange);
   const { kinds } = laid;
-  const { blocks, sorts, kept, names, unnamed } = fit(laid);
+  const { rows, kept, names, unnamed } = fit(laid);
 
   // The frontmatter is delivery rather than content: the globs are what route
   // this file to a path, and one dropped to save a line would mis-deliver the
@@ -801,14 +781,14 @@ export function renderArea(area, target = TARGETS.claude, cochange = []) {
   // arriving nowhere and saying nothing. Measured across 35 repositories: 17
   // hold at least one such area and every one of their bodies came to ten lines
   // or fewer, so what overflows is the routing and never the reading.
-  const body = blocks.slice(0, kept).flat();
-  if (kept < blocks.length) {
-    const dropped = blocks.length - kept;
+  const body = rows.slice(0, kept).flatMap((r) => r.lines);
+  if (kept < rows.length) {
+    const dropped = rows.length - kept;
     // Which kind was dropped, because the two mean opposite things: a lost
     // directive is a convention this file did not deliver, and a lost count is
     // a threshold nobody can audit from here. Folded into one sentence rather
     // than two lines, since the budget is why we are here.
-    const kind = droppedKind(sorts.slice(kept));
+    const kind = droppedKind(rows.slice(kept).map((r) => r.sort));
     // Led by what will actually print, reserved by what was hidden. A record
     // carrying keys and no prose reserves its lines and has no sentences to put
     // in them, and a lead ending in a colon over nothing is worse than no lead.
