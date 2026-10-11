@@ -39,6 +39,8 @@ export const COCHANGE = {
   minTouched: 32,
   keysMost: 100_000,
   lift: 2,
+  // The share of a parent class's candidates that must come from child directories still at the tip.
+  parentLive: 0.5,
   // A change deleting more than this is bulk too, so its deletions stay bounded.
   goneMost: 10_000,
 };
@@ -281,15 +283,16 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
     }
   }
   // A spanning class speaks for its children only where the history it was
-  // counted over came from two of them, nine tenths of it from ones still there:
-  // one child's habit, gone at the tip, is no evidence for a sibling the tree still holds.
+  // counted over came from two of them, at least half of it from ones still
+  // there: evidence mostly from directories the tree no longer holds is none for
+  // a sibling it does, and older children moving out is the recency gate's to judge.
   const producerExists = (producer) => {
     if (!classParts(producer).spans) return atTip.get(producer)[1] > 0;
     const candidates = candidatesOf.get(producer);
     const dirsOf = (i) => changes[i].added.filter((p) => classes(p).includes(producer)).map(dirOf);
     const held = dirsAtTip.get(producer) ?? new Set();
     const live = candidates.filter((i) => dirsOf(i).some((d) => held.has(d))).length;
-    return new Set(candidates.flatMap(dirsOf)).size >= 2 && live / candidates.length >= GATES.minRatio;
+    return new Set(candidates.flatMap(dirsOf)).size >= 2 && live / candidates.length >= COCHANGE.parentLive;
   };
 
   const keysAt = new Map();

@@ -330,7 +330,7 @@ _Avoid_: dependency, coupling, co-occurrence rule
 **Class**:
 A directory and a file suffix, `lib/rubocop/cop/style/*.rb`, or the same suffix one directory up,
 `lib/rubocop/cop/*/*.rb`, which speaks for a sibling directory only where its changes came from two
-child directories, nine tenths of them from ones that still hold a producer. The suffix runs from
+child directories, at least half of them from ones that still hold a producer. The suffix runs from
 the first dot past any segment starting with a digit, Ruby's `_spec.rb` and `_test.rb` kept whole,
 and holds only ASCII letters, digits, `.`, `_` and `-`. A test's class is neither side of a
 co-change claim.
