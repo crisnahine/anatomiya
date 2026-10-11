@@ -383,6 +383,19 @@ test("a Ruby tree survives for the caller that asked for one", needsRuby, async 
   assert.ok(out.records.get("a.rb").program, "no tree, no line number to report a finding on");
 });
 
+test("a tree too deep to send back is charged as a crash, not as a file that could not be read", async () => {
+  // The scan asks for counts and reads this file; the check asks for the tree,
+  // which overflows the stack JSON is written with near 2,000 levels, and the
+  // check told the reader their file could not be parsed.
+  let source = "a();";
+  for (let i = 0; i < 3000; i++) source = `try {} catch (e) {\n${source}\n}`;
+  const counted = await parseAll([{ rel: "deep.js", source, lang: "js" }]);
+  const tree = await parseAll([{ rel: "deep.js", source, lang: "js" }], { withProgram: true });
+
+  assert.equal(counted.records.get("deep.js").kind, "ok");
+  assert.equal(tree.records.get("deep.js").kind, "crashed");
+});
+
 test("a file over the size cap is named apart from one that failed", async (t) => {
   // Checked with `stat` before the file is dispatched, so nothing reads these
   // bytes. It is a generated or minified file, which is nobody's to fix.
