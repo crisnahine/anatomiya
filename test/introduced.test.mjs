@@ -410,6 +410,37 @@ test("a long group of alike copies edited at both ends is aligned in time linear
   assert.ok(ratio < LINEAR, `twice the copies took ${ratio.toFixed(2)} times as long`);
 });
 
+test("sites nested inside sites are judged in time linear in the depth, and each quotes a bounded text", () => {
+  // Each site walked its whole subtree for the bodies to leave out and copied
+  // its whole text, so a site holding sites paid for every level under it:
+  // 2,000 nested catches took 3.7 seconds and 50 MB of quoted text.
+  const shapes = {
+    swallowed_error: (d) => {
+      let s = "a();";
+      for (let i = 0; i < d; i++) s = `try { a${i}(); } catch (e) {\n${s}\n}`;
+      return s;
+    },
+    extends_base: (d) => {
+      let s = "x() {}";
+      for (let i = 0; i < d; i++) s = `m${i}() {\n  return class extends Other {\n${s}\n  }\n}`;
+      return `class Top extends Other {\n${s}\n}`;
+    },
+  };
+  for (const [key, shape] of Object.entries(shapes)) {
+    const slot = area(stated(key, key === "extends_base" ? { learned: "Base" } : {}));
+    const judged = (d) => {
+      const head = revision(shape(d), { file: "f.ts" });
+      const base = revision(shape(d - 1), { file: "f.ts" });
+      return () => newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base, rows: [rowByKey(key)] });
+    };
+    const found = judged(400)();
+    assert.equal(found.length, 1, key);
+    assert.ok(found[0].text.length < 5000, `${key} quoted ${found[0].text.length} characters`);
+    const ratio = doublingRatio(judged, 400);
+    assert.ok(ratio < LINEAR, `${key}: twice the depth took ${ratio.toFixed(2)} times as long`);
+  }
+});
+
 /* --- one polarity for both revisions --- */
 
 const functionStyle = rowByKey("function_style");
