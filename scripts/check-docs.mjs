@@ -240,10 +240,11 @@ const NUMERALS = new Map([
   ...TEENS.map((word, i) => [word, i + 10]),
   ...TENS.flatMap((ten, i) => [[ten, 20 + i * 10], ...ONES.map((one, j) => [`${ten}-${one}`, 21 + i * 10 + j])]),
 ]);
-// A word opening a sentence is the same count.
-const N = `\\b(?:\\d+|${[...NUMERALS.keys()].map((w) => `[${w[0]}${w[0].toUpperCase()}]${w.slice(1)}`).join("|")})\\b`;
+// A word opening a sentence is the same count, and so is each half of a compound in a title or split by a space.
+const spelled = (w) => w.split("-").map((part) => `[${part[0]}${part[0].toUpperCase()}]${part.slice(1)}`).join("(?:-|\\s+)");
+const N = `\\b(?:\\d+|${[...NUMERALS.keys()].map(spelled).join("|")})\\b`;
 /** The number a count spelled in digits or in words stands for. */
-export const counted = (word) => NUMERALS.get(word.toLowerCase()) ?? Number(word);
+export const counted = (word) => NUMERALS.get(word.toLowerCase().replace(/\s+/g, "-")) ?? Number(word);
 
 /**
  * Every file of this repository git can see, or `{ error }` holding git's own

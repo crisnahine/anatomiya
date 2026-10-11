@@ -435,6 +435,20 @@ test("every registry count is read in words as well as digits", (t) => {
   }
 });
 
+test("a compound count reads as the whole compound, in any case and spelled with a space", (t) => {
+  for (const said of ["Twenty-One for JavaScript", "Ninety-Nine for JavaScript", "twenty one for JavaScript"]) {
+    const { status, output } = miscount(t, "docs/how-it-works.md", "28 for JavaScript", said);
+
+    assert.equal(status, 1, said);
+    assert.ok(output.includes(`says "${said}", the registry holds 28`), output);
+  }
+  for (const said of ["Twenty-Eight for JavaScript", "twenty eight for JavaScript"]) {
+    const { output } = miscount(t, "docs/how-it-works.md", "28 for JavaScript", said);
+
+    assert.ok(!output.includes("for JavaScript\", the registry"), `${said}: ${output}`);
+  }
+});
+
 test("a count word past thirteen is still a count", (t) => {
   const { status, output } = miscount(t, "SECURITY.md", /three runtime dependencies/i, "fourteen runtime dependencies");
 
