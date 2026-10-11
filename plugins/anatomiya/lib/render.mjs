@@ -134,7 +134,7 @@ const why = (d, s) =>
     ? `authors ${s.authors} of ${d.authorsRequired}`
     : s.gate === "history-unread"
       ? "history could not be read"
-      : s.gate;
+      : s.gate || d.gate || "suppressed";
 
 /**
  * A claim is this tool's own sentence, not a repository-controlled value, so it
@@ -178,7 +178,16 @@ const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.
  * language otherwise puts the clause on every line there.
  */
 export function scopeOf(area, d) {
-  if (d.scope !== undefined) return d.scope;
+  const scope = d.scope !== undefined ? d.scope : askedOf(area, d);
+  // A record is committed, so a branch writes this list and check prints it once per finding.
+  return Array.isArray(scope) && scope.length <= SCOPE_MOST && scope.every((e) => typeof e === "string" && SCOPE_ENTRY.test(e)) ? scope : null;
+}
+
+const SCOPE_MOST = 16;
+// What `extOrName` gives: an extension, `.d.` and all, or a whole name with none.
+const SCOPE_ENTRY = /^(?:(?:\.d)?\.)?[\p{L}\p{N}_+-]{1,64}$/u;
+
+function askedOf(area, d) {
   const langs = ROW_LANGS.get(d.key);
   const counted = d.askedExts ?? [];
   if (!langs || counted.length === 0) return null;
@@ -187,11 +196,16 @@ export function scopeOf(area, d) {
   return unasked < PRECEDENT_FLOOR ? null : counted;
 }
 
-/** The scope as a clause on the claim's sentence, or nothing. */
+const clauses = new WeakMap();
+
+/** The scope as a clause on the claim's sentence, or nothing: built once per area and slot, since check prints it per finding. */
 function scopeClause(area, d) {
-  const scope = scopeOf(area, d);
-  // Read back from a record too, and a hand-edited one must not take the reader down.
-  const counted = Array.isArray(scope) ? scope.filter((e) => typeof e === "string") : [];
+  const built = clauses.get(area) ?? clauses.set(area, new WeakMap()).get(area);
+  if (!built.has(d)) built.set(d, clauseOf(scopeOf(area, d) ?? []));
+  return built.get(d);
+}
+
+function clauseOf(counted) {
   if (counted.length === 0) return "";
   // A declaration file is a TypeScript file to a reader, and `.d.ts and .ts` says one thing twice.
   const exts = counted.filter((e) => e.startsWith(".")).map((e) => e.replace(/^\.d\./, "."));

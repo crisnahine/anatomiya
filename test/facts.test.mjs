@@ -267,6 +267,15 @@ test("the count behind a declined-name line survives the trip to disk", (t) => {
   assert.equal(readFacts(dir).facts.areas[0].dimensions[0].declined, 3);
 });
 
+test("a slot with no scope writes no key, so an older record and a newer one agree there", () => {
+  const slotOf = (o) => JSON.parse(factsJson(result([dim(o)]))).areas[0].dimensions[0];
+
+  assert.equal("scope" in slotOf({ scope: null }), false);
+  assert.equal("scope" in slotOf({ scope: [] }), false);
+  assert.equal("scope" in slotOf({}), false);
+  assert.deepEqual(slotOf({ scope: [".ts"] }).scope, [".ts"]);
+});
+
 test("a row that declined nothing carries no such count", (t) => {
   const dir = root(t);
 
@@ -702,7 +711,7 @@ test("a record past the size cap is named as unread, not taken for a repository 
 
   const { facts, unreadable } = readFacts(dir);
   assert.equal(facts, null);
-  assert.match(unreadable ?? "", /64 MB/);
+  assert.match(unreadable ?? "", /64 MiB/);
 });
 
 test("a record of exactly the size cap is read, and one byte more is not", (t) => {
@@ -720,7 +729,7 @@ test("a record of exactly the size cap is read, and one byte more is not", (t) =
 });
 
 test("a record past the size cap is told by its size before a byte of it is read", (t) => {
-  // Every hook reads a record, so one committed past the cap cost each tool call a 64 MB read.
+  // Every hook reads a record, so one committed past the cap cost each tool call a 64 MiB read.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
@@ -735,7 +744,7 @@ test("a record past the size cap is told by its size before a byte of it is read
   };
   syncBuiltinESMExports();
   try {
-    assert.match(readFacts(dir).unreadable ?? "", /64 MB/);
+    assert.match(readFacts(dir).unreadable ?? "", /64 MiB/);
   } finally {
     fs.readSync = real;
     syncBuiltinESMExports();
@@ -745,7 +754,7 @@ test("a record past the size cap is told by its size before a byte of it is read
 
 test("a record is measured by its bytes on disk, not by its decoded length", (t) => {
   // A byte that is not UTF-8 decodes to three, and 22 MB of them read as a
-  // record past the 64 MB cap in a sentence that named a size nobody measured.
+  // record past the 64 MiB cap in a sentence that named a size nobody measured.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-odd-record-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
