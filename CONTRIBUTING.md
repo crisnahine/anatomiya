@@ -495,8 +495,10 @@ order:
    its engine body's own list (`ROWS` in `parse-file.mjs` for oxc), in the same order
 3. `test/applicability.test.mjs` the witness pair: the sources your `sites` sentence says are
    applicable, and the neighbouring construct that must not count
-4. the test file beside the one that declares the row: a conforming case, a violating case, and one
-   case that must not be counted at all
+4. the test file that holds the cases of the row's file: `test/dimensions.test.mjs` for
+   `dimensions-base.mjs`, `test/naming.test.mjs` for `dimensions-naming.mjs`, `test/ruby.test.mjs`
+   for `dimensions-ruby.mjs`, and the namesake test for the others: a conforming case, a violating
+   case, and one case that must not be counted at all
 5. `npm run defaults:seed` writes the key's entry in `plugins/anatomiya/lib/model-defaults.json`, seeded unmeasured.
    It reads `none` and fails open, so the row keeps stating until somebody measures it
 6. `test/fixtures/counter-pins.mjs` the counter pin: `ELIGIBLE` where the row carries a
