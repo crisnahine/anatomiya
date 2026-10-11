@@ -134,10 +134,10 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     remove: claude.stale,
     // The temporary files an earlier scan left in Claude Code's directory, removed with the rest.
     staged: claude.staged,
-    // The record and layout file past the bound this replaces without reading, only where there is one.
-    ...(oversized.length > 0 && !blind ? { oversized } : {}),
     // And the ones a scan or a refresh left in the store, where the record is megabytes on a large repository.
     storeStaged: blind ? [] : stagedInStore(storeDir, STORE_STAGED).filter(({ pid }) => !running(pid)).map(({ name }) => name),
+    // The record and layout file past the bound this replaces without reading, only where there is one.
+    ...(oversized.length > 0 && !blind ? { oversized } : {}),
     foreign: claude.foreign,
     unknown: claude.unknown,
     replaced: claude.replaced,

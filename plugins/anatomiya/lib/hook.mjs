@@ -481,10 +481,10 @@ export const ECHO_WINDOW_BYTES = 192 * 1024;
 // prompt snapshot alone runs to 130 KB. Past it the window counts as run out.
 const ECHO_READ_MOST = 1024 * 1024;
 
-// A claim this old is no batch's: its delivery has reached the transcript.
-const CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
-const CLAIM_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+)?)?$/;
-const CLAIMS_LISTED_MOST = 4096;
+// A batch claim this old is no batch's: its delivery has reached the transcript.
+const BATCH_CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
+const BATCH_CLAIM_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+)?)?$/;
+const BATCH_CLAIMS_LISTED_MOST = 4096;
 
 /**
  * The map as a hook would deliver it, or null where there is none to deliver or
@@ -516,7 +516,7 @@ export function echoContext(root, { now = new Date(), transcript = null, data = 
   const digest = hash.digest("hex").slice(0, 12);
   const tail = readTailOf(transcript, ECHO_READ_MOST);
   if (heldIn(tail, digest)) return null;
-  if (!claimed(claimPath(data, transcript, digest), transcript, tail, digest)) return null;
+  if (!batchClaimed(batchClaimPath(data, transcript, digest), transcript, tail, digest)) return null;
 
   // The remedy is the plugin's own command, which is the one spelling a model
   // can run: the binary is `anatomiya.mjs` under a directory only the plugin
@@ -653,16 +653,16 @@ const readByModel = (entry) =>
 
 /**
  * Whether the window holds a delivery of this map with no compaction after it,
- * or a claim at offset `claimAt` that stands in for one not written yet.
+ * or a batch claim at offset `batchClaimAt` that stands in for one not written yet.
  */
-function heldIn(tail, digest, claimAt = null) {
+function heldIn(tail, digest, batchClaimAt = null) {
   if (tail === null) return false;
   const mark = `digest="${digest}"`;
   const lines = tail.text.split("\n");
   let end = tail.end;
   let counted = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (claimAt !== null && end <= claimAt) return true;
+    if (batchClaimAt !== null && end <= batchClaimAt) return true;
     const bytes = Buffer.byteLength(lines[i]) + (i < lines.length - 1 ? 1 : 0);
     end -= bytes;
     const entry = parsed(lines[i]);
@@ -672,11 +672,11 @@ function heldIn(tail, digest, claimAt = null) {
     counted += readBytes(entry, lines[i]);
     if (counted > ECHO_WINDOW_BYTES) return false;
   }
-  return claimAt !== null && end <= claimAt;
+  return batchClaimAt !== null && end <= batchClaimAt;
 }
 
-/** Where this window's claim on this map is kept, or null where the plugin names no data directory. */
-function claimPath(data, transcript, digest) {
+/** Where this window's batch claim on this map is kept, or null where the plugin names no data directory. */
+function batchClaimPath(data, transcript, digest) {
   if (typeof data !== "string" || !isAbsolute(data) || typeof transcript !== "string") return null;
   return join(data, "echo", `${createHash("sha256").update(transcript).digest("hex").slice(0, 16)}-${digest}`);
 }
@@ -688,16 +688,16 @@ export const LOCK_HELD_MOST_MS = 5000;
  * Whether this call is the one in its batch that delivers.
  *
  * The calls of a parallel batch run their hooks before any of their records
- * reach the transcript, so each would read the window as empty. The claim names
- * the transcript offset its maker read up to, and the others read it as a
- * delivery made there, so it holds them only while that offset is inside the
- * window, judged against the transcript as it is when the claim is read.
- * The decision is taken under a lock made with an exclusive create, and
- * a call that finds the lock taken holds; the claim is replaced by a rename, so
- * no reader sees it half written. Anything that cannot be written or read
- * answers as the transcript alone does.
+ * reach the transcript, so each would read the window as empty. The batch
+ * claim names the transcript offset its maker read up to, and the others read
+ * it as a delivery made there, so it holds them only while that offset is
+ * inside the window, judged against the transcript as it is when the batch
+ * claim is read. The decision is taken under a lock made with an exclusive
+ * create, and a call that finds the lock taken holds; the batch claim is
+ * replaced by a rename, so no reader sees it half written. Anything that
+ * cannot be written or read answers as the transcript alone does.
  */
-function claimed(path, transcript, tail, digest) {
+function batchClaimed(path, transcript, tail, digest) {
   if (path === null || tail === null) return true;
   const lock = `${path}.lock`;
   try {
@@ -709,7 +709,7 @@ function claimed(path, transcript, tail, digest) {
   try {
     const entry = readHead(path, 32);
     const at = entry.kind === "file" && /^\d+\n$/.test(entry.head) ? Number(entry.head) : null;
-    // A sibling may have claimed past what this call read; only past the transcript as it is now is stale.
+    // A sibling's batch claim may sit past what this call read; only past the transcript as it is now is stale.
     const now = at !== null && at > tail.end ? (readTailOf(transcript, ECHO_READ_MOST) ?? tail) : tail;
     if (at !== null && at <= now.end && heldIn(now, digest, at)) return false;
     const temp = `${path}.${process.pid}`;
@@ -772,23 +772,23 @@ function statOf(path) {
   }
 }
 
-/** Takes out claims older than a day, so they stay bounded however many sessions run. */
+/** Takes out batch claims, locks and tokens older than a day, so they stay bounded however many sessions run. */
 function sweep(dir, kept) {
   const names = [];
   try {
     const listing = opendirSync(dir);
     try {
-      for (let entry; names.length < CLAIMS_LISTED_MOST && (entry = listing.readSync()) !== null; ) names.push(entry.name);
+      for (let entry; names.length < BATCH_CLAIMS_LISTED_MOST && (entry = listing.readSync()) !== null; ) names.push(entry.name);
     } finally {
       listing.closeSync();
     }
   } catch {
     return;
   }
-  const before = Date.now() - CLAIM_KEPT_MS;
+  const before = Date.now() - BATCH_CLAIM_KEPT_MS;
   for (const name of names) {
     const path = join(dir, name);
-    if (path === kept || !CLAIM_NAME.test(name)) continue;
+    if (path === kept || !BATCH_CLAIM_NAME.test(name)) continue;
     try {
       if (lstatSync(path).mtimeMs < before) unlinkSync(path);
     } catch {
