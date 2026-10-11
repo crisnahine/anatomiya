@@ -217,7 +217,8 @@ export function walk(program, visit) {
     if (isDecl) {
       const up = ctx.enclosing;
       // Only a class's own members carry its name: a function declared inside a method is its own.
-      OWNER.set(node, up === null ? null : isClass(up) ? declName(up) ?? OWNER.get(up) : MEMBERS.has(up.type) ? OWNER.get(up) : null);
+      const own = up !== null && (isClass(up) ? MEMBERS.has(node.type) : MEMBERS.has(up.type) && up.value === node);
+      OWNER.set(node, !own ? null : isClass(up) ? declName(up) ?? OWNER.get(up) : OWNER.get(up));
       if (declName(node) === null) {
         AROUND.set(node, up === null ? null : declName(up) === null ? AROUND.get(up) ?? null : whereOf(up, ctx));
       }

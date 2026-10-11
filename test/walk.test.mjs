@@ -261,6 +261,9 @@ test("a site's name carries the named class around its declaration, and only one
   assert.deepEqual(names(`const A = class { static { try {} catch {} } }`), ["A"]);
   assert.deepEqual(names(`list.push(class { run() { try {} catch {} } })`), ["run"], "an unbound class names nothing");
   assert.deepEqual(names(`class A { static { try {} catch {} } }`), ["A"], "the class is the declaration, not its own owner");
+  assert.deepEqual(names(`class A { static { function run() { try {} catch {} } } run() { try {} catch {} } }`), ["run", "A.run"], "a function in a static block is not a member");
+  assert.deepEqual(names(`class A { api = { run() { try {} catch {} } }; run() { try {} catch {} } }`), ["run", "A.run"], "nor is a method of a field's object literal");
+  assert.deepEqual(names(`class A { [k] = class { run() { try {} catch {} } } }`), ["A.run"], "an unnamed class held by a member names its members after the class around it");
   assert.deepEqual(names(`class O { m() { class I { run() { try {} catch {} } } } }`), ["I.run"], "the innermost class");
   assert.deepEqual(names(`function f() { class C {} try {} catch {} }`), ["f"], "a class closed before the site is not around it");
   assert.deepEqual(names(`class A { run() { list.map(() => { try {} catch {} }) } }`), ["A.run"], "an unnamed callback takes the method around it");
