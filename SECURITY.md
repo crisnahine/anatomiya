@@ -431,11 +431,12 @@ than 7 seconds from the clock, either way, was left by a call that died holding 
 5 second timeout, plus the 2 seconds a FAT or exFAT volume can be off by. No call moves or removes a
 lock that may be live: the right to remove a dead one goes to the call that creates its lock token,
 `<batch claim>.lock.<its mtime in ms>`, with an exclusive create, which removes the lock only while
-it is still the one it found dead, then removes that lock token. Every call then tries the one
-create of the lock, and those that lose it deliver nothing. A batch claim is written to `<batch
-claim>.<pid>` and renamed over the batch claim, so no reader sees one half written. After each batch
-claim it writes, the hook lists at most 4,096 names in that directory and removes those of these
-shapes last written more than a day ago; a name of any other shape is never touched. So the
+it is still the one it found dead, then removes that lock token. A removal the system refuses, as
+Windows refuses one of a file another process holds, leaves that file in place. Every call then
+tries the one create of the lock, and those that lose it deliver nothing. A batch claim is written
+to `<batch claim>.<pid>` and renamed over the batch claim, so no reader sees one half written. After
+each batch claim it writes, the hook lists at most 4,096 names in that directory and removes those
+of these shapes last written more than a day ago; a name of any other shape is never touched. So the
 directory holds one small file per window and map of the last day. The transcript itself is read
 back from its end, at most 1 MiB per call. With no data directory, a relative one, or one that
 cannot be written or read, nothing is written and each call answers from the transcript alone, which

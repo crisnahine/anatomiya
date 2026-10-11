@@ -701,6 +701,58 @@ test("a dead lock replaced by a live one before it is broken holds the call, and
   assert.deepEqual(readdirSync(join(data, "echo")).sort(), [name, `${name}.lock`], "and nowhere else");
 });
 
+/** Runs `call` with every removal of a path `refuses` names failing as Windows fails one another process holds. */
+function removalRefused(refuses, call) {
+  const busy = (real, p, ...rest) => {
+    if (refuses(String(p))) throw Object.assign(new Error(`EBUSY: resource busy or locked, unlink '${p}'`), { code: "EBUSY" });
+    return real(p, ...rest);
+  };
+  return stubbed("rmSync", busy, () => stubbed("unlinkSync", busy, call));
+}
+
+test("a lock token that cannot be removed leaves the call to the lock's one create, so it holds where another call took the lock", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  const answer = removalRefused((p) => {
+    if (!p.startsWith(`${lock}.`)) return false;
+    // Another call took the lock the moment the dead one went.
+    if (!existsSync(lock)) writeFileSync(lock, "live");
+    return true;
+  }, call);
+
+  assert.deepEqual(answer, {});
+  assert.equal(readFileSync(lock, "utf8"), "live", "the call that took the lock holds it");
+});
+
+test("a dead lock that cannot be removed holds the call, and the next call breaks it", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  assert.deepEqual(removalRefused((p) => p === lock, call), {});
+  assert.deepEqual(readdirSync(join(data, "echo")).sort(), [name, `${name}.lock`], "the dead lock and the batch claim, and no lock token");
+  assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "once the lock can be removed");
+  assert.deepEqual(readdirSync(join(data, "echo")), [name]);
+});
+
 test("a call that broke a dead lock and finds a live one in its place holds", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
