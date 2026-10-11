@@ -1,4 +1,4 @@
-import { walk, ownNodes, isFunctionLike, declName, value, boundNames, whereOf } from "./walk.mjs";
+import { walk, ownNodes, isFunctionLike, value, boundNames, whereOf } from "./walk.mjs";
 
 /**
  * JSX dimensions, same contract as `dimensions.mjs`: one claim, one `add` per

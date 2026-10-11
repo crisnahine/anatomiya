@@ -9,7 +9,7 @@
  * reducer offers a row only where at least three files already route through
  * one (C14), so no map carries a line that can only ever read zero.
  */
-import { walk, declName, whereOf } from "./walk.mjs";
+import { walk, whereOf } from "./walk.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 
