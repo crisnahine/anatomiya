@@ -11,7 +11,7 @@ import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
-import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
+import { PIN_PATH, readPin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
@@ -408,6 +408,23 @@ test("a pin under the ceiling parses nothing", async (t) => {
 
   const { pin } = await runPin(dir, { parseFiles });
   assert.equal(pin.areas.length, 1);
+});
+
+test("a pin at exactly the ceiling names no ceiling and reads back", async (t) => {
+  // 120 areas that each count, so nothing folds and nothing is given back.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  for (let a = 0; a < 119; a++) {
+    mkdirSync(join(dir, `m${a}`));
+    for (let i = 0; i < 3; i++) writeFileSync(join(dir, `m${a}`, `f${i}.ts`), `export const a${i} = 1\n`);
+  }
+  git("add", "-A");
+  git("commit", "-qm", "at the ceiling");
+
+  const { pin } = await runPin(dir);
+  assert.equal(pin.areas.length, 120);
+  assert.equal(pin.ceiling, undefined);
+  assert.notEqual(readPin(dir).pin, null);
 });
 
 test("a pin refuses a commit or an edit that lands while the ceiling's parse runs", async (t) => {

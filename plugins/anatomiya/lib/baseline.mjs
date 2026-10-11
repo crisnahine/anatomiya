@@ -149,8 +149,11 @@ function pinProblem(pin) {
     if (!isCount(pin.corpus) || pin.corpus < listed) return "the corpus size it names is not a count of its files";
   }
   // A give-back settles on the count of areas it returned, and only above the
-  // plain ceiling, so a value outside the two is one no pin wrote.
-  if (pin.ceiling !== undefined && (!isCount(pin.ceiling) || pin.ceiling > pin.areas.length || pin.ceiling <= areaCeiling(pin.corpus ?? 0))) {
+  // plain ceiling, so a value outside the two is one no pin wrote. The pin
+  // writes its own area list too, so twice the clamped plain ceiling is the
+  // bound a hand-edited list cannot lift.
+  const plain = areaCeiling(pin.corpus ?? 0);
+  if (pin.ceiling !== undefined && (!isCount(pin.ceiling) || pin.ceiling > pin.areas.length || pin.ceiling <= plain || pin.ceiling > 2 * plain)) {
     return "the area ceiling it names is not a count of its areas";
   }
   return null;
