@@ -488,29 +488,35 @@ export function boundNames(pattern, out = []) {
  * dimension modules need it and neither can import the other.
  */
 export function optionalChain(node, ancestors) {
+  const climbed = [];
   let outer = node;
-  for (let i = ancestors.length - 1; i >= 0; i--) {
-    const p = ancestors[i];
-    if (p.type === "MemberExpression" && p.object === outer) {
-      outer = p;
-      continue;
-    }
-    if (p.type === "CallExpression" && p.callee === outer) {
-      outer = p;
-      continue;
-    }
+  let answer;
+  for (let i = ancestors.length - 1; answer === undefined; i--) {
+    climbed.push(outer);
+    const p = i >= 0 ? ancestors[i] : null;
     // A type wrapper is not the end of the chain. `o!.a!.b = 1` parses as
     // Assignment > Member > TSNonNull > Member, so a walk that stopped at the
     // `!` never reached the assignment and every refused position read as
     // allowed again. Same set `value` peels, for the same reason.
-    if (WRAPS.has(p.type) && (p.expression === outer || p.typeAnnotation === outer)) {
+    if (
+      p !== null &&
+      ((p.type === "MemberExpression" && p.object === outer) ||
+        (p.type === "CallExpression" && p.callee === outer) ||
+        (WRAPS.has(p.type) && (p.expression === outer || p.typeAnnotation === outer)))
+    ) {
       outer = p;
+      answer = CHAINS.get(outer);
       continue;
     }
-    return { outer, allowed: !refusesOptional(p, outer, ancestors[i - 1]) };
+    answer = { outer, allowed: p === null || !refusesOptional(p, outer, ancestors[i - 1]) };
   }
-  return { outer, allowed: true };
+  for (const link of climbed) CHAINS.set(link, answer);
+  return answer;
 }
+
+// Every link of a chain has its outermost node's answer, so one climb answers
+// them all: asked per `!`, re-climbing made a chain of them quadratic.
+const CHAINS = new WeakMap();
 
 // The type and paren wrappers around a value. They sit inside a member or call
 // chain without ending it.
