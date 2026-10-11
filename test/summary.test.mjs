@@ -113,8 +113,22 @@ test("the untracked sentence reads at one and at many", () => {
 test("claims that match the model default are counted apart on the same line", () => {
   assert.equal(
     scanLines(summary({ claims: { stated: 3, matchingDefault: 6, total: 9 } }))[1],
-    "3 of 9 claims stated, 6 match the model default, the rest print as counts"
+    "3 of 9 claims stated, 6 match the model default"
   );
+});
+
+test("the clause after the claims says what is left, at none, one and many", () => {
+  // The rest is what neither stated nor matched the model default, the way scanSummary partitions the slots.
+  const claimsLine = (stated, matchingDefault, total) => scanLines(summary({ claims: { stated, matchingDefault, total } }))[1];
+
+  assert.equal(claimsLine(0, 0, 0), "0 of 0 claims stated");
+  assert.equal(claimsLine(0, 0, 1), "0 of 1 claim stated, the other prints as a count");
+  assert.equal(claimsLine(1, 0, 1), "1 of 1 claim stated");
+  assert.equal(claimsLine(0, 0, 2), "0 of 2 claims stated, the rest print as counts");
+  assert.equal(claimsLine(1, 0, 2), "1 of 2 claims stated, the other prints as a count");
+  assert.equal(claimsLine(0, 1, 1), "0 of 1 claim stated, 1 matches the model default");
+  assert.equal(claimsLine(0, 1, 2), "0 of 2 claims stated, 1 matches the model default, the other prints as a count");
+  assert.equal(claimsLine(1, 1, 2), "1 of 2 claims stated, 1 matches the model default");
 });
 
 test("the engines that answered print with their versions, right after the head", () => {
@@ -714,7 +728,7 @@ test("the summary and its lines agree on a whole scan", () => {
     "41 files, 1 area, 12ms, root /repo",
     "engines: oxc 0.144.0",
     "2 source files in the working tree are untracked. The corpus is tracked files only, so nothing there was counted",
-    "1 of 3 claims stated, 1 matches the model default, the rest print as counts",
+    "1 of 3 claims stated, 1 matches the model default, the other prints as a count",
     UNPINNED,
     "2 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell",
     "1 file in a directory nothing was counted in",
@@ -754,7 +768,7 @@ const others = (cursor = {}, copilot = {}) => ({ targets: { cursor: target(curso
 const BEFORE_LINES = [
   "40 files, 1 area, 12ms, root /repo",
   "engines: oxc 0.144.0",
-  "1 of 3 claims stated, 1 matches the model default, the rest print as counts",
+  "1 of 3 claims stated, 1 matches the model default, the other prints as a count",
   UNPINNED,
   "wrote 2 files",
   RUNNING_SESSION,
