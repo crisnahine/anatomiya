@@ -390,6 +390,17 @@ test("an unstated slot's line is the one check prints for it", () => {
   assert.equal(unstatedLine(mapped, unstated, "a sentence from the row"), "a sentence from the row: no convention. 4 of 4 sites (evidence)");
 });
 
+test("a claim's own closing period is dropped before the colon that says no convention", () => {
+  const hooks = dim({ key: "error_shape", claim: "state is read through hooks, not through React.", directive: false, gate: "evidence", conforming: 4, candidates: 4 });
+  const mapped = area({ dimensions: [hooks] });
+
+  assert.equal(unstatedLine({}, hooks), "state is read through hooks, not through React: no convention. 4 of 4 sites (evidence)");
+  assert.equal(unstatedLine({}, { ...hooks, scope: [".jsx"] }), "state is read through hooks, not through React, in .jsx files: no convention. 4 of 4 sites (evidence)");
+  assert.ok(renderArea(mapped).split("\n").includes("state is read through hooks, not through React: no convention. 4 of 4 sites (evidence)"), renderArea(mapped));
+  // `?.` is an operator a claim may end on, not a full stop.
+  assert.equal(unstatedLine({}, { ...hooks, claim: "optional reads use ?." }), "optional reads use ?.: no convention. 4 of 4 sites (evidence)");
+});
+
 test("a slot read back from a record prints the scope it keeps, and a hand-edited one only its names", () => {
   const unstated = dim({ key: "error_shape", claim: "failure is returned, not thrown", directive: false, gate: "evidence", conforming: 4, candidates: 4 });
 
@@ -441,8 +452,8 @@ test("a slot's scope clause is built once however many findings print it", () =>
   const second = unstatedLine(area, slot, "another sentence.");
 
   assert.equal(reads, once, "the second finding reads no scope");
-  assert.equal(first, "one sentence, in .ts files.: no convention. 4 of 4 sites (evidence)");
-  assert.equal(second, "another sentence, in .ts files.: no convention. 4 of 4 sites (evidence)");
+  assert.equal(first, "one sentence, in .ts files: no convention. 4 of 4 sites (evidence)");
+  assert.equal(second, "another sentence, in .ts files: no convention. 4 of 4 sites (evidence)");
   unstatedLine({}, slot, "a third.");
   assert.ok(reads > once, "another area builds its own");
 });
@@ -451,11 +462,11 @@ test("an unstated line whose record lost its gate names the one check reports", 
   const unstated = dim({ key: "error_shape", claim: "A.", directive: false, conforming: 5, candidates: 10 });
   delete unstated.gate;
 
-  assert.equal(unstatedLine({}, unstated), "A.: no convention. 5 of 10 sites (suppressed)");
-  assert.equal(unstatedLine({}, { ...unstated, gate: null }), "A.: no convention. 5 of 10 sites (suppressed)");
-  assert.equal(unstatedLine({}, { ...unstated, gate: "ratio" }), "A.: no convention. 5 of 10 sites (ratio)");
+  assert.equal(unstatedLine({}, unstated), "A: no convention. 5 of 10 sites (suppressed)");
+  assert.equal(unstatedLine({}, { ...unstated, gate: null }), "A: no convention. 5 of 10 sites (suppressed)");
+  assert.equal(unstatedLine({}, { ...unstated, gate: "ratio" }), "A: no convention. 5 of 10 sites (ratio)");
   const counter = { ...unstated, conforming: 0, counterClaim: "B.", gate: "ratio" };
-  assert.equal(unstatedLine({}, counter), "B.: no convention. 10 of 10 sites (ratio)", "a counter side with no gate of its own names the slot's");
+  assert.equal(unstatedLine({}, counter), "B: no convention. 10 of 10 sites (ratio)", "a counter side with no gate of its own names the slot's");
 });
 
 test("the overview says what a no convention line means", () => {
