@@ -191,6 +191,17 @@ test("a streamed read names its git subcommand past any config option before it"
     () => gitStreamed(dir, ["-c", "core.quotePath=false", "ls-tree", "-z", "--name-only", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"], () => {}),
     /^Error: git ls-tree exited /
   );
+  await assert.rejects(
+    () => gitStreamed(dir, ["-c", "core.quotePath=false", "log", "--format=%ae", "--"], () => {}),
+    /^Error: git log output ended mid-record$/
+  );
+  // A config git cannot parse leaves which commands it names unread.
+  const { dir: broken } = repo(t);
+  writeFileSync(join(broken, ".git", "config"), "[core\n");
+  await assert.rejects(
+    () => gitStreamed(broken, ["-c", "core.quotePath=false", "log", "--format=%ae", "--"], () => {}),
+    /^Error: git log: could not read which commands this repository's config names/
+  );
 });
 
 test("a streamed read that git refused is rejected, not resolved as an empty answer", async (t) => {
@@ -288,6 +299,14 @@ test("a record that never ends is refused before it reaches V8's string limit", 
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
       }),
     /one record past 1024 bytes/
+  );
+  await assert.rejects(
+    () =>
+      gitStreamed(dir, ["-c", "core.quotePath=false", "ls-files", "-z", "--"], () => {}, {
+        maxFieldBytes: 1024,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      }),
+    /^Error: git ls-files sent one record past 1024 bytes$/
   );
 });
 

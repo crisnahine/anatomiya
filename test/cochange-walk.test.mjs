@@ -83,8 +83,9 @@ test("the -z log reads the same whether git ends the header with a NUL or glues 
 });
 
 test("a change deleting more than the bound is bulk too, so its deletions stay bounded", () => {
-  const rows = [["A", "lib/x.rb"], ...Array.from({ length: COCHANGE.goneMost + 1 }, (_, i) => ["D", `old/f${i}.rb`])];
-  assert.deepEqual(readAll(fields([{ author: "a@t", rows }])), [{ bulk: true }]);
+  const rows = (n) => [["A", "lib/x.rb"], ...Array.from({ length: n }, (_, i) => ["D", `old/f${i}.rb`])];
+  assert.deepEqual(readAll(fields([{ author: "a@t", rows: rows(10_001) }])), [{ bulk: true }]);
+  assert.equal(readAll(fields([{ author: "a@t", rows: rows(10_000) }]))[0].bulk, false);
 });
 
 test("a change past the bound stops being stored at its 41st file and is counted as bulk", () => {
@@ -242,14 +243,14 @@ test("each class is judged on its newest hundred candidates, so a habit that sta
 });
 
 test("two classes each shipping with the other added state once, on the side with more candidates", () => {
-  const both = (n, alone) => {
+  const both = (n, alone, [a, b] = ["a", "b"]) => {
     const changes = [];
     for (let i = 0; i < n; i++) {
-      const files = i >= n - alone ? [`app/a/x${i}.ts`] : [`app/a/x${i}.ts`, `app/b/y${i}.ts`];
+      const files = i >= n - alone ? [`app/${a}/x${i}.ts`] : [`app/${a}/x${i}.ts`, `app/${b}/y${i}.ts`];
       changes.push({ author: `p${i % 3}@t.test`, added: files, touched: files });
     }
     for (let i = 0; i < 300; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
-    const tree = new Set(["app/a/x0.ts", "app/b/y0.ts"]);
+    const tree = new Set([`app/${a}/x0.ts`, `app/${b}/y0.ts`]);
     return mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree }).claims;
   };
   const sides = (claims) => claims.filter((c) => c.directive).map((c) => [c.producer, c.companion.path]);
@@ -259,6 +260,8 @@ test("two classes each shipping with the other added state once, on the side wit
   const larger = both(100, 2);
   assert.deepEqual(sides(larger), [["app/a/*.ts", "app/b/*.ts"]]);
   assert.equal(gateOf(larger, "app/b/*.ts"), "pair");
+  // More candidates wins over code order.
+  assert.deepEqual(sides(both(100, 2, ["z", "b"])), [["app/z/*.ts", "app/b/*.ts"]]);
   // A tie goes to the side first in code order.
   const tied = both(40, 0);
   assert.deepEqual(sides(tied), [["app/a/*.ts", "app/b/*.ts"]]);
@@ -307,6 +310,68 @@ test("a pair count past its cap stops and states nothing", (t) => {
   const { claims, truncated } = mineCochange(history(), { tree: TREE });
   assert.equal(truncated, true);
   assert.deepEqual(claims, []);
+});
+
+test("the pair cap counts distinct pairs, however many changes repeat one", (t) => {
+  const was = COCHANGE.keysMost;
+  // Each cop class and its parent pair with the config and with each other: four pairs, 160 times over.
+  COCHANGE.keysMost = 4;
+  t.after(() => {
+    COCHANGE.keysMost = was;
+  });
+  const { claims, truncated } = mineCochange(history(), { tree: TREE });
+  assert.equal(truncated, false);
+  assert.equal(pair(claims).gate, null);
+});
+
+test("a class added under 35 times or a companion touched under 32 is never counted, and one at the bound is", () => {
+  assert.deepEqual(mineCochange(history({ adds: 34 }), { tree: TREE }).claims, []);
+  assert.equal(pair(mineCochange(history({ adds: 35 }), { tree: TREE }).claims)?.candidates, 35);
+  // 32 of 35 clears the ratio, so a companion touched exactly 32 times is still counted.
+  assert.equal(pair(mineCochange(history({ adds: 35, misses: [0, 1, 2] }), { tree: TREE }).claims)?.conforming, 32);
+});
+
+test("the newest fifth rounds up, so 36 candidates are judged on their newest 8", () => {
+  assert.deepEqual(pair(mineCochange(history({ adds: 36 }), { tree: TREE, required: 2 }).claims).newest, [8, 8]);
+});
+
+test("authors are counted over the changes that conformed, so one who always skipped the companion is no second", () => {
+  const walk = history({ adds: 100, misses: [50, 60, 70], quiet: 100, one: "solo@t.test" });
+  for (const i of [50, 60, 70]) walk.changes[i].author = "other@t.test";
+  const c = pair(mineCochange(walk, { tree: TREE, required: 2 }).claims);
+  assert.equal(c.authors, 1);
+  assert.equal(c.gate, "authors");
+});
+
+test("a class's files at the tip say how many arrived in a counted change", () => {
+  const c = pair(mineCochange(history(), { tree: new Set([...TREE, "lib/cops/old.rb"]), required: 2 }).claims);
+  assert.deepEqual(c.files, [1, 2]);
+});
+
+test("a fixture, a snapshot or a test file outside a test tree is the test side, on either end of a pair", () => {
+  const adding = (file, companion = "reg.yml") => {
+    const changes = [];
+    for (let i = 0; i < 40; i++) changes.push({ author: `p${i % 2}@t.test`, added: [file(i)], touched: [file(i), companion] });
+    for (let i = 0; i < 40; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+    return mineCochange({ changes, read: 80, bulk: 0, error: null }, { tree: new Set(["reg.yml", companion]) }).claims;
+  };
+  const producers = (claims) => claims.map((c) => c.producer);
+  assert.equal(producers(adding((i) => `lib/__fixtures__/f${i}.json`)).includes("lib/__fixtures__/*.json"), false);
+  assert.equal(producers(adding((i) => `lib/cases/test_fixtures/f${i}.yml`)).includes("lib/cases/test_fixtures/*.yml"), false);
+  assert.deepEqual(producers(adding((i) => `src/a${i}.test.ts`)), []);
+  assert.deepEqual(adding((i) => `lib/x${i}.rb`, "lib/__snapshots__/all.snap"), []);
+});
+
+test("the near misses kept are the ones with the most candidates, whatever their code order", () => {
+  const companions = Array.from({ length: 120 }, (_, i) => `config/c${String(i).padStart(3, "0")}.yml`);
+  const changes = [];
+  for (let i = 0; i < 40; i++) changes.push({ author: `p${i % 2}@t.test`, added: [`a/f${i}.rb`], touched: [`a/f${i}.rb`, ...companions] });
+  for (let i = 0; i < 50; i++) changes.push({ author: `p${i % 2}@t.test`, added: [`z/f${i}.rb`], touched: [`z/f${i}.rb`, ...companions] });
+  for (let i = 0; i < 200; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+  // Neither class holds a file at the tip, so every pair is a near miss.
+  const { claims } = mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree: new Set(companions) });
+  assert.equal(claims.length, 100);
+  assert.ok(claims.every((c) => c.producer === "z/*.rb" && c.gate === "exists"), [...new Set(claims.map((c) => c.producer))].join());
 });
 
 test("the record says how much history was read and puts a claim in the one area its producers sit in", () => {

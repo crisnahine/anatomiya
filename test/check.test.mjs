@@ -6563,10 +6563,26 @@ test("each rung below MUST-FIX is reached by its own cause", async (t) => {
     commit("service and forty notes");
   }));
   assert.equal(wide.reason, "this branch touches 41 files, more than any change this claim was counted over");
+  // Forty files is the largest change the walk counts, so it is still graded on the record.
+  const widest = await one(shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    for (let i = 0; i < 39; i++) write(`docs/n${i}.md`, `${i}\n`);
+    commit("service and thirty-nine notes");
+  }));
+  assert.equal(widest.severity, "MUST-FIX", widest.reason);
 
   // The area file had no room for the block: thirty directives fill it first.
   const crowded = Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}` }));
   assert.equal((await one(shipping(t, service, { dimensions: crowded }))).reason, "the area file had no room to state this claim");
+});
+
+test("an untracked producer the corpus does not hold is still an added one, so the check answers before the first commit", async (t) => {
+  const dir = shipping(t, () => {}, {
+    claim: shipsWith({ producer: "relnotes/*.md", area: null }),
+    pending: ({ write }) => write("relnotes/v9.md", "notes\n"),
+  });
+  const found = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.deepEqual(found.map((f) => [f.path, f.reason]), [["relnotes/v9.md", "no area file carries this claim"]]);
 });
 
 test("a near miss is no finding, and an older record with no co-change member is none", async (t) => {

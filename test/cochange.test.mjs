@@ -139,8 +139,11 @@ test("a forged claim whose producer or companion is no class or plain path is no
     claim({ producer: "lib/*_x" }),
     claim({ producer: "lib/*.1.gem" }),
     claim({ companion: { kind: "adds", path: "changelog/*..md" } }),
-    // An area the record could not have written counts nowhere.
+    claim({ companion: { kind: "edits", path: "config/./default.yml" } }),
+    // An area the record could not have written counts nowhere, and no count is negative or a word.
     claim({ area: 3 }),
+    claim({ candidates: -3, conforming: -3 }),
+    claim({ authors: "x" }),
   ];
   assert.deepEqual(statedClaims({ claims: forged }), []);
   const fine = [claim({ producer: "plugins/*/*.json" }), claim({ producer: "*.md" }), claim({ producer: "spec/*_spec.rb" }), claim({ companion: { kind: "adds", path: "*.txt" } })];
@@ -175,7 +178,7 @@ test("a branch owes a companion only where it added a producer and touched nothi
   assert.deepEqual(owedBy(adds, { added: [cop], touched: [cop, "changelog/old.md"] }), [cop]);
   // A file in a directory below is another class.
   assert.deepEqual(owedBy(edits, { added: ["lib/rubocop/cop/style/x/deep.rb"], touched: [] }), []);
-  // Three producers and no companion are owed by the one claim, first by code order.
+  // Two producers and no companion are owed by the one claim, first by code order.
   assert.deepEqual(
     owedBy(edits, { added: ["lib/rubocop/cop/style/z.rb", "lib/rubocop/cop/style/a.rb"], touched: [] }),
     ["lib/rubocop/cop/style/a.rb", "lib/rubocop/cop/style/z.rb"]
