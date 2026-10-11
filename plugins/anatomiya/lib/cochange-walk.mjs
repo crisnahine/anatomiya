@@ -371,10 +371,11 @@ function onePerPair(claims) {
 /**
  * The record a scan stores: the walk's counts, and every claim and near miss
  * with the one area each producer class's files at the tip all fall in, or
- * null where they fall in more than one or in none. `areaOf` answers for a path
- * with the area whose file this scan writes, or null.
+ * null where they fall in more than one or in none, or where that area's file
+ * never loads for any of them. `areaOf` answers for a path with the area whose
+ * file this scan writes, or null, and `reaches` whether that file loads for the path.
  */
-export function cochangeRecord(started, { required = GATES.authorEvidence, shallow = false, areaOf = () => null } = {}) {
+export function cochangeRecord(started, { required = GATES.authorEvidence, shallow = false, areaOf = () => null, reaches = () => true } = {}) {
   const { tip, from, walk, tree } = started;
   const record = {
     unit: "first-parent",
@@ -396,16 +397,18 @@ export function cochangeRecord(started, { required = GATES.authorEvidence, shall
   const { claims, truncated } = mineCochange(walk, { tree, required });
   const producers = new Set(claims.map((c) => c.producer));
   const where = new Map();
+  const reached = new Set();
   for (const p of tree) {
     for (const cls of classesOf(p)) {
       if (!producers.has(cls)) continue;
-      const areas = where.get(cls) ?? (where.set(cls, new Set()), where.get(cls));
-      areas.add(areaOf(p));
+      const area = areaOf(p);
+      getOrSet(where, cls, () => new Set()).add(area);
+      if (area !== null && reaches(p)) reached.add(cls);
     }
   }
   for (const c of claims) {
     const areas = where.get(c.producer);
-    c.area = areas?.size === 1 ? [...areas][0] : null;
+    c.area = areas?.size === 1 && reached.has(c.producer) ? [...areas][0] : null;
   }
   return { ...record, truncated, claims };
 }

@@ -2158,7 +2158,7 @@ test("a pin counts an area whose only row is a pairing, as the scan does", needs
 /* --- what the default branch's changes touched together --- */
 
 /** Forty services, each landed with an entry in the registry by one of two people, between ten README edits. */
-function shippingHistory(t, { pinned = false } = {}) {
+function shippingHistory(t, { pinned = false, notes = false } = {}) {
   return repo(t, (dir, { git, write, author, pin }) => {
     git("checkout", "-q", "-b", "main");
     write("README.md", "# r\n");
@@ -2168,6 +2168,7 @@ function shippingHistory(t, { pinned = false } = {}) {
     for (let i = 0; i < 40; i++) {
       author(i % 2 ? "b@t.test" : "a@t.test");
       write(`src/services/s${i}.ts`, `export const s${i} = ${i}\n`);
+      if (notes) write(`src/services/n${i}.md`, `# ${i}\n`);
       write("src/registry.ts", `export const all = [${i}]\n`);
       if (i % 4 === 0) write("README.md", `# r ${i}\n`);
       git("add", "-A");
@@ -2213,6 +2214,21 @@ test("a scan states what a class's additions ship with, and the area file says i
   assert.match(said, /^ {2}A \.ts file added here ships with an edit to "src\/registry\.ts": 40 of the last 40 changes that added one\.$/m);
   assert.deepEqual(await runNotice(dir, write("src/services/s0.ts")), {});
   assert.deepEqual(await runNotice(dir, write("src/other/new.ts")), {});
+});
+
+test("a claim whose producers the area's globs never reach is carried by no area file", async (t) => {
+  const dir = shippingHistory(t, { notes: true });
+  const result = await scan(dir);
+  const stated = result.layout.cochange.claims.filter((c) => c.directive && c.companion.edits === "src/registry.ts");
+  assert.deepEqual(stated.map((c) => [c.producer, c.area]), [
+    ["src/services/*.md", null],
+    ["src/services/*.ts", "src/services"],
+  ]);
+  writeMap(result, {});
+  const file = readdirSync(join(dir, ".claude/rules")).find((n) => n !== "anatomiya-overview.md");
+  const body = readFileSync(join(dir, ".claude/rules", file), "utf8");
+  assert.doesNotMatch(body, /\.md file added/, body);
+  assert.match(body, /^a \.ts file added to "src\/services"/m, body);
 });
 
 test("a pinned scan walks from the pin, and two scans of one history write one map", async (t) => {

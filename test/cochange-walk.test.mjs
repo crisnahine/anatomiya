@@ -294,6 +294,10 @@ test("the record says how much history was read and puts a claim in the one area
   assert.equal(one.from, "pin");
   assert.equal(pair(one.claims).area, "lib");
 
+  // An area whose file never loads for a producer carries none of its claims.
+  const unloaded = cochangeRecord(started, { required: 2, areaOf: (p) => (p.startsWith("lib/") ? "lib" : null), reaches: (p) => !p.endsWith(".rb") });
+  assert.equal(pair(unloaded.claims).area, null);
+
   const split = cochangeRecord(started, { areaOf: (p) => (p.endsWith("c0.rb") ? "lib" : "lib/cops") });
   assert.equal(pair(split.claims).area, null);
   assert.equal(cochangeRecord({ ...started, tree: null }).error, "the tip's tree could not be read");
