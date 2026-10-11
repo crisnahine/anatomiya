@@ -187,8 +187,9 @@ export function scopeOf(area, d) {
 }
 
 const SCOPE_MOST = 16;
-// What `extOrName` gives: an extension, `.d.` and all, or a whole name with none.
-const SCOPE_ENTRY = /^(?:(?:\.d)?\.)?[\p{L}\p{N}_+-]{1,64}$/u;
+// What `extOrName` gives: an extension, `.d.` and all, or a whole name with none. Every
+// declared extension and file name is ASCII, so no scan writes another letter.
+const SCOPE_ENTRY = /^(?:(?:\.d)?\.)?[A-Za-z0-9_+-]{1,64}$/;
 
 function askedOf(area, d) {
   const langs = ROW_LANGS.get(d.key);

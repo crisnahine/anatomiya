@@ -22,6 +22,7 @@ import { areaFilename, isOwned, GENERATOR } from "../plugins/anatomiya/lib/rules
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { PRECEDENT_FLOOR, principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { areaLabel, discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
+import { extOrName } from "../plugins/anatomiya/lib/paths.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { TARGETS, isClaude } from "../plugins/anatomiya/lib/targets.mjs";
@@ -413,6 +414,19 @@ test("a scope read back from a record is a short list of file kinds or none at a
   assert.equal(unstatedLine({}, { ...unstated, scope: { 0: ".ts", length: 1 } }), bare);
   assert.match(unstatedLine({}, { ...unstated, scope: exts(16) }), /, in \.x0, .* and \.x9 files: /);
   assert.equal(unstatedLine({}, { ...unstated, scope: exts(17) }), bare);
+});
+
+test("a scope holds the kinds a scan writes, which are all ASCII, and refuses any other letter", () => {
+  // A kind is read off a declared extension or file name, so a letter past ASCII
+  // in a committed scope was never written by a scan.
+  const unstated = dim({ key: "error_shape", claim: "failure is returned, not thrown", directive: false, gate: "evidence", conforming: 4, candidates: 4 });
+  const bare = "failure is returned, not thrown: no convention. 4 of 4 sites (evidence)";
+  const kinds = LANGUAGES.flatMap((l) => [...l.exts.flatMap((e) => [`a.${e}`, `a.d.${e}`]), ...l.filenames].map(extOrName));
+
+  for (const kind of kinds) assert.notEqual(unstatedLine({}, { ...unstated, scope: [kind] }), bare, kind);
+  assert.equal(unstatedLine({}, { ...unstated, scope: [".тест"] }), bare);
+  assert.equal(unstatedLine({}, { ...unstated, scope: ["Gemfilé"] }), bare);
+  assert.equal(unstatedLine({}, { ...unstated, scope: [".ts٣"] }), bare);
 });
 
 test("a slot's scope clause is built once however many findings print it", () => {
