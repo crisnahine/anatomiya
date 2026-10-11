@@ -20,7 +20,7 @@
  * lives: yours, on this machine, not committed.
  */
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTailOf, realpathOrNull, resolveInside } from "./rules.mjs";
@@ -483,7 +483,7 @@ const ECHO_READ_MOST = 1024 * 1024;
 
 // A claim this old is no batch's: its delivery has reached the transcript.
 const CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
-const CLAIM_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+)?$/;
+const CLAIM_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock)?$/;
 const CLAIMS_LISTED_MOST = 4096;
 
 /**
@@ -629,8 +629,10 @@ export function echoEvent(line) {
  * context, ahead of the delivery they follow in the transcript.
  */
 export function windowBytes(line) {
-  return readByModel(parsed(line)) ? Buffer.byteLength(line) + 1 : 0;
+  return readBytes(parsed(line), line);
 }
+
+const readBytes = (entry, line) => (readByModel(entry) ? Buffer.byteLength(line) + 1 : 0);
 
 function parsed(line) {
   try {
@@ -667,7 +669,7 @@ function heldIn(tail, digest, claimAt = null) {
     const event = eventOf(entry);
     if (event === "compact") return false;
     if (event?.some((text) => text.includes(mark))) return true;
-    if (readByModel(entry)) counted += bytes;
+    counted += readBytes(entry, lines[i]);
     if (counted > ECHO_WINDOW_BYTES) return false;
   }
   return claimAt !== null && end <= claimAt;
@@ -679,53 +681,82 @@ function claimPath(data, transcript, digest) {
   return join(data, "echo", `${createHash("sha256").update(transcript).digest("hex").slice(0, 16)}-${digest}`);
 }
 
+// A hook is killed at its 5 s timeout (hooks.json), so a lock older than that
+// was left by a call that died holding it.
+const LOCK_HELD_MOST_MS = 5000;
+
 /**
  * Whether this call is the one in its batch that delivers.
  *
  * The calls of a parallel batch run their hooks before any of their records
- * reach the transcript, so each would read the window as empty. The first to
- * create the claim delivers; the claim names the transcript offset it read up
- * to, and the others read it as a delivery made there, so it holds them only
- * while that offset is inside the window. Anything that cannot be written or
- * read answers as the transcript alone does. A stale claim is moved aside
- * before it is replaced, so only one caller replaces it; a third caller
- * interleaving with both can still deliver one copy more.
+ * reach the transcript, so each would read the window as empty. The claim names
+ * the transcript offset its maker read up to, and the others read it as a
+ * delivery made there, so it holds them only while that offset is inside the
+ * window. The decision is taken under a lock made with an exclusive create, and
+ * a call that finds the lock taken holds; the claim is replaced by a rename, so
+ * no reader sees it half written. Anything that cannot be written or read
+ * answers as the transcript alone does.
  */
 function claimed(path, tail, digest) {
   if (path === null || tail === null) return true;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      mkdirSync(dirname(path), { recursive: true });
-      const fd = openSync(path, "wx");
-      try {
-        writeSync(fd, `${tail.end}\n`);
-      } finally {
-        closeSync(fd);
-      }
-      sweep(dirname(path), path);
-      return true;
-    } catch (err) {
-      if (err?.code !== "EEXIST") return true;
-    }
+  const lock = `${path}.lock`;
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    if (!locked(lock)) return false;
+  } catch {
+    return true;
+  }
+  try {
     const entry = readHead(path, 32);
     const at = entry.kind === "file" && /^\d+\n$/.test(entry.head) ? Number(entry.head) : null;
     if (at !== null && at <= tail.end && heldIn(tail, digest, at)) return false;
-    const aside = `${path}.${process.pid}`;
+    const temp = `${path}.${process.pid}`;
+    writeFileSync(temp, `${tail.end}\n`);
+    renameSync(temp, path);
+  } catch {
+    return true;
+  } finally {
     try {
-      renameSync(path, aside);
-      unlinkSync(aside);
+      unlinkSync(lock);
     } catch {
-      // Another call moved it first; the next attempt reads what it left.
+      // Taken out by a call that read it as stale; nothing is left to release.
     }
   }
+  sweep(dirname(path), path);
   return true;
+}
+
+/** Takes the lock, breaking it once where it outlived any hook; false where another call holds it. */
+function locked(lock) {
+  for (let broken = false; ; broken = true) {
+    try {
+      closeSync(openSync(lock, "wx"));
+      return true;
+    } catch (err) {
+      if (err?.code !== "EEXIST") throw err;
+    }
+    if (broken) return false;
+    let age = null;
+    try {
+      age = Math.abs(Date.now() - lstatSync(lock).mtimeMs);
+    } catch {
+      // Released between the create and this read: the next create may take it.
+    }
+    if (age !== null && age <= LOCK_HELD_MOST_MS) return false;
+    if (age !== null) rmSync(lock, { force: true });
+  }
 }
 
 /** Takes out claims older than a day, so they stay bounded however many sessions run. */
 function sweep(dir, kept) {
-  let names;
+  const names = [];
   try {
-    names = readdirSync(dir).slice(0, CLAIMS_LISTED_MOST);
+    const listing = opendirSync(dir);
+    try {
+      for (let entry; names.length < CLAIMS_LISTED_MOST && (entry = listing.readSync()) !== null; ) names.push(entry.name);
+    } finally {
+      listing.closeSync();
+    }
   } catch {
     return;
   }
