@@ -79,9 +79,9 @@ test("a destructured catch parameter is a use of the error", () => {
   assert.deepEqual(r, { candidates: 1, conforming: 1 });
 });
 
-test("a catch inside a class method is attributed to the method", () => {
+test("a catch inside a class method is attributed to its class and the method", () => {
   const [hit] = hits("swallowed_error", `class C { m() { try { a() } catch (e) { } } }`);
-  assert.equal(hit.where, "m", "the site has to name the method it sits in");
+  assert.equal(hit.where, "C.m", "the site has to name the method it sits in, and its class");
 });
 
 // --- error_shape ---
@@ -162,6 +162,11 @@ test("an exported binding is still module state", () => {
 });
 
 // --- async_error_handling ---
+
+test("an async method is reported under its class and its own name", () => {
+  const [hit] = hits("async_error_handling", `class S { async load() { await go() } }`);
+  assert.equal(hit.where, "S.load");
+});
 
 test("an inner arrow's try does not satisfy the outer async function", () => {
   const r = counts("async_error_handling", `

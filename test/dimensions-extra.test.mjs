@@ -241,9 +241,14 @@ test("an arrow with an expression body returning null still counts", () => {
   assert.deepEqual(r, { candidates: 1, conforming: 1 });
 });
 
-test("a return inside a method is reported under the method name", () => {
+test("a return inside a method is reported under its class and the method name", () => {
   const h = hits("absent_is_null", `class K { m(x) { if (!x) return undefined; return x } }`);
-  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["m", false]]);
+  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["K.m", false]]);
+});
+
+test("an unnamed function in a class field is reported under the class and the field", () => {
+  const h = hits("absent_is_null", `class K { x = wrap(() => undefined) }`);
+  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["K.x", false]]);
 });
 
 test("a value returned by a nested callback does not make the outer function value-returning", () => {

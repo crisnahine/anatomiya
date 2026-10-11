@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 
-import { walk, collectHits, fromVisitor } from "../plugins/anatomiya/lib/walk.mjs";
+import { walk, collectHits, fromVisitor, whereOf } from "../plugins/anatomiya/lib/walk.mjs";
 
 const { program } = parseSync(
   "f.ts",
@@ -239,4 +239,24 @@ test("every JS row answers the same on the shared walk as walking alone, with a 
   const visiting = rows.filter((d) => d.visitor).map((d) => d.key);
   const silent = visiting.filter((k) => !shared[k]);
   assert.ok(silent.length <= 3, `the fixture should reach most visitor rows; silent: ${silent.join(", ")}`);
+});
+
+test("a site's name carries the named class around its declaration, and only one around it", () => {
+  const names = (src) => {
+    const out = [];
+    walk(parseSync("a.ts", src, { sourceType: "module" }).program, (n, ctx) => {
+      if (n.type === "CatchClause") out.push(whereOf(ctx.enclosing, ctx));
+    });
+    return out;
+  };
+
+  assert.deepEqual(names(`class A { run() { try {} catch {} } }`), ["A.run"]);
+  assert.deepEqual(names(`class A { run = () => { try {} catch {} } }`), ["A.run"]);
+  assert.deepEqual(names(`class A { run() { function inner() { try {} catch {} } } }`), ["A.inner"]);
+  assert.deepEqual(names(`function run() { try {} catch {} }`), ["run"]);
+  assert.deepEqual(names(`const A = class { run() { try {} catch {} } }`), ["run"], "an unnamed class names nothing");
+  assert.deepEqual(names(`class A { static { try {} catch {} } }`), ["A"], "the class is the declaration, not its own owner");
+  assert.deepEqual(names(`class O { m() { class I { run() { try {} catch {} } } } }`), ["I.run"], "the innermost class");
+  assert.deepEqual(names(`function f() { class C {} try {} catch {} }`), ["f"], "a class closed before the site is not around it");
+  assert.deepEqual(names(`class A { run() { list.map(() => { try {} catch {} }) } }`), [null], "an unnamed callback names nothing");
 });

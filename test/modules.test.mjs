@@ -258,6 +258,17 @@ test("a parse child that reads no component loads no component scanner, and no c
   assert.ok(reachedFrom("parse-worker.mjs").has("script-blocks.mjs"));
 });
 
+test("no JavaScript row names a site by its function alone, without the class around it", () => {
+  // Two classes each holding a `run` are one place by the bare name, and the
+  // check then matches a new copy to the old one and reports the old line.
+  const bare = [];
+  for (const file of ["dimensions-base.mjs", "dimensions-extra.mjs", "dimensions-jsx.mjs", "dimensions-capability.mjs"]) {
+    const src = readFileSync(join(LIB, file), "utf8");
+    for (const m of src.matchAll(/where(?::|\s*=)\s*declName\(ctx\.\w+\)/g)) bare.push(`${file}: ${m[0]}`);
+  }
+  assert.deepEqual(bare, []);
+});
+
 test("a module that branches on a row's kind loads the registry that stamps it", () => {
   // `stampKind` writes the field in place while the registry is assembled, so
   // a reader that never loads it reads undefined off a tree row and takes the

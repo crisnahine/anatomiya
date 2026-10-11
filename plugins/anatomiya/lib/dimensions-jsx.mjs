@@ -1,4 +1,4 @@
-import { walk, isFunctionLike, declName, value, boundNames } from "./walk.mjs";
+import { walk, isFunctionLike, declName, value, boundNames, whereOf } from "./walk.mjs";
 
 /**
  * JSX dimensions, same contract as `dimensions.mjs`: one claim, one `add` per
@@ -403,7 +403,7 @@ export const JSX_DIMENSIONS = [
           const c = n.callee;
           if (!c) return;
           if (c.type === "Identifier" && REACT_HOOKS.has(c.name)) {
-            return add({ node: c, conforming: true, where: declName(ctx.fn) });
+            return add({ node: c, conforming: true, where: whereOf(ctx.fn, ctx) });
           }
           // The object has to be React itself. Any other receiver is a library
           // method that happens to share a hook's name, and charging it here
@@ -411,7 +411,7 @@ export const JSX_DIMENSIONS = [
           if (c.type !== "MemberExpression" || c.computed) return;
           if (!c.object || c.object.type !== "Identifier" || c.object.name !== "React") return;
           if (!c.property || !REACT_HOOKS.has(c.property.name)) return;
-          add({ node: c, conforming: false, where: declName(ctx.fn) });
+          add({ node: c, conforming: false, where: whereOf(ctx.fn, ctx) });
         },
       };
     },
@@ -434,7 +434,7 @@ export const JSX_DIMENSIONS = [
           if (n.type !== "JSXAttribute") return;
           const e = handlerValue(n);
           if (!e) return;
-          const where = declName(ctx.fn);
+          const where = whereOf(ctx.fn, ctx);
           // A bind call, a ternary and `undefined` are a third form the claim
           // does not name. Counting them as violations reads a repository that
           // hoists every handler as inconsistent and drops it under the ratio gate.
@@ -473,7 +473,7 @@ export const JSX_DIMENSIONS = [
           noteForwarded(n, forwarded);
           if (n.type !== "JSXOpeningElement") return;
           const component = !isHostElement(n);
-          const where = declName(ctx.fn);
+          const where = whereOf(ctx.fn, ctx);
           // Per attribute, not per element: `<div {...a} {...b}>` is two sites,
           // and counting one hides a wrapper that spreads twice.
           for (const a of n.attributes || []) {
@@ -534,7 +534,7 @@ export const JSX_DIMENSIONS = [
           const inTrans = () => opened.size > 0 && ctx.ancestors.some((a) => opened.has(a));
           if (n.type === "JSXOpeningElement") {
             if (TRANS_ELEMENT.test(jsxName(n) ?? "")) {
-              sites.push({ node: n, conforming: true, where: declName(ctx.fn) });
+              sites.push({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
             }
             return;
           }
@@ -542,7 +542,7 @@ export const JSX_DIMENSIONS = [
             // Text inside a translation element is that element's data: charging
             // every defaultMessage as an untranslated string inverts the claim.
             if (!isVisibleText(n.value) || inTrans()) return;
-            sites.push({ node: n, conforming: false, where: declName(ctx.fn) });
+            sites.push({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
             return;
           }
           if (n.type !== "JSXExpressionContainer") return;
@@ -553,7 +553,7 @@ export const JSX_DIMENSIONS = [
           if (!e || e.type !== "CallExpression") return;
           if (!TRANS_CALL.test(calleeName(e.callee) ?? "")) return;
           if (inTrans()) return;
-          sites.push({ node: n, conforming: true, where: declName(ctx.fn) });
+          sites.push({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
         },
         done() {
           if (translates) for (const hit of sites) add(hit);
@@ -602,7 +602,7 @@ export const JSX_DIMENSIONS = [
           if (n.type !== "JSXAttribute") return;
           const e = handlerValue(n);
           if (!e || e.type !== "Identifier") return;
-          passed.push({ n, e, where: declName(ctx.fn), ancestors: ctx.ancestors.filter(isFunctionLike) });
+          passed.push({ n, e, where: whereOf(ctx.fn, ctx), ancestors: ctx.ancestors.filter(isFunctionLike) });
         },
         done() {
           if (bound.length === 0) return;

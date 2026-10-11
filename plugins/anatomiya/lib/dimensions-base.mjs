@@ -1,4 +1,4 @@
-import { walk, isFunctionLike, declName, value, boundNames, optionalChain } from "./walk.mjs";
+import { walk, isFunctionLike, declName, value, boundNames, optionalChain, whereOf } from "./walk.mjs";
 
 /**
  * The five base oxc rows, and the selection every engine's rows go through.
@@ -128,7 +128,7 @@ export const DIMENSIONS = [
           if (!isCatch(n)) return;
           const names = boundNames(n.param);
           const handled = !bodyIsEmpty(n.body) && (usesParam(n.body, names) || hasRethrow(n.body));
-          add({ node: n, conforming: handled, where: declName(ctx.enclosing) });
+          add({ node: n, conforming: handled, where: whereOf(ctx.enclosing, ctx) });
         },
       };
     },
@@ -157,13 +157,13 @@ export const DIMENSIONS = [
             // A rethrow inside a catch is deliberate, not a policy violation.
             const inCatch = ctx.within(CATCH);
             if (inCatch) return;
-            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+            return add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
           }
           if (n.type !== "ReturnStatement" || !n.argument) return;
           // React merges what this returns into component state, `{ error }` included.
           if (declName(ctx.fn) === "getDerivedStateFromError") return;
           if (!isResultShaped(value(n.argument))) return;
-          results.push({ node: n, conforming: true, where: declName(ctx.fn) });
+          results.push({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
         },
         done() {
           for (const hit of results) add(hit);
@@ -248,7 +248,7 @@ export const DIMENSIONS = [
     langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
-        node(n) {
+        node(n, ctx) {
           if (!isFunctionLike(n) || !n.async) return;
           let handled = false;
           walk(n.body, (m, mctx) => {
@@ -262,7 +262,7 @@ export const DIMENSIONS = [
             if (mctx.enclosing !== null) return;
             handled = true;
           });
-          add({ node: n, conforming: handled, where: declName(n) });
+          add({ node: n, conforming: handled, where: whereOf(n, ctx) });
         },
       };
     },
@@ -295,7 +295,7 @@ export const DIMENSIONS = [
           // A read in a write position, a `new` callee or a tagged template's tag
           // cannot carry `?.` at all, so the conforming form does not exist there.
           if (!optionalChain(n, ctx.ancestors).allowed) return;
-          add({ node: n, conforming: n.optional === true, where: declName(ctx.fn) });
+          add({ node: n, conforming: n.optional === true, where: whereOf(ctx.fn, ctx) });
         },
       };
     },

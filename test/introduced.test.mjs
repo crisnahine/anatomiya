@@ -178,7 +178,31 @@ test("a site added above an identical one is reported where it was added, not wh
 
   const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base }));
 
-  assert.deepEqual(found.map((f) => [f.line, f.where]), [[3, "brandNew"]]);
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[3, "L.brandNew"]]);
+});
+
+test("a method added above a same-named one in another class is reported on the line the branch wrote", () => {
+  const slot = area(stated("swallowed_error"));
+  const cls = (name) => `export class ${name} {\n  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  }\n}\n`;
+  const base = revision(cls("A"), { file: "f.js" });
+  const head = revision(`${cls("B")}\n${cls("A")}`, { file: "f.js" });
+
+  const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/old.js", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[5, "B.run"]]);
+});
+
+test("two same-named methods in one class are matched in source order alone", () => {
+  // Their name, their text and the lines around them are all equal, so the
+  // copy the base held is the first one and the one reported is the second.
+  const slot = area(stated("swallowed_error"));
+  const run = "  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  }\n";
+  const base = revision(`export class A {\n${run}}\n`, { file: "f.js" });
+  const head = revision(`export class A {\n${run}${run}}\n`, { file: "f.js" });
+
+  const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/old.js", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[10, "A.run"]]);
 });
 
 test("renaming the function around a site still introduces nothing", () => {
