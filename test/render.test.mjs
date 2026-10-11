@@ -389,6 +389,14 @@ test("an unstated slot's line is the one check prints for it", () => {
   assert.equal(unstatedLine(mapped, unstated, "a sentence from the row"), "a sentence from the row: no convention. 4 of 4 sites (evidence)");
 });
 
+test("a slot read back from a record prints the scope it keeps, and a hand-edited one only its names", () => {
+  const unstated = dim({ key: "error_shape", claim: "failure is returned, not thrown", directive: false, gate: "evidence", conforming: 4, candidates: 4 });
+
+  assert.equal(unstatedLine({}, { ...unstated, scope: [".ts"] }), "failure is returned, not thrown, in .ts files: no convention. 4 of 4 sites (evidence)");
+  assert.equal(unstatedLine({}, { ...unstated, scope: [7, null, ".ts"] }), unstatedLine({}, { ...unstated, scope: [".ts"] }));
+  assert.equal(unstatedLine({}, { ...unstated, scope: "ts" }), "failure is returned, not thrown: no convention. 4 of 4 sites (evidence)");
+});
+
 test("the overview says what a no convention line means", () => {
   // The gate name in parentheses is the only reason printed, and "no convention.
   // 73 of 73 sites" reads as a denial of a habit every site follows without it.

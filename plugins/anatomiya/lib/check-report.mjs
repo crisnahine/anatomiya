@@ -174,6 +174,9 @@ const ANNOTATION = { "MUST-FIX": "error", FIX: "warning", NIT: "notice" };
 // annotation carrying that line's quoting is quoting nobody asked for.
 const reasonFor = (f, place) => (f.companion == null ? f.reason : `${f.reason}; no ${place(f.companion)}`);
 
+// A slot no gate stated says so in its claim, gate and all, so the text line under it would say it twice.
+const toldInClaim = (f) => f.companion == null && f.reason.startsWith("no convention stated here (") && String(f.claim ?? "").includes(": no convention. ");
+
 /**
  * The report as GitHub workflow commands: one annotation per finding, on the
  * file and line it is about, then what the run could not answer, and the counts
@@ -272,7 +275,8 @@ function renderText(report) {
   for (const f of report.findings) {
     lines.push("");
     lines.push(`${f.severity}  ${quotePath(f.path)}:${f.line}  ${String(f.claim ?? "").replace(/\s+/g, " ").trim()}`);
-    lines.push(`  ${f.where ? `${f.where}: ` : ""}${reasonFor(f, quotePath)}`);
+    const reason = toldInClaim(f) ? null : reasonFor(f, quotePath);
+    if (f.where || reason) lines.push(`  ${[f.where, reason].filter(Boolean).join(": ")}`);
     if (f.snippet) lines.push(`  ${f.snippet}`);
   }
 

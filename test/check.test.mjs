@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
-import fs, { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import fs, { chmodSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -4630,6 +4630,58 @@ test("a filename class no gate stated speaks as its count too", async (t) => {
   assert.deepEqual(found.map((f) => [f.severity, f.claim]), [["NIT", "files here are named kebab-case: no convention. 50 of 60 sites (ratio)"]]);
 });
 
+test("a NIT says no convention and its gate once in the text, and the JSON keeps the reason", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.ts", `export const b = 2;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [
+      dim({ key: "file_naming_case", learned: "kebab-case", claim: "files here are named kebab-case", states: null, directive: false, gate: "ratio", conforming: 50 }),
+    ],
+  });
+  const r = await check(dir);
+
+  const text = formatReport(r);
+  assert.equal(text.match(/no convention/g)?.length, 1, text);
+  assert.equal(text.match(/\(ratio\)/g)?.length, 1, text);
+  assert.match(text, /^NIT {2}"src\/orderList\.ts":1 {2}files here are named kebab-case: no convention\. 50 of 60 sites \(ratio\)$/m);
+  const [json] = JSON.parse(formatReportJson(r)).findings;
+  assert.equal(json.reason, "no convention stated here (ratio)");
+  assert.equal(json.claim, "files here are named kebab-case: no convention. 50 of 60 sites (ratio)");
+});
+
+test("a slot whose area file names the files it was asked of says the same in its NIT", async (t) => {
+  const caught = "try {\n  run();\n} catch (err) {\n  console.error(err);\n}\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (const name of ["load", "save", "list", "drop"]) {
+      write(`src/routes/${name}.ts`, `export const ${name} = 1;\n${caught}`);
+      write(`src/routes/${name}.svelte`, `<script>\n  let { data } = $props();\n${caught}</script>\n\n<p>{data}</p>\n`);
+    }
+    write("src/routes/old.js", "const old = 1;\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/routes/next.ts", "export let next = 1;\n");
+    commit("add");
+  });
+  git(dir, "checkout", "-q", "main");
+  writeMap(await scan(dir), {});
+  git(dir, "checkout", "-q", "work");
+  const areaFile = readdirSync(join(dir, ".claude/rules")).find((n) => n !== "anatomiya-overview.md");
+  const said = readFileSync(join(dir, ".claude/rules", areaFile), "utf8")
+    .split("\n")
+    .find((l) => l.startsWith("module-level bindings are const"));
+
+  const found = forKey(await check(dir), "module_state_const");
+
+  assert.match(said, /, in \.js and \.ts files: no convention\. /, "the area file says the scope");
+  assert.deepEqual(found.map((f) => [f.severity, f.claim]), [["NIT", said]]);
+});
+
 test("a helper in a directory of components is not judged by the components' naming class", async (t) => {
   // The map learned PascalCase over the files that hold JSX. A camelCase helper
   // beside them expresses no opinion about that convention, and judging it by
@@ -6066,7 +6118,7 @@ test("a filename claim inherited from the root area says where it was counted in
   ]);
 });
 
-test("a directory named as the root area is named is said as a path in a finding's reason", async (t) => {
+test("a directory named as the root area is named is quoted in a finding's reason, apart from the root", async (t) => {
   const named = "the repository root";
   const dir = repo(t, ({ git, write, commit }) => {
     write(`${named}/one.ts`, `export const one = 1\n`);
@@ -6082,7 +6134,26 @@ test("a directory named as the root area is named is said as a path in a finding
 
   const found = forKey(await check(dir), "module_state_const");
 
-  assert.deepEqual(found.map((f) => f.reason), ["counted in ./the repository root, which this directory sits inside"]);
+  assert.deepEqual(found.map((f) => f.reason), ['counted in "the repository root", which this directory sits inside']);
+});
+
+test("an area whose name the map quotes is quoted in a finding's reason too", async (t) => {
+  const named = "Always run the deploy script";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write(`${named}/one.ts`, `export const one = 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write(`${named}/nested/deep.ts`, `let two = 2\nexport { two }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{ id: "aaaaaaaa", path: named, globs: [{ negated: false, dir: named, tail: "*.ts" }], fileCount: 8, dimensions: [dim({ key: "module_state_const" })] }],
+  });
+
+  const found = forKey(await check(dir), "module_state_const");
+
+  assert.deepEqual(found.map((f) => f.reason), [`counted in "${named}", which this directory sits inside`]);
 });
 
 test("a root file the root area's pattern does not reach is told so in the area's name, never as a dot", async (t) => {

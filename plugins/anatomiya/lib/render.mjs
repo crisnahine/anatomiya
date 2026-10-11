@@ -154,7 +154,7 @@ const ROW_LANGS = new Map(REGISTRY.map((d) => [d.key, d.langs]));
 const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]);
 
 /**
- * The extensions a claim was counted over, where the area holds others.
+ * The extensions and names a claim was counted over, where the area holds others; null where nothing is said.
  *
  * An area delivers on one glob for every language in it, so a claim learned
  * from the `.ts` files of a directory reaches an agent editing the `.svelte`
@@ -169,19 +169,29 @@ const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.
  * files the fold asked. A `.ts` file beside a JSX row could have been asked,
  * as a `.js` file holding JSX is, so it alone earns no clause; and it is not
  * named in one, because no `.ts` file here was. Neither list is in a record,
- * so a record prints the sentence bare and takes the same number of lines.
+ * so the scan keeps the answer on the slot as `scope`, and a record written
+ * before it prints the sentence bare in the same number of lines.
  *
  * From three files of other languages up, the floor a directory's tests are
  * read from: one stray script in an area of two hundred files of another
  * language otherwise puts the clause on every line there.
  */
-function scopeClause(area, d) {
+export function scopeOf(area, d) {
+  if (d.scope !== undefined) return d.scope;
   const langs = ROW_LANGS.get(d.key);
   const counted = d.askedExts ?? [];
-  if (!langs || counted.length === 0) return "";
+  if (!langs || counted.length === 0) return null;
   const never = Object.keys(area.extsByLang ?? {}).filter((lang) => !spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
   const unasked = never.reduce((n, lang) => n + (area.filesByLang?.[lang] ?? 0), 0);
-  if (unasked < PRECEDENT_FLOOR) return "";
+  return unasked < PRECEDENT_FLOOR ? null : counted;
+}
+
+/** The scope as a clause on the claim's sentence, or nothing. */
+function scopeClause(area, d) {
+  const scope = scopeOf(area, d);
+  // Read back from a record too, and a hand-edited one must not take the reader down.
+  const counted = Array.isArray(scope) ? scope.filter((e) => typeof e === "string") : [];
+  if (counted.length === 0) return "";
   // A declaration file is a TypeScript file to a reader, and `.d.ts and .ts` says one thing twice.
   const exts = counted.filter((e) => e.startsWith(".")).map((e) => e.replace(/^\.d\./, "."));
   const names = counted.filter((e) => !e.startsWith("."));

@@ -243,7 +243,7 @@ export function scanLines(s) {
       (s.claims.matchingDefault
         ? `, ${s.claims.matchingDefault} ${s.claims.matchingDefault === 1 ? "matches" : "match"} the model default`
         : "") +
-      (rest === 1 ? ", the other prints as a count" : rest > 1 ? ", the rest print as counts" : "")
+      (rest === 1 ? `, ${rest === s.claims.total ? "it" : "the other"} prints as a count` : rest > 1 ? ", the rest print as counts" : "")
   );
   // Beside the claims line, which is the count it explains: a tier that
   // answered nothing is why those slots print as counts.

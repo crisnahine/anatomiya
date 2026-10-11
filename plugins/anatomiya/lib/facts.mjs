@@ -657,6 +657,9 @@ function dimensionRecord(d) {
     // states is one this number belongs to. Absent means none, so an older
     // record reads as an area that skipped nothing, which is what it printed.
     ...(d.declined === undefined ? {} : { declined: d.declined }),
+    // The files a claim was asked of, where its sentence names them. Absent on
+    // an older record, which prints the sentence bare, as its own map did.
+    ...(Array.isArray(d.scope) && d.scope.length > 0 ? { scope: d.scope } : {}),
     // Polarity is the one thing the rendered file deliberately does not say, so
     // this record is the only place the check can learn which of the two
     // sentences an area was handed (C6).
