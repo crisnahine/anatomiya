@@ -4105,10 +4105,27 @@ function killedAt(scan, at) {
     env: { ...process.env, ANATOMIYA_KILLED_AT: JSON.stringify({ writer, result: scan, at }) },
     encoding: "utf8",
   });
+  return killedChild(child);
+}
+
+/** Whether a child that may have killed itself did, read the same on every platform. */
+function killedChild(child) {
   if (child.status === 0) return false;
-  assert.equal(child.signal, "SIGKILL", child.stderr);
+  // Windows reports a process that kills itself as exit 1 with no signal.
+  if (child.signal !== null) assert.equal(child.signal, "SIGKILL", child.stderr);
+  assert.equal(child.stdout, "", "a killed child printed no step count");
+  assert.equal(child.stderr, "", "a killed child threw nothing");
   return true;
 }
+
+test("a child reads as killed by its own hand however the platform reports it", () => {
+  assert.equal(killedChild({ status: null, signal: "SIGKILL", stdout: "", stderr: "" }), true);
+  assert.equal(killedChild({ status: 1, signal: null, stdout: "", stderr: "" }), true, "Windows");
+  assert.equal(killedChild({ status: 0, signal: null, stdout: "16\n", stderr: "" }), false);
+  assert.throws(() => killedChild({ status: 1, signal: null, stdout: "", stderr: "Error: thrown\n" }), "a throw is no kill");
+  assert.throws(() => killedChild({ status: 1, signal: null, stdout: "3\n", stderr: "" }), "a child that printed its count was not killed");
+  assert.throws(() => killedChild({ status: null, signal: "SIGTERM", stdout: "", stderr: "" }), "another signal is no self-kill");
+});
 
 test("a scan killed after any rename or removal is finished by the next plain scan, in every directory", (t) => {
   const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];

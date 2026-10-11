@@ -539,6 +539,10 @@ test("a count word opening a sentence is the same count", (t) => {
 
   assert.equal(status, 1);
   assert.ok(output.includes(`README.md: says "Four for PHP", the registry holds 3 asked of PHP`), output);
+
+  const right = miscount(t, "README.md", "3 for PHP", "Three for PHP");
+  assert.doesNotMatch(right.output, /PHP/, "the same count, read as one");
+  assert.equal(right.status, 0, right.output);
 });
 
 test("the grammars counted as grammar packages are read against the registry", (t) => {
