@@ -6403,7 +6403,7 @@ function shipping(t, change, { claim = shipsWith(), from = "pin", dimensions = [
     commit("map");
     git("checkout", "-q", "-b", "feature");
     change({ write, commit, git });
-    if (pending) pending({ write });
+    if (pending) pending({ write, dir });
   });
 }
 
@@ -6537,6 +6537,16 @@ test("a companion the branch deleted is no companion touched", async (t) => {
     git("rm", "-q", "src/registry.ts");
     commit("service, and the registry gone");
   });
+  const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.equal(f?.path, "src/services/b.ts");
+});
+
+test("a companion a commit edited and the tree then deleted is no companion touched", async (t) => {
+  const dir = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    write("src/registry.ts", "export const all = [1]\n");
+    commit("service and its entry");
+  }, { pending: ({ dir }) => rmSync(join(dir, "src/registry.ts")) });
   const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
   assert.equal(f?.path, "src/services/b.ts");
 });

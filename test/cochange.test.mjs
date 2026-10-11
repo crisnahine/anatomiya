@@ -98,6 +98,9 @@ test("only a stated claim of the stored shape is read back, since the record is 
       claim({ companion: { edits: 3 } }),
       claim({ producer: null }),
       claim({ files: "many" }),
+      claim({ files: [266] }),
+      claim({ files: [266, 299, 300] }),
+      claim({ companion: { edits: "config/default.yml", adds: "changelog/*.md" } }),
       null,
     ],
   };
