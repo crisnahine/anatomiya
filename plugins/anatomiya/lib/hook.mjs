@@ -474,18 +474,12 @@ export function targetIn(payload, root, from) {
   return sep === "\\" ? rel.split("\\").join("/") : rel;
 }
 
-/**
- * How far back a delivery still counts as recent, in bytes of the transcript
- * records the model reads (A92).
- *
- * 34 sessions on 2.1.292 to 2.1.296 wrote a median 6.6 such bytes per context
- * token, so this is about 40k tokens between two copies of one map.
- */
-export const ECHO_WINDOW_BYTES = 256 * 1024;
+/** How far back a delivery still counts, in bytes the model reads: about 29.9k tokens at the 6.57 per token measured on 2.1.292 to 2.1.296, A92's distance. */
+export const ECHO_WINDOW_BYTES = 192 * 1024;
 
 // How much transcript is read to find a window's worth of those records: a
 // prompt snapshot alone runs to 130 KB. Past it the window counts as run out.
-const ECHO_READ_MOST = 4 * ECHO_WINDOW_BYTES;
+const ECHO_READ_MOST = 1024 * 1024;
 
 // A claim this old is no batch's: its delivery has reached the transcript.
 const CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
@@ -630,7 +624,9 @@ export function echoEvent(line) {
  * A user or assistant message is read, and an attachment is read where it
  * carries `rendered`, which the build sets only on one that converts into a
  * message. A prompt snapshot, a hook's stdout and every bookkeeping line carry
- * none, and counted they pushed a delivery out within one tool call.
+ * none, and counted they pushed a delivery out within one tool call. The
+ * CLAUDE.md files carry it, but the build places them at the head of the
+ * context, ahead of the delivery they follow in the transcript.
  */
 export function windowBytes(line) {
   return readByModel(parsed(line)) ? Buffer.byteLength(line) + 1 : 0;
@@ -650,7 +646,8 @@ function eventOf(entry) {
   return [].concat(entry.attachment.content ?? []).filter((text) => typeof text === "string");
 }
 
-const readByModel = (entry) => entry?.type === "user" || entry?.type === "assistant" || (entry?.type === "attachment" && Array.isArray(entry.rendered));
+const readByModel = (entry) =>
+  entry?.type === "user" || entry?.type === "assistant" || (entry?.type === "attachment" && Array.isArray(entry.rendered) && entry.attachment?.type !== "instructions");
 
 /**
  * Whether the window holds a delivery of this map with no compaction after it,
