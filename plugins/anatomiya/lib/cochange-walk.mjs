@@ -20,7 +20,7 @@ import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts, companionKey, keyCompa
 import { commitAt, filesAt, gitStreamed, isSha, resolveBaseRef } from "./git.mjs";
 import { ownOutput } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
-import { byCode } from "./paths.mjs";
+import { byCode, dirOf } from "./paths.mjs";
 import { isTestPath } from "./precedent.mjs";
 import { isTestTree } from "./test-shape.mjs";
 
@@ -261,7 +261,7 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
       const companion = keyCompanion(key);
       const isAdded = companion.kind === "adds";
       if (isTestSide(sample(producer)) || isTestSide(isAdded ? sample(companion.path) : companion.path)) continue;
-      if (isAdded && (classParts(companion.path).spans || companion.path === producer || upOf(producer) === companion.path || upOf(companion.path) === producer)) continue;
+      if (isAdded && (classParts(companion.path).spans || companion.path === producer || upOf(companion.path) === producer)) continue;
       if (conforming / candidates < GATES.minRatio) continue;
       kept.push({ producer, key, conforming, candidates, companion });
     }
@@ -270,7 +270,6 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
   // The tip's tree, asked only about the classes a kept pair names.
   const asked = new Set(kept.flatMap(({ producer, companion }) => [producer, ...(companion.kind === "adds" ? [companion.path] : [])]));
   const atTip = new Map([...asked].map((cls) => [cls, [0, 0]]));
-  const dirOf = (p) => p.slice(0, p.lastIndexOf("/"));
   // The child directories a spanning class still holds a file in at the tip.
   const dirsAtTip = new Map();
   for (const p of tree ?? []) {
