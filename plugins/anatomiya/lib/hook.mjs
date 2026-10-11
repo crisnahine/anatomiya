@@ -20,7 +20,7 @@
  * lives: yours, on this machine, not committed.
  */
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, linkSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTailOf, realpathOrNull, resolveInside } from "./rules.mjs";
@@ -483,7 +483,7 @@ const ECHO_READ_MOST = 1024 * 1024;
 
 // A claim this old is no batch's: its delivery has reached the transcript.
 const CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
-const CLAIM_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock)?$/;
+const CLAIM_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+)?)?$/;
 const CLAIMS_LISTED_MOST = 4096;
 
 /**
@@ -681,9 +681,8 @@ function claimPath(data, transcript, digest) {
   return join(data, "echo", `${createHash("sha256").update(transcript).digest("hex").slice(0, 16)}-${digest}`);
 }
 
-// A hook is killed at its 5 s timeout (hooks.json), so a lock older than that
-// was left by a call that died holding it.
-const LOCK_HELD_MOST_MS = 5000;
+/** A hook is killed at its 5 s timeout (hooks.json), so a lock older than that was left by a call that died holding it. */
+export const LOCK_HELD_MOST_MS = 5000;
 
 /**
  * Whether this call is the one in its batch that delivers.
@@ -729,7 +728,12 @@ function claimed(path, transcript, tail, digest) {
   return true;
 }
 
-/** Takes the lock, breaking it once where it outlived any hook; false where another call holds it. */
+/**
+ * Takes the lock, breaking it once where it outlived any hook; false where another call holds it.
+ *
+ * A break moves the lock to a name only this call uses and reads the age of what it moved, so two
+ * calls that both read one lock as dead cannot both take out the live lock one of them made since.
+ */
 function locked(lock) {
   for (let broken = false; ; broken = true) {
     try {
@@ -739,14 +743,36 @@ function locked(lock) {
       if (err?.code !== "EEXIST") throw err;
     }
     if (broken) return false;
-    let age = null;
-    try {
-      age = Math.abs(Date.now() - lstatSync(lock).mtimeMs);
-    } catch {
-      // Released between the create and this read: the next create may take it.
-    }
+    const age = ageOf(lock);
     if (age !== null && age <= LOCK_HELD_MOST_MS) return false;
-    if (age !== null) rmSync(lock, { force: true });
+    if (age === null) continue;
+    const moved = `${lock}.${process.pid}`;
+    try {
+      renameSync(lock, moved);
+    } catch {
+      // Broken or released by another call: the next create may take it.
+      continue;
+    }
+    const was = ageOf(moved);
+    if (was !== null && was <= LOCK_HELD_MOST_MS) {
+      try {
+        linkSync(moved, lock);
+      } catch {
+        // A newer lock took the name; it holds the others as this one would have.
+      }
+      rmSync(moved, { force: true });
+      return false;
+    }
+    rmSync(moved, { force: true });
+  }
+}
+
+/** How long ago a lock was made, or null where it is gone. */
+function ageOf(path) {
+  try {
+    return Math.abs(Date.now() - lstatSync(path).mtimeMs);
+  } catch {
+    return null;
   }
 }
 
