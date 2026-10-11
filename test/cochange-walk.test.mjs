@@ -366,7 +366,7 @@ test("a stopped signal stops both the walk and the tip's tree", async (t) => {
     commit("one");
   });
   const stopped = await startCochange(dir, { status: "unpinned" }, { signal: AbortSignal.abort() });
-  assert.match(stopped.walk.error, /stopped by its caller$/);
+  assert.equal(stopped.walk.error, "git log stopped by its caller");
   assert.equal(stopped.tree, null);
   // A stopped tree is not remembered as the answer for the next caller.
   assert.deepEqual([...(await startCochange(dir, { status: "unpinned" })).tree], ["a.rb"]);

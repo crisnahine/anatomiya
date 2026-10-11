@@ -414,8 +414,7 @@ function repositoryCommands(root, env, timeout) {
 async function prepared(root, args, env, { lazyFetch, timeout }) {
   const repository = await repositoryCommands(root, env, timeout);
   if (repository.unread) return { unread: repository.unread };
-  let at = 0;
-  while (args[at] === "-c") at += 2;
+  const at = subcommandAt(args);
   const sub = args[at];
   const extra = [];
   if (sub === "status" || sub === "diff") extra.push("--ignore-submodules=dirty");
@@ -515,6 +514,13 @@ export async function caseMagic(root) {
   return r.ok && r.stdout.trim() === "true" ? "icase" : "";
 }
 
+// Where the subcommand sits: past each `-c` and its value, the one global option `refuse` lets through.
+function subcommandAt(args) {
+  let at = 0;
+  while (args[at] === "-c") at += 2;
+  return at;
+}
+
 /**
  * The other entry point: output read off the stream, one NUL-delimited field at
  * a time (F6).
@@ -527,9 +533,10 @@ export function gitStreamed(
 ) {
   const refused = refuse(args);
   if (refused) return Promise.reject(new Error(refused));
+  const sub = args[subcommandAt(args)];
   return prepared(root, args, env, { lazyFetch, timeout }).then((call) => new Promise((fulfil, reject) => {
-    if (call.unread) return reject(new Error(`git ${args[0]}: ${unreadConfig(call)}`));
-    if (signal?.aborted) return reject(new Error(`git ${args[0]} stopped by its caller`));
+    if (call.unread) return reject(new Error(`git ${sub}: ${unreadConfig(call)}`));
+    if (signal?.aborted) return reject(new Error(`git ${sub} stopped by its caller`));
 
     const child = spawn("git", call.args, {
       cwd: root,
@@ -583,13 +590,13 @@ export function gitStreamed(
       // string limit and throws from a place no caller can catch, which is the
       // failure streaming exists to avoid.
       if (buf.length > maxFieldBytes) {
-        return fail(new Error(`git ${args[0]} sent one record past ${maxFieldBytes} bytes`));
+        return fail(new Error(`git ${sub} sent one record past ${maxFieldBytes} bytes`));
       }
       rest = buf;
     });
 
-    child.on("error", (err) => fail(new Error(`git ${args[0]} failed: ${err.message}`)));
-    signal?.addEventListener("abort", () => fail(new Error(`git ${args[0]} stopped by its caller`)), { once: true });
+    child.on("error", (err) => fail(new Error(`git ${sub} failed: ${err.message}`)));
+    signal?.addEventListener("abort", () => fail(new Error(`git ${sub} stopped by its caller`)), { once: true });
 
     child.on("close", (code, exitSignal) => {
       if (settled) return;
@@ -602,12 +609,12 @@ export function gitStreamed(
       // A caller of a stream has already been handed part of the output, so
       // the only way to say "that was not the answer" is to refuse the whole
       // read (F13, F15).
-      if (code !== 0) return fail(new Error(`git ${args[0]} exited ${exitSignal || code}: ${stderr.trim()}`));
+      if (code !== 0) return fail(new Error(`git ${sub} exited ${exitSignal || code}: ${stderr.trim()}`));
       // Whether a leftover is the final record or a cut-off one is a fact about
       // the command, not about the caller: `ls-files -z` terminates every entry
       // and `log --format=` terminates none of them.
       if (rest.length) {
-        if (terminated) return fail(new Error(`git ${args[0]} output ended mid-record`));
+        if (terminated) return fail(new Error(`git ${sub} output ended mid-record`));
         // Guarded for the same reason the record loop is, and in the one branch
         // that runs after the child has gone: an escaping throw is an uncaught
         // exception beside a promise that never settles.
