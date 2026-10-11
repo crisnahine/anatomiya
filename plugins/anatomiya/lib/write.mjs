@@ -1,6 +1,7 @@
 import { lstatSync, mkdirSync, renameSync, rmdirSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
+import { claimsIn } from "./cochange.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, recordBytes, tooLargeSentence, tooLargeToPutBack, writePair, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
@@ -374,7 +375,7 @@ function renderTarget(target, laid, described, files, claudeFiles = overviewFile
   if (laid.names.length === 0) return bodies;
   bodies.set(overviewName(target), renderOverview(described, overviewFiles(laid, files), target, claudeFiles));
   for (const a of laid.filed) {
-    const body = renderArea(a, target);
+    const body = renderArea(a, target, claimsIn(described.layout?.cochange, a.path));
     // The name was planned off the same question, so this is two answers to it.
     if (body === null) throw new Error(`${a.path} has no pattern ${target.reader} can be given, so its file could not be written`);
     bodies.set(areaName(target, a.id), body);
