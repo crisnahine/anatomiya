@@ -252,7 +252,7 @@ file it rejects is counted on a line of its own, and the line says which two thi
 `82 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar
 does not cover; the files may be fine.` That is ktor. A reading of its 82 files found no syntax error in any; no Kotlin compiler was run on them.
 On three repositories per language, the largest share of a repository's lines left unread is 0.00%
-for Python (one file in django, a fixture broken on purpose), 0.02% for PHP, none for Go and Rust,
+for Python (one file in django, a fixture broken on purpose), 0.02% for PHP, 0.00% for Go and Rust,
 0.97% for Java, 4.35% for C# and 7.88% for Kotlin.
 
 The C# grammar reads `#if` around whole statements and whole members and nowhere else, and real C#
@@ -854,7 +854,7 @@ whatever the provenance method says, and two seeded entries carry one set by han
 `interface_prefix` and `type_alias_prefix` hold the class `none`, since no prefix is what the model
 writes, so a repository that prefixes nothing prints counts for them though neither was measured.
 
-Each entry names the engine it was measured at, and two engines never merge into one tally. The 24
+Each entry names the engine it was measured at, and entries from different engines never merge into one tally. The 24
 measured entries shipped so far say `claude-opus-5` and name no effort, which is the engine the
 harness ran before it pinned one; it now runs `claude-opus-5[1m]` at `medium`. So a fresh run
 refuses all 24, says so in one line, and leaves them standing. They stay the older engine's answer
