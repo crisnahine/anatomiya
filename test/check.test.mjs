@@ -4763,6 +4763,49 @@ test("a slot whose area file names the files it was asked of says the same in it
   assert.deepEqual(found.map((f) => [f.severity, f.claim]), [["NIT", said]]);
 });
 
+test("a slot counted over named kinds of file raises nothing on a file of another kind, stated or not", async (t) => {
+  // The claim was never counted over a `.ts` file, and quoting it there
+  // printed a scope clause that excluded the file it was on.
+  const swallowed = "try {\n  run();\n} catch (err) {}\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/keep.js", "export const keep = 1;\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/added.js", swallowed);
+    write("src/added_ts.ts", swallowed);
+    commit("add");
+  });
+  for (const [severity, over] of [
+    ["FIX", {}],
+    ["NIT", { states: null, directive: false, gate: "ratio", conforming: 50 }],
+  ]) {
+    facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ scope: [".js"], ...over })] });
+
+    const r = await check(dir);
+
+    assertExamined(r, "src/added_ts.ts");
+    assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.severity, f.path]), [[severity, "src/added.js"]]);
+  }
+});
+
+test("a file name is not judged by a naming slot counted over other kinds of file", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/keep-me.js", "export const a = 1;\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.js", "export const b = 1;\n");
+    write("src/orderTable.ts", "export const c = 1;\n");
+    commit("add");
+  });
+  for (const over of [{}, { states: null, directive: false, gate: "ratio", conforming: 50 }]) {
+    facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ key: "file_naming_case", learned: "kebab-case", scope: [".js"], ...over })] });
+
+    const found = forKey(await check(dir), "file_naming_case");
+
+    assert.deepEqual(found.map((f) => f.path), ["src/orderList.js"]);
+  }
+});
+
 test("a helper in a directory of components is not judged by the components' naming class", async (t) => {
   // The map learned PascalCase over the files that hold JSX. A camelCase helper
   // beside them expresses no opinion about that convention, and judging it by

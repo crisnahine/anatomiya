@@ -208,6 +208,10 @@ version, with times and build digests masked
   slot names. 30 findings over a forged record of a million names took 208 seconds. `scope` is
   kept and read only as at most 16 extensions or file names, and its clause is built once per area
   and slot.
+- `check` held a `.ts` file to a claim counted over `.js` files and quoted the clause that left it
+  out: `module-level bindings are const, in .js files: no convention.` on `added_ts.ts`. A slot
+  whose scope names the kinds it was counted over now raises nothing on a file of another kind,
+  stated or not.
 
 ## [0.14.0] - 2026-10-11
 
