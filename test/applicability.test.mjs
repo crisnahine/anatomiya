@@ -38,7 +38,7 @@ import { RUBY_ERROR } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
  * Going at `dim.run` directly would test a function no caller calls that way.
  */
 const WITNESSES = {
-  // --- dimensions.mjs ---
+  // --- dimensions-base.mjs ---
   swallowed_error: {
     lang: "js",
     applicable: [`try { a() } catch (e) { }`, `try { a() } catch { }`],

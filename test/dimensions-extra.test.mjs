@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { EXTRA_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
-import { dimensionsFor, ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
 
 const dim = (key) => EXTRA_DIMENSIONS.find((d) => d.key === key);
 
@@ -372,15 +373,15 @@ test("keys are unique, so a reducer can key counts by them", () => {
 test("language selection returns only dimensions claiming that language", () => {
   // Through the one registry the product selects with. A second selector here
   // would let this file pass while the scan picked a different set.
-  const ruby = dimensionsFor(["ruby"]).map((d) => d.key);
+  const ruby = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const d of EXTRA_DIMENSIONS) assert.ok(!ruby.includes(d.key), `${d.key} is a JS or TS claim`);
 
-  const js = dimensionsFor(["js"]).map((d) => d.key);
+  const js = dimensionsFor(["js"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const d of EXTRA_DIMENSIONS) assert.ok(js.includes(d.key), `${d.key} is selected for js`);
 });
 
 test("an area with no languages selects nothing", () => {
-  assert.deepEqual(dimensionsFor([]), []);
+  assert.deepEqual(dimensionsFor([], { rows: ALL_DIMENSIONS }), []);
 });
 
 test("a dimension whose inverse loses a capability may not state that inverse", () => {
