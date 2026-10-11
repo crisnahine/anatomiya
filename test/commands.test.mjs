@@ -410,6 +410,34 @@ test("a pin under the ceiling parses nothing", async (t) => {
   assert.equal(pin.areas.length, 1);
 });
 
+test("a pin refuses a commit or an edit that lands while the ceiling's parse runs", async (t) => {
+  // 122 areas over a ceiling of 120, so the pin parses before it partitions.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  for (let a = 0; a < 121; a++) {
+    mkdirSync(join(dir, `m${a}`));
+    for (let i = 0; i < 3; i++) writeFileSync(join(dir, `m${a}`, `f${i}.ts`), `export const a${i} = 1\n`);
+  }
+  git("add", "-A");
+  git("commit", "-qm", "at the ceiling");
+  const during = (land) => async () => {
+    land();
+    return { records: new Map() };
+  };
+  const cases = [
+    ["a commit", /HEAD moved from [0-9a-f]+ while the pin was being taken/, () => {
+      writeFileSync(join(dir, "m0", "f0.ts"), "export const a0 = 2\n");
+      git("commit", "-qam", "during the parse");
+    }],
+    ["an edit", /commit or stash/, () => writeFileSync(join(dir, "m0", "f1.ts"), "export const a1 = 2\n")],
+  ];
+  for (const [name, refusal, land] of cases) {
+    await assert.rejects(() => runPin(dir, { parseFiles: during(land) }), refusal, name);
+    assert.equal(existsSync(join(dir, PIN_PATH)), false, name);
+    git("reset", "-q", "--hard");
+  }
+});
+
 test("a dry-run pin writes nothing", async (t) => {
   const dir = repo(t);
 

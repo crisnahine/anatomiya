@@ -13,11 +13,11 @@ import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 import { factsJson } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
-import { areaId, globsReach } from "../plugins/anatomiya/lib/areas.mjs";
+import { areaId, discover, globsReach } from "../plugins/anatomiya/lib/areas.mjs";
 import { echoContext, holdsTestIn, ownLayout } from "../plugins/anatomiya/lib/hook.mjs";
 import { isTestPath, noticeFor } from "../plugins/anatomiya/lib/precedent.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
-import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
+import { buildPin, PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { defaultPoolSize } from "../plugins/anatomiya/lib/pool.mjs";
@@ -2055,4 +2055,101 @@ test("at the ceiling, an area held for a language this run could not read keeps 
   assert.deepEqual(result.held.map((a) => a.path), ["crate/src"]);
   assert.equal(result.areas.length + result.held.length, 120);
   assert.equal(result.corpus.orphaned, 3);
+});
+
+/**
+ * At the ceiling of 120 under a host: `pkg` and 119 three-file areas inside it, a
+ * crate that states nothing, and a Python area that counts.
+ */
+function hostedCeilingRepo(t) {
+  return repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 3; i++) write(`pkg/p${i}.ts`, moduleSource(i));
+    for (let a = 0; a < 119; a++) for (let i = 0; i < 3; i++) write(`pkg/m${String(a).padStart(3, "0")}/f${i}.ts`, moduleSource(i));
+    for (let i = 0; i < 20; i++) write(`crate/src/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
+    for (let i = 0; i < 3; i++) write(`py/m${i}.py`, `def run${i}(a):\n    return a\n\n\nclass Job${i}:\n    pass\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+const statuses = (result) => {
+  const out = {};
+  for (const a of result.areas) out[a.baseline.status] = (out[a.baseline.status] ?? 0) + 1;
+  return out;
+};
+
+test("under a pin at the ceiling, an area that stops counting gives no place back and moves no area", async (t) => {
+  const dir = hostedCeilingRepo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
+  await runPin(dir);
+  const before = await scan(dir);
+  assert.ok(before.areas.some((a) => a.path === "py"), "the Python area counts at the pin");
+  assert.deepEqual(statuses(before), { ok: before.areas.length });
+
+  for (let i = 0; i < 3; i++) writeFileSync(join(dir, "py", `m${i}.py`), `X${i} = 1\n`);
+  git("commit", "-qam", "count nothing");
+  const after = await scan(dir);
+
+  assert.ok(!after.areas.some((a) => a.path === "py"), "the Python area now counts nothing");
+  assert.deepEqual(statuses(after), { ok: after.areas.length });
+  assert.deepEqual(after.areas.map((a) => a.path), before.areas.map((a) => a.path).filter((p) => p !== "py"));
+
+  // A pin whose commit is gone still names the partition the scan folds to.
+  const pinFile = join(dir, PIN_PATH);
+  writeFileSync(pinFile, JSON.stringify({ ...JSON.parse(readFileSync(pinFile, "utf8")), sha: "0".repeat(40) }));
+  const gone = await scan(dir);
+  assert.equal(gone.baseline.status, "unreachable");
+  assert.deepEqual(gone.areas.map((a) => a.path), after.areas.map((a) => a.path));
+});
+
+test("a pin that names no ceiling is read at the plain ceiling, so one taken before the give-back moves no area", async (t) => {
+  const dir = hostedCeilingRepo(t);
+  const { files } = await collectCorpus(dir);
+  const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
+  // What a pin from a build with no give-back holds: the plain fold.
+  const plain = discover(files);
+  assert.equal(plain.length, 120);
+  writePin(dir, buildPin(plain, { sha, corpus: files.length }));
+
+  const result = await scan(dir);
+  assert.equal(result.baseline.status, "ok");
+  assert.deepEqual(statuses(result), { ok: result.areas.length });
+  assert.ok(!result.areas.some((a) => a.path === "pkg/m000"), "the area folded at the pin stays folded");
+});
+
+test("an area's answer is asked again at each size a fold gives it", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 3; i++) write(`h/x${i}.py`, `X${i} = 1\n`);
+    for (let i = 0; i < 3; i++) write(`h/c/m${i}.py`, `def run${i}(a):\n    return a\n\n\nclass Job${i}:\n    pass\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const { files } = await collectCorpus(dir);
+  const { records } = await parseAll(files, { frameworks: [] });
+  const countsNothing = countsNothingIn(files, records, []);
+  const host = (fs) => ({ path: "h", langs: ["python"], files: fs, fileCount: fs.length });
+
+  // The host as it stands with its child folded in, then with the child given back.
+  assert.equal(countsNothing(host(files)), false, "the child's files count");
+  assert.equal(countsNothing(host(files.filter((f) => !f.rel.startsWith("h/c/")))), true);
+});
+
+test("a pin counts an area whose only row is a pairing, as the scan does", needsRuby, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let a = 0; a < 119; a++) for (let i = 0; i < 3; i++) write(`m${String(a).padStart(3, "0")}/f${i}.ts`, moduleSource(i));
+    for (let i = 0; i < 20; i++) write(`crate/src/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
+    for (let i = 0; i < 4; i++) write(`app/models/model${i}.rb`, `class Model${i}\nend\n`);
+    for (let i = 0; i < 4; i++) write(`spec/models/model${i}_spec.rb`, `RSpec.describe Model${i} do\n  it "works" do\n    expect(1).to eq(1)\n  end\nend\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const first = await scan(dir);
+  const models = first.areas.find((a) => a.path === "app/models");
+  assert.deepEqual(models?.dimensions.map((d) => d.key), ["model_spec"], "the fixture's model area counts through its pairing alone");
+
+  const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
+  const { pin } = await runPin(dir);
+  assert.deepEqual(pin.areas.map((a) => a.path).filter((p) => p !== "crate/src"), first.areas.map((a) => a.path));
 });

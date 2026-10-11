@@ -639,6 +639,9 @@ export function discover(files, {
   assignGlobs(all, files, uncounted);
   // Whether the ceiling folded any area, which is when a pin has to parse.
   all.folded = capped.orphaned !== undefined;
+  // The ceiling a give-back settled on, or null where it gave back nothing: a
+  // fold stops at exactly its bound, so that ceiling is the count it returned.
+  all.ceiling = all.length > maxAreas ? all.length : null;
   all.orphaned = orphaned.concat(folded);
   return all;
 }

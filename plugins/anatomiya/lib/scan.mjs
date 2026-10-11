@@ -126,12 +126,17 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // it from today's file count re-partitions the repository on one added file
   // and every area then reads as a population change against a pin that knew
   // the old one.
+  //
+  // Under a pin the ceiling is the one it settled on and nothing is given back:
+  // the give-back reads file content, so an edit that adds no file would move
+  // areas against the pin. A pin that names none folds at the plain ceiling.
   const partitionSize = state.partitionSize ?? files.length;
+  const pinned = state.status === "ok" || state.status === "unreachable";
   const areas = discover(files, {
     minFiles: areaFloor(partitionSize),
-    maxAreas: areaCeiling(partitionSize),
+    maxAreas: state.ceiling ?? areaCeiling(partitionSize),
     uncounted,
-    countsNothing: countsNothingIn(files, head.records, frameworks),
+    countsNothing: pinned ? null : countsNothingIn(files, head.records, frameworks),
   });
 
   const authors = await authorsRun;
