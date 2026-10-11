@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import { locator } from "../lib/encode.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
 import { unsupportedNode } from "../lib/readiness.mjs";
+import { parseTargets } from "../lib/targets.mjs";
 
 const USAGE = [
-  "usage: anatomiya scan   [path] [--dry-run] [--format <name>]",
+  "usage: anatomiya scan   [path] [--dry-run] [--targets <list>] [--format <name>]",
   "       anatomiya check  [path] [--base <ref>] [--format <name>]",
   "       anatomiya pin    [path] [--dry-run] [--format <name>]",
   "       anatomiya doctor",
@@ -14,25 +16,49 @@ const USAGE = [
   "",
   "scan runs the typescript checker on its own where it can resolve types: the",
   "optional typescript dependency is installed, the repository's own",
-  "dependencies are on disk inside it, and it has a root tsconfig.json or a",
-  "TypeScript source file that is not a declaration file. It measured about 5x",
-  "a plain scan on a 3,800-file repository and about 10x on a 2,600-file one.",
-  "check never runs it, because the checker is whole-program and a check would",
-  "have to build the corpus twice.",
+  "dependencies are on disk inside it, and it has a root tsconfig.json, a root",
+  "tsconfig.base.json where there is none, or a TypeScript source file that is",
+  "not a declaration file. It measured 5.6 to 5.7 seconds against 1.3 without",
+  "it on a 3,347-file repository, about 4.5 times. check never runs it,",
+  "because the checker is whole-program and a check would have to build the",
+  "corpus twice. A background refresh does not run it where the last run",
+  "measured it as degraded and this version, the root config and node_modules",
+  "(its size and time, and its install record's) are unchanged; a scan you run",
+  "always does. After a failed run of the checker the next refresh runs it",
+  "again, and from the second failed run in a row under those it does not. An",
+  "edit to a config the root config extends or references does not end a",
+  "carried verdict.",
   "",
   "--format is text by default. json prints the same answer as a record, for a",
   "reader that is not a terminal. github prints one annotation per finding and",
   "is a check option only, since nothing else here has findings. doctor and",
   "setup print lines for a person to read and take neither.",
   "",
+  "--targets is a scan option: a comma-separated list of cursor and copilot.",
+  "The same map is then also written under .cursor/rules for Cursor and under",
+  ".github/instructions for GitHub Copilot. A target stays on for every later",
+  "scan while its anatomiya-overview file is there, until --targets names a",
+  "set without it. --targets claude turns the others off and removes what",
+  "this tool wrote there.",
+  "",
   "[path] picks the repository, not a subtree: every command covers the whole",
   "repository the path is in, and scan prints the root it resolved to. doctor",
-  "and setup take no path: they answer about this installation.",
+  "and setup take no path: they answer about this installation. doctor also",
+  "prints a line for each Cursor or Copilot target that is on in the",
+  "repository it is run in.",
   "",
-  "setup installs the node-hosted engine's dependencies in the plugin's own",
-  "directory. It is the only command that installs anything and the only one",
-  "that reaches a package registry, and nothing else here runs it. On Windows",
-  "it prints the command to run by hand instead.",
+  "doctor prints a line for node, one for each engine (oxc, prism and",
+  "tree-sitter) and one for each package beside them: flow-remove-types and",
+  "the optional typescript. The tree-sitter line counts the grammar files that",
+  "load and are the ones this plugin shipped (grammars: 7 of 7). tree-sitter",
+  "reads Python, PHP, Go, Java, C#, Rust and Kotlin.",
+  "",
+  "setup installs the packages the node-hosted engines load, in the plugin's",
+  "own directory. It is the only command that installs anything and the only",
+  "one that reaches a package registry, and nothing else here runs it. On",
+  "Windows it prints the command to run by hand instead. A grammar file is no",
+  "package: one that does not load, or is not the file this plugin shipped, is",
+  "fixed by reinstalling the plugin.",
 ].join("\n");
 
 /**
@@ -52,7 +78,7 @@ const COMMANDS = {
       const { runScan } = await import("../lib/commands.mjs");
       const { noteScan } = await import("../lib/refresh-run.mjs");
       const { scanJson, scanLines } = await import("../lib/summary.mjs");
-      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun });
+      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun, targets: opts.targets });
       // A scan run by hand is the refresh's answer too: it clears a failed
       // refresh the echo is reporting, and the next refresh has nothing to redo.
       if (!opts.dryRun) await noteScan(result.root);
@@ -98,7 +124,7 @@ const COMMANDS = {
       // Exit 0 whichever way it came out: what it found is the report, and a
       // non-zero exit would read as a probe that could not run.
       const { runDoctor } = await import("../lib/commands.mjs");
-      const { lines } = await runDoctor();
+      const { lines } = await runDoctor({ cwd: sessionDir(true) });
       console.log(lines.join("\n"));
     },
   },
@@ -191,6 +217,17 @@ function fail(message, code = 2) {
 }
 
 /**
+ * Refuse the arguments in one sentence, with the usage under it.
+ *
+ * The sentence quotes what the caller typed, so it is printed with every
+ * unprintable character as a space: an argument holding an escape sequence or
+ * a line break otherwise reaches the terminal as one, under this tool's name.
+ */
+function refuse(sentence) {
+  fail(`${locator(sentence)}\n${USAGE}`);
+}
+
+/**
  * The directory this process is in, or nothing where it has been removed under it.
  *
  * `process.cwd()` refuses with ENOENT once the directory a session started in is
@@ -227,47 +264,59 @@ function parseArgs(argv) {
   // names the wrong fix. A mistyped option was already refused by name.
   if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") return { cmd: null, help: true };
   if (!Object.hasOwn(COMMANDS, argv[0])) {
-    if (argv[0].startsWith("-")) fail(`no command given, and an option cannot stand in for one: ${argv[0]}\n${USAGE}`);
-    fail(`unknown command: ${argv[0]}\n${USAGE}`);
+    if (argv[0].startsWith("-")) refuse(`no command given, and an option cannot stand in for one: ${argv[0]}`);
+    refuse(`unknown command: ${argv[0]}`);
   }
   const cmd = argv.shift();
   const spec = COMMANDS[cmd];
-  const opts = { cmd, path: null, dryRun: false, baseRef: null, format: "text" };
+  const opts = { cmd, path: null, dryRun: false, baseRef: null, format: "text", targets: null };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") return { ...opts, help: true };
     if (arg === "--deep") {
-      fail(`--deep is not an option: scan runs the type checker on its own where it can resolve types\n${USAGE}`);
+      refuse("--deep is not an option: scan runs the type checker on its own where it can resolve types");
     }
     if (arg === "--dry-run") {
-      if (!spec.dryRun) fail(`${cmd} takes no --dry-run option\n${USAGE}`);
+      if (!spec.dryRun) refuse(`${cmd} takes no --dry-run option`);
       opts.dryRun = true;
       continue;
     }
     if (arg === "--base" || arg.startsWith("--base=")) {
-      if (cmd !== "check") fail(`${cmd} takes no --base option\n${USAGE}`);
+      if (cmd !== "check") refuse(`${cmd} takes no --base option`);
       const value = arg === "--base" ? argv[++i] : arg.slice("--base=".length);
-      if (!value || value.startsWith("-")) fail(`--base needs a ref\n${USAGE}`);
+      if (!value || value.startsWith("-")) refuse("--base needs a ref");
       opts.baseRef = value;
+      continue;
+    }
+    if (arg === "--targets" || arg.startsWith("--targets=")) {
+      if (cmd !== "scan") refuse(`${cmd} takes no --targets option`);
+      if (opts.targets !== null) refuse("--targets may be given once");
+      const value = arg === "--targets" ? argv[++i] : arg.slice("--targets=".length);
+      try {
+        // An option where the list belongs is a list nobody gave.
+        opts.targets = parseTargets(value?.startsWith("-") ? "" : value);
+      } catch (err) {
+        refuse(err.message);
+      }
       continue;
     }
     if (arg === "--format" || arg.startsWith("--format=")) {
       const value = arg === "--format" ? argv[++i] : arg.slice("--format=".length);
-      if (!value || value.startsWith("-")) fail(`--format needs a name\n${USAGE}`);
-      if (!FORMATS.has(value)) fail(`unknown format: ${value}\n${USAGE}`);
+      if (!value || value.startsWith("-")) refuse("--format needs a name");
+      if (!FORMATS.has(value)) refuse(`unknown format: ${value}`);
       // Refused rather than accepted and answered in text: a format that was
       // asked for and quietly not used reads as a run whose output shape nobody
       // has to check.
       if (!spec.formats.includes(value)) {
-        fail(`${cmd} does not answer in ${value}: it answers in ${spec.formats.join(" and ")}\n${USAGE}`);
+        refuse(`${cmd} does not answer in ${value}: it answers in ${spec.formats.join(" and ")}`);
       }
       opts.format = value;
       continue;
     }
-    if (arg.startsWith("-")) fail(`unknown option: ${arg}\n${USAGE}`);
-    if (!spec.path) fail(`${cmd} takes no path: it answers about this installation\n${USAGE}`);
-    if (opts.path !== null) fail(`only one path may be given\n${USAGE}`);
+    if (arg.startsWith("-")) refuse(`unknown option: ${arg}`);
+    if (!spec.path) refuse(`${cmd} takes no path: it answers about this installation`);
+    if (opts.path !== null) refuse("only one path may be given");
     opts.path = arg;
   }
 
@@ -315,7 +364,10 @@ if (opts.help) {
       // A missing repository, an unreadable tree or a git that will not run are
       // all ordinary conditions here, and a stack trace is not what the caller
       // needs.
-      console.error(`anatomiya: ${err && err.message ? err.message : String(err)}`);
+      // The sentence can quote a path or a ref the caller typed, so each line the
+      // tool wrote is printed as `refuse` prints its own.
+      const lines = err?.lines ?? [err && err.message ? err.message : String(err)];
+      console.error(`anatomiya: ${lines.map(locator).join("\n")}`);
       process.exitCode = 1;
     }
   }

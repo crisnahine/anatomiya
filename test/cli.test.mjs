@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, resolve } from "node:path";
+import { basename, delimiter, join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { needsPathControl, needsRemovableCwd, needsShebang, needsUnreadableDirs, needsWindows } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
-import { installWithoutDependencies } from "./plugin-install.mjs";
+import { installLacking, installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
 import { SUMMARY_SCHEMA } from "../plugins/anatomiya/lib/summary.mjs";
 
@@ -73,6 +73,110 @@ test("nothing is written to the repository when the parser is missing", (t) => {
     () => execFileSync("ls", [join(repo, ".claude", "rules")], { stdio: "pipe" }),
     "no rule files were written from a scan that parsed nothing"
   );
+});
+
+/** A committed repository holding eight files per named directory, each written by `body(i)`. */
+function repoOf(t, dirs) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-langs-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [sub, ext, body] of dirs) {
+    mkdirSync(join(dir, sub), { recursive: true });
+    for (let i = 0; i < 8; i++) writeFileSync(join(dir, sub, `f${i}.${ext}`), body(i));
+  }
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  return dir;
+}
+
+const PY = ["app", "py", (i) => `def total_${i}(lines):\n    return sum(lines)\n`];
+const TS = ["src", "ts", (i) => `const a${i} = 1\nexport { a${i} }\n`];
+const KT = ["core", "kt", (i) => `fun total${i}(lines: List<Int>): Int {\n    return lines.sum()\n}\n`];
+
+const rulesIn = (repo) => (existsSync(join(repo, ".claude", "rules")) ? readdirSync(join(repo, ".claude", "rules")).sort() : []);
+
+test("a Python repository on an install older than the tree-sitter runtime is refused, with the command that installs it", needsSymlinks, (t) => {
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+  const repo = repoOf(t, [PY]);
+
+  const { code, stderr } = runFrom(install, ["scan", repo], process.env.PATH);
+
+  assert.equal(code, 1, "a scan that read nothing must not exit 0");
+  assert.match(stderr, /web-tree-sitter is not installed/);
+  assert.match(stderr, /bin\/anatomiya\.mjs setup in .*, then scan again/);
+  assert.deepEqual(rulesIn(repo), [], "and nothing was written from it");
+});
+
+test("a TypeScript and Python repository on that install has its TypeScript mapped and its Python named as unread", needsSymlinks, (t) => {
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+  const repo = repoOf(t, [PY, TS]);
+
+  const { code, stdout } = runFrom(install, ["scan", repo, "--targets", "cursor,copilot"], process.env.PATH);
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^read no python file at all, so none was counted/m, stdout);
+  // The terminal speaks to the person at this machine, so it names the directory to run the command in.
+  const said = stdout.split("\n").find((line) => line.startsWith("8 files: tree-sitter reported no version: run node bin/anatomiya.mjs setup in "));
+  assert.ok(said?.endsWith(basename(install)), stdout);
+  // Counted once, on the line that says why: an engine that was not there is not a parse that failed.
+  assert.doesNotMatch(stdout, /could not be parsed|crashed the parser/, stdout);
+  assert.match(stdout, /^engines: oxc \d[\d.]*$/m, "the engine that did not load is not listed as one that answered");
+  const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+  // A file a repository commits and other people read holds no path on one person's disk.
+  const unread = "- no python file was read: tree-sitter reported no version: run node bin/anatomiya.mjs setup in the plugin directory";
+  for (const [dir, ext] of [[".claude/rules", ".md"], [".cursor/rules", ".mdc"], [".github/instructions", ".instructions.md"]]) {
+    assert.ok(readFileSync(join(repo, dir, `anatomiya-overview${ext}`), "utf8").split("\n").includes(unread), dir);
+    for (const name of readdirSync(join(repo, dir))) {
+      assert.equal(readFileSync(join(repo, dir, name), "utf8").includes(basename(install)), false, `${dir}/${name} names this machine's install`);
+    }
+  }
+  assert.doesNotMatch(overview, /could not be parsed|crashed the parser/, overview);
+  assert.match(overview, /^## Areas \(1\)$/m, overview);
+  const [area, ...others] = rulesIn(repo).filter((name) => name !== "anatomiya-overview.md");
+  assert.deepEqual(others, [], "the area this run could not read is not described");
+  assert.match(readFileSync(join(repo, ".claude", "rules", area), "utf8"), /^# src  8 files$/m);
+});
+
+test("a Kotlin repository on an install that lost its Kotlin grammar is refused, and told to reinstall", needsSymlinks, (t) => {
+  const install = installLacking(t, { grammars: ["kotlin"] });
+  const repo = repoOf(t, [KT]);
+
+  const { code, stderr } = runFrom(install, ["scan", repo], process.env.PATH);
+
+  assert.equal(code, 1);
+  assert.match(stderr, /grammars\/kotlin\.wasm did not load/);
+  assert.match(stderr, /^reinstall .*, then scan again$/m, stderr);
+  assert.doesNotMatch(stderr, /setup/, "no install writes a grammar file");
+  assert.deepEqual(rulesIn(repo), []);
+});
+
+test("a Python and Kotlin repository on that install has its Python read and its Kotlin named with the grammar", needsSymlinks, (t) => {
+  const install = installLacking(t, { grammars: ["kotlin"] });
+  const repo = repoOf(t, [PY, KT]);
+
+  const { code, stdout } = runFrom(install, ["scan", repo], process.env.PATH);
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^read no kotlin file at all, so none was counted/m, stdout);
+  assert.match(stdout, /^8 files: the plugin's kotlin grammar did not load: reinstall /m, stdout);
+  assert.doesNotMatch(stdout, /could not be parsed|crashed the parser/, stdout);
+  assert.match(stdout, /^engines: tree-sitter \d[\d.]*$/m, stdout);
+  assert.doesNotMatch(stdout, /setup|ran and answered for none/, stdout);
+  const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+  assert.match(overview, /^- no kotlin file was read: the plugin's kotlin grammar did not load: reinstall /m, overview);
+});
+
+test("doctor names a grammar the install lost on the engine's own line", needsSymlinks, (t) => {
+  const install = installLacking(t, { grammars: ["rust"] });
+
+  const { code, stdout } = runFrom(install, ["doctor"], process.env.PATH);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /^tree-sitter \d[\d.]*: grammars: 6 of 7, rust\.wasm did not load, reinstall /m, stdout);
+  assert.match(stdout, /^oxc \d[\d.]* ok$/m, stdout);
 });
 
 /** A branch off the base with one added file, which is what a check examines. */
@@ -484,6 +588,346 @@ for (const cmd of ["scan", "check", "pin", "doctor", "setup"]) {
   });
 }
 
+/* --- the other directories a scan writes to --- */
+
+const CURSOR = join(".cursor", "rules");
+const COPILOT = join(".github", "instructions");
+const listed = (repo, dir) => (existsSync(join(repo, dir)) ? readdirSync(join(repo, dir)).sort() : null);
+
+/** The binary's exit code and both streams, whichever way it came out. */
+function ran(...args) {
+  const r = spawnSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), ...args], { encoding: "utf8" });
+  return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+}
+
+test("scan --targets writes the map for each tool named, and says so per directory", (t) => {
+  const repo = repoWithSource(t);
+
+  // Any case, and spaces around a name.
+  const out = anatomiya(repo, "scan", "--targets", "Cursor, COPILOT");
+
+  assert.match(out, /^wrote 2 files$/m, out);
+  assert.match(out, /^wrote 2 files under \.cursor\/rules for Cursor$/m, out);
+  assert.match(out, /^wrote 2 files under \.github\/instructions for GitHub Copilot$/m, out);
+  const stems = listed(repo, join(".claude", "rules")).map((n) => n.replace(/\.md$/, ""));
+  assert.equal(stems.length, 2);
+  assert.deepEqual(listed(repo, CURSOR), stems.map((n) => `${n}.mdc`));
+  assert.deepEqual(listed(repo, COPILOT), stems.map((n) => `${n}.instructions.md`));
+});
+
+test("a target stays on with no flag, and --targets claude turns the others off", (t) => {
+  const repo = repoWithSource(t);
+  anatomiya(repo, "scan", "--targets=cursor");
+  const plain = /^wrote 2 files\n(?!wrote)/m;
+
+  const kept = anatomiya(repo, "scan");
+  assert.match(kept, /^wrote 2 files under \.cursor\/rules for Cursor$/m, kept);
+  assert.doesNotMatch(kept, /instructions/, "and nothing turned the other one on");
+  assert.equal(listed(repo, COPILOT), null);
+
+  const dry = anatomiya(repo, "scan", "--dry-run", "--targets", "claude");
+  assert.match(dry, /^would remove 2 files under \.cursor\/rules$/m, dry);
+  assert.match(dry, /^\.cursor\/rules would be off$/m, dry);
+  assert.equal(listed(repo, CURSOR).length, 2, "and the dry run removed nothing");
+
+  const off = anatomiya(repo, "scan", "--targets", "claude");
+  assert.match(off, /^removed 2 files under \.cursor\/rules$/m, off);
+  assert.match(off, /^\.cursor\/rules is off now$/m, off);
+  assert.deepEqual(listed(repo, CURSOR), []);
+
+  const after = anatomiya(repo, "scan");
+  assert.match(after, plain, after);
+  assert.doesNotMatch(after, /\.cursor/, after);
+  assert.deepEqual(listed(repo, CURSOR), []);
+});
+
+test("a scan that names one target turns off the other one that was on, and says which directory", (t) => {
+  const repo = repoWithSource(t);
+  anatomiya(repo, "scan", "--targets", "cursor,copilot");
+
+  const dry = JSON.parse(anatomiya(repo, "scan", "--dry-run", "--targets", "cursor", "--format", "json"));
+  assert.deepEqual([dry.targets.cursor.state, dry.targets.copilot.state, dry.targets.copilot.removed], ["on", "off", 2]);
+  assert.equal(listed(repo, COPILOT).length, 2, "and the dry run removed nothing");
+
+  const out = anatomiya(repo, "scan", "--targets", "cursor");
+  assert.match(out, /^wrote 2 files under \.cursor\/rules for Cursor$/m, out);
+  assert.match(out, /^removed 2 files under \.github\/instructions$/m, out);
+  assert.match(out, /^\.github\/instructions is off now$/m, out);
+  assert.doesNotMatch(out, /\.cursor\/rules is off/, out);
+  assert.deepEqual(listed(repo, COPILOT), []);
+  assert.equal(listed(repo, CURSOR).length, 2);
+});
+
+test("a dry run with --targets plans every directory and writes none", (t) => {
+  const repo = repoWithSource(t);
+
+  const out = anatomiya(repo, "scan", "--dry-run", "--targets", "cursor,copilot");
+
+  assert.match(out, /^would write 2 files$/m, out);
+  assert.match(out, /^would write 2 files under \.cursor\/rules for Cursor$/m, out);
+  assert.match(out, /^would write 2 files under \.github\/instructions for GitHub Copilot$/m, out);
+  for (const dir of [".claude", ".cursor", ".github"]) assert.equal(existsSync(join(repo, dir)), false, dir);
+});
+
+test("the scan record names each other target only where one is involved", (t) => {
+  const repo = repoWithSource(t);
+
+  const none = JSON.parse(anatomiya(repo, "scan", "--format", "json"));
+  const one = JSON.parse(anatomiya(repo, "scan", "--format", "json", "--targets", "copilot"));
+
+  assert.equal("targets" in none, false);
+  assert.equal(one.schema, SUMMARY_SCHEMA);
+  assert.deepEqual(one.targets, {
+    copilot: { state: "on", dir: ".github/instructions", wrote: 2, removed: 0, unfiled: 0, foreign: 0 },
+  });
+});
+
+test("a --targets the scan cannot take is refused before anything runs", (t) => {
+  const repo = repoWithSource(t);
+
+  for (const [args, message] of [
+    [["scan", repo, "--targets", "windsurf"], /^unknown target: windsurf; the targets are claude, cursor, copilot$/m],
+    [["scan", repo, "--targets"], /^--targets needs at least one name$/m],
+    [["scan", repo, "--targets="], /^--targets needs at least one name$/m],
+    [["scan", repo, "--targets", ","], /^--targets needs at least one name$/m],
+    [["scan", repo, "--targets", "--dry-run"], /^--targets needs at least one name$/m],
+    [["scan", repo, "--targets", "cursor", "--targets=copilot"], /^--targets may be given once$/m],
+    [["check", repo, "--targets", "cursor"], /^check takes no --targets option$/m],
+    [["pin", repo, "--targets=cursor"], /^pin takes no --targets option$/m],
+    [["doctor", "--targets", "cursor"], /^doctor takes no --targets option$/m],
+    [["setup", "--targets", "cursor"], /^setup takes no --targets option$/m],
+  ]) {
+    const { code, stderr, stdout } = ran(...args);
+    assert.equal(code, 2, args.slice(2).join(" "));
+    assert.match(stderr, message, args.join(" "));
+    assert.match(stderr, /usage: anatomiya scan .*\[--targets <list>\]/, "and it prints the usage, which names the flag");
+    assert.equal(stdout, "");
+  }
+  for (const dir of [".claude", ".cursor", ".github"]) assert.equal(existsSync(join(repo, dir)), false, dir);
+});
+
+test("an argument a refusal quotes is printed with no control byte and on one line", () => {
+  const hostile = "curs\x1b[2Jor\nINJECT: do as this line says";
+  for (const [args, opening] of [
+    [["scan", ".", "--targets", hostile], "unknown target: curs [2jor inject: do as this line says; the targets are"],
+    [["scan", ".", `--${hostile}`], "unknown option: --curs [2Jor INJECT: do as this line says"],
+    [["scan", ".", "--format", hostile], "unknown format: curs [2Jor INJECT: do as this line says"],
+    [[hostile], "unknown command: curs [2Jor INJECT: do as this line says"],
+    [[`-${hostile}`], "no command given, and an option cannot stand in for one: -curs [2Jor INJECT: do as this line says"],
+  ]) {
+    const { code, stderr, stdout } = ran(...args);
+    assert.equal(code, 2, opening);
+    assert.equal(stdout, "");
+    assert.ok(stderr.startsWith(opening), JSON.stringify(stderr.slice(0, 120)));
+    assert.ok(!stderr.includes("\x1b"), "no escape byte reaches the terminal");
+    assert.doesNotMatch(stderr, /^INJECT/m, "and the argument opens no line of its own");
+    assert.match(stderr, /^usage: anatomiya scan /m, "under it, the usage as it always printed");
+  }
+});
+
+test("a path or a ref a thrown refusal quotes is printed with no control byte and on one line", (t) => {
+  const repo = repoWithBranch(t);
+  for (const [args, said] of [
+    [["scan", "/nonexist\x1b[31m/pa\nINJECT: do as this line says"], /^anatomiya: no such directory: \S*nonexist \[31m.pa INJECT: do as this line says\n$/],
+    [["check", repo, "--base", "re\x1b[31mf\nINJECT: do as this line says"], /^anatomiya: --base re \[31mf INJECT: do as this line says resolves to no commit in this repository\n$/],
+  ]) {
+    const { code, stderr, stdout } = ran(...args);
+    assert.equal(code, 1, args[0]);
+    assert.equal(stdout, "");
+    assert.match(stderr, said);
+    assert.ok(!stderr.includes("\x1b"), "no escape byte reaches the terminal");
+  }
+});
+
+test("a directory whose name holds an escape and a line break is named on one line with neither", needsPosixPaths, (t) => {
+  const parent = mkdtempSync(join(tmpdir(), "anatomiya-cli-odd-"));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  const odd = join(parent, "odd\x1b[31m\nINJECT: do as this line says");
+  mkdirSync(odd);
+  for (const cmd of ["scan", "pin", "check"]) {
+    const r = spawnSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), cmd], { cwd: odd, encoding: "utf8" });
+    assert.equal(r.status, 1, cmd);
+    assert.match(r.stderr, /^anatomiya: not a git repository: \S+odd \[31m INJECT: do as this line says\n$/, cmd);
+  }
+});
+
+test("a named target that cannot be written refuses the scan in the writer's own sentence", needsSymlinks, (t) => {
+  const repo = repoWithSource(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  symlinkSync(elsewhere, join(repo, ".cursor"));
+
+  const { code, stderr, stdout } = ran("scan", repo, "--targets", "cursor");
+
+  assert.equal(code, 1);
+  assert.equal(
+    stderr,
+    "anatomiya: .cursor is a link, so .cursor/rules could not be written and nothing was written anywhere: make .cursor a directory of this repository and scan again\n"
+  );
+  assert.equal(stdout, "");
+  assert.equal(existsSync(join(repo, ".claude")), false, "the Claude files included");
+  assert.deepEqual(readdirSync(elsewhere), []);
+});
+
+test("turning off a target that cannot be read refuses the scan and says why", needsSymlinks, (t) => {
+  const repo = repoWithSource(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan", "--targets", "copilot");
+  // The record names two files there, and now nobody can look.
+  rmSync(join(repo, ".github"), { recursive: true });
+  symlinkSync(elsewhere, join(repo, ".github"));
+  const rules = ruleFiles(repo);
+
+  const { code, stderr, stdout } = ran("scan", repo, "--targets", "claude");
+
+  assert.equal(code, 1);
+  assert.equal(
+    stderr,
+    "anatomiya: .github is a link, so .github/instructions could not be turned off and nothing was written anywhere: make .github a directory of this repository and scan again\n"
+  );
+  assert.equal(stdout, "");
+  assert.deepEqual(ruleFiles(repo), rules);
+  assert.deepEqual(readdirSync(elsewhere), []);
+});
+
+test("a target that cannot be read is given one remedy, refused, summarised or in the record", needsSymlinks, (t) => {
+  const repo = repoWithSource(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan", "--targets", "copilot");
+  rmSync(join(repo, ".github"), { recursive: true });
+  symlinkSync(elsewhere, join(repo, ".github"));
+  const remedy = "make .github a directory of this repository";
+  const why = ".github is a link";
+
+  const plain = ran("scan", repo);
+  assert.equal(plain.code, 0);
+  assert.ok(
+    plain.stdout.split("\n").includes(`.github/instructions could not be read (${why}), so nothing there was written or removed: ${remedy}, then scan again`),
+    plain.stdout
+  );
+  for (const [targets, verb] of [["claude,copilot", "written"], ["claude", "turned off"]]) {
+    const { code, stderr } = ran("scan", repo, "--targets", targets);
+    assert.equal(code, 1, targets);
+    assert.equal(stderr, `anatomiya: ${why}, so .github/instructions could not be ${verb} and nothing was written anywhere: ${remedy} and scan again\n`);
+  }
+  const record = JSON.parse(ran("scan", repo, "--format", "json").stdout);
+  assert.deepEqual(record.targets.copilot, { state: "unknown", dir: ".github/instructions", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: why, remedy });
+});
+
+test("a plain scan writes Claude's map past a target directory it cannot write, and says what to do about that one", needsUnreadableDirs, (t) => {
+  const repo = repoWithSource(t);
+  anatomiya(repo, "scan", "--targets", "cursor");
+  const before = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+  mkdirSync(join(repo, "lib"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(repo, "lib", `g${i}.ts`), `const b${i} = 1\nexport { b${i} }\n`);
+  execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "more"], { cwd: repo, stdio: "pipe" });
+  chmodSync(join(repo, ".cursor", "rules"), 0o555);
+  let plain;
+  let named;
+  try {
+    plain = ran("scan", repo);
+    named = ran("scan", repo, "--targets", "cursor");
+  } finally {
+    chmodSync(join(repo, ".cursor", "rules"), 0o755);
+  }
+  assert.equal(plain.code, 0, plain.stderr);
+  assert.ok(
+    plain.stdout.split("\n").includes(".cursor/rules could not be written (.cursor/rules is not writable), so nothing there was written or removed: fix its permissions, then scan again"),
+    plain.stdout
+  );
+  assert.notEqual(readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8"), before, "the Claude map was written");
+
+  assert.equal(named.code, 1);
+  assert.equal(named.stderr, "anatomiya: .cursor/rules is not writable, so the map could not be written: fix its permissions and scan again\n");
+});
+
+const needsImmutableFlag = process.platform === "darwin" ? {} : { skip: "chflags uchg is the lock this case sets on a real file, and only macOS has it" };
+
+test("a plain scan writes Claude's map past a file it cannot replace in a target directory, and exits 0", needsImmutableFlag, (t) => {
+  const repo = repoWithSource(t);
+  anatomiya(repo, "scan", "--targets", "cursor");
+  const overview = join(repo, ".cursor", "rules", "anatomiya-overview.mdc");
+  const before = [readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8"), readFileSync(overview, "utf8")];
+  mkdirSync(join(repo, "lib"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(repo, "lib", `g${i}.ts`), `const b${i} = 1\nexport { b${i} }\n`);
+  execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "more"], { cwd: repo, stdio: "pipe" });
+  execFileSync("chflags", ["uchg", overview]);
+  let named;
+  let plain;
+  let json;
+  try {
+    named = ran("scan", repo, "--targets", "cursor");
+    plain = ran("scan", repo);
+    json = ran("scan", repo, "--format", "json");
+  } finally {
+    execFileSync("chflags", ["nouchg", overview]);
+  }
+  const at = ".cursor/rules/anatomiya-overview.mdc could not be replaced (EPERM)";
+  const remedy = "close what holds it or change its mode";
+  assert.equal(named.code, 1);
+  assert.equal(named.stderr, `anatomiya: ${at}, so the scan stopped and put back what it had replaced: the file is locked or read-only, so ${remedy}, then scan again\n`);
+
+  assert.equal(plain.code, 0, plain.stderr);
+  assert.ok(plain.stdout.split("\n").includes(`.cursor/rules could not be written (${at}), so nothing there was written or removed: ${remedy}, then scan again`), plain.stdout);
+  assert.notEqual(readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8"), before[0], "the Claude map was written");
+  assert.equal(readFileSync(overview, "utf8"), before[1]);
+  assert.equal(json.code, 0, json.stderr);
+  assert.deepEqual(JSON.parse(json.stdout).targets.cursor, { state: "unknown", dir: ".cursor/rules", wrote: 0, removed: 0, unfiled: 0, foreign: 0, reason: at, remedy, unwritable: true });
+});
+
+test("a repository that never turned a target on reads the same whatever sits in the other tools' directories", needsSymlinks, (t) => {
+  const repo = repoWithBranch(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan");
+  // The one thing that moves between two runs of unchanged source.
+  const settled = (out) => out.replace(/, \d+ms, /, ", Nms, ").replace(/"durationMs": \d+/, '"durationMs": 0');
+  const said = () => ({
+    scan: settled(anatomiya(repo, "scan")),
+    json: settled(anatomiya(repo, "scan", "--format", "json")),
+    dry: settled(anatomiya(repo, "scan", "--dry-run")),
+    check: anatomiya(repo, "check"),
+    doctor: execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "doctor"], { cwd: repo, encoding: "utf8" }),
+  });
+  const before = said();
+  assert.equal("targets" in JSON.parse(before.json), false);
+
+  // A link at `.cursor`, to a directory holding a hand-written file at the overview's name.
+  const hand = "---\nalwaysApply: true\n---\n# Written by hand\n";
+  mkdirSync(join(elsewhere, "rules"));
+  writeFileSync(join(elsewhere, "rules", "anatomiya-overview.mdc"), hand);
+  symlinkSync(elsewhere, join(repo, ".cursor"));
+  // A team's own instructions, one of them under this tool's prefix and another at its overview's name.
+  mkdirSync(join(repo, COPILOT), { recursive: true });
+  const theirs = {
+    "style.instructions.md": '---\napplyTo: "**"\n---\n# House style\n',
+    "anatomiya-notes.instructions.md": "# Notes on the map\n",
+    "anatomiya-overview.instructions.md": hand,
+  };
+  for (const [name, body] of Object.entries(theirs)) writeFileSync(join(repo, COPILOT, name), body);
+
+  const after = said();
+
+  for (const what of Object.keys(before)) assert.equal(after[what], before[what], what);
+  for (const [name, body] of Object.entries(theirs)) assert.equal(readFileSync(join(repo, COPILOT, name), "utf8"), body, name);
+  assert.deepEqual(readdirSync(join(elsewhere, "rules")), ["anatomiya-overview.mdc"]);
+});
+
+test("doctor names each other target that is on in the repository it is run in", (t) => {
+  const repo = repoWithSource(t);
+  const doctor = () => execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "doctor"], { cwd: repo, encoding: "utf8" });
+  const before = doctor();
+  anatomiya(repo, "scan", "--targets", "cursor");
+
+  const out = doctor();
+
+  assert.equal(out, `${before}.cursor/rules: on, 2 files\n`);
+});
+
 /* --- one answer, three writers --- */
 
 test("a scan answers as a record for a reader that is not a terminal", (t) => {
@@ -575,6 +1019,7 @@ test("doctor answers a line per engine and exits 0 whatever it found", () => {
   assert.match(out, /^oxc \d/m, out);
   assert.match(out, /^flow-remove-types /m, out);
   assert.match(out, /^prism /m, out);
+  assert.match(out, /^tree-sitter \d[\d.]* ok \(grammars: 7 of 7\)$/m, out);
   assert.match(out, /^typescript /m, out);
 });
 
@@ -642,8 +1087,13 @@ test("setup runs npm in the plugin's own directory, with the arguments it printe
   const { code, stdout } = runFrom(install, ["setup"], bin);
 
   assert.equal(code, 0, stdout);
-  assert.match(stdout, /^not installed: oxc, flow-remove-types, typescript$/m, stdout);
+  assert.match(stdout, /^not installed: oxc, flow-remove-types, tree-sitter, typescript$/m, stdout);
   assert.match(stdout, /added 2 packages/, "npm's own words come back");
+  assert.equal(
+    stdout.trimEnd().split("\n").at(-1),
+    "run `/anatomiya:scan` again in any repository you have a map in: a background refresh that stopped for what was missing may not run again until that checkout's HEAD moves",
+    "and the last line says what to do with the maps written before it"
+  );
   assert.deepEqual(
     readFileSync(join(install, "npm-argv.txt"), "utf8").trim().split("\n"),
     ["install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"],
@@ -709,6 +1159,74 @@ test("a setup whose npm finished without the engine loading fails and names it",
   assert.equal(code, 2, stdout);
   assert.match(stderr, /up to date in 1ms/, "npm's own words still come back");
   assert.match(stderr, /^npm finished, and still not loading: oxc \(oxc-parser did not load\)/m, stderr);
+  assert.doesNotMatch(stderr + stdout, /anatomiya:scan/, "nothing to scan again for");
+});
+
+for (const args of [["setup"], ["setup", "--dry-run"]]) {
+  test(`${args.join(" ")} on an install that lost a grammar file installs nothing, and says what doctor says of it`, needsSymlinks, (t) => {
+    // Every package is there. No install writes a grammar file, so one that ran would change nothing.
+    const install = installLacking(t, { grammars: ["kotlin"] });
+    const bin = stubNpm(t, "#!/bin/sh\necho ran > npm-ran.txt\n");
+
+    const { code, stdout, stderr } = runFrom(install, args, `${bin}${delimiter}${process.env.PATH}`);
+    const doctor = runFrom(install, ["doctor"], process.env.PATH).stdout.split("\n").find((line) => line.startsWith("tree-sitter "));
+
+    assert.match(doctor, /^tree-sitter \d[\d.]*: grammars: 6 of 7, kotlin\.wasm did not load, reinstall this plugin, /);
+    assert.equal(code, 2, stdout);
+    assert.ok(stderr.split("\n").includes(doctor), stderr);
+    assert.doesNotMatch(stderr, /not installed|would run|npm install/, stderr);
+    assert.match(stderr, /^nothing to install: /m, stderr);
+    assert.equal(existsSync(join(install, "npm-ran.txt")), false, "npm was not run");
+  });
+}
+
+test("doctor and setup say a grammar file that is not the plugin's own the way they say one that does not load", needsSymlinks, (t) => {
+  const install = installLacking(t);
+  cpSync(join(install, "grammars", "java.wasm"), join(install, "grammars", "kotlin.wasm"));
+  const bin = stubNpm(t, "#!/bin/sh\necho ran > npm-ran.txt\n");
+
+  const doctor = runFrom(install, ["doctor"], process.env.PATH);
+  const line = doctor.stdout.split("\n").find((l) => l.startsWith("tree-sitter "));
+  const setup = runFrom(install, ["setup", "--dry-run"], `${bin}${delimiter}${process.env.PATH}`);
+
+  assert.equal(doctor.code, 0);
+  assert.match(line, /^tree-sitter \d[\d.]*: grammars: 6 of 7, kotlin\.wasm is not the file this plugin shipped, reinstall this plugin, /);
+  assert.equal(setup.code, 2, setup.stdout);
+  assert.ok(setup.stderr.split("\n").includes(line), setup.stderr);
+  assert.match(setup.stderr, /^nothing to install: /m, setup.stderr);
+  assert.equal(existsSync(join(install, "npm-ran.txt")), false, "npm was not run");
+});
+
+test("a setup that installs a package on an install that also lost a grammar file names each once, and does not call the grammar a package still not loading", needsShebang, (t) => {
+  const install = installLacking(t, { modules: ["flow-remove-types"], grammars: ["kotlin"] });
+  const packages = join(ROOT, "node_modules", "flow-remove-types");
+  const bin = stubNpm(t, `#!/bin/sh\n/bin/ln -s ${JSON.stringify(packages)} node_modules/flow-remove-types\necho 'added 1 package'\n`);
+
+  const { code, stderr } = runFrom(install, ["setup"], `${bin}${delimiter}${process.env.PATH}`);
+
+  assert.equal(code, 2, stderr);
+  assert.match(stderr, /^not installed: flow-remove-types$/m, stderr);
+  assert.match(stderr, /added 1 package/, stderr);
+  assert.equal(stderr.split("kotlin.wasm did not load").length - 1, 1, stderr);
+  assert.doesNotMatch(stderr, /still not loading/, stderr);
+});
+
+test("a setup that installs the grammars' own runtime names the grammar file that still does not load, and exits 2", needsShebang, (t) => {
+  // Without the runtime no grammar is tried, so the lost file shows only in the rows read after the install.
+  const install = installLacking(t, { modules: ["web-tree-sitter"], grammars: ["kotlin"] });
+  const packages = join(ROOT, "node_modules", "web-tree-sitter");
+  const bin = stubNpm(t, `#!/bin/sh\n/bin/ln -s ${JSON.stringify(packages)} node_modules/web-tree-sitter\necho 'added 1 package'\n`);
+
+  const { code, stdout, stderr } = runFrom(install, ["setup"], `${bin}${delimiter}${process.env.PATH}`);
+  const doctor = runFrom(install, ["doctor"], process.env.PATH).stdout.split("\n").find((line) => line.startsWith("tree-sitter "));
+
+  assert.match(doctor, /^tree-sitter \d[\d.]*: grammars: 6 of 7, kotlin\.wasm did not load, reinstall this plugin, /);
+  assert.equal(code, 2, stdout);
+  assert.match(stderr, /^not installed: tree-sitter$/m, stderr);
+  assert.match(stderr, /added 1 package/, stderr);
+  assert.ok(stderr.split("\n").includes(doctor), stderr);
+  assert.equal(stderr.split("kotlin.wasm did not load").length - 1, 1, stderr);
+  assert.doesNotMatch(stderr, /still not loading/, stderr);
 });
 
 test("doctor and setup refuse the arguments they have no use for", () => {
@@ -944,6 +1462,34 @@ test("--help and -h still print the usage with no command word", () => {
     });
     assert.match(out, /^usage: anatomiya scan/, `${flag} prints the usage`);
   }
+});
+
+test("no paragraph of the usage breaks a line where its next word still fits", () => {
+  // One sentence stopped at column 44 and went on below, so the paragraph read as two. The width is the text's own:
+  // a paragraph line ends only where the next word would run past the widest of them.
+  const out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "--help"], { stdio: "pipe", encoding: "utf8" });
+  const prose = out.split("\n\n").slice(1).map((paragraph) => paragraph.trimEnd().split("\n"));
+  const widest = Math.max(...prose.flat().map((line) => line.length));
+  const early = [];
+  for (const lines of prose) {
+    for (const [i, line] of lines.slice(0, -1).entries()) {
+      if (line.length + 1 + lines[i + 1].split(" ")[0].length < widest) early.push(line);
+    }
+  }
+
+  assert.ok(prose.length > 5 && widest > 60, "the usage's paragraphs were not read");
+  assert.deepEqual(early, []);
+});
+
+test("the usage says what --targets writes, that a target stays on, and how to turn one off", () => {
+  const out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "--help"], { stdio: "pipe", encoding: "utf8" });
+  // Joined, so where a line wraps is not what is held.
+  const usage = out.replace(/\s+/g, " ");
+
+  assert.match(usage, /--targets is a scan option: a comma-separated list of cursor and copilot\./);
+  assert.match(usage, /also written under \.cursor\/rules for Cursor and under \.github\/instructions for GitHub Copilot\./);
+  assert.match(usage, /A target stays on for every later scan while its anatomiya-overview file is there, until --targets names a set without it\./);
+  assert.match(usage, /--targets claude turns the others off and removes what this tool wrote there\./);
 });
 
 test("a mistyped --base exits non-zero and names the argument, not the repository", (t) => {

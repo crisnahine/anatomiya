@@ -6,7 +6,7 @@ import { absentInterpreter } from "./child.mjs";
 import { scan } from "./scan.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
-import { engineOf, language } from "./langs.mjs";
+import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
@@ -14,9 +14,11 @@ import { caseMagic, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
-import { listSome, LISTED, PREFIX, RULES_DIR, trackedRulesDir } from "./rules.mjs";
-import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
-import { pinSummary, scanSummary } from "./summary.mjs";
+import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
+import { TARGETS, isClaude } from "./targets.mjs";
+import { readFacts } from "./facts.mjs";
+import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
+import { otherEntries, pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { removeStaleHook } from "./hook.mjs";
 
@@ -28,9 +30,16 @@ import { removeStaleHook } from "./hook.mjs";
  * nothing, so a caller that is not a terminal gets the same answer.
  */
 
-/** Scan the repository the path is in, and write the map unless this is a dry run. */
-export async function runScan(cwd, { dryRun = false } = {}) {
-  const result = await scan(cwd);
+/**
+ * Scan the repository the path is in, and write the map unless this is a dry run.
+ *
+ * `targets` is the whole set of places it goes, or null for the ones already on.
+ * `leaveAlone` is the other targets whose files this scan leaves as they are.
+ * `carried` is the checker's last measured verdict, which only a refresh hands
+ * in: the scan then does not run the checker, and a scan a person runs always does.
+ */
+export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone = [], carried = null } = {}) {
+  const result = await (carried !== null ? scan(cwd, { carried }) : scan(cwd));
   // Only where it left nothing to read (B13). An engine missing for one
   // language costs that language's files and the scan goes on for the rest:
   // refusing here gave a TypeScript repository with one Gemfile no map at all
@@ -38,7 +47,7 @@ export async function runScan(cwd, { dryRun = false } = {}) {
   // language went unread and what to do about it (B41).
   if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
-  const plan = writeMap(result, { dryRun });
+  const plan = writeMap(result, { dryRun, targets, leaveAlone });
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
   // settings, where `${CLAUDE_PLUGIN_ROOT}` is never substituted and Claude Code
   // refuses the hook by name on every prompt and every tool call. The plugin
@@ -156,12 +165,13 @@ async function refuseUnlikeHead(root) {
   // A staged, edited or deleted tracked file is listed against a commit that
   // does not hold it, and every scan after reads that area as a population
   // change for as long as the pin stands. This tool's own output under
-  // `.claude/` is left out: a repository that commits its map rewrites it on
-  // every scan, and it is never part of the population. A map written through
-  // a `.claude/rules` link is stored under the link's target.
+  // `.claude/` is left out, and its generated names in every other directory a
+  // scan writes: a repository that commits its map rewrites it on every scan,
+  // and it is never part of the population. A map written through a
+  // `.claude/rules` link is stored under the link's target.
   const rules = trackedRulesDir(root);
   const exclude = `:(${["exclude", await caseMagic(root)].filter(Boolean).join(",")})`;
-  const own = rules === RULES_DIR ? [] : [`${exclude}${rules}/${PREFIX}*.md`];
+  const own = [...(rules === RULES_DIR ? [] : [`${rules}/${PREFIX}*.md`]), ...EXCLUDE_LINES].map((line) => `${exclude}${line}`);
   const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]);
   if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
   if (dirty.stdout.length > 0) {
@@ -184,7 +194,7 @@ async function absentSkipWorktree(root) {
 /** Answer the branch against the map on disk. */
 export async function runCheck(cwd, { baseRef = null } = {}) {
   const report = await check(cwd, { baseRef });
-  const { missingParser, missingEngines } = report.parse;
+  const { missingParser } = report.parse;
   if (missingParser) {
     // The scan's rule, for the same reason: a change that touched a Gemfile
     // beside a TypeScript file went unchecked because one file of another
@@ -192,7 +202,7 @@ export async function runCheck(cwd, { baseRef = null } = {}) {
     // change examined needed the missing engine, since a report of no findings
     // there reads as a check that ran (B13). Otherwise each unread file carries
     // its own caveat, and one more says which engine and what to do.
-    const readable = report.examined.some((c) => !missingEngines.includes(engineOf(language(c.path))));
+    const readable = report.examined.some((c) => !couldNotRead(report.parse, language(c.path)));
     if (!readable) throw notInstalled(report.parse, "check");
   }
   return { report };
@@ -208,12 +218,48 @@ export async function runCheck(cwd, { baseRef = null } = {}) {
  * and drop what to do about it: printed on the lead and on every row it
  * explains, one sentence appeared four times and the report read as four faults
  * again, which is what the lead is there to stop.
+ *
+ * `cwd` is where it was run from. Inside a repository, each other directory the
+ * map is written to there gets a line after the engines.
  */
-export async function runDoctor() {
+export async function runDoctor({ cwd = null } = {}) {
   const rows = await readiness({ engines: PROBE_IDS });
   const problem = installProblem(rows);
-  const lines = readinessLines(rows, { installSaid: problem !== null });
+  const lines = [...readinessLines(rows, { installSaid: problem !== null }), ...(await targetLines(cwd))];
   return { rows, lines: problem === null ? lines : [problem, ...lines] };
+}
+
+/**
+ * One line per Cursor or Copilot target that is on, or that the record names
+ * files in and nobody can read; none for any other. A target that is on gets a
+ * second line where its directory holds entries a scan counts as left there.
+ */
+async function targetLines(cwd) {
+  let root;
+  try {
+    root = await gitRoot(cwd);
+  } catch {
+    // Not a repository, no directory or no git: the engines are the whole answer.
+    return [];
+  }
+  const facts = readFacts(root).facts;
+  const lines = [];
+  for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
+    const { state, reason } = targetStatus(root, target);
+    const known = knownNames(facts, target);
+    if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);
+    if (state !== "on") continue;
+    // The split a scan makes: the files the record names are the map's, and
+    // the scan's summary counts every other entry as left there. A clone holds
+    // the files and not the record, and there the key and a name a scan gives
+    // a file are all there is to go on.
+    const { ours, unknown, foreign, occupied, listed } = auditRules(root, known, target);
+    const mine = known === null ? unknown.filter((name) => isMapName(name, target)) : ours;
+    lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);
+    const others = unknown.length - (known === null ? mine.length : 0) + foreign.length + occupied.length;
+    if (others > 0) lines.push(`${otherEntries(target.dir, others)} that a scan neither writes nor removes`);
+  }
+  return lines;
 }
 
 /**
@@ -231,10 +277,12 @@ export async function runDoctor() {
 export async function runSetup({ dryRun = false, platform = process.platform } = {}) {
   const root = pluginRoot();
   const rows = await readiness({ engines: NODE_PROBE_IDS });
+  // A grammar file ships in the plugin and no install writes one, so its row is said as doctor says it and asks for no install.
+  const lost = readinessLines(rows.filter(lostGrammar));
   // Present and not ready is a copy resolving from somewhere other than this
   // plugin's own install, one the tool will not use, and the install puts a
   // usable one ahead of it.
-  const needed = rows.filter((r) => !r.present || !r.ok).map(probeName);
+  const needed = rows.filter((r) => (!r.present || !r.ok) && !lostGrammar(r)).map(probeName);
   const where = `${INSTALL.join(" ")} in ${root}`;
   const state =
     needed.length === 0
@@ -243,8 +291,8 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
 
   // With nothing needed there is no install to describe: "nothing to install"
   // followed by "would run npm install" contradicted itself about one install.
-  if (needed.length === 0) return answer(root, needed, { output: state });
-  if (dryRun) return answer(root, needed, { output: `${state}\nwould run ${where}` });
+  if (needed.length === 0) return answer(root, needed, { ok: lost.length === 0, output: [state, ...lost].join("\n") });
+  if (dryRun) return answer(root, needed, { ok: lost.length === 0, output: [state, `would run ${where}`, ...lost].join("\n") });
 
   // npm ships as `npm.cmd` on Windows, and a spawn resolves an extension-less
   // name against `.com` and `.exe` only, so the attempt answers ENOENT on a
@@ -269,7 +317,7 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   const how = err ? `${where} ${err.killed ? `did not finish within ${INSTALL_TIMEOUT_MS / 60_000} minutes` : "failed"}` : `ran ${where}`;
   const said = err ? stderr || stdout || err.message : stdout;
   const lines = [state, how, tail(said)].filter(Boolean);
-  if (err) return answer(root, needed, { ran: true, ok: false, output: lines.join("\n") });
+  if (err) return answer(root, needed, { ran: true, ok: false, output: [...lines, ...lost].join("\n") });
 
   // An exit of 0 says npm finished, not that anything loads. Measured with
   // `npm_config_optional=false`: npm left out oxc's native binding, which is an
@@ -281,10 +329,20 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   // and a module whose evaluation threw stays failed here whatever npm did.
   const { rows: after, error } = await readinessAfresh({ engines: NODE_PROBE_IDS });
   const still = [];
-  for (const r of after ?? []) if (!r.ok) still.push(`${probeName(r)} (${r.reason})`);
+  for (const r of after ?? []) if (!r.ok && !lostGrammar(r)) still.push(`${probeName(r)} (${r.reason})`);
   if (error) lines.push(`npm finished, and whether the engines load now could not be asked: ${error}`);
   else if (still.length) lines.push(`npm finished, and still not loading: ${still.join(", ")}`);
-  return answer(root, needed, { ran: true, ok: !error && still.length === 0, output: lines.join("\n") });
+  // A missing runtime hides a lost grammar file until the install brings the runtime back, so the rows read after it are the ones asked.
+  const lostNow = after ? readinessLines(after.filter(lostGrammar)) : lost;
+  lines.push(...lostNow);
+  const ok = !error && still.length === 0 && lostNow.length === 0;
+  // A refresh that stopped for the missing runtime waits on its checkout's HEAD or its retry clock, and the map there is as it was.
+  if (ok) {
+    lines.push(
+      "run `/anatomiya:scan` again in any repository you have a map in: a background refresh that stopped for what was missing may not run again until that checkout's HEAD moves"
+    );
+  }
+  return answer(root, needed, { ran: true, ok, output: lines.join("\n") });
 }
 
 /**
@@ -348,5 +406,7 @@ function npmInstall(cwd) {
  * npm, which is the one thing that cannot install an interpreter.
  */
 function notInstalled(parse, command) {
-  return new Error(`${parse.missingParser}\n${remedyFor(parse.missingEngines[0])}, then ${command} again`);
+  // Two lines of this tool's own, kept apart for a printer that puts a quoted argument on one.
+  const lines = [parse.missingParser, `${remedyForMissing(parse)}, then ${command} again`];
+  return Object.assign(new Error(lines.join("\n")), { lines });
 }

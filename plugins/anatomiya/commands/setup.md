@@ -2,7 +2,9 @@
 description: Install what this plugin's own parser needs, in the plugin's own directory
 ---
 
-Install the node-hosted engine's dependencies, and nothing else.
+Install the packages the node-hosted engines load, and nothing else: `oxc-parser` and
+`flow-remove-types` for JavaScript and TypeScript, `web-tree-sitter` for Python, PHP, Go, Java, C#,
+Rust and Kotlin, and the optional `typescript`.
 
 Claude Code already does this on `/plugin install`, from the lockfile this plugin ships. Reach for
 this command where that install did not run or did not finish, which `/anatomiya:doctor` reports two
@@ -25,13 +27,43 @@ ways: a first line where nothing was installed at all, and an engine line where 
 
 4. Then run `/anatomiya:doctor` to see what answers now. A zero exit says npm succeeded and every
    engine npm provides loads afterwards, not that every engine is ready: npm cannot install Ruby, so
-   an interpreter line stays whatever it was.
+   an interpreter line stays whatever it was. Nor can it put back a grammar file: those ship in the
+   plugin's own directory, so a `tree-sitter` line that names a `.wasm` file that did not load or
+   is not the file the plugin shipped, or names `grammars.json`, is fixed by reinstalling the
+   plugin, and setup run for it prints that line, installs nothing for it, and ends non-zero.
 
 5. **Do not open the generated files with the Read tool.** Reading a context file permanently
    suppresses its automatic injection for the rest of the session. Use `cat` or `head` through
    Bash if you need to show one.
 
-If setup exits non-zero, show its output and stop. It says which of the four happened: this is
-Windows, where npm is a batch file and nothing here spawns a shell, so the printed command is for
-the user to run themselves; npm was not found at all; npm ran and failed, and that one carries npm's
-own words; or npm finished and an engine it provides still does not load, and that one names it.
+Setup ends one of nine ways, and its output says which. Show the output, then do what the ending
+asks:
+
+Exit 0:
+
+- `nothing to install: ...` and no other line. Every package is there. Say so and stop; run
+  nothing else.
+- `not installed: ...` then `would run npm install ...`, and no `tree-sitter` line under them. This
+  was `--dry-run`. Show the command and the directory, and run nothing.
+- `not installed: ...`, `ran npm install ...`, and a last line that says to run `/anatomiya:scan`
+  again. The install ran and every engine it provides loads. Pass that last line on: a map written
+  before the install is as it was, so offer to run `/anatomiya:scan` in this repository, and tell
+  the user to do the same in any other repository they have a map in.
+
+Exit non-zero. Stop after each; do not run setup again unless the ending says to:
+
+- A `tree-sitter` line naming a `.wasm` file that did not load or is not the file the plugin
+  shipped, or naming `grammars.json`, with or without an install before it. A dry run ends this
+  way too, exit 2: under `nothing to install: ...`, or under `not installed: ...` and `would run
+  npm install ...` where a package is missing as well. A grammar file ships in the plugin and no
+  install writes one. Tell the user to reinstall the plugin, as the line says.
+- `npm on Windows is a batch file ...` and `run it yourself: ...`. Nothing here spawns a shell.
+  Give the user the printed command and the directory to run it in.
+- `npm was not found; ...`. Tell the user to install Node.js 22 with npm, then run setup again.
+- `... failed`, with npm's own words under it. Show what npm said; the fix is in those words
+  (the network, a proxy, a permission), and it is the user's to make.
+- `... did not finish within N minutes`. The install was stopped by its own clock. Say so, and
+  offer to run setup once more.
+- `npm finished, and still not loading: ...` or `npm finished, and whether the engines load now
+  could not be asked: ...`. npm exited 0 and an engine is still not ready. Show the line, then run
+  `/anatomiya:doctor` for that engine's own reason.

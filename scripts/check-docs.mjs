@@ -31,6 +31,8 @@ import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules
 import { FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { GATES } from "../plugins/anatomiya/lib/gates.mjs";
+import { ENGINES, LANGUAGES, assertKeyed, hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
+import { PROBE_IDS } from "../plugins/anatomiya/lib/readiness.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
 
@@ -209,7 +211,23 @@ export function readGlossary(text) {
 }
 
 /**
- * Every file of this repository git can see, or none where git cannot say.
+ * The name prose gives each language tree-sitter reads, by the id the registry
+ * knows it by. Held to the registry where this loads, so a language added
+ * there has its "N for X" count read here or the gate does not start.
+ */
+export const PROSE_NAMES = { python: "Python", php: "PHP", go: "Go", java: "Java", csharp: "C#", rust: "Rust", kotlin: "Kotlin" };
+
+/** Each language tree-sitter hosts as `[its name in prose, its id]`, refused where the names and the registry differ on a language. */
+export function proseNamed(names = PROSE_NAMES, hosted = hostedBy("tree-sitter")) {
+  assertKeyed("PROSE_NAMES", names, hosted);
+  return hosted.map((id) => [names[id], id]);
+}
+
+const TREE_LANGS = proseNamed();
+
+/**
+ * Every file of this repository git can see, or `{ error }` holding git's own
+ * first line where it cannot say.
  *
  * The working tree rather than the index: a file added and not staged is still
  * a file the prose may name, and a gate that reads the index answers about a
@@ -220,12 +238,12 @@ export function readGlossary(text) {
  */
 function repositoryFiles() {
   try {
-    return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" })
+    return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
       .split("\n")
       .filter(Boolean)
       .filter((rel) => existsSync(join(root, rel)));
-  } catch {
-    return [];
+  } catch (err) {
+    return { error: String(err.stderr || err.message).trim().split("\n")[0] };
   }
 }
 
@@ -297,6 +315,47 @@ export function pathsThatMoved(text, docRel, tracked) {
   return [...moved.values()];
 }
 
+const DECISION_ROW = /^\| ([A-H]\d+) \|/;
+const OWN_CODE = /^(?:plugins|scripts|test)\//;
+const dirOf = (rel) => rel.slice(0, rel.lastIndexOf("/"));
+
+// A42 names a canary under `test/` that was deleted with the plugin it watched,
+// and what the row should say instead is a decision, not a typo.
+const DONE_UNHELD = new Set(["A42"]);
+
+/**
+ * Files a decision row's status cell names as done that this tree does not hold.
+ *
+ * `pathsThatMoved` answers only for a path found somewhere else, so a file
+ * renamed or deleted outright left its row pointing at nothing. The tree is the
+ * discriminator here too: a path whose own directory holds no file is another
+ * repository's (`test/models/user_test.rb`), and one whose directory does is ours.
+ */
+export function doneFilesGone(text, tracked) {
+  const dirs = new Set([...tracked].map(dirOf));
+  const gone = [];
+  for (const line of text.split(/\r?\n/)) {
+    const row = DECISION_ROW.exec(line)?.[1];
+    const done = line.indexOf("**done**");
+    if (!row || done < 0 || DONE_UNHELD.has(row)) continue;
+    for (const [, spelled] of line.slice(done).matchAll(DOC_PATH)) {
+      if (OWN_CODE.test(spelled) && !tracked.has(spelled) && dirs.has(dirOf(spelled))) gone.push({ row, spelled });
+    }
+  }
+  return gone;
+}
+
+/** Row numbers a decision row cites that no row carries. A code span is skipped: `B7` there is a key, not a row. */
+export function rowsCitedMissing(text) {
+  const rows = text.split(/\r?\n/).filter((line) => DECISION_ROW.test(line));
+  const ids = new Set(rows.map((line) => DECISION_ROW.exec(line)[1]));
+  return rows.flatMap((line) =>
+    [...line.replace(/`[^`]*`/g, "").matchAll(/\b[A-H]\d+\b/g)]
+      .filter(([cited]) => !ids.has(cited))
+      .map(([cited]) => ({ row: DECISION_ROW.exec(line)[1], cited }))
+  );
+}
+
 // A document that records a past state names the paths that state had, and
 // today's path in it would be a claim the measurement never made.
 const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
@@ -358,6 +417,8 @@ export const READS = [
   "SECURITY.md",
   "package.json",
   `${REL.anatomiya}/package.json`,
+  `${REL.anatomiya}/README.md`,
+  `${REL.anatomiya}/grammars/grammars.json`,
   `${REL.anatomiya}/bin/anatomiya.mjs`,
   `${REL.anatomiya}/commands`,
   `${REL.anatomiya}/lib/check.mjs`,
@@ -396,6 +457,7 @@ export function checkDocs() {
   const js = rowsForLangs(["js"]).length;
   const jsx = rowsForLangs(["jsx"]).length;
   const ruby = rowsForLangs(["ruby"]).length;
+  const component = { Vue: rowsForLangs(["vue"]).length, Svelte: rowsForLangs(["svelte"]).length };
   const obligations = rowsOfKind("pairing").length;
 
   // Section 4 of the walkthrough counts the rows asked of a file, so the
@@ -407,8 +469,9 @@ export function checkDocs() {
 
   // Prose spells a count of one as a word, and a phrasing nothing parses is a
   // number that drifts in silence, which is what this file is for.
-  const NUMERALS = new Map([["one", 1], ["two", 2], ["three", 3]]);
-  const counted = (word) => NUMERALS.get(word) ?? Number(word);
+  const WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen"];
+  const NUMERALS = new Map(WORDS.map((word, i) => [word, i + 1]));
+  const counted = (word) => NUMERALS.get(word.toLowerCase()) ?? Number(word);
 
   // A released entry states the number that shipped in it and stays true forever.
   // Reading the whole changelog made every past release a claim about today, so
@@ -430,6 +493,14 @@ export function checkDocs() {
     }
     for (const m of text.matchAll(/(\d+)\s+for\s+Ruby/g)) {
       claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", the registry holds ${ruby}`);
+    }
+    for (const m of text.matchAll(/(\d+)\s+for\s+(Vue|Svelte)\b/g)) {
+      claim(rel, Number(m[1]) === component[m[2]], `says "${m[1]} for ${m[2]}", the registry holds ${component[m[2]]} asked of a ${m[2]} script`);
+    }
+    for (const [name, id] of TREE_LANGS) {
+      for (const m of text.matchAll(new RegExp(`(\\d+)\\s+for\\s+${name.replace(/\W/g, "\\$&")}(?![\\w#])`, "g"))) {
+        claim(rel, Number(m[1]) === rowsForLangs([id]).length, `says "${m[1]} for ${name}", the registry holds ${rowsForLangs([id]).length} asked of ${name}`);
+      }
     }
     for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
       claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);
@@ -500,6 +571,12 @@ export function checkDocs() {
   // A row number appearing twice is a row nobody can cite.
   const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-H]\d+) \|/gm)].map((m) => m[1]);
   claim("DECISIONS.md", new Set(ids).size === ids.length, "two rows share a number");
+
+  // "(B13)" read as the source of a rule another row holds, and nothing read it.
+  // A number that names the wrong row still passes; one that names no row does not.
+  for (const { row, cited } of rowsCitedMissing(read("DECISIONS.md"))) {
+    claim("DECISIONS.md", false, `row ${row} cites ${cited}, and no row has that number`);
+  }
 
   // --- the gate table ---------------------------------------------------------
 
@@ -723,6 +800,51 @@ export function checkDocs() {
     claim(doc, !/only runtime dependency/.test(text), `says "only runtime dependency" with ${deps.length} of them`);
   }
 
+  // --- the engines and the grammars --------------------------------------------
+
+  // Each of these is a count a third engine moved, and none was read: "two
+  // runtime dependencies" stood in four documents beside a manifest declaring
+  // three. A number or a number word, so the phrasing a sentence reads best in
+  // is still a phrasing this parses.
+  const N = `\\d+|${WORDS.join("|")}`;
+  const hosted = hostedBy("tree-sitter").length;
+  const COUNTS = [
+    [`(${N})\\s+runtime\\s+dependencies`, deps.length, (n) => `the plugin's manifest declares ${n}`],
+    [`(${N})\\s+parser\\s+engines`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`],
+    [`(${N})\\s+node-hosted\\s+engines`, Object.values(ENGINES).filter((e) => e.host === "node").length, (n) => `the registry declares ${n} hosted by node`],
+    [`(${N})\\s+(?:vendored\\s+)?grammars\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
+    [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
+  ];
+  const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
+  for (const rel of stating) {
+    const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
+    for (const [phrasing, held, source] of COUNTS) {
+      for (const m of text.matchAll(new RegExp(phrasing, "gi"))) {
+        claim(rel, counted(m[1]) === held, `says "${m[0]}", ${source(held)}`);
+      }
+    }
+  }
+
+  // The table section 10 prints, held to what doctor asks: an engine added to
+  // the registry prints a line the day it lands, and a reader looking its row
+  // up found four where doctor printed five.
+  const readiness = read("docs/how-it-works.md");
+  const from = readiness.indexOf("## 10. Readiness and setup");
+  claim("docs/how-it-works.md", from !== -1, "has no ## 10. Readiness and setup section to read the readiness table from");
+  const tabled = new Set([...readiness.slice(Math.max(from, 0)).matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]));
+  const printed = [...PROBE_IDS, ...Object.values(ENGINES).flatMap((e) => (e.extras ?? []).map((extra) => extra.module))];
+  for (const id of printed) claim("docs/how-it-works.md", tabled.has(id), `the readiness table has no row for ${id}, which doctor prints a line for`);
+  for (const id of tabled) claim("docs/how-it-works.md", printed.includes(id), `the readiness table has a row for ${id}, which doctor prints no line for`);
+
+  // The grammars are the one dependency a user runs that no manifest of theirs
+  // lists, so the document a reader vets this tool by names each at its version.
+  const vendored = readJson(`${REL.anatomiya}/grammars/grammars.json`);
+  claim(`${REL.anatomiya}/grammars/grammars.json`, Array.isArray(vendored.value), vendored.problem ?? "is not a list of grammars");
+  for (const grammar of Array.isArray(vendored.value) ? vendored.value : []) {
+    const named = `${grammar.package}@${grammar.version}`;
+    claim("SECURITY.md", read("SECURITY.md").includes(`\`${named}\``), `does not name the grammar package ${named}`);
+  }
+
   // --- committed documents carry no local path --------------------------------
 
   // The first A/B result committed here carried /Users/<name>/Documents/... into
@@ -746,8 +868,12 @@ export function checkDocs() {
   // Git's list rather than a walk, because the local working directories a tool
   // leaves behind are full of paths that were never this repository's, and
   // because a tree git cannot answer for is not this repository: the gate runs on
-  // a checkout, and there is nothing there to check a path against.
-  const tracked = new Set(repositoryFiles());
+  // a checkout, and there is nothing there to check a path against. That is a
+  // failure and never a pass: with no list, every check below reads nothing and
+  // the summary line says the documents match.
+  const listed = repositoryFiles();
+  claim("git", Array.isArray(listed), `could not list the files here, so no path a document names was read against the tree: ${listed.error}`);
+  const tracked = new Set(Array.isArray(listed) ? listed : []);
   // The same leak the measurements are checked for, from the other kind of
   // document. A generated one never spells a placeholder, so the shape of a home
   // directory is enough there; a hand-written one does, and `/Users/me/code/app`
@@ -763,6 +889,9 @@ export function checkDocs() {
     for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
       claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
     }
+  }
+  for (const { row, spelled } of doneFilesGone(read("DECISIONS.md"), tracked)) {
+    claim("DECISIONS.md", false, `row ${row} names \`${spelled}\` as done, and no such file is here`);
   }
 
   // --- versions ---------------------------------------------------------------

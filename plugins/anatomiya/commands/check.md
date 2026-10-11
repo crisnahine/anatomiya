@@ -60,10 +60,12 @@ If it says a parser engine is not installed, run the readiness probe:
 node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" doctor
 ```
 
-For the node-hosted engine, `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" setup` installs it.
+For a node-hosted engine (`oxc`, or `tree-sitter` reported absent),
+`node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" setup` installs it.
 Tell the user first that setup runs npm in the plugin's own directory, which is the only command
 here that installs anything. Any other engine carries its own remedy on its doctor line, and npm
-cannot install an interpreter. Then run the check again.
+cannot install an interpreter. A grammar file that did not load is the plugin's own file, so its
+remedy is to reinstall the plugin and setup does not help. Then run the check again.
 
 ### Type-checked claims
 

@@ -31,6 +31,48 @@ const only = (key, found) => found.filter((f) => f.dimension === key);
 const judge = (over) =>
   only("handler_is_named", newlyIntroduced({ area: area(stated("handler_is_named")), path: "src/a.jsx", lang: "jsx", ...over }));
 
+test("a site in a file tree-sitter read is placed by its offsets, past a CRLF line ending and an astral character", async () => {
+  // Offsets are UTF-16 units into the string the check holds, so the line and
+  // the quoted text both come from them: read as bytes, the slice would start
+  // two units late for the one character above it.
+  const { parseTreeFile } = await import("../plugins/anatomiya/lib/tree-sitter-file.mjs");
+  const { nameOf, site, walkTree } = await import("../plugins/anatomiya/lib/tree-walk.mjs");
+  const { fromVisitor } = await import("../plugins/anatomiya/lib/walk.mjs");
+  const source = "# 😀 totals\r\nimport os\r\n\r\n\r\ndef total():\r\n    return 1\r\n\r\n\r\ndef other():\r\n    return 2\r\n";
+  const r = await parseTreeFile(source, "app/a.py", "python", { withProgram: true });
+  const visitor = (program, add) => ({
+    node: (n) => {
+      if (n.type === "function_definition") add({ node: site(n), conforming: false, where: nameOf(n) });
+    },
+  });
+  const row = { key: "probe_functions", tier: "syntactic", precision: "precise", claim: "no functions", counterClaim: null, langs: ["python"], run: fromVisitor(visitor, walkTree) };
+
+  const found = newlyIntroduced({
+    area: area(stated("probe_functions")),
+    path: "app/a.py",
+    lang: "python",
+    head: { program: r.program, source, comments: r.comments, facets: r.facets },
+    rows: [row],
+  });
+
+  assert.deepEqual(
+    found.map((f) => [f.line, f.where, f.text]),
+    [
+      [5, "total", "def total(): return 1"],
+      [9, "other", "def other(): return 2"],
+    ]
+  );
+  const added = newlyIntroduced({
+    area: area(stated("probe_functions")),
+    path: "app/a.py",
+    lang: "python",
+    head: { program: r.program, source, comments: r.comments, facets: r.facets },
+    rows: [row],
+    addedLines: [[9, 10]],
+  });
+  assert.deepEqual(added.map((f) => f.where), ["other"], "the lines a diff names are the file's own");
+});
+
 /* --- identity --- */
 
 test("a site's identity is the node type and the normalised slice, never the line", () => {
@@ -463,7 +505,7 @@ test("a Ruby rescue added above one the base held is the one reported", needsRub
 
   const found = only("rescue_uses_error", newlyIntroduced({ area: slot, path: "app/w.rb", lang: "ruby", head, base }));
 
-  assert.deepEqual(found.map((f) => f.where), ["brand_new"]);
+  assert.deepEqual(found.map((f) => f.where), ["W#brand_new"]);
 });
 
 test("an omission is reported only where the map stated the claim", needsRuby, async (t) => {

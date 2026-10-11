@@ -7,32 +7,35 @@
  * one where a convention was most likely broken. This asks the prior question
  * instead, and answers it from counts the scan already took (H38).
  */
-import { byCode, dirOf } from "./paths.mjs";
-import { RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS } from "./test-shape.mjs";
+import { byCode, dirOf, extOf } from "./paths.mjs";
+import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, namesATest, pairedWith, sitsWhereItsToolReads, withoutTree } from "./test-shape.mjs";
 import { isCorpusPath } from "./corpus.mjs";
+import { familyOf, language } from "./langs.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
-import { namesakeClause, testsParts } from "./render-layout.mjs";
-import { encode } from "./encode.mjs";
-
-/**
- * Producers a source root needs before its silence counts as precedent, and
- * namesake tests it needs before its testing does.
- *
- * One untested file is a repository that has not said anything, and one tested
- * file among five hundred has not either: measured on a front end, a single
- * namesake silenced the rule for 517 files. Three is where the learned-suffix
- * vote also stops, arrived at separately rather than shared with it: the two
- * answer different questions and moving one is not a reason to move the other.
- */
-export const PRECEDENT_FLOOR = 3;
+import { namesakeClause, pathText, testsParts } from "./render-layout.mjs";
+import { encode, locator } from "./encode.mjs";
+import { PRECEDENT_FLOOR } from "./principles.mjs";
 
 /** Whether a root pairs enough of its files with tests to call that its habit. */
 function pairsTests(r) {
   return (r?.companions?.with ?? 0) >= PRECEDENT_FLOOR;
 }
 
+/** Whether a root has precedent of its own, a file that holds its own tests counted as tested where it sits. */
+function hasPrecedent(r) {
+  return (r?.companions?.with ?? 0) + (r?.companions?.inline ?? 0) >= PRECEDENT_FLOOR;
+}
+
+// The family whose own spelling of a test name a path is read by, or null where the JavaScript and Ruby spellings read it.
+const namedFamily = (rel) => {
+  const family = familyOf(language(rel));
+  return FAMILY_TEST_NAMES[family] ? family : null;
+};
+
 /**
- * Whether this path names a test file, in either language's spelling.
+ * Whether this path names a test file, in its language's spelling: the two
+ * JavaScript and Ruby share, or the one its own tool collects by. Rust has no
+ * name, cargo collecting by place, so no `.rs` path is one.
  *
  * Held to a source extension as well as to the name, because the name alone
  * admits `Component.test.tsx.snap`, `seed.test.sql`, `button.test.png` and
@@ -46,7 +49,9 @@ function pairsTests(r) {
  * four findings became none.
  */
 export function isTestPath(rel) {
-  return isCorpusPath(rel) && (TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel));
+  if (!isCorpusPath(rel)) return false;
+  const family = namedFamily(rel);
+  return family === null ? TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel) : namesATest(rel, family);
 }
 
 /**
@@ -58,9 +63,19 @@ export function isTestPath(rel) {
  * the same reason `companionRoot` drops it going the other way.
  */
 function testedTail(rel) {
+  // A family with a build of its own names its trees its own way: a Gradle source set, a `.Tests` project, a package under `java`.
+  const family = namedFamily(rel);
+  if (family !== null) return withoutTree(dirOf(rel), family);
   const parts = rel.split("/").slice(0, -1).filter((p) => !TEST_DIRS.has(p));
   return (TEST_ROOTS.has(parts[0]) ? parts.slice(1) : parts).join("/");
 }
+
+const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
+
+// Every count the reason prints, as a number: a record is a file a repository can commit, and a count that is text prints as written.
+const countsAreNumbers = (r) =>
+  isCount(r.companions.with) && isCount(r.companions.of) && (r.companions.inline === undefined || isCount(r.companions.inline)) &&
+  Array.isArray(r.tests ?? []) && (r.tests ?? []).every((t) => isCount(t?.files) && (t.under === undefined || isCount(t.under)));
 
 /**
  * The source root this test's placement is judged against, or null.
@@ -73,16 +88,31 @@ function testedTail(rel) {
  * is the directory the miss this rule was written for was in.
  *
  * A tail more than one root answers to is answered by none of them where any
- * one already pairs its files with tests (`pairsTests`). Longest is not
+ * one already has precedent (`hasPrecedent`). Longest is not
  * nearest: a repository with `app/mailers` specced beside an engine's own
  * untested `app/mailers` told a spec sitting with its four siblings that it had
  * no precedent, off the longer name, which is a directory it has nothing to do
  * with. Where they are all untested the verdict is the same whichever it is, so
  * the one with the most producers speaks, since that is the strongest count
  * that is true.
+ *
+ * Where the language's layout pairs the test's directory with a project, only a
+ * root of that project answers: a PHP `tests/Cache` is about the `src/Cache`
+ * beside it, and a `Cache` in another tree is not its to answer for.
+ *
+ * Answered with the directories the answer turns on, each with the family its
+ * root counts: a tail shortened past directories is a test of something under
+ * them, and where the change made one of them and put source of that family
+ * under it, the package has no habit yet and the files of the directory above
+ * it are another directory's. Every directory on the way is asked, not the
+ * test's own alone: a package's test can sit in a `tests` of its own, which
+ * holds none of the source, and asking only there holds a new package to its
+ * parent's ratio.
  */
 function coveredRoot(rel, roots) {
   const parts = testedTail(rel).split("/").filter(Boolean);
+  const family = namedFamily(rel);
+  const inProject = family === null ? null : pairedWith(dirOf(rel), family);
   // A root recorded for one level counts nothing its children hold, so its zero
   // says the level is untested and never the directory. React's
   // `react-reconciler/src` reads 0 of 81 with 78 tests in the `__tests__`
@@ -92,14 +122,22 @@ function coveredRoot(rel, roots) {
   // schema this build knows and still hold a root that is not one; the hook's
   // never-fail catch is a floor rather than the answer.
   const eligible = roots.filter(
-    (r) => !r?.testRoot && typeof r?.dir === "string" && typeof r?.path === "string" && r?.companions && !r.path.endsWith(LEVEL_ONLY_LABEL)
+    (r) =>
+      !r?.testRoot && typeof r?.dir === "string" && typeof r?.path === "string" && r?.companions && !r.path.endsWith(LEVEL_ONLY_LABEL) &&
+      countsAreNumbers(r) &&
+      (inProject === null || inProject(r.dir))
   );
   for (let end = parts.length; end > 0; end -= 1) {
     const tail = parts.slice(0, end).join("/");
     const matches = eligible.filter((r) => r.dir === tail || r.dir.endsWith(`/${tail}`));
     if (matches.length === 0) continue;
-    if (matches.some(pairsTests)) return null;
-    return matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0];
+    if (matches.some(hasPrecedent)) return null;
+    const below = parts.slice(end);
+    // The family a root counts, or the test's own where the map recorded no extension for it.
+    const counted = (r) => familyOf(language(`x${r.companions.ext ?? extOf(rel)}`));
+    // Every directory from the root down to the test's own, nearest the root first: a package's `tests` holds none of its source.
+    const turnsOn = matches.flatMap((r) => below.map((_, i) => ({ dir: [r.dir, ...below.slice(0, i + 1)].join("/"), family: counted(r) })));
+    return { root: matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0], turnsOn };
   }
   return null;
 }
@@ -142,7 +180,7 @@ function countsLine(dir, root) {
   // first of several can be a .png.
   const ext = root.companions.ext ?? (root.exts?.length === 1 ? root.exts[0][0] : null);
   const counted = namesakeClause({ ...root.companions, root: null }, ext ? `${encode(ext)} file` : "file");
-  return `${dir} holds no other test; ${root.dir}: ${counted}${held}`;
+  return `${pathText(dir)} holds no other test; ${pathText(root.dir)}: ${counted}${held}`;
 }
 
 /**
@@ -169,6 +207,16 @@ const testFilesHeld = (root) => (root.tests ?? []).reduce((n, t) => n + t.files,
  * `holdsTest` answers whether a directory already holds a test that this change
  * did not bring. A caller that cannot tell says nothing, which leaves the rule
  * where it was before the question was asked.
+ *
+ * `turnsOn` on a finding is the directories it does not stand for where the
+ * change made one of them for source of the family beside it (`coveredRoot`).
+ * Only a caller holding the change and its base can tell, so it is handed the
+ * question and the finding is stated as if none was.
+ *
+ * Nothing is said of a test that sits where its language's own tool reads it
+ * from and nowhere else (`sitsWhereItsToolReads`): the first test of a Go
+ * package has no other directory to go to, so "where the siblings put theirs"
+ * is where it already is.
  */
 export function precedentFindings(arrived, roots, { fresh = true, holdsTest = () => false } = {}) {
   // A repository that pairs no tests anywhere has no habit to have departed
@@ -180,7 +228,7 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
   const found = [];
   for (const file of arrived) {
     const rel = typeof file === "string" ? file : file.path;
-    if (!isTestPath(rel)) continue;
+    if (!isTestPath(rel) || sitsWhereItsToolReads(dirOf(rel), namedFamily(rel))) continue;
     // The nearest evidence there is, and the half of issue 120's own sentence
     // this rule was missing: a test landing beside tests is following them,
     // whatever the root's ratio says a level or two up. The caller answers it,
@@ -188,7 +236,7 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
     // notice can see is from the write it is about, and a check has to leave
     // out everything the same change brought.
     if (holdsTest(dirOf(rel))) continue;
-    const covered = coveredRoot(rel, roots);
+    const { root: covered, turnsOn } = coveredRoot(rel, roots) ?? {};
     if (!covered) continue;
     if (covered.companions.of < PRECEDENT_FLOOR) continue;
     // Tests under the root that pair with nothing are still tests. The same
@@ -215,6 +263,7 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
       precision: "precise",
       where: null,
       snippet: null,
+      turnsOn,
     });
   }
   return found;
@@ -240,10 +289,10 @@ export function noticeFor(rel, layout, { holdsTest, from = null } = {}) {
   const [finding] = precedentFindings([rel], layout?.roots ?? [], holdsTest ? { holdsTest } : {});
   if (!finding) return null;
   return [
-    `anatomiya: ${rel}`,
+    `anatomiya: ${pathText(rel)}`,
     `  ${finding.reason}.`,
     `  ${PRECEDENT_COUNTED} Put it where the siblings put theirs, or leave it out and say which rule you followed.`,
-    // A worktree with no map of its own is answered from its main checkout's.
-    ...(from === null ? [] : [`  Counted from this repository's main checkout at ${from}, not this worktree.`]),
+    // A worktree with no map of its own is answered from its main checkout's, named as the path it is opened by.
+    ...(from === null ? [] : [`  Counted from this repository's main checkout at ${locator(from)}, not this worktree.`]),
   ].join("\n");
 }

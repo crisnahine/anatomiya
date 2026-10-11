@@ -43,7 +43,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       # 3.4, not 3.3: 3.3 ships prism 0.19, which the parser child rejects by
       # version because a rescue chain and a constant path are spelled
@@ -118,7 +118,7 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       # One run, and every floor read off its record rather than off the total
       # node prints. A floor over a whole scope says nothing about one file
@@ -173,7 +173,7 @@ jobs:
         with:
           node-version: "22"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       # Every number in the prose that the code also states. Both drifted in one
       # afternoon: the README claimed 21 dimensions after 31 shipped, and a gate
@@ -202,6 +202,13 @@ jobs:
 
       - name: The plugin's own lockfile is the one the seed produces
         run: node scripts/plugin-lock.mjs --check
+
+      # The plugin ships copies of seven grammar files and none of the packages
+      # they come from, so a copy is held to its package only where this runs.
+      # The suite makes the same comparison; this is the command a release is
+      # told to run, and its exit code is what a person reads.
+      - name: The vendored grammars are the ones their packages hold
+        run: node scripts/grammars.mjs --check
 
       # What a marketplace install actually does, on the files it actually
       # copies. Claude Code reads the plugin root with a non-recursive `readdir`
@@ -248,6 +255,10 @@ jobs:
           fi
           grep -qE "^oxc [0-9]" "$RUNNER_TEMP/doctor.out" \
             || { echo "::error::the parser did not load after a marketplace install"; exit 1; }
+          # The grammars are the plugin's own files, so this checks the marketplace
+          # copy as well as the install. The line reads ok only where every grammar loaded.
+          grep -qE "^tree-sitter [0-9][^ ]* ok \(grammars: [0-9]+ of [0-9]+\)" "$RUNNER_TEMP/doctor.out" \
+            || { echo "::error::tree-sitter or one of its grammars did not load after a marketplace install"; exit 1; }
 
   # A unit suite that passes while the binary is broken is a familiar failure,
   # so the binary runs against a real repository with real git history. Both
@@ -277,7 +288,7 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Scan a real repository
         shell: bash
@@ -448,3 +459,45 @@ jobs:
           grep -q "could not be parsed" "$RUNNER_TEMP/ruby-scan.out" \
             && { echo "::error::prism failed on files in a real Ruby repository"; exit 1; }
           test -f .claude/rules/anatomiya-overview.md
+
+      # tree-sitter has no smoke coverage otherwise: none of the repositories
+      # above holds a file it reads, so outside the unit suite no runner would
+      # parse a file with the wasm runtime and a vendored grammar. The plugin
+      # job's doctor check loads both and parses nothing.
+      # Pinned to a tag, small and all Python. The step asserts that tree-sitter
+      # answered with a version, that the scan found an area and stated a claim,
+      # that an area file carries a stated claim's sites line and the sentence
+      # `functions declare what they return`, and that the grammar read every
+      # file. A scan that reads the files and states nothing is the failure a
+      # summary line alone would pass, and the step asks for that sentence by
+      # name, so a claim of another row cannot pass it.
+      # A clone that fails twice fails the step, where the two smokes above pass
+      # with a warning: they repeat what the unit suite parses, and a warning
+      # nobody reads here would leave the wasm runtime with no smoke at all.
+      - name: Scan a Python repository
+        shell: bash
+        env:
+          PYTHON_REPO: https://github.com/pallets/flask.git
+          PYTHON_REF: 3.1.3
+        run: |
+          clone() { git clone --quiet --depth 50 --branch "$PYTHON_REF" "$PYTHON_REPO" "$RUNNER_TEMP/python-smoke"; }
+          clone || { rm -rf "$RUNNER_TEMP/python-smoke"; sleep 10; clone; } \
+            || { echo "::error::could not clone the Python smoke repository in two tries"; exit 1; }
+          cd "$RUNNER_TEMP/python-smoke"
+          node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/python-scan.out"
+          grep -qE "^engines: .*tree-sitter [0-9]" "$RUNNER_TEMP/python-scan.out" \
+            || { echo "::error::tree-sitter did not answer for a Python repository"; exit 1; }
+          grep -qE "^[0-9]+ files?, [1-9][0-9]* areas?" "$RUNNER_TEMP/python-scan.out" \
+            || { echo "::error::the scan of a Python repository found no area"; exit 1; }
+          grep -qE "^[1-9][0-9]* of [0-9]+ claims? stated" "$RUNNER_TEMP/python-scan.out" \
+            || { echo "::error::the scan of a Python repository stated no claim"; exit 1; }
+          # The summary's count and the disk have to agree: a stated claim is two
+          # lines in an area file, the second its sites and its files.
+          grep -qE "^  [0-9]+ of [0-9]+ sites across [0-9]+ of [0-9]+ files" .claude/rules/anatomiya-area-*.md \
+            || { echo "::error::no area file of the Python repository states a claim"; exit 1; }
+          grep -qx "functions declare what they return" .claude/rules/anatomiya-area-*.md \
+            || { echo "::error::no area file of the Python repository states that functions declare what they return"; exit 1; }
+          if grep -q "could not be read by this tool's grammar" "$RUNNER_TEMP/python-scan.out"; then
+            echo "::error::the Python grammar could not read a file of a repository it read whole when this was pinned"
+            exit 1
+          fi

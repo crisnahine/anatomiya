@@ -634,6 +634,20 @@ test("prefixClass answers for a name that can say, and says nothing for one that
   assert.equal(prefixClass("TEFLogonStep"), null);
 });
 
+test("prefixClass says nothing for two capitals and a digit", async () => {
+  // `IV8Profile` is `I` on `V8Profile` and `ID3Tag` is the tag of an `ID3`,
+  // and nothing in the two names separates them. Read as carrying no prefix,
+  // `IV8Profile` broke a stated `I` claim that no spelling of it could keep.
+  const { prefixClass } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  for (const name of ["IV8Profile", "IS3Client", "ID3Tag", "ES2019Features", "IK8sPod", "TI18n", "IP4"]) {
+    assert.equal(prefixClass(name), null, name);
+  }
+  assert.equal(prefixClass("IFoo"), "I");
+  assert.equal(prefixClass("Foo"), "none");
+  assert.equal(prefixClass("V8Engine"), "none", "one capital before the digit is a word");
+  assert.equal(prefixClass("I18nConfig"), "none");
+});
+
 test("prefixClass does not read an acronym's first letter as a prefix", async () => {
   // `OAuthToken` voted `O`, `ETag` voted `E` and `IDs` voted `I`: a capital,
   // a capital, a lower-case letter is the prefix shape and also how every
@@ -1617,4 +1631,52 @@ test("a grouped row resolves a relative mixin the way the superclass row does", 
 
   assert.equal(slot.learned, "Api::V1::Trackable");
   assert.equal(slot.conforming, 10, "both spellings name the module the nesting resolves to");
+});
+
+/* --- component files are a population of their own --- */
+
+test("components learn their own filename class beside the modules they sit with", async () => {
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const { claimFor } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  const { rowByKey } = await import("../plugins/anatomiya/lib/registry.mjs");
+  const components = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
+  const helpers = ["format-date", "parse-amount", "build-query"];
+  const rels = [...components.map((n) => `src/${n}.vue`), ...helpers.map((n) => `src/${n}.ts`)];
+  const area = { langs: ["vue", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith(".vue") ? "vue" : "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: rel.endsWith(".vue") ? { embedded: "vue" } : {} }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.learned, "PascalCase");
+  assert.equal(slot.learnedKind, "component");
+  assert.equal(slot.candidates, 8, "the three helpers left the population");
+  assert.equal(slot.narrowed, true);
+  assert.equal(claimFor(rowByKey("file_naming_case"), slot.learned, slot.learnedKind), "component files here are named PascalCase");
+});
+
+test("a component with markup and no script still votes with its name", async () => {
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const rels = ["src/UserCard.svelte", "src/OrderList.svelte", "src/DataTable.svelte", "src/nav_bar.svelte"];
+  const area = { langs: ["svelte"], files: rels.map((rel) => ({ rel, lang: "svelte" })) };
+  const parsed = rels.map((rel, i) => ({ rel, ok: true, hits: {}, facets: { embedded: "svelte", ...(i < 2 ? { empty: true } : {}) } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.candidates, 4);
+  assert.equal(slot.conforming, 3);
+  assert.equal(slot.learnedKind, "component");
+});
+
+test("the filename row asks none of the seven tree-sitter languages", async () => {
+  // Measured over three repositories per language and refused on the bar every
+  // row has to clear. The commonest class is 99.9% or more of a repository's
+  // names in Python, Java and C#, and the widest a language spreads on files
+  // somebody wrote is 0.13: Go 0.88 to 1.00, Rust 0.83 to 0.97, PHP 0.90 to
+  // 1.00. Kotlin reaches 0.79 only through 128 example files a tool generated.
+  // A language joins here with the numbers that reverse one of those.
+  const { rowByKey } = await import("../plugins/anatomiya/lib/registry.mjs");
+  const { LANGUAGES } = await import("../plugins/anatomiya/lib/langs.mjs");
+  const row = rowByKey("file_naming_case");
+  assert.deepEqual(row.langs, ["js", "jsx", "ruby", "vue", "svelte"]);
+  for (const { id } of LANGUAGES.filter((l) => l.engine === "tree-sitter")) assert.equal(row.langs.includes(id), false, id);
 });

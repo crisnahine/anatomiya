@@ -13,16 +13,19 @@ import {
   corpusDrop,
   gitRoot,
   isCorpusPath,
+  isSource,
   safeResolve,
   lsFiles,
 } from "./corpus.mjs";
-import { language, MISSING_STRIPPER } from "./langs.mjs";
-import { areaOwner, globsReach } from "./areas.mjs";
+import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
+import { isProducer, placedTests } from "./layout.mjs";
+import { areaLabel, areaOwner, globsReach, underArea } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase } from "./render.mjs";
-import { auditRules, isLink, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
+import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
+import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
-import { remedyFor } from "./readiness.mjs";
+import { remedyForMissing } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
 import { isTestPath, precedentFindings } from "./precedent.mjs";
@@ -35,7 +38,7 @@ import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
-import { byCode } from "./paths.mjs";
+import { byCode, dirOf } from "./paths.mjs";
 
 /**
  * The check phase: which of the conventions the map stated did this branch
@@ -232,8 +235,10 @@ export async function check(cwd, { baseRef = null } = {}) {
       "the corpus could not be listed, so no routing claim was checked"))
     : new Set();
 
-  const { findings, missingEngines, missingParser } = await collect(root, {
+  const placed = await placedAmong(root, examined);
+  const { findings, missingEngines, missingGrammars, missingParser, headFacets } = await collect(root, {
     examined,
+    placed,
     areas,
     base,
     mode,
@@ -256,6 +261,11 @@ export async function check(cwd, { baseRef = null } = {}) {
   // What "already" means here is not what it means for the hook: a change that
   // invents a directory and fills it with four specs must not have three of
   // them excused by the first, so everything it brought is subtracted.
+  // A relocation is an arrival too: moving a test into a directory whose
+  // siblings have none is the same deviation as writing it there. Read off
+  // `from` rather than the status letter, which spells the same move two ways:
+  // `R` from the diff, and `M` with an `orig` from a working tree where it is
+  // staged and not yet committed.
   // A rename within its own directory arrives nowhere: the file was already
   // there under another name. Counted as an arrival, it was also subtracted as
   // one, and a directory whose only test had been renamed read as holding none.
@@ -272,24 +282,45 @@ export async function check(cwd, { baseRef = null } = {}) {
   const holdsTest = (dir) =>
     tracked === null || tracked.some((rel) => dirname(rel) === (dir || ".") && !brought.has(rel));
 
-  findings.push(
-    ...precedentFindings(
-      // A relocation too: moving a test into a directory whose siblings have
-      // none is the same deviation as writing it there. Read off `from` rather
-      // than the status letter, which spells the same move two ways: `R` from
-      // the diff, and `M` with an `orig` from a working tree where it is staged
-      // and not yet committed.
-      arrived,
-      facts?.layout?.roots ?? [],
-      {
-        // The comparison alone is what says a file arrived; a stale map does
-        // not bear on that, and it caps at FIX anyway, which is this rule's
-        // ceiling.
-        fresh: mode === "compare",
-        holdsTest,
-      }
-    )
-  );
+  const roots = facts?.layout?.roots ?? [];
+  // The comparison alone is what says a file arrived; a stale map does not
+  // bear on that, and it caps at FIX anyway, which is this rule's ceiling.
+  const asked = { fresh: mode === "compare", holdsTest };
+  // A directory holding only the tests the change wrote is not one it made
+  // for source, and is the directory this rule asks about. Neither is one
+  // holding a test and a file no test could be written for, which is the
+  // layout's own question: an empty index, a declaration file, a story, the
+  // file a runner loads. Read by its path where this run parsed no head of it.
+  // Every directory above each such file, with its family: asked once for each finding and each directory it turns on.
+  const sourced = new Set();
+  for (const { path } of arrived) {
+    const lang = language(path);
+    if (!isProducer({ rel: path, lang, facets: headFacets.get(path) ?? null }, placed)) continue;
+    for (let dir = dirname(path); dir !== "."; dir = dirname(dir)) sourced.add(`${familyOf(lang)}\0${dir}`);
+  }
+  const broughtSource = (dir, family) => sourced.has(`${family}\0${dir}`);
+  // A finding does not stand where the change made a directory its test is
+  // under and put source there, which the merge base says: one listing, and
+  // none where no finding was about to be stated or the change put no source
+  // under any of them.
+  const stated = precedentFindings(arrived, roots, asked).map(({ turnsOn, ...finding }) => ({
+    finding,
+    under: turnsOn.filter(({ dir, family }) => broughtSource(dir, family)).map(({ dir }) => dir),
+  }));
+  const absent = await absentAt(root, base.mergeBase, [...new Set(stated.flatMap(({ under }) => under))]);
+  // A listing that failed says nothing of any directory, so a finding that turns on one is declined, and said (C33).
+  let declined = 0;
+  for (const { finding, under } of stated) {
+    if (absent === null && under.length > 0) declined += 1;
+    else if (!under.some((dir) => absent.has(dir))) findings.push(finding);
+  }
+  if (declined > 0) {
+    caveat(
+      caveats,
+      CAVEATS.BASE_UNREADABLE,
+      `the merge base could not be asked which directories it held, so ${declined} ${declined === 1 ? "test" : "tests"} under a directory this change put source in drew no placement finding`
+    );
+  }
 
   findings.sort(
     (a, b) =>
@@ -303,28 +334,45 @@ export async function check(cwd, { baseRef = null } = {}) {
   // Everything in there this build did not write is named: the file nobody here
   // wrote, and the file an older build left behind that no map lists. The
   // prefix is not the test, because a hand-written file can take it.
-  const { foreign, unknown, unreadable: unreadableRules, escaped, listed } = auditRules(root, knownNames(facts));
-  // The scan refuses to write through a link out of the repository; the check
-  // has nothing to refuse, so it says what it could not look at. A clean rules
-  // directory reported here would be the same lie as a clean diff reported for
-  // one git would not produce.
-  if (escaped) {
-    caveat(
-      caveats,
-      CAVEATS.RULES_ESCAPED,
-      `${RULES_DIR} resolves outside the repository, so nothing there was examined: this is a symlink in the working tree`
-    );
-  } else if (!listed) {
-    // Same rule again: a directory nobody could list is not one holding
-    // nothing, and the files in it load whether or not this run saw them.
-    caveat(caveats, CAVEATS.RULES_UNLISTED, `${RULES_DIR} could not be listed, so nothing there was examined`);
-  }
-  if (unreadableRules.length) {
-    caveat(
-      caveats,
-      CAVEATS.RULES_UNREADABLE,
-      `${unreadableRules.length} file(s) in ${RULES_DIR} could not be read, so whose they are is unknown`
-    );
+  //
+  // Cursor's and Copilot's directories get the same audit while their target
+  // is on, each under its own name.
+  const audited = (target) => {
+    const { foreign, unknown, unreadable, escaped, listed } = auditRules(root, knownNames(facts, target), target);
+    // The scan refuses to write through a link out of the repository; the check
+    // has nothing to refuse, so it says what it could not look at. A clean rules
+    // directory reported here would be the same lie as a clean diff reported for
+    // one git would not produce.
+    if (escaped) {
+      caveat(
+        caveats,
+        CAVEATS.RULES_ESCAPED,
+        `${target.dir} resolves outside the repository, so nothing there was examined: this is a symlink in the working tree`
+      );
+    } else if (!listed) {
+      // Same rule again: a directory nobody could list is not one holding
+      // nothing, and the files in it load whether or not this run saw them.
+      caveat(caveats, CAVEATS.RULES_UNLISTED, `${target.dir} could not be listed, so nothing there was examined`);
+    }
+    if (unreadable.length) {
+      caveat(
+        caveats,
+        CAVEATS.RULES_UNREADABLE,
+        `${unreadable.length} file(s) in ${target.dir} could not be read, so whose they are is unknown`
+      );
+    }
+    return { foreign, unknown, rules: { escaped, listed, unreadable } };
+  };
+  const { foreign, unknown, rules } = audited(TARGETS.claude);
+  const targets = {};
+  for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
+    const { state, reason } = targetStatus(root, target);
+    if (state === "on") targets[target.id] = { dir: target.dir, state, ...audited(target) };
+    // Unread, and the record says a scan wrote files there: they load whether or not this run saw them.
+    if (state === "unknown" && knownNames(facts, target)?.size) {
+      caveat(caveats, CAVEATS.RULES_UNLISTED, `${target.dir} could not be read (${reason}), so nothing there was examined`);
+      targets[target.id] = { dir: target.dir, state, reason, foreign: [], unknown: [], rules: { escaped: false, listed: false, unreadable: [] } };
+    }
   }
 
   return {
@@ -350,7 +398,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     caveats,
     // Which engine is absent, beside the message it produced: the remedy is
     // the engine's and npm cannot install an interpreter.
-    parse: { missingParser, missingEngines },
+    parse: { missingParser, missingEngines, missingGrammars },
     semantic: { claims: semanticClaims },
     foreign,
     unknown,
@@ -358,7 +406,10 @@ export async function check(cwd, { baseRef = null } = {}) {
     // caveat prose they were unreadable to anything but a human: four empty
     // lists and `listed: false` is a directory nobody looked in, which reads
     // exactly like one holding nothing foreign.
-    rules: { escaped, listed, unreadable: unreadableRules },
+    rules,
+    // The same for each other directory a scan writes to here. No key where
+    // none is on, so a repository that never named one reads as it did.
+    ...(Object.keys(targets).length ? { targets } : {}),
   };
 }
 
@@ -649,8 +700,75 @@ async function trackedTests(root) {
   return found;
 }
 
+// The most bytes of directory names one listing is handed. A Windows command line holds 32,767 characters, the
+// shortest of the three platforms' bounds, and half of it leaves the other half for the quoting a name can need.
+// Past a bound the call fails outright: 20,000 names of 50 bytes drew `spawn E2BIG` on macOS.
+const LISTING_ARG_BYTES = 16_000;
+
+/**
+ * Which of `dirs` the merge base does not hold, or null where a listing failed.
+ *
+ * None where there is no merge base to ask. Null and never a set from the calls
+ * that did answer: a failed listing names no directory, and read as an answer
+ * every directory it was asked of would be absent (C33).
+ */
+async function absentAt(root, mergeBase, dirs) {
+  if (!mergeBase || dirs.length === 0) return new Set();
+  // Spelled literal, since a name is the repository's: git reads a leading colon as pathspec magic and lists nothing for `:top`.
+  const calls = [];
+  let room = 0;
+  for (const dir of dirs) {
+    const named = `:(literal)${dir}`;
+    const bytes = Buffer.byteLength(named) + 1;
+    if (calls.length === 0 || room < bytes) {
+      calls.push([]);
+      room = LISTING_ARG_BYTES;
+    }
+    calls.at(-1).push(named);
+    room -= bytes;
+  }
+  // Asked of a directory and of one inside it, git lists what the outer one holds and not the outer one, so every directory above an entry is held too.
+  const held = new Set();
+  for (const named of calls) {
+    const listed = await gitBuffered(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...named], { timeout: GIT.checkTimeoutMs });
+    if (!listed.ok) return null;
+    for (const entry of listed.stdout.split("\0")) {
+      for (let at = entry; at !== "" && !held.has(at); at = dirOf(at)) held.add(at);
+    }
+  }
+  return new Set(dirs.filter((dir) => !held.has(dir)));
+}
+
+/**
+ * The examined files a language's tool collects as tests by where they sit,
+ * asked of everything git tracks beside them, the way a scan asks it.
+ *
+ * Empty where no examined language has such a tool, which costs no listing,
+ * and where the listing failed: the file is then read by what it holds alone.
+ */
+async function placedAmong(root, examined) {
+  if (!examined.some((c) => placeTestsOf(language(c.path)) !== null)) return new Set();
+  const listed = examined.map((c) => ({ rel: c.path, lang: language(c.path) }));
+  try {
+    await lsFiles(root, (rel) => listed.push({ rel, lang: language(rel) }));
+  } catch {
+    return new Set();
+  }
+  return placedTests(listed);
+}
+
+/**
+ * Whether the path a file had at the base is one that held source there.
+ *
+ * `notes.txt` renamed to `notes.py` held nothing a row was ever asked of, so
+ * the file arrives as an added one does and every site in it is new. Read as a
+ * base it would go to the fallback language: text that is no JavaScript is
+ * rejected there, and text that is would be taken for sites the base held.
+ */
+const heldSource = (file) => Boolean(file.from) && isSource(file.from);
+
 async function collect(root, run) {
-  const { examined, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending } = run;
+  const { examined, placed, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending } = run;
   const areaFor = areaIndex(areas);
   const ancestorsOf = ancestorsIndex(areas);
   // Which directives each area's file had no room to state, recomputed from the
@@ -685,7 +803,7 @@ async function collect(root, run) {
     // the new path does not exist, and a path hash cannot tell a rename from a
     // delete plus an add. Only the head side is ever read from the tree, so no
     // edit of an agent's can move the base it is judged against.
-    if (mode === "compare" && file.from) baseWanted.set(file.from, { rel: file.from, lang: language(file.from) });
+    if (mode === "compare" && heldSource(file)) baseWanted.set(file.from, { rel: file.from, lang: language(file.from) });
   }
 
   // The head tree is on disk while the base read runs and both are on disk
@@ -733,7 +851,7 @@ async function collect(root, run) {
       }
       const job = { file, lang, source, abs: atHeadBlob?.abs ?? null, base: null, baseAbs: null };
 
-      if (mode === "compare" && file.from) {
+      if (mode === "compare" && heldSource(file)) {
         const atMergeBase = baseBlobs.get(file.from);
         // Without the base version every site in the file reads as new, which is
         // the forgery this design exists to prevent. Say so and check nothing.
@@ -756,16 +874,17 @@ async function collect(root, run) {
       // A file read from the working tree is the one side that arrives as bytes.
       // The parser gets a copy rather than the live path, because the text every
       // offset here is resolved against is the copy this run read.
-      entries.push({ rel: `head:${job.file.path}`, lang: job.lang, ...(job.abs ? { abs: job.abs } : { source: job.source }) });
+      // The head's facets say what kind of file both revisions are, so only the head is told where it sits.
+      entries.push({ rel: `head:${job.file.path}`, path: job.file.path, lang: job.lang, placed: placed.has(job.file.path), ...(job.abs ? { abs: job.abs } : { source: job.source }) });
       // Under the path it had at the base, which is what picks the grammar: a
       // `.ts` renamed to `.tsx` was parsed as TSX, where a generic arrow that
       // is valid TypeScript is a syntax error, and the whole file was skipped.
       if (job.base !== null) {
-        entries.push({ rel: `base:${job.file.from}`, lang: language(job.file.from), abs: job.baseAbs });
+        entries.push({ rel: `base:${job.file.from}`, path: job.file.from, lang: language(job.file.from), abs: job.baseAbs });
       }
     }
 
-    const { records: parsed, missingEngines, missingParser, missingStripper } = await parseAll(entries, { withProgram: true });
+    const { records: parsed, missingEngines, missingGrammars, missingParser, missingStripper } = await parseAll(entries, { withProgram: true });
     const findings = [];
 
     // Per area, as the fold holds them: a base one changed file adds is what
@@ -780,7 +899,7 @@ async function collect(root, run) {
         lang: job.lang,
         frameworks,
         capabilities,
-        head: { program: headParse.program, source: job.source, comments: headParse.comments, facets: headParse.facets },
+        head: { program: headParse.program, source: headParse.text ?? job.source, comments: headParse.comments, facets: headParse.facets },
       });
       if (!declaredIn.has(area.path)) declaredIn.set(area.path, new Map());
       const into = declaredIn.get(area.path);
@@ -817,6 +936,9 @@ async function collect(root, run) {
         caveat(caveats, unreadCode(headParse), `${path} ${unreadReason(headParse)}, so it was not checked`);
         continue;
       }
+      if (headParse.oneBranch) {
+        caveat(caveats, CAVEATS.HEAD_ONE_BRANCH, `${path} was read with one branch of each #if, so its other branches were not checked`);
+      }
 
       // The path the file had at the base, so a rename keeps every identity;
       // introduced.mjs says why the line never is one.
@@ -839,8 +961,9 @@ async function collect(root, run) {
         lang: job.lang,
         frameworks,
         capabilities,
-        head: { program: headParse.program, source: job.source, comments: headParse.comments, stripped: headParse.stripped, facets: headParse.facets },
-        base: mode === "added-lines" || !baseParse ? null : { program: baseParse.program, source: job.base, comments: baseParse.comments, stripped: baseParse.stripped },
+        // The text each tree was read from, which for a C# file read with one branch is not the file as written.
+        head: { program: headParse.program, source: headParse.text ?? job.source, comments: headParse.comments, stripped: headParse.stripped, facets: headParse.facets },
+        base: mode === "added-lines" || !baseParse ? null : { program: baseParse.program, source: baseParse.text ?? job.base, comments: baseParse.comments, stripped: baseParse.stripped },
         addedLines: mode === "added-lines" ? (added && added.get(path)) || [] : null,
         parents: area ? declaredIn.get(area.path) : undefined,
       });
@@ -868,7 +991,7 @@ async function collect(root, run) {
         // as "no convention" and never delivered here either.
         const away = own && area && !globsReach(area.globs, path);
         const verdict = up
-          ? { severity: "FIX", reason: `counted in ${up.from}, which this directory sits inside` }
+          ? { severity: "FIX", reason: `counted in ${areaLabel(up.from)}, which this directory sits inside` }
           : cappedAway(
               severityFor(
                 { path, oldPath: job.file.from },
@@ -911,10 +1034,12 @@ async function collect(root, run) {
     // what to do: a check that examined files of another language now goes on
     // for them rather than refusing over this (B41), so it says so once.
     if (missingParser) {
-      caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyFor(missingEngines[0])}, then check again`);
+      caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyForMissing({ missingEngines, missingGrammars })}, then check again`);
     }
 
-    return { findings, missingParser, missingEngines };
+    // The facets alone: a record holds its tree, which nothing past here reads.
+    const headFacets = new Map([...headRecords].map(([path, record]) => [path, record?.ok ? record.facets : null]));
+    return { findings, missingParser, missingEngines, missingGrammars, headFacets };
   } finally {
     // The sources the report quotes are held in the parent, so nothing past
     // here needs the files: leaving them until the run ends would keep two
@@ -1032,11 +1157,11 @@ function cappedAway(verdict, away, area, path) {
   // cover; missed there too, the name is. One sentence for both told a `.tsx`
   // sitting in the area's own directory that it sat inside that directory.
   const name = path.slice(path.lastIndexOf("/") + 1);
-  if (globsReach(area.globs, area.path === "." ? name : `${area.path}/${name}`)) {
-    return { severity: "FIX", reason: `counted in ${area.path}, which this directory sits inside` };
+  if (globsReach(area.globs, underArea(area.path, name))) {
+    return { severity: "FIX", reason: `counted in ${areaLabel(area.path)}, which this directory sits inside` };
   }
   const type = name.lastIndexOf(".") > 0 ? `${name.slice(name.lastIndexOf("."))} files` : name;
-  return { severity: "FIX", reason: `the area file for ${area.path} does not reach ${type}, so this claim was never delivered here` };
+  return { severity: "FIX", reason: `the area file for ${areaLabel(area.path)} does not reach ${type}, so this claim was never delivered here` };
 }
 
 /** How an area's file dropped this slot, `named` or `unnamed`, or false where it printed it. */
@@ -1088,7 +1213,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
   // is not delivered here, so the map did not tell this file's author.
   const away = !from && !globsReach(area.globs, path);
   const verdict = from
-    ? { severity: "FIX", reason: `counted in ${from}, which this directory sits inside` }
+    ? { severity: "FIX", reason: `counted in ${areaLabel(from)}, which this directory sits inside` }
     : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, capped, dropped }), away, area, path);
   return {
     severity: verdict.severity,
@@ -1113,7 +1238,8 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
  * causes kept apart, because the reader's next move differs for each: a crash
  * is this tool's problem, rejected syntax is the branch's own code, the cap is
  * a generated file nobody writes by hand, and the rest is this tool or the
- * filesystem.
+ * filesystem. A rejected record says what its engine's rejection means, and a
+ * grammar's is worded as this tool's limit under the same code.
  *
  * The sentence and the code sit in one table, so the split a human reads and
  * the split anything else branches on can never name different causes.
@@ -1132,7 +1258,7 @@ const unreadOf = (parse) => UNREAD[parse && parse.kind] ?? UNREAD_ELSE;
 
 /** The cause as a sentence. This surface names one file, so it is singular. */
 export function unreadReason(parse) {
-  return unexaminedPhrase(unreadOf(parse).phrase, 1);
+  return unexaminedPhrase(unreadOf(parse).phrase, 1, parse?.rejects);
 }
 
 /** The same cause as a code, for a reader that does not read the sentence. */

@@ -2,8 +2,9 @@
 /**
  * The second tier: `typescript@5`'s checker, run where the repository can use it.
  *
- * A scan with it measured about 3x a plain one, and the checker is whole-program,
- * so narrowing its file set does not buy the time back: driving the corpus down
+ * A scan with it measured about 4.5 times a plain one on typeorm (5.6 to 5.7 seconds
+ * against 1.3, 3,347 files read), and the checker is whole-program, so narrowing
+ * its file set does not buy the time back: driving the corpus down
  * drove unresolved types from 3.1% to 36.2%. Major 5 is pinned because 7 is the Go
  * port and publishes no JS API at all.
  */
@@ -49,7 +50,7 @@ export function unusableReason(ts) {
  * and every claim the checker could make reads degraded; a directory holding
  * only tool caches such as `.vite` is no install. A typescript of another major
  * reads `not-installed` too, and doctor names which. Plain JavaScript with no
- * `tsconfig.json` is skipped before any of that: run on the compiler's defaults
+ * config at its root is skipped before any of that: run on the compiler's defaults
  * it resolved 25% to 39% on three installed repositories and closed every
  * type-checked slot, and no install changes that.
  */
@@ -73,11 +74,152 @@ export function checkerStamp(root, { specifier = "typescript" } = {}) {
   } catch {
     // Absent is a state the stamp records, not a failure.
   }
-  return `${hasInstall(root)}\0${hasConfig(root)}\0${resolved}`;
+  return `${hasInstall(root)}\0${configNameIn(root) ?? ""}\0${resolved}`;
+}
+
+/**
+ * What a verdict is measured under: this build, `checkerStamp`, what an install
+ * leaves behind, and the bytes of the config the root is read through, since an
+ * edit there is the likeliest thing to lift a rate and moves none of the others.
+ */
+export function verdictStamp(root, build) {
+  const name = configNameIn(root);
+  const config = name === null ? "" : configStamp(root, join(root, name));
+  return createHash("sha256").update(`${build ?? ""}\0${checkerStamp(root)}\0${installStamp(root)}\0${config}`).digest("hex");
+}
+
+/**
+ * A root config's bytes, or what stands in for them. One that leaves the
+ * repository gives the reason the checker refuses it for and is not opened.
+ * Bounded and typed: the file comes with the repository, and one linked to an
+ * endless device read whole never returns. The bound is more than any config
+ * a person writes; past it an edit is not seen.
+ */
+function configStamp(root, path) {
+  if (!insideRoot(root, path)) return CONFIG_REFUSALS.escaped;
+  const entry = readHead(path);
+  return entry.kind === "file" ? entry.head : entry.kind;
+}
+
+/**
+ * The file each package manager rewrites when it installs, by name under
+ * `node_modules`: npm, pnpm, yarn 2 and later with the node-modules linker, yarn 1.
+ */
+const INSTALL_RECORDS = Object.freeze([".package-lock.json", ".modules.yaml", ".yarn-state.yml", ".yarn-integrity"]);
+
+/**
+ * What moves when an install changes the packages the checker resolves: the
+ * size and modification time of `node_modules` and of each install record in
+ * it. A verdict measured over a partial install is otherwise carried past the
+ * install that completes it. Stats only, of the entries themselves: a linked
+ * `node_modules` is no install of the repository's own, the same as for
+ * `hasInstall`, and nothing is read through it.
+ */
+function installStamp(root) {
+  const deps = join(root, "node_modules");
+  if (!isDirectory(deps)) return "";
+  return [deps, ...INSTALL_RECORDS.map((name) => join(deps, name))].map(sizeAndTime).join("\0");
+}
+
+function isDirectory(path) {
+  try {
+    return lstatSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function sizeAndTime(path) {
+  try {
+    const stat = lstatSync(path);
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The last verdict, where a refresh may hand it to its scan, or null where the
+ * checker has to measure with nothing behind it: `recorded` is the last
+ * record's tier, `under` the stamp now. Only a degraded verdict under the same
+ * stamp: an ok tier's numbers are the claims. One a run finished is carried in
+ * place of a run. A failed run measured nothing, so it is handed on with its
+ * count, and `standsIn` says from which count it is carried.
+ *
+ * The record is a file anyone on the machine can edit, and what is carried is
+ * printed in the always-loaded overview on every refresh after. So only a
+ * verdict a scan could have written is handed on, and any other is measured.
+ */
+export function carriedVerdict(recorded, under, now = Date.now()) {
+  if (recorded?.status !== "degraded" || (recorded.ran !== true && recorded.carried !== true)) return null;
+  if (recorded.measuredUnder !== under) return null;
+  const { status, reason, measuredAt, measuredUnder } = recorded;
+  const typedResolutionRate = recorded.typedResolutionRate ?? null;
+  // A record with no count holds no failure a run counted.
+  const failures = recorded.failures ?? 0;
+  if (!classified(reason, typedResolutionRate, failures) || !isMomentBy(measuredAt, now)) return null;
+  return { status, reason, typedResolutionRate, measuredAt, measuredUnder, failures };
+}
+
+/**
+ * How many runs in a row have to fail under one stamp before a refresh stops
+ * starting the checker. One failure can be a machine under load, and carried
+ * on its first sighting it would stick. The second costs a repository that
+ * always fails one more run: 47 seconds on the 4,099-file workspace measured.
+ */
+export const FAILURES_CARRIED = 2;
+
+const TIER_FAILED = "tier-failed";
+
+/** Whether a scan handed `verdict` by a refresh records it in place of running the checker. */
+export function standsIn(verdict) {
+  return verdict.reason !== TIER_FAILED || verdict.failures >= FAILURES_CARRIED;
+}
+
+/**
+ * The failures in a row a measuring scan records, this run counted: `last` is
+ * the verdict the refresh handed in, or null, and `under` the stamp this run
+ * measured under. A run that finished records none, and a failure under
+ * another stamp, or with nothing behind it, is the first. A verdict that is no
+ * failure counts none.
+ */
+export function failuresIn(semantic, last, under) {
+  if (semantic.reason !== TIER_FAILED) return 0;
+  return (last?.measuredUnder === under ? last.failures : 0) + 1;
+}
+
+const LOW_RESOLUTION = "low-resolution";
+const REFUSALS = new Set(Object.values(CONFIG_REFUSALS));
+
+/**
+ * Whether a scan records a degraded tier with this reason beside this rate and
+ * this count. A failed run has no rate, and its count is 1 up to the count a
+ * refresh carries from, past which no run measures to raise it.
+ */
+function classified(reason, rate, failures) {
+  if (reason === TIER_FAILED) return rate === null && Number.isInteger(failures) && failures >= 1 && failures <= FAILURES_CARRIED;
+  if (failures !== 0) return false;
+  if (REFUSALS.has(reason)) return rate === null || isShare(rate, 1);
+  if (reason !== LOW_RESOLUTION && reason !== NO_CONFIG) return false;
+  return isShare(rate, 1) && rate < RESOLUTION_FLOOR;
+}
+
+const isShare = (rate, most) => typeof rate === "number" && rate >= 0 && rate <= most;
+
+// No scan of this tool ran before it, so a day before it is one a hand wrote.
+const EARLIEST_MOMENT = Date.UTC(2020, 0, 1);
+// What a clock set wrong, on the machine that measured or on this one, is allowed.
+const CLOCK_SLACK_MS = 24 * 60 * 60 * 1000;
+
+/** Whether `text` is a moment as a scan writes one, from 2020 on and no more than a day after `now`. */
+function isMomentBy(text, now) {
+  if (typeof text !== "string") return false;
+  const at = Date.parse(text);
+  return at >= EARLIEST_MOMENT && at <= now + CLOCK_SLACK_MS && new Date(at).toISOString() === text;
 }
 
 function hasConfig(root) {
-  return existsSync(join(root, CONFIG_NAME));
+  return configNameIn(root) !== null;
 }
 
 // A hand-written `.d.ts` beside JavaScript types nothing that JavaScript imports.
@@ -96,7 +238,7 @@ export function hasInstall(root) {
 
 function hasPackages(deps) {
   try {
-    return lstatSync(deps).isDirectory() && readdirSync(deps).some((name) => !name.startsWith("."));
+    return isDirectory(deps) && readdirSync(deps).some((name) => !name.startsWith("."));
   } catch {
     return false;
   }
@@ -106,10 +248,12 @@ import { guardedChild } from "./child.mjs";
 import { guardsOver } from "./limits.mjs";
 import { holdsTypeSyntax } from "./langs.mjs";
 import { extOf } from "./paths.mjs";
-import { CONFIG_NAME } from "./tsconfig.mjs";
+import { readHead } from "./rules.mjs";
+import { CONFIG_REFUSALS, configNameIn, insideRoot, NO_CONFIG } from "./tsconfig.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const WORKER = fileURLToPath(new URL("./semantic-worker.mjs", import.meta.url));
@@ -143,7 +287,7 @@ export function classifySemantic({ config, resolution }) {
   // nothing for the checker to resolve. A config that read with a note of its
   // own, which is a root with no tsconfig at all, gives that note as the cause.
   if (rate !== null && rate < RESOLUTION_FLOOR) {
-    return { status: "degraded", reason: config?.reason ?? "low-resolution", typedResolutionRate: rate };
+    return { status: "degraded", reason: config?.reason ?? LOW_RESOLUTION, typedResolutionRate: rate };
   }
   return { status: "ok", reason: null, typedResolutionRate: rate };
 }
@@ -195,7 +339,7 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
       settled = true;
       sup.settle();
       sup.kill("finished");
-      if (error) return resolve({ records, config, status: "degraded", reason: "tier-failed", typedResolutionRate: null, error });
+      if (error) return resolve({ records, config, status: "degraded", reason: TIER_FAILED, typedResolutionRate: null, error });
       resolve({ records, config, ...classifySemantic({ config, resolution: summed(records.keys(), records) }), error: null });
     };
 

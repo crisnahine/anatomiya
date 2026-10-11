@@ -5,10 +5,11 @@
  *
  * The corpus rows ask about filenames and need no parser; the reducer composes
  * them the way it composes pairings. The AST rows run in the worker like every
- * other dimension. Nothing here imports the registry, because the registry
+ * other dimension. Nothing here imports `registry.mjs`, because `registry.mjs`
  * imports this file.
  */
-import { isFunctionLike } from "./walk.mjs";
+import { templateMountsByName } from "./langs.mjs";
+import { componentProps, isFunctionLike } from "./walk.mjs";
 import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./stems.mjs";
 import { encode } from "./encode.mjs";
@@ -85,13 +86,15 @@ export function claimFor(dim, cls, kind) {
  *
  * A name that is nothing but two capitals cannot say either: `IO` is the type
  * of that name, and reading it as `I` on an `O` or as a word are the same two
- * readings with nothing to separate them.
+ * readings with nothing to separate them. Two capitals and a digit is the
+ * same: `IV8Profile` is `I` on `V8Profile`, and `ID3Tag` is the tag of an
+ * `ID3`.
  */
 export function prefixClass(name) {
   const s = name || "";
   const m = /^([A-Z])[A-Z][a-z]/.exec(s);
   if (m) return PREFIX_LETTERS.has(m[1]) && !ACRONYM_OPENING.test(s) ? m[1] : null;
-  if (/^[A-Z]{3,}/.test(s) || /^[A-Z]{2}$/.test(s)) return null;
+  if (/^[A-Z]{3,}/.test(s) || /^[A-Z]{2}(?:\d|$)/.test(s)) return null;
   return "none";
 }
 
@@ -235,6 +238,9 @@ export function namesASite(rel, facets = null) {
  */
 const splitByJsx = (record) => (record?.facets?.jsx === true ? "jsx" : "module");
 
+// A component file is named by its framework's habit, not by the modules beside it.
+const splitByComponent = (record) => (record?.facets?.embedded ? "component" : splitByJsx(record));
+
 export const NAMING_CORPUS = [
   {
     key: "file_naming_case",
@@ -245,6 +251,7 @@ export const NAMING_CORPUS = [
     splitClaim: {
       jsx: "files here that hold JSX are named <style>",
       module: "files here that hold no JSX are named <style>",
+      component: "component files here are named <style>",
     },
     counterClaim: null, // the other side is another class, which the learning already picks
     // A directory of components and a directory of helpers can sit in one area,
@@ -253,13 +260,14 @@ export const NAMING_CORPUS = [
     // helper a violation of a convention nobody holds. Counted rather than
     // declared: the file either holds JSX or it does not, which is the same
     // facet the roster already splits a root by.
-    splitBy: splitByJsx,
+    splitBy: splitByComponent,
     precision: "precise",
     applicabilityPredicate: {
       sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`), and neither is a stem of capitals alone in a file that holds JSX, which React reads as a component (`SBA.jsx`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
       blind: null,
     },
-    langs: ["js", "jsx", "ruby"],
+    // None of the seven tree-sitter languages: each names a file by its own rule, so the row would state a default (H52).
+    langs: ["js", "jsx", "ruby", "vue", "svelte"],
     classify: classifyBasename,
     // Which names answer the claim at all. Separate from `classify` because
     // the scan votes with the class and the check enforces over the site, and
@@ -304,7 +312,7 @@ function exportedPopulation(d) {
  * so a specifier answers none of the three rows rather than guessing which
  * one.
  */
-function exportedSites(program) {
+function exportedSites(program, props = null) {
   const out = [];
   for (const n of program.body) {
     // A default export usually names what it declares, and one class per file
@@ -321,7 +329,7 @@ function exportedSites(program) {
     const d = n.declaration;
     if (d?.type === "VariableDeclaration") {
       for (const decl of d.declarations) {
-        if (decl.id?.type !== "Identifier") continue;
+        if (decl.id?.type !== "Identifier" || props?.has(decl)) continue;
         const population = decl.init?.type === "ClassExpression" ? "class" : "value";
         out.push({
           node: decl.id,
@@ -361,17 +369,21 @@ export const NAMING_AST = [
     applicabilityPredicate: {
       // Module level only, matching function_style's altitude: a method answers
       // to its class's convention, which is a different sentence.
-      sites: "a file declaring a module-level function, or binding one to a module-level variable, under a name that spells a naming class; a function whose body yields JSX, one bound to a name annotated as a React component type (FC, FunctionComponent, ComponentType), or one whose name this file renders as an element, is a component whose name JSX decides and is not a site, and one this file calls with new or reads a prototype off is a constructor and is not a site either",
+      sites: "a file declaring a module-level function, or binding one to a module-level variable, under a name that spells a naming class; a function whose body yields JSX, one bound to a name annotated as a React component type (FC, FunctionComponent, ComponentType), or one whose name this file renders as an element, is a component whose name JSX decides and is not a site, and one this file calls with new or reads a prototype off is a constructor and is not a site either. In a Vue file a PascalCase function is taken for a component the template renders, and a Svelte component's `export let` declares a prop; neither is a site",
       blind: null,
     },
-    langs: ["js", "jsx"],
-    visitor(program, add) {
+    langs: ["js", "jsx", "vue", "svelte"],
+    visitor(program, add, { rel } = {}) {
       const constructed = new Set();
       const named = [];
+      const props = componentProps(program, rel);
+      // The template is not read, so where one mounts a function by its name a
+      // capitalised function is taken for the component it mounts.
+      const mounted = templateMountsByName(rel ?? "");
       return {
         node(n, ctx) {
           noteConstructed(n, constructed);
-          if (ctx.enclosing !== null) return;
+          if (ctx.enclosing !== null || props.has(n)) return;
           let name = null;
           let fn = null;
           if (n.type === "FunctionDeclaration" && n.id) {
@@ -399,6 +411,7 @@ export const NAMING_AST = [
             // A component returning JSX and one this file only renders are the same
             // thing, so excluding one of them alone would be arbitrary.
             if (rendered.has(name) || constructed.has(name) || yieldsJsx(fn)) continue;
+            if (mounted && cls === "PascalCase") continue;
             // The id node rides along so the check can point at the declaration
             // rather than line 1; the worker strips nodes before IPC either way.
             add({ node: id, conforming: false, where: name, class: cls });
@@ -426,11 +439,11 @@ export const NAMING_AST = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or the name of one this file binds, to a lazy or dynamic import, or to a styled template, a name annotated as a React component type (FC, FunctionComponent, ComponentType), and a name this file renders as an element, are components whose name JSX decides and are not sites, and a name this file calls with new or reads a prototype off is a constructor and is not a site either",
+      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or the name of one this file binds, to a lazy or dynamic import, or to a styled template, a name annotated as a React component type (FC, FunctionComponent, ComponentType), and a name this file renders as an element, are components whose name JSX decides and are not sites, and a name this file calls with new or reads a prototype off is a constructor and is not a site either. A Svelte component's `export let` declares a prop and is not an export",
       blind: null,
     },
-    langs: ["js", "jsx"],
-    visitor(program, add) {
+    langs: ["js", "jsx", "vue", "svelte"],
+    visitor(program, add, { rel } = {}) {
       const constructed = new Set();
       return {
         node(n) {
@@ -443,7 +456,7 @@ export const NAMING_AST = [
           // this row binds a name to a call, so only this row meets a component a
           // `forwardRef`, a `memo` or a `styled` template made.
           let rendered = null;
-          for (const s of exportedSites(program)) {
+          for (const s of exportedSites(program, componentProps(program, rel))) {
             if (s.population !== "value") continue;
             const cls = classifyWord(s.name);
             if (!cls) continue;
@@ -464,12 +477,12 @@ export const NAMING_AST = [
     counterClaim: null,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "an export statement declaring a class, or a variable bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site",
+      sites: "an export statement declaring a class, or a variable bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site. A Svelte component's `export let` declares a prop and is not an export",
       blind: null,
     },
-    langs: ["js", "jsx"],
-    run(program, add) {
-      for (const s of exportedSites(program)) {
+    langs: ["js", "jsx", "vue", "svelte"],
+    run(program, add, { rel } = {}) {
+      for (const s of exportedSites(program, componentProps(program, rel))) {
         if (s.population !== "class") continue;
         const cls = classifyWord(s.name);
         if (cls) add({ node: s.node, conforming: false, where: s.name, class: cls });
@@ -491,7 +504,7 @@ export const NAMING_AST = [
       sites: "an export statement declaring an interface, a type alias, or an enum, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     run(program, add) {
       for (const s of exportedSites(program)) {
         if (s.population !== "type") continue;
@@ -516,7 +529,7 @@ export const NAMING_AST = [
         "a class naming no superclass, and one whose superclass is anything but a name or a dotted name",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -546,7 +559,7 @@ export const NAMING_AST = [
         "a TypeScript interface declaration outside any ambient module or namespace, and not at the top level of a declaration file with no import or export, whose name votes for its prefix letter or for carrying none. A name of two capitals, one opening on three or more, one whose prefix-shaped capital is not I, T or E, or one opening on a known acronym (IDs, IPv4, ETag), votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add, { rel } = {}) {
       const globalScript = DECLARATION_FILE.test(rel ?? "") && !(program.body || []).some(isModuleSyntax);
       return {
@@ -584,7 +597,7 @@ export const NAMING_AST = [
         "a TypeScript type alias declaration, whose name votes for its prefix letter or for carrying none. A name of two capitals, one opening on three or more, one whose prefix-shaped capital is not I, T or E, or one opening on a known acronym (IDs, IPv4, ETag), votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {

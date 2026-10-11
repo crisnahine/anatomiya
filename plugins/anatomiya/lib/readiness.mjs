@@ -13,15 +13,14 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { absentInterpreter } from "./child.mjs";
 import { firstLine } from "./encode.mjs";
-import { ENGINES } from "./langs.mjs";
-import { olderThan } from "./version.mjs";
+import { ENGINES, engineOf } from "./langs.mjs";
+import { installedVersion, manifestVersion, olderThan } from "./version.mjs";
 
 /**
  * The type checker, probed beside the engines and deliberately not one of them.
@@ -93,6 +92,24 @@ const BRIDGES = {
   },
 };
 
+// What a node-hosted engine needs besides its module, asked the way a parse
+// asks for it. Loaded when the probe runs, for the reason `BRIDGES` is.
+const GRAMMARS = {
+  "tree-sitter": async () => (await import("./tree-sitter-file.mjs")).probeGrammars(),
+};
+
+/**
+ * What a person does about a grammar file that did not load.
+ *
+ * Its own sentence, because the engine's is wrong for it: the grammars ship in
+ * the plugin's directory and no package install writes one, so `setup` would
+ * run, change nothing, and send the reader back here.
+ */
+export const GRAMMAR_REMEDY = "reinstall this plugin, which ships its grammar files in its own directory";
+
+/** Whether a row is an engine that loads and lost a grammar file: nothing an install provides is missing from it. */
+export const lostGrammar = (row) => row.lostGrammars?.length > 0;
+
 // The phrase the node remedy spells in the directory for. The table states it
 // the way a person would read it aloud; a person following it needs the path.
 const PLUGIN_DIRECTORY = "the plugin directory";
@@ -110,6 +127,9 @@ export function pluginRoot() {
   return dirname(dirname(fileURLToPath(import.meta.url)));
 }
 
+/** The version this build's own manifest states, or null where it cannot be read: what a stamp means by "this build". */
+export const buildVersion = () => manifestVersion(pluginRoot());
+
 /** The declaration behind an engine name. An unknown name is a bug, so it says so. */
 function probeFor(id) {
   const engine = PROBES[id];
@@ -124,12 +144,26 @@ function probeFor(id) {
  * installation's. It is an argument because a report about one directory may
  * not name another in the same sentence: a reader told nothing is installed in
  * one place and to install it in a second has been handed two paths and no way
- * to tell which is theirs.
+ * to tell which is theirs. `null` names no directory and leaves the table's
+ * own words: a file written into a repository is committed and read on other
+ * machines, where this one's path is nobody's.
  */
 export function remedyFor(engineId, root = pluginRoot()) {
   const engine = probeFor(engineId);
-  return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, root)}` : engine.remedy;
+  return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, () => root ?? PLUGIN_DIRECTORY)}` : engine.remedy;
 }
+
+/**
+ * The next move for whatever a parse found missing: the absent engine's own
+ * remedy, and the grammar's where every engine was there.
+ */
+export function remedyForMissing({ missingEngines, missingGrammars = [] }, root = pluginRoot()) {
+  return missingEngines.length || !missingGrammars.length ? remedyFor(missingEngines[0], root) : GRAMMAR_REMEDY;
+}
+
+/** Whether a parse could read no file of a language at all: its engine was absent, or its own grammar was. */
+export const couldNotRead = ({ missingEngines, missingGrammars = [] }, lang) =>
+  missingEngines.includes(engineOf(lang)) || missingGrammars.includes(lang);
 
 /**
  * Why an engine read no file of its language, in its own terms, from the
@@ -142,13 +176,33 @@ export function remedyFor(engineId, root = pluginRoot()) {
  * none is the install, and its own remedy is the next move. Here rather than
  * with one printer, because the summary and the map both say it.
  */
-export function whyUnread(engineId, engines, root = pluginRoot()) {
+function whyUnread(engineId, engines, root) {
   const engine = engines?.[engineId];
   if (engine?.version) return `${engineId} ${engine.version} ran and answered for none of them`;
   // Stopped by our own clock before it could report a version: the install is
   // not what that says, so its remedy is not the next move.
   if (engine?.stalled) return `${engineId} was stopped by its own clock before it answered: ${engine.stalled}`;
   return `${engineId} reported no version: ${remedyFor(engineId, root)}`;
+}
+
+/**
+ * One reason per cause for the languages a run read no file of: a grammar that
+ * did not load first, then each engine in its own terms.
+ *
+ * A grammar apart from its engine, because the engine answered: it reported a
+ * version and read its other languages, so its own sentence would say it ran
+ * and answered for none of them, which names no cause and no next move.
+ */
+export function unreadReasons(langs, { engines, missingGrammars = [] }, root = pluginRoot()) {
+  const unloaded = langs.filter((l) => missingGrammars.includes(l));
+  const rest = langs.filter((l) => !unloaded.includes(l));
+  const reasons = [...new Set(rest.map(engineOf))].map((id) => ({
+    langs: rest.filter((l) => engineOf(l) === id),
+    why: whyUnread(id, engines, root),
+  }));
+  if (!unloaded.length) return reasons;
+  const what = `${unloaded.join(" and ")} ${unloaded.length === 1 ? "grammar" : "grammars"}`;
+  return [{ langs: unloaded, why: `the plugin's ${what} did not load: ${GRAMMAR_REMEDY}` }, ...reasons];
 }
 
 /**
@@ -315,7 +369,7 @@ export function readinessLines(rows, { installSaid = false } = {}) {
 }
 
 /** One row, so every probe answers the same shape whatever it looked at. */
-function row(engine, { extra = null, present, version = null, ok = false, reason = null, remedy = null }) {
+function row(engine, { extra = null, present, version = null, ok = false, reason = null, remedy = null, lostGrammars = [] }) {
   return {
     engine: engine.id,
     extra,
@@ -325,6 +379,7 @@ function row(engine, { extra = null, present, version = null, ok = false, reason
     ok,
     reason: reason ?? engine.note ?? null,
     remedy: remedy ?? remedyFor(engine.id),
+    lostGrammars,
   };
 }
 
@@ -361,26 +416,45 @@ async function probeNode(engine) {
     // flag it is for refuses it, and one install puts a usable one first.
     const why = extra === null && engine.unusable ? await engine.unusable(loaded.default ?? loaded) : null;
     if (why) {
-      rows.push(row(engine, { extra, present: true, version: versionOf(module), reason: why }));
+      rows.push(row(engine, { extra, present: true, version: installedVersion(module), reason: why }));
       continue;
     }
-    rows.push(row(engine, { extra, present: true, version: versionOf(module), ok: true }));
+    // An engine that loads and cannot read one of its languages is not ready,
+    // and says which: the count is on its row either way.
+    const held = extra === null && GRAMMARS[engine.id] ? await GRAMMARS[engine.id]() : null;
+    const lost = held ? [...held.missing, ...held.foreign] : [];
+    if (lost.length) {
+      const reason = [grammarsLine(held), ...grammarFaults(held)].join(", ");
+      rows.push(row(engine, { extra, present: true, version: installedVersion(module), reason, remedy: GRAMMAR_REMEDY, lostGrammars: lost }));
+      continue;
+    }
+    rows.push(row(engine, { extra, present: true, version: installedVersion(module), ok: true, reason: held ? grammarsLine(held) : null }));
   }
   return rows;
 }
 
+const grammarsLine = ({ total, missing, foreign }) => `grammars: ${total - missing.length - foreign.length} of ${total}`;
+
 /**
- * A module's own version, off its manifest.
- *
- * Read rather than taken from the module: `oxc-parser` exports no version at
- * all, and the two that do would each have to be spelled here by name.
+ * What is wrong with the grammar files a probe could not count, each cause in
+ * its own words: a file that loads and is another file is not one that "did
+ * not load", and the reader of either is sent to the same reinstall. A file
+ * the runtime refuses by its language version is neither: the file is the
+ * plugin's own and the runtime beside it is not the one the plugin locks.
  */
-function versionOf(module) {
-  try {
-    return createRequire(import.meta.url)(`${module}/package.json`).version ?? null;
-  } catch {
-    return null;
+function grammarFaults({ missing, foreign, refused, manifest }) {
+  const files = (ids) => ids.map((id) => `${id}.wasm`).join(" and ");
+  const faults = [];
+  const turnedAway = new Set(refused.map((r) => r.grammar));
+  const unloaded = missing.filter((id) => !turnedAway.has(id));
+  if (unloaded.length) faults.push(`${files(unloaded)} did not load`);
+  // One fault for each version refused, since the grammars are not all built for one.
+  for (const [said, group] of Map.groupBy(refused, (r) => `language version ${r.version} and this runtime reads ${r.reads[0]} through ${r.reads[1]}`)) {
+    faults.push(`${files(group.map((r) => r.grammar))} ${group.length === 1 ? "is" : "are"} ${said}`);
   }
+  if (!manifest) faults.push("grammars.json is missing or is not the file this plugin shipped");
+  else if (foreign.length) faults.push(`${files(foreign)} ${foreign.length === 1 ? "is not the file" : "are not the files"} this plugin shipped`);
+  return faults;
 }
 
 /**

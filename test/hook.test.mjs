@@ -197,8 +197,9 @@ test("a file the payload spells through a link is the same file the root was res
   // `/private/tmp/x` read as another repository's file and the hook, which
   // exists to say something before a write, said nothing at all.
   const real = recorded(t);
-  const link = join(mkdtempSync(join(tmpdir(), "anatomiya-link-")), "repo");
-  t.after(() => rmSync(link, { recursive: true, force: true }));
+  const holder = mkdtempSync(join(tmpdir(), "anatomiya-link-"));
+  t.after(() => rmSync(holder, { recursive: true, force: true }));
+  const link = join(holder, "repo");
   symlinkSync(real, link, "dir");
 
   assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(link, "spec/x_spec.rb") } }, real), "spec/x_spec.rb");

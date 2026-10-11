@@ -87,16 +87,21 @@ function reachedFrom(entry, edges = graph()) {
   return reached;
 }
 
+// The two shells the pool forks, each with the body it hosts behind it.
+const WORKERS = ["parse-worker.mjs", "tree-sitter-worker.mjs"];
+
 test("no module the parse worker reaches imports node:child_process", () => {
   // Every JS parse child loads `dimensions.mjs` for the registry, and the two
   // Ruby dimension files took their walkers from `ruby.mjs`, the module that
   // spawns Ruby. That put the spawn machinery and the inline prism script into
   // all eight forked workers, which is the exact cost `langs.mjs` and
   // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
-  const offenders = [...reachedFrom("parse-worker.mjs")].filter((file) =>
-    /from\s*["']node:child_process["']/.test(readFileSync(join(LIB, file), "utf8"))
-  );
-  assert.deepEqual(offenders, []);
+  for (const worker of WORKERS) {
+    const offenders = [...reachedFrom(worker)].filter((file) =>
+      /from\s*["']node:child_process["']/.test(readFileSync(join(LIB, file), "utf8"))
+    );
+    assert.deepEqual(offenders, [], worker);
+  }
 });
 
 test("every bridge that runs a child takes the guards from the one supervisor", () => {
@@ -122,6 +127,7 @@ test("the writers do not reach the pipeline that produced the record", () => {
     "check-report.mjs",
     "encode.mjs",
     "rules.mjs",
+    "targets.mjs",
   ]);
 });
 
@@ -213,7 +219,36 @@ test("the parse worker does not reach the registry", () => {
   // The worker runs the tree rows off `dimensionsFor` and nothing else: an
   // obligation has no program to run against and a filename row answers off
   // the corpus, so composing all three in eight forked children buys nothing.
-  assert.equal(reachedFrom("parse-worker.mjs").has("registry.mjs"), false);
+  for (const worker of WORKERS) assert.equal(reachedFrom(worker).has("registry.mjs"), false, worker);
+});
+
+test("a parser is loaded by the body that parses with it, and by no other module", () => {
+  // Statically imported anywhere, a runtime that is not installed is a module
+  // that will not load: the worker would not start, and no file could say why.
+  const loads = (file) => /import\(\s*["']web-tree-sitter["']\s*\)|from\s*["']web-tree-sitter["']/.test(readFileSync(join(LIB, file), "utf8"));
+  assert.deepEqual(readdirSync(LIB).filter((f) => f.endsWith(".mjs") && loads(f)), ["tree-sitter-file.mjs"]);
+  assert.doesNotMatch(readFileSync(join(LIB, "tree-sitter-file.mjs"), "utf8"), /from\s*["']web-tree-sitter["']/);
+});
+
+// What only a tree-sitter read needs: the engine's body, its rows, its walk and the tables behind them.
+const TREE_SITTER_ONLY = ["csharp-directives.mjs", "dimensions-tree.mjs", "tree-facets.mjs", "tree-shapes.mjs", "tree-sitter-file.mjs", "tree-walk.mjs"];
+
+test("a Ruby shard thread loads the prism rows and no other engine's", () => {
+  // The thread's heap hold is sized over what its own modules hold (`heldHeap`),
+  // so a module it loads and never calls is taken out of every file's margin.
+  // Measured on Linux arm64, Node 24, median of 20 threads: 8.09 MB used once
+  // `dimensions.mjs` is loaded with every engine's rows, 7.43 MB with the prism tables alone.
+  const loaded = reachedFrom("ruby-shard.mjs", graph(LIB, { dynamic: false }));
+  assert.deepEqual([...TREE_SITTER_ONLY, "dimensions.mjs"].filter((file) => loaded.has(file)), []);
+});
+
+test("a parse child that reads no component loads no component scanner, and no child loads another engine's body", () => {
+  // Counted from each shell's static imports: what a child holds before its first file.
+  const loads = (shell) => reachedFrom(shell, graph(LIB, { dynamic: false }));
+  assert.deepEqual(["blank.mjs", "script-blocks.mjs", "csharp-directives.mjs", "tree-sitter-file.mjs"].filter((file) => loads("parse-worker.mjs").has(file)), []);
+  assert.deepEqual(["script-blocks.mjs", "parse-file.mjs"].filter((file) => loads("tree-sitter-worker.mjs").has(file)), []);
+  // Loaded on the first component instead, by the body that reads one.
+  assert.ok(reachedFrom("parse-worker.mjs").has("script-blocks.mjs"));
 });
 
 test("a module that branches on a row's kind loads the registry that stamps it", () => {
@@ -555,10 +590,12 @@ test("every verb the binary declares carries its own arm in the one table", () =
   // A command is imported inside the arm that runs it, so no arm can exist
   // outside the table for a verb to fall through to, and a hook loads only its
   // own. The binary itself imports what reading argv and the never-fail
-  // boundary need. The offsets are asserted first: compared against undefined,
-  // every import would read as inside.
+  // boundary need: the targets leaf is the names `--targets` takes, and it
+  // imports nothing, and the encoder is what a refusal quoting argv is printed
+  // through, which the hook module loads already. The offsets are asserted
+  // first: compared against undefined, every import would read as inside.
   const own = program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value);
-  assert.deepEqual(own.sort(), ["../lib/hook.mjs", "../lib/readiness.mjs"]);
+  assert.deepEqual(own.sort(), ["../lib/encode.mjs", "../lib/hook.mjs", "../lib/readiness.mjs", "../lib/targets.mjs"]);
   assert.ok(Number.isInteger(table.init.start) && Number.isInteger(table.init.end), "the table carries offsets");
   const loads = [...scan(src).matchAll(/\bimport\(/g)];
   assert.ok(loads.length >= verbs.length, `read ${loads.length} arm imports`);
@@ -599,6 +636,7 @@ const ECHO_LOADS = [
   "langs.mjs",
   "readiness.mjs",
   "rules.mjs",
+  "targets.mjs",
   "version.mjs",
   "worktree.mjs",
 ];

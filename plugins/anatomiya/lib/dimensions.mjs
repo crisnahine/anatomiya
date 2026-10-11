@@ -1,5 +1,6 @@
 import { walk, fromVisitor, isFunctionLike, declName, value, boundNames, optionalChain } from "./walk.mjs";
 import { walkRuby } from "./ruby-walk.mjs";
+import { walkTree } from "./tree-walk.mjs";
 import { engineOf } from "./langs.mjs";
 import { EXTRA_DIMENSIONS } from "./dimensions-extra.mjs";
 import { RUBY_DIMENSIONS } from "./dimensions-ruby.mjs";
@@ -8,6 +9,7 @@ import { RAILS_DIMENSIONS } from "./dimensions-rails.mjs";
 import { SEMANTIC_DIMENSIONS } from "./dimensions-semantic.mjs";
 import { NAMING_AST } from "./dimensions-naming.mjs";
 import { CAPABILITY_DIMENSIONS } from "./dimensions-capability.mjs";
+import { TREE_DIMENSIONS } from "./dimensions-tree.mjs";
 import { CAPABILITY_WORDS } from "./stems.mjs";
 // The framework field is held to the declared profiles, so a row naming a
 // framework nobody detects cannot ship as a slot that can only read zero (C8).
@@ -150,7 +152,7 @@ export const DIMENSIONS = [
       sites: "a file holding at least one catch clause, whether or not it binds the error",
       blind: null,
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n, ctx) {
@@ -176,7 +178,7 @@ export const DIMENSIONS = [
       sites: "a file that throws outside a catch, or returns a result: a Result.* call, an ok(), err(), Ok() or Err() call, or an object literal carrying an ok key, or one carrying an error or success key whose every key is error, success, data, value, result, valid or isValid. An object carrying any other key beside error is a view-model or state, not a result, and so is whatever getDerivedStateFromError returns",
       blind: "a throw inside a helper the caller wraps is invisible from the file that throws",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "svelte"],
     visitor(program, add) {
       // Every throw before every result, the order two walks gave.
       const results = [];
@@ -274,7 +276,7 @@ export const DIMENSIONS = [
       sites: "a file declaring at least one async function",
       blind: "a caller-level wrapper handling the failure is invisible from the function that fails",
     },
-    langs: ["js", "jsx"],
+    langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
       return {
         node(n) {
@@ -370,14 +372,35 @@ export const ALL_DIMENSIONS = [
   ...SEMANTIC_DIMENSIONS,
   ...NAMING_AST,
   ...CAPABILITY_DIMENSIONS,
+  ...TREE_DIMENSIONS,
 ];
 
 // A visitor row's `run` walks the tree alone, on its engine's walk, for the
 // callers that ask one row at a time: the check, and the tests. Here, where the
-// tree rows meet, because the parse worker and the Ruby shard read this list
-// and must not reach `registry.mjs`.
-const WALKS = { oxc: walk, prism: walkRuby };
-for (const d of ALL_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, WALKS[engineOf(d.langs[0])]);
+// tree rows meet, because the parse workers read this list and must not reach
+// `registry.mjs`. Every row is asked its walk, one that brings a `run` of its
+// own too: it is handed one engine's trees like any other, and listing a
+// language of a second it loaded and crashed that engine's parser on each file.
+const WALKS = { oxc: walk, prism: walkRuby, "tree-sitter": walkTree };
+for (const d of ALL_DIMENSIONS) {
+  const walkOf = walkFor(d);
+  if (d.visitor) d.run = fromVisitor(d.visitor, walkOf);
+}
+
+/**
+ * The walk a row's engine reads its tree with. Refused at import where there
+ * is none, and where the row lists languages of two engines: a row walked by
+ * another engine's walk counts nothing and says nothing.
+ */
+export function walkFor(row, walks = WALKS) {
+  const engines = [...new Set(row.langs.map(engineOf))];
+  if (engines.length !== 1) {
+    throw new Error(engines.length ? `${row.key} lists languages of ${engines.join(" and ")}, and one walk reads one engine's tree` : `${row.key} lists no language`);
+  }
+  const [engine] = engines;
+  if (!walks[engine]) throw new Error(`${row.key} is a row for ${engine}, and no walk reads a ${engine} tree`);
+  return walks[engine];
+}
 
 export const PRECISIONS = ["precise", "partial"];
 
@@ -460,6 +483,17 @@ export function assertApplicability(rows) {
       if (typeof c !== "string" || !/\S/.test(c) || /\s\s|[\r\n]/.test(c) || c.length > 120) {
         throw new Error(
           `dimension ${d.key} states applicabilityPredicate.notCounted as ${JSON.stringify(c)}, which is not one line of at most 120 characters`
+        );
+      }
+    }
+    // Printed ahead of that clause in an area holding component files, with
+    // their extensions filled in, so it is held to the same line and has a
+    // clause to sit ahead of.
+    if ("componentNotCounted" in a) {
+      const c = a.componentNotCounted;
+      if (typeof c !== "string" || !c.includes("<ext>") || /\s\s|[\r\n]/.test(c) || c.length > 120 || !("notCounted" in a)) {
+        throw new Error(
+          `dimension ${d.key} states applicabilityPredicate.componentNotCounted as ${JSON.stringify(c)}, which is not one line naming <ext> beside a notCounted clause`
         );
       }
     }

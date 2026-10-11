@@ -27,7 +27,8 @@ const SIDEKIQ_JOB = /^Sidekiq::(Worker|Job)$/;
 const ZONED = /^(now|today|local|parse|at)$/;
 const MODEL_BASE = /(^|::)(ApplicationRecord|ActiveRecord::Base|ApplicationRecord::Base)$/;
 
-const where = (ctx) => (ctx.def && ctx.def.name) || (ctx.cls && ctx.cls.name) || null;
+// The class beside the method, which is what tells a new `B#run` from the `A#run` written under it.
+const where = (ctx) => [ctx.cls && ctx.cls.name, ctx.def && ctx.def.name].filter(Boolean).join("#") || null;
 
 /**
  * Ruby's own exception classes, as of 3.4: everything

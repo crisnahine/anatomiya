@@ -1,11 +1,14 @@
 import { encode, encodePath } from "./encode.mjs";
-import { engineOf, MISSING_STRIPPER } from "./langs.mjs";
-import { whyUnread } from "./readiness.mjs";
+import { embeddedIn, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
+import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
+import { PRECEDENT_FLOOR } from "./principles.mjs";
 import { statedSide } from "./facts.mjs";
-import { globText } from "./areas.mjs";
-import { GENERATOR, listSome, LISTED, PREFIX, RULES_DIR } from "./rules.mjs";
+import { areaLabel, globText } from "./areas.mjs";
+import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
+import { byCode } from "./paths.mjs";
+import { frontmatter, isClaude, readsEveryPattern, spelledGlobs, TARGETS } from "./targets.mjs";
 
 /**
  * The line bound every generated file is held to.
@@ -24,6 +27,28 @@ import { REGISTRY } from "./registry.mjs";
  */
 export const MAX_LINES = 40;
 
+/**
+ * The most lines a target's overview and one of its area files run to, or null
+ * for an area file whose frontmatter grows with the cover.
+ *
+ * The bound is held over the body, which is the one Claude Code's file has,
+ * and a target pays for its own lines on top: the frontmatter it takes, the
+ * sentence saying what wrote the file, the line naming the areas it has no
+ * file for, and under an area's body a blank and one line per way its patterns
+ * can differ from the area.
+ */
+export function mostLines(target) {
+  const fence = (t, kind, patterns) => frontmatter(t, { kind, patterns }).length;
+  const exact = readsEveryPattern(target);
+  const overview = MAX_LINES + fence(target, "overview") - fence(TARGETS.claude, "overview") + (target.wrote ? 1 : 0) + (exact ? 0 : 1);
+  if (fence(target, "area", ["a", "b"]) > fence(target, "area", ["a"])) return { overview, area: null };
+  const closing = exact ? 0 : 1 + CLOSING_KINDS + (target.widens ? 1 : 0);
+  return { overview, area: MAX_LINES + fence(target, "area", ["a"]) - fence(TARGETS.claude, "area", ["a"]) + closing };
+}
+
+// The patterns a target cannot be told and the ones it cannot be given, a closing line each.
+const CLOSING_KINDS = 2;
+
 // What an area file says even when its `paths` list has eaten the budget: one
 // directive block, its exceptions, and the count of what did not fit. The kinds
 // line comes out of this too, so a file carrying one floors its body at six.
@@ -36,8 +61,8 @@ const KINDS_LINES = 2;
 
 /**
  * The glob is built from a directory name, so it is repository-controlled and
- * goes through the encoder like every other such value (F4). It is emitted
- * JSON-quoted, which is also a valid YAML double-quoted scalar, so a newline in
+ * goes through the encoder like every other such value (F4). Its escapes are
+ * JSON's, which a YAML double-quoted scalar reads the same way, so a newline in
  * the directory name cannot open a second frontmatter fence.
  *
  * Only the directory half is encoded, and the area record carries the two
@@ -49,9 +74,35 @@ const KINDS_LINES = 2;
  * A leading `!` is the matcher's negation marker rather than part of any
  * directory name, so `globText` puts it back outside the encoded half.
  */
-function encodeGlob(g) {
-  return `"${globText(g, (dir) => encodePath(dir).slice(1, -1))}"`;
+const spellGlob = (g, anchored) => globText(g, (dir) => encodePath(dir).slice(1, -1), anchored);
+
+const NAMED = 6;
+const some = (names) => {
+  const { shown, rest } = listSome(names, NAMED);
+  return shown.join(", ") + (rest ? ` and ${rest} more` : "");
+};
+
+/**
+ * What a target's reading of the cover gets wrong, in the file whose patterns it reads. Each line says what the patterns
+ * match, which was measured, and not when the file is delivered, which was not.
+ *
+ * Each sentence is encoded whole: a pattern's tail can hold a directory name,
+ * and encoding a pattern alone would strip its leading `*`.
+ */
+function matchLines(target, { dropped, widened, unspellable }) {
+  const lines = [];
+  if (dropped.length) lines.push(`This file's patterns also match ${some(dropped)}, which the area leaves out.`);
+  // Every widened pattern is already in the frontmatter, so the line names none.
+  if (widened.length) lines.push(target.widens);
+  if (unspellable.length) {
+    lines.push(`This file's patterns do not match ${some(unspellable)}, which ${target.reader} cannot be given.`);
+  }
+  return lines.map((line) => encode(line, { max: Infinity }));
 }
+
+/** Whether a target gets a file for an area: one that can be given none of the area's patterns gets none. */
+export const hasFile = (area, target) =>
+  !area.globs?.length || spelledGlobs(target, area.globs, spellGlob).patterns.length > 0;
 
 /**
  * One area file. Kept short on purpose: a rewritten context file does not
@@ -95,6 +146,50 @@ const why = (d, s) =>
  */
 const claimLine = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 
+const ROW_LANGS = new Map(REGISTRY.map((d) => [d.key, d.langs]));
+
+const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]);
+
+/**
+ * The extensions a claim was counted over, where the area holds others.
+ *
+ * An area delivers on one glob for every language in it, so a claim learned
+ * from the `.ts` files of a directory reaches an agent editing the `.svelte`
+ * file beside them, where the row was never asked and the opposite may be the
+ * rule. A clause on the sentence rather than a line under it, because the
+ * sentence is what survives the budget and a line is one of forty.
+ *
+ * Extensions first, then the files that have none by their own names: the kinds
+ * line's `(none)` is a label for a count and reads as nothing in a sentence.
+ *
+ * Whether to say it is a question about languages, and what to say is the
+ * files the fold asked. A `.ts` file beside a JSX row could have been asked,
+ * as a `.js` file holding JSX is, so it alone earns no clause; and it is not
+ * named in one, because no `.ts` file here was. Neither list is in a record,
+ * so a record prints the sentence bare and takes the same number of lines.
+ *
+ * From three files of other languages up, the floor a directory's tests are
+ * read from: one stray script in an area of two hundred files of another
+ * language otherwise puts the clause on every line there.
+ */
+function scopeClause(area, d) {
+  const langs = ROW_LANGS.get(d.key);
+  const counted = d.askedExts ?? [];
+  if (!langs || counted.length === 0) return "";
+  const never = Object.keys(area.extsByLang ?? {}).filter((lang) => !spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
+  const unasked = never.reduce((n, lang) => n + (area.filesByLang?.[lang] ?? 0), 0);
+  if (unasked < PRECEDENT_FLOOR) return "";
+  // A declaration file is a TypeScript file to a reader, and `.d.ts and .ts` says one thing twice.
+  const exts = counted.filter((e) => e.startsWith(".")).map((e) => e.replace(/^\.d\./, "."));
+  const names = counted.filter((e) => !e.startsWith("."));
+  const listed = (xs) => series([...new Set(xs)].sort(byCode).map((e) => encode(e)));
+  const groups = [exts.length > 0 ? `${listed(exts)} files` : null, names.length > 0 ? listed(names) : null];
+  return `, in ${groups.filter(Boolean).join(" and ")}`;
+}
+
+// Inside the full stop that ends a sentence. `?.` ends one too and is an operator.
+const scoped = (claim, clause) => (clause && /\w\.$/.test(claim) ? `${claim.slice(0, -1)}${clause}.` : claim + clause);
+
 // Keyed off the registry rather than off the record, because both readers of
 // the layout have a key and only one of them has the prose. Storing the clause
 // would put the same sentence in every area of `facts.json` and let the file the
@@ -105,6 +200,22 @@ const NOT_COUNTED = new Map(
     claimLine(d.applicabilityPredicate.notCounted),
   ])
 );
+
+const COMPONENT_NOT_COUNTED = new Map(
+  REGISTRY.filter((d) => d.applicabilityPredicate?.componentNotCounted).map((d) => [
+    d.key,
+    claimLine(d.applicabilityPredicate.componentNotCounted),
+  ])
+);
+
+// The declined form an area's own components make likely, ahead of the rest:
+// beside `.vue` files the import an agent is about to write is a `.vue` one.
+function componentClause(key, area) {
+  const template = COMPONENT_NOT_COUNTED.get(key);
+  const exts = Object.entries(area.extsByLang ?? {}).flatMap(([lang, exts]) => (embeddedIn(lang) ? exts : []));
+  if (!template || exts.length === 0) return "";
+  return `${template.replace("<ext>", exts.sort(byCode).map((e) => encode(e)).join(" or "))}; `;
+}
 
 /**
  * The form this dimension's predicate declines, where a reader would otherwise
@@ -123,9 +234,9 @@ const NOT_COUNTED = new Map(
  * line costs one of forty in every area that states the row, so it is spent
  * where it answers something.
  */
-function notCountedLine(d, side, said) {
+function notCountedLine(d, side, said, area) {
   if (side.conforming !== d.candidates || side.exceptions.length > 0 || side.more) return null;
-  const clause = NOT_COUNTED.get(d.key);
+  const clause = componentClause(d.key, area) + (NOT_COUNTED.get(d.key) ?? "");
   // Once per file. Nine companion rows share one sentence and two of them reach
   // the same area whenever a repository writes both `_spec.rb` and `_test.rb`,
   // so an `app` area printed it three times and spent three of its forty lines
@@ -206,7 +317,8 @@ const MACHINE_DEPENDENT = new Set(["crashed"]);
 /**
  * The four ways a file goes unexamined, named apart because the reader's next
  * move differs: a crash is this tool's problem, rejected syntax is the file's,
- * and the cap is a generated file nobody writes by hand.
+ * and the cap is a generated file nobody writes by hand. A rejection is counted
+ * once per meaning (`ENGINES[id].rejects`): a grammar's is not the file's fault.
  *
  * Shared for the same reason `splitUncovered` is. Copied, they drifted: the cap
  * read "over the size cap" in the summary and "exceeded" in the overview.
@@ -219,10 +331,14 @@ export function unexaminedLines(parse, { stable = false } = {}) {
   // A count of one reads as one. Seven repositories in a thirty-five
   // repository corpus printed "1 files hold syntax the parser rejected", on the
   // summary and in the file that loads on every turn.
-  const line = (n, kind) => `${plural(n, "file")} ${unexaminedPhrase(kind, n)}`;
+  const line = (n, kind, means) => `${plural(n, "file")} ${unexaminedPhrase(kind, n, means)}`;
   for (const kind of ["crashed", "failed", "syntaxErrors", "skipped"]) {
     if (stable && MACHINE_DEPENDENT.has(kind)) continue;
-    if (parse[kind]) lines.push(line(parse[kind], kind));
+    if (!parse[kind]) continue;
+    if (kind !== "syntaxErrors") lines.push(line(parse[kind], kind));
+    // In the table's order, never the order the engines answered in. A record
+    // with no split was written where every rejection was the file's syntax.
+    else for (const [means, n] of rejectionsOf(parse)) lines.push(`${line(n, kind, means)}${REJECTED_NOTE[means]?.(n) ?? ""}`);
   }
   // Without the stripper every Flow file lands in the count above, and the two
   // facts are otherwise unconnected on screen. The dependency arrived after the
@@ -230,6 +346,10 @@ export function unexaminedLines(parse, { stable = false } = {}) {
   // oxc loads, the retry cannot run, and react loses 286 files silently.
   if (parse.syntaxErrors && parse.missingStripper) {
     lines.push(MISSING_STRIPPER);
+  }
+  // Read, and not whole: a count over these files is a count over the branch that was kept.
+  if (parse.oneBranch) {
+    lines.push(`${plural(parse.oneBranch, "file")} ${parse.oneBranch === 1 ? "was" : "were"} read with one branch of each #if; the other branches were not read`);
   }
   return lines;
 }
@@ -239,8 +359,10 @@ export function unexaminedLines(parse, { stable = false } = {}) {
 // closed rather than exhaustive: missing one here means silence about it,
 // never a wrong name for it.
 const OTHER_LANGUAGE_EXTS = new Set([
-  ".java", ".kt", ".kts", ".rs", ".go", ".py", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh",
-  ".cs", ".swift", ".php", ".scala", ".m", ".mm", ".ex", ".exs", ".pl", ".pm",
+  ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh",
+  ".swift", ".scala", ".m", ".mm", ".ex", ".exs", ".pl", ".pm",
+  ".erb", ".haml", ".slim", ".css", ".scss", ".sass", ".less", ".html", ".htm", ".sh", ".bash", ".sql",
+  ".lua", ".dart", ".r", ".jl", ".zig", ".hs", ".clj", ".erl", ".fs", ".vb", ".groovy", ".astro",
 ]);
 
 /**
@@ -271,16 +393,29 @@ export function unreadLanguageFiles(result) {
 // The phrase per cause, so the check can name one file with the sentence the
 // summary and the overview use for a count of them. Only one of the four
 // carries a present-tense verb, and only that one changes with the number.
+// A rejection has a second key, what the engine's rejection means, which the
+// engine's own declaration states (`ENGINES[id].rejects`).
 const UNEXAMINED = {
   crashed: "crashed the parser",
   failed: "could not be parsed",
-  syntaxErrors: "hold syntax the parser rejected",
+  syntaxErrors: { syntax: "hold syntax the parser rejected", grammar: "could not be read by this tool's grammar" },
   skipped: "exceeded the size cap",
 };
 
 const UNEXAMINED_ONE = {
   ...UNEXAMINED,
-  syntaxErrors: "holds syntax the parser rejected",
+  syntaxErrors: { ...UNEXAMINED.syntaxErrors, syntax: "holds syntax the parser rejected" },
+};
+
+// Said after a count, where there is room: a reader told only that files went
+// unread goes looking for what is wrong with them.
+const REJECTED_NOTE = {
+  grammar: (n) => `. That is a syntax error or syntax the grammar does not cover; the ${n === 1 ? "file" : "files"} may be fine.`,
+};
+
+const rejectionsOf = (parse) => {
+  const by = parse.rejections ?? { syntax: parse.syntaxErrors };
+  return Object.keys(UNEXAMINED.syntaxErrors).filter((means) => by[means]).map((means) => [means, by[means]]);
 };
 
 /**
@@ -291,7 +426,10 @@ const UNEXAMINED_ONE = {
  * replace at one call site, since the two surfaces have already drifted once
  * over the wording of the cap.
  */
-export const unexaminedPhrase = (kind, n) => (n === 1 ? UNEXAMINED_ONE : UNEXAMINED)[kind];
+export const unexaminedPhrase = (kind, n, means = "syntax") => {
+  const phrase = (n === 1 ? UNEXAMINED_ONE : UNEXAMINED)[kind];
+  return typeof phrase === "string" ? phrase : phrase[means];
+};
 
 /**
  * What this area's files reach for, and what the rest of the repository reaches
@@ -325,23 +463,9 @@ function rosterLines(area) {
  * line, its exceptions and its blank.
  */
 function areaBlocks(area) {
-  // Measured: a `paths` key with no pattern under it loads on every turn, which
-  // is what the overview is for and what an area file must never do. There is
-  // no glob-less area to render, so this is a bug in the caller either way.
-  if (!area.globs || area.globs.length === 0) {
-    throw new Error(`area has no paths glob, so its file would load on every turn: ${area.path}`);
-  }
-
-  const head = [
-    "---",
-    `generator: ${GENERATOR}`,
-    "paths:",
-    ...area.globs.map((g) => `  - ${encodeGlob(g)}`),
-    "---",
-    "",
-    `# ${encode(area.path)}  ${area.fileCount} files`,
-    "",
-  ];
+  // Claude Code's head, whichever target the file is for: the body is laid out
+  // once, under the list of patterns that file carries, and every target gets it.
+  const { head } = areaEnds(area, TARGETS.claude);
 
   // A stated inverse prints in the shape a stated claim prints. The sentence is
   // the directive either way, and a marker saying which side it is would spend
@@ -370,9 +494,10 @@ function areaBlocks(area) {
   // The clauses this file has already printed, so a sentence shared by several
   // rows costs one line rather than one per row.
   const said = new Set();
+  const sentence = (d, s) => scoped(claimLine(s.claim), scopeClause(area, d));
   for (const [d, s] of directives) {
     const block = [
-      claimLine(s.claim),
+      sentence(d, s),
       // The files this dimension could have spoken about, which is what the
       // gate divided by. The area's own count is a different number wherever
       // the area holds more than one language or a file nothing was read from,
@@ -384,7 +509,7 @@ function areaBlocks(area) {
         companionAudit(d) +
         partialNote(d),
     ];
-    const notCounted = notCountedLine(d, s, said);
+    const notCounted = notCountedLine(d, s, said, area);
     if (notCounted) block.push(notCounted);
     for (const e of s.exceptions) {
       block.push(`  except ${encodePath(e.path)}${e.count > 1 ? ` (${e.count} sites)` : ""}`);
@@ -393,7 +518,7 @@ function areaBlocks(area) {
     block.push("");
     blocks.push(block);
     keys.push(d.key);
-    claims.push(claimLine(s.claim));
+    claims.push(sentence(d, s));
   }
   const stated = blocks.length;
 
@@ -436,13 +561,13 @@ function areaBlocks(area) {
   for (const [d, s] of counts) {
     blocks.push([
       (d.matchesDefault === true && s.states !== null
-        ? `${claimLine(s.claim)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
-        : `${claimLine(s.claim)}: no convention. ` +
+        ? `${sentence(d, s)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
+        : `${sentence(d, s)}: no convention. ` +
           `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s)})`) +
         partialNote(d),
     ]);
     keys.push(s.states === null ? null : d.key);
-    claims.push(s.states === null ? null : claimLine(s.claim));
+    claims.push(s.states === null ? null : sentence(d, s));
   }
 
   // Taken out of the floor as well as out of the bound, so `head + kinds + body`
@@ -451,7 +576,30 @@ function areaBlocks(area) {
   // and a reader who has to give up two of those for the line naming what the
   // siblings do is better off by it.
   const budget = Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0);
-  return { head, blocks, keys, claims, stated, descriptions, kinds, budget };
+  return { blocks, keys, claims, stated, descriptions, kinds, budget };
+}
+
+/**
+ * What one target puts around an area's body: its frontmatter and the heading
+ * above, and below it what its patterns match that the area does not. Null
+ * where the target can be given none of the area's patterns.
+ */
+function areaEnds(area, target) {
+  // Measured: a `paths` key with no pattern under it loads on every turn, which
+  // is what the overview is for and what an area file must never do. There is
+  // no glob-less area to render, so this is a bug in the caller either way.
+  if (!area.globs || area.globs.length === 0) {
+    throw new Error(`area has no paths glob, so its file would load on every turn: ${area.path}`);
+  }
+  const spelled = spelledGlobs(target, area.globs, spellGlob);
+  if (spelled.patterns.length === 0) return null;
+  const head = [
+    ...frontmatter(target, { kind: "area", patterns: spelled.patterns }),
+    "",
+    `# ${areaLabel(area.path, encode)}  ${area.fileCount} files`,
+    "",
+  ];
+  return { head, closing: matchLines(target, spelled) };
 }
 
 /**
@@ -554,8 +702,12 @@ export function droppedSlots(area) {
   return new Map(keys.slice(kept).filter(Boolean).map((key, i) => [key, i < names.length ? "named" : "unnamed"]));
 }
 
-export function renderArea(area) {
-  const { head, blocks, keys, claims, stated, descriptions, kinds, budget } = areaBlocks(area);
+/** Null where the target can be given none of the area's patterns. */
+export function renderArea(area, target = TARGETS.claude) {
+  const ends = areaEnds(area, target);
+  if (ends === null) return null;
+  const { head, closing } = ends;
+  const { blocks, keys, claims, stated, descriptions, kinds, budget } = areaBlocks(area);
   const { kept, names, unnamed } = settle(blocks, keys, claims, budget);
 
   // The frontmatter is delivery rather than content: the globs are what route
@@ -582,8 +734,11 @@ export function renderArea(area) {
   }
 
   // Read under the heading: what the area holds is what a reader wants before
-  // what it asks of them.
-  return [...head, ...(kinds ? [kinds, ""] : []), ...body].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+  // what it asks of them. The closing lines go under the body and take nothing
+  // from it: a line one target's file had no room for is a claim the check
+  // still holds, off the one layout it reads.
+  const tail = closing.length ? ["", ...closing] : [];
+  return [...head, ...(kinds ? [kinds, ""] : []), ...body, ...tail].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
 /**
@@ -631,21 +786,75 @@ function companionAudit(d) {
  * byte-stable between scans with no source change: the token economics only
  * work on a cached read, and anything that moves per commit destroys that. So
  * no timestamp, no duration, no counts that drift.
+ *
+ * `claudeFiles` is what `files` is for Claude Code's directory, which another
+ * target's overview is laid out against.
  */
-export function renderOverview(result, files) {
+export function renderOverview(result, files, target = TARGETS.claude, claudeFiles = files) {
+  const head = overviewHead(result, target);
+  // Everything that gives way under the bound is decided as Claude Code's
+  // overview decides it, off that directory's own listings, so the roots, the
+  // sentences and the number of areas named are the same in every directory
+  // and a target's own lines are paid for on top (`mostLines`).
+  const mine = overviewHead(result, TARGETS.claude).length;
+
+  // What the scan could not cover, and how many files this tool generated.
+  // Neither grows with the repository, so both are paid before anything else.
+  // A listing that named an area the target has no file for would promise notes that never arrive.
+  // Nor one whose file there is somebody else's, which the writer hands in as `left`.
+  const filed = result.areas.filter((a) => hasFile(a, target) && !files.left?.includes(a.id));
+  const unfiled = result.areas.filter((a) => !hasFile(a, target));
+  const fixed = overviewTail(result, filed, files, target);
+
+  // The roster is paid next and shrinks into what is left of the bound, minus
+  // the `## Areas` heading and its blank and the lines the two listings below
+  // never give up: one sentence per kind of rule file this tool did not write,
+  // and one line of areas. Pushed unbudgeted it was head, and `Math.max(2, ...)`
+  // has nothing to give back: seven roots on a repository with a full tail put
+  // the overview six lines past its bound.
+  const listings = otherFiles(claudeFiles.others, 1).length + 1;
+  const layout = renderLayout(result.layout, MAX_LINES - mine - fixed.length - 2 - listings);
+
+  // Two listings do grow: the areas, and the rule files this tool did not write.
+  // They share whatever is left, and each keeps at least one line, because a
+  // budget that starves one of them entirely is a fact the file stops carrying.
+  // Budgeting the areas alone was the bug: the other listing was rendered first
+  // and unbounded, and a repository with enough of both put the overview eight
+  // lines past its bound.
+  const room = Math.max(2, MAX_LINES - mine - layout.length - 2 - fixed.length);
+  const theirs = otherFiles(claudeFiles.others, Math.max(1, room - 1));
+  // No area at all left the heading over two blank lines, which reads as a
+  // listing that failed to print rather than as a repository where no directory
+  // cleared the floor and kept a count. Why is not said here: the causes are the
+  // Not covered lines, and an empty repository has none of them.
+  const listed = (areas, none, reader) =>
+    result.areas.length
+      ? areaListing(areas, none, Math.max(1, room - theirs.length), reader)
+      : ["No directory became an area, so nothing here states a claim."];
+  const listing = listed(filed, unfiled, target);
+  // A directory's own listing of other files takes the lines Claude Code's
+  // takes and the ones that overview leaves under the bound, and folds into them.
+  const inClaude = result.areas.filter((a) => !claudeFiles.left?.includes(a.id));
+  const spare = MAX_LINES - mine - layout.length - 2 - listed(inClaude, [], TARGETS.claude).length - fixed.length - theirs.length;
+  const others = isClaude(target) ? theirs : otherFiles(files.others, theirs.length + Math.max(0, spare), true);
+
+  return [...head, ...layout, `## Areas (${filed.length})`, "", ...listing, ...fixed, ...others].join("\n") + "\n";
+}
+
+/** The overview down to where the roster starts: what the file is, how to read it, and what this scan could not say. */
+function overviewHead(result, target) {
   const head = [
-    "---",
-    `generator: ${GENERATOR}`,
-    "---",
+    ...frontmatter(target, { kind: "overview" }),
     "",
     "# Repository map",
     "",
+    ...(target.wrote ? [target.wrote] : []),
     "Facts counted from this repository's own code, per directory.",
     // One line with the legend, so the key to every counts line costs the
     // roster nothing on a repository whose overview sits at its bound.
     'A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.',
     "",
-    "Read a file before editing it: these notes load when you read, not when you grep.",
+    target.reads,
     // Names the tools the agent already has, and permits saying
     // "unverified", which is the half that keeps a guess from being written down
     // as a fact (docs/research/one-line-that-stops-guessing.md).
@@ -695,38 +904,7 @@ export function renderOverview(result, files) {
   // head saying the window was the reason.
   const truncated = truncatedHistorySentence(result.authors?.error ? null : result.authors?.shallow);
   if (truncated) head.push(truncated, "");
-
-  // What the scan could not cover, and how many files this tool generated.
-  // Neither grows with the repository, so both are paid before anything else.
-  const fixed = overviewTail(result, files);
-
-  // The roster is paid next and shrinks into what is left of the bound, minus
-  // the `## Areas` heading and its blank and the lines the two listings below
-  // never give up: one sentence per kind of rule file this tool did not write,
-  // and one line of areas. Pushed unbudgeted it was head, and `Math.max(2, ...)`
-  // has nothing to give back: seven roots on a repository with a full tail put
-  // the overview six lines past its bound.
-  const listings = otherFiles(files.others, 1).length + 1;
-  head.push(...renderLayout(result.layout, MAX_LINES - head.length - fixed.length - 2 - listings));
-  head.push(`## Areas (${result.areas.length})`, "");
-
-  // Two listings do grow: the areas, and the rule files this tool did not write.
-  // They share whatever is left, and each keeps at least one line, because a
-  // budget that starves one of them entirely is a fact the file stops carrying.
-  // Budgeting the areas alone was the bug: the other listing was rendered first
-  // and unbounded, and a repository with enough of both put the overview eight
-  // lines past its bound.
-  const room = Math.max(2, MAX_LINES - head.length - fixed.length);
-  const others = otherFiles(files.others, Math.max(1, room - 1));
-  // No area at all left the heading over two blank lines, which reads as a
-  // listing that failed to print rather than as a repository where no directory
-  // cleared the floor and kept a count. Why is not said here: the causes are the
-  // Not covered lines, and an empty repository has none of them.
-  const listing = result.areas.length
-    ? areaListing(result, Math.max(1, room - others.length))
-    : ["No directory became an area, so nothing here states a claim."];
-
-  return [...head, ...listing, ...fixed, ...others].join("\n") + "\n";
+  return head;
 }
 
 /**
@@ -738,12 +916,12 @@ export function renderOverview(result, files) {
  * 5,489-file Rails repository, 143 of 151 areas stated nothing and 89% of an
  * always-loaded file went on their names.
  */
-function areaListing(result, budget) {
+function areaListing(areas, unfiled, budget, target) {
   // The same partition the area file makes: a slot the model writes by default
   // is a counts line there, so it must not earn the area a name here.
   const stated = (a) =>
     a.dimensions.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true).length;
-  const eligible = result.areas.filter((a) => stated(a) > 0);
+  const eligible = areas.filter((a) => stated(a) > 0);
 
   // A trailing count is owed unless every area is named, and an area the budget
   // cuts is as unnamed as one that states nothing: two numbers a reader has to
@@ -751,29 +929,36 @@ function areaListing(result, budget) {
   // cut. Reserved on both causes, because reserving on the first alone put the
   // trailer one line past the bound whenever every area stated something and
   // they still did not all fit.
-  const namesEveryArea = eligible.length === result.areas.length && eligible.length <= budget;
+  const namesEveryArea = eligible.length === areas.length && eligible.length <= budget;
   const lines = eligible
     .slice(0, Math.max(0, namesEveryArea ? budget : budget - 1))
-    .map((a) => `- ${encode(a.path)} — ${a.fileCount} files, ${stated(a)} stated`);
+    .map((a) => `- ${areaLabel(a.path, encode)} — ${a.fileCount} files, ${stated(a)} stated`);
 
   // "more" only counts against something already named. A repository whose
   // areas all carry counts and state nothing lists none of them, which is the
   // ordinary case before any convention is measured, and "and 3 more areas"
   // under an empty listing reads as three areas withheld on top of three shown.
-  const unnamed = result.areas.length - lines.length;
+  const unnamed = areas.length - lines.length;
   if (unnamed > 0) {
     const what = unnamed === 1
-      ? "area in its own file, loaded when you read one of its files"
-      : "areas, each in its own file, loaded when you read one of its files";
+      ? `area in its own file, ${target.listed}`
+      : `areas, each in its own file, ${target.listed}`;
     lines.push(lines.length ? `- and ${unnamed} more ${what}` : `- ${unnamed} ${what}`);
+  }
+  if (unfiled.length) {
+    const one = unfiled.length === 1;
+    lines.push(
+      `- ${plural(unfiled.length, "area")} ${one ? "has" : "have"} no pattern ${target.reader} can be given, ` +
+        `so no file here covers ${one ? "it" : "them"}: ${some(unfiled.map((a) => areaLabel(a.path, encode)))}.`
+    );
   }
   return lines;
 }
 
 /**
- * What the scan could not cover, and who wrote the files in `.claude/rules/`.
+ * What the scan could not cover, and who wrote the files in the target's directory.
  */
-function overviewTail(result, files) {
+function overviewTail(result, filed, files, target) {
   const lines = ["", "## Not covered", ""];
 
   // Two different facts, and only the first was ever what the sentence said.
@@ -791,6 +976,14 @@ function overviewTail(result, files) {
     const total = unread.reduce((n, [, count]) => n + count, 0);
     const named = unread.map(([ext, count]) => `${count} ${ext}`).join(", ");
     lines.push(`- ${plural(total, "file")} ${total === 1 ? "holds" : "hold"} a language this map does not read (${named})`);
+  }
+  // A count over a component's script reads as a count over the component.
+  // The count is every component in the corpus, a rejected one included, so
+  // the line says which part is read and not that any one file was.
+  const scripts = result.corpus?.scriptOnly ?? [];
+  if (scripts.length) {
+    const total = scripts.reduce((n, [, count]) => n + count, 0);
+    lines.push(`- of ${total} ${series(scripts.map(([ext]) => ext))} ${total === 1 ? "file" : "files"} only the script block is read; the template is not`);
   }
   // Dropped in `collect`, before anything counts, so without this row nothing
   // anywhere says they exist: a reader who knows the directory is there sees a
@@ -818,8 +1011,8 @@ function overviewTail(result, files) {
   const degraded = degradedSemanticSentence(result.semantic);
   if (degraded) lines.push(`- ${degraded}`);
 
-  const generatedCount = result.areas.filter((a) => a.dimensions.length > 0).length + 1;
-  lines.push("", `Generated files: ${generatedCount} under ${RULES_DIR}/${PREFIX}*.md`);
+  const generatedCount = filed.filter((a) => a.dimensions.length > 0).length + 1;
+  lines.push("", `Generated files: ${generatedCount} under ${target.dir}/${PREFIX}*${target.ext}`);
   return lines;
 }
 
@@ -828,11 +1021,8 @@ function overviewTail(result, files) {
  * Empty on a run that read every language it holds.
  */
 function unreadLines(parse) {
-  const langs = parse?.unreadable ?? [];
-  return [...new Set(langs.map(engineOf))].map((id) => {
-    const of = langs.filter((l) => engineOf(l) === id);
-    return `no ${of.join(" or ")} file was read: ${whyUnread(id, parse.engines)}`;
-  });
+  // No directory named: the terminal says where this install is, and a committed file is read on other machines.
+  return unreadReasons(parse?.unreadable ?? [], parse ?? {}, null).map(({ langs, why }) => `no ${langs.join(" or ")} file was read: ${why}`);
 }
 
 /**
@@ -878,7 +1068,7 @@ function historyWindow(shallow) {
  */
 const historyClaim = (held, gated) =>
   `history truncated: shallow clone${held ? `, ${held}` : ""}, so author counts are a floor` +
-  (gated > 0 ? ` and ${plural(gated, "claim")} print as counts on the author gate` : "");
+  (gated > 0 ? ` and ${plural(gated, "claim")} ${gated === 1 ? "prints" : "print"} as counts on the author gate` : "");
 
 /**
  * The claim alone, for the overview.
@@ -903,12 +1093,18 @@ export const truncatedHistoryLine = (shallow, gated = 0) =>
  * and the reason are what the record already holds; the cause is deliberately
  * not named, because a repository whose own types are loose reads the same as
  * one whose checker could not be set up.
+ *
+ * A degraded tier prints no count, measured or carried. A carried verdict
+ * quotes the rate of the run that measured it, by that run's day, and those
+ * words are all that tell the two overviews apart. The day is the UTC one and
+ * says so: a local day would print another map on another machine.
  */
 export function degradedSemanticSentence(semantic) {
-  if (!semantic || semantic.ran !== true || semantic.status !== "degraded") return null;
+  if (!semantic || semantic.status !== "degraded" || (semantic.ran !== true && semantic.carried !== true)) return null;
   const rate = semantic.typedResolutionRate;
   const pct = rate === null || rate === undefined ? "no" : `${Math.round(rate * 100)}% of`;
-  return `type-checked claims are counts only: ${pct} type lookups resolved (${semantic.reason})`;
+  const measured = semantic.carried === true ? ` when measured ${encode(String(semantic.measuredAt).slice(0, 10))} UTC` : "";
+  return `type-checked claims are not counted: ${pct} type lookups resolved${measured} (${encode(semantic.reason)})`;
 }
 
 const count = (xs, noun) => plural(xs.length, noun);
@@ -916,7 +1112,7 @@ const was = (xs) => (xs.length === 1 ? "was" : "were");
 const they = (xs) => (xs.length === 1 ? "it is" : "they are");
 const them = (xs) => (xs.length === 1 ? "it" : "them");
 
-function otherFiles(others, budget) {
+function otherFiles(others, budget, folds = false) {
   const { foreign = [], unknown = [], unreadable = [] } = others || {};
   if (foreign.length === 0 && unknown.length === 0 && unreadable.length === 0) {
     return ["Any other file there was not written by this tool."];
@@ -950,6 +1146,11 @@ function otherFiles(others, budget) {
     );
     for (const name of shown) lines.push(`- ${encodePath(name)}`);
     if (shown.length && rest) lines.push(`- and ${rest} more`);
+  }
+  // Past the budget no name was shown, so there is one sentence per kind and the last ones share a line.
+  if (folds && lines.length > budget) {
+    const rest = [unknown, unreadable, foreign].filter((kind) => kind.length).slice(budget - 1).flat();
+    return [...lines.slice(0, budget - 1), `${count(rest, "other file")} there ${was(rest)} not written by this scan.`];
   }
   return lines;
 }

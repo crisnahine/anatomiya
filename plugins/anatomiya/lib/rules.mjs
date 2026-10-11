@@ -17,6 +17,8 @@
 import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 
+import { GENERATOR, PREFIX, TARGETS, areaName, isClaude, overviewName } from "./targets.mjs";
+
 /**
  * A path resolved through every link and alias the OS keeps, or null where it
  * cannot be resolved at all.
@@ -41,7 +43,7 @@ export function realpathOrNull(p) {
 /** The same, falling back to the lexical path: a path that does not exist is not a read. */
 export const realpathOf = (p) => realpathOrNull(p) ?? resolve(p);
 
-export const RULES_DIR = ".claude/rules";
+export const RULES_DIR = TARGETS.claude.dir;
 export const STORE_DIR = ".claude/anatomiya";
 /** What the refresh worker last did, relative to the repository root. */
 export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
@@ -49,12 +51,11 @@ export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
 // that writes it, because this module is where every path a scan touches is
 // spelled, and the exclude line below has to be the same string.
 export const SETTINGS_PATH = ".claude/settings.local.json";
-export const GENERATOR = "anatomiya";
-export const PREFIX = "anatomiya-";
-export const OVERVIEW_FILE = `${PREFIX}overview.md`;
+export { GENERATOR, PREFIX };
+export const OVERVIEW_FILE = overviewName(TARGETS.claude);
 
 export function areaFilename(area) {
-  return `${PREFIX}area-${area.id}.md`;
+  return areaName(TARGETS.claude, area.id);
 }
 
 /**
@@ -108,7 +109,7 @@ export function isOwned(text) {
 }
 
 const FENCE = /^---[ \t]*$/;
-const KEY = /^generator:[ \t]*anatomiya[ \t]*$/;
+const KEY = new RegExp(`^generator:[ \\t]*${GENERATOR}[ \\t]*$`);
 
 /**
  * A name this tool may write, checked rather than assumed.
@@ -119,26 +120,136 @@ const KEY = /^generator:[ \t]*anatomiya[ \t]*$/;
  * asserted at the moment the plan is built rather than trusted because today's
  * area id happens to be a hex digest.
  */
-export function isGeneratedName(name) {
+export function isGeneratedName(name, target = TARGETS.claude) {
   return (
     typeof name === "string" &&
     name.startsWith(PREFIX) &&
-    name.endsWith(".md") &&
-    name.length > PREFIX.length + 3 &&
+    name.endsWith(target.ext) &&
+    name.length > PREFIX.length + target.ext.length &&
     !/[\\/\0]/.test(name)
   );
 }
 
+/**
+ * A name a scan gives a file: the overview's, or an area's eight hex digits.
+ *
+ * Narrower than the rule above, for the two directories people write in by
+ * hand. A copy somebody kept of a generated file carries the key and the
+ * prefix, so there only a name this tool can produce is its to remove.
+ */
+export function isMapName(name, target = TARGETS.claude) {
+  if (!isGeneratedName(name, target)) return false;
+  return name === overviewName(target) || AREA_STEM.test(name.slice(0, -target.ext.length));
+}
+
+const AREA_STEM = new RegExp(`^${PREFIX}area-[0-9a-f]{8}$`);
+
+/**
+ * Where a file is staged before it is renamed to `path`: beside it, under the
+ * stager's process id and sixteen hex digits nobody can predict.
+ */
+export const stagedPath = (path, pid, hex) => `${path}.tmp-${pid}-${hex}`;
+
+// The one reading of what `stagedPath` adds.
+const STAGED = /\.tmp-(\d+)-[0-9a-f]{16}$/;
+
+// The stager's process id where the name is one `owns` answers for with that added, or null.
+function stager(name, owns) {
+  const added = STAGED.exec(name);
+  return added !== null && owns(name.slice(0, added.index)) ? Number(added[1]) : null;
+}
+
+/**
+ * The process that staged a temporary file of the map's, read off the file's
+ * name, or null for any other name: a name a scan gives a file in this
+ * directory, then what the stager adds to it.
+ */
+export function stagedBy(name, target = TARGETS.claude) {
+  return stager(name, (staged) => isMapName(staged, target));
+}
+
+/**
+ * The temporary files a stopped writer left in the store, each with the process
+ * that staged it: a regular file whose whole name is one of `names` and what
+ * the stager adds. Never a link, a directory or a fifo, and never another name,
+ * since the directory comes with the repository.
+ */
+export function stagedInStore(dir, names) {
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries
+    .sort()
+    .map((name) => ({ name, pid: stager(name, (staged) => names.includes(staged)) }))
+    .filter(({ name, pid }) => pid !== null && isPlainFile(join(dir, name)));
+}
+
+/** What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`. */
+export const folded = (name) => name.toUpperCase().toLowerCase();
+
+/**
+ * The entry a write to `name` may land on: one spelled otherwise that a volume
+ * folding case would answer with, or null. A listing that holds `name`
+ * itself has none, since no volume that folds can list both spellings.
+ */
+export const spelledOtherwise = (entries, name) =>
+  entries.includes(name) ? null : (entries.find((e) => folded(e) === folded(name)) ?? null);
+
+/**
+ * The entries that are one of `names` on this volume: each spelled otherwise,
+ * where the listing does not hold the name and the volume answers for it with
+ * that entry. A volume that keeps case apart answers for no name its listing lacks.
+ *
+ * One pass over the listing, which comes with the repository: asked a name at
+ * a time, 500 names against 100,000 entries took 3.4 s.
+ */
+export function foldedOnto(dir, entries, names) {
+  const listed = new Set(entries);
+  const spelled = new Map();
+  for (const e of entries) {
+    const key = folded(e);
+    if (!spelled.has(key)) spelled.set(key, []);
+    spelled.get(key).push(e);
+  }
+  return names.flatMap((n) => {
+    const it = listed.has(n) || !spelled.has(folded(n)) ? null : entryAt(dir, n);
+    return it === null ? [] : spelled.get(folded(n)).filter((e) => sameEntry(it, entryAt(dir, e))).slice(0, 1);
+  });
+}
+
+// `folded` is JavaScript's fold and a volume has its own: a dotless i goes onto
+// `i` here and stays apart on APFS. So which entry a name is gets asked of the
+// volume. A file under two links, or on a volume that numbers no file, is
+// nobody's to tell apart, and reads as no entry.
+function entryAt(dir, name) {
+  try {
+    const { dev, ino, nlink } = lstatSync(join(dir, name), { bigint: true });
+    return nlink === 1n && ino !== 0n ? { dev, ino } : null;
+  } catch {
+    return null;
+  }
+}
+
+const sameEntry = (a, b) => a !== null && b !== null && a.dev === b.dev && a.ino === b.ino;
 /**
  * The filenames the map on disk says this build wrote, or `null` when there is
  * no map to ask.
  *
  * `null` is not an empty set: an empty set says the last scan wrote nothing,
  * and no scan writes nothing. Without the record the third fact is unavailable,
- * so nothing is removable.
+ * so nothing is removable. The same for a Cursor or Copilot directory the
+ * record does not name, until a scan is told by name to leave that target out.
  */
-export function knownNames(facts) {
+export function knownNames(facts, target = TARGETS.claude) {
   if (!facts || !Array.isArray(facts.areas)) return null;
+  if (!isClaude(target)) {
+    // Stored rather than derived: a target has no file for an area it cannot spell.
+    const listed = facts.targets?.[target.id];
+    return Array.isArray(listed) ? new Set(listed.filter((n) => isMapName(n, target))) : null;
+  }
   const names = new Set([OVERVIEW_FILE]);
   for (const a of facts.areas) {
     if (a && typeof a.id === "string") names.add(areaFilename(a));
@@ -148,7 +259,8 @@ export function knownNames(facts) {
 
 /**
  * Every `.md` in the rules directory, split by which of the three facts it
- * carries.
+ * carries. In a Cursor or Copilot directory, only the names under our prefix:
+ * the rest is that tool's own rules, which are meant to be there.
  *
  *   ours     all three, so this tool may replace or remove it
  *   unknown  our prefix and our key, but the map does not name it
@@ -158,13 +270,17 @@ export function knownNames(facts) {
  * byte-stable across scans with no source change. `readdir` order is the
  * filesystem's.
  */
-export function auditRules(root, known = null) {
+export function auditRules(root, known = null, target = TARGETS.claude) {
   const out = {
     ours: [],
     unknown: [],
     foreign: [],
     unreadable: [],
     occupied: [],
+    // Every name the listing holds, as the directory spells it.
+    entries: [],
+    // The regular files a scan staged here and neither renamed nor removed.
+    staged: [],
     dir: null,
     escaped: false,
     // Whether the directory could be listed at all. `false` beside four empty
@@ -173,7 +289,7 @@ export function auditRules(root, known = null) {
     listed: false,
   };
 
-  const dir = resolveRulesDir(root);
+  const dir = resolveTargetDir(root, target);
   if (dir === null) return { ...out, escaped: true };
   out.dir = dir;
 
@@ -189,8 +305,13 @@ export function auditRules(root, known = null) {
     return out;
   }
   out.listed = true;
+  out.entries = names;
+  // Asked of the entry itself: a link, a directory or a fifo under such a name is somebody's.
+  out.staged = names.filter((n) => stagedBy(n, target) !== null && isPlainFile(join(dir, n))).sort();
 
-  for (const name of names.filter((n) => n.endsWith(".md")).sort()) {
+  const read = (n) => n.endsWith(target.ext) && (isClaude(target) || n.startsWith(PREFIX));
+  const listed = new Set(names);
+  for (const name of names.filter(read).sort()) {
     const entry = readHead(join(dir, name));
     // A name `readdir` reports that is not a regular file is not a rule file.
     // The type is asked on the opened handle, before any content is read. It
@@ -206,13 +327,24 @@ export function auditRules(root, known = null) {
       out.unreadable.push(name);
       continue;
     }
-    if (!name.startsWith(PREFIX) || !isOwned(entry.head)) {
+    // A link too, in a directory another tool reads: this tool writes files
+    // there, so a link is somebody's own entry whatever it leads to.
+    const theirLink = !isClaude(target) && isLink(join(dir, name));
+    // In Claude Code's directory a generated name is this tool's by construction,
+    // and on a volume that folds case an entry spelled as one in another case is
+    // the file at that name: ours under the map's name where it carries the key.
+    const lower = folded(name);
+    const isMapped = isClaude(target) && isMapName(lower, target) && !listed.has(lower) && sameEntry(entryAt(dir, name), entryAt(dir, lower));
+    const mapped = isMapped ? lower : name;
+    if (!mapped.startsWith(PREFIX) || !isOwned(entry.head) || theirLink) {
       out.foreign.push(name);
       continue;
     }
-    if (known && known.has(name)) out.ours.push(name);
-    else out.unknown.push(name);
+    if (known && known.has(mapped)) out.ours.push(mapped);
+    else out.unknown.push(mapped);
   }
+  out.ours.sort();
+  out.unknown.sort();
   return out;
 }
 
@@ -238,6 +370,110 @@ export function auditRules(root, known = null) {
  */
 export function resolveRulesDir(root) {
   return resolveInside(root, RULES_DIR);
+}
+
+/**
+ * Where one target's directory is, or `null` where this tool does not write.
+ *
+ * Claude Code's is the rules directory above, link exception included. The
+ * other two get no exception: every component is a directory of the
+ * repository's own or is not there yet. `.github` holds workflows, so a link at
+ * it that resolves inside the tree is still somewhere a map must not land.
+ */
+export function resolveTargetDir(root, target) {
+  return locateTarget(root, target).dir;
+}
+
+// The directory, or the path in the way and what it is, for a reader to act on.
+function locateTarget(root, target) {
+  if (isClaude(target)) return { dir: resolveRulesDir(root) };
+  const own = ownDirectory(root, target.dir);
+  if (own.dir === null) return own;
+  // A `.claude/rules` link can lead here, and Claude Code would then load this target's files as its own.
+  const rules = resolveRulesDir(root);
+  if (rules === null) return own;
+  // In the native form: the plain one keeps a link's own case on a volume that folds it.
+  const [a, b] = [nativeUpTo(rules), nativeUpTo(own.dir)];
+  return contains(a, b) || contains(b, a)
+    ? blocked(`${RULES_DIR} is a link into the same place as ${target.dir}`, `point ${RULES_DIR} somewhere else`)
+    : own;
+}
+
+function ownDirectory(root, relPath) {
+  let at;
+  try {
+    at = realpathSync(root);
+  } catch {
+    return blocked("the repository root could not be read", UNREAD);
+  }
+  const parts = relPath.split("/");
+  for (let i = 0; i < parts.length; i++) {
+    const next = join(at, parts[i]);
+    const name = parts.slice(0, i + 1).join("/");
+    let entry;
+    try {
+      entry = lstatSync(next);
+    } catch (err) {
+      // Only a name with nothing at it is ours to create.
+      if (err.code === "ENOENT") return { dir: join(at, ...parts.slice(i)) };
+      return blocked(`${name} could not be read`, UNREAD);
+    }
+    // Asked of the entry itself, so a link to a directory is a link.
+    if (!entry.isDirectory()) {
+      return blocked(`${name} is ${entry.isSymbolicLink() ? "a link" : "not a directory"}`, `make ${name} a directory of this repository`);
+    }
+    at = next;
+  }
+  return { dir: at };
+}
+
+const blocked = (reason, remedy) => ({ dir: null, reason, remedy });
+const UNREAD = "make it readable";
+
+/**
+ * Whether a scan keeps writing this target: `on`, `off` or `unknown`.
+ *
+ * Claude Code's is always on. Another is on while its own overview is a file
+ * this tool wrote, so nothing is remembered anywhere else. It is off only where
+ * that was seen: nothing at the name, or a file somebody else wrote. Anything
+ * that could not be read is unknown, because off is what removes a map.
+ */
+export function targetState(root, target) {
+  return targetStatus(root, target).state;
+}
+
+/**
+ * The same, and for an unknown one the path that made it so, what that path
+ * is, and what a person does about it: the one remedy every sentence about it
+ * gives.
+ */
+export function targetStatus(root, target) {
+  if (isClaude(target)) return { state: "on" };
+  const { dir, reason, remedy } = locateTarget(root, target);
+  if (dir === null) return { state: "unknown", reason, remedy };
+  const path = join(dir, overviewName(target));
+  const said = `${target.dir}/${overviewName(target)}`;
+  const unknown = (what, remedy = `move or delete ${said}`) => ({ state: "unknown", reason: `${said} ${what}`, remedy });
+  let entry;
+  try {
+    entry = lstatSync(path);
+  } catch (err) {
+    return err.code === "ENOENT" ? { state: "off" } : unknown("could not be read", UNREAD);
+  }
+  if (!entry.isFile()) return unknown(entry.isSymbolicLink() ? "is a link" : "is not a file");
+  const read = readHead(path);
+  if (read.kind !== "file") return unknown("could not be read", UNREAD);
+  // A volume that folds case answers for an entry spelled another way, and that one is somebody's.
+  return { state: isOwned(read.head) && listsExactly(dir, overviewName(target)) ? "on" : "off" };
+}
+
+// True where the directory cannot be listed: the `lstat` is then all there is to go on.
+function listsExactly(dir, name) {
+  try {
+    return readdirSync(dir).includes(name);
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -393,6 +629,14 @@ export function leafReplaceable(path) {
   }
 }
 
+function isPlainFile(path) {
+  try {
+    return lstatSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Whether the path is a symbolic link, false where even lstat is refused: a
  * directory this may not enter answers EACCES here as well as to realpath.
@@ -517,7 +761,11 @@ export const HEAD_BYTES = 1024 * 1024;
 // exclude covers all of it. `settings.local.json` was on this list while the
 // scan installed its re-delivery hook there; the plugin declares that itself
 // now, and a scan takes the old entry out rather than writing one.
-export const EXCLUDE_LINES = [`${RULES_DIR}/${PREFIX}*.md`, `${STORE_DIR}/`];
+export const EXCLUDE_LINES = [
+  `${RULES_DIR}/${PREFIX}*.md`,
+  `${STORE_DIR}/`,
+  ...Object.values(TARGETS).filter((t) => !isClaude(t)).map((t) => `${t.dir}/${PREFIX}*${t.ext}`),
+];
 
 /**
  * How many rule files a surface names before it counts them.

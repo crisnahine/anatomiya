@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { READS, checkDocs, pathsThatMoved, readGlossary, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, checkDocs, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
 
@@ -106,10 +107,10 @@ function repositoryFiles() {
   }
 }
 
-// The module under test answers `[]` where git cannot say, on purpose, and a
-// suite that dies at import over the same question is a file whose other 30
-// cases stop running with nothing said. A tree that is not a checkout is a real
-// place to run this from: this repository is copied to one for review.
+// The gate under test fails where git cannot say, and a suite that dies at
+// import over the same question is a file whose other 30 cases stop running
+// with nothing said. A tree that is not a checkout is a real place to run this
+// from: this repository is copied to one for review.
 const REPOSITORY_FILES = repositoryFiles();
 const needsCheckout = REPOSITORY_FILES
   ? {}
@@ -117,6 +118,16 @@ const needsCheckout = REPOSITORY_FILES
 const isRepositoryFile = (src) => statSync(src).isDirectory() || REPOSITORY_FILES.has(src);
 
 function repoCopy(t) {
+  const dir = copyWithNoRepository(t);
+  // Nothing is staged or committed: the sweep asks git for the working tree, and
+  // a commit would need an identity this suite has no business setting on the
+  // machine it runs on.
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  return dir;
+}
+
+/** The copy as files alone, which is no tree the gate can ask git about. */
+function copyWithNoRepository(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-check-docs-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -128,19 +139,6 @@ function repoCopy(t) {
   for (const f of readdirSync(ROOT).filter((f) => f.endsWith(".md"))) cpSync(join(ROOT, f), join(dir, f));
   // The lockfile carries the version twice, and the checker reads both.
   for (const f of ["package.json", "package-lock.json"]) cpSync(join(ROOT, f), join(dir, f));
-  return dir;
-}
-
-/**
- * The same copy, made a repository, so the path sweep has a file list to read.
- *
- * Nothing is staged or committed: the sweep asks git for the working tree, and
- * a commit would need an identity this suite has no business setting on the
- * machine it runs on.
- */
-function repoCopyTracked(t) {
-  const dir = repoCopy(t);
-  execFileSync("git", ["init", "-q"], { cwd: dir });
   return dir;
 }
 
@@ -178,6 +176,17 @@ test("an untouched copy of this repository passes", (t) => {
 
   assert.equal(status, 0, output);
   assert.match(output, /docs match the code/);
+});
+
+test("a tree git cannot list the files of fails the gate and says why", (t) => {
+  const dir = copyWithNoRepository(t);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /^::error::git: could not list the files here, so no path a document names was read against the tree: .*not a git repository/m);
+  assert.doesNotMatch(output, /docs match the code/);
+  assert.equal(output.split("\n").filter((line) => line.startsWith("::error::")).length, 1, "the one fault, said once");
 });
 
 test("the worktree recipe is read line by line, so a CRLF checkout passes and a missing line still fails", (t) => {
@@ -230,6 +239,107 @@ test("a command file that spells an invocation the CLI refuses fails", (t) => {
   const flag = check(dir);
   assert.equal(flag.status, 1);
   assert.match(flag.output, /commands\/check\.md: .*check \. --deep/);
+});
+
+test("the rows a component's script is asked are read against the registry, per framework", (t) => {
+  // "24 for Vue" sat beside "28 for JavaScript" with nothing reading it, so a
+  // row listed for one framework and not the other would leave both stale.
+  for (const [phrasing, lang] of [[/(\d+)\s+for\s+Vue/, "Vue"], [/(\d+)\s+for\s+Svelte/, "Svelte"]]) {
+    for (const rel of ["README.md", "docs/how-it-works.md"]) {
+      const dir = repoCopy(t);
+      const wrong = bumpCount(dir, phrasing, rel);
+
+      const { status, output } = check(dir);
+
+      assert.equal(status, 1, `${rel} states "${wrong}" and passed`);
+      assert.match(output, new RegExp(`${rel.replace(/[.]/g, "\\.")}: says "\\d+ for ${lang}", the registry holds \\d+ asked of a ${lang} script`));
+    }
+  }
+});
+
+test("the rows asked of each tree-sitter language are read against the registry", (t) => {
+  assert.deepEqual(Object.keys(PROSE_NAMES), hostedBy("tree-sitter"), "one name for each language the registry routes to tree-sitter");
+  // The gate does not start on a table and a registry that differ, in either direction.
+  const { kotlin, ...short } = PROSE_NAMES;
+  assert.throws(() => proseNamed(short), /^Error: PROSE_NAMES has no entry for kotlin$/);
+  assert.throws(() => proseNamed({ ...PROSE_NAMES, zig: "Zig" }), /^Error: PROSE_NAMES holds zig, which nothing asks it about$/);
+  assert.deepEqual(proseNamed().at(-1), [kotlin, "kotlin"]);
+  for (const name of Object.values(PROSE_NAMES)) {
+    const dir = repoCopy(t);
+    const wrong = bumpCount(dir, new RegExp(`(\\d+)\\s+for\\s+${name.replace("#", "\\#")}(?![\\w#])`), "docs/how-it-works.md");
+
+    const { status, output } = check(dir);
+
+    assert.equal(status, 1, `docs/how-it-works.md states "${wrong}" and passed`);
+    assert.ok(output.includes(`for ${name}", the registry holds`), `${name}: ${output}`);
+  }
+});
+
+/** One count a document spells as a word, changed to another word, in a copy that then has to fail. */
+function miscount(t, rel, from, to) {
+  const dir = repoCopy(t);
+  edit(join(dir, ...rel.split("/")), (text) => text.replace(from, to));
+  return check(dir);
+}
+
+test("the count of runtime dependencies is read against the plugin's manifest, in every document that states it", (t) => {
+  // "Two runtime dependencies" stood in four documents while the manifest gained a third: the gate read the names and never the count.
+  for (const rel of ["README.md", "SECURITY.md", "CONTRIBUTING.md", `${REL.anatomiya}/README.md`]) {
+    const { status, output } = miscount(t, rel, /three runtime dependencies/i, "four runtime dependencies");
+
+    assert.equal(status, 1, `${rel} states four runtime dependencies and passed`);
+    assert.ok(output.includes(`${rel}: says "four runtime dependencies", the plugin's manifest declares 3`), output);
+  }
+});
+
+test("the count of parser engines is read against the registry", (t) => {
+  for (const rel of ["docs/how-it-works.md", "CONTEXT.md"]) {
+    const { status, output } = miscount(t, rel, /three parser engines/, "four parser engines");
+
+    assert.equal(status, 1, `${rel} states four parser engines and passed`);
+    assert.ok(output.includes(`${rel}: says "four parser engines", the registry declares 3`), output);
+  }
+});
+
+test("the count of engines node hosts is read against the registry", (t) => {
+  const { status, output } = miscount(t, "README.md", /two node-hosted engines/, "three node-hosted engines");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`README.md: says "three node-hosted engines", the registry declares 2 hosted by node`), output);
+});
+
+test("the count of grammars is read against the languages the registry routes to tree-sitter", (t) => {
+  for (const rel of ["README.md", "SECURITY.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`]) {
+    const { status, output } = miscount(t, rel, /seven(\s+)grammars/, "eight$1grammars");
+
+    assert.equal(status, 1, `${rel} states eight grammars and passed`);
+    assert.match(output, new RegExp(`${rel.replace(/[.]/g, "\\.")}: says "eight\\s+grammars", the registry routes 7 languages to tree-sitter`));
+  }
+});
+
+test("the count of declarations the build contract states is read against the registry", (t) => {
+  const { status, output } = miscount(t, "DECISIONS.md", "The registry holds twelve declarations", "The registry holds thirteen declarations");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`DECISIONS.md: says "The registry holds thirteen declarations", the registry holds 12`), output);
+});
+
+test("the readiness table has a row for every line doctor prints, and for nothing else", (t) => {
+  // The table listed four rows for a release after doctor printed a fifth engine's line.
+  const lost = miscount(t, "docs/how-it-works.md", /^\| `tree-sitter` \| node \|.*\n/m, "");
+  assert.equal(lost.status, 1);
+  assert.ok(lost.output.includes("docs/how-it-works.md: the readiness table has no row for tree-sitter, which doctor prints a line for"), lost.output);
+
+  const stale = miscount(t, "docs/how-it-works.md", "| `tree-sitter` | node |", "| `acorn` | node | it imports | the same install |\n| `tree-sitter` | node |");
+  assert.equal(stale.status, 1);
+  assert.ok(stale.output.includes("docs/how-it-works.md: the readiness table has a row for acorn, which doctor prints no line for"), stale.output);
+});
+
+test("the grammar packages the security notes name are the ones the manifest records, at its versions", (t) => {
+  const { status, output } = miscount(t, "SECURITY.md", "tree-sitter-go@0.25.0", "tree-sitter-go@0.24.0");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes("SECURITY.md: does not name the grammar package tree-sitter-go@0.25.0"), output);
 });
 
 test("the README's share of the dimension total is read against the registry", (t) => {
@@ -696,7 +806,7 @@ test("a path that is still where the prose says it is passes", () => {
 });
 
 test("a document naming a file that lives somewhere else now is failed, with where it went", needsCheckout, (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   const path = join(dir, "CONTRIBUTING.md");
   writeFileSync(path, `${readFileSync(path, "utf8")}\n\nThe registry is \`lib/registry.mjs\`.\n`);
 
@@ -707,15 +817,60 @@ test("a document naming a file that lives somewhere else now is failed, with whe
 });
 
 test("a tracked copy with nothing wrong still passes, so the sweep is not failing on its own reading", needsCheckout, (t) => {
-  const { status, output } = check(repoCopyTracked(t));
+  const { status, output } = check(repoCopy(t));
 
   assert.equal(status, 0, output);
+});
+
+const ROWS = [
+  "| B1 | one | why | **done** `scripts/check-docs.mjs`, pinned by `scripts/gone.mjs` |",
+  "| B2 | two, as B1 has it (B9, H3) | `scripts/never.mjs` was measured, and `B7` is a key | pending |",
+  "| B3 | three | a Rails app keeps `test/models/user_test.rb` | **done** `test/models/user_test.rb` `lib/hook.mjs` |",
+].join("\n");
+
+test("a file a decision row names as done and the tree does not hold is named with its row", () => {
+  // A row's status cell is the one place that says where a decision lives, and
+  // a renamed file left it pointing at nothing with every gate passing.
+  const tracked = new Set(["scripts/check-docs.mjs", "scripts/validate.mjs"]);
+
+  assert.deepEqual(doneFilesGone(ROWS, tracked), [{ row: "B1", spelled: "scripts/gone.mjs" }]);
+});
+
+test("a path outside the status cell, or in a directory this tree does not hold, is another repository's", () => {
+  const tracked = new Set(["scripts/check-docs.mjs", "test/fixtures/a.json"]);
+
+  assert.deepEqual(doneFilesGone(ROWS, tracked).map((g) => g.spelled), ["scripts/gone.mjs"]);
+  assert.deepEqual(doneFilesGone(ROWS, new Set()), [], "and a tree git cannot list answers nothing");
+});
+
+test("a row citing a number no row has is named, and a key in a code span is not a citation", () => {
+  assert.deepEqual(rowsCitedMissing(ROWS), [{ row: "B2", cited: "B9" }, { row: "B2", cited: "H3" }]);
+});
+
+test("a decision row naming a file that is gone fails the check", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "DECISIONS.md"), (text) => text.replace("**done** `scan.mjs` (`corpus.scriptOnly`)", "**done** `scripts/scan-gone.mjs` (`corpus.scriptOnly`)"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /DECISIONS\.md: row B55 names `scripts\/scan-gone\.mjs` as done, and no such file is here/);
+});
+
+test("a decision row citing a row that does not exist fails the check", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "DECISIONS.md"), (text) => text.replace("a recovered tree is not the file (B15)", "a recovered tree is not the file (B99)"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /DECISIONS\.md: row B53 cites B99, and no row has that number/);
 });
 
 // A tracked file removed from the working tree and not yet staged is still in
 // git's list, and reading it threw a stack in place of the gate's answer.
 test("a tracked document deleted from the working tree is passed over, not read", needsCheckout, (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   writeFileSync(join(dir, "docs", "gone.md"), "A note.\n");
   execFileSync("git", ["add", "docs/gone.md"], { cwd: dir });
   rmSync(join(dir, "docs", "gone.md"));
@@ -727,7 +882,7 @@ test("a tracked document deleted from the working tree is passed over, not read"
 });
 
 test("a document carrying the path of the machine it was written on is failed", needsCheckout, (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   const path = join(dir, "docs", "why.md");
   writeFileSync(path, `${readFileSync(path, "utf8")}\n\nRead from ${join(homedir(), "notes.md")}\n`);
 
@@ -741,7 +896,7 @@ test("a document carrying the path of the machine it was written on is failed", 
 // file at the path it had then is true of that release and would be false
 // rewritten to today's.
 test("a changelog names the paths its releases had", (t) => {
-  const dir = repoCopyTracked(t);
+  const dir = repoCopy(t);
   const path = join(dir, "CHANGELOG.md");
   writeFileSync(path, `${readFileSync(path, "utf8")}\n\nThe read was in \`lib/hook.mjs\` then.\n`);
 
@@ -858,7 +1013,7 @@ test("an outcome the glossary stops naming fails the check", { ...needsCheckout 
 // spawned the binary for `--help`, ran `git ls-files` and read every document
 // before their first assertion. The gate is a function now, and this is the
 // one call that runs it, on the checkout the suite is in.
-test("the gate is a function, and on this checkout it answers no problem", () => {
+test("the gate is a function, and on this checkout it answers no problem", needsCheckout, () => {
   const { problems, owed, summary } = checkDocs();
 
   assert.deepEqual(problems, []);

@@ -24,10 +24,12 @@ import { isFunctionLike, walk } from "./walk.mjs";
  *
  * `keyPath` is the path the file had at the base, so a rename produces the
  * same identities on both sides; it defaults to `path`. `head.facets` governs
- * both revisions: the kind is a property of the file under review, and
- * answering it per revision skipped the whole base side of a file that gained
- * JSX on the branch. `base` and `addedLines` are the two modes and cannot both
- * be given; neither is a file the branch added, where every head site is new.
+ * both revisions, for which rows are asked and for what each row is told the
+ * file is: the kind is a property of the file under review, and answering it
+ * per revision skipped the whole base side of a file that gained JSX on the
+ * branch, and charged a file moved out of a test tree every site it held.
+ * `base` and `addedLines` are the two modes and cannot both be given; neither
+ * is a file the branch added, where every head site is new.
  * `rows` narrows the registry, for a test driving one row. `parents` is what
  * `declaredParents` found in the files the branch changed in this area.
  *
@@ -89,7 +91,7 @@ export function declaredParents({ path, lang, frameworks, capabilities, rows, he
     try {
       dim.run(head.program, (hit) => {
         if (typeof hit.self === "string" && typeof hit.class === "string" && !parents.has(hit.self)) parents.set(hit.self, hit.class);
-      }, { comments: head.comments, source: head.source, rel: path });
+      }, { comments: head.comments, source: head.source, rel: path, facets: head.facets });
     } catch {
       continue;
     }
@@ -317,7 +319,7 @@ function breakingSites(program, source, lang, keyPath, { polarity, copies = new 
           judged.add(at);
         }
         found.push(at);
-      }, { comments, source, rel });
+      }, { comments, source, rel, facets });
     } catch {
       continue;
     }

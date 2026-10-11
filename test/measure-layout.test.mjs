@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -302,8 +302,123 @@ test("every fold line the roster can print reconciles through the recount", () =
   assert.equal(shapes, 74, "and the loop above is the whole series, not a sample of it");
 });
 
+const script = fileURLToPath(new URL("../scripts/measure-layout.mjs", import.meta.url));
+
+/** The script run over a corpus of one committed repository holding these files. */
+function recountOf(t, files) {
+  const tmp = mkdtempSync(join(tmpdir(), "anatomiya-recount-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const corpus = join(tmp, "corpus");
+  const dir = join(corpus, "one");
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), body);
+  }
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init");
+  const run = spawnSync(process.execPath, [script, corpus, "--md", join(tmp, "out.md")], { encoding: "utf8" });
+  return { ...run, section: run.status === 0 ? readFileSync(join(tmp, "out.md"), "utf8") : "" };
+}
+
+test("the recount reads a root line whose files hold their own tests", (t) => {
+  // The namesake clause is two clauses there, joined by the separator the line is split on.
+  const inline = "pub fn f() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn runs() {}\n}\n";
+  const run = recountOf(t, {
+    "Cargo.toml": '[package]\nname = "one"\n',
+    "src/a.rs": inline,
+    "src/b.rs": inline,
+    "src/c.rs": "pub fn c() {}\n",
+    "src/d.rs": "pub fn d() {}\n",
+    "tests/it.rs": "#[test]\nfn runs() {}\n",
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- src: 4 \.rs; 0 of 2 have a namesake test; 2 hold their own tests$/m);
+  assert.match(run.section, /^- tests: 1 cargo test spec under tests; 0 of 2 \.rs files under src have a namesake test; 2 hold their own tests$/m);
+});
+
+test("the recount reads a root holding a test tree, whose files are in no namesake count", (t) => {
+  const fn = (name) => `export function ${name}() {\n  return 1;\n}\n`;
+  const run = recountOf(t, {
+    "pkg/a.js": fn("a"),
+    "pkg/b.js": fn("b"),
+    "pkg/c.js": fn("c"),
+    "pkg/a.test.js": 'import { test } from "vitest";\ntest("a", () => {});\n',
+    ...Object.fromEntries([0, 1, 2, 3].map((i) => [`pkg/test/apps/basic/r${i}.js`, fn(`r${i}`)])),
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- pkg: 8 \.js; 1 vitest spec; 1 of 3 has a namesake test$/m);
+});
+
+test("the recount reads a root that names its source after two kinds of file this tool does not read", (t) => {
+  const run = recountOf(t, {
+    ...Object.fromEntries([0, 1, 2, 3, 4, 5].flatMap((i) => [[`pkg/locale/l${i}/a.mo`, `mo ${i}\n`], [`pkg/locale/l${i}/a.po`, `po ${i}\n`]])),
+    ...Object.fromEntries([0, 1, 2, 3].map((i) => [`pkg/m${i}.py`, `def f${i}():\n    return ${i}\n`])),
+    "pkg/README.txt": "pkg\n",
+    "tests/test_m0.py": "def test_f0():\n    assert True\n",
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- pkg: 6 \.mo, 6 \.po, 4 \.py and 1 other; 1 of 4 has a namesake test$/m);
+});
+
+test("the recount reads a root of components then modules, which prints a namesake clause for each", (t) => {
+  const vitest = (name) => `import { test } from "vitest";\ntest("${name}", () => {});\n`;
+  const run = recountOf(t, {
+    ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map((i) => [`src/ui/C${i}.vue`, `<script setup lang="ts">\nconst a = ${i}\n</script>\n<template><p>{{ a }}</p></template>\n`])),
+    ...Object.fromEntries([0, 1, 2].map((i) => [`src/ui/m${i}.ts`, `export const m${i} = ${i};\n`])),
+    ...Object.fromEntries(["C0", "C1", "m0", "m1"].map((n) => [`src/ui/__tests__/${n}.test.ts`, vitest(n)])),
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(
+    run.section,
+    /^- src\/ui: 8 \.vue, 7 \.ts; 4 vitest specs under __tests__; 2 of 8 \.vue files have a namesake test under src\/ui\/__tests__; 2 of 3 \.ts files have a namesake test under src\/ui\/__tests__$/m
+  );
+  assert.match(run.section, /^- tests: 4 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test; 2 of 3 \.ts files under src\/ui have a namesake test$/m);
+});
+
+test("the recount reads a root whose second kind of file is under the floor: one namesake clause, and two where a test credits one of the few", (t) => {
+  const vitest = (name) => `import { test } from "vitest";\ntest("${name}", () => {});\n`;
+  const holding = (tests) => ({
+    ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map((i) => [`src/ui/C${i}.vue`, `<script setup lang="ts">\nconst a = ${i}\n</script>\n<template><p>{{ a }}</p></template>\n`])),
+    "src/ui/index.ts": "export const all = 8;\n",
+    "src/ui/types.ts": "export const kinds = 2;\n",
+    ...Object.fromEntries(tests.map((n) => [`src/ui/__tests__/${n}.test.ts`, vitest(n)])),
+  });
+
+  const bare = recountOf(t, holding(["C0", "C1"]));
+  assert.equal(bare.status, 0, bare.stderr);
+  assert.match(bare.section, /^- src\/ui: 8 \.vue, 4 \.ts; 2 vitest specs under __tests__; 2 of 8 have a namesake test under src\/ui\/__tests__$/m);
+  assert.match(bare.section, /^- tests: 2 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test$/m);
+
+  const credited = recountOf(t, holding(["C0", "C1", "index"]));
+  assert.equal(credited.status, 0, credited.stderr);
+  assert.match(
+    credited.section,
+    /^- src\/ui: 8 \.vue, 5 \.ts; 3 vitest specs under __tests__; 2 of 8 \.vue files have a namesake test under src\/ui\/__tests__; 1 of 2 \.ts files has a namesake test$/m
+  );
+  assert.match(credited.section, /^- tests: 3 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test; 1 of 2 \.ts files under src\/ui has a namesake test$/m);
+});
+
+test("the recount counts a root named tests, which prints with a slash so it is not the tests line", (t) => {
+  // ripgrep's 22 files under `tests` were read as the tests line and left out of the sum.
+  const run = recountOf(t, {
+    ...Object.fromEntries([0, 1, 2, 3].map((i) => [`src/m${i}.js`, `export const m${i} = ${i};\n`])),
+    ...Object.fromEntries([0, 1].map((i) => [`tests/m${i}.test.js`, `import { test } from "node:test";\ntest("m${i}", () => {});\n`])),
+    ...Object.fromEntries([0, 1, 2].map((i) => [`tests/data/d${i}.txt`, "x\n"])),
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- tests\/: 3 \.txt, 2 \.js; 2 node:test specs$/m);
+  assert.match(run.section, /^- tests: 2 node:test specs under tests; /m);
+  assert.equal(run.section.split("\n").filter((line) => line.startsWith("- tests: ")).length, 1, "one bullet carries the label");
+});
+
 test("a corpus directory that cannot be listed is refused by name, not with a stack", () => {
-  const script = fileURLToPath(new URL("../scripts/measure-layout.mjs", import.meta.url));
   const run = spawnSync(process.execPath, [script, join(tmpdir(), "anatomiya-no-such-corpus")], { encoding: "utf8" });
 
   assert.equal(run.status, 2, run.stderr);

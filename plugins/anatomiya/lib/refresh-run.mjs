@@ -4,17 +4,18 @@
  * the scan to answer with a watch list.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, linkSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, linkSync, lstatSync, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
 import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
-import { pluginRoot } from "./readiness.mjs";
+import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
-import { checkerStamp } from "./semantic.mjs";
-import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, trackedRulesDir } from "./rules.mjs";
+import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
+import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { isClaude, overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
 const LOCK_FILE = "refresh.lock";
@@ -40,6 +41,14 @@ const retryDue = (state) => {
   return !Number.isFinite(at) || Date.now() - at > RETRY_MS;
 };
 
+// A scan that wrote Claude Code's map and left another tool's directory stopped is no failure, and is not the last
+// word either: what held a file there is often an editor, for a moment. It waits on the failure's clock, so a
+// directory stopped for good costs one scan each interval. Read as nothing stopped by a build that does not know it.
+const settled = (state) => (state.ok && !(state.stopped?.length > 0)) || !retryDue(state);
+
+/** The directories a scan's plan left stopped, in the plan's order. */
+const stoppedIn = (answer) => Object.values(answer?.plan?.targets ?? {}).filter((target) => target.unwritable).map((target) => target.dir);
+
 // Rescans in one worker when HEAD keeps moving under it. A rebase landing
 // commit by commit is the case; the next change after that starts another.
 const PASSES = 3;
@@ -54,8 +63,11 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  *
  * `reason` is one of: scanned, current, failed, failed-before, busy, git-busy,
  * tracked, no-map, outside, no-head.
+ *
+ * `git` is a test seam with one use: it answers whether a target's overview
+ * is committed, which only a git that fails on that question can prove.
  */
-export async function refreshRepository(root, { scan = runScan, pin = runPin } = {}) {
+export async function refreshRepository(root, { scan = runScan, pin = runPin, git = gitBuffered } = {}) {
   const store = resolveInside(root, STORE_DIR);
   if (store === null) return { reason: "outside", pinned: false };
   // Only a checkout's own root: a scan resolves the root from wherever it is
@@ -83,7 +95,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   for (;;) {
     let round;
     try {
-      round = await passes(root, store, { scan, pin });
+      round = await passes(root, store, { scan, pin, git });
     } finally {
       release(lock);
     }
@@ -96,24 +108,34 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
 }
 
 /** Follow the pin, then rescan until HEAD holds still or the passes run out. */
-async function passes(root, store, { scan, pin }) {
+async function passes(root, store, { scan, pin, git }) {
   const { accepted, held } = await followPin(root, pin);
   const pinned = accepted !== null;
   for (let pass = 0; pass < PASSES; pass++) {
     const stamp = await stampOf(root);
     if (stamp === null) return { reason: "no-head", pinned, held };
     const state = readRecord(join(store, basename(REFRESH_STATE))).record;
-    if (state?.stamp === stamp && (state.ok || !retryDue(state)) && sameHold(state.held, held)) {
+    if (state?.stamp === stamp && settled(state) && sameHold(state.held, held)) {
       return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned, held };
     }
-    if (state?.stamp === stamp && (state.ok || !retryDue(state))) {
+    if (state?.stamp === stamp && settled(state)) {
       // Nothing to rescan; only what the pin decided is new.
       // The retry clock is the failure's, so it keeps its moment.
       writeState(store, { ...state, pinned: state.pinned ?? null, held });
       return { reason: state.ok ? "current" : "failed-before", pinned, held };
     }
+    let stopped = [];
     try {
-      await scan(root);
+      const leaveAlone = await committedTargets(root, git);
+      // A checker the last run measured as degraded, with nothing it reads
+      // moved since, comes out the same and costs most of the scan. So does one
+      // that failed twice in a row; the scan runs one that failed once. A scan run
+      // by hand is handed no verdict and measures. The stamp reads the root
+      // config, so it is taken only where there is a verdict to compare.
+      const recorded = readFacts(root).facts?.semantic ?? null;
+      const carried = recorded?.status === "degraded" ? carriedVerdict(recorded, verdictStamp(root, buildVersion())) : null;
+      const options = { ...(leaveAlone.length > 0 ? { leaveAlone } : {}), ...(carried !== null ? { carried } : {}) };
+      stopped = stoppedIn(await (Object.keys(options).length > 0 ? scan(root, options) : scan(root)));
     } catch (err) {
       // The previous map stays: a scan that throws has written nothing or
       // put back what it replaced, and one that would not run now will not
@@ -122,7 +144,7 @@ async function passes(root, store, { scan, pin }) {
       writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted, held });
       return { reason: "failed", pinned, held };
     }
-    writeState(store, { stamp, ok: true, error: null, pinned: accepted, held });
+    writeState(store, { stamp, ok: true, error: null, pinned: accepted, held, stopped });
   }
   return { reason: "scanned", pinned, held };
 }
@@ -150,10 +172,10 @@ export async function noteScan(root) {
 /**
  * Everything a scan's answer depends on that can change without the scan
  * knowing: the commit, the index (which paths are tracked, and what is staged),
- * the pin, this build, whether the repository holds packages, whether a root
- * `tsconfig.json` is on disk and where typescript resolves, so installing the
- * repository's dependencies or adding a config after the first scan turns the
- * checker on. Other working-tree edits are left out on purpose: they move with
+ * the pin, this build, whether the repository holds packages, which of the two
+ * config names the root is read through (`tsconfig.json`, `tsconfig.base.json`
+ * or neither) and where typescript resolves, so installing the repository's
+ * dependencies or adding a config after the first scan turns the checker on. Other working-tree edits are left out on purpose: they move with
  * every keystroke, and what a refresh follows is HEAD.
  */
 async function stampOf(root) {
@@ -178,18 +200,10 @@ async function stampOf(root) {
     .update("\0")
     .update(pinBytes)
     .update("\0")
-    .update(buildVersion())
+    .update(buildVersion() ?? "")
     .update("\0")
     .update(checkerStamp(root))
     .digest("hex");
-}
-
-function buildVersion() {
-  try {
-    return JSON.parse(readFileSync(join(pluginRoot(), "package.json"), "utf8")).version ?? "";
-  } catch {
-    return "";
-  }
 }
 
 /**
@@ -415,13 +429,31 @@ async function mapTracked(root) {
   return r.ok && r.stdout.length > 0;
 }
 
+/**
+ * The other targets that are on and whose overview the repository commits, by
+ * id. A scan here leaves those files as the commit has them, for the reason
+ * above, and still writes the map nobody commits: a repository that commits
+ * only the copy another tool reads from the remote has no other way to keep
+ * the local one current. A question git could not answer leaves the target alone.
+ */
+async function committedTargets(root, git) {
+  const magic = (await caseMagic(root)) ? ":(icase)" : "";
+  const committed = [];
+  for (const t of Object.values(TARGETS)) {
+    if (isClaude(t) || targetState(root, t) !== "on") continue;
+    const r = await git(root, ["ls-files", "-z", "--", `${magic}${t.dir}/${overviewName(t)}`]);
+    if (!r.ok || r.stdout.length > 0) committed.push(t.id);
+  }
+  return committed;
+}
+
 async function gitBusy(root) {
   const r = await gitBuffered(root, ["rev-parse", "--absolute-git-dir"]);
   return !r.ok || operationUnfinished(r.stdout.trim());
 }
 
-function writeState(store, { stamp, ok, error, pinned = null, held = null, at = new Date().toISOString() }) {
-  const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}) };
+function writeState(store, { stamp, ok, error, pinned = null, held = null, stopped = [], at = new Date().toISOString() }) {
+  const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}), ...(stopped?.length > 0 ? { stopped } : {}) };
   atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
 }
 

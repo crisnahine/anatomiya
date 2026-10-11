@@ -2,10 +2,10 @@ import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexamin
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
-import { engineOf } from "./langs.mjs";
-import { whyUnread } from "./readiness.mjs";
-import { listSome, LISTED, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
+import { unreadReasons } from "./readiness.mjs";
+import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
+import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
 
 /**
  * What a command answered, and the lines that say it.
@@ -36,7 +36,10 @@ const hookRemoved = (dryRun) =>
 // The shape of the two records below, so a reader older than one refuses it
 // rather than reading fields that moved. Same rule the facts record carries.
 // 2 replaced `hookInstalled` with `hookRemoved`: the scan installed a hook into
-// the repository and now only removes the one it used to install.
+// the repository and now only removes the one it used to install. `targets`
+// shares 2: it is a key an older reader never looks for, and it is absent
+// wherever that reader's answer would be whole without it. So does a target's
+// `remedy`, beside the `reason` it is the answer to.
 export const SUMMARY_SCHEMA = 2;
 
 /** Every fact a scan prints, derived once, so nothing derives it twice. */
@@ -47,6 +50,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
   const authorGated = slots.filter((d) => statedSide(d).gate === "authors").length;
   const stated = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true);
   const matching = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault === true);
+  const targets = targetSummaries(result, plan);
 
   return {
     files: result.corpus.files,
@@ -58,6 +62,9 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // Which engines ran and what they are, so a map that moved under unchanged
     // source has somewhere to look before anyone reads the counts.
     engines: result.parse.engines ?? null,
+    // Only where one did not load, so a summary of a healthy run is the record it was.
+    ...(result.parse.missingGrammars?.length ? { missingGrammars: result.parse.missingGrammars } : {}),
+    ...(result.parse.unanswered ? { unanswered: result.parse.unanswered } : {}),
     layoutLine: layoutSummary(result.layout, result.areas),
     baseline: {
       status: result.baseline.status,
@@ -109,6 +116,12 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
       replaced: plan.replaced,
     },
     removed: plan.remove.length,
+    // Only where there were any: a scan that stopped part way is the one thing that leaves them.
+    ...(plan.staged?.length ? { stagedRemoved: plan.staged.length } : {}),
+    ...(plan.storeStaged?.length ? { storeStagedRemoved: plan.storeStaged.length } : {}),
+    // And the ones that would not go: a file somebody holds, or made read-only.
+    ...(plan.stagedLeft?.length ? { stagedLeft: plan.stagedLeft.length } : {}),
+    ...(plan.storeStagedLeft?.length ? { storeStagedLeft: plan.storeStagedLeft.length } : {}),
     wrote: plan.write.length,
     // A language read no file of is one of two facts, told apart by whether
     // anything else was read: `blind` is a run that wrote nothing at all, and
@@ -117,7 +130,91 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     uncounted: plan.blind ? [] : plan.unreadable,
     held: plan.held.length,
     dryRun,
+    ...(Object.keys(targets).length ? { targets } : {}),
   };
+}
+
+/**
+ * What the scan did in each other directory the map goes to, by target id.
+ *
+ * A target this scan found off and left off has no entry, whatever its
+ * directory holds: that is somebody else's directory until a scan is asked to
+ * write there, and a repository that never named one reads as it did.
+ * `state` is the one the scan leaves behind, or would on a dry run.
+ */
+function targetSummaries(result, plan) {
+  // An area that states nothing has no file in any directory, so no target lacks one for it.
+  const stated = new Set((plan.result ?? result).areas.filter((a) => a.dimensions.length > 0).map((a) => a.path));
+  const out = {};
+  for (const [id, t] of Object.entries(plan.targets ?? {})) {
+    // Left alone for a caller nobody is watching, which is why it was.
+    if (t.leftAlone) continue;
+    const unread = t.state === "unknown";
+    const foreign = t.foreign.length + t.unknown.length;
+    // One nobody could read is said only where the record names files there.
+    // One that could not be written was on, so it is always said.
+    const quiet = unread ? t.names.length === 0 && !t.unwritable : !t.on && t.state === "off" && t.remove.length === 0;
+    if (quiet) continue;
+    out[id] = {
+      state: unread || plan.blind ? t.state : t.on ? "on" : "off",
+      dir: t.dir,
+      wrote: t.write.length,
+      removed: t.remove.length,
+      unfiled: t.unfiled.filter((path) => stated.has(path)).length,
+      foreign,
+      ...(t.unreadableRules.length ? { unreadable: t.unreadableRules } : {}),
+      // Once: the record names files there from this scan on.
+      ...(t.first === true && t.write.length ? { switchedOnBy: `${t.dir}/${overviewName(TARGETS[id])}` } : {}),
+      // Why, and what a person does about it, for the line below and for the record.
+      ...(unread ? { reason: t.reason, ...(t.remedy ? { remedy: t.remedy } : {}) } : {}),
+      ...(t.unwritable ? { unwritable: true } : {}),
+    };
+  }
+  return out;
+}
+
+/**
+ * How many entries under this tool's prefix a directory holds that are no file
+ * of the map's, in one spelling for the scan and for `doctor`. An entry, since
+ * a directory can hold the name.
+ */
+export const otherEntries = (dir, n) => `${dir} holds ${n === 1 ? "1 entry" : `${n} entries`} named ${PREFIX}*`;
+
+const UNREAD_ONE = "could not be read, so whose it is was not established";
+const UNREAD_MANY = "could not be read, so whose they are was not established";
+
+/** The lines for the other directories, in the targets' own order. */
+function targetLines(s) {
+  const lines = [];
+  for (const id of TARGET_IDS) {
+    const t = s.targets?.[id];
+    if (!t) continue;
+    const { reader } = TARGETS[id];
+    const one = (n) => n === 1;
+    // Nobody named the target on this scan, so the line says what did and how to undo it.
+    const why = t.switchedOnBy ? `, which ${t.switchedOnBy} switched on: \`scan --targets claude\` switches it off` : "";
+    if (t.wrote) lines.push(`${s.dryRun ? "would write" : "wrote"} ${plural(t.wrote, "file")} under ${t.dir} for ${reader}${why}`);
+    if (t.removed) lines.push(`${s.dryRun ? "would remove" : "removed"} ${plural(t.removed, "file")} under ${t.dir}`);
+    if (t.removed && t.state === "off") lines.push(s.dryRun ? `${t.dir} would be off` : `${t.dir} is off now`);
+    if (t.unfiled) {
+      lines.push(
+        `${plural(t.unfiled, "area")} ${one(t.unfiled) ? "has" : "have"} no pattern ${reader} can be given, ` +
+          `so no file under ${t.dir} covers ${one(t.unfiled) ? "it" : "them"}`
+      );
+    }
+    if (t.foreign) {
+      // Neither verb claims who wrote it.
+      lines.push(
+        `${otherEntries(t.dir, t.foreign)} that this scan neither wrote nor removed; ` +
+          `${one(t.foreign) ? "it was left as it is" : "they were left as they are"}`
+      );
+    }
+    lines.push(...ruleFileLines(t.unreadable ?? [], UNREAD_ONE, UNREAD_MANY, t.dir));
+    if (t.state === "unknown") {
+      lines.push(`${t.dir} could not be ${t.unwritable ? "written" : "read"} (${t.reason}), so nothing there was written or removed${t.remedy ? `: ${t.remedy}, then scan again` : ""}`);
+    }
+  }
+  return lines;
 }
 
 /** The scan summary as the lines the CLI prints, in the order it prints them. */
@@ -180,13 +277,7 @@ export function scanLines(s) {
     )
   );
   // Whose it is was never established, so neither sentence above is true of it.
-  lines.push(
-    ...ruleFileLines(
-      s.rules.unreadable,
-      "could not be read, so whose it is was not established",
-      "could not be read, so whose they are was not established"
-    )
-  );
+  lines.push(...ruleFileLines(s.rules.unreadable, UNREAD_ONE, UNREAD_MANY));
   if (!s.rules.listed) lines.push(`${RULES_DIR}/ could not be listed, so nothing in it was examined`);
   // A generated name is ours by construction, so this is not a refusal. It is
   // still the one case where a scan replaces a file somebody wrote by hand.
@@ -209,13 +300,19 @@ export function scanLines(s) {
         : `${s.removed} area files ${what}: their area is gone or states nothing`
     );
   }
+  for (const [n, dir] of [[s.stagedRemoved, RULES_DIR], [s.storeStagedRemoved, STORE_DIR]]) {
+    if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} ${s.dryRun ? "would be removed" : n === 1 ? "was removed" : "were removed"}`);
+  }
+  for (const [n, dir] of [[s.stagedLeft, RULES_DIR], [s.storeStagedLeft, STORE_DIR]]) {
+    if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
+  }
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.
   if (s.blind.length) {
     lines.push(
       `read no ${s.blind.join(" or ")} file at all, so nothing was written and the previous map was left alone`
     );
-    lines.push(...blindLines(s.blind, s.engines));
+    lines.push(...blindLines(s.blind, s));
     return lines;
   }
   // A language this run read none of, where it read another: the rest of the
@@ -226,9 +323,10 @@ export function scanLines(s) {
       ? ` and ${plural(s.held, "area")} holding one ${s.held === 1 ? "was" : "were"} left as the last scan wrote ${s.held === 1 ? "it" : "them"}`
       : "";
     lines.push(`read no ${s.uncounted.join(" or ")} file at all, so none was counted${held}`);
-    lines.push(...blindLines(s.uncounted, s.engines));
+    lines.push(...blindLines(s.uncounted, s));
   }
   lines.push(s.dryRun ? `would write ${plural(s.wrote, "file")}` : `wrote ${plural(s.wrote, "file")}`);
+  lines.push(...targetLines(s));
   if (s.hookRemoved) lines.push(hookRemoved(s.dryRun));
   if (s.hookRefused) lines.push(`the map is written, and ${s.hookRefused}`);
   if (!s.dryRun) lines.push(RUNNING_SESSION);
@@ -264,6 +362,9 @@ function encodeScan(s) {
       unreadable: s.rules.unreadable.map(locator),
       replaced: s.rules.replaced.map(locator),
     },
+    ...(s.targets
+      ? { targets: Object.fromEntries(Object.entries(s.targets).map(([id, t]) => [id, t.unreadable ? { ...t, unreadable: t.unreadable.map(locator) } : t])) }
+      : {}),
   };
 }
 
@@ -280,13 +381,17 @@ function enginesLine(engines) {
 }
 
 /**
- * Why a run read no file of these languages, in each engine's own terms
- * (`whyUnread`). A summary carrying no probe at all keeps the old sentence,
+ * Why a run read no file of these languages, one line per cause
+ * (`unreadReasons`). A summary carrying no probe at all keeps the old sentence,
  * which is all it can honestly say.
  */
-function blindLines(langs, engines) {
+function blindLines(langs, { engines, missingGrammars, unanswered = {} }) {
   if (!engines) return ["this is usually a missing interpreter rather than a repository that changed"];
-  return [...new Set(langs.map(engineOf))].map((id) => whyUnread(id, engines));
+  return unreadReasons(langs, { engines, missingGrammars }).map((r) => {
+    // The files nothing was there to read are counted here and on no other line.
+    const n = r.langs.reduce((sum, lang) => sum + (unanswered[lang] ?? 0), 0);
+    return n ? `${plural(n, "file")}: ${r.why}` : r.why;
+  });
 }
 
 /**
@@ -302,11 +407,11 @@ function blindLines(langs, engines) {
  * their verb: "and 2 more file(s) ... that was not written" gave one line two
  * numbers.
  */
-function ruleFileLines(names, one, many) {
+function ruleFileLines(names, one, many, dir = RULES_DIR) {
   const { shown, rest } = listSome(names, LISTED.report);
-  const lines = shown.map((name) => `${encodePath(name)} in ${RULES_DIR}/ ${one}`);
+  const lines = shown.map((name) => `${encodePath(name)} in ${dir}/ ${one}`);
   if (rest) {
-    lines.push(`and ${rest} more ${rest === 1 ? "file" : "files"} in ${RULES_DIR}/ that ${rest === 1 ? one : many}`);
+    lines.push(`and ${rest} more ${rest === 1 ? "file" : "files"} in ${dir}/ that ${rest === 1 ? one : many}`);
   }
   return lines;
 }

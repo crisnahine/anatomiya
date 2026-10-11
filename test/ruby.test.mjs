@@ -9,7 +9,9 @@ import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { choosePrism, heldHeap, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
+import { engineOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { readiness } from "../plugins/anatomiya/lib/readiness.mjs";
@@ -2184,6 +2186,15 @@ test("failure class, an unreadable file: the interpreter names the error class a
   assert.deepEqual(lines, []);
 });
 
+test("a shard thread runs every row the registry asks of a prism file", needsRuby, async () => {
+  // The thread loads the prism tables and not the list they are part of, so a
+  // table that list gains and the thread does not load is a key it dies on.
+  const asked = ALL_DIMENSIONS.filter((d) => d.langs.some((lang) => engineOf(lang) === "prism"));
+  assert.ok(asked.length > RUBY_DIMENSIONS.length, "more than one table holds a prism row");
+  const out = await parseRuby(pair, { dimensions: asked });
+  assert.deepEqual(out.results.map((r) => [r.ok, r.crashed ?? false, r.error ?? null]), [[true, false, null], [true, false, null]]);
+});
+
 test("a shard whose worker cannot run its rows charges its files rather than losing them", needsRuby, async () => {
   // A row reaches the worker by key, so one the registry does not hold is the
   // one way the worker itself fails before it answers.
@@ -2220,12 +2231,16 @@ test("the smallest hold is at least twice what a shard thread uses before it rea
   // A thread that has only loaded its modules already owns part of its hold,
   // and that part grows with the code. Both numbers are V8's own, read on a
   // thread started with the limits the smallest shard gets.
-  const lib = (name) => new URL(`../plugins/anatomiya/lib/${name}`, import.meta.url).href;
+  // The modules are the shard's own imports, read from its source: a list
+  // written out here measured `dimensions.mjs`, which the thread does not load.
+  const lib = (name) => new URL(`../plugins/anatomiya/lib/${name}`, import.meta.url);
+  const loaded = [...readFileSync(lib("ruby-shard.mjs"), "utf8").matchAll(/from\s*["']\.\/([^"']+\.mjs)["']/g)].map((m) => lib(m[1]).href);
+  assert.ok(loaded.includes(lib("ruby.mjs").href), "the shard's imports were not read");
   const stats = await new Promise((resolve, reject) => {
     const worker = new Worker(
       `const { parentPort, workerData } = require("node:worker_threads");
        Promise.all(workerData.map((url) => import(url))).then(() => parentPort.postMessage(require("node:v8").getHeapStatistics()));`,
-      { eval: true, execArgv: [], workerData: [lib("ruby.mjs"), lib("dimensions.mjs")], resourceLimits: heldHeap(0) }
+      { eval: true, execArgv: [], workerData: loaded, resourceLimits: heldHeap(0) }
     );
     worker.once("message", resolve);
     worker.once("error", reject);

@@ -11,7 +11,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
+import { outsideClaude, readHead, resolveInside, stagedPath } from "./rules.mjs";
 import { wilsonLower } from "./gates.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
@@ -110,6 +110,19 @@ export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 // 19 stores `counterAuthors`. A slot shown on its counter side printed the
 // claim side's author count, because the record carried no other, and a held
 // area re-renders from the record. An older record prints what it printed.
+// `targets` shares 19: the filenames a scan left in the Cursor and Copilot
+// directories sit under a key no older reader looks at, and no field moved. A
+// number of its own would have every build already installed refuse the record
+// and enforce nothing from it. An older record owns nothing there, as does one
+// with no key.
+// `semantic.carried`, `measuredAt` and `measuredUnder` share 19 for the same
+// reason: when the tier's verdict was measured, under which stamp of what the
+// checker reads, and whether this scan carried it in place of a run. No older
+// reader looks at them, and a record without them was measured under no stamp,
+// so the next refresh measures.
+// `semantic.failures` shares 19 too: how many runs in a row the checker has
+// failed under that stamp, which a refresh carries the failure from at two. A
+// record without it counts none.
 export const FACTS_SCHEMA = 19;
 
 /**
@@ -345,7 +358,7 @@ export function writeTemp(path, body) {
   // repository shipping that name as a tracked symlink had the map's bytes
   // written wherever it pointed. The directories were resolved (F2); this
   // leaf was not.
-  const tmp = `${path}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
+  const tmp = stagedPath(path, process.pid, randomBytes(8).toString("hex"));
   // Created on its own, and written inside the cleanup: a write that fails part
   // way, on a full disk, has already made the temp file, and ENOSPC out of a
   // single `writeFileSync` before the `try` left it beside the map. A create
@@ -435,7 +448,7 @@ export function previousBytes(path) {
  * nothing. The record goes first because that rename is the one that can fail
  * with nothing moved: the old pair stays whole and still answers.
  */
-function writePair(dir, recordBytes, layout, schema) {
+export function writePair(dir, recordBytes, layout, schema) {
   const record = join(dir, basename(FACTS_PATH));
   const temps = [writeTemp(record, recordBytes)];
   try {
@@ -452,9 +465,13 @@ function writePair(dir, recordBytes, layout, schema) {
   }
 }
 
-/** The record's bytes, for a writer that puts them on disk together with the map. */
-export function factsJson(result) {
-  return JSON.stringify(factsRecord(result), null, 2) + "\n";
+/**
+ * The record's bytes, for a writer that puts them on disk together with the map.
+ * `targets` is the filenames that writer leaves in each directory besides
+ * Claude Code's.
+ */
+export function factsJson(result, targets = {}) {
+  return JSON.stringify(factsRecord(result, targets), null, 2) + "\n";
 }
 
 /**
@@ -502,7 +519,8 @@ function statOf(path) {
   }
 }
 
-function factsRecord(result) {
+function factsRecord(result, targets = {}) {
+  const named = Object.entries(targets).filter(([, names]) => names.length > 0);
   return {
     schema: FACTS_SCHEMA,
     root: result.root,
@@ -533,6 +551,8 @@ function factsRecord(result) {
       reused: a.reused ?? null,
       dimensions: a.dimensions.map(dimensionRecord),
     })),
+    // No key at all where nothing was written, which is every scan that names no other target.
+    ...(named.length ? { targets: Object.fromEntries(named) } : {}),
   };
 }
 

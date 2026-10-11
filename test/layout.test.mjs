@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import {
+  isProducer,
   isStoryFile,
   isTestFile,
   layoutFacts,
@@ -10,6 +11,8 @@ import {
   layoutRoots,
   minRootFiles,
   mirroredTests,
+  placedTests,
+  printedExtensions,
   rootFacts,
   runnerOf,
   tally,
@@ -17,6 +20,7 @@ import {
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
 import { roster } from "../plugins/anatomiya/lib/layout-scan.mjs";
+import { PRECEDENT_FLOOR } from "../plugins/anatomiya/lib/principles.mjs";
 
 const file = (rel, lang = null, facets = null) => ({ rel, lang, facets });
 const files = (n, make) => Array.from({ length: n }, (_, i) => make(i));
@@ -460,6 +464,8 @@ test("the namesake index carries the fields a pair would recompute", () => {
       bare: "modules/budgets/models",
       covers: new Set(),
       owner: null,
+      componentOwner: null,
+      paired: null,
     },
   ]);
 });
@@ -1052,4 +1058,480 @@ test("a commented-out source does not hold a spec no root will count", () => {
   const record = rootFacts({ path: "lib", dir: "lib", files: corpus.filter((f) => f.rel.startsWith("lib/")) }, indexes);
 
   assert.deepEqual(record.companions, { with: 2, of: 2, root: "spec", under: 1, ext: ".rb" });
+});
+
+test("the namesake count takes a Vue component with a spec beside it", () => {
+  const corpus = [
+    ...files(4, (i) => file(`src/components/C${i}.vue`, "vue", { jsx: false, inlineHelpers: 0 })),
+    file("src/components/C0.spec.ts", "js", { testRunner: "vitest" }),
+    file("src/components/C1.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src/components", dir: "src/components", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".vue", 4], [".ts", 2]]);
+  assert.deepEqual(record.companions, { with: 2, of: 4, root: "src/components", ext: ".vue" });
+});
+
+test("a component is not a module the JSX roster could have inlined", () => {
+  const corpus = [
+    ...files(3, (i) => file(`src/ui/C${i}.tsx`, "jsx", { jsx: true, inlineHelpers: 0 })),
+    ...files(2, (i) => file(`src/ui/m${i}.ts`, "js", { jsx: false, inlineHelpers: 0 })),
+    ...files(3, (i) => file(`src/ui/V${i}.vue`, "vue", { jsx: false, inlineHelpers: 0 })),
+    file("src/ui/S0.svelte", "svelte", { jsx: false, inlineHelpers: 0 }),
+  ];
+
+  assert.equal(layoutFacts(corpus, { minFiles: 3 }).roots[0].helpers.siblingModules, 2);
+});
+
+test("a component with markup and no script still owes a test", () => {
+  const markup = { empty: true, embedded: "vue" };
+  const corpus = [
+    ...files(4, (i) => file(`src/components/C${i}.vue`, "vue", i < 2 ? markup : { embedded: "vue" })),
+    file("src/components/C0.spec.ts", "js", { testRunner: "vitest" }),
+    file("src/components/C2.spec.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src/components", dir: "src/components", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.companions, { with: 2, of: 4, root: "src/components", ext: ".vue" });
+});
+
+test("a component is never a test, wherever it sits, whatever it is named and whatever its script holds", () => {
+  // No runner collects a `.vue` or `.svelte` file: vitepress keeps its e2e
+  // site's 5 theme components under `__tests__` and read 78 test files for 73.
+  for (const [lang, ext] of [["vue", "vue"], ["svelte", "svelte"]]) {
+    for (const facets of [{ empty: true, embedded: lang }, { embedded: lang }, { embedded: lang, testRunner: "vitest", testCalls: true }]) {
+      assert.equal(isTestFile(file(`src/__tests__/Fixture.${ext}`, lang, facets)), false);
+      assert.equal(isTestFile(file(`src/Foo.test.${ext}`, lang, facets)), false);
+      assert.equal(isTestFile(file(`test/unit/Foo.${ext}`, lang, facets), new Set([`test/unit/Foo.${ext}`])), false);
+    }
+  }
+  assert.equal(isTestFile(file("src/__tests__/Foo.tsx", "jsx", {})), true, "a module there is one");
+});
+
+test("a component in a tests directory is in neither number of the namesake count, and owns no test", () => {
+  const corpus = [
+    ...files(3, (i) => file(`pkg/src/C${i}.vue`, "vue", { embedded: "vue" })),
+    file("pkg/__tests__/Host.vue", "vue", { embedded: "vue" }),
+    file("pkg/__tests__/C0.vue", "vue", { embedded: "vue" }),
+    { ...file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }), facets: { testRunner: "vitest", imports: [{ module: "./C0.vue" }] } },
+    file("pkg/__tests__/C1.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".vue", 5], [".ts", 2]]);
+  assert.deepEqual(record.tests, [{ runner: "vitest", files: 2, sub: "__tests__", under: 2 }]);
+  assert.deepEqual(record.companions, { with: 2, of: 3, root: "pkg/__tests__", ext: ".vue" });
+  assert.equal(testsLine(corpus)[0].files, 2);
+});
+
+test("a module the parse found empty stays out of both sides, beside a component that does not", () => {
+  const corpus = [
+    ...files(3, (i) => file(`src/lib/m${i}.ts`, "js", i === 0 ? { empty: true } : {})),
+    file("src/lib/m0.test.ts", "js", { testRunner: "vitest" }),
+    file("src/lib/m1.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src/lib", dir: "src/lib", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual([record.companions.with, record.companions.of], [1, 2]);
+});
+
+const mixedPackage = (component, lang) => [
+  ...files(5, (i) => file(`pkg/m${i}.ts`, "js", {})),
+  ...files(3, (i) => file(`pkg/C${i}.${component}`, lang, { embedded: lang })),
+  file("pkg/__tests__/m0.test.ts", "js", { testRunner: "vitest" }),
+  file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }),
+  file("pkg/__tests__/C1.test.ts", "js", { testRunner: "vitest" }),
+];
+
+test("a root's components are counted on their own, beside the modules and never into them", () => {
+  // element-plus's packages/components read 85 of 745 over its .ts files and
+  // said nothing of 164 .vue components, 81 of which have a namesake test.
+  for (const [ext, lang] of [["vue", "vue"], ["svelte", "svelte"]]) {
+    const corpus = mixedPackage(ext, lang);
+    const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+    assert.deepEqual(record.exts, [[".ts", 8], [`.${ext}`, 3]]);
+    assert.deepEqual(record.companions, { with: 1, of: 5, root: null, ext: ".ts" }, "the first count is the one it was");
+    assert.deepEqual(record.otherCompanions, { with: 2, of: 3, root: "pkg/__tests__", ext: `.${ext}` });
+  }
+});
+
+test("a root of components then modules counts each, whichever extension is first", () => {
+  // vitepress's src/client/theme-default is 66 .vue and 20 .ts, and its line
+  // read 1 of 66 with the 20 modules and the place of their 6 tests in no count.
+  const corpus = [
+    ...files(8, (i) => file(`pkg/C${i}.vue`, "vue", { embedded: "vue" })),
+    ...files(3, (i) => file(`pkg/m${i}.ts`, "js", {})),
+    file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }),
+    file("pkg/__tests__/m0.test.ts", "js", { testRunner: "vitest" }),
+    file("pkg/__tests__/m1.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".vue", 8], [".ts", 6]]);
+  assert.deepEqual(record.companions, { with: 1, of: 8, root: null, ext: ".vue" }, "the first count is the one it was");
+  assert.deepEqual(record.otherCompanions, { with: 2, of: 3, root: "pkg/__tests__", ext: ".ts" });
+});
+
+test("a component count is over an extension the line printed, or it is not taken", () => {
+  // The denominator has to be a number the reader can see beside it.
+  const corpus = [...mixedPackage("vue", "vue"), ...files(4, (i) => file(`pkg/d${i}.json`))];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".ts", 8], [".json", 4]]);
+  assert.equal("otherCompanions" in record, false);
+});
+
+test("a root with one counted extension carries one count, component or not", () => {
+  const vue = [
+    ...files(4, (i) => file(`src/components/C${i}.vue`, "vue", { embedded: "vue" })),
+    file("src/components/C0.spec.ts", "js", { testRunner: "vitest" }),
+  ];
+  assert.equal("otherCompanions" in rootFacts({ path: "src/components", dir: "src/components", files: vue }, layoutIndexes(vue)), false);
+
+  const plain = [
+    ...files(5, (i) => file(`pkg/m${i}.ts`, "js", {})),
+    ...files(3, (i) => file(`pkg/C${i}.tsx`, "jsx", { jsx: true })),
+    file("pkg/__tests__/C0.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  assert.equal("otherCompanions" in rootFacts({ path: "pkg", dir: "pkg", files: plain }, layoutIndexes(plain)), false);
+});
+
+test("components inside a test tree are what the tests run on, and are not asked either", () => {
+  const corpus = mixedPackage("svelte", "svelte").map((f) => ({ ...f, rel: `test/apps/${f.rel}` }));
+  const record = rootFacts({ path: "test/apps/pkg", dir: "test/apps/pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.equal("companions" in record, false);
+  assert.equal("otherCompanions" in record, false);
+});
+
+test("Go and Python: the name alone makes a test file, in its own family only", () => {
+  assert.equal(isTestFile(file("pkg/auth_test.go", "go")), true);
+  assert.equal(isTestFile(file("pkg/auth.go", "go")), false);
+  assert.equal(isTestFile(file("docs_src/app/test_main.py", "python")), true);
+  assert.equal(isTestFile(file("pkg/auth_test.py", "python")), true);
+  assert.equal(isTestFile(file("pkg/testing.py", "python")), false);
+  // The other family's spelling is an ordinary name here.
+  assert.equal(isTestFile(file("pkg/test_auth.go", "go")), false);
+  assert.equal(isTestFile(file("tests/AuthTest.py", "python")), false);
+  assert.equal(isTestFile(file("pkg/auth_test.rs", "rust")), false);
+});
+
+test("PHP, Java, Kotlin and C#: a CamelCase test name counts under a test tree and not outside one", () => {
+  for (const [rel, lang] of [
+    ["tests/Routing/RouteTest.php", "php"],
+    ["tests/Composer/Test/Util/GitTest.php", "php"],
+    ["src/test/java/org/a/StringUtilsTest.java", "java"],
+    ["m/src/test/java/org/a/OrFilterTests.java", "java"],
+    ["m/src/test/java/org/a/GraalIT.java", "java"],
+    ["okhttp/src/jvmTest/kotlin/okhttp3/CacheTest.kt", "kotlin"],
+    ["core/commonTest/src/kotlinx/TuplesTest.kt", "kotlin"],
+    ["test/Serilog.Tests/Core/LoggerTests.cs", "csharp"],
+    ["Src/Newtonsoft.Json.Tests/Bson/BsonReaderTests.cs", "csharp"],
+  ]) {
+    assert.equal(isTestFile(file(rel, lang)), true, rel);
+  }
+  for (const [rel, lang] of [
+    // junit's own annotation, Laravel's attribute: source files that wear the word.
+    ["api/src/main/java/org/junit/jupiter/api/RepeatedTest.java", "java"],
+    ["src/Illuminate/Foundation/Testing/Attributes/UnitTest.php", "php"],
+    ["src/main/kotlin/a/SpeedTest.kt", "kotlin"],
+    ["src/Serilog/Core/SelfTest.cs", "csharp"],
+    ["src/test/java/org/a/Contest.java", "java"],
+    ["src/test/java/org/a/Audit.java", "java"],
+    ["src/test/java/org/a/FooSpec.java", "java"],
+    ["tests/Mocks/MockAction.php", "php"],
+    // A Gradle source set is a test tree for the JVM and a directory name for anything else.
+    ["app/commonTest/RouteTest.php", "php"],
+  ]) {
+    assert.equal(isTestFile(file(rel, lang)), false, rel);
+  }
+});
+
+test("Rust: a directory does not make a test file, and neither does a name", () => {
+  // serde keeps 118 compile-fail sources under `tests/ui` and no runner collects one of them.
+  assert.equal(isTestFile(file("test_suite/tests/ui/remote/missing_field.rs", "rust")), false);
+  assert.equal(isTestFile(file("tests/util.rs", "rust")), false);
+  assert.equal(isTestFile(file("tests/feature.rs", "rust", { testRunner: "cargo test", testCalls: true })), true);
+  // A file holding its own unit tests is still the source file it is.
+  assert.equal(isTestFile(file("src/escape.rs", "rust", { testRunner: null, testCalls: false, inlineTests: true })), false);
+});
+
+test("Rust: cargo collects every file directly under a crate's tests directory, cases or none", () => {
+  // ripgrep declares 333 of its 365 cases with `rgtest!`, in six files directly under `tests`.
+  const plain = { testRunner: null, testCalls: false };
+  const cargo = { testRunner: "cargo test", testCalls: true };
+  const corpus = [
+    file("Cargo.toml"),
+    file("tests/feature.rs", "rust", plain),
+    file("tests/util.rs", "rust", plain),
+    file("tests/index/basic.rs", "rust", plain),
+    file("tests/common/mod.rs", "rust", plain),
+    file("tests/common/cases.rs", "rust", cargo),
+    file("crates/ignore/src/lib.rs", "rust", plain),
+    file("crates/ignore/tests/gitignore.rs", "rust", plain),
+    // A module's unit tests split into a directory of their own, inside `src` and beside no crate.
+    file("tokio/src/runtime/tests/queue.rs", "rust", plain),
+    file("tests/data/sherlock.txt"),
+  ];
+  const mirrored = mirroredTests(corpus);
+  const test = (rel) => isTestFile(corpus.find((f) => f.rel === rel), mirrored);
+  for (const rel of ["tests/feature.rs", "tests/util.rs", "crates/ignore/tests/gitignore.rs", "tests/common/cases.rs"]) {
+    assert.equal(test(rel), true, rel);
+  }
+  for (const rel of ["tests/index/basic.rs", "tests/common/mod.rs", "tokio/src/runtime/tests/queue.rs", "tests/data/sherlock.txt"]) {
+    assert.equal(test(rel), false, rel);
+  }
+  assert.equal(runnerOf("tests/util.rs", plain), "cargo test");
+  // A `tests` directory beside nothing that makes a crate is a directory name.
+  assert.equal(isTestFile(file("tests/util.rs", "rust", plain), mirroredTests([file("tests/util.rs", "rust", plain)])), false);
+  assert.deepEqual(layoutFacts(corpus, { minFiles: 3 }).tests.map((g) => [g.runner, g.files]), [["cargo test", 4]]);
+});
+
+test("only a file of the language cargo builds is a test by sitting in a crate's tests directory", () => {
+  const corpus = [
+    file("crate/Cargo.toml"),
+    file("crate/src/lib.rs", "rust"),
+    file("crate/tests/it.rs", "rust"),
+    file("crate/tests/helper.py", "python"),
+    file("crate/tests/gen.go", "go"),
+    file("crate/tests/deep/mod.rs", "rust"),
+  ];
+
+  assert.deepEqual([...placedTests(corpus)], ["crate/tests/it.rs"]);
+  assert.deepEqual([...mirroredTests(corpus)], ["crate/tests/it.rs"]);
+});
+
+test("the seven languages take no test name from JavaScript or Ruby, and no mirror", () => {
+  const corpus = [file("lib/rules/no_var.py", "python"), file("tests/lib/rules/no_var.py", "python")];
+  assert.equal(isTestFile(corpus[1], mirroredTests(corpus)), false);
+  assert.equal(isTestFile(file("pkg/a.test.go", "go")), false);
+  assert.equal(isTestFile(file("src/__tests__/a.py", "python")), false);
+  assert.equal(isTestFile(file("spec/a_spec.py", "python")), false);
+});
+
+test("an empty file in one of the seven is no test, whatever it is called", () => {
+  assert.equal(isTestFile(file("pkg/auth_test.go", "go", { testRunner: null, testCalls: false, empty: true })), false);
+  assert.equal(isTestFile(file("tests/test_auth.py", "python", { testRunner: null, testCalls: false, empty: true })), false);
+});
+
+test("a family's own test tree is a test tree for that family's roots only", () => {
+  assert.equal(underTestTree("core/commonTest/src/kotlinx", "kotlin"), true);
+  assert.equal(underTestTree("core/commonTest/src/kotlinx", "js"), false);
+  assert.equal(underTestTree("core/commonTest/src/kotlinx"), false);
+  assert.equal(underTestTree("Src/Newtonsoft.Json.Tests/TestObjects", "csharp"), true);
+  assert.equal(underTestTree("Src/Newtonsoft.Json/Linq", "csharp"), false);
+  assert.equal(underTestTree("src/test/java/a", "java"), true);
+});
+
+test("a nine-file Go package counts its tests by runner and its namesakes beside the source", () => {
+  const goTest = { testRunner: "go test", testCalls: true };
+  const plain = { testRunner: null, testCalls: false };
+  const corpus = [
+    ...["auth", "route", "tree", "util", "mode"].map((s) => file(`pkg/${s}.go`, "go", plain)),
+    ...["auth", "route", "tree"].map((s) => file(`pkg/${s}_test.go`, "go", goTest)),
+    file("pkg/bench_test.go", "go", goTest),
+  ];
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  assert.deepEqual(facts.tests, [{ runner: "go test", root: "pkg", files: 4, under: 4 }]);
+  assert.deepEqual(facts.roots[0].companions, { with: 3, of: 5, root: "pkg", ext: ".go" });
+});
+
+test("a root inside a family's own test tree is not asked whether its files have tests", () => {
+  const junit = { testRunner: "junit", testCalls: true };
+  const plain = { testRunner: null, testCalls: false };
+  const corpus = [
+    ...["A", "B", "C"].map((s) => file(`core/commonMain/src/k/${s}.kt`, "kotlin", plain)),
+    ...["A", "B"].map((s) => file(`core/commonTest/src/k/${s}Test.kt`, "kotlin", junit)),
+    ...["Fake", "Stub", "Data"].map((s) => file(`core/commonTest/src/k/${s}.kt`, "kotlin", plain)),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const at = (dir) => rootFacts({ path: dir, files: corpus.filter((f) => f.rel.startsWith(`${dir}/`)) }, indexes);
+  assert.equal(at("core/commonTest/src/k").companions, undefined);
+  assert.deepEqual(at("core/commonMain/src/k").companions, { with: 2, of: 3, root: "core/commonTest/src/k", ext: ".kt" });
+});
+
+test("a Rust file holding its own tests is counted apart, neither a test file nor one with a namesake", () => {
+  const plain = { testRunner: null, testCalls: false };
+  const inline = { ...plain, inlineTests: true };
+  const corpus = [
+    file("crates/cli/src/escape.rs", "rust", inline),
+    file("crates/cli/src/human.rs", "rust", inline),
+    file("crates/cli/src/lib.rs", "rust", plain),
+    file("crates/cli/src/wtr.rs", "rust", plain),
+    file("tests/feature.rs", "rust", { testRunner: "cargo test", testCalls: true }),
+    file("crates/cli/tests/wtr.rs", "rust", { testRunner: "cargo test", testCalls: true }),
+    // A file of its stem beside a file that tests itself: still in neither number.
+    file("crates/cli/tests/escape.rs", "rust", { testRunner: "cargo test", testCalls: true }),
+  ];
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  assert.deepEqual(facts.tests.map((g) => [g.runner, g.files]), [["cargo test", 3]]);
+  // A namesake is another file carrying the stem; a module inside the file is not one.
+  assert.deepEqual(facts.roots[0].companions, { with: 1, of: 2, root: null, inline: 2, ext: ".rs" });
+});
+
+test("a file a test could be written for is source that holds something, outside every test tree of its family", () => {
+  const plain = { testRunner: null, testCalls: false };
+  for (const [rel, lang, facets, want] of [
+    ["src/cart.ts", "js", plain, true],
+    ["app/models/user.rb", "ruby", plain, true],
+    ["src/cart.ts", "js", null, true],
+    ["src/empty.ts", "js", { empty: true }, false],
+    ["src/cart.test.ts", "js", plain, false],
+    ["src/Cart.stories.tsx", "jsx", plain, false],
+    ["src/types.d.ts", "js", plain, false],
+    ["src/types.d.mts", "js", plain, false],
+    ["src/d.ts", "js", plain, true],
+    ["pkg/conftest.py", "python", { testRunner: "pytest", testCalls: false }, false],
+    ["pkg/test/apps/basic/src/hooks.js", "js", plain, false],
+    ["spec/support/helpers.rb", "ruby", plain, false],
+    ["Src/Lib.Tests/TestObjects/Person.cs", "csharp", plain, false],
+    ["core/commonTest/src/Fake.kt", "kotlin", plain, false],
+    ["core/commonTest/src/fake.js", "js", plain, true],
+    ["docs/logo.png", null, null, false],
+  ]) {
+    assert.equal(isProducer(file(rel, lang, facets)), want, rel);
+  }
+});
+
+test("a root's namesake count leaves out what sits under a test tree inside the root", () => {
+  // Newtonsoft.Json's `Src` read 63 of 631 with 388 of the 631 under `Src/Newtonsoft.Json.Tests`.
+  const xunit = { testRunner: "xunit", testCalls: true };
+  const corpus = [
+    ...["A", "B", "C"].map((s) => file(`Src/Lib/${s}.cs`, "csharp")),
+    file("Src/Lib.Tests/ATests.cs", "csharp", xunit),
+    ...files(4, (i) => file(`Src/Lib.Tests/TestObjects/Person${i}.cs`, "csharp")),
+  ];
+  const record = rootFacts({ path: "Src", dir: "Src", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".cs", 8]], "the extension clause still counts every file");
+  assert.deepEqual(record.companions, { with: 1, of: 3, root: null, ext: ".cs" });
+});
+
+test("a package whose only other files are its test apps is not a package of untested files", () => {
+  // kit's `packages/adapter-vercel` read 0 of 13 over its test apps, with `utils.js` and `utils.spec.js` beside them.
+  const corpus = [
+    file("pkg/utils.js", "js"),
+    file("pkg/utils.spec.js", "js", { testRunner: "vitest" }),
+    ...files(5, (i) => file(`pkg/test/apps/basic/src/routes/r${i}.js`, "js")),
+    ...files(3, (i) => file(`pkg/test/apps/basic/src/routes/P${i}.svelte`, "svelte", { embedded: "svelte" })),
+  ];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.companions, { with: 1, of: 1, root: null, ext: ".js" });
+  assert.equal("otherCompanions" in record, false, "and no count over the test apps' components");
+});
+
+test("a helper under a test tree keeps the test of its own name", () => {
+  const corpus = [
+    file("src/render.js", "js"),
+    file("test/helpers/render.js", "js"),
+    file("test/helpers/render.test.js", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src", dir: "src", files: corpus.slice(0, 1) }, layoutIndexes(corpus));
+
+  assert.equal(record.companions.with, 0, "the test is the helper's");
+});
+
+test("the counted extensions are the first the tool reads and the other where either is a component's", () => {
+  const png = [file("a/x.png"), file("a/y.png"), file("a/z.png")];
+  assert.deepEqual(printedExtensions([...png, file("a/C.vue", "vue"), file("a/D.vue", "vue"), file("a/m.ts", "js")]), {
+    exts: [[".png", 3], [".vue", 2]],
+    counted: [".vue", null],
+  });
+  assert.deepEqual(printedExtensions([file("a/C.vue", "vue"), file("a/D.vue", "vue"), file("a/m.ts", "js")]), {
+    exts: [[".vue", 2], [".ts", 1]],
+    counted: [".vue", ".ts"],
+  });
+  assert.deepEqual(printedExtensions(png), { exts: [[".png", 3]], counted: [null, null] });
+});
+
+test("a root whose two commonest extensions are both unread names the source it holds, and counts over it", () => {
+  // django's own package printed `1226 .mo, 1226 .po and 1164 other` with 907 `.py` files inside the 1164.
+  const corpus = [
+    ...files(6, (i) => file(`pkg/locale/l${i}/a.mo`)),
+    ...files(6, (i) => file(`pkg/locale/l${i}/a.po`)),
+    ...files(4, (i) => file(`pkg/m${i}.py`, "python")),
+    file("pkg/README.txt"),
+    file("tests/test_m0.py", "python", { testRunner: "pytest", testCalls: true }),
+  ];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: corpus.slice(0, 17) }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".mo", 6], [".po", 6], [".py", 4]]);
+  assert.equal(record.other, 1, "and the leftover is what the three did not name");
+  assert.deepEqual(record.companions, { with: 1, of: 4, root: null, ext: ".py" });
+});
+
+test("a root names no third extension where one of its two commonest is read, or where it holds no source", () => {
+  const mixed = [...files(6, (i) => file(`a/s${i}.png`)), ...files(4, (i) => file(`a/C${i}.tsx`, "jsx")), file("a/m.ts", "js")];
+  assert.deepEqual(printedExtensions(mixed).exts, [[".png", 6], [".tsx", 4]], "the screenshots case keeps its two");
+  const none = [...files(3, (i) => file(`d/a${i}.md`)), ...files(2, (i) => file(`d/b${i}.png`)), file("d/c.txt")];
+  assert.deepEqual(printedExtensions(none).exts, [[".md", 3], [".png", 2]]);
+});
+
+// A root of two unread kinds and `n` Python files, with one test elsewhere so a count can be taken.
+const unreadRoot = (n) => {
+  const own = [
+    ...files(76, (i) => file(`docs/p${i}.rst`)),
+    ...files(5, (i) => file(`docs/i${i}.png`)),
+    ...files(n, (i) => file(`docs/s${i}.py`, "python")),
+  ];
+  const corpus = [...own, file("tests/test_s0.py", "python", { testRunner: "pytest", testCalls: true })];
+  return rootFacts({ path: "docs", dir: "docs", files: own }, layoutIndexes(corpus));
+};
+
+test("one or two stray scripts beside two unread kinds are not a root's source, and print no count", () => {
+  // flask's `docs` is 76 `.rst`, 5 `.png` and one `conf.py`.
+  for (const n of [1, PRECEDENT_FLOOR - 1]) {
+    const record = unreadRoot(n);
+    assert.deepEqual(record.exts, [[".rst", 76], [".png", 5]], `${n}`);
+    assert.equal(record.other, n);
+    assert.equal("companions" in record, false, `${n}`);
+  }
+});
+
+test("a root names its read source beside two unread kinds from the floor a test precedent needs", () => {
+  const record = unreadRoot(PRECEDENT_FLOOR);
+  assert.deepEqual(record.exts, [[".rst", 76], [".png", 5], [".py", PRECEDENT_FLOOR]]);
+  assert.equal(record.other, 0);
+  assert.equal(record.companions.of, PRECEDENT_FLOOR);
+});
+
+test("the floor is over files a test could be written for, not over files of the extension", () => {
+  const own = [
+    ...files(6, (i) => file(`pkg/a${i}.mo`)),
+    ...files(6, (i) => file(`pkg/a${i}.po`)),
+    ...files(2, (i) => file(`pkg/m${i}.py`, "python")),
+    ...files(3, (i) => file(`pkg/e${i}.py`, "python", { empty: true })),
+  ];
+  assert.deepEqual(printedExtensions(own).exts, [[".mo", 6], [".po", 6]]);
+});
+
+test("the source a root names beside two unread kinds is the commonest that holds enough files a test could be written for", () => {
+  const unread = [...files(10, (i) => file(`pkg/a${i}.mo`)), ...files(9, (i) => file(`pkg/a${i}.po`))];
+  const declared = [...unread, ...files(5, (i) => file(`pkg/t${i}.d.ts`, "js")), ...files(4, (i) => file(`pkg/m${i}.js`, "js"))];
+  assert.deepEqual(printedExtensions(declared), { exts: [[".mo", 10], [".po", 9], [".js", 4]], counted: [".js", null] });
+
+  const stories = [...unread, ...files(5, (i) => file(`pkg/C${i}.stories.tsx`, "jsx")), ...files(4, (i) => file(`pkg/m${i}.ts`, "js"))];
+  assert.deepEqual(printedExtensions(stories), { exts: [[".mo", 10], [".po", 9], [".ts", 4]], counted: [".ts", null] });
+
+  const corpus = [...declared, file("test/other.test.js", "js", { testRunner: "jest" })];
+  const record = rootFacts({ path: "pkg", dir: "pkg", files: declared }, layoutIndexes(corpus));
+  assert.deepEqual(record.exts, [[".mo", 10], [".po", 9], [".js", 4]]);
+  assert.equal(record.other, 5, "the declarations are among the rest");
+  assert.equal(record.companions.of, 4);
+});
+
+test("a root's count is over the commonest printed extension that holds a file a test could be written for", () => {
+  // webpack's `schemas/plugins` is 39 `.d.ts` beside 39 `.js`, and counted over the declarations it read `0 of 39`, then nothing.
+  const corpus = [
+    ...files(4, (i) => file(`schemas/p${i}.d.ts`, "js")),
+    ...files(3, (i) => file(`schemas/p${i}.check.js`, "js")),
+    file("test/other.test.js", "js", { testRunner: "jest" }),
+  ];
+  const record = rootFacts({ path: "schemas", dir: "schemas", files: corpus.slice(0, 7) }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.exts, [[".d.ts", 4], [".js", 3]]);
+  assert.deepEqual(record.companions, { with: 0, of: 3, root: null, ext: ".js" });
+  assert.deepEqual(printedExtensions(corpus.slice(0, 4)).counted, [null, null], "and none where no printed extension holds one");
 });

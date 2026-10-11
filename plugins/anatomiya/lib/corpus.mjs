@@ -1,11 +1,13 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
-import { gitBuffered, gitStreamed } from "./git.mjs";
+import { caseMagic, gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
+import { placedTests } from "./layout.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
-import { isLink, readHead } from "./rules.mjs";
+import { folded, isLink, isMapName, readHead, STORE_DIR, trackedRulesDir } from "./rules.mjs";
+import { TARGETS, isClaude } from "./targets.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
 // token and a .git/config with credentials in the remote URL; a filesystem walk
@@ -124,6 +126,20 @@ function excludedAt(path) {
     if (isExcludedDir(dir)) return dir;
   }
   return null;
+}
+
+// By name, with no head read: a hand-written file under one of these exact names is left out with the map.
+// Git lists a map written through a `.claude/rules` link under the link's target, so that is the directory asked.
+// `inAnyCase` asks with the directory in whatever case git lists it, which is this tool's own only where
+// the repository folds case: the writer follows the one the volume answers with. The name is held to its
+// own spelling, since no scan writes another.
+function ownOutput(root) {
+  const dirs = Object.values(TARGETS).map((t) => [isClaude(t) ? trackedRulesDir(root) : t.dir, t]);
+  const asked = (fold) => {
+    const under = (path, dir) => fold(path.slice(0, dir.length + 1)) === fold(`${dir}/`);
+    return (path) => under(path, STORE_DIR) || dirs.some(([dir, t]) => under(path, dir) && isMapName(path.slice(dir.length + 1), t));
+  };
+  return { asWritten: asked((text) => text), inAnyCase: asked(folded) };
 }
 
 export function isSource(path) {
@@ -457,20 +473,26 @@ export async function collect(root) {
   // Where each folded name sits in `files`. Only a fold that collides is asked
   // for file identity, so a stat per file is not the price of the rare case.
   const byFold = new Map();
+  const own = ownOutput(root);
+  // Git is asked whether it folds case only when a path is the map's own on no
+  // other ground: the question is a child process, measured at 25 to 30 ms a scan.
+  const ownIfFolded = new Set();
 
   await lsFiles(root, (rel) => {
     const { drop, abs } = classify(root, rel, generatedRules);
     // Non-source tracked files feed the roster this scan builds over every
     // tracked path, not just the parsed ones.
-    const folded = drop === "notSource" || drop === "excluded" ? languageInAnyCase(rel) : null;
+    const anyCase = drop === "notSource" || drop === "excluded" ? languageInAnyCase(rel) : null;
     if (drop === "notSource") {
       dropped.notSource++;
+      if (own.asWritten(rel)) return;
+      if (own.inAnyCase(rel)) ownIfFolded.add(rel);
       others.push({ rel });
-      if (folded) uncounted.push({ rel, lang: folded });
+      if (anyCase) uncounted.push({ rel, lang: anyCase });
       return;
     }
     // Left out as unidiomatic on purpose, so an area's glob has to cut it out.
-    if (drop === "excluded" && folded) uncounted.push({ rel, lang: folded, excludedAt: excludedAt(rel) });
+    if (drop === "excluded" && anyCase) uncounted.push({ rel, lang: anyCase, excludedAt: excludedAt(rel) });
     if (drop === "generated") uncounted.push({ rel, lang: language(rel) });
     if (drop) { dropped[drop]++; return; }
     const file = { rel, abs, lang: language(rel) };
@@ -489,9 +511,16 @@ export async function collect(root) {
     files.push(file);
   });
 
+  // Whether a tool collects a file by where it sits is a fact about the whole
+  // listing, a manifest among the files nobody parses, so it rides on the file.
+  const mine = ownIfFolded.size > 0 && (await caseMagic(root)) ? ownIfFolded : null;
+  const theirs = (listed) => (mine ? listed.filter(({ rel }) => !mine.has(rel)) : listed);
+  const placed = placedTests([...files, ...theirs(others).map(({ rel }) => ({ rel, lang: null }))]);
+  for (const f of files) if (placed.has(f.rel)) f.placed = true;
+
   // Kept in the shape callers already read: listing the files never truncates
   // the corpus. A parse that hits the Ruby per-line guard sets its own flag.
-  return { files, others, uncounted, truncated: false, dropped };
+  return { files, others: theirs(others), uncounted: theirs(uncounted), truncated: false, dropped };
 }
 
 /** Whether two paths open one file. BigInt, since an NTFS file id passes 2^53. */

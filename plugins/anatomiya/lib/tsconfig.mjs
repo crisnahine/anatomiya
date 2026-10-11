@@ -16,7 +16,29 @@ import { basename, dirname, join, resolve, relative, isAbsolute, posix, win32 } 
 
 import { realpathOf, resolveInside } from "./rules.mjs";
 
-export const CONFIG_NAME = "tsconfig.json";
+/**
+ * Where a root keeps its compiler options, its own file first. A workspace that
+ * gives each package a config keeps the shared half, the path aliases among
+ * it, in the second, and has no first.
+ */
+export const CONFIG_NAMES = Object.freeze(["tsconfig.json", "tsconfig.base.json"]);
+
+/** The config this root is read through, or null where it has neither. */
+export function configNameIn(root) {
+  return CONFIG_NAMES.find((name) => existsSync(join(root, name))) ?? null;
+}
+
+/** The reason a root with neither config rides to the classifier, which names it only under the floor. */
+export const NO_CONFIG = "no-tsconfig";
+
+/** Every reason a config is refused for, which degrades the tier whatever then resolves. */
+export const CONFIG_REFUSALS = Object.freeze({
+  escaped: "config-escaped",
+  reference: "reference-escaped",
+  unparseable: "unparseable",
+  extends: "extends-escaped",
+  errors: "config-errors",
+});
 
 /**
  * Options this tool sets whatever the repository asked for.
@@ -129,29 +151,31 @@ function climbs(rel) {
 export const toTsPath = (p) => String(p).replace(/\\/g, "/");
 
 export function readConfig(ts, root) {
-  const configPath = join(root, CONFIG_NAME);
+  const configName = configNameIn(root);
 
   // No file is not a broken one: the checker runs on its own defaults, which is
   // what `tsc` does in a directory without one, and whether that resolved is
-  // the rate's to say. Degraded here, a monorepo keeping its options in
-  // `tsconfig.base.json` and one config per package read as counts only at
-  // 100% resolution. The reason rides along, so a rate under the floor names
-  // the likeliest cause rather than the generic one.
-  if (!existsSync(configPath)) {
+  // the rate's to say: one of five measured roots with neither file resolves
+  // over the floor that way. The reason rides along, so a rate under the floor
+  // names the likeliest cause rather than the generic one.
+  if (configName === null) {
     return {
       options: { ...ts.getDefaultCompilerOptions(), ...FORCED_OPTIONS },
       fileNames: [],
       status: "ok",
-      reason: "no-tsconfig",
+      reason: NO_CONFIG,
       configPath: null,
     };
   }
+  return readNamed(ts, root, join(root, configName));
+}
 
+function readNamed(ts, root, configPath) {
   // The root config is a path the repository writes like any `extends`, and it
   // was read with the host's own readFile before anything confined it: a
   // committed `tsconfig.json` linking out of the tree was opened and its
   // options handed to the checker. Links followed, as every other read here.
-  if (!insideRoot(root, configPath)) return degraded(ts, "config-escaped");
+  if (!insideRoot(root, configPath)) return degraded(ts, CONFIG_REFUSALS.escaped);
 
   const { config, references } = readOne(ts, root, configPath);
   if (references.length === 0) return config;
@@ -166,7 +190,7 @@ export function readConfig(ts, root) {
   // shape. A reference is a path the repository writes, the same as an
   // `extends`, so one leaving the tree is refused rather than opened.
   const first = ts.resolveProjectReferencePath(references[0]);
-  if (!insideRoot(root, first)) return degraded(ts, "reference-escaped");
+  if (!insideRoot(root, first)) return degraded(ts, CONFIG_REFUSALS.reference);
   return readOne(ts, root, first).config;
 }
 
@@ -184,12 +208,12 @@ function readOne(ts, root, configPath) {
   const tsPath = toTsPath(configPath);
 
   const text = ts.sys.readFile(configPath);
-  if (typeof text !== "string") return alone(degraded(ts, "unparseable"));
+  if (typeof text !== "string") return alone(degraded(ts, CONFIG_REFUSALS.unparseable));
 
   // Not JSON.parse: a tsconfig legally carries comments and trailing commas,
   // and rejecting one for that reads as a broken config to every caller.
   const parsed = ts.parseConfigFileTextToJson(tsPath, text);
-  if (parsed.error) return alone(degraded(ts, "unparseable"));
+  if (parsed.error) return alone(degraded(ts, CONFIG_REFUSALS.unparseable));
 
   const escaped = [];
   const host = confinedParseHost(ts, root, escaped);
@@ -198,14 +222,14 @@ function readOne(ts, root, configPath) {
   const result = ts.parseJsonConfigFileContent(parsed.config, host, toTsPath(dirname(configPath)), undefined, tsPath);
 
   const options = { ...result.options, ...FORCED_OPTIONS };
-  if (escaped.length) return alone({ ...degraded(ts, "extends-escaped", options), configPath });
+  if (escaped.length) return alone({ ...degraded(ts, CONFIG_REFUSALS.extends, options), configPath });
   // B9 forces the root file list to the corpus, so what the config's own
   // include and files globs match is never read. TypeScript reports finding no
   // inputs as an error, and it fires on every well-formed config whose globs
   // this tool is about to override, which is all of them.
   const errors = (result.errors ?? []).filter((e) => e.code !== 18002 && e.code !== 18003);
   if (errors.length) {
-    return alone({ ...degraded(ts, "config-errors", options), configPath });
+    return alone({ ...degraded(ts, CONFIG_REFUSALS.errors, options), configPath });
   }
 
   const config = { options, fileNames: result.fileNames ?? [], status: "ok", reason: null, configPath };

@@ -40,6 +40,14 @@ test("stacked block markers are stripped until none is left", () => {
   assert.equal(encode("- - - do this"), "do this");
 });
 
+test("a number and a dot open a list only before a space or the end, so a branch, a version and a file named for a number keep their head", () => {
+  for (const marker of ["1. do this", "1) do this", "12.\tdo this", "1.\u00a0do this", "3. # do this"]) assert.equal(encode(marker), "do this", marker);
+  assert.equal(encode("1."), "");
+  assert.equal(encode("13.x"), "13.x");
+  assert.equal(encode("2.0"), "2.0");
+  assert.equal(encodePath("404.vue"), '"404.vue"');
+});
+
 test("bidi overrides and zero-width joiners are removed", () => {
   // These are category Cf and pass an ASCII control filter untouched.
   assert.ok(!encode("safe‮evil.ts").includes("‮"), "RLO");

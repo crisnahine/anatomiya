@@ -275,7 +275,7 @@ test("a scan that leaves the checker off says why in the facts it writes", async
   await runScan(dir);
 
   const facts = JSON.parse(readFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "utf8"));
-  assert.deepEqual(facts.semantic, { ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null });
+  assert.deepEqual(facts.semantic, { ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null, carried: false, measuredAt: null, measuredUnder: null, failures: 0 });
 });
 
 test("a checked scan measures resolution over area files, so a bundle in no area does not degrade it", needsTs, async (t) => {
@@ -504,6 +504,58 @@ test("a pin leaves out its map where the index spells .claude in another case th
 
   await runPin(dir);
   assert.ok(existsSync(join(dir, PIN_PATH)));
+});
+
+test("a pin leaves out the map's copies for Cursor and Copilot, and nothing else beside them", async (t) => {
+  // A repository that commits those copies has them rewritten by every scan,
+  // and they are no more part of the population than the Claude ones.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
+  writeFileSync(join(dir, ".cursor", "rules", "team.mdc"), "# the team's own\n");
+  git("add", "-A");
+  git("commit", "-qm", "commit the map");
+  for (const [at, name] of [[".cursor/rules", "anatomiya-overview.mdc"], [".github/instructions", "anatomiya-overview.instructions.md"]]) {
+    writeFileSync(join(dir, at, name), "rewritten by a scan\n");
+  }
+
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+
+  writeFileSync(join(dir, ".cursor", "rules", "team.mdc"), "# edited\n");
+  await assert.rejects(() => runPin(dir), /commit or stash/, "a rule somebody wrote there is still a difference");
+});
+
+test("a scan handed a set of targets writes that set, and one handed none writes what is on", async (t) => {
+  const dir = repo(t);
+
+  const named = await runScan(dir, { targets: ["claude", "cursor"] });
+  const kept = await runScan(dir);
+  const off = await runScan(dir, { targets: ["claude"] });
+
+  assert.deepEqual(named.summary.targets, { cursor: { state: "on", dir: ".cursor/rules", wrote: 2, removed: 0, unfiled: 0, foreign: 0 } });
+  assert.deepEqual(kept.summary.targets, named.summary.targets);
+  assert.deepEqual(off.summary.targets, { cursor: { state: "off", dir: ".cursor/rules", wrote: 0, removed: 2, unfiled: 0, foreign: 0 } });
+  assert.deepEqual(readdirSync(join(dir, ".cursor", "rules")), []);
+  assert.equal(existsSync(join(dir, ".github")), false);
+});
+
+test("a person's file at a name a named target writes refuses the scan in the writer's sentence", async (t) => {
+  const dir = repo(t);
+  mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "# mine\n");
+
+  await assert.rejects(() => runScan(dir, { targets: ["claude", "cursor"] }), {
+    message:
+      ".cursor/rules/anatomiya-overview.mdc was not written by this tool, so .cursor/rules could not be written and nothing was written anywhere: move or delete it and scan again",
+  });
+  assert.equal(existsSync(join(dir, ".claude")), false);
+
+  // Not named, the target is off: the file stays and the scan has nothing to say about it.
+  const { summary } = await runScan(dir);
+  assert.equal("targets" in summary, false);
+  assert.equal(scanLines(summary).some((l) => l.includes(".cursor")), false, scanLines(summary).join("\n"));
+  assert.equal(readFileSync(join(dir, ".cursor", "rules", "anatomiya-overview.mdc"), "utf8"), "# mine\n");
 });
 
 test("a pin refuses while a merge has left a path unmerged, under .claude/ as well", async (t) => {
@@ -872,6 +924,89 @@ test("a doctor asks every engine and the optional checker, and answers a line ea
   assert.deepEqual([...new Set(rows.map((r) => r.engine))], [...PROBE_IDS]);
   assert.equal(lines.length, rows.length, "an extra answers a line of its own");
   assert.ok(lines.some((l) => l.startsWith("oxc ")), lines.join("\n"));
+  const treeSitter = lines.filter((l) => l.startsWith("tree-sitter "));
+  assert.equal(treeSitter.length, 1, "one line for the engine and its grammars together");
+  assert.match(treeSitter[0], /^tree-sitter \d+\.\d+\.\d+ ok \(grammars: 7 of 7\)$/);
+});
+
+test("a doctor run inside a repository says which other targets are on there, and why one could not be read", needsSymlinks, async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines, engines, "nothing for a target that is off");
+  symlinkSync(join(dir, "src"), join(dir, ".cursor"));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines, engines, "nor for one nobody can read that no scan here wrote to");
+  rmSync(join(dir, ".cursor"));
+
+  await runScan(dir, { targets: ["claude", "cursor", "copilot"] });
+  rmSync(join(dir, ".github"), { recursive: true });
+  symlinkSync(join(dir, "src"), join(dir, ".github"));
+
+  const { lines } = await runDoctor({ cwd: join(dir, "src") });
+
+  assert.deepEqual(lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".github/instructions: could not be read (.github is a link)",
+  ]);
+});
+
+test("a doctor counts the names a scan gives a file, and says when the directory cannot be listed", needsPosixPermissions, async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  const rules = join(dir, ".cursor", "rules");
+  // A copy somebody kept: this tool's key, under a name no scan gives a file.
+  writeFileSync(join(rules, "anatomiya-my-notes.mdc"), readFileSync(join(rules, "anatomiya-overview.mdc")));
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes",
+  ]);
+
+  // Entered and not listed: the overview still reads as this tool's.
+  chmodSync(rules, 0o311);
+  try {
+    assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, could not be listed"]);
+  } finally {
+    chmodSync(rules, 0o755);
+  }
+});
+
+test("a doctor counts as a target's files what a scan counts as written, and the rest as the scan does", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  const rules = join(dir, ".cursor", "rules");
+  // This tool's key at a name a scan gives a file, which the record never listed.
+  writeFileSync(join(rules, "anatomiya-area-deadbeef.mdc"), readFileSync(join(rules, "anatomiya-overview.mdc")));
+  mkdirSync(join(rules, "anatomiya-area-0badf00d.mdc"));
+  writeFileSync(join(rules, "anatomiya-notes.mdc"), "# by hand\n");
+
+  const { summary } = await runScan(dir);
+  const said = scanLines(summary).filter((l) => l.includes(".cursor/rules"));
+  assert.deepEqual(said, [
+    "wrote 2 files under .cursor/rules for Cursor",
+    ".cursor/rules holds 3 entries named anatomiya-* that this scan neither wrote nor removed; they were left as they are",
+  ]);
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".cursor/rules holds 3 entries named anatomiya-* that a scan neither writes nor removes",
+  ]);
+});
+
+test("a doctor counts a target's files where the clone holds them and no record", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  rmSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [".cursor/rules: on, 2 files"]);
+});
+
+test("a doctor run outside any repository answers about the installation alone", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-none-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines, (await runDoctor()).lines);
 });
 
 /**
@@ -899,6 +1034,7 @@ test("a setup with the dependencies already installed runs nothing", needsEveryt
   assert.equal(ok, true);
   assert.equal(root, pluginRoot());
   assert.match(output, /^nothing to install: oxc \d/, output);
+  assert.doesNotMatch(output, /anatomiya:scan/, "nothing changed, so nothing to scan again for");
 });
 
 test("a dry run answers the exact command and runs nothing", async (t) => {
@@ -944,7 +1080,7 @@ test("a setup on Windows refuses rather than spawning an npm it cannot start", a
 
   assert.equal(ok, false);
   assert.equal(ran, false);
-  assert.deepEqual(needed, ["oxc", "flow-remove-types", "typescript"], "the copy has no node_modules, so there is something to install");
+  assert.deepEqual(needed, ["oxc", "flow-remove-types", "tree-sitter", "typescript"], "the copy has no node_modules, so there is something to install");
   assert.match(output, /npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund/, output);
   // Compared as the same directory rather than as the same string: node
   // resolves a module's own path, so `pluginRoot()` answers the realpath while

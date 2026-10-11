@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { parseSync } from "oxc-parser";
 import {
   DIMENSIONS,
@@ -14,11 +15,14 @@ import {
   KINDS,
   PRINCIPLE_NAMES,
   PRECISIONS,
+  walkFor,
 } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
+import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { PAIRINGS, companionOf } from "../plugins/anatomiya/lib/pairing.mjs";
-import { JS_DECLINED, PATH_DECLINED, RUBY_DECLINED } from "./declined-fixtures.mjs";
+import { JS_DECLINED, PATH_DECLINED, RUBY_DECLINED, TREE_DECLINED } from "./declined-fixtures.mjs";
 // The battery that stamps these rows runs where the registry is assembled.
 import "../plugins/anatomiya/lib/registry.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
@@ -909,8 +913,8 @@ test("the rows that name a declined form are the rows one true clause can name",
   const declared = REGISTRY.filter((d) => d.applicabilityPredicate?.notCounted).map((d) => d.key);
 
   assert.deepEqual(declared.slice().sort(), [
-    "column_null_declared", "controller_spec", "extends_base", "import_extension", "job_spec",
-    "job_test", "model_spec", "model_test", "non_null_assertion", "nullish_default",
+    "column_null_declared", "controller_spec", "extends_base", "import_extension",
+    "job_spec", "job_test", "model_spec", "model_test", "non_null_assertion", "nullish_default",
     "optional_chaining", "rake_task_spec", "reference_foreign_key", "route_env", "route_logging",
     "route_network", "serializer_spec", "service_spec", "spread_on_component", "worker_spec",
   ]);
@@ -947,6 +951,27 @@ test("the clause contract is refused at the registry gate, not only in this file
   // language spells with a capital, and no rule there could tell `Net::HTTP`
   // from a sentence.
   assert.doesNotThrow(() => assertApplicability(row("Net::HTTP called through a constant receiver, which is the client itself")));
+});
+
+test("a clause for an area holding components names their extension and is run on both", () => {
+  const row = (componentNotCounted, clause = { notCounted: "a specifier naming a directory" }) => [{
+    key: "k", kind: "syntactic", tier: "syntactic", claim: "c", precision: "precise", langs: ["js"],
+    applicabilityPredicate: { sites: "a file holding the construct", ...clause, componentNotCounted, blind: null },
+    run() {},
+  }];
+
+  assert.throws(() => assertApplicability(row("an import of a component")), /componentNotCounted/);
+  assert.throws(() => assertApplicability(row("an import of a <ext>\nfile")), /componentNotCounted/);
+  assert.throws(() => assertApplicability(row("an import of a <ext> file", {})), /componentNotCounted/);
+  assert.doesNotThrow(() => assertApplicability(row("an import of a <ext> file")));
+
+  const carrying = REGISTRY.filter((d) => d.applicabilityPredicate?.componentNotCounted).map((d) => d.key);
+  assert.deepEqual(carrying, ["import_extension"]);
+  for (const key of carrying) {
+    for (const ext of ["vue", "svelte"]) {
+      assert.ok(JS_DECLINED[key].declined.some((f) => source(f).src.includes(`.${ext}"`)), `${key} runs no .${ext} import`);
+    }
+  }
 });
 
 /* --- every clause is pinned to what its own predicate actually declines (#97) --- */
@@ -999,6 +1024,7 @@ test("no row carries a clause that nothing runs", () => {
   const pinned = new Set([
     ...Object.keys(JS_DECLINED),
     ...Object.keys(RUBY_DECLINED),
+    ...Object.keys(TREE_DECLINED),
     ...PAIRINGS.map((p) => p.key),
   ]);
 
@@ -1052,4 +1078,38 @@ test("a nested binding of the same name does not use the caught error", () => {
     candidates: 1,
     conforming: 1,
   });
+});
+
+test("a row that walks its own tree is held to one engine where the rows load, as a visitor row is", () => {
+  // Such a row listing a language of a second engine loaded, and a scan then crashed that engine's parser on every file.
+  const lib = (name) => JSON.stringify(new URL(`../plugins/anatomiya/lib/${name}`, import.meta.url).href);
+  const script = `
+const { EXTRA_DIMENSIONS } = await import(${lib("dimensions-extra.mjs")});
+const row = EXTRA_DIMENSIONS.find((d) => d.key === "hook_per_module");
+if (row.visitor || typeof row.run !== "function") throw new Error("hook_per_module is not a row that walks its own tree");
+row.langs.push("ruby");
+await import(${lib("dimensions.mjs")}).then(() => console.log("loaded"), (err) => console.log(err.message));
+`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+
+  assert.equal(run.stdout.trim(), "hook_per_module lists languages of oxc and prism, and one walk reads one engine's tree", run.stderr);
+});
+
+test("a row is walked by its own engine's walk, and one whose engine has none refuses to load", () => {
+  // A miss that fell through to the oxc walk would find no child it knows in
+  // another engine's tree: the row would count nothing and nothing would say so.
+  assert.equal(walkFor({ key: "a", langs: ["js", "jsx"] }), walk);
+  assert.equal(walkFor({ key: "b", langs: ["ruby"] }), walkRuby);
+  for (const lang of ["python", "php", "go", "java", "csharp", "rust", "kotlin"]) {
+    assert.equal(walkFor({ key: "c", langs: [lang] }), walkTree, lang);
+  }
+  assert.throws(
+    () => walkFor({ key: "declared_return_type", langs: ["python"] }, { oxc: walk, prism: walkRuby }),
+    /^Error: declared_return_type is a row for tree-sitter, and no walk reads a tree-sitter tree$/
+  );
+  // One walk reads one engine's tree, so a row listing languages of two would count nothing on the second.
+  assert.throws(() => walkFor({ key: "swallowed_error", langs: ["js", "jsx", "python"] }), /^Error: swallowed_error lists languages of oxc and tree-sitter, and one walk reads one engine's tree$/);
+  assert.throws(() => walkFor({ key: "mixed", langs: ["ruby", "go", "rust"] }), /^Error: mixed lists languages of prism and tree-sitter, /);
+  assert.equal(walkFor({ key: "d", langs: ["js", "jsx", "vue", "svelte"] }), walk, "a component's script is the JavaScript engine's");
+  assert.throws(() => walkFor({ key: "none", langs: [] }), /^Error: none lists no language$/);
 });

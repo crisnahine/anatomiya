@@ -1,19 +1,27 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { needsPosixPaths, needsSymlinks } from "./platform.mjs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
-import { renderOverview } from "../plugins/anatomiya/lib/render.mjs";
-import { globsReach } from "../plugins/anatomiya/lib/areas.mjs";
+import { renderArea, renderOverview } from "../plugins/anatomiya/lib/render.mjs";
+import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
+import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
+import { factsJson } from "../plugins/anatomiya/lib/facts.mjs";
+import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
+import { areaId, globsReach } from "../plugins/anatomiya/lib/areas.mjs";
+import { echoContext, holdsTestIn, ownLayout } from "../plugins/anatomiya/lib/hook.mjs";
+import { isTestPath, noticeFor } from "../plugins/anatomiya/lib/precedent.mjs";
+import { claudeCodeReaches } from "./paths-reader.mjs";
 import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { defaultPoolSize } from "../plugins/anatomiya/lib/pool.mjs";
-import { checkerBlocked, loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
+import { checkerBlocked, loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
+import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 
 // The directory is removed through the test context, so a failing assertion
@@ -241,6 +249,54 @@ test("a file that kills the parser costs that one file", async (t) => {
   assert.ok(!dim.files.includes("src/bomb.ts"));
 });
 
+test("the scan counts a grammar's unread files apart, and a record of the older languages is the one it was", async (t) => {
+  const older = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/broken.ts", "export const broken = 5\nfoo(\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const before = (await scan(older)).parse;
+  assert.equal(before.syntaxErrors, 1);
+  assert.equal("rejections" in before, false, "nothing new on a record no grammar touched");
+
+  const mixed = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/broken.ts", "export const broken = 5\nfoo(\n");
+    // Correct Kotlin the grammar has no rule for: a member on the line that closes its class.
+    write("app/A.kt", "class A { fun f() {} }\n");
+    write("app/B.kt", "class B { val x = 1 }\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const after = (await scan(mixed)).parse;
+  assert.equal(after.syntaxErrors, 3, "the count of files rejected, whoever rejected them");
+  assert.deepEqual(after.rejections, { syntax: 1, grammar: 2 });
+});
+
+test("the scan counts the files it read with one branch of their conditionals, and says so under Not covered", async (t) => {
+  const member = (i) => `namespace App;\n\npublic class M${i}\n{\n    public int F(int x)\n    {\n        return x + ${i};\n    }\n}\n`;
+  const older = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/M${i}.cs`, member(i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const before = await scan(older);
+  assert.equal("oneBranch" in before.parse, false, "nothing new on the record of a run that read every file whole");
+  assert.doesNotMatch(renderOverview(before, { uncovered: 0 }), /one branch/);
+
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/M${i}.cs`, member(i));
+    write("src/Chain.cs", 'namespace App;\n\npublic class Chain\n{\n    public bool F(string s)\n    {\n        return s\n#if SPAN\n            .Trim()\n#else\n            .TrimEnd()\n#endif\n            .StartsWith("a");\n    }\n}\n');
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const after = await scan(dir);
+  assert.equal(after.parse.syntaxErrors, 0);
+  assert.equal(after.parse.oneBranch, 1);
+  assert.match(renderOverview(after, { uncovered: 0 }), /^- 1 file was read with one branch of each #if; the other branches were not read$/m);
+});
+
 test("a file the parser could not read costs that one file", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
@@ -285,13 +341,13 @@ test("a directory nothing could be counted in is not a directory that was too sm
 test("the corpus tallies every file it has no language for, by extension", async (t) => {
   // The overview names an unread language from this field, and it exists
   // because the roster cannot be counted back off for the number: a root prints
-  // its top two extensions and folds the rest away, which held 781 of next.js's
-  // 1,016 Rust files. Pinned here rather than only at the renderer, where a
+  // its top two extensions and folds the rest away, which held 781 of the
+  // 1,016 files next.js had in a language this did not read. Pinned here rather than only at the renderer, where a
   // hand-built record would pass whatever the scan actually stored.
   const dir = repo(t, (d, { git, write }) => {
     for (let i = 0; i < 4; i++) write(`src/a${i}.ts`, `export const a${i} = 1\n`);
-    for (let i = 0; i < 3; i++) write(`crates/core/m${i}.rs`, `pub fn f${i}() -> i32 { ${i} }\n`);
-    write("crates/api/n0.rs", "pub fn g() -> i32 { 0 }\n");
+    for (let i = 0; i < 3; i++) write(`Sources/Core/m${i}.swift`, `func f${i}() -> Int { ${i} }\n`);
+    write("Sources/Api/n0.swift", "func g() -> Int { 0 }\n");
     write("README.md", "# hi\n");
     git("add", "-A");
     git("commit", "-qm", "init");
@@ -299,7 +355,8 @@ test("the corpus tallies every file it has no language for, by extension", async
 
   const result = await scan(dir);
 
-  assert.deepEqual(result.corpus.otherExts, [[".rs", 4], [".md", 1]]);
+  assert.deepEqual(result.corpus.otherExts, [[".swift", 4], [".md", 1]]);
+  assert.equal("scriptOnly" in result.corpus, false, "a repository with no component carries no count of them");
   assert.equal(result.corpus.files, 4, "and the source count is the four it can read");
 });
 
@@ -892,6 +949,97 @@ function typedRepo(t, { deps = "dir", pinned = false, areas = ["src/models"], br
   });
 }
 
+// What a tier no run measured says of its measurement.
+const UNMEASURED = { carried: false, measuredAt: null, measuredUnder: null, failures: 0 };
+
+const CARRIED = { status: "degraded", reason: "low-resolution", typedResolutionRate: 0.61, measuredAt: "2026-10-08T01:02:03.000Z", measuredUnder: "s1", failures: 0 };
+
+test("a measured tier says when it was measured and under what", async (t) => {
+  const dir = typedRepo(t);
+  const r = await scan(dir);
+
+  assert.equal(r.semantic.ran, true);
+  assert.equal(r.semantic.carried, false);
+  assert.equal(r.semantic.measuredAt, r.scannedAt);
+  assert.equal(r.semantic.measuredUnder, verdictStamp(dir, buildVersion()));
+  assert.equal(r.semantic.failures, 0);
+});
+
+/** A checker whose child cannot start, counting its runs; `mended` runs the real one. */
+function failingChecker() {
+  const seen = { runs: 0, mended: false };
+  const runChecker = (root, files, options) => {
+    seen.runs++;
+    return runSemantic(root, files, seen.mended ? options : { ...options, workerPath: join(root, "no-such-worker.mjs") });
+  };
+  return { seen, runChecker };
+}
+
+/** What a refresh reads back from the record of a scan whose checker failed. */
+const failedBefore = (semantic) => ({ status: semantic.status, reason: semantic.reason, typedResolutionRate: null, measuredAt: semantic.measuredAt, measuredUnder: semantic.measuredUnder, failures: semantic.failures });
+
+test("a checker that fails is counted, and measured again on its first failure", async (t) => {
+  const dir = typedRepo(t);
+  const { seen, runChecker } = failingChecker();
+
+  const first = (await scan(dir, { runChecker })).semantic;
+  assert.deepEqual(first, { ran: true, status: "degraded", reason: "tier-failed", typedResolutionRate: null, carried: false, measuredAt: first.measuredAt, measuredUnder: verdictStamp(dir, buildVersion()), failures: 1 });
+
+  const second = (await scan(dir, { runChecker, carried: failedBefore(first) })).semantic;
+  assert.equal(seen.runs, 2, "one failure was carried");
+  assert.deepEqual([second.ran, second.carried, second.reason, second.failures], [true, false, "tier-failed", 2]);
+  assert.equal((await scan(dir, { runChecker })).semantic.failures, 1, "a scan handed nothing counts from one");
+  assert.equal((await scan(dir, { runChecker, carried: { ...failedBefore(first), measuredUnder: "another-stamp" } })).semantic.failures, 1, "a failure under another stamp was counted on");
+});
+
+test("a checker that failed twice under one stamp is not run, and its failure is recorded as carried", async (t) => {
+  const dir = typedRepo(t);
+  const { seen, runChecker } = failingChecker();
+  const first = (await scan(dir, { runChecker })).semantic;
+  const twice = { ...failedBefore(first), failures: 2 };
+
+  const measured = await scan(dir, { runChecker, carried: failedBefore(first) });
+  const r = await scan(dir, { runChecker, carried: twice });
+
+  assert.equal(seen.runs, 2, "the checker ran though it had failed twice");
+  assert.deepEqual(r.semantic, { ran: false, ...twice, carried: true });
+  assert.deepEqual(r.areas, measured.areas, "the carried failure and the measured one describe different areas");
+});
+
+test("a success after a failure resets the count", async (t) => {
+  const dir = typedRepo(t);
+  const { seen, runChecker } = failingChecker();
+  const first = (await scan(dir, { runChecker })).semantic;
+
+  seen.mended = true;
+  const mended = (await scan(dir, { runChecker, carried: failedBefore(first) })).semantic;
+
+  assert.deepEqual([mended.ran, mended.status, mended.failures], [true, "ok", 0]);
+});
+
+test("a carried verdict stands in for the checker's run, and is marked", async (t) => {
+  const dir = typedRepo(t);
+  let runs = 0;
+  const runChecker = (...args) => {
+    runs++;
+    return runSemantic(...args);
+  };
+
+  const r = await scan(dir, { runChecker, carried: CARRIED });
+
+  assert.equal(runs, 0, "the checker ran though its verdict was handed in");
+  assert.deepEqual(r.semantic, { ran: false, ...CARRIED, carried: true });
+  assert.ok(!r.areas.some((a) => a.dimensions.some((d) => d.tier === "semantic")), "a type-checked row was counted with no checker");
+  assert.equal((await scan(dir, { runChecker })).semantic.ran, true, "and with none handed in the checker measures");
+  assert.equal(runs, 1);
+});
+
+test("a carried verdict does not stand in where the checker could not run at all", async (t) => {
+  const r = await scan(typedRepo(t, { deps: null }), { carried: CARRIED });
+
+  assert.deepEqual(r.semantic, { ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null, ...UNMEASURED });
+});
+
 test("the checker runs on its own where the repository can use it", async (t) => {
   const r = await scan(typedRepo(t));
   assert.equal(r.semantic.ran, true);
@@ -914,7 +1062,7 @@ for (const [name, opts, reason] of [
 ]) {
   test(`the checker stays off ${name}`, { skip: opts.deps === "link" && process.platform === "win32" }, async (t) => {
     const r = await scan(typedRepo(t, opts));
-    assert.deepEqual(r.semantic, { ran: false, status: null, reason, typedResolutionRate: null });
+    assert.deepEqual(r.semantic, { ran: false, status: null, reason, typedResolutionRate: null, ...UNMEASURED });
     assert.ok(!r.areas.some((a) => a.dimensions.some((d) => d.key === "law_of_demeter")));
   });
 }
@@ -930,7 +1078,7 @@ test("the checker stays off in plain JavaScript, with its dependencies installed
     git("commit", "-qm", "init");
   });
   const r = await scan(withDeps(dir));
-  assert.deepEqual(r.semantic, { ran: false, status: null, reason: "plain-javascript", typedResolutionRate: null });
+  assert.deepEqual(r.semantic, { ran: false, status: null, reason: "plain-javascript", typedResolutionRate: null, ...UNMEASURED });
 });
 
 const demeterRow = async (dir, path = "src/models") => dimension(await scan(dir), path, "law_of_demeter");
@@ -1005,12 +1153,36 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
 
   assert.equal(r.semantic.ran, true);
   assert.equal(r.semantic.status, "degraded", `the tier was expected degraded, got ${r.semantic.reason}`);
+  // Neither a line nor a slot: the counts are a checker's that resolved too
+  // few types to be believed, and a refresh that carries the verdict has none.
+  assert.ok(r.areas.length > 0);
   for (const area of r.areas) {
-    for (const d of area.dimensions.filter((x) => x.key === "law_of_demeter")) {
-      assert.equal(d.states, null, `${area.path} stated a semantic claim off a degraded tier`);
-      assert.equal(d.gate, "degraded-semantic", `${area.path} closed it for ${d.gate} instead`);
-    }
+    assert.deepEqual(area.dimensions.filter((d) => d.tier === "semantic").map((d) => d.key), [], area.path);
   }
+  assert.doesNotMatch(factsJson(r), /law_of_demeter|"tier":\s*"semantic"/);
+  const bodies = [...planMap(r).bodies.values()].join("\n");
+  assert.doesNotMatch(bodies, /call chain|degraded-semantic/);
+  assert.match(bodies, /^- type-checked claims are not counted: \S+( of)? type lookups resolved \(\S+\)$/m);
+});
+
+test("an area only the checker counted in is described by no scan whose checker degraded", async (t) => {
+  // A carried verdict folds no type-checked row, so such an area is one
+  // nothing was counted in. A scan that measures the verdict has to agree.
+  const onlyTyped = async (files, options) => {
+    const parsed = await parseAll(files, options);
+    for (const r of parsed.records.values()) r.hits = {};
+    return parsed;
+  };
+  const rows = (r) => r.areas.flatMap((a) => a.dimensions.map((d) => d.key));
+
+  assert.deepEqual(rows(await scan(typedRepo(t), { parseFiles: onlyTyped })), ["law_of_demeter"], "the fixture counts another row");
+
+  const dir = typedRepo(t);
+  writeFileSync(join(dir, "tsconfig.json"), "{ this is not json");
+  const measured = await scan(dir, { parseFiles: onlyTyped });
+  assert.equal(measured.semantic.status, "degraded");
+  assert.deepEqual(measured.areas, []);
+  assert.deepEqual((await scan(dir, { parseFiles: onlyTyped, carried: CARRIED })).areas, []);
 });
 
 test("the resolution rate is taken over the areas the map describes", async (t) => {
@@ -1077,6 +1249,43 @@ test("a repository whose every area was dropped takes no rate from it", async (t
   assert.deepEqual(r.areas, []);
   assert.equal(r.semantic.status, "ok", `degraded for ${r.semantic.reason} at ${r.semantic.typedResolutionRate}`);
   assert.equal(r.semantic.typedResolutionRate, null);
+});
+
+/** A workspace whose packages import each other through an alias only the base config declares. */
+function aliasedWorkspace(t, { base }) {
+  return repo(t, (d, { git, write }) => {
+    if (base) {
+      write("tsconfig.base.json", `{"compilerOptions":{"strict":true,"baseUrl":".","paths":{"@acme/util":["libs/util/src/index.ts"]}}}`);
+    }
+    write(".gitignore", "node_modules\n");
+    write(
+      "libs/util/src/index.ts",
+      `export class Leaf { label = "x"; }\nexport class Mid { beta = new Leaf(); }\nexport class Top { alpha = new Mid(); }\nexport function make(): Top { return new Top(); }\n`
+    );
+    for (let i = 0; i < 8; i++) {
+      write(`apps/web/src/m${i}.ts`, `import { make } from "@acme/util";\nexport const v${i} = make().alpha.beta.label.length;\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+test("a workspace root with only a base config resolves through it", async (t) => {
+  // Measured on six Nx-style roots: three read degraded on the compiler's
+  // defaults and ok once the aliases in tsconfig.base.json were read.
+  const r = await scan(withDeps(aliasedWorkspace(t, { base: true })));
+
+  assert.equal(r.semantic.ran, true);
+  assert.equal(r.semantic.status, "ok", `degraded for ${r.semantic.reason} at ${r.semantic.typedResolutionRate}`);
+  assert.equal(r.semantic.reason, null);
+  assert.ok(r.semantic.typedResolutionRate >= 0.8, `resolved ${r.semantic.typedResolutionRate}`);
+});
+
+test("the same workspace with no config at its root reads its aliases as any", async (t) => {
+  const r = await scan(withDeps(aliasedWorkspace(t, { base: false })));
+
+  assert.equal(r.semantic.status, "degraded");
+  assert.equal(r.semantic.reason, "no-tsconfig");
 });
 
 test("root code below the area floor keeps its rate beside a dropped bundle directory", async (t) => {
@@ -1322,4 +1531,463 @@ test("the parse starts before the baseline answers, and the map is the same as w
   assert.equal(order, "parse first");
   assert.equal(plain.areas[0].baseline.status, "ok", "the fixture reaches the baseline");
   assert.deepEqual(stable(delayed), stable(plain));
+});
+
+test("a directory of components becomes an area that counts its scripts and its names", async (t) => {
+  const names = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
+  const script = `import { api } from "../api";\n\nasync function loadItem(id) {\n  try {\n    return await api.get(id);\n  } catch (err) {\n    console.error(err);\n  }\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of names) {
+      write(`src/components/${name}.vue`, `<template>\n  <div @click="loadItem(1)" />\n</template>\n\n<script setup>\n${script}</script>\n`);
+      write(`src/lib/${name}.svelte`, `<script>\n${script}</script>\n\n<button onclick={() => loadItem(1)}>load</button>\n`);
+    }
+    // Markup alone: no script to read, and still a component with a name.
+    write("src/components/PlainBanner.vue", "<template>\n  <p>hello</p>\n</template>\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  for (const [path, ext, files] of [["src/components", ".vue", 9], ["src/lib", ".svelte", 8]]) {
+    const area = result.areas.find((a) => a.path === path);
+    assert.ok(area, `${path} is an area`);
+    assert.match(renderArea(area), new RegExp(`^paths:\\n  - "${path}/\\*\\*/\\*\\${ext}"$`, "m"));
+    const named = dimension(result, path, "file_naming_case");
+    assert.equal(named.learned, "PascalCase");
+    assert.equal(named.learnedKind, "component");
+    assert.equal(named.candidates, files, "a component with no script still votes with its name");
+    assert.deepEqual(
+      [dimension(result, path, "swallowed_error").candidates, dimension(result, path, "function_naming_case").candidates],
+      [8, 8],
+      "the script rows count inside the block"
+    );
+  }
+
+  const lines = [...scanLines(scanSummary(result, planMap(result))), renderOverview(result, { uncovered: 0 })].join("\n");
+  assert.doesNotMatch(lines, /nothing was counted in/);
+  assert.deepEqual(result.corpus.scriptOnly, [[".vue", 9], [".svelte", 8]]);
+  assert.match(lines, /^- of 17 \.vue and \.svelte files only the script block is read; the template is not$/m);
+});
+
+test("a claim counted over a Gemfile names it, not the label the kinds line gives a file with no extension", async (t) => {
+  const rescued = "begin\n  run\nrescue StandardError => e\n  warn e\nend\n";
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["load", "save", "list", "drop"]) write(`tools/${name}.rb`, rescued);
+    write("tools/Gemfile", `source "https://rubygems.org"\n${rescued}`);
+    for (const ext of ["js", "mjs", "cjs"]) write(`tools/old.${ext}`, "const old = 1;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+
+  assert.match(text, /^kinds: .*\(none\)/m);
+  assert.match(text, /^rescue blocks use the error they caught, in \.rb files and Gemfile: /m);
+  assert.match(text, /^module-level bindings are const, in \.cjs, \.js and \.mjs files: /m);
+});
+
+test("two stray files of another language put no scope on an area's claims", async (t) => {
+  const rescued = "begin\n  run\nrescue StandardError => e\n  warn e\nend\n";
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["load", "save", "list", "drop"]) write(`tools/${name}.rb`, rescued);
+    for (const name of ["old", "older"]) write(`tools/${name}.js`, "const old = 1;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+
+  assert.match(text, /^rescue blocks use the error they caught: /m);
+  assert.match(text, /^module-level bindings are const, in \.js files: /m, "the two files' own row was not asked of the four");
+  assert.doesNotMatch(factsJson(result), /filesByLang/, "the record does not hold the count");
+});
+
+test("a claim learned from the modules of a directory says so beside the components it was not asked of", async (t) => {
+  const caught = "try {\n  run();\n} catch (err) {\n  console.error(err);\n}\n";
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["load", "save", "list", "drop"]) {
+      write(`src/routes/${name}.ts`, `export const ${name} = 1;\n${caught}`);
+      write(`src/routes/${name}.svelte`, `<script>\n  let { data } = $props();\n${caught}</script>\n\n<p>{data}</p>\n`);
+    }
+    write("src/routes/old.js", "const old = 1;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+
+  assert.match(text, /^module-level bindings are const, in \.js and \.ts files: /m);
+  assert.match(text, /^catch blocks use the error they caught: /m, "a row asked of every file here names none");
+  assert.doesNotMatch(factsJson(result), /extsByLang|askedExts/, "the record holds neither");
+});
+
+test("a claim names only the extensions its row was asked of, and a row asked of no file prints nothing", async (t) => {
+  const handler = (name) => `export const ${name} = () => {\n  const onPick = () => {};\n  return <List onPick={onPick} />;\n};\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["Load", "Save", "List", "Drop"]) write(`src/panel/${name}.tsx`, handler(name));
+    for (const name of ["load", "save", "list", "drop"]) write(`src/panel/use-${name}.ts`, `export const ${name} = 1;\n`);
+    for (const name of ["Panel", "Side", "Top"]) write(`src/panel/${name}.vue`, "<template><p /></template>\n");
+    for (const name of ["load", "save", "list", "drop"]) write(`src/hooks/use-${name}.ts`, `export const ${name} = 1;\n`);
+    write("src/hooks/Hook.vue", "<template><p /></template>\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const bodies = planMap(await scan(dir)).bodies;
+  const text = (dirName) => [...bodies.values()].find((body) => body.includes(`# ${dirName}`));
+
+  assert.match(text("src/panel"), /^an event handler prop is given [^,]+, [^,]+, in \.tsx files: /m);
+  assert.doesNotMatch(text("src/hooks"), /event handler prop|^\s*, in /m);
+});
+
+/** A team's own files beside where each target's map lands, and enough source for one area. */
+function teamRepo(t) {
+  return repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 8; i++) write(`src/m${i}.ts`, moduleSource(i));
+    for (const f of ["workflows/ci.yml", "workflows/release.yml", "dependabot.yml"]) write(`.github/${f}`, "on: push\n");
+    for (const f of ["team", "style", "review"]) write(`.cursor/rules/${f}.mdc`, "# ours\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+/** Every file in every target's directory, by path. */
+function mapBytes(dir) {
+  const out = {};
+  for (const target of Object.values(TARGETS)) {
+    for (const name of readdirSync(join(dir, target.dir)).sort()) {
+      out[`${target.dir}/${name}`] = readFileSync(join(dir, target.dir, name), "utf8");
+    }
+  }
+  return out;
+}
+
+const rosterLines = (bytes, dirName) =>
+  bytes[".claude/rules/anatomiya-overview.md"].split("\n").filter((l) => l.startsWith(`- ${dirName}`));
+
+async function threeScans(t, afterFirst) {
+  const dir = teamRepo(t);
+  writeMap(await scan(dir), { targets: Object.keys(TARGETS) });
+  const first = mapBytes(dir);
+  afterFirst(dir);
+  writeMap(await scan(dir), { targets: null });
+  const second = mapBytes(dir);
+  writeMap(await scan(dir), { targets: null });
+  return { first, second, third: mapBytes(dir) };
+}
+
+test("three scans with every target on leave every file byte-identical after the first", async (t) => {
+  // A repository that commits its map: the second scan's listing holds the first scan's files.
+  const { first, second, third } = await threeScans(t, (dir) => {
+    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+    git("add", "-A");
+    git("commit", "-qm", "the map");
+    const tracked = git("ls-files").toString();
+    for (const target of Object.values(TARGETS)) assert.ok(tracked.includes(`${target.dir}/anatomiya-overview`), target.dir);
+  });
+
+  assert.ok(Object.keys(first).some((p) => p.startsWith(".github/instructions/anatomiya-area-")), "an area file per target");
+  assert.ok(Object.keys(first).some((p) => p.startsWith(".cursor/rules/anatomiya-area-")));
+  assert.deepEqual(second, first);
+  assert.deepEqual(third, first);
+  assert.deepEqual(rosterLines(third, ".github"), ["- .github: 3 .yml"]);
+  assert.deepEqual(rosterLines(third, ".cursor"), ["- .cursor/rules: 3 .mdc"]);
+  assert.deepEqual(rosterLines(third, ".claude"), [], "nor the store and the map under .claude");
+});
+
+/** A Go module whose package is the repository root, beside a subpackage, a directory under the floor and a directory named as the root area is. */
+function goRootRepo(t) {
+  const fn = (pkg, name) => `package ${pkg}\n\n// ${name} runs.\nfunc ${name}() int {\n\treturn 1\n}\n`;
+  return repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`g${i}.go`, fn("gin", `Run${i}`));
+      write(`g${i}_test.go`, `package gin\n\nimport "testing"\n\nfunc TestRun${i}(t *testing.T) {\n}\n`);
+      write(`binding/b${i}.go`, fn("binding", `Bind${i}`));
+      write(`the repository root/n${i}.go`, fn("named", `Name${i}`));
+    }
+    write("tiny/t.go", fn("tiny", "Tiny"));
+    write("conf.js", "module.exports = {}\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+test("a package at the repository root gets an area file wherever a reader can be given its pattern, the same over three scans", async (t) => {
+  const dir = goRootRepo(t);
+  const result = await scan(dir);
+  writeMap(result, { targets: Object.keys(TARGETS) });
+  const first = mapBytes(dir);
+  for (let i = 0; i < 2; i++) {
+    writeMap(await scan(dir), { targets: null });
+    assert.deepEqual(mapBytes(dir), first, `scan ${i + 2}`);
+  }
+
+  assert.deepEqual(result.areas.map((a) => [a.path, a.fileCount]), [[".", 12], ["binding", 6], ["the repository root", 6]]);
+  const rootFiles = result.areas[0].globs;
+  const tracked = execFileSync("git", ["ls-files"], { cwd: dir }).toString().split("\n").filter(Boolean);
+  // conf.js and the directory under the floor are in no area: the root area owns its own language's direct files.
+  assert.equal(result.corpus.orphaned, 2);
+  assert.ok(scanLines(scanSummary(result, planMap(result))).some((l) => l.startsWith("2 files in no area: ")));
+
+  const fileOf = (target, path) => first[`${target.dir}/anatomiya-area-${areaId(path)}${target.ext}`].split("\n");
+  const past = (lines, head) => lines.slice(lines.indexOf(head));
+  const { claude, cursor, copilot } = TARGETS;
+  const HEAD = "# the repository root  12 files";
+
+  // Claude Code: the patterns as written reach the root's own .go files and nothing else that is tracked.
+  const paths = fileOf(claude, ".").filter((l) => l.startsWith('  - "')).map((l) => JSON.parse(l.slice(4)));
+  assert.deepEqual(paths, ["/*.go"]);
+  for (const rel of tracked) {
+    const mine = !rel.includes("/") && rel.endsWith(".go");
+    assert.equal(claudeCodeReaches(paths, rel), mine, rel);
+    assert.equal(globsReach(rootFiles, rel), mine, rel);
+  }
+  // Cursor reads it at the root alone with no slash. VS Code reads it under every parent directory, so
+  // Copilot has no file for the root, and its overview says which area that is.
+  assert.ok(fileOf(cursor, ".").includes("globs: *.go"));
+  assert.deepEqual(past(fileOf(cursor, "."), HEAD), past(fileOf(claude, "."), HEAD));
+  assert.equal(first[`${copilot.dir}/anatomiya-area-${areaId(".")}${copilot.ext}`], undefined);
+  assert.match(first[`${copilot.dir}/anatomiya-overview${copilot.ext}`], /^- 1 area has no pattern GitHub Copilot can be given, so no file here covers it: the repository root\.$/m);
+
+  // Two areas a reader could confuse, on two heads.
+  assert.ok(fileOf(claude, "the repository root").includes("# ./the repository root  6 files"));
+  for (const [name, body] of Object.entries(first)) {
+    const lines = body.trimEnd().split("\n");
+    assert.ok(lines.length - (lines.indexOf("---", 1) + 1) <= 43, `${name}: ${lines.length} lines`);
+    assert.doesNotMatch(body, /^# \.  /m, name);
+  }
+
+  // The hooks: the echo hands over the overview a scan with a root area wrote, and a test written at the root, where tests already sit, draws no notice.
+  const echoed = echoContext(dir);
+  assert.match(echoed, /^## Areas \(3\)$/m);
+  assert.match(echoed, /^- 2 source files sit in no area /m);
+  const layout = ownLayout(dir).layout;
+  assert.equal(noticeFor("fresh_test.go", layout, { holdsTest: holdsTestIn(dir, isTestPath) }), null);
+});
+
+test("three scans with every target on and the map untracked leave every file byte-identical", async (t) => {
+  const { first, second, third } = await threeScans(t, () => {});
+
+  assert.deepEqual(second, first);
+  assert.deepEqual(third, first);
+  assert.deepEqual(rosterLines(third, ".github"), ["- .github: 3 .yml"]);
+  assert.deepEqual(rosterLines(third, ".cursor"), ["- .cursor/rules: 3 .mdc"]);
+});
+
+test("three scans leave a map committed through a .claude/rules link byte-identical", needsSymlinks, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 8; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("agents/rules/team.md", "# ours\n");
+    mkdirSync(join(d, ".claude"));
+    symlinkSync("../agents/rules", join(d, ".claude", "rules"), "dir");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
+  const written = () => Object.fromEntries(
+    readdirSync(join(dir, "agents/rules")).sort().map((n) => [n, readFileSync(join(dir, "agents/rules", n), "utf8")])
+  );
+  const scanned = async () => { writeMap(await scan(dir)); return written(); };
+
+  const first = await scanned();
+  git("add", "-A");
+  git("commit", "-qm", "the map");
+  assert.match(git("ls-files"), /^agents\/rules\/anatomiya-overview\.md$/m, "git tracks the map under the link's target");
+  const second = await scanned();
+  const third = await scanned();
+
+  assert.ok(Object.keys(first).some((n) => n.startsWith("anatomiya-area-")), "an area file");
+  assert.deepEqual(second, first);
+  assert.deepEqual(third, first);
+  const roster = third["anatomiya-overview.md"].split("## What lives where\n\n")[1].split("\n\n")[0].split("\n");
+  // The link and the team's one file, and none of the three the scan wrote beside it.
+  assert.deepEqual(roster, ["- src: 8 .ts", "- and 2 files in 2 directories too small for a line of their own"]);
+});
+
+// One small repository per language, in the layout that language's own
+// repositories were measured to use: three sources, two of them tested.
+const SEVEN = {
+  python: {
+    runner: "pytest",
+    source: (s) => [`src/shop/${s}.py`, `def ${s}():\n    return 1\n`],
+    test: (s) => [`tests/test_${s}.py`, `from shop.${s} import ${s}\n\n\ndef test_${s}():\n    assert ${s}() == 1\n`],
+  },
+  php: {
+    runner: "phpunit",
+    source: (s) => [`src/Shop/${cap(s)}.php`, `<?php\n\nnamespace Shop;\n\nclass ${cap(s)}\n{\n}\n`],
+    test: (s) => [
+      `tests/Shop/${cap(s)}Test.php`,
+      `<?php\n\nnamespace Shop\\Tests;\n\nclass ${cap(s)}Test extends TestCase\n{\n    public function testRuns(): void\n    {\n    }\n}\n`,
+    ],
+  },
+  go: {
+    runner: "go test",
+    source: (s) => [`shop/${s}.go`, `package shop\n\nfunc ${cap(s)}() int {\n\treturn 1\n}\n`],
+    test: (s) => [`shop/${s}_test.go`, `package shop\n\nimport "testing"\n\nfunc Test${cap(s)}(t *testing.T) {\n}\n`],
+  },
+  java: {
+    runner: "junit",
+    source: (s) => [`src/main/java/shop/${cap(s)}.java`, `package shop;\n\nclass ${cap(s)} {\n}\n`],
+    test: (s) => [
+      `src/test/java/shop/${cap(s)}Test.java`,
+      `package shop;\n\nimport org.junit.jupiter.api.Test;\n\nclass ${cap(s)}Test {\n    @Test\n    void runs() {}\n}\n`,
+    ],
+  },
+  csharp: {
+    runner: "xunit",
+    source: (s) => [`src/Shop/${cap(s)}.cs`, `namespace Shop;\n\npublic class ${cap(s)}\n{\n}\n`],
+    test: (s) => [`test/Shop.Tests/${cap(s)}Tests.cs`, `namespace Shop.Tests;\n\npublic class ${cap(s)}Tests\n{\n    [Fact]\n    public void Runs() {}\n}\n`],
+  },
+  kotlin: {
+    runner: "kotlin.test",
+    source: (s) => [`shop/commonMain/src/shop/${cap(s)}.kt`, `package shop\n\nclass ${cap(s)}\n`],
+    test: (s) => [
+      `shop/commonTest/src/shop/${cap(s)}Test.kt`,
+      `package shop\n\nimport kotlin.test.Test\n\nclass ${cap(s)}Test {\n    @Test\n    fun runs() {\n    }\n}\n`,
+    ],
+  },
+};
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+
+for (const [lang, { runner, source, test: spec }] of Object.entries(SEVEN)) {
+  test(`${lang}: a scan counts the tests by their runner and the sources that have one of their name`, async (t) => {
+    const dir = repo(t, (d, { git, write }) => {
+      for (const s of ["cart", "order", "price"]) write(...source(s));
+      for (const s of ["cart", "order"]) write(...spec(s));
+      git("add", "-A");
+      git("commit", "-q", "-m", "init");
+    });
+
+    const result = await scan(dir);
+    assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [[runner, 2]]);
+    const companions = result.layout.roots.map((r) => r.companions).filter(Boolean);
+    assert.deepEqual(companions.map((c) => [c.with, c.of]), [[2, 3]], JSON.stringify(result.layout.roots));
+    const overview = renderOverview(result, { uncovered: 0 });
+    assert.match(overview, new RegExp(`^- tests: 2 ${runner}.*; 2 of 3 `, "m"), overview);
+  });
+}
+
+test("rust: a scan counts a file that holds its own tests apart, and only what cargo collects as test files", async (t) => {
+  const inline = (s) => `pub fn ${s}() -> i64 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn runs() {\n        assert_eq!(${s}(), 1);\n    }\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["cart", "order"]) write(`src/${s}.rs`, inline(s));
+    write("src/price.rs", "pub fn price() -> i64 {\n    1\n}\n");
+    write("tests/checkout.rs", "#[test]\nfn pays() {}\n");
+    write("tests/refund.rs", "#[test]\nfn refunds() {}\n");
+    write("tests/util.rs", "pub fn setup() {}\n");
+    write("tests/common/mod.rs", "pub fn setup() {}\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [["cargo test", 3]]);
+  const overview = renderOverview(result, { uncovered: 0 });
+  assert.match(overview, /^- tests: 3 cargo test.*; 0 of 1 .*; 2 hold their own tests$/m, overview);
+});
+
+test("a row that leaves test files out leaves out every file the kinds line of its area calls a test", async (t) => {
+  const undocumented = (n) => Array.from({ length: n }, (_, i) => `pub fn helper${i}() {}\n`).join("\n");
+  const dir = repo(t, (d, { git, write }) => {
+    write("Cargo.toml", '[package]\nname = "shop"\n');
+    for (let i = 0; i < 6; i++) write(`src/m${i}.rs`, `/// Runs.\npub fn run${i}() {}\n`);
+    // cargo builds each of these as a test target, a case in it or none.
+    for (let i = 0; i < 3; i++) write(`tests/cased${i}.rs`, `#[test]\nfn works() {}\n\n${undocumented(2)}`);
+    for (let i = 0; i < 3; i++) write(`tests/bare${i}.rs`, undocumented(2));
+    // A `tests` directory in no crate is a directory, and what it holds is source.
+    for (let i = 0; i < 6; i++) write(`notes/tests/n${i}.rs`, undocumented(1));
+    for (let i = 0; i < 5; i++) write(`py/tests/test_m${i}.py`, `def test_m${i}():\n    pass\n`);
+    write("py/tests/conftest.py", "import pytest\n\n\n@pytest.fixture\ndef client():\n    return 1\n\n\ndef make_app():\n    return 1\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  assert.deepEqual(Object.fromEntries(result.layout.tests.map((g) => [g.runner, g.files])), { "cargo test": 6, pytest: 6 });
+  // An area none of whose files holds a site of any row is not written.
+  const counted = Object.fromEntries(result.areas.map((a) => [a.path, a.dimensions.map((d) => [d.key, d.candidates])]));
+  assert.deepEqual(counted, { "notes/tests": [["public_doc_comment", 6]], src: [["public_doc_comment", 6]] });
+});
+
+test("python: a package is asked for a test of its directory's name, since its __init__ is the package", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["cart", "order", "price"]) write(`src/shop/${s}.py`, `def ${s}():\n    return 1\n`);
+    for (const s of ["__init__", "tag", "provider"]) write(`src/shop/json/${s}.py`, `def ${s.replace(/_/g, "") || "x"}():\n    return 1\n`);
+    for (const s of ["cart", "order", "json"]) write(`tests/test_${s}.py`, `def test_${s}():\n    assert True\n`);
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const [shop] = result.layout.roots.filter((r) => r.companions);
+  assert.deepEqual([shop.path, shop.companions.with, shop.companions.of, shop.companions.root], ["src/shop", 3, 6, "tests"]);
+  // The package's own directory, counted as an area, credits the same file and no other.
+  const json = result.areas.find((a) => a.path === "src/shop/json");
+  assert.deepEqual([json.kinds.companions.with, json.kinds.companions.of], [1, 3]);
+});
+
+test("java: a test paired with the class of its own module answers no class of that name in another", async (t) => {
+  const cls = (name) => `package com.x;\n\npublic class ${name} {\n}\n`;
+  const spec = (name) => `package com.x;\n\nimport org.junit.jupiter.api.Test;\n\nclass ${name}Test {\n    @Test\n    void runs() {}\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["Foo", "A", "B"]) write(`mod-a/src/main/java/com/x/${s}.java`, cls(s));
+    for (const s of ["Foo", "C", "D"]) write(`mod-b/src/main/java/com/x/${s}.java`, cls(s));
+    for (const s of ["Foo", "A", "B"]) write(`mod-a/src/test/java/com/x/${s}Test.java`, spec(s));
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const counted = Object.fromEntries(result.layout.roots.filter((r) => r.companions).map((r) => [r.path, [r.companions.with, r.companions.of]]));
+  assert.deepEqual(counted, { "mod-a/src/main/java/com/x": [3, 3], "mod-b/src/main/java/com/x": [0, 3] });
+});
+
+test("php: a component that keeps a Tests directory beside its classes is counted as tested by it", async (t) => {
+  const cls = (ns, name) => `<?php\n\nnamespace ${ns};\n\nclass ${name}\n{\n}\n`;
+  const spec = (ns, name) => `<?php\n\nnamespace ${ns}\\Tests;\n\nuse PHPUnit\\Framework\\TestCase;\n\nclass ${name}Test extends TestCase\n{\n    public function testRuns(): void\n    {\n    }\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["Item", "Pool", "Lock"]) write(`src/Component/Cache/${s}.php`, cls("S\\Cache", s));
+    for (const s of ["Item", "Pool"]) write(`src/Component/Cache/Tests/${s}Test.php`, spec("S\\Cache", s));
+    // The same class name in another component, with no test of its own.
+    for (const s of ["Item", "Queue", "Worker"]) write(`src/Component/Messenger/${s}.php`, cls("S\\Messenger", s));
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [["phpunit", 2]]);
+  // Two of the six, and not three: `Messenger/Item.php` is not credited with the test of `Cache/Item.php`.
+  const [component] = result.layout.roots;
+  assert.deepEqual([component.path, component.companions.with, component.companions.of, component.companions.root], ["src/Component", 2, 6, "src/Component/Cache/Tests"]);
+});
+
+test("csharp: a test project named in the singular is paired with the project its name carries", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["Cart", "Order", "Price"]) write(`src/Shop/${s}.cs`, `namespace Shop;\n\npublic class ${s}\n{\n}\n`);
+    for (const s of ["Cart", "Order"]) write(`test/Shop.Test/Sub/${s}Tests.cs`, `namespace Shop.Test;\n\npublic class ${s}Tests\n{\n    [Fact]\n    public void Runs() {}\n}\n`);
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const companions = result.layout.roots.map((r) => r.companions).filter(Boolean);
+  assert.deepEqual(companions.map((c) => [c.with, c.of]), [[2, 3]], JSON.stringify(result.layout.roots));
+});
+
+test("a Go test beside a Python file of its stem is no test of the Python file", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["cart", "order", "price"]) write(`shop/${s}.py`, `def ${s}():\n    return 1\n`);
+    write("shop/cart_test.go", 'package shop\n\nimport "testing"\n\nfunc TestCart(t *testing.T) {\n}\n');
+    write("shop/order_test.go", 'package shop\n\nimport "testing"\n\nfunc TestOrder(t *testing.T) {\n}\n');
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const [shop] = result.layout.roots;
+  assert.deepEqual([shop.companions.with, shop.companions.of, shop.companions.ext], [0, 3, ".py"]);
 });
