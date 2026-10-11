@@ -1,4 +1,4 @@
-import { walk, isFunctionLike, declName, value, boundNames, optionalChain, whereOf } from "./walk.mjs";
+import { ownNodes, isFunctionLike, declName, value, boundNames, optionalChain, whereOf } from "./walk.mjs";
 
 /**
  * The five base oxc rows. They live apart from `dimensions.mjs`, which composes
@@ -12,26 +12,96 @@ const CATCH = new Set(["CatchClause"]);
 const LOOPS = new Set(["ForStatement", "ForInStatement", "ForOfStatement", "WhileStatement", "DoWhileStatement"]);
 const NAMESPACE = new Set(["TSModuleDeclaration"]);
 
-function usesParam(body, names) {
-  if (!names.length) return false;
-  let used = false;
-  walk(body, (n, ctx) => {
-    if (n.type !== "Identifier" || !names.includes(n.name)) return;
-    // A property key and a non-computed member property spell the same name
-    // without reading the binding: { e: 1 } and x.e are not uses of e.
-    const parent = ctx.ancestors[ctx.ancestors.length - 1];
-    if (parent && (parent.type === "Property" || parent.type === "ObjectProperty") &&
-        parent.key === n && !parent.computed) return;
-    if (parent && parent.type === "MemberExpression" && parent.property === n && !parent.computed) return;
-    // A nested scope binding the same name hides the caught one:
-    // `catch (e) { items.forEach((e) => log(e)) }` logs each item and drops
-    // the error, and read by name it counted as handling it. The catch body
-    // itself cannot rebind its own parameter with let or const, so only the
-    // scopes below it are asked.
-    if (ctx.ancestors.some((a) => a !== body && scopeBinds(a, n.name))) return;
-    used = true;
-  });
-  return used;
+/**
+ * Whether each catch clause uses the error it caught or throws from its body,
+ * read in the one walk, since asking each catch's body again costs the square
+ * of the depth of catches nested inside each other.
+ *
+ * A name resolves to the innermost scope around it that binds the name, so a
+ * nested scope binding the same name hides the caught one:
+ * `catch (e) { items.forEach((e) => log(e)) }` logs each item and drops the
+ * error, and read by name it counted as handling it. The catch body itself
+ * cannot rebind its own parameter with let or const, so it never hides it.
+ */
+function readCatches(add) {
+  const records = new Map();
+  // Open catches, and per name the scopes binding it, each with the ancestors
+  // index it sits at; innermost last, and dropped once the walk has left it.
+  const open = [];
+  const binders = new Map();
+  const live = (stack, ancestors) => {
+    let top = stack[stack.length - 1];
+    while (top && ancestors[top.at] !== top.node) {
+      stack.pop();
+      top = stack[stack.length - 1];
+    }
+    return top ?? null;
+  };
+  // The innermost catch whose body holds the node being visited.
+  const owner = (ancestors) => {
+    const top = live(open, ancestors);
+    if (!top) return null;
+    return ancestors[top.at + 1] === top.node.body ? records.get(top.node) : records.get(top.node).owner;
+  };
+  const bind = (node, at, names) => {
+    for (const name of names) {
+      if (!binders.has(name)) binders.set(name, []);
+      binders.get(name).push({ node, at });
+    }
+  };
+  return {
+    node(n, ctx) {
+      const { ancestors } = ctx;
+      const at = ancestors.length;
+      if (isCatch(n)) {
+        const where = whereOf(ctx.enclosing, ctx);
+        records.set(n, { where, owner: owner(ancestors), used: false, threw: false });
+        open.push({ node: n, at });
+        bind(n, at, boundNames(n.param));
+        return;
+      }
+      if (!live(open, ancestors)) return;
+      if (n.type === "ThrowStatement") {
+        const record = owner(ancestors);
+        if (record) record.threw = true;
+        return;
+      }
+      if (n.type !== "Identifier") {
+        const names = scopeNames(n);
+        if (names.length) bind(n, at, names);
+        return;
+      }
+      // A property key and a non-computed member property spell the same name
+      // without reading the binding: { e: 1 } and x.e are not uses of e.
+      const parent = ancestors[at - 1];
+      if (parent && (parent.type === "Property" || parent.type === "ObjectProperty") &&
+          parent.key === n && !parent.computed) return;
+      if (parent && parent.type === "MemberExpression" && parent.property === n && !parent.computed) return;
+      const scope = binders.has(n.name) ? live(binders.get(n.name), ancestors) : null;
+      if (!scope) return;
+      if (isCatch(scope.node)) {
+        // The parameter's own pattern, a default in it included, is not the body.
+        if (ancestors[scope.at + 1] === scope.node.body) records.get(scope.node).used = true;
+        return;
+      }
+      const above = ancestors[scope.at - 1];
+      if (above && isCatch(above) && above.body === scope.node && boundNames(above.param).includes(n.name)) {
+        records.get(above).used = true;
+      }
+    },
+    done() {
+      // A catch comes after the one holding it, so walking back carries a
+      // throw out through every body around it.
+      const all = [...records];
+      for (let i = all.length - 1; i >= 0; i--) {
+        const r = all[i][1];
+        if (r.threw && r.owner) r.owner.threw = true;
+      }
+      for (const [n, r] of all) {
+        add({ node: n, conforming: !bodyIsEmpty(n.body) && (r.used || r.threw), where: r.where });
+      }
+    },
+  };
 }
 
 const paramNames = (fn) =>
@@ -39,28 +109,38 @@ const paramNames = (fn) =>
 
 const lexical = (decl) => decl && decl.type === "VariableDeclaration" && decl.kind !== "var";
 
-/** Whether this node opens a scope that binds `name` for everything beneath it. */
-function scopeBinds(node, name) {
+/** The names this node opens a scope binding for everything beneath it. */
+function scopeNames(node) {
   if (isFunctionLike(node)) {
-    return paramNames(node).includes(name) || (node.type === "FunctionExpression" && node.id?.name === name);
+    const names = paramNames(node);
+    if (node.type === "FunctionExpression" && node.id?.name) names.push(node.id.name);
+    return names;
   }
-  if (node.type === "CatchClause") return boundNames(node.param).includes(name);
-  if (node.type === "ForStatement") return lexical(node.init) && declared(node.init, name);
+  if (node.type === "CatchClause") return boundNames(node.param);
+  if (node.type === "ForStatement") return lexical(node.init) ? declared(node.init) : NONE;
   if (node.type === "ForOfStatement" || node.type === "ForInStatement") {
-    return lexical(node.left) && declared(node.left, name);
+    return lexical(node.left) ? declared(node.left) : NONE;
   }
-  if (node.type === "BlockStatement" || node.type === "StaticBlock") {
-    return (node.body || []).some((s) => {
-      // A `var` belongs to the function around it, and one written straight
-      // into a catch body assigns the caught binding rather than hiding it.
-      if (s.type === "VariableDeclaration") return lexical(s) && declared(s, name);
-      return (s.type === "FunctionDeclaration" || s.type === "ClassDeclaration") && s.id?.name === name;
-    });
+  if (node.type !== "BlockStatement" && node.type !== "StaticBlock") return NONE;
+  const names = [];
+  for (const s of node.body || []) {
+    // A `var` belongs to the function around it, and one written straight
+    // into a catch body assigns the caught binding rather than hiding it.
+    if (s.type === "VariableDeclaration") {
+      if (lexical(s)) declared(s, names);
+    } else if ((s.type === "FunctionDeclaration" || s.type === "ClassDeclaration") && s.id?.name) {
+      names.push(s.id.name);
+    }
   }
-  return false;
+  return names;
 }
 
-const declared = (decl, name) => (decl.declarations || []).some((d) => boundNames(d.id).includes(name));
+const NONE = Object.freeze([]);
+
+const declared = (decl, out = []) => {
+  for (const d of decl.declarations || []) boundNames(d.id, out);
+  return out;
+};
 
 /**
  * The names this node assigns to, gathered over every node of the program.
@@ -122,14 +202,7 @@ export const DIMENSIONS = [
     },
     langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
-      return {
-        node(n, ctx) {
-          if (!isCatch(n)) return;
-          const names = boundNames(n.param);
-          const handled = !bodyIsEmpty(n.body) && (usesParam(n.body, names) || hasRethrow(n.body));
-          add({ node: n, conforming: handled, where: whereOf(ctx.enclosing, ctx) });
-        },
-      };
+      return readCatches(add);
     },
   },
 
@@ -250,16 +323,14 @@ export const DIMENSIONS = [
         node(n, ctx) {
           if (!isFunctionLike(n) || !n.async) return;
           let handled = false;
-          walk(n.body, (m, mctx) => {
+          // The handler must belong to THIS function, not to an inner arrow or
+          // a nested method that happens to sit inside its byte range.
+          ownNodes(n.body, (m) => {
             // Only a catch handles anything. A try with just a finally re-throws
             // once the cleanup runs, and lock, transaction and cleanup helpers
             // are written that way everywhere: counted, they stated this claim
             // at 80 of 80 over code that caught nothing.
-            if (m.type !== "TryStatement" || !m.handler) return;
-            // The handler must belong to THIS function, not to an inner arrow or
-            // a nested method that happens to sit inside its byte range.
-            if (mctx.enclosing !== null) return;
-            handled = true;
+            if (m.type === "TryStatement" && m.handler) handled = true;
           });
           add({ node: n, conforming: handled, where: whereOf(n, ctx) });
         },
@@ -300,14 +371,6 @@ export const DIMENSIONS = [
     },
   },
 ];
-
-function hasRethrow(block) {
-  let found = false;
-  walk(block, (n) => {
-    if (n.type === "ThrowStatement") found = true;
-  });
-  return found;
-}
 
 function isResultShaped(node) {
   if (!node) return false;

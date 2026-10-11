@@ -288,6 +288,8 @@ test("a method of an object literal bound to a name carries that name, through a
   assert.deepEqual(names(`const run = () => { try {} catch {} }`), ["run"], "a function bound directly is its own name");
   assert.deepEqual(names(`class A { m() { const api = { run() { try {} catch {} } } } }`), ["api.run"], "the innermost owner");
   assert.deepEqual(names(`const api = make(() => ({ run() { try {} catch {} } }))`), ["run"], "a function between them breaks the binding");
+  assert.deepEqual(names(`const vm = new Vue({ methods: { run() { try {} catch {} } } })`), ["vm.run"]);
+  assert.deepEqual(names(`const api = await make({ run() { try {} catch {} } })`), ["api.run"]);
 });
 
 test("a site's name costs the same at any depth of nested callbacks", () => {
@@ -304,6 +306,32 @@ test("a site's name costs the same at any depth of nested callbacks", () => {
   };
   const ratio = doublingRatio(read, 800);
   assert.ok(ratio < LINEAR, `twice the depth took ${ratio.toFixed(2)} times as long`);
+});
+
+test("a site's name costs the same at any depth of every nesting shape", () => {
+  // Each shape: its source, the function type counted, the name each one gets, and how many per level.
+  const shapes = {
+    alternating: [(n) => "const f = () => { g(() => {\n".repeat(n) + "}) }".repeat(n) + "\n", "ArrowFunctionExpression", "f", 2],
+    named: [(n) => "function f() {\n".repeat(n) + "}".repeat(n) + "\n", "FunctionDeclaration", "f", 1],
+    classes: [(n) => "export const X = " + "class extends B { m() { return 0,\n".repeat(n) + "1" + " } }".repeat(n) + ";\n", "FunctionExpression", "m", 1],
+    objects: [(n) => "const api = " + "{ m() {}, c:\n".repeat(n) + "1" + "}".repeat(n) + ";\n", "FunctionExpression", "api.m", 1],
+    calls: [(n) => "const api = " + "make({ m() {}, c:\n".repeat(n) + "1" + "})".repeat(n) + ";\n", "FunctionExpression", "api.m", 1],
+  };
+  for (const [shape, [source, type, name, per]] of Object.entries(shapes)) {
+    const read = (n) => {
+      const { program, errors } = parseSync("a.ts", source(n), { sourceType: "module" });
+      assert.deepEqual(errors, [], shape);
+      return () => {
+        let named = 0;
+        walk(program, (node, ctx) => {
+          if (node.type === type && whereOf(node, ctx) === name) named++;
+        });
+        assert.equal(named, per * n, shape);
+      };
+    };
+    const ratio = doublingRatio(read, 800);
+    assert.ok(ratio < LINEAR, `${shape}: twice the depth took ${ratio.toFixed(2)} times as long`);
+  }
 });
 
 test("a static and an instance method of one name are one place, which is rare enough to leave", () => {

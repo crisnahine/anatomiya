@@ -85,6 +85,18 @@ test("a catch inside a class method is attributed to its class and the method", 
   assert.equal(hit.where, "C.m", "the site has to name the method it sits in, and its class");
 });
 
+test("a catch's own body decides: an inner throw counts for it, a default in its parameter does not", () => {
+  const conforming = (src) => hits("swallowed_error", src).map((h) => h.conforming);
+  assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (f) { throw f } }`), [true, true]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (e) { log(e) } }`), [false, true]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (f) { log(e) } }`), [true, false]);
+  assert.deepEqual(conforming(`try { a() } catch ({ message, code = message }) { x() }`), [false]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { let e = 1; log(e) }`), [true], "its body never hides it");
+  assert.deepEqual(conforming(`try { a() } catch ({ a = () => { throw x } }) { y() }`), [false]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { const f = function e() { return e } }`), [false]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (f) {} } throw e`), [false, false]);
+});
+
 // --- error_shape ---
 
 test("a rethrow inside catch is not counted as a policy violation", () => {
@@ -263,7 +275,14 @@ test("every JS row reads a deeply nested file in time linear in its depth", () =
     chain: (n) => "export const x = " + Array(n).fill("a").join(" + ") + ";\n",
     functions: (n) => "export const x = " + "() => ".repeat(n) + "1;\n",
     blocks: (n) => "{ throw e; let v = 1; interface I {}\n".repeat(n) + "}".repeat(n) + "\n",
+    // A row reading a function's own returns or handlers, or a catch's own body,
+    // walked everything nested inside it again.
+    callbacks: (n) => "export function F() {\n" + "g(async function () { if (a) return null; try { h(<a/>) } catch {}\n".repeat(n) + "return <a/>; });".repeat(n) + "\n}\n",
+    classes: (n) => "export const X = " + "class extends B { m() { return 0,\n".repeat(n) + "1" + " } }".repeat(n) + ";\n",
+    objects: (n) => "export const o = " + "{ m() {}, c:\n".repeat(n) + "1" + "}".repeat(n) + ";\n",
+    catches: (n) => "try { a() } catch (e) { log(e); if (b) throw e;\n".repeat(n) + "}".repeat(n) + "\n",
   };
+  const NESTED = new Set(["callbacks", "classes", "objects", "catches"]);
   const rows = dimensionsFor(["js", "jsx"], { rows: ALL_DIMENSIONS });
   for (const [name, source] of Object.entries(shapes)) {
     const read = (n) => {
@@ -271,7 +290,8 @@ test("every JS row reads a deeply nested file in time linear in its depth", () =
       assert.deepEqual(errors, [], name);
       return () => collectHits(program, rows, { comments: [], source: "", rel: "f.tsx" });
     };
-    const ratio = doublingRatio(read, name === "chain" ? 4000 : 1500);
+    // The parser's own stack ends a little past 1,600 levels of these.
+    const ratio = doublingRatio(read, name === "chain" ? 4000 : NESTED.has(name) ? 800 : 1500);
     assert.ok(ratio < LINEAR, `${name}: twice the depth took ${ratio.toFixed(2)} times as long`);
   }
 });

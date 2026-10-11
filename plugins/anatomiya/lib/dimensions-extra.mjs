@@ -1,4 +1,4 @@
-import { componentProps, optionalChain, walk, isFunctionLike, declName, value, whereOf } from "./walk.mjs";
+import { componentProps, optionalChain, ownNodes, isFunctionLike, declName, value, whereOf } from "./walk.mjs";
 import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
@@ -257,8 +257,8 @@ function siteName(fn, ctx) {
 function ownReturns(fn) {
   const out = [];
   if (!fn.body || fn.body.type !== "BlockStatement") return out;
-  walk(fn.body, (n, ctx) => {
-    if (n.type === "ReturnStatement" && !ctx.fn) out.push(n);
+  ownNodes(fn.body, (n) => {
+    if (n.type === "ReturnStatement") out.push(n);
   });
   return out;
 }
