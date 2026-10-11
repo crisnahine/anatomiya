@@ -1,4 +1,4 @@
-import { encode, encodePath, nameText } from "./encode.mjs";
+import { encode, encodePath, nameText, sanitisePath } from "./encode.mjs";
 import { embeddedIn, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
@@ -80,8 +80,8 @@ const spellGlob = (g, anchored) => globText(g, (dir) => encodePath(dir).slice(1,
 // An area's directory, said the way the overview's root lines say theirs.
 const nameOf = (p) => nameText(encode(p));
 
-// A pattern as a sentence names it, its directory said as `nameOf` says one.
-const sayGlob = (g, anchored) => globText(g, nameOf, anchored);
+// A pattern as a sentence names it, its directory said as the layout lines say one.
+const sayGlob = (g, anchored) => globText(g, (dir) => nameText(sanitisePath(dir)), anchored);
 
 const NAMED = 6;
 const some = (names) => {
