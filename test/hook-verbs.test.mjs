@@ -524,10 +524,10 @@ test("the calls of one batch deliver one copy between them, before any of them i
 const BIN = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
 
 /** How many of `n` echo processes deliver when their payloads arrive together. */
-async function batch(dir, data, path, n) {
+async function batch(dir, data, path, n, nodeArgs = []) {
   const runs = [];
   for (let i = 0; i < n; i++) {
-    const child = spawn(process.execPath, [BIN, "echo", dir], { env: { ...process.env, CLAUDE_PLUGIN_DATA: data } });
+    const child = spawn(process.execPath, [...nodeArgs, BIN, "echo", dir], { env: { ...process.env, CLAUDE_PLUGIN_DATA: data } });
     let out = "";
     child.stdout.on("data", (chunk) => (out += chunk));
     runs.push({ child, done: new Promise((done) => child.on("close", () => done(out))) });
@@ -573,6 +573,7 @@ test("a lock held by another call holds this one, and a lock older than the hook
   utimesSync(lock, sixSeconds, sixSeconds);
   assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock past the timeout");
   assert.equal(existsSync(lock), false, "released after the delivery");
+  assert.deepEqual(readdirSync(join(data, "echo")), [name], "nothing left of the lock it broke");
   assert.deepEqual(call(), {}, "the claim it wrote holds");
 
   writeFileSync(join(data, "echo", name), "0\n");
@@ -580,6 +581,149 @@ test("a lock held by another call holds this one, and a lock older than the hook
   const ahead = new Date(Date.now() + 6000);
   utimesSync(lock, ahead, ahead);
   assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock stamped past the timeout ahead of the clock");
+});
+
+/** Runs one echo call with `fs[name]` replaced by `stub`, which is handed the real one. */
+function stubbed(name, stub, call) {
+  const real = fs[name];
+  fs[name] = (...args) => stub(real, ...args);
+  syncBuiltinESMExports();
+  try {
+    return call();
+  } finally {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  }
+}
+
+// Holds every read of a lock's age, so two calls that find one dead both read it before either breaks it.
+const SLOW_LOCK_AGE = `data:text/javascript,${encodeURIComponent(`
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const real = fs.lstatSync;
+fs.lstatSync = (path, ...rest) => {
+  const stat = real(path, ...rest);
+  if (String(path).endsWith(".lock")) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400);
+  return stat;
+};
+syncBuiltinESMExports();
+`)}`;
+
+test("two calls that both find a dead lock deliver one copy between them", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  const dead = new Date(Date.now() - 60_000);
+
+  for (let round = 0; round < 20; round++) {
+    writeFileSync(join(data, "echo", name), "0\n");
+    writeFileSync(lock, "");
+    utimesSync(lock, dead, dead);
+    assert.equal(await batch(dir, data, path, 2, [`--import=${SLOW_LOCK_AGE}`]), 1, `round ${round}`);
+  }
+});
+
+test("a dead lock replaced by a live one before it is broken holds the call, and the live one stays", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "live");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  let replaced = false;
+  const answer = stubbed("lstatSync", (real, p, ...rest) => {
+    const stat = real(p, ...rest);
+    if (p === lock && !replaced) {
+      // Another call broke it and took its own in the meantime.
+      replaced = true;
+      utimesSync(lock, new Date(), new Date());
+    }
+    return stat;
+  }, call);
+
+  assert.equal(replaced, true);
+  assert.deepEqual(answer, {});
+  assert.equal(readFileSync(lock, "utf8"), "live", "the live lock is where its holder will release it");
+  assert.deepEqual(readdirSync(join(data, "echo")).sort(), [name, `${name}.lock`], "and nowhere else");
+});
+
+test("a call that broke a dead lock and finds a live one in its place holds", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  let creates = 0;
+  const answer = stubbed("openSync", (real, p, flags, ...rest) => {
+    // Another call takes the lock between this one's break and its create.
+    if (p === lock && flags === "wx" && ++creates === 2) writeFileSync(lock, "");
+    return real(p, flags, ...rest);
+  }, call);
+
+  assert.equal(creates, 2);
+  assert.deepEqual(answer, {});
+});
+
+test("a dead lock released before the call could break it is taken", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  const answer = stubbed("renameSync", (real, from, to) => {
+    if (from !== lock) return real(from, to);
+    rmSync(lock);
+    throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  }, call);
+
+  assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
+});
+
+test("a claim write that fails partway leaves the claim it replaces whole", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const claim = join(data, "echo", name);
+  const before = readFileSync(claim, "utf8");
+  append(path, [filler(300 * 1024)]);
+
+  let failed = false;
+  const answer = stubbed("writeFileSync", (real, p, text, ...rest) => {
+    if (!String(p).startsWith(join(data, "echo"))) return real(p, text, ...rest);
+    failed = true;
+    real(p, String(text).slice(0, 1));
+    throw Object.assign(new Error("EIO"), { code: "EIO" });
+  }, call);
+
+  assert.equal(failed, true);
+  assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a claim that cannot be written answers as the transcript alone");
+  assert.equal(readFileSync(claim, "utf8"), before);
 });
 
 test("a claim from later in the same transcript holds a sibling that read an earlier, shorter snapshot", needsRuby, async (t) => {
@@ -668,6 +812,9 @@ test("claims older than a day are swept when a new one is made", needsRuby, asyn
   const lock = join(data, "echo", "0000000000000000-000000000000.lock");
   writeFileSync(lock, "");
   utimesSync(lock, twoDays, twoDays);
+  const moved = `${lock}.123`;
+  writeFileSync(moved, "");
+  utimesSync(moved, twoDays, twoDays);
   const foreign = join(data, "echo", "notes.txt");
   writeFileSync(foreign, "");
   utimesSync(foreign, twoDays, twoDays);
@@ -676,6 +823,7 @@ test("claims older than a day are swept when a new one is made", needsRuby, asyn
 
   assert.equal(existsSync(old), false);
   assert.equal(existsSync(lock), false, "a lock left by a call that died");
+  assert.equal(existsSync(moved), false, "a lock a call died breaking");
   assert.equal(existsSync(recent), true);
   assert.equal(existsSync(foreign), true, "only a name a claim has");
   assert.equal(readdirSync(join(data, "echo")).length, 3);
