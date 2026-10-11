@@ -10,9 +10,14 @@
  */
 import { encode, encodePath } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
+import { RUBY_TEST_NAME } from "./test-shape.mjs";
 
-// Ruby names its tests by a suffix of their own, which is a kind of file apart from `.rb`.
-const RUBY_KIND = /(_spec|_test)\.rb$/;
+// The record keeps at most this many stated claims and this many near misses,
+// and a reader takes no more than this many of either from it.
+export const CLAIMS_MOST = 100;
+
+// A kind is printed in a sentence, so it holds nothing a sentence could be built from.
+const KIND = /^[\w.-]+$/;
 
 /**
  * The kind a file name spells: from the first dot, past any segment a version
@@ -20,15 +25,16 @@ const RUBY_KIND = /(_spec|_test)\.rb$/;
  * one directory of vendored gems into `*.1.0.gem` and `*.2.0.gem`.
  */
 export function suffixOf(name) {
-  const ruby = RUBY_KIND.exec(name);
-  if (ruby) return ruby[0];
+  // A test name's own suffix is a kind apart from the plain one.
+  const test = RUBY_TEST_NAME.exec(name);
+  if (test) return test[0];
   const parts = name.split(".");
   // A dotfile's own name is not its kind: `.eslintrc.js` is a `.js`.
   let k = parts[0] === "" ? 2 : 1;
   if (parts.length <= k) return null;
   while (k < parts.length - 1 && /^\d/.test(parts[k])) k++;
   const kind = parts.slice(k);
-  return kind.includes("") ? null : `.${kind.join(".")}`;
+  return kind.includes("") || !KIND.test(kind.join(".")) ? null : `.${kind.join(".")}`;
 }
 
 /**
@@ -91,22 +97,35 @@ export const claimKey = (claim) =>
 
 const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
 
+// A repository-relative path git could have printed: no empty, `.` or `..` segment.
+const isPlainPath = (p) => typeof p === "string" && p.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
+
+// A class this module could have built: a plain directory and a kind it would read.
+function isClass(cls) {
+  if (typeof cls !== "string") return false;
+  const { dir, spans, suffix } = classParts(cls);
+  const built = dir === null ? `*${suffix}` : spans ? `${dir}/*/*${suffix}` : `${dir}/*${suffix}`;
+  return built === cls && /^[._]/.test(suffix) && KIND.test(suffix) && (dir === null || isPlainPath(dir));
+}
+
 // The record is committed, so a hand edit reaches every reader: a claim that is
 // not whole is not one, rather than a crash in a hook that must never fail.
 function isWhole(c) {
-  if (!c || typeof c !== "object" || typeof c.producer !== "string") return false;
+  if (!c || typeof c !== "object" || !isClass(c.producer)) return false;
   const { companion } = c;
-  const named = companion && (typeof companion.edits === "string") !== (typeof companion.adds === "string");
+  const named = companion && (typeof companion.edits === "string") !== (typeof companion.adds === "string")
+    && (companion.edits === undefined ? isClass(companion.adds) : isPlainPath(companion.edits));
   return Boolean(named)
     && isCount(c.candidates) && isCount(c.conforming) && isCount(c.authors)
     && Array.isArray(c.files) && c.files.length === 2 && c.files.every(isCount)
     && (c.area === null || typeof c.area === "string");
 }
 
-/** The claims a record states, each of the shape this build writes. */
+/** The claims a record states, each of the shape this build writes, the first hundred at most. */
 export function statedClaims(record) {
-  const claims = Array.isArray(record?.claims) ? record.claims : [];
-  return claims.filter((c) => isWhole(c) && c.directive === true);
+  // The writer keeps a hundred of each kind, so nothing past both is read.
+  const claims = Array.isArray(record?.claims) ? record.claims.slice(0, 2 * CLAIMS_MOST) : [];
+  return claims.filter((c) => isWhole(c) && c.directive === true).slice(0, CLAIMS_MOST);
 }
 
 /** The stated claims an area's file carries. */

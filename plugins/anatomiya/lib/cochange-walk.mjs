@@ -16,7 +16,7 @@
  */
 import { GATES, wilsonLower } from "./gates.mjs";
 import { isPerson } from "./authors.mjs";
-import { classesOf, classParts } from "./cochange.mjs";
+import { CLAIMS_MOST, classesOf, classParts } from "./cochange.mjs";
 import { commitAt, filesAt, gitStreamed, isSha, resolveBaseRef } from "./git.mjs";
 import { ownOutput } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
@@ -330,8 +330,13 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
     };
   });
   onePerPair(claims);
-  claims.sort((a, b) => byCode(a.producer, b.producer) || byCode(keyText(a), keyText(b)));
-  return { claims, truncated: false };
+  const strongest = (stated) => claims
+    .filter((c) => c.directive === stated)
+    .sort((a, b) => b.candidates - a.candidates || byCode(a.producer, b.producer) || byCode(keyText(a), keyText(b)))
+    .slice(0, CLAIMS_MOST);
+  const stored = [...strongest(true), ...strongest(false)];
+  stored.sort((a, b) => byCode(a.producer, b.producer) || byCode(keyText(a), keyText(b)));
+  return { claims: stored, truncated: false };
 }
 
 const keyText = (c) => (c.companion.edits !== undefined ? `e\0${c.companion.edits}` : `a\0${c.companion.adds}`);
