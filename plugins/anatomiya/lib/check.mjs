@@ -5,7 +5,7 @@ import { dirname } from "node:path/posix";
 
 import { parseAll } from "./parse.mjs";
 import { ALL_DIMENSIONS } from "./dimensions.mjs";
-import { dimensionsFor } from "./dimensions-base.mjs";
+import { dimensionsFor } from "./walk.mjs";
 import { GATES, wilsonLower } from "./gates.mjs";
 import {
   collect as collectCorpus,

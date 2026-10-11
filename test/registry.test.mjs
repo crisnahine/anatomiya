@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { REGISTRY, REGISTRY_KEYS, rowsOfKind, rowsForLangs, rowByKey, assertUniqueKeys } from "../plugins/anatomiya/lib/registry.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
-import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { PAIRINGS, pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
 import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 

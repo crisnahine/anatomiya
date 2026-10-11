@@ -505,3 +505,49 @@ export function componentProps(program, rel) {
   }
   return props;
 }
+
+/**
+ * The dimensions that speak these languages, and where the caller knows which
+ * frameworks the repository uses, only those the repository could satisfy.
+ *
+ * A dimension carries `framework` when its claim is a framework's and it cannot
+ * see from one file which framework it is standing in. `zone_aware_time` is the
+ * case: `Time.now` is a drifting timestamp under Rails and correct in plain
+ * Ruby, and with no counterClaim it can never state either side off-Rails, so
+ * it emits a line that can only ever read zero. `model_callbacks` and the
+ * migrations are not marked, because they already gate on an ActiveRecord
+ * superclass and find nothing off-Rails on their own.
+ *
+ * Naming no frameworks is not the same as naming none. A caller that cannot
+ * know, such as the parse worker, is offered everything and its extra hits go
+ * unread: the reducer and the check are the arbiters, both selecting here with
+ * the frameworks the corpus shows, so a hit no slot and no finding reads is a
+ * hit nobody counted. A framework row may therefore live on any language,
+ * whichever engine parses it.
+ *
+ * `adoptedCapabilities` is the one reader that takes hits without selecting
+ * here, and it is framework-blind. It stays safe because a row may not carry
+ * `framework` and `capability` at once, which `assertDeclaredFields` refuses:
+ * otherwise off-framework hits would vote for a capability's adoption.
+ *
+ * `rows` is the list the selection runs over, and the caller names it: the
+ * registry's tree rows in the parent, one engine's own tables in a parse child,
+ * so a child loads no other engine's rows. A reader that wants an obligation or a filename row asks the
+ * registry for it, because neither is a question asked of a walked tree.
+ */
+export function dimensionsFor(langs, { frameworks, tier = "syntactic", capabilities, rows }) {
+  const known = frameworks ? new Set(frameworks) : null;
+  // The same shape as frameworks: a routing claim is offered only where the
+  // corpus shows a wrapper for it, and a caller that cannot know is offered
+  // everything, whose extra hits go unread.
+  const caps = capabilities ?? null;
+  return rows.filter(
+    (d) =>
+      d.langs.some((l) => langs.includes(l)) &&
+      // A caller that does not ask for the semantic tier must never be handed
+      // a claim that needs a checker nobody ran.
+      (tier === "all" || d.tier === tier) &&
+      (!known || !d.framework || known.has(d.framework)) &&
+      (!caps || !d.capability || caps.has(d.capability))
+  );
+}

@@ -5,7 +5,7 @@ import { parseSync } from "oxc-parser";
 import { CAPABILITY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-capability.mjs";
 import { stemWords } from "../plugins/anatomiya/lib/stems.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
-import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { capabilitiesIn } from "../plugins/anatomiya/lib/corpus.mjs";
 
 const dim = (key) => CAPABILITY_DIMENSIONS.find((d) => d.key === key);

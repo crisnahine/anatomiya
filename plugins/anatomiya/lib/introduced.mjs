@@ -11,13 +11,12 @@
 import { createHash } from "node:crypto";
 
 import { ALL_DIMENSIONS } from "./dimensions.mjs";
-import { dimensionsFor } from "./dimensions-base.mjs";
 import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
 import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
-import { isFunctionLike, walk } from "./walk.mjs";
+import { dimensionsFor, isFunctionLike, walk } from "./walk.mjs";
 
 /**
  * The sites `head` holds that the branch introduced, judged against `base` or

@@ -13,10 +13,9 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync } fr
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { dimensionsFor } from "./dimensions-base.mjs";
 import { TREE_DIMENSIONS } from "./dimensions-tree.mjs";
 import { encode } from "./encode.mjs";
-import { collectHits } from "./walk.mjs";
+import { collectHits, dimensionsFor } from "./walk.mjs";
 import { withOneBranch } from "./csharp-directives.mjs";
 import { ENGINES, declOf, grammarFor, hostedBy, mayHoldDirectives } from "./langs.mjs";
 import { treeFacets } from "./tree-facets.mjs";

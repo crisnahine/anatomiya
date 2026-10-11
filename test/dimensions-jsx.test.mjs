@@ -7,7 +7,7 @@ import { parseSync } from "oxc-parser";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { calleeName, JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
-import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions-base.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 
 const dim = (key) => JSX_DIMENSIONS.find((d) => d.key === key);
