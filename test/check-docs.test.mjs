@@ -449,6 +449,13 @@ test("a compound count reads as the whole compound, in any case and spelled with
   }
 });
 
+test("a count for JavaScript is read whatever follows it", (t) => {
+  const { status, output } = miscount(t, "docs/how-it-works.md", "28 for JavaScript", "twenty-two for JavaScript and three engines");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`says "twenty-two for JavaScript", the registry holds 28`), output);
+});
+
 test("a count word past thirteen is still a count", (t) => {
   const { status, output } = miscount(t, "SECURITY.md", /three runtime dependencies/i, "fourteen runtime dependencies");
 

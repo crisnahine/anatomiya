@@ -517,7 +517,7 @@ export function checkDocs() {
       claim(rel, Number(m[1]) === total, `says "${m[1]} dimensions", the registry holds ${total}`);
     }
     const said = (phrasing) => text.matchAll(new RegExp(phrasing.replaceAll("(N)", `(${N})`), "g"));
-    for (const m of said(`(N)\\s+for\\s+JavaScript(?!\\s+and)`)) {
+    for (const m of said(`(N)\\s+for\\s+JavaScript`)) {
       claim(rel, counted(m[1]) === js, `says "${m[1]} for JavaScript", the registry holds ${js}`);
     }
     for (const m of said(`(N)\\s+reachable\\s+in\\s+JSX`)) {
