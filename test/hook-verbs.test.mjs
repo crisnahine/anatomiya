@@ -351,8 +351,14 @@ test("the end-of-turn check reads a worktree's own change against its main check
   // sitting in the main checkout.
   const dir = await railsish(t);
   const wt = worktreeOf(t, dir);
-  // A session that began a minute ago, as every real stop names one.
-  const session = transcript(t, [{ type: "user", timestamp: new Date(Date.now() - 60 * 1000).toISOString(), message: { role: "user", content: "go" } }]);
+  // A session that began a minute ago, as every real stop names one, inside a
+  // call that runs through the test so its writes are the session's own.
+  const at = (ms) => new Date(Date.now() + ms).toISOString();
+  const session = transcript(t, [
+    { type: "user", timestamp: at(-60 * 1000), message: { role: "user", content: "go" } },
+    { type: "assistant", timestamp: at(-59 * 1000), message: { role: "assistant", content: [{ type: "tool_use", id: "w1", name: "Bash", input: {} }] } },
+    { type: "user", timestamp: at(10 * 60 * 1000), message: { role: "user", content: [{ type: "tool_result", tool_use_id: "w1", content: "done" }] } },
+  ]);
   const stop = (cwd) => ({ hook_event_name: "Stop", cwd, transcript_path: session });
 
   writeFileSync(join(dir, "app/services/g.rb"), "class G\n  def g = 1\nend\n");
