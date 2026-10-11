@@ -2674,7 +2674,8 @@ test("where the volume folds case, a file in .claude/rules spelled as one of the
     assert.deepEqual(others(first), { replaced: [theirs], foreign: [], unknown: [], remove: [] }, theirs);
     const held = listRules(dir);
     assert.equal(held.length, 3, `${theirs}: the control, the volume kept one entry for the two spellings`);
-    assert.ok(held.includes(theirs) && !held.includes(name), `${theirs}: the control, under the spelling it had`);
+    // APFS keeps the entry's spelling through a rename onto it, and NTFS takes the name the rename gave.
+    assert.notEqual(held.includes(theirs), held.includes(name), `${theirs}: the control, one entry under one of the two spellings`);
     assert.ok(isOwned(readFileSync(join(rules(dir), theirs), "utf8")), `${theirs}: it holds the map now`);
     const wrote = overview();
     assert.ok(wrote.endsWith(`\nGenerated files: 3 under .claude/rules/anatomiya-*.md\n${NONE_OTHER}\n`), wrote.slice(-200));
