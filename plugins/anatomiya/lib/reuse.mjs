@@ -272,10 +272,12 @@ export function reuseRecord(files) {
  * two different edits can land on the same lines, and per file, so an edit to
  * one file does not make every other one look new. `since` leaves out a file
  * last written before that moment, and `calls` one last written outside every
- * one of the session's tool calls: either is work the session did not do. Nothing
- * is read while a merge or the like is unfinished, which is another branch's. A migration, a schema dump and a file the corpus refuses (generated,
- * or a link) have no function anybody would reuse, and are left out, and so is
- * a hunk whose every added line provably defines nothing callable.
+ * one of the session's tool calls: either is work the session did not do.
+ * Nothing is read while a merge or the like is unfinished, which is another
+ * branch's. A migration, a schema dump and a file the corpus refuses
+ * (generated, or a link) have no function anybody would reuse, and are left
+ * out, and so is a hunk whose every added line provably defines nothing
+ * callable.
  *
  * `turnStart` adds what this turn committed: a turn told to write and commit
  * leaves the tree clean, and read against HEAD alone its work was never asked
