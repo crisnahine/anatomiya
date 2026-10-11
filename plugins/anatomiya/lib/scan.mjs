@@ -13,6 +13,7 @@ import { resolve as resolveBaseline, measure as measureBaseline } from "./baseli
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
 import { extOf, extOrName } from "./paths.mjs";
+import { scopeOf } from "./render.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 
 /**
@@ -267,6 +268,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
 
     const current = { fileCount: area.fileCount, dirCount: dirCount(area.files.map((f) => f.rel)) };
 
+    const languages = { extsByLang: extsByLang(area.files), filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))) };
     const gated = dims.map((d) => {
       const baselineDim = measuredArea.dims.find((b) => b.key === d.key) || null;
       const source = baselineDim || d;
@@ -299,10 +301,9 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // The same counts a root line carries, over this area's own files.
       kinds: kinds(area),
       // For the renderer alone, which says where an area holds files a claim's
-      // row is never asked of. Not in the record: the map is written from this
-      // object, and nothing reads the scope back.
-      extsByLang: extsByLang(area.files),
-      filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))),
+      // row is never asked of. Not in the record: each slot keeps its answer as
+      // `scope`, which is all a reader of the record prints.
+      ...languages,
       // What a new file in here would import, and what to check for before
       // writing one. Read at HEAD like the roster: both are counts, and neither
       // is a claim anything is gated against.
@@ -310,7 +311,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // Over every record in the repository, not this area's: the question is
       // who else reaches in here.
       reused: hasImports ? mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels) : null,
-      dimensions: gated,
+      dimensions: gated.map((d) => ({ ...d, scope: scopeOf(languages, d) })),
     });
   }
 

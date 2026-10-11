@@ -26,6 +26,7 @@ import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus }
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
+import { nameText, sanitisePath } from "./encode.mjs";
 import { remedyForMissing } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
@@ -992,7 +993,7 @@ async function collect(root, run) {
         // as "no convention" and never delivered here either.
         const away = own && area && !globsReach(area.globs, path);
         const verdict = up
-          ? { severity: "FIX", reason: `counted in ${areaLabel(up.from)}, which this directory sits inside` }
+          ? { severity: "FIX", reason: `counted in ${areaName(up.from)}, which this directory sits inside` }
           : cappedAway(
               severityFor(
                 { path, oldPath: job.file.from },
@@ -1159,11 +1160,14 @@ function cappedAway(verdict, away, area, path) {
   // sitting in the area's own directory that it sat inside that directory.
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (globsReach(area.globs, underArea(area.path, name))) {
-    return { severity: "FIX", reason: `counted in ${areaLabel(area.path)}, which this directory sits inside` };
+    return { severity: "FIX", reason: `counted in ${areaName(area.path)}, which this directory sits inside` };
   }
   const type = name.lastIndexOf(".") > 0 ? `${name.slice(name.lastIndexOf("."))} files` : name;
-  return { severity: "FIX", reason: `the area file for ${areaLabel(area.path)} does not reach ${type}, so this claim was never delivered here` };
+  return { severity: "FIX", reason: `the area file for ${areaName(area.path)} does not reach ${type}, so this claim was never delivered here` };
 }
+
+// An area as the map names it, quoted where the map quotes it.
+const areaName = (path) => areaLabel(path, (p) => nameText(sanitisePath(p)));
 
 // A slot no gate stated speaks as the count its area file prints for it: the majority's sentence alone reads as advice.
 const spokenClaim = (claim, area, dim) => (statedSide(dim).states === null ? unstatedLine(area, dim, claim) : claim);
@@ -1217,7 +1221,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
   // is not delivered here, so the map did not tell this file's author.
   const away = !from && !globsReach(area.globs, path);
   const verdict = from
-    ? { severity: "FIX", reason: `counted in ${areaLabel(from)}, which this directory sits inside` }
+    ? { severity: "FIX", reason: `counted in ${areaName(from)}, which this directory sits inside` }
     : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, capped, dropped }), away, area, path);
   return {
     severity: verdict.severity,

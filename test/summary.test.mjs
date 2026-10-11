@@ -122,7 +122,7 @@ test("the clause after the claims says what is left, at none, one and many", () 
   const claimsLine = (stated, matchingDefault, total) => scanLines(summary({ claims: { stated, matchingDefault, total } }))[1];
 
   assert.equal(claimsLine(0, 0, 0), "0 of 0 claims stated");
-  assert.equal(claimsLine(0, 0, 1), "0 of 1 claim stated, the other prints as a count");
+  assert.equal(claimsLine(0, 0, 1), "0 of 1 claim stated, it prints as a count", "with nothing beside it there is no other");
   assert.equal(claimsLine(1, 0, 1), "1 of 1 claim stated");
   assert.equal(claimsLine(0, 0, 2), "0 of 2 claims stated, the rest print as counts");
   assert.equal(claimsLine(1, 0, 2), "1 of 2 claims stated, the other prints as a count");

@@ -295,7 +295,7 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // renderer prints this one only where there is something to disclose.
       ...(declined.size ? { declined: declined.size } : {}),
       files: [...perFile.keys()],
-      // For the renderer's scope clause, and left out of the record.
+      // For the renderer's scope clause; the record keeps only the answer, as `scope`.
       askedExts: [...new Set(examined.filter(eligible).map((e) => extOrName(e.rel)))].sort(),
       claimFiles,
       counterFiles,
