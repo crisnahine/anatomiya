@@ -436,10 +436,11 @@ about one area, with a precision marker where the predicate cannot see every sit
   the base class and the included mixin, learned from the area's own plurality rather than declared.
 - **9 file-to-file obligations**: a model ships with its spec, a rake task with its spec, learned
   from where the repository actually keeps its companions.
-- **What ships together**: for a kind of file the default branch's changes added at least 35
-  times, the one file those changes also edited, or the kind of file they also added, read from the
-  newest 20,000 first-parent changes up to the pin where there is one. It reads history rather than code, so any
-  language can get one, and it is no dimension: of 60 measured repositories, 9 state one, 25 claims in all.
+- **What ships together**: for a kind of file the default branch's changes added at least 35 times,
+  the one file those changes also edited, or the kind of file they also added, read from the newest
+  20,000 first-parent changes up to the pin where there is one. It reads history rather than code,
+  so any language can get one, and it is no dimension: of 60 measured repositories, 9 state one, 25
+  claims in all.
 - **The layout roster**: the "What lives where" section above, counted over every tracked file.
 - **Wrapper routing**: whether logging, HTTP and environment reads go through the repository's own
   module, offered only where the repository has adopted one.
