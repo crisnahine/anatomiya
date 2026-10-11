@@ -1031,6 +1031,32 @@ test("a doctor counts as a target's files what a scan counts as written, and the
   ]);
 });
 
+test("a doctor says which keyed files the next scan removes, where the record was about to remove them", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  const rules = join(dir, ".cursor", "rules");
+  const keyed = readFileSync(join(rules, "anatomiya-overview.mdc"));
+  writeFileSync(join(rules, "anatomiya-area-deadbeef.mdc"), keyed);
+  writeFileSync(join(rules, "anatomiya-area-0badf00d.mdc"), keyed);
+  const record = join(dir, ".claude", "anatomiya", "facts.json");
+  writeFileSync(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), removing: { cursor: ["anatomiya-area-deadbeef.mdc"] } }));
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes",
+    ".cursor/rules holds 1 entry named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove it",
+  ]);
+
+  // A record that names no file there still says what it was about to remove, and a scan removes it.
+  const { targets, ...rest } = JSON.parse(readFileSync(record, "utf8"));
+  writeFileSync(record, JSON.stringify({ ...rest, targets: { copilot: targets.copilot ?? [] }, removing: { cursor: ["anatomiya-area-0badf00d.mdc", "anatomiya-area-deadbeef.mdc"] } }));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".cursor/rules holds 2 entries named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove them",
+  ]);
+});
+
 test("a doctor counts a target's files where the clone holds them and no record", async (t) => {
   const dir = repo(t);
   const engines = (await runDoctor()).lines;

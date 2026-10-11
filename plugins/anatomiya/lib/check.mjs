@@ -22,7 +22,7 @@ import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs"
 import { isProducer, placedTests } from "./layout.mjs";
 import { areaLabel, areaOwner, globsReach, underArea } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
-import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
+import { auditRules, isLink, knownNames, pendingNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
@@ -363,9 +363,12 @@ export async function check(cwd, { baseRef = null } = {}) {
         `${unreadable.length} file(s) in ${target.dir} could not be read, so whose they are is unknown`
       );
     }
-    return { foreign, unknown, rules: { escaped, listed, unreadable } };
+    // Still unnamed by the map and still loading, but a killed scan's record lists it, so the next scan removes it.
+    const going = pendingNames(facts, target);
+    const removing = unknown.filter((name) => going.has(name));
+    return { foreign, unknown, ...(removing.length ? { removing } : {}), rules: { escaped, listed, unreadable } };
   };
-  const { foreign, unknown, rules } = audited(TARGETS.claude);
+  const { foreign, unknown, removing, rules } = audited(TARGETS.claude);
   const targets = {};
   for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
     const { state, reason } = targetStatus(root, target);
@@ -404,6 +407,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     semantic: { claims: semanticClaims },
     foreign,
     unknown,
+    ...(removing ? { removing } : {}),
     // The audit's own three fields, beside the names it split. Folded into
     // caveat prose they were unreadable to anything but a human: four empty
     // lists and `listed: false` is a directory nobody looked in, which reads
