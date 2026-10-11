@@ -562,7 +562,8 @@ function assignGlobs(areas, files, uncounted) {
  * generated code. It decides no area and counts toward none; it only keeps
  * the globs off it.
  *
- * `countsNothing` says which areas the map will drop for counting nothing.
+ * `countsNothing` says which areas the map will drop for counting nothing, and
+ * is asked only where the ceiling binds.
  * Those hold no place under the ceiling, so the places they took go back to
  * the areas the fold took last.
  */
@@ -628,12 +629,16 @@ export function discover(files, {
     else areas.push(build(path, fs));
   }
 
-  const capped = countsNothing ? giveBack(areas, maxAreas, twins, countsNothing) : capCount(areas, maxAreas, twins);
+  const capped = countsNothing && areas.length > maxAreas
+    ? giveBack(areas, maxAreas, twins, countsNothing)
+    : capCount(areas, maxAreas, twins);
   const folded = capped.orphaned || [];
   const all = capped.sort((a, b) => byCode(a.path, b.path));
   // After the count is capped, never before: a glob is measured against the
   // areas that ended up existing, and a fold changes which subtrees are foreign.
   assignGlobs(all, files, uncounted);
+  // Whether the ceiling folded any area, which is when a pin has to parse.
+  all.folded = capped.orphaned !== undefined;
   all.orphaned = orphaned.concat(folded);
   return all;
 }

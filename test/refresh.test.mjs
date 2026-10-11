@@ -2458,3 +2458,32 @@ test("a move that lands while another worker holds the lock is scanned before th
   assert.equal((await refreshRepository(dir, { scan: async () => { again++; } })).reason, "current");
   assert.equal(again, 0, "the last move was already scanned");
 });
+
+test("a refresh that moves the pin at the ceiling keeps the places of areas that count nothing", async (t) => {
+  // 120 three-file areas sit at the ceiling of 120 beside a crate that counts
+  // nothing: the scan gives the crate's place back, and so must every pin.
+  const atCeiling = (origin) => {
+    for (let a = 0; a < 119; a++) source(origin, `m${String(a).padStart(3, "0")}`, 3);
+    mkdirSync(join(origin, "crate", "src"), { recursive: true });
+    for (let i = 0; i < 20; i++) writeFileSync(join(origin, "crate", "src", `r${i}.rs`), `fn helper${i}() -> i64 {\n    1\n}\n`);
+    commit(origin, "at the ceiling");
+  };
+  const { origin, dir } = await cloned(t, atCeiling);
+  const kept = async () => {
+    const r = await scan(dir);
+    assert.equal(r.areas.length, 120);
+    assert.equal(r.corpus.orphaned, 0);
+    assert.ok(r.areas.every((a) => a.baseline.status === "ok"), "no area reads a population change");
+  };
+
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  assert.equal(loadPin(dir).areas.length, 121, "the crate and every three-file area");
+  await kept();
+
+  source(origin, "src", 9);
+  commit(origin, "merged upstream");
+  git(dir, "pull", "-q", "--ff-only");
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"));
+  await kept();
+});

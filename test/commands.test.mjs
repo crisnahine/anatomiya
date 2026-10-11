@@ -400,6 +400,16 @@ test("a pin writes the baseline and answers with the delta it accepted", async (
   assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).sha, pin.sha);
 });
 
+test("a pin under the ceiling parses nothing", async (t) => {
+  const dir = repo(t);
+  const parseFiles = () => {
+    throw new Error("parsed under the ceiling");
+  };
+
+  const { pin } = await runPin(dir, { parseFiles });
+  assert.equal(pin.areas.length, 1);
+});
+
 test("a dry-run pin writes nothing", async (t) => {
   const dir = repo(t);
 

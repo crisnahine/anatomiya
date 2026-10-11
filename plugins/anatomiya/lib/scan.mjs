@@ -120,33 +120,17 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   applyPairings(head.records, corpusRels, langsIn(files));
   const headTruncated = corpusTruncated || head.truncated;
 
-  // An area holding a language this run read no file of is held (B41), below.
-  const unreadable = unreadableLangs(files, head.records);
-  // Keyed by path and size: every partition below replays one fold, in which an
-  // area only grows, so the two name one file set.
-  const reduced = new Map();
-  const reduceOnce = (area) => {
-    const key = `${area.path}\u0000${area.fileCount}`;
-    if (!reduced.has(key)) {
-      const areaParsed = area.files.map((f) => head.records.get(f.rel)).filter(Boolean);
-      reduced.set(key, { areaParsed, dims: areaParsed.length ? reduceArea(area, areaParsed, { frameworks, capabilities, tier }) : [] });
-    }
-    return reduced.get(key);
-  };
   // The areas are partitioned over the corpus the pin was built over where
   // there is one. The floor is a step function of the corpus size, so deriving
   // it from today's file count re-partitions the repository on one added file
   // and every area then reads as a population change against a pin that knew
-  // the old one. For the same reason a pin in force keeps the fold it holds: the
-  // pin is taken without a parse, so it cannot know which areas count nothing.
+  // the old one.
   const partitionSize = state.partitionSize ?? files.length;
   const areas = discover(files, {
     minFiles: areaFloor(partitionSize),
     maxAreas: areaCeiling(partitionSize),
     uncounted,
-    countsNothing: state.countsOnly
-      ? (area) => !area.langs.some((l) => unreadable.includes(l)) && reduceOnce(area).dims.length === 0
-      : null,
+    countsNothing: countsNothingIn(files, head.records, frameworks),
   });
 
   const authors = await authorsRun;
@@ -196,6 +180,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // run that could wrote it. Every other area is described as usual. A mixed
   // area is held rather than described from half its files, because
   // describing it would write over claims this run had no way to measure.
+  const unreadable = unreadableLangs(files, head.records);
   const unanswered = unansweredFiles(files, head.records);
   const held = areas.filter((a) => a.langs.some((l) => unreadable.includes(l)));
   const heldIds = new Set(held.map((a) => a.id));
@@ -211,7 +196,10 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // scanning a subtree answers differently from scanning the whole of it.
   const folded = [];
   for (const area of areas) {
-    const { areaParsed, dims } = reduceOnce(area);
+    const areaParsed = area.files.map((f) => head.records.get(f.rel)).filter(Boolean);
+    if (areaParsed.length === 0) continue;
+
+    const dims = reduceArea(area, areaParsed, { frameworks, capabilities, tier });
     if (dims.length === 0) continue;
 
     // `measure` writes a record for every area it was handed, so a miss is a
@@ -417,6 +405,42 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     layout,
     areas: out,
   };
+}
+
+/**
+ * Which areas a scan drops for counting nothing, answered off the parse alone so
+ * a pin taken without the checker answers it the same way. An area of a language
+ * the checker reads is never one: whether the checker runs is not known to a pin.
+ * Nor is an area held for a language no file of which was read, whose file stays.
+ */
+export function countsNothingIn(files, records, frameworks) {
+  const capabilities = adoptedCapabilities(records);
+  const unreadable = unreadableLangs(files, records);
+  // Keyed by path and size: within one fold an area only grows, so the two name one file set.
+  const known = new Map();
+  return (area) => {
+    if (area.langs.some((l) => langHas(l, "semantic") || unreadable.includes(l))) return false;
+    const key = `${area.path}\u0000${area.fileCount}`;
+    if (!known.has(key)) {
+      const parsed = area.files.map((f) => records.get(f.rel)).filter(Boolean);
+      known.set(key, reduceArea(area, parsed, { frameworks, capabilities }).length === 0);
+    }
+    return known.get(key);
+  };
+}
+
+/**
+ * The areas a pin records: the partition a scan of this commit with no pin
+ * uses, so the places of areas that count nothing are given back here too. The
+ * parse runs only where the fold folded anything.
+ */
+export async function pinPartition(files, { parseFiles = parseAll } = {}) {
+  const areas = discover(files);
+  if (!areas.folded) return areas;
+  const frameworks = [...frameworksIn(files)];
+  const { records } = await parseFiles(files, { frameworks });
+  applyPairings(records, new Set(files.map((f) => f.rel)), langsIn(files));
+  return discover(files, { countsNothing: countsNothingIn(files, records, frameworks) });
 }
 
 /** Each language's extensions among these files, and the whole name of a file that has none. */
