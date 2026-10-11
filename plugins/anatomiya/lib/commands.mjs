@@ -13,7 +13,7 @@ import { caseMagic, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
-import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, pendingNames, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
+import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, pendingAmong, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
@@ -83,8 +83,7 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
   // Asked again once the list is read. It comes from the index, and reading it
   // takes seconds on a large repository: a commit or a `git add` landing in
   // that window put files into a pin labelled with the commit judged before.
-  if ((await headSha(root)) !== sha) throw new Error(`HEAD moved from ${sha} while the pin was being taken`);
-  await refuseUnlikeHead(root);
+  await refuseMoved(root, sha);
   // No repository size truncates the corpus any more, so this cannot fire from
   // `collect`. It stays because a pin must describe a whole population, and the
   // flag is the one thing that says whether this one is.
@@ -116,8 +115,7 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
 
   const areas = await pinPartition(files, { parseFiles });
   // The parse at the ceiling reads the tree for seconds more, so the tree it read is asked about again.
-  if ((await headSha(root)) !== sha) throw new Error(`HEAD moved from ${sha} while the pin was being taken`);
-  await refuseUnlikeHead(root);
+  await refuseMoved(root, sha);
   // No area is the empty population by another route: every area a later
   // commit makes postdates it.
   if (areas.length === 0) {
@@ -143,6 +141,12 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
     previous,
     delta,
   };
+}
+
+/** Refuse a pin whose HEAD moved from `sha` or whose tree is no longer HEAD's. */
+async function refuseMoved(root, sha) {
+  if ((await headSha(root)) !== sha) throw new Error(`HEAD moved from ${sha} while the pin was being taken`);
+  await refuseUnlikeHead(root);
 }
 
 /**
@@ -257,9 +261,9 @@ async function targetLines(cwd) {
     // a file are all there is to go on.
     const { ours, unknown, foreign, occupied, listed } = auditRules(root, known, target);
     // A name the record was about to remove is neither: the next scan removes it.
-    const going = pendingNames(facts, target);
-    const removing = unknown.filter((name) => going.has(name)).length;
-    const mine = known === null ? unknown.filter((name) => isMapName(name, target) && !going.has(name)) : ours;
+    const going = pendingAmong(facts, target, unknown);
+    const removing = going.length;
+    const mine = known === null ? unknown.filter((name) => isMapName(name, target) && !going.includes(name)) : ours;
     lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);
     const others = unknown.length - (known === null ? mine.length : 0) - removing + foreign.length + occupied.length;
     if (others > 0) lines.push(`${otherEntries(target.dir, others)} that a scan neither writes nor removes`);
