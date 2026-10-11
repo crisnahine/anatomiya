@@ -6359,3 +6359,174 @@ test("a file that stops being a test file by what it holds is not charged the si
   assert.deepEqual(report.examined.map((e) => e.path), ["src/py/tools.py"]);
   assert.deepEqual(forKey(report, "public_doc_comment").map((f) => f.line), []);
 });
+
+/* --- what a change adding a file of one class also touches --- */
+
+const shipsWith = (o = {}) => ({
+  producer: "src/services/*.ts",
+  companion: { edits: "src/registry.ts" },
+  candidates: 100,
+  conforming: 100,
+  newest: [20, 20],
+  authors: 9,
+  authorsRequired: 2,
+  lift: 9.5,
+  files: [40, 41],
+  area: "src/services",
+  gate: null,
+  directive: true,
+  ...o,
+});
+
+/**
+ * A repository whose map states one co-change claim, pinned at main, with a
+ * branch built by `change`. `from` is where the walk's tip came from.
+ */
+function shipping(t, change, { claim = shipsWith(), from = "pin", dimensions = [], pending = null, pinned = true } = {}) {
+  return repo(t, ({ dir, git, write, commit }) => {
+    write("src/services/a.ts", "export const a = 1\n");
+    write("src/registry.ts", "export const all = []\n");
+    write("CHANGELOG.md", "# changes\n");
+    commit("init");
+    const areas = [{ id: "aaaaaaaa", path: "src/services", globs: [{ negated: false, dir: "src/services", tail: "**/*.ts" }], fileCount: 8, dimensions }];
+    writeFacts(dir, {
+      root: dir,
+      scannedAt: "2026-01-01T00:00:00.000Z",
+      corpus: { files: 8, frameworks: [], capabilities: [] },
+      parse: { parsed: 8 },
+      suppressAll: false,
+      layout: { roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false, cochange: { from, tip: sha(dir), claims: [claim] } },
+      areas,
+    });
+    if (pinned) writeFileSync(join(dir, ".claude/anatomiya/baseline.json"), JSON.stringify({ schema: 1, sha: sha(dir), areas: [{ id: "aaaaaaaa", path: "src/services", files: ["src/services/a.ts"] }] }));
+    // Committed, as a mapped repository holds its map, so the branch's own size is its own.
+    commit("map");
+    git("checkout", "-q", "-b", "feature");
+    change({ write, commit, git });
+    if (pending) pending({ write });
+  });
+}
+
+const cochangeOf = (report) => report.findings.filter((f) => f.dimension === "cochange");
+
+test("a branch adding a producer and touching no companion is reported once, at MUST-FIX off a pinned perfect record", async (t) => {
+  const dir = shipping(t, ({ write, commit }) => {
+    write("src/services/z.ts", "export const z = 1\n");
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("two services");
+  });
+
+  const [f, ...rest] = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.deepEqual(rest, []);
+  assert.equal(f.path, "src/services/b.ts");
+  assert.equal(f.severity, "MUST-FIX");
+  assert.equal(f.reason, "all 100 of the last 100 changes that added one");
+  assert.equal(f.companion, "src/registry.ts");
+  assert.equal(f.claim, 'a .ts file added to "src/services" ships with an edit to "src/registry.ts"');
+  assert.equal(f.area, "src/services");
+  assert.equal(f.line, 1);
+});
+
+test("a companion touched anywhere in the change, committed or still in the tree, answers every producer", async (t) => {
+  const committed = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    write("src/registry.ts", "export const all = [1]\n");
+    commit("service and its entry");
+  });
+  assert.deepEqual(cochangeOf(await check(committed, { baseRef: "main" })), []);
+
+  // A file of no language the check reads is still part of the change.
+  const md = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  }, { claim: shipsWith({ companion: { edits: "CHANGELOG.md" } }), pending: ({ write }) => write("CHANGELOG.md", "# changes\n- b\n") });
+  assert.deepEqual(cochangeOf(await check(md, { baseRef: "main" })), []);
+
+  const added = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    write("changelog/b.md", "b\n");
+    commit("service and its note");
+  }, { claim: shipsWith({ companion: { adds: "changelog/*.md" } }) });
+  assert.deepEqual(cochangeOf(await check(added, { baseRef: "main" })), []);
+});
+
+test("an edit or a rename into the producer's directory owes nothing", async (t) => {
+  const dir = shipping(t, ({ git, write, commit }) => {
+    write("src/services/a.ts", "export const a = 2\n");
+    commit("edit");
+    git("mv", "src/registry.ts", "src/services/registry.ts");
+    commit("move");
+  });
+  assert.deepEqual(cochangeOf(await check(dir, { baseRef: "main" })), []);
+});
+
+test("each rung below MUST-FIX is reached by its own cause", async (t) => {
+  const service = ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  };
+  const one = async (dir) => {
+    const found = cochangeOf(await check(dir, { baseRef: "main" }));
+    assert.equal(found.length, 1);
+    return found[0];
+  };
+
+  assert.deepEqual(
+    [await one(shipping(t, service, { from: "base" }))].map((f) => [f.severity, f.reason]),
+    [["FIX", "no baseline population recorded"]]
+  );
+  assert.equal((await one(shipping(t, service, { claim: shipsWith({ area: null }) }))).reason, "no area file carries this claim");
+  assert.equal((await one(shipping(t, service, { claim: shipsWith({ conforming: 97 }) }))).reason, "97 of the last 100 changes that added one");
+  assert.equal((await one(shipping(t, service, { pinned: false }))).reason, "capped by this run: no baseline pinned");
+
+  // A file the area's globs do not reach was never handed the claim.
+  const away = await one(shipping(t, ({ write, commit }) => {
+    write("src/services/b.js", "export const b = 1\n");
+    commit("service");
+  }, { claim: shipsWith({ producer: "src/services/*.js" }) }));
+  assert.equal(away.severity, "FIX");
+  assert.match(away.reason, /does not reach \.js files/);
+
+  const wide = await one(shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    for (let i = 0; i < 40; i++) write(`docs/n${i}.md`, `${i}\n`);
+    commit("service and forty notes");
+  }));
+  assert.equal(wide.reason, "this branch touches 41 files, more than any change this claim was counted over");
+
+  // The area file had no room for the block: thirty directives fill it first.
+  const crowded = Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}` }));
+  assert.equal((await one(shipping(t, service, { dimensions: crowded }))).reason, "the area file had no room to state this claim");
+});
+
+test("a near miss is no finding, and an older record with no co-change member is none", async (t) => {
+  const near = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  }, { claim: shipsWith({ gate: "evidence", directive: false }) });
+  assert.deepEqual(cochangeOf(await check(near, { baseRef: "main" })), []);
+
+  const dir = repo(t, ({ dir, git, write, commit }) => {
+    write("src/services/a.ts", "export const a = 1\n");
+    commit("init");
+    facts(dir, { sha: sha(dir), path: "src/services", pinned: ["src/services/a.ts"] });
+    git("checkout", "-q", "-b", "feature");
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  });
+  assert.deepEqual(cochangeOf(await check(dir, { baseRef: "main" })), []);
+});
+
+test("the map a scan wrote is no part of the change, left untracked or rewritten by a refresh", async (t) => {
+  const dir = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  }, {
+    pending: ({ write }) => {
+      for (let i = 0; i < 41; i++) write(`.claude/rules/anatomiya-area-${String(i).padStart(8, "0")}.md`, `${i}\n`);
+      write(".claude/anatomiya/refresh.json", "{}\n");
+    },
+  });
+  const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.equal(f.severity, "MUST-FIX", f.reason);
+});
