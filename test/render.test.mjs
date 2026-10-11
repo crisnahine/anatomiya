@@ -13,6 +13,7 @@ import {
   unexaminedLines,
   unexaminedPhrase,
   unreadLanguageFiles,
+  unstatedLine,
   untrackedSentence,
   MAX_LINES,
 } from "../plugins/anatomiya/lib/render.mjs";
@@ -378,6 +379,14 @@ test("a partial dimension says so on its counts line too", () => {
     /^failure is returned, not thrown: no convention\. 4 of 4 sites \(evidence\) {2}\(partial: some sites are not visible statically\)$/m
   );
   assert.match(out, /^module-level bindings are const: no convention\. 4 of 4 sites \(evidence\)$/m, "a precise one stays bare");
+});
+
+test("an unstated slot's line is the one check prints for it", () => {
+  const unstated = dim({ key: "error_shape", claim: "failure is returned, not thrown", directive: false, gate: "evidence", conforming: 4, candidates: 4 });
+  const mapped = area({ dimensions: [unstated] });
+
+  assert.ok(renderArea(mapped).split("\n").includes(unstatedLine(mapped, unstated)), renderArea(mapped));
+  assert.equal(unstatedLine(mapped, unstated, "a sentence from the row"), "a sentence from the row: no convention. 4 of 4 sites (evidence)");
 });
 
 test("the overview says what a no convention line means", () => {
