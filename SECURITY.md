@@ -450,9 +450,10 @@ slot, so a record cannot make `check` slow with it, and the most it can put into
 bare names of its own, never a sentence: 30 findings over a forged record of a million names took
 208 seconds before the bound and no measurable time after it. A pin's area `ceiling` is read only as
 a count above the plain ceiling for the pin's own corpus, at most twice that, and at most the number
-of areas the pin lists, and only in a pin that names its corpus size. Any other value makes the pin unreadable, as any malformed field does, so a
-hand-edited pin cannot lift the map past 1,000 areas. A co-change claim read back is held to the
-shapes the walk writes, and no reader takes more than the first 100 of each kind.
+of areas the pin lists, and only in a pin that names its corpus size. Any other value makes the pin
+unreadable, as any malformed field does, so a hand-edited pin cannot lift the map past 1,000 areas.
+A co-change claim read back is held to the shapes the walk writes, and no reader takes more than the
+first 100 of each kind.
 
 ### Parser crashes are contained by a process boundary
 
