@@ -11,7 +11,7 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
-import { embeddedIn, familyOf, language, placeTestsOf } from "./langs.mjs";
+import { embeddedIn, familyOf, langHas, language, placeTestsOf } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
 import {
@@ -220,8 +220,9 @@ export function printedExtensions(own, mirrored = null) {
 
 /**
  * A test file is one the parse saw import a runner or call `describe`, one
- * whose own name says so, one sitting in a `__tests__` directory, or one
- * mirroring a source file from inside a test tree. Four claims about the file;
+ * whose own name says so, or, unless the parse read it as support, one
+ * sitting in a `__tests__` directory or mirroring a source file from inside a
+ * test tree. Four claims about the file;
  * where a repository files it is not one of them. A file the parse read and
  * found empty is none of them, whatever it is called.
  *
@@ -273,6 +274,14 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // reason `test-shape.mjs` records: discourse writes 4,000 tests as
   // `login-test.js` and no other signal in them says so.
   if (RUBY_TEST_NAME.test(base) && underTestTree(dir)) return true;
+  // Past its name, a read file is a test by its address only where nothing in
+  // it says otherwise. One that exports is what the tests import: 328 of the
+  // 645 files the two claims below took across 60 repositories, every one a
+  // fixture, helper, mock or config, and none of eslint's 294 mirrored rule
+  // tests. A language with no import graph has no export to show, and Ruby's
+  // parse names every runner here, so a file it read with no case is support:
+  // 11 of 11, page objects, factories and helpers.
+  if (facets && (!langHas(lang, "importGraph") || facets.exports?.length > 0)) return false;
   if (mirrored?.has(rel)) return true;
   return dir !== "" && dir.split("/").some((seg) => TEST_DIRS.has(seg));
 }
