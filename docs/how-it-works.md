@@ -2242,9 +2242,10 @@ states nothing. A pair then states only where it passes D1's ratio and Wilson bo
 borrowing, the author bar over its conforming candidates, and three gates of its own: the companion
 is touched at twice its base rate or more, the companion and a producer exist at the tip, and the
 newest fifth of the candidates conforms at 0.90. A spanning class, one directory up, states only
-from candidates in at least two child directories, one still holding a producer at the tip. One
-statement per pair: a directory's own class over its parent unless the parent covers a tenth more
-candidates, and of two classes that each ship with the other added, the one with more candidates.
+from candidates in at least two child directories, at least 0.90 of them in ones still holding a
+producer at the tip. One statement per pair: a directory's own class over its parent unless the
+parent covers a tenth more candidates, and of two classes that each ship with the other added, the
+one with more candidates.
 
 The record keeps the walk's counts, at most 100 stated claims and at most 100 near misses, those
 with the most candidates first, in `layout.cochange`. A claim's area is the one area that holds its
