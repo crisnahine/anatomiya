@@ -231,11 +231,19 @@ const TREE_LANGS = proseNamed();
  * Two tables went stale apart: one check read words to thirteen and the rest
  * read digits, so "four for PHP" and "fourteen runtime dependencies" passed.
  */
-const WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
-const NUMERALS = new Map(WORDS.map((word, i) => [word, i + 1]));
+const ONES = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const TEENS = ["ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const TENS = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+const NUMERALS = new Map([
+  ...["no", "none", "zero"].map((word) => [word, 0]),
+  ...ONES.map((word, i) => [word, i + 1]),
+  ...TEENS.map((word, i) => [word, i + 10]),
+  ...TENS.flatMap((ten, i) => [[ten, 20 + i * 10], ...ONES.map((one, j) => [`${ten}-${one}`, 21 + i * 10 + j])]),
+]);
 // A word opening a sentence is the same count.
-const N = `\\b(?:\\d+|${WORDS.map((w) => `[${w[0]}${w[0].toUpperCase()}]${w.slice(1)}`).join("|")})\\b`;
-const counted = (word) => NUMERALS.get(word.toLowerCase()) ?? Number(word);
+const N = `\\b(?:\\d+|${[...NUMERALS.keys()].map((w) => `[${w[0]}${w[0].toUpperCase()}]${w.slice(1)}`).join("|")})\\b`;
+/** The number a count spelled in digits or in words stands for. */
+export const counted = (word) => NUMERALS.get(word.toLowerCase()) ?? Number(word);
 
 /**
  * Every file of this repository git can see, or `{ error }` holding git's own
@@ -833,16 +841,17 @@ export function checkDocs() {
     [`(${N})\\s+runtime\\s+dependencies`, deps.length, (n) => `the plugin's manifest declares ${n}`],
     [`(${N})\\s+parser\\s+engines`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`],
     [`(${N})\\s+node-hosted\\s+engines`, Object.values(ENGINES).filter((e) => e.host === "node").length, (n) => `the registry declares ${n} hosted by node`],
-    // Not in the build contract, where "the two engines" names the pair a row compares.
-    [`(?:the|all)\\s+(${N})\\s+engines\\b`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`, "DECISIONS.md"],
+    // Told apart by the document: a build contract row says "spans two engines"
+    // of the pair it compares, where every other document counts them.
+    [`(?:(?:the|all)\\s+)?(${N})\\s+engines\\b`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`, "DECISIONS.md"],
     [`(${N})\\s+(?:vendored\\s+)?grammar(?:s|\\s+files|\\s+packages)\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
     [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
   ];
   const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
   for (const rel of stating) {
     const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
-    for (const [phrasing, held, source, unread] of COUNTS) {
-      if (rel === unread) continue;
+    for (const [phrasing, held, source, pairsIn] of COUNTS) {
+      if (rel === pairsIn) continue;
       for (const m of text.matchAll(new RegExp(phrasing, "gi"))) {
         claim(rel, counted(m[1]) === held, `says "${m[0]}", ${source(held)}`);
       }
