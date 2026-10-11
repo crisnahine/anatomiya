@@ -113,20 +113,21 @@ digits), because the pin file that carries them is a repository-controlled
 input like any other, and a ref is rejected if it starts with `-`.
 
 The co-change walk reads the most history of any read here, and reads it under the same rules. It
-runs one `git log <sha> --first-parent --diff-merges=first-parent --no-renames --name-status -z
---max-count=20000 --`, from a validated sha: the pin's, the fork point with a base ref, or HEAD's.
-Paths arrive as NUL-delimited fields, so none comes back quoted or split, and the author email is
-read only to count authors. `--no-renames` with `--name-status` reads trees and never a blob, and
-the call runs with `GIT_NO_LAZY_FETCH`, so a blobless clone answers offline and a treeless one fails
-rather than fetching. It is bounded: the git runner's 120 second clock and its 64 MiB cap on one
-field; at most 20,000 changes; a change past 40 added or modified files, or past 10,000 deletions,
-is counted as bulk and none of its paths is kept; pairs are counted only for a kind of file added
-35 times and a companion touched 32 times, and past 100,000 pair keys the count stops and states
-nothing. The record keeps at most 100 stated claims and 100 near misses, and every reader takes no
-more than that from it. A kind of file is held to ASCII letters, digits, `.`, `_` and `-`, so a file
-whose name spells anything else is in no class, and a claim read back from a record that names
-anything else is no claim. Every path a claim prints, in an area file, the notice or `check`, goes
-through the path encoder. A git older than 2.31 refuses `--diff-merges`; the walk then states
+runs one `git -c log.showRoot=false log <sha> --first-parent --diff-merges=first-parent --no-renames
+--name-status -z --format=\x1e%aE --max-count=20000 --`, where `\x1e` is that one byte, from a
+validated sha: the pin's, the fork point with a base ref, or HEAD's. Paths arrive as NUL-delimited
+fields, so none comes back quoted or split, and the author email is read only to count authors.
+`--no-renames` with `--name-status` reads trees and never a blob, and the call runs with
+`GIT_NO_LAZY_FETCH`, so a blobless clone answers offline and a treeless one fails rather than
+fetching. It is bounded: the git runner's 120 second clock and its 64 MiB cap on one field; at most
+20,000 changes; a change past 40 added or modified files, or past 10,000 distinct deleted file
+names, is counted as bulk and none of its paths is kept; pairs are counted only for a kind of file
+added 35 times and a companion touched 32 times, and past 100,000 pair keys the count stops and
+states nothing. The record keeps at most 100 stated claims and 100 near misses, and every reader
+takes no more than that from it. A kind of file is held to ASCII letters, digits, `.`, `_` and `-`,
+so a file whose name spells anything else is in no class, and a claim read back from a record that
+names anything else is no claim. Every path a claim prints, in an area file, the notice or `check`,
+goes through the path encoder. A git older than 2.31 refuses `--diff-merges`; the walk then states
 nothing and the scan goes on.
 
 ### Everything rendered goes through one allowlist encoder
@@ -222,18 +223,19 @@ the file only when nothing else is left in it (A25). With a target on, a scan al
 in the repository.
 
 `scan --targets` turns a target on. It then stays on while its own overview file is in its directory
-and carries the `generator: anatomiya` key. That file is the whole switch, so a repository can ship
+and carries the `generator: anatomiya` key, unless the record names that overview among the files a
+scan killed part way was about to remove. That file is the whole switch, so a repository can ship
 one: a clone holding a committed `.cursor/rules/anatomiya-overview.mdc` with the key has the Cursor
-target on, and the first scan run there writes that directory without being asked. Its summary
-says so on that directory's line: which file switched the target on, and that
-`scan --targets claude` switches it off. In that
-directory the scan writes only the map's own names. A plain scan removes a regular file under a
-map name only where the file carries the key and the record on disk lists it. A scan that leaves
-the target out of `--targets` removes every regular file under a map name that carries the key. A repository can commit the record as well, and
-then it chooses which of those files the record lists. The writes and the removals land on tracked
-files: the scan replaces the committed overview and area files and can delete a committed area
-file, so `git status` shows changes nobody made by hand, and `git commit -a` takes them in. The
-background refresh leaves a target alone when git tracks its overview. A scan run by hand does not.
+target on, and the first scan run there writes that directory without being asked. Its summary says
+so on that directory's line: which file switched the target on, and that `scan --targets claude`
+switches it off. In that directory the scan writes only the map's own names. A plain scan removes a
+regular file under a map name only where the file carries the key and the record on disk lists it. A
+scan that leaves the target out of `--targets` removes every regular file under a map name that
+carries the key. A repository can commit the record as well, and then it chooses which of those
+files the record lists. The writes and the removals land on tracked files: the scan replaces the
+committed overview and area files and can delete a committed area file, so `git status` shows
+changes nobody made by hand, and `git commit -a` takes them in. The background refresh leaves a
+target alone when git tracks its overview. A scan run by hand does not.
 
 What is written there is only the map: `anatomiya-overview` and `anatomiya-area-<id>` with that
 directory's extension, each asserted to be a bare prefixed name when the plan is built. Temporary
@@ -422,31 +424,33 @@ The echo hook keeps a batch claim per context window and map under the plugin's 
 `${CLAUDE_PLUGIN_DATA}/echo/`, where Claude Code names one. That is outside every repository, and
 the repository chooses nothing in it. A name there is two hashes: the first 16 hex digits of the
 SHA-256 of the transcript's path, a dash, and the 12 hex digits that name the delivered map, so no
-path, file name or transcript text reaches a name. A batch claim holds the transcript offset
-its maker had read to. The calls of one parallel batch decide under `<claim>.lock`, made with an
-exclusive create, and a call that finds the lock taken delivers nothing. A lock more than 5 seconds
-old, the echo hook's timeout, was left by a call that died holding it. No call moves or removes a
-lock that may be live: the right to remove a dead one goes to the call that creates
-`<claim>.lock.<its mtime in ms>` with an exclusive create, which removes the lock only while it is
-still the one it found dead, then removes that token. Every call then tries the one create of the
-lock, and those that lose it deliver nothing. A claim is written to `<claim>.<pid>` and renamed over the claim, so no reader sees
-one half written. After each claim it writes, the hook lists at most 4,096 names in that directory
-and removes those of these shapes last written more than a day ago; a name of any other shape is
-never touched. So the directory holds one small file per window and map of the last day. The
-transcript itself is read back from its end, at most 1 MiB per call. With no data directory, a
-relative one, or one that cannot be written or read, nothing is written and each call answers from
-the transcript alone, which can deliver one copy per call of a batch. A call killed while it holds a
-token leaves that dead lock in place, so the echo for that window and map stays silent until a claim
-another window or map makes there a day or more later sweeps both.
+path, file name or transcript text reaches a name. A batch claim holds the transcript offset its
+maker had read to. The calls of one parallel batch decide under `<batch claim>.lock`, made with an
+exclusive create, and a call that finds the lock taken delivers nothing. A lock whose mtime is more
+than 7 seconds from the clock, either way, was left by a call that died holding it: the echo hook's
+5 second timeout, plus the 2 seconds a FAT or exFAT volume can be off by. No call moves or removes a
+lock that may be live: the right to remove a dead one goes to the call that creates its lock token,
+`<batch claim>.lock.<its mtime in ms>`, with an exclusive create, which removes the lock only while
+it is still the one it found dead, then removes that lock token. Every call then tries the one
+create of the lock, and those that lose it deliver nothing. A batch claim is written to `<batch
+claim>.<pid>` and renamed over the batch claim, so no reader sees one half written. After each batch
+claim it writes, the hook lists at most 4,096 names in that directory and removes those of these
+shapes last written more than a day ago; a name of any other shape is never touched. So the
+directory holds one small file per window and map of the last day. The transcript itself is read
+back from its end, at most 1 MiB per call. With no data directory, a relative one, or one that
+cannot be written or read, nothing is written and each call answers from the transcript alone, which
+can deliver one copy per call of a batch. A call killed while it holds a lock token leaves that dead
+lock in place, so the echo for that window and map stays silent until a batch claim another window
+or map makes there a day or more later sweeps both.
 
 ### A committed record or pin is input too
 
 `facts.json`, `layout.json` and `baseline.json` can be committed, so every reader holds what it
 takes from them to what this tool could have written. Each is read only as a regular file of at most
 64 MiB. A slot's `scope`, the extensions a claim's `, in .ts files` clause names, is kept, written
-and read only as at most 16 entries, each an extension or a whole file name of up to 64 ASCII letters,
-digits, `_`, `+` or `-`, and any other value is no scope. The clause is built once per area and
-slot, so a record cannot make `check` slow with it, and the most it can put into a finding is 16
+and read only as at most 16 entries, each an extension or a whole file name of up to 64 ASCII
+letters, digits, `_`, `+` or `-`, and any other value is no scope. The clause is built once per area
+and slot, so a record cannot make `check` slow with it, and the most it can put into a finding is 16
 bare names of its own, never a sentence: 30 findings over a forged record of a million names took
 208 seconds before the bound and no measurable time after it. A pin's area `ceiling` is read only as
 a count above the plain ceiling for the pin's own corpus, at most twice that, and at most the number

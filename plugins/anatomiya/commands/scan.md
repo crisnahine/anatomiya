@@ -24,13 +24,13 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
 
    The same map is then also written under `.cursor/rules/` and `.github/instructions/`, and every
    later scan keeps writing a target that is on, which it is while its `anatomiya-overview` file
-   is there, so do not pass the flag again. `--targets` names
-   the whole set: `--targets cursor` leaves Copilot out, and `--targets claude` turns both off and
-   removes the files this tool wrote there. Pass it only when the user asks for a target to be
-   added or dropped. If the scan refuses over a file or a link in one of those directories, show
-   the sentence and stop: it wrote nothing anywhere. The same holds for a file past 64 MiB at a
-   name the map writes in `.claude/rules` or in a directory the scan named: the scan will not read
-   it whole to put it back, so it refuses until the file is moved or deleted.
+   is there, so do not pass the flag again. `--targets` names the whole set: `--targets cursor`
+   leaves Copilot out, and `--targets claude` turns both off and removes the files this tool wrote
+   there. Pass it only when the user asks for a target to be added or dropped. If the scan refuses
+   over a file or a link in one of those directories, show the sentence and stop: it wrote nothing
+   anywhere. The same holds for a file past 64 MiB at a name the map writes or removes in
+   `.claude/rules` or in a directory the scan named: the scan will not read it whole to put it
+   back, so it refuses until the file is moved or deleted.
 
 2. Report what came back, in this order:
    - how many files and areas, and how long it took
