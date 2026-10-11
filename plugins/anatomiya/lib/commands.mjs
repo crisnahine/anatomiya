@@ -238,7 +238,8 @@ export async function runDoctor({ cwd = null } = {}) {
 /**
  * One line per Cursor or Copilot target that is on, or that the record names
  * files in and nobody can read; none for any other. A target that is on gets a
- * second line where its directory holds entries a scan counts as left there.
+ * second line where its directory holds entries a scan counts as left there,
+ * and it and `.claude/rules` one more where the next scan removes some.
  */
 async function targetLines(cwd) {
   let root;
@@ -250,6 +251,8 @@ async function targetLines(cwd) {
   }
   const facts = readFacts(root).facts;
   const lines = [];
+  const claude = pendingAmong(facts, TARGETS.claude, auditRules(root, knownNames(facts)).unknown).length;
+  if (claude > 0) lines.push(removingLine(TARGETS.claude.dir, claude));
   for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
     const { state, reason } = targetStatus(root, target);
     const known = knownNames(facts, target);
@@ -267,12 +270,12 @@ async function targetLines(cwd) {
     lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);
     const others = unknown.length - (known === null ? mine.length : 0) - removing + foreign.length + occupied.length;
     if (others > 0) lines.push(`${otherEntries(target.dir, others)} that a scan neither writes nor removes`);
-    if (removing > 0) {
-      lines.push(`${otherEntries(target.dir, removing)} that the next scan removes, since the scan that wrote the map was about to remove ${removing === 1 ? "it" : "them"}`);
-    }
+    if (removing > 0) lines.push(removingLine(target.dir, removing));
   }
   return lines;
 }
+
+const removingLine = (dir, n) => `${otherEntries(dir, n)} that the next scan removes, since the scan that wrote the map was about to remove ${n === 1 ? "it" : "them"}`;
 
 /**
  * Install what one npm install in this plugin's own directory provides: the

@@ -1074,6 +1074,28 @@ test("a doctor says which keyed files the next scan removes, where the record wa
   ]);
 });
 
+test("a doctor says which keyed files the next scan removes from .claude/rules, in the same sentence", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir);
+  const rules = join(dir, ".claude", "rules");
+  const keyed = readFileSync(join(rules, "anatomiya-overview.md"));
+  writeFileSync(join(rules, "anatomiya-area-deadbeef.md"), keyed);
+  writeFileSync(join(rules, "anatomiya-area-0badf00d.md"), keyed);
+  const record = join(dir, ".claude", "anatomiya", "facts.json");
+  const facts = JSON.parse(readFileSync(record, "utf8"));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [], "a keyed file the record does not name is the scan summary's to count");
+
+  writeFileSync(record, JSON.stringify({ ...facts, removing: { claude: ["anatomiya-area-deadbeef.md"] } }));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".claude/rules holds 1 entry named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove it",
+  ]);
+  writeFileSync(record, JSON.stringify({ ...facts, removing: { claude: ["anatomiya-area-deadbeef.md", "anatomiya-area-0badf00d.md"] } }));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".claude/rules holds 2 entries named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove them",
+  ]);
+});
+
 test("a doctor counts a target's files where the clone holds them and no record", async (t) => {
   const dir = repo(t);
   const engines = (await runDoctor()).lines;

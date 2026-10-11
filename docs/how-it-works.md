@@ -1599,8 +1599,8 @@ the files under a map name that carry the key), a second where that
 directory holds other entries under the prefix (`.cursor/rules holds 1 entry named anatomiya-* that a
 scan neither writes nor removes`), and a third for the entries at a name the record lists under
 `removing` (`... that the next scan removes, since the scan that wrote the map was about to remove
-it`), and `pin` leaves the generated names of all three
-directories out of its clean-tree test. The record names the files written for each target under an
+it`), the one line it prints for `.claude/rules` too, and `pin` leaves the generated names of all
+three directories out of its clean-tree test. The record names the files written for each target under an
 optional `targets` key, present only where one was written, with no change of schema (C10).
 
 Whether either copy reaches a model is not measured (A106). For Cursor the delivery was read from
