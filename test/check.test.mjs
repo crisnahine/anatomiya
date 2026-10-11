@@ -1395,6 +1395,18 @@ test("a file the map does not name at a name the record was about to remove is s
   assert.deepEqual([json.removing, json.targets.cursor.removing], [r.removing, r.targets.cursor.removing]);
 });
 
+test("a target whose own overview the record was about to remove is off at the next scan, and its directory is still audited", async (t) => {
+  const dir = await mappedFor(t, ["claude", "cursor"]);
+  const record = join(dir, ".claude", "anatomiya", "facts.json");
+  const { targets, ...facts } = JSON.parse(readFileSync(record, "utf8"));
+  writeFileSync(record, JSON.stringify({ ...facts, removing: { cursor: targets.cursor } }));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.targets.cursor.state, "off");
+  assert.deepEqual(r.targets.cursor.removing, [...targets.cursor].sort());
+});
+
 test("a target that is off is not audited, so a check with none on reports what it did", async (t) => {
   const dir = await mappedFor(t, ["claude"]);
   mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });

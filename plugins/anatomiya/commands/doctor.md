@@ -10,18 +10,20 @@ Run the readiness probe and report what it said.
    node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" doctor
    ```
 
-2. Report every line it printed, as it printed them. A line that is not `ok` carries what was
-   wrong and what to do about it, and the remedy differs per engine: npm cannot install an
-   interpreter, and installing Ruby does not install a node module. Report only the lines it
-   printed. It takes no path. Its engine lines are about this installation. Run inside a
-   repository, it also prints one line for each Cursor or Copilot target that is on there,
-   `.cursor/rules: on, 5 files`, and a second where that directory holds other entries named
-   `anatomiya-*` (`.cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor
-   removes`), and a third for entries a killed scan was about to remove, which the next scan
-   removes. It prints that third line for `.claude/rules` too, the only one about that directory.
-   Run anywhere else it prints none. In a clone that holds a target's files and no
-   record yet, the count is of the files named as a scan names them that carry its key, so it can
-   differ from what the first scan there prints, and it moves once, after that scan.
+2. Report every line it printed, as it printed them. A line that is not `ok` carries what was wrong
+   and what to do about it, and the remedy differs per engine: npm cannot install an interpreter,
+   and installing Ruby does not install a node module. Report only the lines it printed. It takes no
+   path. Its engine lines are about this installation. Run inside a repository, it also prints one
+   line for each Cursor or Copilot target that is on there, `.cursor/rules: on, 5 files`, or
+   `.cursor/rules: off at the next scan` where a killed scan was turning it off, which the next scan
+   without `--targets` finishes, and a second where that directory holds other entries named
+   `anatomiya-*`
+   (`.cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes`), and a
+   third for entries a killed scan was about to remove, which the next scan removes. It prints that
+   third line for `.claude/rules` too, the only one about that directory. Run anywhere else it
+   prints none. In a clone that holds a target's files and no record yet, the count is of the files
+   named as a scan names them that carry its key, so it can differ from what the first scan there
+   prints, and it moves once, after that scan.
 
 3. A first line reading `nothing is installed here: ...` is one fault, not one per engine below it:
    Claude Code installs this plugin's dependencies on `/plugin install`, and that install did not
