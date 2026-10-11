@@ -3,12 +3,11 @@ import { lstatSync } from "node:fs";
 import { join } from "node:path";
 
 import { absentInterpreter } from "./child.mjs";
-import { scan } from "./scan.mjs";
+import { pinPartition, scan } from "./scan.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
 import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
-import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { caseMagic, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
@@ -66,9 +65,9 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
  * largest, and a suggestion there launders it.
  *
  * `collectFiles` is a seam for tests, which land a commit while the list is
- * read.
+ * read, and `parseFiles` one for the parse a pin at the area ceiling runs.
  */
-export async function runPin(cwd, { dryRun = false, expect = null, collectFiles = collect } = {}) {
+export async function runPin(cwd, { dryRun = false, expect = null, collectFiles = collect, parseFiles } = {}) {
   const root = await gitRoot(cwd);
   const sha = await headSha(root);
   if (!sha) throw new Error("no commit to pin: this repository has no HEAD");
@@ -115,7 +114,7 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
     );
   }
 
-  const areas = discover(files);
+  const areas = await pinPartition(files, { parseFiles });
   // No area is the empty population by another route: every area a later
   // commit makes postdates it.
   if (areas.length === 0) {

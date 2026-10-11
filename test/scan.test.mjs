@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { scan } from "../plugins/anatomiya/lib/scan.mjs";
+import { countsNothingIn, scan } from "../plugins/anatomiya/lib/scan.mjs";
+import { collect as collectCorpus } from "../plugins/anatomiya/lib/corpus.mjs";
 import { renderArea, renderOverview } from "../plugins/anatomiya/lib/render.mjs";
 import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
@@ -2013,16 +2014,31 @@ test("at the ceiling, a crate that counts nothing takes no place from an area th
   assert.ok(!first.areas.some((a) => a.path.startsWith("crate")));
   assert.deepEqual(stable(await scan(dir)), stable(first));
 
-  // A pin records the fold without asking what counts, and a given-back area
-  // split out of a pinned host would read as a population change on both sides,
-  // so a pinned scan keeps the fold the pin holds.
+  // The pin gives the places back the way the scan did, so it holds the areas
+  // the scan printed, and a scan under it reads every one as the population pinned.
   const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
-  await runPin(dir);
+  const { pin } = await runPin(dir);
+  assert.deepEqual(pin.areas.map((a) => a.path).filter((p) => p !== "crate/src"), first.areas.map((a) => a.path));
   const pinned = await scan(dir);
   assert.equal(pinned.baseline.status, "ok");
-  assert.equal(pinned.areas.length, 119);
-  assert.equal(pinned.corpus.orphaned, 3);
+  assert.equal(pinned.areas.length, 120);
+  assert.equal(pinned.corpus.orphaned, 0);
   assert.ok(pinned.areas.every((a) => a.baseline.status === "ok"), "every area reads the population its pin holds");
+});
+
+test("an area the checker reads is never one that counts nothing, so no pin or scan depends on the checker", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 3; i++) write(`a/f${i}.ts`, moduleSource(i));
+    for (let i = 0; i < 3; i++) write(`b/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const files = (await collectCorpus(dir)).files;
+  const countsNothing = countsNothingIn(files, new Map(), []);
+  const area = (path, lang) => ({ path, langs: [lang], files: files.filter((f) => f.lang === lang), fileCount: 3 });
+
+  assert.equal(countsNothing(area("a", "js")), false, "nothing parsed, and still the checker could count here");
+  assert.equal(countsNothing(area("b", "rust")), true);
 });
 
 test("at the ceiling, an area held for a language this run could not read keeps its place", async (t) => {
