@@ -1,4 +1,4 @@
-import { encode, encodePath } from "./encode.mjs";
+import { encode, encodePath, nameText } from "./encode.mjs";
 import { embeddedIn, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
@@ -75,6 +75,9 @@ const KINDS_LINES = 2;
  * directory name, so `globText` puts it back outside the encoded half.
  */
 const spellGlob = (g, anchored) => globText(g, (dir) => encodePath(dir).slice(1, -1), anchored);
+
+// An area's directory, said the way the overview's root lines say theirs.
+const nameOf = (p) => nameText(encode(p));
 
 const NAMED = 6;
 const some = (names) => {
@@ -607,7 +610,7 @@ function areaEnds(area, target) {
   const head = [
     ...frontmatter(target, { kind: "area", patterns: spelled.patterns }),
     "",
-    `# ${areaLabel(area.path, encode)}  ${area.fileCount} files`,
+    `# ${areaLabel(area.path, nameOf)}  ${area.fileCount} files`,
     "",
   ];
   return { head, closing: matchLines(target, spelled) };
@@ -943,7 +946,7 @@ function areaListing(areas, unfiled, budget, target) {
   const namesEveryArea = eligible.length === areas.length && eligible.length <= budget;
   const lines = eligible
     .slice(0, Math.max(0, namesEveryArea ? budget : budget - 1))
-    .map((a) => `- ${areaLabel(a.path, encode)} — ${a.fileCount} files, ${stated(a)} stated`);
+    .map((a) => `- ${areaLabel(a.path, nameOf)} — ${a.fileCount} files, ${stated(a)} stated`);
 
   // "more" only counts against something already named. A repository whose
   // areas all carry counts and state nothing lists none of them, which is the
@@ -960,7 +963,7 @@ function areaListing(areas, unfiled, budget, target) {
     const one = unfiled.length === 1;
     lines.push(
       `- ${plural(unfiled.length, "area")} ${one ? "has" : "have"} no pattern ${target.reader} can be given, ` +
-        `so no file here covers ${one ? "it" : "them"}: ${some(unfiled.map((a) => areaLabel(a.path, encode)))}.`
+        `so no file here covers ${one ? "it" : "them"}: ${some(unfiled.map((a) => areaLabel(a.path, nameOf)))}.`
     );
   }
   return lines;

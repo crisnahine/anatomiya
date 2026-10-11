@@ -46,6 +46,7 @@ import {
   extNoun,
   namesakeClause,
   pathOfRootLabel,
+  rootLabelEnd,
   ROOT_LABEL,
   runnerCount,
   RUNNERS_SHOWN,
@@ -268,7 +269,7 @@ const take = (clauses, expected) => clauses.splice(0, expected.split("; ").lengt
  */
 function readRootLine(line) {
   const body = line.slice(2);
-  const at = body.indexOf(": ");
+  const at = rootLabelEnd(body);
   if (at === -1) return null;
   return { label: body.slice(0, at), clauses: body.slice(at + 2).split("; ") };
 }
