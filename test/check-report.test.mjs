@@ -334,6 +334,18 @@ const finding = (o = {}) => ({
   ...o,
 });
 
+test("the text drops a NIT's reason only where its claim already says it", () => {
+  const spoken = "catch blocks use the error they caught: no convention. 8 of 9 sites (ratio)";
+  const unstated = { severity: "NIT", reason: "no convention stated here (ratio)", where: null };
+  const reasonLine = (o) => formatReport(bare({ findings: [finding({ ...unstated, ...o })], counts: { "MUST-FIX": 0, FIX: 0, NIT: 1 } })).split("\n")[4];
+
+  assert.equal(reasonLine({ claim: spoken }), "  catch (e) { }", "the claim says it, so the snippet follows");
+  assert.equal(reasonLine({ claim: spoken, where: "B.run" }), "  B.run");
+  assert.equal(reasonLine({ claim: "catch blocks use the error they caught" }), "  no convention stated here (ratio)", "a claim that does not say it");
+  assert.equal(reasonLine({ claim: spoken, reason: "no convention counted here" }), "  no convention counted here", "another reason");
+  assert.equal(reasonLine({ claim: spoken, companion: "spec/a_spec.rb" }), '  no convention stated here (ratio); no "spec/a_spec.rb"', "the companion is said");
+});
+
 test("the JSON writer answers the whole record, encoded", async (t) => {
   const dir = reportRepo(t);
   facts(dir);
