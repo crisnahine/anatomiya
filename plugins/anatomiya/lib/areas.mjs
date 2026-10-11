@@ -628,9 +628,7 @@ export function discover(files, {
     else areas.push(build(path, fs));
   }
 
-  const capped = countsNothing && areas.length > maxAreas
-    ? giveBack(areas, maxAreas, twins, countsNothing)
-    : capCount(areas, maxAreas, twins);
+  const capped = countsNothing ? giveBack(areas, maxAreas, twins, countsNothing) : capCount(areas, maxAreas, twins);
   const folded = capped.orphaned || [];
   const all = capped.sort((a, b) => byCode(a.path, b.path));
   // After the count is capped, never before: a glob is measured against the
@@ -729,7 +727,7 @@ function giveBack(areas, maxAreas, twins, countsNothing) {
   const countedIn = (set) => set.filter((a) => !countsNothing(a)).length;
   let best = capCount(areas, maxAreas, twins);
   let room = maxAreas - countedIn(best);
-  while (room > 0 && best.length < areas.length) {
+  while (room > 0) {
     const next = capCount(areas, best.length + room, twins);
     const over = countedIn(next) - maxAreas;
     if (over > 0) {
