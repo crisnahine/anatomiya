@@ -334,16 +334,19 @@ const finding = (o = {}) => ({
   ...o,
 });
 
-test("the text drops a NIT's reason only where its claim already says it", () => {
+test("a writer drops a reason only where the finding says its claim told it", () => {
   const spoken = "catch blocks use the error they caught: no convention. 8 of 9 sites (ratio)";
   const unstated = { severity: "NIT", reason: "no convention stated here (ratio)", where: null };
-  const reasonLine = (o) => formatReport(bare({ findings: [finding({ ...unstated, ...o })], counts: { "MUST-FIX": 0, FIX: 0, NIT: 1 } })).split("\n")[4];
+  const report = (o) => bare({ findings: [finding({ ...unstated, ...o })], counts: { "MUST-FIX": 0, FIX: 0, NIT: 1 } });
+  const reasonLine = (o) => formatReport(report(o)).split("\n")[4];
 
-  assert.equal(reasonLine({ claim: spoken }), "  catch (e) { }", "the claim says it, so the snippet follows");
-  assert.equal(reasonLine({ claim: spoken, where: "B.run" }), "  B.run");
-  assert.equal(reasonLine({ claim: "catch blocks use the error they caught" }), "  no convention stated here (ratio)", "a claim that does not say it");
-  assert.equal(reasonLine({ claim: spoken, reason: "no convention counted here" }), "  no convention counted here", "another reason");
-  assert.equal(reasonLine({ claim: spoken, companion: "spec/a_spec.rb" }), '  no convention stated here (ratio); no "spec/a_spec.rb"', "the companion is said");
+  assert.equal(reasonLine({ claim: spoken, toldInClaim: true }), "  catch (e) { }", "the claim says it, so the snippet follows");
+  assert.equal(reasonLine({ claim: spoken, toldInClaim: true, where: "B.run" }), "  B.run");
+  assert.equal(reasonLine({ claim: spoken }), "  no convention stated here (ratio)", "a claim that reads like one is not taken for one");
+  assert.equal(reasonLine({ claim: "catch blocks use the error they caught" }), "  no convention stated here (ratio)");
+  assert.equal(formatReportGithub(report({ claim: spoken, toldInClaim: true })).split("\n")[0], `::notice file=src/a.ts,line=12::${spoken}`, "one annotation says the gate once");
+  assert.equal(formatReportGithub(report({ claim: spoken })).split("\n")[0], `::notice file=src/a.ts,line=12,title=${spoken.replaceAll(":", "%3A")}::no convention stated here (ratio)`);
+  assert.equal(JSON.parse(formatReportJson(report({ claim: spoken, toldInClaim: true }))).findings[0].reason, "no convention stated here (ratio)", "the record keeps the field");
 });
 
 test("the JSON writer answers the whole record, encoded", async (t) => {
