@@ -686,9 +686,10 @@ function contains(base, target) {
  * The buffer is the smaller of the cap and the file, so an ordinary five-line
  * rule file costs five lines and only a large one pays the cap. `size` is the
  * file's bytes on disk: a cap asked of the decoded head counts each byte that
- * is not UTF-8 three times.
+ * is not UTF-8 three times. Asked for a `whole` read, a file past the cap is
+ * not read at all and comes back with a null head.
  */
-export function readHead(path, bytes = HEAD_BYTES) {
+export function readHead(path, bytes = HEAD_BYTES, { whole = false } = {}) {
   let fd;
   try {
     // Open first and stat the handle, so the file that is typed is the file
@@ -699,6 +700,7 @@ export function readHead(path, bytes = HEAD_BYTES) {
     fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     const stat = fstatSync(fd);
     if (!stat.isFile()) return { kind: "other" };
+    if (whole && stat.size > bytes) return { kind: "file", head: null, size: stat.size, mtimeMs: stat.mtimeMs };
     const want = Math.min(bytes, stat.size);
     if (want === 0) return { kind: "file", head: "", size: stat.size, mtimeMs: stat.mtimeMs };
     const buf = Buffer.alloc(want);

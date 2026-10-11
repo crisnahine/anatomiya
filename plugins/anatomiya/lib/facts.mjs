@@ -236,7 +236,7 @@ const RECORD_MOST = 64 * 1024 * 1024;
  * and takes whatever size it finds, and every scan, check and hook reads one.
  */
 export function readRecord(path) {
-  const entry = readHead(path, RECORD_MOST + 1);
+  const entry = readHead(path, RECORD_MOST, { whole: true });
   if (entry.kind !== "file") return { record: null, oversize: false };
   if (entry.size > RECORD_MOST) return { record: null, oversize: true };
   try {
