@@ -650,7 +650,7 @@ test("one worker reads all seven languages, and a broken file between them costs
   }
 });
 
-test("a tree too deep for the channel is answered as unread, and its counts still cross", async (t) => {
+test("a tree too deep for the channel is answered as a crash, as the JavaScript child answers one, and its counts still cross", async (t) => {
   const dir = scratch(t, "anatomiya-ts-deep-");
   const deep = file(dir, "deep.py", `x = ${"(".repeat(6000)}1${")".repeat(6000)}\n`, "python");
   const flat = file(dir, "flat.py", SAMPLES.python, "python");
@@ -658,7 +658,7 @@ test("a tree too deep for the channel is answered as unread, and its counts stil
   const trees = createPool({ size: 1, worker: WORKER, engine: "tree-sitter", withProgram: true });
   try {
     const [r, after] = await Promise.all([trees.parse(deep), trees.parse(flat)]);
-    assert.deepEqual(r, { rel: "deep.py", ok: false, error: "the tree is too deep to send", attempts: 1 });
+    assert.deepEqual(r, { rel: "deep.py", ok: false, error: "the tree is too deep to send", crashed: true, attempts: 1 });
     assert.equal(after.ok, true, "the worker went on to the next file");
     assert.equal(after.program.lang, "python");
   } finally {
