@@ -1598,13 +1598,15 @@ removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. `stagedLeft` 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
 that is on (`.cursor/rules: on, 4 files`, counting the files the record names, or with no record the
-files under a map name that carry the key), a second where that directory holds other entries under
-the prefix (`.cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes`),
-and a third for the entries at a name the record lists under `removing` (`... that the next scan
-removes, since the scan that wrote the map was about to remove it`), the one line it prints for
-`.claude/rules` too, and `pin` leaves the generated names of all three directories out of its
-clean-tree test. The record names the files written for each target under an optional `targets` key,
-present only where one was written, with no change of schema (C10).
+files under a map name that carry the key, and `.cursor/rules: off at the next scan` where the
+record names its overview under `removing`, as `check --format json` gives that target
+`state: "off"`), a second where that directory holds other entries under the prefix
+(`.cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes`), and a
+third for the entries at a name the record lists under `removing`
+(`... that the next scan removes, since the scan that wrote the map was about to remove it`), the
+one line it prints for `.claude/rules` too, and `pin` leaves the generated names of all three
+directories out of its clean-tree test. The record names the files written for each target under an
+optional `targets` key, present only where one was written, with no change of schema (C10).
 
 Whether either copy reaches a model is not measured (A106). For Cursor the delivery was read from
 the 3.20.21 client's code, where a rule with `globs` goes to the agent with its first read of a

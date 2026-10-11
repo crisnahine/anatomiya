@@ -23,7 +23,7 @@ import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs"
 import { isProducer, placedTests } from "./layout.mjs";
 import { areaIndex, areaLabel, globsReach, underArea } from "./areas.mjs";
 import { droppedSlots, scopeOf, unexaminedPhrase, unstatedLine } from "./render.mjs";
-import { auditRules, isLink, knownNames, pendingAmong, readHead, resolveInside, targetStatus } from "./rules.mjs";
+import { auditRules, isLink, knownNames, pendingAmong, readHead, resolveInside, targetStatus, turningOff } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
@@ -376,7 +376,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   const targets = {};
   for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
     const { state, reason } = targetStatus(root, target);
-    if (state === "on") targets[target.id] = { dir: target.dir, state, ...audited(target) };
+    if (state === "on") targets[target.id] = { dir: target.dir, state: turningOff(facts, target) ? "off" : state, ...audited(target) };
     // Unread, and the record says a scan wrote files there: they load whether or not this run saw them.
     if (state === "unknown" && knownNames(facts, target)?.size) {
       caveat(caveats, CAVEATS.RULES_UNLISTED, `${target.dir} could not be read (${reason}), so nothing there was examined`);

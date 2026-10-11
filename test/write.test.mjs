@@ -13,6 +13,7 @@ import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { writeFacts, writeTemp, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
+import { runDoctor } from "../plugins/anatomiya/lib/commands.mjs";
 
 const RULES = ".claude/rules";
 const STORE = ".claude/anatomiya";
@@ -4174,6 +4175,23 @@ test("a scan killed while turning the other targets off is finished by the next 
   }
   assert.ok(points > 0, "the control: the scan was killed");
   assert.ok(halfway > 0, "the control: some kill left Cursor's overview behind with part of its directory removed");
+});
+
+test("doctor says a target a killed scan was turning off is off at the next scan", async (t) => {
+  const [a, b] = [area("src/services"), area("src/api")];
+  for (let at = 1; ; at++) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    assert.equal(killedAt(result(dir, [a, b]), at, { targets: ["claude"] }), true, "the control: some kill left Cursor's overview behind, named to remove");
+    if (!namesIn(dir, cursor).includes(overviewName(cursor)) || !readFacts(dir).removing?.cursor?.includes(overviewName(cursor))) continue;
+    execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
+
+    const { lines } = await runDoctor({ cwd: dir });
+
+    assert.ok(lines.includes(`${cursor.dir}: off at the next scan`), `killed after step ${at}:\n${lines.join("\n")}`);
+    assert.equal(lines.some((l) => l.startsWith(`${cursor.dir}: on`)), false, `killed after step ${at}`);
+    return;
+  }
 });
 
 test("the record a scan renames first names what it is about to remove in each directory", (t) => {

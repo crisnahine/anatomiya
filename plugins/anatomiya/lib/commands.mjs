@@ -13,7 +13,7 @@ import { caseMagic, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
-import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, pendingAmong, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
+import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, pendingAmong, PREFIX, RULES_DIR, targetStatus, trackedRulesDir, turningOff } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
@@ -237,7 +237,8 @@ export async function runDoctor({ cwd = null } = {}) {
 
 /**
  * One line per Cursor or Copilot target that is on, or that the record names
- * files in and nobody can read; none for any other. A target that is on gets a
+ * files in and nobody can read; none for any other. One a killed scan was
+ * turning off reads as off at the next scan. A target that is on gets a
  * second line where its directory holds entries a scan counts as left there,
  * and it and `.claude/rules` one more where the next scan removes some.
  */
@@ -267,7 +268,7 @@ async function targetLines(cwd) {
     const going = pendingAmong(facts, target, unknown);
     const removing = going.length;
     const mine = known === null ? unknown.filter((name) => isMapName(name, target) && !going.includes(name)) : ours;
-    lines.push(`${target.dir}: on, ${listed ? plural(mine.length, "file") : "could not be listed"}`);
+    lines.push(`${target.dir}: ${turningOff(facts, target) ? "off at the next scan" : `on, ${listed ? plural(mine.length, "file") : "could not be listed"}`}`);
     const others = unknown.length - (known === null ? mine.length : 0) - removing + foreign.length + occupied.length;
     if (others > 0) lines.push(`${otherEntries(target.dir, others)} that a scan neither writes nor removes`);
     if (removing > 0) lines.push(removingLine(target.dir, removing));

@@ -487,6 +487,11 @@ export function targetStatus(root, target) {
   return { state: isOwned(read.head) && listsExactly(dir, overviewName(target)) ? "on" : "off" };
 }
 
+/** Whether the record names a target's own overview among the files it was about to remove, which makes it off at the next scan. */
+export function turningOff(facts, target) {
+  return pendingNames(facts, target).has(overviewName(target));
+}
+
 // True where the directory cannot be listed: the `lstat` is then all there is to go on.
 function listsExactly(dir, name) {
   try {
