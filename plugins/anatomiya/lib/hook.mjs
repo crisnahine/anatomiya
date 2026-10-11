@@ -516,7 +516,7 @@ export function echoContext(root, { now = new Date(), transcript = null, data = 
   const digest = hash.digest("hex").slice(0, 12);
   const tail = readTailOf(transcript, ECHO_READ_MOST);
   if (heldIn(tail, digest)) return null;
-  if (!claimed(claimPath(data, transcript, digest), tail, digest)) return null;
+  if (!claimed(claimPath(data, transcript, digest), transcript, tail, digest)) return null;
 
   // The remedy is the plugin's own command, which is the one spelling a model
   // can run: the binary is `anatomiya.mjs` under a directory only the plugin
@@ -692,12 +692,13 @@ const LOCK_HELD_MOST_MS = 5000;
  * reach the transcript, so each would read the window as empty. The claim names
  * the transcript offset its maker read up to, and the others read it as a
  * delivery made there, so it holds them only while that offset is inside the
- * window. The decision is taken under a lock made with an exclusive create, and
+ * window, judged against the transcript as it is when the claim is read.
+ * The decision is taken under a lock made with an exclusive create, and
  * a call that finds the lock taken holds; the claim is replaced by a rename, so
  * no reader sees it half written. Anything that cannot be written or read
  * answers as the transcript alone does.
  */
-function claimed(path, tail, digest) {
+function claimed(path, transcript, tail, digest) {
   if (path === null || tail === null) return true;
   const lock = `${path}.lock`;
   try {
@@ -709,9 +710,11 @@ function claimed(path, tail, digest) {
   try {
     const entry = readHead(path, 32);
     const at = entry.kind === "file" && /^\d+\n$/.test(entry.head) ? Number(entry.head) : null;
-    if (at !== null && at <= tail.end && heldIn(tail, digest, at)) return false;
+    // A sibling may have claimed past what this call read; only past the transcript as it is now is stale.
+    const now = at !== null && at > tail.end ? (readTailOf(transcript, ECHO_READ_MOST) ?? tail) : tail;
+    if (at !== null && at <= now.end && heldIn(now, digest, at)) return false;
     const temp = `${path}.${process.pid}`;
-    writeFileSync(temp, `${tail.end}\n`);
+    writeFileSync(temp, `${now.end}\n`);
     renameSync(temp, path);
   } catch {
     return true;
