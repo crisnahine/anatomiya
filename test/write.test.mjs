@@ -4175,7 +4175,7 @@ test("a name to remove that a scan never gives a file is not removed", (t) => {
 });
 
 // Hand-counted, not imported: a bound read off the module under test moves with it.
-const PUT_BACK_MOST = 128 * 2 ** 20;
+const PUT_BACK_MOST = 64 * 2 ** 20;
 const TOO_LARGE = PUT_BACK_MOST + 1;
 
 /** A sparse regular file one byte past the bound, opening with `head`. */
@@ -4194,7 +4194,7 @@ function sizes(dir) {
   return out;
 }
 
-const refusedAsTooLarge = (at) => `"${at}" is ${TOO_LARGE} bytes, past the 128 MiB a scan reads to put a file back`;
+const refusedAsTooLarge = (at) => `"${at}" is ${TOO_LARGE} bytes, past the 64 MiB a scan reads to put a file back`;
 
 test("a file past the bound a scan would replace or remove in Claude Code's directory or the store refuses the scan whole, dry run too", (t) => {
   const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
