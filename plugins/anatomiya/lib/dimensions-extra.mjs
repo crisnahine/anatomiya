@@ -241,18 +241,6 @@ function noteMetadataReads(n, names) {
   }
 }
 
-/**
- * The name to report a function-shaped site under. A method's name lives on
- * the `MethodDefinition` above it, not on the function it holds.
- */
-function siteName(fn, ctx) {
-  if (declName(fn)) return whereOf(fn, ctx);
-  const e = ctx.enclosing;
-  return e && (e.type === "MethodDefinition" || e.type === "PropertyDefinition")
-    ? whereOf(e, ctx)
-    : null;
-}
-
 /** Returns belonging to this function, not to an arrow nested inside its body. */
 function ownReturns(fn) {
   const out = [];
@@ -690,7 +678,7 @@ export const EXTRA_DIMENSIONS = [
       return {
         node(n, ctx) {
           if (!isFunctionLike(n)) return;
-          const where = siteName(n, ctx);
+          const where = whereOf(n, ctx);
           // React refuses `return null` from an effect in its own words, so
           // `undefined` there says "stop" rather than "an absent value is spelled
           // undefined", which is the same thing a bare return says.
