@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { Worker } from "node:worker_threads";
 
 import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
@@ -1129,9 +1130,45 @@ test("an area given back that counts nothing gives its own place back too", () =
   assert.equal(counted(areas, rustOnly), 3);
 });
 
-test("every area comes back when those counting nothing leave room for all of them", () => {
+/**
+ * discover run in a worker, so a give-back that never settles fails at the
+ * deadline: a test's own timeout cannot interrupt a synchronous loop.
+ */
+async function discoverWithin(files, { countsNothing, ...options }, ms = 10_000) {
+  const lib = new URL("../plugins/anatomiya/lib/areas.mjs", import.meta.url).href;
+  const worker = new Worker(
+    `const { parentPort, workerData: w } = require("node:worker_threads");
+    import(w.lib).then(({ discover }) => {
+      const areas = discover(w.files, { ...w.options, countsNothing: eval(w.countsNothing) });
+      parentPort.postMessage({ areas: [...areas], ceiling: areas.ceiling, orphaned: areas.orphaned });
+    });`,
+    { eval: true, workerData: { lib, files, options, countsNothing: String(countsNothing) } }
+  );
+  let timer;
+  try {
+    const out = await Promise.race([
+      new Promise((resolve, reject) => worker.once("message", resolve).once("error", reject)),
+      new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`the give-back did not settle in ${ms} ms`)), ms))),
+    ]);
+    return Object.assign(out.areas, { ceiling: out.ceiling, orphaned: out.orphaned });
+  } finally {
+    clearTimeout(timer);
+    await worker.terminate();
+  }
+}
+
+test("giving places back stops at twice the ceiling, the most a pin of the corpus may name", async () => {
+  const files = [...filesIn("a", 3), ...[10, 11, 12, 13, 14].flatMap((n, i) => filesIn(`r${i}`, n, "rust"))];
+  const areas = await discoverWithin(files, { minFiles: 3, maxAreas: 2, countsNothing: rustOnly });
+
+  assert.deepEqual(areas.map((a) => a.path), ["r1", "r2", "r3", "r4"]);
+  assert.equal(areas.ceiling, 4);
+  assert.deepEqual(areas.orphaned.map((f) => f.rel).sort(), [...filesIn("a", 3), ...filesIn("r0", 10, "rust")].map((f) => f.rel).sort());
+});
+
+test("every area comes back when those counting nothing leave room for all of them", async () => {
   const files = [...filesIn("a", 3), ...filesIn("r", 10, "rust"), ...filesIn("s", 20, "rust")];
-  const areas = discover(files, { minFiles: 3, maxAreas: 2, countsNothing: rustOnly });
+  const areas = await discoverWithin(files, { minFiles: 3, maxAreas: 2, countsNothing: rustOnly });
 
   assert.deepEqual(areas.map((a) => a.path), ["a", "r", "s"]);
   assert.deepEqual(areas.orphaned, []);

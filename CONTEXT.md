@@ -96,8 +96,9 @@ _Avoid_: area limit, area budget, cap
 **Give-back**:
 What happens at the **area ceiling** to the places of areas a scan drops for counting nothing: they
 go back to the areas the fold took last, the largest first, in the order it took them, in a scan and
-in a pin alike. An area holding JavaScript is never one that counts nothing, since the type checker
-may count there, and a held area keeps its place.
+in a pin alike, and never past twice the plain ceiling, the most a pin may name. An area holding
+JavaScript is never one that counts nothing, since the type checker may count there, and a held area
+keeps its place.
 _Avoid_: refill, reclaim, unfold
 
 **Pinned ceiling**:
