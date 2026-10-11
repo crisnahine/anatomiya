@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-12
+
 A scan reads the default branch's history and states what ships together: a change that adds a new
 cop also edits `config/default.yml`, and the area file, the notice before a write and `check` say
 so. Parallel tool calls carry one copy of the map between them, and the end-of-turn reuse check asks
@@ -4429,7 +4431,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/crisnahine/anatomiya/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/crisnahine/anatomiya/compare/v0.13.4...v0.14.0
 [0.13.4]: https://github.com/crisnahine/anatomiya/compare/v0.13.3...v0.13.4
 [0.13.3]: https://github.com/crisnahine/anatomiya/compare/v0.13.2...v0.13.3
