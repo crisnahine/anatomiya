@@ -616,12 +616,13 @@ function areaBlocks(area, cochange = []) {
 
 /**
  * The line an area file prints for a slot no gate let state: its sentence, its count and the gate that stopped it.
+ * The sentence's own full stop is dropped, since the colon after it goes on with the line.
  * The facts record keeps no claim sentence, so a reader of the record passes the one the row gives.
  */
 export function unstatedLine(area, d, claim = statedSide(d).claim) {
   const s = statedSide(d);
   return (
-    `${scoped(claimLine(claim), scopeClause(area, d))}: no convention. ` +
+    `${scoped(claimLine(claim).replace(/(\w)\.$/, "$1"), scopeClause(area, d))}: no convention. ` +
     `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s)})` +
     partialNote(d)
   );

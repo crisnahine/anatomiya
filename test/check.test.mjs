@@ -4685,6 +4685,20 @@ test("a filename class no gate stated speaks as its count too", async (t) => {
   assert.deepEqual(found.map((f) => [f.severity, f.claim, f.toldInClaim]), [["NIT", "files here are named kebab-case: no convention. 50 of 60 sites (ratio)", true]]);
 });
 
+test("a NIT on a claim that ends in a full stop prints no stop before its colon", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.tsx", `import { useState } from "react";\nexport function A() {\n  const [x] = useState(0);\n  return <div>{x}</div>;\n}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.tsx", `import React from "react";\nexport function B() {\n  const [y] = React.useState(0);\n  return <div>{y}</div>;\n}\n`);
+    commit("add");
+  });
+  facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ key: "hook_call_style", states: null, directive: false, gate: "ratio", conforming: 50 })] });
+  const found = forKey(await check(dir), "hook_call_style");
+
+  assert.deepEqual(found.map((f) => [f.severity, f.claim]), [["NIT", "React's hooks are called by their bare name, not through React: no convention. 50 of 60 sites (ratio)"]]);
+});
+
 test("a stated claim's finding is not taken for one whose claim told its reason", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/user-profile.ts", `export let a = 1;\n`);
