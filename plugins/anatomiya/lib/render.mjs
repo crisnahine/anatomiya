@@ -80,6 +80,9 @@ const spellGlob = (g, anchored) => globText(g, (dir) => encodePath(dir).slice(1,
 // An area's directory, said the way the overview's root lines say theirs.
 const nameOf = (p) => nameText(encode(p));
 
+// A pattern as a sentence names it, its directory said as `nameOf` says one.
+const sayGlob = (g, anchored) => globText(g, nameOf, anchored);
+
 const NAMED = 6;
 const some = (names) => {
   const { shown, rest } = listSome(names, NAMED);
@@ -635,7 +638,7 @@ function areaEnds(area, target) {
   if (!area.globs || area.globs.length === 0) {
     throw new Error(`area has no paths glob, so its file would load on every turn: ${area.path}`);
   }
-  const spelled = spelledGlobs(target, area.globs, spellGlob);
+  const spelled = spelledGlobs(target, area.globs, spellGlob, sayGlob);
   if (spelled.patterns.length === 0) return null;
   const head = [
     ...frontmatter(target, { kind: "area", patterns: spelled.patterns }),
