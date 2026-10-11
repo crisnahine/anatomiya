@@ -169,6 +169,18 @@ test("a streamed read hands over one field per NUL-delimited record", async (t) 
   assert.deepEqual(seen, ["a.ts"]);
 });
 
+test("a streamed read whose signal was stopped before git started never starts it", async (t) => {
+  // A listener added to a signal that already fired never fires, so the read would run to its end.
+  const { dir } = repo(t);
+  const seen = [];
+
+  await assert.rejects(
+    () => gitStreamed(dir, ["ls-files", "-z", "--"], (field) => seen.push(field), { signal: AbortSignal.abort() }),
+    /^Error: git ls-files stopped by its caller$/
+  );
+  assert.deepEqual(seen, []);
+});
+
 test("a streamed read that git refused is rejected, not resolved as an empty answer", async (t) => {
   // The whole of F13 and F15: buffering an oversize log put it in the same
   // silent branch as a repository with no commits, and every file came back

@@ -969,7 +969,7 @@ async function pathSet(root, args, opts = {}) {
  * a file that is sitting right there. A map stating the obligation puts those
  * at MUST-FIX against an author who wrote the companion.
  */
-export async function filesAt(root, sha, { timeout, maxFieldBytes } = {}) {
+export async function filesAt(root, sha, { timeout, maxFieldBytes, signal } = {}) {
   if (!safeRef(sha)) return null;
   // Streamed: this listing grows with the repository exactly as `ls-files`
   // does, and that is the read `execFile` answers with a `RangeError` thrown
@@ -977,7 +977,7 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes } = {}) {
   //
   // The rev goes before the separator: git reads anything past `--` as a path.
   const args = ["ls-tree", "-r", "--name-only", "-z", sha, "--"];
-  const ask = () => pathSet(root, args, { timeout, maxFieldBytes });
+  const ask = () => pathSet(root, args, { timeout, maxFieldBytes, signal });
   // The bounds are part of the question: a listing read under one caller's
   // must not answer a caller that set tighter ones.
   const key = [...args, `${timeout}`, `${maxFieldBytes}`];
