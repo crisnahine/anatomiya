@@ -58,6 +58,22 @@ export function areaOwner(path, areaPaths) {
   return owner;
 }
 
+/**
+ * Nested areas both contain the path; the deepest one carries its claims.
+ *
+ * Indexed once per area list rather than per call: this sits inside two
+ * per-file loops, and rebuilding the path list there cost one allocation and a
+ * second walk for every changed file.
+ */
+export function areaIndex(areas = []) {
+  const byPath = new Map(areas.map((a) => [a.path, a]));
+  const paths = [...byPath.keys()];
+  return (path) => {
+    const owner = areaOwner(path, paths);
+    return owner === null ? null : byPath.get(owner);
+  };
+}
+
 // The root is the least specific answer there is, and it is one character long,
 // so its length cannot stand in for its depth.
 const depth = (p) => (p === "." ? 0 : p.length);
