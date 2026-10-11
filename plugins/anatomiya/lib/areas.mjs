@@ -561,11 +561,16 @@ function assignGlobs(areas, files, uncounted) {
  * `uncounted` is the tracked source the corpus left out as fixture or
  * generated code. It decides no area and counts toward none; it only keeps
  * the globs off it.
+ *
+ * `countsNothing` says which areas the map will drop for counting nothing.
+ * Those hold no place under the ceiling, so the places they took go back to
+ * the areas the fold took last.
  */
 export function discover(files, {
   minFiles = areaFloor(files.length),
   maxAreas = areaCeiling(files.length),
   uncounted = [],
+  countsNothing = null,
 } = {}) {
   const byDir = new Map();
   for (const f of files) {
@@ -623,7 +628,9 @@ export function discover(files, {
     else areas.push(build(path, fs));
   }
 
-  const capped = capCount(areas, maxAreas, twins);
+  const capped = countsNothing && areas.length > maxAreas
+    ? giveBack(areas, maxAreas, twins, countsNothing)
+    : capCount(areas, maxAreas, twins);
   const folded = capped.orphaned || [];
   const all = capped.sort((a, b) => byCode(a.path, b.path));
   // After the count is capped, never before: a glob is measured against the
@@ -655,7 +662,8 @@ function build(path, files) {
 function capCount(areas, maxAreas, twins) {
   if (areas.length <= maxAreas) return areas;
 
-  const order = [...areas].sort((a, b) => a.fileCount - b.fileCount);
+  // By path within a size, so which of two equal areas folds is not the order the files arrived in.
+  const order = [...areas].sort((a, b) => a.fileCount - b.fileCount || byCode(a.path, b.path));
   const byPath = new Map(areas.map((a) => [a.path, a]));
 
   const orphaned = [];
@@ -708,6 +716,31 @@ function capCount(areas, maxAreas, twins) {
   const out = [...byPath.values()];
   out.orphaned = orphaned;
   return out;
+}
+
+/**
+ * The fold stopped earlier by as many places as the areas counting nothing
+ * hold, so the last folds, the largest areas, are the ones undone. The fold is
+ * the same sequence whatever its ceiling, so a higher one replays a prefix of
+ * it. Repeated, since an area given back may count nothing too, and stepped
+ * down where giving back would hold more counted areas than the ceiling.
+ */
+function giveBack(areas, maxAreas, twins, countsNothing) {
+  const countedIn = (set) => set.filter((a) => !countsNothing(a)).length;
+  let best = capCount(areas, maxAreas, twins);
+  let room = maxAreas - countedIn(best);
+  while (room > 0 && best.length < areas.length) {
+    const next = capCount(areas, best.length + room, twins);
+    const over = countedIn(next) - maxAreas;
+    if (over > 0) {
+      room -= over;
+      continue;
+    }
+    if (next.length <= best.length) break;
+    best = next;
+    room = maxAreas - countedIn(best);
+  }
+  return best;
 }
 
 // Put an area at its place in a queue kept smallest first, after any area of

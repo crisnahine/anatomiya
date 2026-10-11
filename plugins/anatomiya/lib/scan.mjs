@@ -89,7 +89,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   const stateRun = resolveState(root);
   stateRun.catch(() => {});
 
-  let state, areas, frameworks, head, headRun;
+  let state, frameworks, head, headRun;
   try {
     // A claim that belongs to a framework cannot be judged without knowing the
     // repository uses it, and one file never says. Read from the corpus, so a
@@ -99,18 +99,6 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     headRun.catch(() => {});
 
     state = await stateRun;
-    // The areas are partitioned over the corpus the pin was built over where
-    // there is one. The floor is a step function of the corpus size, so deriving
-    // it from today's file count re-partitions the repository on one added file
-    // and every area then reads as a population change against a pin that knew
-    // the old one.
-    const partitionSize = state.partitionSize ?? files.length;
-    areas = discover(files, {
-      minFiles: areaFloor(partitionSize),
-      maxAreas: areaCeiling(partitionSize),
-      uncounted,
-    });
-
     head = await headRun;
   } catch (err) {
     // Otherwise the process stays up until a checker nobody will read finishes.
@@ -131,6 +119,35 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   const corpusRels = new Set(files.map((f) => f.rel));
   applyPairings(head.records, corpusRels, langsIn(files));
   const headTruncated = corpusTruncated || head.truncated;
+
+  // An area holding a language this run read no file of is held (B41), below.
+  const unreadable = unreadableLangs(files, head.records);
+  // Keyed by path and size: every partition below replays one fold, in which an
+  // area only grows, so the two name one file set.
+  const reduced = new Map();
+  const reduceOnce = (area) => {
+    const key = `${area.path}\u0000${area.fileCount}`;
+    if (!reduced.has(key)) {
+      const areaParsed = area.files.map((f) => head.records.get(f.rel)).filter(Boolean);
+      reduced.set(key, { areaParsed, dims: areaParsed.length ? reduceArea(area, areaParsed, { frameworks, capabilities, tier }) : [] });
+    }
+    return reduced.get(key);
+  };
+  // The areas are partitioned over the corpus the pin was built over where
+  // there is one. The floor is a step function of the corpus size, so deriving
+  // it from today's file count re-partitions the repository on one added file
+  // and every area then reads as a population change against a pin that knew
+  // the old one. For the same reason a pin in force keeps the fold it holds: the
+  // pin is taken without a parse, so it cannot know which areas count nothing.
+  const partitionSize = state.partitionSize ?? files.length;
+  const areas = discover(files, {
+    minFiles: areaFloor(partitionSize),
+    maxAreas: areaCeiling(partitionSize),
+    uncounted,
+    countsNothing: state.countsOnly
+      ? (area) => !area.langs.some((l) => unreadable.includes(l)) && reduceOnce(area).dims.length === 0
+      : null,
+  });
 
   const authors = await authorsRun;
   // Unread history and empty history both give every file zero authors, which
@@ -179,7 +196,6 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // run that could wrote it. Every other area is described as usual. A mixed
   // area is held rather than described from half its files, because
   // describing it would write over claims this run had no way to measure.
-  const unreadable = unreadableLangs(files, head.records);
   const unanswered = unansweredFiles(files, head.records);
   const held = areas.filter((a) => a.langs.some((l) => unreadable.includes(l)));
   const heldIds = new Set(held.map((a) => a.id));
@@ -195,10 +211,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // scanning a subtree answers differently from scanning the whole of it.
   const folded = [];
   for (const area of areas) {
-    const areaParsed = area.files.map((f) => head.records.get(f.rel)).filter(Boolean);
-    if (areaParsed.length === 0) continue;
-
-    const dims = reduceArea(area, areaParsed, { frameworks, capabilities, tier });
+    const { areaParsed, dims } = reduceOnce(area);
     if (dims.length === 0) continue;
 
     // `measure` writes a record for every area it was handed, so a miss is a
