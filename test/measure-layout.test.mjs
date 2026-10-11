@@ -418,6 +418,19 @@ test("the recount counts a root named tests, which prints with a slash so it is 
   assert.equal(run.section.split("\n").filter((line) => line.startsWith("- tests: ")).length, 1, "one bullet carries the label");
 });
 
+test("the recount reads a root whose name is quoted, a separator inside the quotes included", (t) => {
+  const node = (name) => `import { test } from "node:test";\ntest("${name}", () => {});\n`;
+  const run = recountOf(t, {
+    ...Object.fromEntries([0, 1, 2, 3].map((i) => [`a: b/m${i}.js`, `export const m${i} = ${i};\n`])),
+    ...Object.fromEntries([0, 1, 2].map((i) => [`src/n${i}.js`, `export const n${i} = ${i};\n`])),
+    ...Object.fromEntries([0, 1].map((i) => [`test/m${i}.test.js`, node(`m${i}`)])),
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- "a: b": 4 \.js; 2 of 4 have a namesake test under test$/m);
+  assert.match(run.section, /^- tests: 2 node:test specs under test; 2 of 4 \.js files under "a: b" have a namesake test$/m);
+});
+
 test("a corpus directory that cannot be listed is refused by name, not with a stack", () => {
   const run = spawnSync(process.execPath, [script, join(tmpdir(), "anatomiya-no-such-corpus")], { encoding: "utf8" });
 

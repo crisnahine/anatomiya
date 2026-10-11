@@ -172,6 +172,20 @@ test("a write into a directory with no precedent is worth a word before it happe
   assert.match(said, /Nothing here was matched to a test by name/);
 });
 
+test("a notice spells a name that reads as words the way the overview does, quoted", () => {
+  const layout = {
+    roots: [
+      root("app/my mailers", { files: 4, companions: { with: 0, of: 4, root: null } }),
+      root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
+    ],
+  };
+
+  const said = noticeFor("spec/my mailers/x_spec.rb", layout);
+
+  assert.equal(said.split("\n")[0], 'anatomiya: "spec/my mailers/x_spec.rb"');
+  assert.match(said, /"app\/my mailers": 0 of 4 \.rb files have a namesake test/);
+});
+
 test("an ordinary write says nothing, so the one that matters is not one banner in a hundred", () => {
   // An unchanged block on every result is anti-signal, and the fact that
   // mattered was one clause inside it (A44).
