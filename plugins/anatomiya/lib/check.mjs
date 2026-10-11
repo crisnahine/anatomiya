@@ -17,10 +17,11 @@ import {
   isSource,
   safeResolve,
   lsFiles,
+  ownOutput,
 } from "./corpus.mjs";
 import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
 import { isProducer, placedTests } from "./layout.mjs";
-import { areaLabel, areaOwner, globsReach, underArea } from "./areas.mjs";
+import { areaIndex, areaLabel, globsReach, underArea } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
 import { auditRules, isLink, knownNames, pendingNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
@@ -41,6 +42,8 @@ import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
 import { byCode, dirOf } from "./paths.mjs";
+import { claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
+import { COCHANGE } from "./cochange-walk.mjs";
 
 /**
  * The check phase: which of the conventions the map stated did this branch
@@ -249,6 +252,9 @@ export async function check(cwd, { baseRef = null } = {}) {
     capabilities,
     pending,
     removed: new Set([...removed, ...pending.deleted]),
+    // Every row of the committed diff, corpus or not, and what the map says ships together.
+    rows: diff.rows,
+    cochange: facts?.layout?.cochange ?? null,
     // Only the two-run comparison establishes that a site is newly introduced,
     // so the degraded mode caps severity for the same reason a stale map does.
     // Named per cause: one sentence for all of them told a run with no pin that
@@ -774,7 +780,7 @@ async function placedAmong(root, examined) {
 const heldSource = (file) => Boolean(file.from) && isSource(file.from);
 
 async function collect(root, run) {
-  const { examined, placed, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending } = run;
+  const { examined, placed, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending, cochange } = run;
   const areaFor = areaIndex(areas);
   const ancestorsOf = ancestorsIndex(areas);
   // Which directives each area's file had no room to state, recomputed from the
@@ -785,7 +791,7 @@ async function collect(root, run) {
   const droppedIn = new Map(
     areas.map((a) => {
       try {
-        return [a.path, droppedSlots(a)];
+        return [a.path, droppedSlots(a, claimsIn(cochange, a.path))];
       } catch {
         return [a.path, new Map()];
       }
@@ -1030,6 +1036,7 @@ async function collect(root, run) {
     // answer their names give.
     const headRecords = new Map(jobs.map((job) => [job.file.path, parsed.get(`head:${job.file.path}`)]));
     await addPairingFindings(root, findings, run, droppedIn, headRecords);
+    addCochangeFindings(root, findings, run, droppedIn);
     // The scan says this on its own summary, and a check runs in CI where nobody
     // read that. Without it a Flow file reads as a broken file.
     if (missingStripper) {
@@ -1144,6 +1151,72 @@ async function addPairingFindings(root, findings, { examined, areas, base, cappe
       });
     }
   }
+}
+
+/**
+ * Companions the branch did not touch, one finding per stated claim on the
+ * first producer it added: one edit answers every producer, so three new cops
+ * and no entry is one finding. Read off every row of the change, corpus or
+ * not, with the tree's pending work folded in, since a companion is as often a
+ * YAML or Markdown file as source. A rename is no addition.
+ */
+function addCochangeFindings(root, findings, { rows = [], pending, areas, capped, cochange }, droppedIn) {
+  const claims = statedClaims(cochange);
+  if (claims.length === 0) return;
+  const gone = new Set([...(pending?.deleted ?? []), ...(pending?.removed ?? [])]);
+  // The map a scan wrote, the walk leaves out too: an untracked map is no 41st file.
+  const own = ownOutput(root).asWritten;
+  const added = new Set();
+  const touched = new Set();
+  for (const row of [...rows, ...(pending?.touched ?? [])]) {
+    if (row.status === "D" || gone.has(row.path) || own(row.path)) continue;
+    touched.add(row.path);
+    if (row.status === "A") added.add(row.path);
+  }
+  const change = { added: [...added], touched: [...touched] };
+  for (const claim of claims) {
+    const [path] = owedBy(claim, change);
+    if (path === undefined) continue;
+    const area = claim.area === null ? null : areas.find((a) => a?.path === claim.area) ?? null;
+    const dropped = area ? droppedOf(droppedIn, area, claimKey(claim)) : false;
+    const verdict = cappedAway(cochangeSeverity(claim, { from: cochange.from, area, dropped, capped, size: touched.size }), area && !globsReach(area.globs, path), area, path);
+    findings.push({
+      severity: verdict.severity,
+      reason: verdict.reason,
+      companion: claim.companion.edits ?? claim.companion.adds,
+      path,
+      oldPath: null,
+      line: 1,
+      area: claim.area,
+      dimension: "cochange",
+      claim: claimSentence(claim),
+      precision: "precise",
+      where: null,
+      snippet: null,
+    });
+  }
+}
+
+/**
+ * A co-change claim's place on the ladder. MUST-FIX only off a pinned tip, since
+ * off the base or HEAD the agent's own merged work is in the count it is graded
+ * by, and only for a record no change the claim was counted over contradicts.
+ */
+function cochangeSeverity(claim, { from, area, dropped, capped, size }) {
+  if (from !== "pin") return { severity: "FIX", reason: NO_BASELINE };
+  if (area === null) return { severity: "FIX", reason: "no area file carries this claim" };
+  const rung = cappedRung({ dropped });
+  if (rung) return rung;
+  if (size > COCHANGE.changeMost) {
+    return { severity: "FIX", reason: `this branch touches ${size} files, more than any change this claim was counted over` };
+  }
+  const run = cappedRung({ capped });
+  if (run) return run;
+  // Spelled out rather than built, so the documents gate reads both reasons.
+  if (claim.conforming !== claim.candidates) {
+    return { severity: "FIX", reason: `${claim.conforming} of the last ${claim.candidates} changes that added one` };
+  }
+  return { severity: "MUST-FIX", reason: `all ${claim.candidates} of the last ${claim.candidates} changes that added one` };
 }
 
 // The rows whose site is the filename, found by kind rather than by key, so a
@@ -1300,9 +1373,8 @@ export function severityFor(file, { dim, capped = null, dropped = false }) {
   // got at most the sentence under the notice, with no counts to weigh it by.
   // MUST-FIX means the map told them and they are the first to break it. Same
   // ladder position staleness and a partial predicate already occupy.
-  if (dropped === "named") return { severity: "FIX", reason: "the area file names this claim without its counts" };
-  if (dropped) return { severity: "FIX", reason: "the area file had no room to state this claim" };
-  if (capped) return { severity: "FIX", reason: `capped by this run: ${capped}` };
+  const rung = cappedRung({ dropped, capped });
+  if (rung) return rung;
   if (dim.precision !== "precise") {
     return { severity: "FIX", reason: "partial predicate: some sites are not visible statically" };
   }
@@ -1311,7 +1383,7 @@ export function severityFor(file, { dim, capped = null, dropped = false }) {
   }
 
   const base = baselineSide(dim, side);
-  if (!base) return { severity: "FIX", reason: "no baseline population recorded" };
+  if (!base) return { severity: "FIX", reason: NO_BASELINE };
   // A claim the map stated on the rest of the repository's confidence rather
   // than on this area's own sample. It is a real claim and it is enforced, but
   // not at the severity that means "this branch is the first violation in this
@@ -1340,6 +1412,19 @@ export function severityFor(file, { dim, capped = null, dropped = false }) {
     severity: "MUST-FIX",
     reason: `all ${base.candidates} baseline sites conform`,
   };
+}
+
+const NO_BASELINE = "no baseline population recorded";
+
+/**
+ * The rungs every finding shares above its own counts: the area file had no
+ * room for its claim, or this run could not answer for its comparison.
+ */
+function cappedRung({ dropped = false, capped = null }) {
+  if (dropped === "named") return { severity: "FIX", reason: "the area file names this claim without its counts" };
+  if (dropped) return { severity: "FIX", reason: "the area file had no room to state this claim" };
+  if (capped) return { severity: "FIX", reason: `capped by this run: ${capped}` };
+  return null;
 }
 
 /**
@@ -1412,22 +1497,6 @@ async function staleness(root, facts, base, unreadable = null) {
 }
 
 /* --- surroundings --- */
-
-/**
- * Nested areas both contain the path; the deepest one carries its claims.
- *
- * Indexed once per area list rather than per call: this sits inside two
- * per-file loops, and rebuilding the path list there cost one allocation and a
- * second walk for every changed file.
- */
-function areaIndex(areas = []) {
-  const byPath = new Map(areas.map((a) => [a.path, a]));
-  const paths = [...byPath.keys()];
-  return (path) => {
-    const owner = areaOwner(path, paths);
-    return owner === null ? null : byPath.get(owner);
-  };
-}
 
 /**
  * The areas one area sits inside, nearest first.
