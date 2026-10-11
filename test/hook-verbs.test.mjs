@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync } from "node:fs";
+import fs, { appendFileSync, existsSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { syncBuiltinESMExports } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -579,6 +580,39 @@ test("a lock held by another call holds this one, and a lock older than the hook
   const ahead = new Date(Date.now() + 6000);
   utimesSync(lock, ahead, ahead);
   assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock stamped past the timeout ahead of the clock");
+});
+
+test("a claim from later in the same transcript holds a sibling that read an earlier, shorter snapshot", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+
+  for (const [what, after, held] of [["inside the window", 100, true], ["pushed out of the window since", 300 * 1024, false]]) {
+    const claimedAt = statSync(path).size + Buffer.byteLength(`${JSON.stringify(filler(100))}\n`);
+    writeFileSync(join(data, "echo", name), `${claimedAt}\n`);
+    // The transcript grows after this call read it and before it reads the claim, as a sibling's record would.
+    const mkdir = fs.mkdirSync;
+    let grew = false;
+    fs.mkdirSync = (...args) => {
+      if (!grew) appendFileSync(path, [filler(100), ...(after > 100 ? [filler(after)] : [])].map((e) => `${JSON.stringify(e)}\n`).join(""));
+      grew = true;
+      return mkdir(...args);
+    };
+    syncBuiltinESMExports();
+    let answer;
+    try {
+      answer = call();
+    } finally {
+      fs.mkdirSync = mkdir;
+      syncBuiltinESMExports();
+    }
+    assert.equal(grew, true, `${what}: the transcript grew inside the call`);
+    if (held) assert.deepEqual(answer, {}, what);
+    else assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /, what);
+  }
 });
 
 test("a window's first batch delivers once, before anything is in its transcript", needsRuby, async (t) => {
