@@ -4082,7 +4082,7 @@ test("a directory holding a generated name in a target is reported, not an errno
 const KILLED_AT = `
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-const { writer, result, at } = JSON.parse(process.env.ANATOMIYA_KILLED_AT);
+const { writer, result, at, options } = JSON.parse(process.env.ANATOMIYA_KILLED_AT);
 let steps = 0;
 for (const name of ["renameSync", "unlinkSync"]) {
   const real = fs[name];
@@ -4094,15 +4094,15 @@ for (const name of ["renameSync", "unlinkSync"]) {
 }
 syncBuiltinESMExports();
 const { writeMap } = await import(writer);
-writeMap(result);
+writeMap(result, options);
 console.log(steps);
 `;
 
-/** Run a plain scan of `scan` in a child that dies after its `at`th step, and answer whether it did. */
-function killedAt(scan, at) {
+/** Run a scan of `scan`, plain unless `options` say otherwise, in a child that dies after its `at`th step, and answer whether it did. */
+function killedAt(scan, at, options = {}) {
   const writer = new URL("../plugins/anatomiya/lib/write.mjs", import.meta.url).href;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", KILLED_AT], {
-    env: { ...process.env, ANATOMIYA_KILLED_AT: JSON.stringify({ writer, result: scan, at }) },
+    env: { ...process.env, ANATOMIYA_KILLED_AT: JSON.stringify({ writer, result: scan, at, options }) },
     encoding: "utf8",
   });
   return killedChild(child);
@@ -4149,6 +4149,31 @@ test("a scan killed after any rename or removal is finished by the next plain sc
   }
   // Two store files and three in each directory renamed, one area file removed from each, and the record written again.
   assert.equal(points, 16, "the control: every step was a kill point");
+});
+
+test("a scan killed while turning the other targets off is finished by the next plain scan as the scan asked", (t) => {
+  const [a, b] = [area("src/services"), area("src/api")];
+  const control = workspace(t);
+  writeMap(result(control, [a, b]), { targets: ALL });
+  writeMap(result(control, [a, b]), { targets: ["claude"] });
+  let halfway = 0;
+  let points = 0;
+  for (let at = 1; ; at++) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    if (!killedAt(result(dir, [a, b]), at, { targets: ["claude"] })) break;
+    points++;
+    const left = namesIn(dir, cursor);
+    if (left.includes(overviewName(cursor)) && left.length < mapOf(cursor, a, b).length) halfway++;
+
+    writeMap(result(dir, [a, b]));
+
+    for (const target of [claude, ...OTHERS]) assert.deepEqual(namesIn(dir, target), namesIn(control, target), `${target.id}, killed after step ${at}`);
+    assert.deepEqual(readFacts(dir).targets, readFacts(control).targets, `killed after step ${at}`);
+    assert.equal("removing" in readFacts(dir), false, `killed after step ${at}`);
+  }
+  assert.ok(points > 0, "the control: the scan was killed");
+  assert.ok(halfway > 0, "the control: some kill left Cursor's overview behind with part of its directory removed");
 });
 
 test("the record a scan renames first names what it is about to remove in each directory", (t) => {
