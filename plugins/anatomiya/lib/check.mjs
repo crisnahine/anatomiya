@@ -42,8 +42,7 @@ import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
 import { byCode, dirOf } from "./paths.mjs";
-import { claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
-import { COCHANGE } from "./cochange-walk.mjs";
+import { CHANGE_MOST, claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
 
 /**
  * The check phase: which of the conventions the map stated did this branch
@@ -1206,7 +1205,7 @@ function cochangeSeverity(claim, { from, area, dropped, capped, size }) {
   if (area === null) return { severity: "FIX", reason: "no area file carries this claim" };
   const rung = cappedRung({ dropped });
   if (rung) return rung;
-  if (size > COCHANGE.changeMost) {
+  if (size > CHANGE_MOST) {
     return { severity: "FIX", reason: `this branch touches ${size} files, more than any change this claim was counted over` };
   }
   const run = cappedRung({ capped });
