@@ -169,7 +169,7 @@ test("a streamed read hands over one field per NUL-delimited record", async (t) 
   assert.deepEqual(seen, ["a.ts"]);
 });
 
-test("a streamed read whose signal was stopped before git started never starts it", async (t) => {
+test("a streamed read whose signal was stopped before the call is refused and hands over no field", async (t) => {
   // A listener added to a signal that already fired never fires, so the read would run to its end.
   const { dir } = repo(t);
   const seen = [];
