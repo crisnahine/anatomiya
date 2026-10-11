@@ -445,13 +445,13 @@ test("the echo delivers a map that differs from the one the window holds", needs
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
-test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", needsRuby, async (t) => {
+test("the echo holds a delivery 150 KiB back and delivers again past 192 KiB", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const after = (bytes) => transcript(t, [delivered(first), filler(bytes)]);
 
-  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(200 * 1024) }), {});
-  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(256 * 1024) }).hookSpecificOutput.additionalContext, /<repository-map /);
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(150 * 1024) }), {});
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(192 * 1024) }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
 // What 2.1.296 writes for itself between two calls: a snapshot of the system
@@ -461,7 +461,7 @@ const own = (bytes) => [
   { type: "queue-operation", operation: "enqueue", content: "x".repeat(bytes) },
   { type: "attachment", attachment: { type: "hook_success", stdout: "x".repeat(bytes) } },
 ];
-const shown = (bytes) => ({ type: "attachment", attachment: { type: "instructions" }, rendered: [{ content: "x".repeat(bytes) }] });
+const shown = (type, bytes) => ({ type: "attachment", attachment: { type }, rendered: [{ content: "x".repeat(bytes) }] });
 
 test("records the build writes for itself do not push a delivery out of the window", needsRuby, async (t) => {
   const dir = await railsish(t);
@@ -469,7 +469,16 @@ test("records the build writes for itself do not push a delivery out of the wind
   const call = (entries) => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: transcript(t, [delivered(first), ...entries]) });
 
   assert.deepEqual(call([...own(300 * 1024), filler(100 * 1024)]), {});
-  assert.match(call([shown(300 * 1024)]).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "an attachment the model reads counts");
+  assert.match(call([shown("skill_listing", 300 * 1024)]).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "an attachment the model reads counts");
+});
+
+test("the CLAUDE.md files the build writes after a delivery do not push it out of the window", needsRuby, async (t) => {
+  // The build places them at the head of the context, ahead of the delivery they follow in the transcript.
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const path = transcript(t, [delivered(first), shown("instructions", 129_512), filler(100 * 1024)]);
+
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
 });
 
 /** The plugin's data directory as Claude Code names it to a plugin's hooks, for one test. */
