@@ -560,11 +560,9 @@ function areaBlocks(area) {
   // wrong threshold auditable. Only one of those is worth the last line.
   for (const [d, s] of counts) {
     blocks.push([
-      (d.matchesDefault === true && s.states !== null
-        ? `${sentence(d, s)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
-        : `${sentence(d, s)}: no convention. ` +
-          `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s)})`) +
-        partialNote(d),
+      d.matchesDefault === true && s.states !== null
+        ? `${sentence(d, s)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)${partialNote(d)}`
+        : unstatedLine(area, d),
     ]);
     keys.push(s.states === null ? null : d.key);
     claims.push(s.states === null ? null : sentence(d, s));
@@ -577,6 +575,19 @@ function areaBlocks(area) {
   // siblings do is better off by it.
   const budget = Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0);
   return { blocks, keys, claims, stated, descriptions, kinds, budget };
+}
+
+/**
+ * The line an area file prints for a slot no gate let state: its sentence, its count and the gate that stopped it.
+ * The facts record keeps no claim sentence, so a reader of the record passes the one the row gives.
+ */
+export function unstatedLine(area, d, claim = statedSide(d).claim) {
+  const s = statedSide(d);
+  return (
+    `${scoped(claimLine(claim), scopeClause(area, d))}: no convention. ` +
+    `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s)})` +
+    partialNote(d)
+  );
 }
 
 /**

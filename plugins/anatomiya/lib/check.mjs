@@ -20,7 +20,7 @@ import {
 import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
 import { isProducer, placedTests } from "./layout.mjs";
 import { areaLabel, areaOwner, globsReach, underArea } from "./areas.mjs";
-import { droppedSlots, unexaminedPhrase } from "./render.mjs";
+import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
 import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
@@ -1009,7 +1009,7 @@ async function collect(root, run) {
           line: f.line,
           area: area ? area.path : null,
           dimension: f.dimension,
-          claim: f.claim,
+          claim: own ? spokenClaim(f.claim, area, own) : f.claim,
           precision: f.precision,
           where: f.where,
           companion: null,
@@ -1164,6 +1164,9 @@ function cappedAway(verdict, away, area, path) {
   return { severity: "FIX", reason: `the area file for ${areaLabel(area.path)} does not reach ${type}, so this claim was never delivered here` };
 }
 
+// A slot no gate stated speaks as the count its area file prints for it: the majority's sentence alone reads as advice.
+const spokenClaim = (claim, area, dim) => (statedSide(dim).states === null ? unstatedLine(area, dim, claim) : claim);
+
 /** How an area's file dropped this slot, `named` or `unnamed`, or false where it printed it. */
 function droppedOf(droppedIn, area, key) {
   return (area && droppedIn?.get(area.path)?.get(key)) || false;
@@ -1225,7 +1228,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
     dimension: row.key,
     // Worded by the row's owner, which also knows the kind the narrowing left
     // out and the two rules the template alone cannot carry.
-    claim: claimFor(row, nameDim.learned, nameDim.narrowed === true ? nameDim.learnedKind : undefined),
+    claim: spokenClaim(claimFor(row, nameDim.learned, nameDim.narrowed === true ? nameDim.learnedKind : undefined), area, nameDim),
     precision: nameDim.precision ?? "precise",
     where: null,
     companion: null,

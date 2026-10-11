@@ -17,7 +17,7 @@ import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/li
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
-import { renderArea } from "../plugins/anatomiya/lib/render.mjs";
+import { renderArea, unstatedLine } from "../plugins/anatomiya/lib/render.mjs";
 import { buildPin, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
@@ -4551,6 +4551,60 @@ test("an undelivered claim the gates suppressed is still only a NIT", async (t) 
   assert.equal(found.length, 1, JSON.stringify(r.findings));
   assert.equal(found[0].severity, "NIT", JSON.stringify(found[0]));
   assert.match(found[0].reason, /no convention stated here/);
+});
+
+test("a slot no gate stated speaks as the count its area file prints, not as the majority's sentence", async (t) => {
+  // An area typing 8 of 70 functions, unstated: a new typed function there drew
+  // "functions declare no return type", which reads as advice to drop it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("docs_src/security/one.py", `def one():\n    return 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("docs_src/security/two.py", `def two() -> int:\n    return 2\n`);
+    commit("add");
+  });
+  const unstated = dim({
+    key: "declared_return_type",
+    claim: "functions declare what they return",
+    counterClaim: "functions declare no return type",
+    states: null,
+    directive: false,
+    gate: "ratio",
+    counterGate: "ratio",
+    applicability: 20,
+    candidates: 70,
+    conforming: 8,
+    baseline: { candidates: 70, conforming: 8, exceptions: [] },
+  });
+  facts(dir, { sha: sha(dir, "main"), path: "docs_src/security", dimensions: [unstated] });
+
+  const r = await check(dir);
+  assertExamined(r, "docs_src/security/two.py");
+  const found = forKey(r, "declared_return_type");
+
+  assert.equal(found.length, 1, JSON.stringify(r.findings));
+  assert.equal(found[0].severity, "NIT");
+  assert.equal(found[0].claim, "functions declare no return type: no convention. 62 of 70 sites (ratio)");
+  assert.equal(found[0].claim, unstatedLine({}, unstated), "the area file's own line for the slot");
+});
+
+test("a filename class no gate stated speaks as its count too", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.ts", `export const b = 2;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [
+      dim({ key: "file_naming_case", learned: "kebab-case", claim: "files here are named kebab-case", states: null, directive: false, gate: "ratio", conforming: 50 }),
+    ],
+  });
+  const found = forKey(await check(dir), "file_naming_case");
+
+  assert.deepEqual(found.map((f) => [f.severity, f.claim]), [["NIT", "files here are named kebab-case: no convention. 50 of 60 sites (ratio)"]]);
 });
 
 test("a helper in a directory of components is not judged by the components' naming class", async (t) => {
