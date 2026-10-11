@@ -15,6 +15,8 @@ import {
   baseOf,
   byName,
   checkDirs,
+  cochangeCell,
+  cochangePlan,
   copyDependencies,
   dependencyProblems,
   corpusRepos,
@@ -284,6 +286,36 @@ test("an area whose dominant extension the check would not read is not where the
   assert.equal(probePlan({ areas: both }).path, "app/models/ZzProbeFile.rb");
 });
 
+const shipsWith = (o = {}) => ({
+  producer: "lib/rubocop/cop/style/*.rb",
+  companion: { edits: "config/default.yml" },
+  candidates: 100, conforming: 100, newest: [20, 20], authors: 22, authorsRequired: 2, lift: 9.5,
+  files: [266, 299], area: "lib/rubocop/cop", gate: null, directive: true,
+  ...o,
+});
+
+test("the co-change probe adds one producer of a stated claim and none of its companion", () => {
+  const plan = cochangePlan({ areas: [], layout: { cochange: { claims: [shipsWith({ gate: "evidence", directive: false, producer: "app/*.rb" }), shipsWith()] } } });
+
+  assert.equal(plan.path, "lib/rubocop/cop/style/zz_cochange_probe.rb");
+  assert.equal(plan.producer, "lib/rubocop/cop/style/*.rb");
+  assert.equal(plan.body, "");
+  // A class spanning sibling directories gets a new sibling, and the root's a file at the root.
+  assert.equal(cochangePlan({ layout: { cochange: { claims: [shipsWith({ producer: "plugins/*/*.json" })] } } }).path, "plugins/zzcochange/zz_cochange_probe.json");
+  assert.equal(cochangePlan({ layout: { cochange: { claims: [shipsWith({ producer: "*.md" })] } } }).path, "zz_cochange_probe.md");
+});
+
+test("a repository that states no co-change claim says so in its own column", () => {
+  assert.equal(cochangePlan({ layout: { cochange: { claims: [shipsWith({ gate: "evidence", directive: false })] } } }), null);
+  assert.equal(cochangePlan({ layout: null }), null);
+  assert.equal(cochangeCell(null), "n.a. (no claim stated)");
+  const plan = cochangePlan({ layout: { cochange: { claims: [shipsWith()] } } });
+  const report = (dimension, path) => ({ findings: [{ dimension, path }] });
+  assert.equal(cochangeCell(plan, report("cochange", plan.path)), "yes lib/rubocop/cop/style/*.rb");
+  assert.equal(cochangeCell(plan, report("file_naming_case", plan.path)), "no");
+  assert.equal(cochangeCell(plan, null), "no");
+});
+
 test("the report's finding paths are read off its findings and nothing else", () => {
   const report = {
     counts: { "MUST-FIX": 1, FIX: 0, NIT: 1 },
@@ -300,13 +332,13 @@ test("the report's finding paths are read off its findings and nothing else", ()
 
 test("the table prints one row per repository, in the order they ran", () => {
   const rows = [
-    { repo: "errbit", files: 252, areas: 32, stated: 0, roots: 7, wrote: 33, stable: "yes", pin: "ok", clean: 0, probe: "n.a.", semantic: "off no-dependencies", seconds: 4.1 },
+    { repo: "errbit", files: 252, areas: 32, stated: 0, roots: 7, wrote: 33, stable: "yes", pin: "ok", clean: 0, probe: "n.a.", cochange: "n.a. (no claim stated)", semantic: "off no-dependencies", seconds: 4.1 },
   ];
 
   const out = tableOf(rows).split("\n");
   assert.equal(out[0], `| ${COLUMNS.join(" | ")} |`);
   assert.equal(out[1], `|${COLUMNS.map(() => "---").join("|")}|`);
-  assert.equal(out[2], "| errbit | 252 | 32 | 0 | 7 | 33 | yes | ok | 0 | n.a. | off no-dependencies | 4.1 |");
+  assert.equal(out[2], "| errbit | 252 | 32 | 0 | 7 | 33 | yes | ok | 0 | n.a. | n.a. (no claim stated) | off no-dependencies | 4.1 |");
 });
 
 test("the arguments name a corpus and a scratch directory, and refuse anything else", () => {
