@@ -281,6 +281,8 @@ test("every JS row reads a deeply nested file in time linear in its depth", () =
     classes: (n) => "export const X = " + "class extends B { m() { return 0,\n".repeat(n) + "1" + " } }".repeat(n) + ";\n",
     objects: (n) => "export const o = " + "{ m() {}, c:\n".repeat(n) + "1" + "}".repeat(n) + ";\n",
     catches: (n) => "try { a() } catch (e) { log(e); if (b) throw e;\n".repeat(n) + "}".repeat(n) + "\n",
+    // A row asking each `!` for the chain it heads climbed the whole chain again.
+    nonNull: (n) => "export const x = a" + "!.b".repeat(n) + "!;\n",
   };
   const NESTED = new Set(["callbacks", "classes", "objects", "catches"]);
   const rows = dimensionsFor(["js", "jsx"], { rows: ALL_DIMENSIONS });
@@ -291,7 +293,7 @@ test("every JS row reads a deeply nested file in time linear in its depth", () =
       return () => collectHits(program, rows, { comments: [], source: "", rel: "f.tsx" });
     };
     // The parser's own stack ends a little past 1,600 levels of these.
-    const ratio = doublingRatio(read, name === "chain" ? 4000 : NESTED.has(name) ? 800 : 1500);
+    const ratio = doublingRatio(read, name === "chain" || name === "nonNull" ? 4000 : NESTED.has(name) ? 800 : 1500);
     assert.ok(ratio < LINEAR, `${name}: twice the depth took ${ratio.toFixed(2)} times as long`);
   }
 });
