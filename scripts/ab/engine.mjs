@@ -62,6 +62,9 @@ const OVERRIDES = new Set([
   // decides what a trial's model is allowed to do, one capability at a time,
   // and two machines that differ on it are not comparable.
   "CLAUDE_CODE_MODEL_CAPABILITIES",
+  // 2.1.296 runs a workflow's agents on the model this names, over the one the
+  // script asks for, and says so: `Workflow agent model "..." ignored`.
+  "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
 ]);
 
 /**
