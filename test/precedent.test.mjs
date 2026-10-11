@@ -562,7 +562,19 @@ test("a finding names the directories it turns on, which a change that made one 
   const counting = (ext) => [roots[0], { ...roots[1], companions: { ...roots[1].companions, ext } }];
   assert.equal(turnsOn("src/pages/Product/__tests__/form.test.ts", counting(".vue"))[0].family, "js");
   assert.equal(turnsOn("src/pages/Product/form_spec.rb")[0].family, "ruby");
-  assert.equal(turnsOn("src/pages/Product/form_spec.rb", counting(".py"))[0].family, "python");
+});
+
+test("a root answers a test only in the family the test is written in", () => {
+  const tested = rootOf(".rb", "app/services", { with: 6, of: 6, root: null });
+  const models = rootOf(".js", "src/models", { with: 0, of: 8, root: null });
+  assert.deepEqual(precedentFindings(["src/models/eng/spec/eng_spec.rb"], [tested, models]), []);
+  // The same root still answers a test of its own family, and a component of that family counts as it.
+  for (const path of ["src/models/eng/spec/eng.test.ts", "src/models/eng/__tests__/eng.test.vue"]) {
+    assert.equal(precedentFindings([path], [tested, models])[0]?.area, "src/models", path);
+  }
+  // A root of another family with a habit of its own does not silence the root of the test's.
+  const rubyModels = rootOf(".rb", "app/src/models", { with: 6, of: 6, root: null });
+  assert.equal(precedentFindings(["src/models/eng/eng.test.ts"], [tested, models, rubyModels])[0]?.area, "src/models");
 });
 
 test("a test under a test tree of its family's own is about the directory with that tree's word dropped", () => {
@@ -603,7 +615,7 @@ test("the notice prints a path through the encoder the map uses", () => {
 test("the notice prints what a record holds through the encoder too", () => {
   const dir = `app/${HOSTILE}`;
   const roots = [
-    { ...root(dir, { files: 4, companions: { with: 0, of: 4, root: null, ext: `.rb${HOSTILE}` }, tests: [{ runner: HOSTILE, files: 1, sub: HOSTILE, under: 1 }] }) },
+    { ...root(dir, { files: 4, companions: { with: 0, of: 4, root: null, ext: `.${HOSTILE}.rb` }, tests: [{ runner: HOSTILE, files: 1, sub: HOSTILE, under: 1 }] }) },
     tested(),
   ];
 
