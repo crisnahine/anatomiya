@@ -68,7 +68,10 @@ areas of noise.
 
 The layout is taken from the pinned corpus size where there is one. The floor is a step function, so
 one added file would otherwise re-partition the repository and every area would read as a population
-change against a pin that knew the old layout.
+change against a pin that knew the old layout. Under a pin the ceiling is the one the pin recorded,
+and nothing is given back (below): the give-back reads what each area counts, so an edit that adds
+no file would otherwise move areas against the pin. A pin that records none, which every pin 0.14.0
+or earlier took, folds at the plain ceiling. Places come back when a pin is next taken.
 
 Counts are cumulative up the tree, so a directory with 3 direct files and 20 in its subtree is a
 real area rather than being folded away.
@@ -84,7 +87,9 @@ root as a package like any directory, which Go's does (`rootPackage` on its decl
 39 of 371. Nothing folds into that area. A scan counts it over the root files of that language
 alone, so a root file of another language and a directory under the floor stay uncovered. In
 `check` it owns a path that holds no slash and none below (`areaOwner`).
-It prints as `the repository root`, and a directory of that name prints as `./the repository root`.
+It prints as `the repository root`. A directory of that name prints quoted, `"the repository root"`,
+as any name holding a space does, in the map and in `check`, and as `./the repository root` in the
+pin's listing.
 The record and `--format json` keep its path, `.`. Given up: in `check` it is still the furthest
 enclosing area of every other one, so a subdirectory area with no slot of its own for a dimension
 is held to the root area's claim at FIX, with `counted in the repository root, which this directory
@@ -92,10 +97,27 @@ sits inside`, though the root area's count was not taken over that directory and
 delivered there.
 
 Above the ceiling the smallest areas fold into the nearest ancestor that is itself an area, smallest
-first, until the count fits. Where no ancestor is an area, which happens whenever a directory holds
+first, until the count fits. A tie in size folds by the area's first file. Where no ancestor is an area, which happens whenever a directory holds
 only subdirectories, the parent is created rather than the files dropped: leaving it alone orphaned
 76,000 of 100,000 files on a measured repository. The repository root is still never a target,
 whether or not it is an area.
+
+The fold runs before anything is counted, so an area it keeps can turn out to count nothing, and
+the scan drops such an area. Its place goes back: the fold is run again with the ceiling raised by
+the places those areas held, which undoes its last folds, the largest areas, and again while an
+area given back counts nothing too. The fold is the same sequence at any ceiling, so a higher one
+replays a prefix of it. A pin records the same partition: where the fold folded anything it parses
+without the checker to learn which areas count nothing, and records the ceiling it settled on where
+that rose past the plain one. An area that holds JavaScript or TypeScript is never one that counts
+nothing, since a pin cannot know whether the checker will run there and count rows. Measured on the
+two corpus repositories that reach the ceiling: next.js holds 500 areas where it held 497, and
+canvas-lms 498 where it held 497. A pin of next.js took 14.5
+seconds where it took 8.1, and canvas-lms 20.3 where it took 6.5, at a load of 13 to 28. Under a pin
+an area that starts counting after the pin is not folded for it, so the areas that count can pass
+500 by at most the places the pin gave back, 3 on next.js and 4 on canvas-lms, until a pin is next taken.
+Given up: an area that counts but states nothing keeps its place, since ranking by stated claims
+would move the partition with every commit, and so does an area holding JavaScript that counts
+nothing.
 
 Raising the ceiling is not free coverage. Taking it to 1,000 split a measured 2,468-file repository
 into 209 smaller areas and dropped stated claims from 194 to 143, because a smaller area holds fewer
@@ -250,10 +272,14 @@ What a rejection means is the engine's to say. oxc and prism are their languages
 file they reject holds a syntax error. A tree-sitter grammar covers less than its language, so a
 file it rejects is counted on a line of its own, and the line says which two things that can mean:
 `82 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar
-does not cover; the files may be fine.` That is ktor. A reading of its 82 files found no syntax error in any; no Kotlin compiler was run on them.
+does not cover; the files may be fine.` That is ktor. The parser of the Kotlin 2.4.21 compiler accepts all 82 of those files.
 On three repositories per language, the largest share of a repository's lines left unread is 0.00%
 for Python (one file in django, a fixture broken on purpose), 0.02% for PHP, 0.00% for Go and Rust,
-0.97% for Java, 4.35% for C# and 7.88% for Kotlin.
+0.97% for Java, 4.35% for C# and 7.88% for Kotlin. Outside those three, next.js leaves 9.71% of its
+Rust lines unread, 22 files that rustc accepts: a `box` pattern, which only nightly Rust takes, in
+12 of them, and an attribute on a field of a struct pattern in 9. A newer tree-sitter-rust reads 4
+of the 22, and is published only as a GitHub release, where every grammar the plugin carries is a
+copy held by hash to its npm package, so none is taken from there.
 
 The C# grammar reads `#if` around whole statements and whole members and nowhere else, and real C#
 writes it inside base lists, parameter lists, call chains and initializers. It also rejects a file
@@ -343,6 +369,14 @@ counting every walk of the file's tree or of a subtree in it, and `collectHits` 
 parse worker's time; one shared walk took that to 9.2 walks and 2,047 calls. The check and the tests
 still ask one row at a time, through a `run` that `dimensions.mjs` builds from the same visitor on
 its engine's walk. A row that reads only `program.body` never walked, and keeps its `run`.
+
+A parse child loads its own engine's rows and no other engine's. The five base oxc rows and
+`dimensionsFor`, which selects from the rows its caller names, sit in `dimensions-base.mjs`; the
+JavaScript child names its list (`ROWS` in `parse-file.mjs`), the tree-sitter child its own, and the
+Ruby shard its prism tables. `dimensions.mjs` builds the whole registry, which the parent reads.
+Loading the registry in a JavaScript child loaded every prism and tree-sitter row in each of up to
+eight children: a JavaScript child adds 1.42 MB at load where it added 1.92, and a tree-sitter child
+1.50 MB where it added 1.94, medians of 25 on macOS arm64.
 
 A JavaScript file's facets take a walk of their own first, because they choose its rows: JSX and
 type syntax decide which rows the file gets, and only those rows go on the shared walk. The facets'
@@ -489,8 +523,9 @@ unchanged lends the hits the working tree gives it even when its imported types 
 area, the `tsconfig.json` changed or a dependency was upgraded: the checker is whole-program, and
 there is no program at the pin to ask.
 
-The checker, the history read and the baseline's git reads start beside the parse rather than
-after it, since none of them needs anything the parse answers. On a machine with no spare core (a one-worker pool) the checker still
+The checker, the history read, the co-change walk and the baseline's git reads start beside the
+parse rather than after it, since none of them needs anything the parse answers. The co-change walk
+starts once the pin has answered, since the pin is where it stops. On a machine with no spare core (a one-worker pool) the checker still
 waits for the parse, because beside it, it would take the time of the parse's only worker. A scan
 that fails while the checker runs stops it rather than waiting on it. The compiler host answers
 each path once per build, its containment and whether it exists, where it resolves and what it
@@ -866,8 +901,11 @@ about effort as `medium` would date them to a setting nobody can check they ran 
 Every gate reads the **baseline** population, not today's files. The counts from today print beside
 it and decide nothing, or an agent that adds conforming sites raises the bar it is judged against.
 
-`anatomiya pin` writes `.claude/anatomiya/baseline.json`: the commit, and the file list each area
-held at that commit. The file list is the whole point. A baseline recomputed by running today's
+`anatomiya pin` writes `.claude/anatomiya/baseline.json`: the commit, the file list each area held
+at that commit, the corpus size, and the area ceiling where giving places back raised it (section
+2). A ceiling that is not a count, is above the areas the pin lists, is at or below the plain
+ceiling for the pin's corpus, or is above twice that makes the pin unreadable, as any malformed
+field does, so no pin can lift the map past 1,000 areas. The file list is the whole point. A baseline recomputed by running today's
 glob against the old commit re-selects only the files that are still there, so moving the violating
 files into a new directory lifts the ratio to 1.00 with every other guard still holding. It stores
 no counts, because stored counts are the numbers the guard exists to verify.
@@ -929,10 +967,14 @@ Four hooks run, on different events and answering different questions. `anatomiy
 `SessionStart` and `FileChanged` and keeps the map current (below). `anatomiya echo` fires on
 `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` and re-delivers the map. `anatomiya notice`
 fires on `PreToolUse` for `Write`, `Edit` and `NotebookEdit`, and answers for the one path that call is
-about: whether a test is being put where its kind of file has no test precedent. A test is one by
+about: whether a test is being put where its kind of file has no test precedent, and whether the
+file is of a kind a stated co-change claim says ships with another change. A test is one by
 its name: the JavaScript and Ruby forms, or its own language's in Python, PHP, Go, Java, C# and
 Kotlin, read by the rule the layout reads a file by. No Rust path is asked, since cargo collects by
-place and a crate is known only by the files around it. It is silent otherwise,
+place and a crate is known only by the files around it. For a co-change claim it prints one line
+per claim whose producer class holds the path, `A .rb file added here ships with an edit to
+"config/default.yml": 100 of the last 100 changes that added one.`, and then which change to make in
+the same change, or to say why this file does not need it. It is silent otherwise,
 which is most writes. That silence is the point rather than a saving. A session was handed the same
 overview more than a hundred times and still put a spec in a directory whose siblings had none, because
 the clause that mattered had scrolled past a hundred times with everything else; an unchanged block on
@@ -957,7 +999,15 @@ findings, two of them in that root.
 
 `anatomiya reuse` fires on `Stop`, at the end of a turn, and speaks only where the turn left source
 lines nothing has checked against the repository: a scanned repository, a changed file the corpus
-counts, and at least one added line, in a file written since the session began. It answers `decision: "block"` with one reason, which asks the
+counts, and at least one added line, in a file last written during one of the session's own tool
+calls. A call runs from its `tool_use` record to its `tool_result`, widened a second each side for
+filesystems that keep whole seconds, whatever the tool, so a Bash write and a subagent's write count
+without parsing anything. A call run in the background runs on to the first record of its
+completion: a task notification, queued or delivered, that opens with `<task-notification>` and
+names the call first; a prompt that quotes a call's id extends nothing. A file another session, an
+editor or a formatter saved between calls is not asked about, and one written by someone else
+during one of the session's calls still is. A transcript whose calls carry no timestamps charges
+nothing. It answers `decision: "block"` with one reason, which asks the
 model to give one subagent the diff and the added lines and to call any existing function that does
 the same job in place of the copy. That wording is the only one measured passing every hard case, 24
 of 24, where every wording the model answered inline passed 9 or 10 of 12 (A91). It stops no tool and
@@ -1039,7 +1089,8 @@ bytes on microsoft/vscode, so the bound the rendered map is held to would have s
 on exactly the repositories where a directory nobody read is easiest to miss.
 
 The notice, the end-of-turn check and the refresh want only the record's `layout`, 2,037 bytes of
-that record, so a scan writes it a second time on its own, as
+that record, plus the co-change record inside it, 326 to 334 bytes where nothing was mined and
+about 8 KB for rubocop's claims and their near misses, so a scan writes it a second time on its own, as
 `.claude/anatomiya/layout.json`, stamped with the size and mtime of the record file it was taken
 from. A hook reads it only where its schema is one this build reads and the record on disk has
 exactly that size and that mtime, and reads the record otherwise. A length alone passed a record
@@ -1116,7 +1167,7 @@ nothing) and nothing else, each verb imports its own module when it
 runs (`hook-verbs.mjs` for the echo, the notice and the end-of-turn check, `refresh.mjs` for the
 refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check.
 Every hook process used to load 65 modules; the echo now loads 13, the notice 13 until it reads its
-rules and 25 after, the end-of-turn check 22 and the refresh 28. The echo went from 65ms to 39ms
+rules and 26 after, the end-of-turn check 22 and the refresh 28. The echo went from 65ms to 39ms
 against 26ms for bare node, timed when it loaded 12 (A100). A module that will not
 load throws inside the same boundary as everything else, so the hook still answers `{}`.
 
@@ -1134,21 +1185,36 @@ That read is contained by F2 like every write, so a settings file symlinked out 
 refused rather than followed, and a refusal is a printed line rather than a failed scan.
 
 A delivery is roughly 500 tokens, and until A92 one was made on every turn and every tool call, so a
-session making 300 calls spent about 150,000 on it. Claude Code keeps every copy. The hook now reads the
-last 256 KiB of the session's transcript first and stays silent when that tail holds a delivery of the
-same map with no compaction after it. Each map carries a `digest` of its body, so a re-scan is delivered
-on the next call, and a copy further back than the window is delivered again, about every 29k tokens of
-context in a typical session. A subagent or a workflow stage is answered from its own transcript.
-Anything the hook cannot read answers with a delivery, which is the old behaviour. Parallel tool
-calls in one batch each run before any of the batch's deliveries is written, so none sees the
-others', and the worst case is one copy per call. Inside a mapped checkout the prompt has already
-delivered the map before the first batch, and the batch adds none. A session started one directory
-above the checkout has no map on the prompt, which names no file, so its first batch into that
-checkout reaches the worst case, once per context window and per map: measured on 2.1.285, five
-parallel reads gave four copies from the parent and one from inside the checkout.
-`scripts/measure-echo.mjs` replays the rule over a transcript store: on 3,502 local transcripts it kept
-7,857 of 65,977 deliveries. The measurements behind the rule are in
-`docs/research/what-a-repeated-hook-context-costs.md`. There is still no flag for it: nothing a
+session making 300 calls spent about 150,000 on it. Claude Code keeps every copy. The hook reads back through the
+session's transcript, at most 1 MiB, until it has counted 192 KiB of what the model reads after a
+delivery: user and assistant messages and the attachments the build marks `rendered`, less the
+CLAUDE.md files, which the build places at the head of the context. A prompt snapshot, a hook's own
+stdout and every other bookkeeping line count for nothing; counted, a prompt snapshot of up to 130 KB
+pushed a delivery out within one tool call. It stays silent when those bytes hold a delivery of the
+same map with no compaction after it. Each map carries a `digest` of its body, so a re-scan is
+delivered on the next call, and a copy further back than the window is delivered again, about every
+29.9k tokens at the 6.57 bytes per token measured on 2.1.292 to 2.1.296. A subagent or a workflow
+stage is answered from its own transcript. Anything the hook cannot read answers with a delivery.
+
+Parallel tool calls in one batch each run before any of the batch's deliveries is written, so none
+sees the others'. Where Claude Code names the plugin a data directory, `CLAUDE_PLUGIN_DATA`, the
+calls share a claim per transcript and map under `echo/` there. The first to take the claim's lock,
+made with an exclusive create, writes the transcript offset it read to, by a rename, and delivers;
+the others read that offset as a delivery made there and stay silent. A claim holds only while its
+offset is inside the window, judged against the transcript as it is when the claim is read. A call
+that finds the lock taken stays silent. A lock older than the hook's 5 second timeout was left by a
+call that died holding it, and is broken once: the call moves it to a name of its own, reads the
+age of what it moved, and puts it back where it turns out fresh. Claims and locks older than a day
+are swept, at most 4,096 names read. Started 3 and 8 at once, 20 rounds each, with no claim and with
+a stale one, the echo delivered once in every round. Without that directory, or where it cannot be
+written, the worst case is one copy per call. Inside a mapped checkout the prompt has already
+delivered the map before the first batch, and the batch adds none.
+`scripts/measure-echo.mjs` replays the rule over a transcript store: on 4,328 local transcripts on
+2026-10-11 it kept 9,267 of 46,370 deliveries. Reading up to 1 MiB and parsing each line costs a
+median 3.7 ms where no delivery is found, against tens of milliseconds for the node process the hook
+already is. The measurements behind the rule are in
+`docs/research/what-a-repeated-hook-context-costs.md` and
+`docs/research/what-a-2-1-296-transcript-holds.md`. There is still no flag for it: nothing a
 scan takes tunes a hook.
 
 That last row is the ceiling on the whole design. A `paths` rule attaches when the agent uses the
@@ -1210,7 +1276,13 @@ replaced as one: every one is written to its temp file before any rename, the fa
 first and stale area files removed last, and a rename or removal that fails puts back what it had
 replaced. So no rendered file exists that is not derivable from facts on disk, and a scan that fails
 part way does not leave new facts beside the old map for `check` to call fresh. A process killed
-between two renames is the one window left. It carries a schema version, and the check refuses a
+between two renames leaves a record that names, for each directory, the map files that scan had yet
+to remove (`removing`), written into the record before its first rename. The next plain scan removes
+a file at such a name that still carries the key and that its own plan does not write, and once a
+scan's removals have landed it writes the record again without that list, so a file someone puts at
+one of those names later is not removed. Measured on a scan of all three directories that replaced
+one area with another, killed after each of its 16 renames and removals, the next plain scan healed
+every one. The record carries a schema version, and the check refuses a
 version past the one it knows rather than reading the fields positionally: an older record is
 readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
 language writes neither, for the same reason: keeping the rendered files while replacing the facts
@@ -1240,7 +1312,12 @@ Three constraints shape the rendering:
   map off for the session that just built it. The commands use `cat`.
 
 Ownership needs all three of: the `anatomiya-` filename prefix, a `generator: anatomiya` frontmatter
-key, and the map on disk naming the file. All three, or the file is left alone and reported. The
+key, and the map on disk naming the file, as a file the map holds or one the scan that wrote it was
+about to remove. All three, or the file is left alone and reported. `check` lists a file at a name
+on that second list as one the map does not name, since it still loads, and says under that list
+that the next scan removes it (`the next scan removes "anatomiya-area-<id>.md", which the scan that
+wrote the map was about to remove`); `--format json` names it again under `removing`, beside
+`unknown`. The
 prefix earns its place for one job, which is that a single `$(git rev-parse --git-common-dir)/info/exclude`
 line per directory hides every generated file there. It is not the ownership test, because a hand-written file can take
 that name. Nor is the frontmatter key: an older build wrote files this one knows nothing about, and
@@ -1431,7 +1508,8 @@ by the next scan that writes or removes in that directory: a regular file named 
 (`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier scan left in
 .claude/anatomiya were removed`. The pin's and the refresh lock's temporary files are not swept. A
 leftover is removed without being opened, where every other file about to be replaced or removed
-is read whole first for the put-back, so its size costs the scan nothing and a scan that fails
+is read whole first for the put-back, up to 64 MiB (past that a scan refuses, leaves a Cursor or
+Copilot directory it did not name alone, or replaces a record unread), so its size costs the scan nothing and a scan that fails
 later does not put it back. A leftover whose removal fails, on any code, stops nothing
 (`pair.left` in `replaceAll`): it stays, the scan writes, and the plan comes back with it moved
 from what was removed to what was left: `stagedLeft` for `.claude/rules` and `storeStagedLeft` for
@@ -1511,7 +1589,9 @@ that never names one reads as it did. `doctor`, run inside a repository, prints 
 that is on (`.cursor/rules: on, 4 files`, counting the files the record names, or with no record
 the files under a map name that carry the key), a second where that
 directory holds other entries under the prefix (`.cursor/rules holds 1 entry named anatomiya-* that a
-scan neither writes nor removes`), and `pin` leaves the generated names of all three
+scan neither writes nor removes`), and a third for the entries at a name the record lists under
+`removing` (`... that the next scan removes, since the scan that wrote the map was about to remove
+it`), and `pin` leaves the generated names of all three
 directories out of its clean-tree test. The record names the files written for each target under an
 optional `targets` key, present only where one was written, with no change of schema (C10).
 
@@ -1639,8 +1719,9 @@ line is read as for a first pin. A branch merged on the remote with a merge comm
 second parent and is pinned, the merge being its review.
 
 And the pin is taken at the commit that was judged, or not at all: HEAD and the tree are asked
-again once the file list is read, since a commit or a `git add` landing while it was read would
-put files into a pin labelled with the commit judged before. What each automatic pin accepted is
+again once the file list is read, and again after the parse a pin at the area ceiling runs, since a
+commit or a `git add` landing in either window would put files into a pin labelled with the commit
+judged before. What each automatic pin accepted is
 written to `refresh.json`.
 
 A pin that stops following while the checkout sits on the tip is held, and `refresh.json` says why
@@ -1830,7 +1911,9 @@ its own.
 
 A file is a test by its facets, its name or its position, and by nothing else. The facets first: a
 known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
-counts when it carries `.test.`, `.spec.`, `.cy.` or `-test.`, `-spec.` on the name alone, and when
+counts when it carries `.test.`, `.spec.`, `.cy.`, `-test.` or `-spec.`, or one of seven kinds of
+test spelled as a dotted segment of their own (`.unittest.`, `.basictest.`, `.longtest.`,
+`.spectest.`, `.stest.`, `.integrationTest.`, `.releaseTest.`), on the name alone, and when
 it carries `_spec.rb` or `_test.rb` and a test tree above it agrees. The Ruby form is the one a
 non-test file wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
 own `software_spec_spec.rb` under `test/`.
@@ -1849,10 +1932,15 @@ plus the ones the family's own build uses: a Gradle source set ending in `Test` 
 and a `Test` or `Tests` directory for PHP (composer's `tests/Composer/Test`, symfony's
 `Component/Cache/Tests`). Rust has no name, and a file there is a test by its facets
 or by sitting directly in a crate's `tests`.
-Then a `__tests__` path segment, because nothing but a test is ever put in one. Last, for a source
-file under a top-level `test`, `tests` or `spec` directory, a source file outside that tree whose
-path the file's own tail mirrors: eslint's `tests/lib/rules/no-var.js` covers `lib/rules/no-var.js`
-and says so nowhere but in its path. A file counted by one of the last three prints its runner as
+Then a `__tests__` path segment, and last, for a source file under a top-level `test`, `tests` or
+`spec` directory, a source file outside that tree whose path the file's own tail mirrors: eslint's
+`tests/lib/rules/no-var.js` covers `lib/rules/no-var.js` and says so nowhere but in its path.
+Neither of these two holds for a file the parse read that exports something, which is what the tests
+import, or for a Ruby file it read that declares no case: 328 of the 645 files the two took across 60
+repositories export something, and every one of those is a fixture, a helper, a mock or a config,
+plus 11 Ruby support files. A file the parse could not read, or read through a fallback, keeps the
+path rule, since what the tool could not read decides nothing. Such a support file is neither a test
+nor a source file in any count. A file counted by one of the last three prints its runner as
 `test files` rather than having one guessed at.
 
 A component is never a test file, by any of these: no runner collects a `.vue` or `.svelte` file,
@@ -2007,8 +2095,11 @@ Every clause is dropped when it counts nothing.
   words that name another file. Where every file a root would ask holds its own tests the namesake
   count is dropped and the clause stands alone, `4 hold their own tests`. The tests line and an
   area's kinds line carry the same clause.
-- The helper facet, JavaScript and JSX roots only: how many non-test `.ts` and `.js` modules sit
-  beside the JSX files, the three commonest stems among them that appear more than once, and how
+- The helper facet, JavaScript and JSX roots only: how many `.ts` and `.js` modules sit beside the
+  JSX files, counted over the files a test could be written for, the namesake count's own
+  definition, so no test, story, empty file, declaration file or file under a test tree is one:
+  next.js's `test` root loses the clause and vscode's `extensions` reads 2256 where it read 2621.
+  The three commonest stems among them that appear more than once, and how
   many of the JSX files define a module-level function they do not export, out of how many JSX
   files there are. Both numbers print and no side is chosen. A stem that appears once is no habit,
   and ranking unique names put the first three alphabetically on the line as the "commonest"; where
@@ -2117,6 +2208,66 @@ Only importers outside the area count: a directory importing its own files is ho
 written, not who depends on it. This is the counted form of "check before creating", and Ruby has
 no static import surface, so there is no Ruby line.
 
+### What ships together
+
+Some habits are not in any file's text and not in the tree: a new cop is entered in
+`config/default.yml`, a component ships with a changeset. The evidence is
+which files changed together, so a scan reads the default branch's history for it, once, beside the
+parse, with no parser: any language can get a claim.
+
+The unit is one first-parent change, since a branch lands on the default branch as one, so the
+change a claim is counted over and the change `check` holds to it are the same thing. The walk
+reads the newest 20,000 first-parent changes up to its tip, where the tip is the pin where it loads
+and is reachable, else HEAD's fork point with the first base ref that resolves, else HEAD, and the
+record names which. A change past 40 added or modified files, or past 10,000 deletions, is bulk (a
+vendored import, a rename sweep) and is not counted. Renames are off, so a move is a deletion and an
+addition, and a moved file is not a new one. The map this tool writes is no part of a change.
+
+A file's class is its directory and its kind, `lib/rubocop/cop/style/*.rb`, and the same kind one
+directory up, `lib/rubocop/cop/*/*.rb`, unless that would be the repository root. The kind runs from
+the first dot of the name past any segment a version number starts, so forem's vendored gems are
+all `vendor/cache/*.gem` and not `*.1.0.gem` and `*.2.0.gem`; a dotfile's own name is not its kind,
+Ruby's `_spec.rb` and `_test.rb` are kinds of their own, and a kind holding anything but ASCII
+letters, digits, `.`, `_` and `-` is none, so such a file is in no class. A claim says what a change
+adding a file of one class, the producer, also touches: one named file edited, or a file of another
+class added, the companion. A test class is neither side: tests are counted file by file by the
+namesake count and the obligations, and as a class "adds a spec here" is met by any spec at all.
+
+Each producer class is judged on its newest 100 candidates, the changes that added one, because a
+deep window averages a habit with the years before it began: rubocop's style cops ship with
+`config/default.yml` 76 of 76 times in the newest 4,000 changes and 200 of 334 over all of them.
+Pairs are counted only for a class with at least 35 candidates and a companion touched at least 32
+times, the floor the Wilson bound at 0.90 needs, and past 100,000 pair keys the count stops and
+states nothing. A pair then states only where it passes D1's ratio and Wilson bound with no
+borrowing, the author bar over its conforming candidates, and three gates of its own: the companion
+is touched at twice its base rate or more, the companion and a producer exist at the tip, and the
+newest fifth of the candidates conforms at 0.90. A spanning class, one directory up, states only
+from candidates in at least two child directories, one still holding a producer at the tip. One
+statement per pair: a directory's own class over its parent unless the parent covers a tenth more
+candidates, and of two classes that each ship with the other added, the one with more candidates.
+
+The record keeps the walk's counts, at most 100 stated claims and at most 100 near misses, those
+with the most candidates first, in `layout.cochange`. A claim's area is the one area that holds its
+producers at the tip and whose globs reach one of them; where there is none it is printed nowhere,
+and the notice and `check` still speak for it. The area file prints it after the directives:
+
+```
+a .rb file added to "lib/rubocop/cop/style" ships with an edit to "config/default.yml"
+  100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here arrived that way
+```
+
+A claim printed in an area file counts as stated, in the scan's claims line and in the overview's
+`N stated`; one printed nowhere counts in neither. A shallow clone, such as a CI checkout at depth
+one, reads too few changes to state anything, and a git older than 2.31 refuses `--diff-merges`, so
+the walk states nothing there either.
+
+Measured with the build's own walk and gates on 44 repositories, mined on the older four fifths of
+each one's changes and held out on the newest fifth: 24 claims in 11 repositories, and 1,563 of the
+1,633 held-out additions came with their companion (95.7%). Mined over every change read, as a scan
+does, 25 claims in 9; over the 60 corpus repositories a scan states those 25, 16 of them in an area
+file. The walk and the tip's tree took 3.35 seconds at most, on opf/openproject, and 34.7 over all
+44 (`docs/measurements/2026-10-11-cochange.md`).
+
 ### The budget
 
 The section is at most 16 lines: heading, blank, 7 roots, the fold line, the tests line, a blank,
@@ -2131,7 +2282,10 @@ denominator for all of them.
 
 In an area file the `kinds` line and the two roster lines outlive a suppressed count and give way to
 a stated directive, and they are not offered at all when the `paths` cover has already taken the
-body budget. A directive is what the file exists to deliver; a description is what makes the next
+body budget. A co-change block sits after the directives and before the descriptions. The
+directives are settled with the blocks taken out, and the blocks fill only what that leaves, with
+the `and N more` line counted as owed, so no block changes a directive's fate. Where not even that
+line fits, the blocks go unsaid and `check` caps their claims at FIX. A directive is what the file exists to deliver; a description is what makes the next
 file fit beside the ones already there.
 
 ## 8. `check`
@@ -2150,6 +2304,15 @@ report a whole declaration: a line added inside a function body is not a new `fu
 `explicit_return_type` or `doc_comment_style` site on the declaration that holds it. An edit to the
 signature still is. Copies that share a fingerprint are matched by their own text first, then by the
 lines around them, then by the function they sit in, and only what is left is matched by count.
+That function is named by its nearest named owner, in every language: `Class.method` inside a
+named class, `api.run` for a method of an object literal bound to `api`, through nested literals,
+call and `new` arguments, `await`, `as`, `satisfies` and parentheses, and for an unnamed function,
+a callback, the name of the nearest named declaration around it. So a site added in a same-named
+method of another class, or above an old one in another callback, is matched to its own and
+reported on its own line. A static and an instance method of one name in one class share a name,
+and are matched in source order. Each name is worked out once per node on the way into the tree,
+so a file costs one pass however deep it nests, as every JavaScript row does: a row that
+reads a function's own nodes steps over the functions nested in it.
 Two rows judge what is inside the body, `async_error_handling` and `swallowed_error`, so for them a
 copy that stopped conforming shares its fingerprint with one that never did. Their copies, conforming
 or not, are aligned the way a line diff aligns lines, among the copies that open on the same line
@@ -2233,7 +2396,10 @@ match a claim, because a file that creates its own directory is the only member 
 itself every time. It carries the same finding shape as any other, `dimension: "test_precedent"` in the
 json, so a reader that filters by dimension sees it beside the counted rows; it is not in the dimension
 count the documentation checks, since nothing about it is measured per area. What it does and refuses to
-do is H38, and the sentence the map states beside it is H39. A test that sits in the one place its
+do is H38, and the sentence the map states beside it is H39. A root answers a test only of the family
+it counts, as the tree-sitter languages always did: a `_spec.rb` under a directory of `.js` files is
+not told those files have no namesake test. Asked of all 46,820 tests the 60 corpus repositories
+track, each as if it were new, the rule gives the same 5 findings with that hold as without it. A test that sits in the one place its
 language's tool reads it from is asked nothing: a Go `_test.go` in its package's directory, a Java
 or Kotlin test in its module's own `src/test` or `<set>Test`, a C# test in its test project. In
 PHP, whose layout pairs a `tests` tree with the `src` beside it, a test is held to a directory of
@@ -2249,12 +2415,28 @@ have a namesake test`: the count is over one extension, and a bare `5 files` rea
 directory holding nine. A map written before the root recorded that extension says `0 of 5 files`
 unless the root holds only one, since its most common extension can be a screenshot.
 
+A second rule outside the registry is `cochange`. For each stated co-change claim (section 7b), a
+branch that adds a file of the claim's producer class and does not make the companion change, an
+edit to the named file or a new file of the companion class, gets one finding, on the first such
+file in code order: one edit answers every producer, so three new cops and no entry is one finding.
+What the branch touched is read off every row of its change and the pending tree, source or not,
+since a companion is as often a YAML or Markdown file; the map's own files are no part of it, a
+companion the branch deleted is not touched, and a rename adds nothing. Its severity has a ladder
+of its own. MUST-FIX only where the walk's tip was a pin, since off the base or HEAD the agent's own
+merged work is in the count it is graded by; FIX with `no baseline population recorded` otherwise.
+Then FIX where no one area file carries the claim, where the area file had no room for its block,
+where the branch touches more than 40 files, more than any change the claim was counted over, where
+the run is capped, and where the record was not perfect, `N of the last M changes that added one`.
+Left to MUST-FIX, `all N of the last N changes that added one`, which is what a stated claim off a
+pin with every candidate conforming says; it drops to FIX on a path the area's globs never deliver
+to, as any claim does (H24).
+
 Severity, in the order the checks are made:
 
 | Result | When |
 |---|---|
-| NIT | "no convention counted here", or a gate suppressed the one that was: "no convention stated here (GATE)", naming the gate |
-| FIX | the area file's 40-line budget dropped the claim's block: "the area file names this claim without its counts" where the notice still prints its sentence, "the area file had no room to state this claim" where it does not; or the run is capped, "capped by this run: CAUSE", where CAUSE is the stale reason the header prints or no merge base; or the predicate is partial, "partial predicate: some sites are not visible statically"; or "the map already names this file as an exception"; or "no baseline population recorded"; or the claim was stated on the rest of the repository's bound rather than this area's own (D8), "N of M baseline sites here, on a claim the rest of the repository carries"; or the Wilson bound on the baseline counts does not reach 0.90, "N of M baseline sites is thin"; or the baseline itself was not perfect, "N of M baseline sites conform". Two caps sit outside that ladder (H24): a file whose area holds no slot for the claim is judged on the nearest enclosing area that states one, "counted in AREA, which this directory sits inside", and a MUST-FIX on a path the owning area's globs never deliver to drops to FIX, with the same "counted in" reason where the globs miss the directory, such as a new subdirectory under a `dir/*.ext` area, and "the area file for AREA does not reach TYPE, so this claim was never delivered here" where they miss the file's name, TYPE being its extension as `.tsx files` or its whole name; or, for a co-change claim, "no baseline population recorded" where the walk's tip was not a pin, "no area file carries this claim" where no one area holds the producer class, "this branch touches N files, more than any change this claim was counted over" past 40 files, and "N of the last M changes that added one" where the record was not perfect |
+| NIT | "no convention counted here", or a gate suppressed the one that was: "no convention stated here (GATE)", naming the gate. On such a slot the finding's claim is the area file's own counts line for it, in its words and with its scope clause, `functions declare no return type: no convention. 62 of 70 sites (ratio)`, never the majority side's sentence alone. That claim already says `no convention` and the gate, so the finding carries `toldInClaim`: the text report prints no reason line under it, the GitHub annotation carries the claim as its message with no title, and the JSON keeps `reason` beside the field |
+| FIX | the area file's 40-line budget dropped the claim's block: "the area file names this claim without its counts" where the notice still prints its sentence, "the area file had no room to state this claim" where it does not; or the run is capped, "capped by this run: CAUSE", where CAUSE is the stale reason the header prints or no merge base; or the predicate is partial, "partial predicate: some sites are not visible statically"; or "the map already names this file as an exception"; or "no baseline population recorded"; or the claim was stated on the rest of the repository's bound rather than this area's own (D8), "N of M baseline sites here, on a claim the rest of the repository carries"; or the Wilson bound on the baseline counts does not reach 0.90, "N of M baseline sites is thin"; or the baseline itself was not perfect, "N of M baseline sites conform". Two caps sit outside that ladder (H24): a file whose area holds no slot for the claim is judged on the nearest enclosing area that states one, "counted in AREA, which this directory sits inside", AREA named as the map names it, quoted where it holds a space or a double quote, and a MUST-FIX on a path the owning area's globs never deliver to drops to FIX, with the same "counted in" reason where the globs miss the directory, such as a new subdirectory under a `dir/*.ext` area, and "the area file for AREA does not reach TYPE, so this claim was never delivered here" where they miss the file's name, TYPE being its extension as `.tsx files` or its whole name; or, for a co-change claim, "no baseline population recorded" where the walk's tip was not a pin, "no area file carries this claim" where no one area holds the producer class, "this branch touches N files, more than any change this claim was counted over" past 40 files, and "N of the last M changes that added one" where the record was not perfect |
 | MUST-FIX | "all N baseline sites conform", so this branch is the first violation; for a co-change claim, "all N of the last N changes that added one" |
 
 Baseline counts come from the pinned population, never from the current one, or the agent's own
