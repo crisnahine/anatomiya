@@ -49,6 +49,18 @@ test("the hyphen forms are is-test only: a hyphen-named test answers no namesake
   assert.ok(!NAMESAKE_SUFFIXES.some((s) => "login-test".endsWith(s)));
 });
 
+test("the kinds of test a repository spells as their own dotted segment are dotted and cased only as written", () => {
+  for (const kind of ["unittest", "basictest", "longtest", "spectest", "stest", "integrationTest", "releaseTest"]) {
+    assert.ok(TEST_NAME.test(`a.${kind}.ts`), kind);
+    assert.ok(!TEST_NAME.test(`a-${kind}.ts`), kind);
+    assert.ok(!TEST_NAME.test(`a.${kind}s.ts`), kind);
+  }
+  assert.ok(!TEST_NAME.test("a.integrationtest.ts"));
+  assert.ok(!TEST_NAME.test("a.baseTest.ts"), "a camel-case word no repository collects by");
+  assert.ok(!TEST_NAME.test("a.vitest.ts"));
+  assert.ok(!TEST_NAME.test("a.latest.ts"));
+});
+
 test("only the Ruby form is anchored, binding its own expression", () => {
   assert.ok(RUBY_TEST_NAME.test("a_spec.rb"));
   assert.ok(!RUBY_TEST_NAME.test("a_spec.rb.bak"));

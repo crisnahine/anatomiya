@@ -54,6 +54,26 @@ test("a name spelled with a hyphen is a test name too", () => {
   assert.equal(isTestFile(file("src/latest-thing.ts", "js")), false);
 });
 
+test("a kind of test spelled before the extension names a test file, whatever the file exports", () => {
+  // vscode's suites call `suite` or `ssuite`, which no case list reads, and a
+  // few export a fixture class beside them; webpack's wrap `describeCases`.
+  const exported = { exports: ["TestDiskFileSystemProvider"], testCalls: false };
+  for (const rel of [
+    "src/vs/platform/files/test/node/diskFileService.integrationTest.ts",
+    "src/vs/workbench/contrib/themes/test/node/colorRegistry.releaseTest.ts",
+    "extensions/copilot/test/inline/slashDoc.py.stest.ts",
+    "test/ConfigTestCases.basictest.js",
+    "test/WatchTestCases.longtest.js",
+    "test/ArrayQueue.unittest.js",
+    "test/html5lib.spectest.js",
+  ]) {
+    assert.equal(isTestFile(file(rel, "js", exported)), true, rel);
+  }
+  for (const rel of ["eslint.config.vitest.js", "src/CHANGELOG.latest.js", "src/contest.ts", "src/a.smoketest-utils.ts"]) {
+    assert.equal(isTestFile(file(rel, "js", exported)), false, rel);
+  }
+});
+
 test("a file in a test tree that mirrors a source file is that file's test", () => {
   // eslint names `tests/lib/rules/no-var.js` after the `lib/rules/no-var.js`
   // it covers and drives RuleTester, so nothing in the file says what it is.

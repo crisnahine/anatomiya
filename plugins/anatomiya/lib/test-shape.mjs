@@ -21,7 +21,11 @@ import { stemOf } from "./paths.mjs";
 // dotted-only, because `-cy.` is the tail of an ordinary word.
 // Two expressions rather than one alternation, because only the Ruby form is
 // anchored and a `$` that binds one branch of three reads as if it bound all.
-export const TEST_NAME = /[.-](?:test|spec)\.|\.cy\./;
+//
+// The closed list is every kind of test a repository spells as a dotted segment
+// of its own across 60 repositories, 226 files of webpack's jest `testMatch` and
+// vscode's suites. A wider shape takes `eslint.config.vitest.js`, a config.
+export const TEST_NAME = /[.-](?:test|spec)\.|\.cy\.|\.(?:unit|basic|long|spec|s)test\.|\.(?:integration|release)Test\./;
 export const RUBY_TEST_NAME = /_(?:spec|test)\.rb$/;
 
 // The `_test` half of the Ruby form alone, over the whole path: minitest's own
