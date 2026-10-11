@@ -273,14 +273,15 @@ What a rejection means is the engine's to say. oxc and prism are their languages
 file they reject holds a syntax error. A tree-sitter grammar covers less than its language, so a
 file it rejects is counted on a line of its own, and the line says which two things that can mean:
 `82 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar
-does not cover; the files may be fine.` That is ktor. The parser of the Kotlin 2.4.21 compiler accepts all 82 of those files.
-On three repositories per language, the largest share of a repository's lines left unread is 0.00%
-for Python (one file in django, a fixture broken on purpose), 0.02% for PHP, 0.00% for Go and Rust,
-0.97% for Java, 4.35% for C# and 7.88% for Kotlin. Outside those three, next.js leaves 9.71% of its
-Rust lines unread, 22 files that rustc accepts: a `box` pattern, which only nightly Rust takes, in
-12 of them, and an attribute on a field of a struct pattern in 9. A newer tree-sitter-rust reads 4
-of the 22, and is published only as a GitHub release, where every grammar the plugin carries is a
-copy held by hash to its npm package, so none is taken from there.
+does not cover; the files may be fine.` That is ktor. The parser of the Kotlin 2.4.21 compiler
+accepts all 82 of those files. On three repositories per language, the largest share of a
+repository's lines left unread is 0.00% for Python (one file in django, a fixture broken on
+purpose), 0.02% for PHP, 0.00% for Go and Rust, 0.97% for Java, 4.35% for C# and 7.88% for Kotlin.
+Outside those three, next.js leaves 9.71% of its Rust lines unread, 22 files that rustc accepts: a
+`box` pattern, which only nightly Rust takes, in 12 of them, and an attribute on a field of a struct
+pattern in 9. A newer tree-sitter-rust reads 4 of the 22, and is published only as a GitHub release,
+where every grammar the plugin carries is a copy held by hash to its npm package, so none is taken
+from there.
 
 The C# grammar reads `#if` around whole statements and whole members and nowhere else, and real C#
 writes it inside base lists, parameter lists, call chains and initializers. It also rejects a file
@@ -526,15 +527,15 @@ there is no program at the pin to ask.
 
 The checker, the history read, the co-change walk and the baseline's git reads start beside the
 parse rather than after it, since none of them needs anything the parse answers. The co-change walk
-starts once the pin has answered, since the pin is where it stops. On a machine with no spare core (a one-worker pool) the checker still
-waits for the parse, because beside it, it would take the time of the parse's only worker. A scan
-that fails while the checker runs stops it rather than waiting on it. The compiler host answers
-each path once per build, its containment and whether it exists, where it resolves and what it
-lists: module resolution asks about the same paths thousands of times, 107,928 stats of 24,737
-paths on one front end, and walking `realpath` up from the root on every ask was 45% of building the
-program. The containment walk resolves each directory off its parent's answer with one `lstat`,
-unless the directory is itself a link. The answers live in the host rather than the module, so a
-second scan in one process sees the tree as it is then.
+starts once the pin has answered, since the pin is where it stops. On a machine with no spare core
+(a one-worker pool) the checker still waits for the parse, because beside it, it would take the time
+of the parse's only worker. A scan that fails while the checker runs stops it rather than waiting on
+it. The compiler host answers each path once per build, its containment and whether it exists, where
+it resolves and what it lists: module resolution asks about the same paths thousands of times,
+107,928 stats of 24,737 paths on one front end, and walking `realpath` up from the root on every ask
+was 45% of building the program. The containment walk resolves each directory off its parent's
+answer with one `lstat`, unless the directory is itself a link. The answers live in the host rather
+than the module, so a second scan in one process sees the tree as it is then.
 
 The checker builds one program over every JavaScript and TypeScript file, then measures the share
 of property accesses whose receiver resolved to a real type. Under 0.80 the tier is degraded and its
@@ -890,12 +891,13 @@ whatever the provenance method says, and two seeded entries carry one set by han
 `interface_prefix` and `type_alias_prefix` hold the class `none`, since no prefix is what the model
 writes, so a repository that prefixes nothing prints counts for them though neither was measured.
 
-Each entry names the engine it was measured at, and entries from different engines never merge into one tally. The 24
-measured entries shipped so far say `claude-opus-5` and name no effort, which is the engine the
-harness ran before it pinned one; it now runs `claude-opus-5[1m]` at `medium`. So a fresh run
-refuses all 24, says so in one line, and leaves them standing. They stay the older engine's answer
-until someone re-measures them with `--force`, which replaces rather than adds. Reading their silence
-about effort as `medium` would date them to a setting nobody can check they ran at.
+Each entry names the engine it was measured at, and entries from different engines never merge into
+one tally. The 24 measured entries shipped so far say `claude-opus-5` and name no effort, which is
+the engine the harness ran before it pinned one; it now runs `claude-opus-5[1m]` at `medium`. So a
+fresh run refuses all 24, says so in one line, and leaves them standing. They stay the older
+engine's answer until someone re-measures them with `--force`, which replaces rather than adds.
+Reading their silence about effort as `medium` would date them to a setting nobody can check they
+ran at.
 
 ## 6. The baseline and `pin`
 
@@ -906,10 +908,11 @@ it and decide nothing, or an agent that adds conforming sites raises the bar it 
 at that commit, the corpus size, and the area ceiling where giving places back raised it (section
 2). A ceiling that is not a count, is above the areas the pin lists, is at or below the plain
 ceiling for the pin's corpus, or is above twice that makes the pin unreadable, as any malformed
-field does, so no pin can lift the map past 1,000 areas. The file list is the whole point. A baseline recomputed by running today's
-glob against the old commit re-selects only the files that are still there, so moving the violating
-files into a new directory lifts the ratio to 1.00 with every other guard still holding. It stores
-no counts, because stored counts are the numbers the guard exists to verify.
+field does, so no pin can lift the map past 1,000 areas. The file list is the whole point. A
+baseline recomputed by running today's glob against the old commit re-selects only the files that
+are still there, so moving the violating files into a new directory lifts the ratio to 1.00 with
+every other guard still holding. It stores no counts, because stored counts are the numbers the
+guard exists to verify.
 
 The scan then reads those files at that commit with `git cat-file blob`, never from the working
 tree, parses them through the same pool, and gates on what it finds.
@@ -1090,8 +1093,8 @@ bytes on microsoft/vscode, so the bound the rendered map is held to would have s
 on exactly the repositories where a directory nobody read is easiest to miss.
 
 The notice, the end-of-turn check and the refresh want only the record's `layout`, 2,037 bytes of
-that record, plus the co-change record inside it, 326 to 334 bytes where nothing was mined and
-about 8 KB for rubocop's claims and their near misses, so a scan writes it a second time on its own, as
+that record, plus the co-change record inside it, 326 to 334 bytes where nothing was mined and about
+8 KB for rubocop's claims and their near misses, so a scan writes it a second time on its own, as
 `.claude/anatomiya/layout.json`, stamped with the size and mtime of the record file it was taken
 from. A hook reads it only where its schema is one this build reads and the record on disk has
 exactly that size and that mtime, and reads the record otherwise. A length alone passed a record
@@ -1186,16 +1189,17 @@ That read is contained by F2 like every write, so a settings file symlinked out 
 refused rather than followed, and a refusal is a printed line rather than a failed scan.
 
 A delivery is roughly 500 tokens, and until A92 one was made on every turn and every tool call, so a
-session making 300 calls spent about 150,000 on it. Claude Code keeps every copy. The hook reads back through the
-session's transcript, at most 1 MiB, until it has counted 192 KiB of what the model reads after a
-delivery: user and assistant messages and the attachments the build marks `rendered`, less the
-CLAUDE.md files, which the build places at the head of the context. A prompt snapshot, a hook's own
-stdout and every other bookkeeping line count for nothing; counted, a prompt snapshot of up to 130 KB
-pushed a delivery out within one tool call. It stays silent when those bytes hold a delivery of the
-same map with no compaction after it. Each map carries a `digest` of its body, so a re-scan is
-delivered on the next call, and a copy further back than the window is delivered again, about every
-29.9k tokens at the 6.57 bytes per token measured on 2.1.292 to 2.1.296. A subagent or a workflow
-stage is answered from its own transcript. Anything the hook cannot read answers with a delivery.
+session making 300 calls spent about 150,000 on it. Claude Code keeps every copy. The hook reads
+back through the session's transcript, at most 1 MiB, until it has counted 192 KiB of what the model
+reads after a delivery: user and assistant messages and the attachments the build marks `rendered`,
+less the CLAUDE.md files, which the build places at the head of the context. A prompt snapshot, a
+hook's own stdout and every other bookkeeping line count for nothing; counted, a prompt snapshot of
+up to 130 KB pushed a delivery out within one tool call. It stays silent when those bytes hold a
+delivery of the same map with no compaction after it. Each map carries a `digest` of its body, so a
+re-scan is delivered on the next call, and a copy further back than the window is delivered again,
+about every 29.9k tokens at the 6.57 bytes per token measured on 2.1.292 to 2.1.296. A subagent or a
+workflow stage is answered from its own transcript. Anything the hook cannot read answers with a
+delivery.
 
 Parallel tool calls in one batch each run before any of the batch's deliveries is written, so none
 sees the others'. Where Claude Code names the plugin a data directory, `CLAUDE_PLUGIN_DATA`, the
@@ -1505,18 +1509,18 @@ A temporary file a scan left behind, by a kill or through a directory swapped un
 by the next scan that writes or removes in that directory: a regular file named as a map file plus
 `.tmp-<pid>-<16 hex>`, where no process of that id is running. The summary counts the ones under
 `.claude/rules`, `1 temporary file an earlier scan left in .claude/rules was removed`.
-`.claude/anatomiya` is swept for three names, `facts.json`, `layout.json` and `refresh.json` plus that suffix
-(`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier scan left in
-.claude/anatomiya were removed`. The pin's and the refresh lock's temporary files are not swept. A
-leftover is removed without being opened, where every other file about to be replaced or removed
-is read whole first for the put-back, up to 64 MiB (past that a scan refuses, leaves a Cursor or
-Copilot directory it did not name alone, or replaces a record unread), so its size costs the scan nothing and a scan that fails
-later does not put it back. A leftover whose removal fails, on any code, stops nothing
-(`pair.left` in `replaceAll`): it stays, the scan writes, and the plan comes back with it moved
-from what was removed to what was left: `stagedLeft` for `.claude/rules` and `storeStagedLeft` for
-`.claude/anatomiya`, each a summary line (`1 temporary file an earlier scan left in .claude/anatomiya could
-not be removed, so it was left as it is`), and in a Cursor or Copilot directory one more of the
-entries `foreign` counts.
+`.claude/anatomiya` is swept for three names, `facts.json`, `layout.json` and `refresh.json` plus
+that suffix (`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier scan
+left in .claude/anatomiya were removed`. The pin's and the refresh lock's temporary files are not
+swept. A leftover is removed without being opened, where every other file about to be replaced or
+removed is read whole first for the put-back, up to 64 MiB (past that a scan refuses, leaves a
+Cursor or Copilot directory it did not name alone, or replaces a record unread), so its size costs
+the scan nothing and a scan that fails later does not put it back. A leftover whose removal fails,
+on any code, stops nothing (`pair.left` in `replaceAll`): it stays, the scan writes, and the plan
+comes back with it moved from what was removed to what was left: `stagedLeft` for `.claude/rules`
+and `storeStagedLeft` for `.claude/anatomiya`, each a summary line (`1 temporary file an earlier
+scan left in .claude/anatomiya could not be removed, so it was left as it is`), and in a Cursor or
+Copilot directory one more of the entries `foreign` counts.
 
 A failure at any rename or removal puts back every file already replaced, in every directory, takes
 out the temporary files, and removes a Cursor or Copilot directory this run made if it is empty. Nothing is put back
@@ -1914,35 +1918,34 @@ A file is a test by its facets, its name or its position, and by nothing else. T
 known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
 counts when it carries `.test.`, `.spec.`, `.cy.`, `-test.` or `-spec.`, or one of seven kinds of
 test spelled as a dotted segment of their own (`.unittest.`, `.basictest.`, `.longtest.`,
-`.spectest.`, `.stest.`, `.integrationTest.`, `.releaseTest.`), on the name alone, and when
-it carries `_spec.rb` or `_test.rb` and a test tree above it agrees. The Ruby form is the one a
+`.spectest.`, `.stest.`, `.integrationTest.`, `.releaseTest.`), on the name alone, and when it
+carries `_spec.rb` or `_test.rb` and a test tree above it agrees. The Ruby form is the one a
 non-test file wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
-own `software_spec_spec.rb` under `test/`.
-The seven languages above each have a name of their own and answer by it alone, never by the forms
-here or the two rules below: a Go `_test.go` and a Python `test_*.py` or `*_test.py` on the name,
-because the compiler and pytest collect by it (578 Go files, 567 holding a case; 1,180 Python
-files, 1,168 holding one); a PHP `*Test.php`, a Java or Kotlin `*Test`, `*Tests` or `*IT`, and a C#
-`*Tests` or `*Test` where a test tree above it agrees, because a source file wears those words too
-(junit's own `RepeatedTest.java`, Laravel's `UnitTest.php`). Of 3,691 files so named in twelve
-repositories, 17 sit outside every test tree and 9 of those are not tests; 141 sit inside one with
-no case of their own, most of them a subclass that inherits its cases. `IT` needs a lower-case
-letter or a digit before it, so `EXIT` is not one, and `Spec` is not a suffix at all: two files in
-the 21 repositories end in it and neither is a test. A test tree for these is the six names below
-plus the ones the family's own build uses: a Gradle source set ending in `Test` (`commonTest`,
-`jvmTest`) or named `testFixtures` for Java and Kotlin, a dotted project name ending in `Tests` or `Test` (`Serilog.Tests`, `Autofac.Test`) for C#,
-and a `Test` or `Tests` directory for PHP (composer's `tests/Composer/Test`, symfony's
-`Component/Cache/Tests`). Rust has no name, and a file there is a test by its facets
-or by sitting directly in a crate's `tests`.
-Then a `__tests__` path segment, and last, for a source file under a top-level `test`, `tests` or
-`spec` directory, a source file outside that tree whose path the file's own tail mirrors: eslint's
+own `software_spec_spec.rb` under `test/`. The seven languages above each have a name of their own
+and answer by it alone, never by the forms here or the two rules below: a Go `_test.go` and a Python
+`test_*.py` or `*_test.py` on the name, because the compiler and pytest collect by it (578 Go files,
+567 holding a case; 1,180 Python files, 1,168 holding one); a PHP `*Test.php`, a Java or Kotlin
+`*Test`, `*Tests` or `*IT`, and a C# `*Tests` or `*Test` where a test tree above it agrees, because
+a source file wears those words too (junit's own `RepeatedTest.java`, Laravel's `UnitTest.php`). Of
+3,691 files so named in twelve repositories, 17 sit outside every test tree and 9 of those are not
+tests; 141 sit inside one with no case of their own, most of them a subclass that inherits its
+cases. `IT` needs a lower-case letter or a digit before it, so `EXIT` is not one, and `Spec` is not
+a suffix at all: two files in the 21 repositories end in it and neither is a test. A test tree for
+these is the six names below plus the ones the family's own build uses: a Gradle source set ending
+in `Test` (`commonTest`, `jvmTest`) or named `testFixtures` for Java and Kotlin, a dotted project
+name ending in `Tests` or `Test` (`Serilog.Tests`, `Autofac.Test`) for C#, and a `Test` or `Tests`
+directory for PHP (composer's `tests/Composer/Test`, symfony's `Component/Cache/Tests`). Rust has no
+name, and a file there is a test by its facets or by sitting directly in a crate's `tests`. Then a
+`__tests__` path segment, and last, for a source file under a top-level `test`, `tests` or `spec`
+directory, a source file outside that tree whose path the file's own tail mirrors: eslint's
 `tests/lib/rules/no-var.js` covers `lib/rules/no-var.js` and says so nowhere but in its path.
 Neither of these two holds for a file the parse read that exports something, which is what the tests
-import, or for a Ruby file it read that declares no case: 328 of the 645 files the two took across 60
-repositories export something, and every one of those is a fixture, a helper, a mock or a config,
+import, or for a Ruby file it read that declares no case: 328 of the 645 files the two took across
+60 repositories export something, and every one of those is a fixture, a helper, a mock or a config,
 plus 11 Ruby support files. A file the parse could not read, or read through a fallback, keeps the
 path rule, since what the tool could not read decides nothing. Such a support file is neither a test
-nor a source file in any count. A file counted by one of the last three prints its runner as
-`test files` rather than having one guessed at.
+nor a source file in any count. A file counted by one of the last three prints its runner as `test
+files` rather than having one guessed at.
 
 A component is never a test file, by any of these: no runner collects a `.vue` or `.svelte` file,
 and vitepress keeps the five theme components of its e2e site under `__tests__`. A component under
@@ -2284,11 +2287,11 @@ denominator for all of them.
 
 In an area file the `kinds` line and the two roster lines outlive a suppressed count and give way to
 a stated directive, and they are not offered at all when the `paths` cover has already taken the
-body budget. A co-change block sits after the directives and before the descriptions. The
-directives are settled with the blocks taken out, and the blocks fill only what that leaves, with
-the `and N more` line counted as owed, so no block changes a directive's fate. Where not even that
-line fits, the blocks go unsaid and `check` caps their claims at FIX. A directive is what the file exists to deliver; a description is what makes the next
-file fit beside the ones already there.
+body budget. A co-change block sits after the directives and before the descriptions. The directives
+are settled with the blocks taken out, and the blocks fill only what that leaves, with the `and N
+more` line counted as owed, so no block changes a directive's fate. Where not even that line fits,
+the blocks go unsaid and `check` caps their claims at FIX. A directive is what the file exists to
+deliver; a description is what makes the next file fit beside the ones already there.
 
 ## 8. `check`
 
@@ -2392,26 +2395,27 @@ is never remembered, since a commit can land between two calls in one process, a
 failed answer. A two-file branch of this repository went from 25 git calls to 20, and its check
 from 422ms to 285ms (E14).
 
-One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether a
-test the change added has any precedent in the source root it covers, rather than whether its contents
-match a claim, because a file that creates its own directory is the only member of it and conforms with
-itself every time. It carries the same finding shape as any other, `dimension: "test_precedent"` in the
-json, so a reader that filters by dimension sees it beside the counted rows; it is not in the dimension
-count the documentation checks, since nothing about it is measured per area. What it does and refuses to
-do is H38, and the sentence the map states beside it is H39. A root answers a test only of the family
-it counts, as the tree-sitter languages always did: a `_spec.rb` under a directory of `.js` files is
-not told those files have no namesake test. Asked of all 46,820 tests the 60 corpus repositories
-track, each as if it were new, the rule gives the same 5 findings with that hold as without it. A test that sits in the one place its
-language's tool reads it from is asked nothing: a Go `_test.go` in its package's directory, a Java
-or Kotlin test in its module's own `src/test` or `<set>Test`, a C# test in its test project. In
-PHP, whose layout pairs a `tests` tree with the `src` beside it, a test is held to a directory of
-that tree. A test for a directory the branch itself created and put a file a test could be written for in is
-not held to the files of the directory above it, and an empty file, a declaration file, a story or
-a `conftest.py` is no such file. The directory is any one from the root down to the test's own, so
-a new package that brings its source and keeps its test in its own `tests` directory draws no
-finding. `check` asks the merge base which of those directories it held, in one `git ls-tree` for
-each 16,000 bytes of names, and the notice cannot. Where a listing fails, every finding that turns
-on such a directory is left unstated and one `base-unreadable` caveat counts them. Its reason, which the `PreToolUse`
+One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether
+a test the change added has any precedent in the source root it covers, rather than whether its
+contents match a claim, because a file that creates its own directory is the only member of it and
+conforms with itself every time. It carries the same finding shape as any other, `dimension:
+"test_precedent"` in the json, so a reader that filters by dimension sees it beside the counted
+rows; it is not in the dimension count the documentation checks, since nothing about it is measured
+per area. What it does and refuses to do is H38, and the sentence the map states beside it is H39. A
+root answers a test only of the family it counts, as the tree-sitter languages always did: a
+`_spec.rb` under a directory of `.js` files is not told those files have no namesake test. Asked of
+all 46,820 tests the 60 corpus repositories track, each as if it were new, the rule gives the same 5
+findings with that hold as without it. A test that sits in the one place its language's tool reads
+it from is asked nothing: a Go `_test.go` in its package's directory, a Java or Kotlin test in its
+module's own `src/test` or `<set>Test`, a C# test in its test project. In PHP, whose layout pairs a
+`tests` tree with the `src` beside it, a test is held to a directory of that tree. A test for a
+directory the branch itself created and put a file a test could be written for in is not held to the
+files of the directory above it, and an empty file, a declaration file, a story or a `conftest.py`
+is no such file. The directory is any one from the root down to the test's own, so a new package
+that brings its source and keeps its test in its own `tests` directory draws no finding. `check`
+asks the merge base which of those directories it held, in one `git ls-tree` for each 16,000 bytes
+of names, and the notice cannot. Where a listing fails, every finding that turns on such a directory
+is left unstated and one `base-unreadable` caveat counts them. Its reason, which the `PreToolUse`
 notice prints too, gives the root's count in the tests line's words, `src/hooks: 0 of 5 .tsx files
 have a namesake test`: the count is over one extension, and a bare `5 files` read as the whole of a
 directory holding nine. A map written before the root recorded that extension says `0 of 5 files`
