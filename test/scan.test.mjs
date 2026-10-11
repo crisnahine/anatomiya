@@ -1754,7 +1754,7 @@ test("a package at the repository root gets an area file wherever a reader can b
   assert.match(first[`${copilot.dir}/anatomiya-overview${copilot.ext}`], /^- 1 area has no pattern GitHub Copilot can be given, so no file here covers it: the repository root\.$/m);
 
   // Two areas a reader could confuse, on two heads.
-  assert.ok(fileOf(claude, "the repository root").includes("# ./the repository root  6 files"));
+  assert.ok(fileOf(claude, "the repository root").includes('# "the repository root"  6 files'));
   for (const [name, body] of Object.entries(first)) {
     const lines = body.trimEnd().split("\n");
     assert.ok(lines.length - (lines.indexOf("---", 1) + 1) <= 43, `${name}: ${lines.length} lines`);
