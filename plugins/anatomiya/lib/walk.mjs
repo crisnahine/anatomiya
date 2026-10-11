@@ -75,12 +75,17 @@ export function declName(node) {
 
 /**
  * The name a site inside `decl` reports: `Class.method` under the innermost
- * named class around the declaration, the shape the tree rows give, and the
- * bare name outside a class. Two classes each holding a `run` are two places.
+ * named class around the declaration, the shape the tree rows give, `api.run`
+ * for a method of an object literal bound to `api`, and the bare name
+ * otherwise. Two classes each holding a `run` are two places. An unnamed
+ * function, such as a callback, reports the nearest named declaration around it.
  */
 export function whereOf(decl, ctx) {
+  if (!decl) return null;
   const name = declName(decl);
-  if (name === null) return null;
+  if (name === null) return AROUND.get(decl) ?? null;
+  const holder = HOLDER.get(decl);
+  if (holder) return `${holder}.${name}`;
   // From below the declaration itself, so a site whose declaration is the class reports the class alone.
   const at = ctx.stack.lastIndexOf(decl);
   for (let i = (at === -1 ? ctx.stack.length : at) - 1; i >= 0; i--) {
@@ -90,11 +95,37 @@ export function whereOf(decl, ctx) {
   return name;
 }
 
-function bind(node) {
+// Both kept per node as the walk passes: a site rescanning its ancestors is
+// quadratic in a callback nested a thousand deep.
+const AROUND = new WeakMap();
+const HOLDER = new WeakMap();
+
+// What an object literal passes through on its way to a binding: `{ methods: { run } }` and
+// `defineComponent({ ... })` both hold `run` under the binding, not under `methods`.
+const THROUGH = new Set([
+  "ObjectExpression",
+  "Property",
+  "CallExpression",
+  "TSAsExpression",
+  "TSSatisfiesExpression",
+  "ParenthesizedExpression",
+]);
+
+/** The name a variable binds the object literal a member sits in to, or null; `ancestors` end at the member's parent. */
+function objectBinding(ancestors) {
+  let i = ancestors.length - 1;
+  while (i >= 0 && THROUGH.has(ancestors[i].type)) i--;
+  const d = ancestors[i];
+  return d?.type === "VariableDeclarator" ? (d.id.name ?? null) : null;
+}
+
+function bind(node, ancestors) {
   const child = node.value ?? node.init;
   if (!child || typeof child !== "object" || !isFn(child)) return;
   const name = declName(node);
   if (name) NAMED.set(child, name);
+  const holder = objectBinding(ancestors);
+  if (holder) HOLDER.set(child, holder);
 }
 
 /**
@@ -161,7 +192,7 @@ export function walk(program, visit) {
     if (typeof node.type !== "string") continue;
 
     const isDecl = DECL.has(node.type);
-    if (BINDS.has(node.type)) bind(node);
+    if (BINDS.has(node.type)) bind(node, ancestors);
     const ctx = {
       stack,
       ancestors,
@@ -170,6 +201,11 @@ export function walk(program, visit) {
       cls: classes.length ? classes[classes.length - 1] : null,
       within,
     };
+
+    if (isDecl && declName(node) === null) {
+      const up = ctx.enclosing;
+      AROUND.set(node, up === null ? null : declName(up) === null ? AROUND.get(up) ?? null : whereOf(up, ctx));
+    }
 
     visit(node, ctx);
 
@@ -532,8 +568,9 @@ export function componentProps(program, rel) {
  *
  * `rows` is the list the selection runs over, and the caller names it: the
  * registry's tree rows in the parent, one engine's own tables in a parse child,
- * so a child loads no other engine's rows. A reader that wants an obligation or a filename row asks the
- * registry for it, because neither is a question asked of a walked tree.
+ * so a child loads no other engine's rows. A reader that wants an obligation
+ * or a filename row asks the registry for it, because neither is a question
+ * asked of a walked tree.
  */
 export function dimensionsFor(langs, { frameworks, tier = "syntactic", capabilities, rows }) {
   const known = frameworks ? new Set(frameworks) : null;

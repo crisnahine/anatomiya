@@ -192,6 +192,23 @@ test("a method added above a same-named one in another class is reported on the 
   assert.deepEqual(found.map((f) => [f.line, f.where]), [[5, "B.run"]]);
 });
 
+for (const [shape, holder, where] of [
+  ["a callback inside a method", (name) => `export class ${name} {\n  run(list) {\n    list.forEach((go) => {\n      try {\n        go();\n      } catch (error) {}\n    });\n  }\n}\n`, "B.run"],
+  ["an object-literal method", (name) => `export const ${name} = {\n  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  },\n};\n`, "B.run"],
+  ["a component's method", (name) => `const ${name} = defineComponent({\n  methods: {\n    run(go) {\n      try {\n        go();\n      } catch (error) {}\n    },\n  },\n});\n`, "B.run"],
+]) {
+  test(`${shape} added above a same-named one under another name is reported on the line the branch wrote`, () => {
+    const slot = area(stated("swallowed_error"));
+    const base = revision(holder("A"), { file: "f.js" });
+    const head = revision(`${holder("B")}\n${holder("A")}`, { file: "f.js" });
+
+    const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/old.js", lang: "js", head, base }));
+
+    const line = holder("B").split("\n").findIndex((l) => l.includes("catch")) + 1;
+    assert.deepEqual(found.map((f) => [f.line, f.where]), [[line, where]]);
+  });
+}
+
 test("two same-named methods in one class are matched in source order alone", () => {
   // Their name, their text and the lines around them are all equal, so the
   // copy the base held is the first one and the one reported is the second.
