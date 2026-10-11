@@ -188,7 +188,9 @@ function otherTargets(root, asked, previous, leaveAlone) {
       const { state, reason = null, remedy } = targetStatus(root, target);
       const explicit = asked !== null;
       if (leaveAlone.includes(target.id)) return { target, state, reason, remedy, explicit, on: false, leftAlone: true };
-      if (state !== "unknown") return { target, state, reason, explicit, on: explicit ? asked.includes(target.id) : state === "on" };
+      // A scan killed while turning this target off leaves its overview behind, and the record naming it to remove.
+      const turningOff = pendingNames(previous, target).has(overviewName(target));
+      if (state !== "unknown") return { target, state, reason, explicit, on: explicit ? asked.includes(target.id) : state === "on" && !turningOff };
       if (asked?.includes(target.id)) {
         throw new Error(`${reason}, so ${target.dir} could not be written and nothing was written anywhere: ${remedy} and scan again`);
       }
