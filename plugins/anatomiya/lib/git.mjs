@@ -128,6 +128,11 @@ const FLAGS = new Set([
   "--get-regexp",
   // Whether core.ignorecase folds case, as git itself parses the value.
   "--type=bool",
+  // The co-change walk: each first-parent change against its first parent,
+  // trees only, the newest 20,000 (`cochange-walk.mjs`).
+  "--diff-merges=first-parent",
+  "--no-renames",
+  "--max-count=20000",
 ]);
 
 // `--format=<pattern>` carries a pattern this tool composes; the value is not
