@@ -585,8 +585,8 @@ test("a lock held by another call holds this one, and a lock a minute old or a m
 
   assert.deepEqual(held(0), {}, "a fresh lock");
   // Past the 5 s hook timeout, inside the 2 s a FAT or exFAT mtime can be off by.
-  assert.deepEqual(held(-6500), {}, "a lock 6.5 s old");
-  assert.deepEqual(held(6500), {}, "a lock 6.5 s ahead");
+  assert.deepEqual(held(-6900), {}, "a lock 6.9 s old");
+  assert.deepEqual(held(6900), {}, "a lock 6.9 s ahead");
 
   assert.match(held(-60_000).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock a minute old");
   assert.equal(existsSync(lock), false, "released after the delivery");
@@ -594,7 +594,7 @@ test("a lock held by another call holds this one, and a lock a minute old or a m
   assert.deepEqual(lockEnds(echo), {}, "the batch claim it wrote holds");
 
   assert.match(held(60_000).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock a minute ahead");
-  assert.match(held(-8000).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock 8 s old, past the slack");
+  assert.match(held(-7100).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock 7.1 s old, past the slack");
 });
 
 /** Runs `call` and fails where a lock loop goes on past the few exclusive creates one call makes. */
