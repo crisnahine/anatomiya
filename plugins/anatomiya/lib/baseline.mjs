@@ -152,10 +152,11 @@ function pinProblem(pin) {
   // plain ceiling, so a value outside the two is one no pin wrote. The pin
   // writes its own area list too, so twice the clamped plain ceiling is the
   // bound a hand-edited list cannot lift.
-  const plain = areaCeiling(pin.corpus ?? 0);
-  if (pin.ceiling !== undefined && (!isCount(pin.ceiling) || pin.ceiling > pin.areas.length || pin.ceiling <= plain || pin.ceiling > 2 * plain)) {
-    return "the area ceiling it names is not a count of its areas";
-  }
+  if (pin.ceiling === undefined) return null;
+  if (!isCount(pin.ceiling) || pin.ceiling > pin.areas.length) return "the area ceiling it names is not a count of its areas";
+  if (pin.corpus === undefined) return "the area ceiling it names comes with no corpus size";
+  const plain = areaCeiling(pin.corpus);
+  if (pin.ceiling <= plain || pin.ceiling > 2 * plain) return "the area ceiling it names is outside what a pin of its corpus can settle on";
   return null;
 }
 
