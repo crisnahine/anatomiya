@@ -8,11 +8,12 @@
  * version at all.
  */
 import { randomBytes } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { outsideClaude, readHead, resolveInside, stagedPath } from "./rules.mjs";
 import { wilsonLower } from "./gates.mjs";
+import { encodePath } from "./encode.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
 
@@ -123,6 +124,9 @@ export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 // `semantic.failures` shares 19 too: how many runs in a row the checker has
 // failed under that stamp, which a refresh carries the failure from at two. A
 // record without it counts none.
+// `removing` shares 19 as well: the names a scan is about to remove in each
+// directory, which a scan killed before it removed them leaves for the next one.
+// An older reader ignores the key, and a record without it removes nothing more.
 export const FACTS_SCHEMA = 19;
 
 /**
@@ -427,15 +431,41 @@ export function putBack(path, previous, was) {
   else atomic(path, previous);
 }
 
-/** A regular file's bytes, `null` where nothing is, `undefined` where they cannot be put back. */
+// The most a scan reads whole to put a file back: ten times the largest file a scan of the corpus writes (9.7 MiB, vscode's facts.json), as a power of two.
+export const PUT_BACK_MOST = 128 * 2 ** 20;
+
+/**
+ * The size of a regular file at `path` past `PUT_BACK_MOST`, or null: what a
+ * scan asks before it plans to replace or remove the file.
+ */
+export function tooLargeToPutBack(path) {
+  try {
+    const entry = lstatSync(path);
+    return entry.isFile() && entry.size > PUT_BACK_MOST ? entry.size : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The refusal's first half for such a file, named by the repository's spelling of it. */
+export const tooLargeSentence = (at, size) => `${encodePath(at)} is ${size} bytes, past the ${PUT_BACK_MOST / 2 ** 20} MiB a scan reads to put a file back`;
+
+/**
+ * A regular file's bytes, `null` where nothing is, `undefined` where they cannot
+ * be put back. Past `PUT_BACK_MOST` it throws, with the size on `tooLarge`.
+ */
 export function previousBytes(path) {
   let fd;
   try {
     // Opened then typed through the handle, so the file read is the file typed;
     // O_NOFOLLOW refuses a link the way lstat did.
     fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    return fstatSync(fd).isFile() ? readFileSync(fd) : undefined;
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return undefined;
+    if (stat.size > PUT_BACK_MOST) throw Object.assign(new Error(tooLargeSentence(path, stat.size)), { tooLarge: stat.size });
+    return readFileSync(fd);
   } catch (err) {
+    if (err.tooLarge !== undefined) throw err;
     return err.code === "ENOENT" ? null : undefined;
   } finally {
     if (fd !== undefined) closeSync(fd);
@@ -468,10 +498,10 @@ export function writePair(dir, recordBytes, layout, schema) {
 /**
  * The record's bytes, for a writer that puts them on disk together with the map.
  * `targets` is the filenames that writer leaves in each directory besides
- * Claude Code's.
+ * Claude Code's, and `removing` the ones it is about to remove, by target.
  */
-export function factsJson(result, targets = {}) {
-  return JSON.stringify(factsRecord(result, targets), null, 2) + "\n";
+export function factsJson(result, targets = {}, removing = {}) {
+  return JSON.stringify(factsRecord(result, targets, removing), null, 2) + "\n";
 }
 
 /**
@@ -519,8 +549,9 @@ function statOf(path) {
   }
 }
 
-function factsRecord(result, targets = {}) {
+function factsRecord(result, targets = {}, removing = {}) {
   const named = Object.entries(targets).filter(([, names]) => names.length > 0);
+  const going = Object.entries(removing).filter(([, names]) => names.length > 0);
   return {
     schema: FACTS_SCHEMA,
     root: result.root,
@@ -553,6 +584,7 @@ function factsRecord(result, targets = {}) {
     })),
     // No key at all where nothing was written, which is every scan that names no other target.
     ...(named.length ? { targets: Object.fromEntries(named) } : {}),
+    ...(going.length ? { removing: Object.fromEntries(going) } : {}),
   };
 }
 

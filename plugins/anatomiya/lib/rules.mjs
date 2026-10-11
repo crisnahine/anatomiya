@@ -10,7 +10,8 @@
  * the direction that deletes.
  *
  * Ownership is three facts, or the file is left alone: our filename
- * prefix, our frontmatter key, and the map on disk naming it. The prefix alone
+ * prefix, our frontmatter key, and the map on disk naming it, as a file it
+ * holds or one it was about to remove. The prefix alone
  * is a filename anyone can type; the frontmatter alone is a file an older build
  * wrote and this one knows nothing about.
  */
@@ -255,6 +256,19 @@ export function knownNames(facts, target = TARGETS.claude) {
     if (a && typeof a.id === "string") names.add(areaFilename(a));
   }
   return names;
+}
+
+/**
+ * The filenames the map on disk was about to remove from one directory: an
+ * empty set where it names none, which is every record written before the list.
+ *
+ * The record is renamed before the first removal, so a scan killed between the
+ * two leaves a record that no longer names the file it was removing, and only
+ * this list says the file is still ours to remove.
+ */
+export function pendingNames(facts, target = TARGETS.claude) {
+  const listed = facts?.removing?.[target.id];
+  return new Set(Array.isArray(listed) ? listed.filter((n) => isMapName(n, target)) : []);
 }
 
 /**
