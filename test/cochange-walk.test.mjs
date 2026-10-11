@@ -130,8 +130,13 @@ test("a class added with one companion every time states it, and its parent clas
   assert.equal(c.authorsRequired, 2);
   assert.deepEqual(c.files, [1, 1]);
   assert.equal(c.lift, 2);
-  // The parent covers no more candidates than the directory's own, so it gives way.
-  assert.equal(pair(claims, "lib/*/*.rb").gate, "pair");
+  // Every candidate of the parent came from this one directory.
+  assert.equal(pair(claims, "lib/*/*.rb").gate, "exists");
+
+  // From two directories, the parent covering no tenth more than the directory's own gives way.
+  const walk = history({ quiet: 50 });
+  for (let i = 0; i < 2; i++) walk.changes.unshift({ author: "p0@t.test", added: [`lib/more/m${i}.rb`], touched: [`lib/more/m${i}.rb`, "config/default.yml"] });
+  assert.equal(pair(mineCochange(walk, { tree: TREE, required: 2 }).claims, "lib/*/*.rb").gate, "pair");
 });
 
 test("a parent class covering a tenth more candidates than its directory's own is the one stated", () => {
@@ -147,6 +152,27 @@ test("a parent class covering a tenth more candidates than its directory's own i
   const changeset = claims.filter((c) => c.companion.adds === ".changeset/*.md");
   assert.deepEqual(changeset.filter((c) => c.directive).map((c) => c.producer), ["plugins/*/*.json"]);
   assert.equal(changeset.find((c) => c.producer === "plugins/one/*.json").gate, "pair");
+});
+
+test("a parent class states only from two child directories, one of them still holding a producer at the tip", () => {
+  const spread = (dirOf) => {
+    const changes = [];
+    for (let i = 0; i < 40; i++) {
+      const file = `lib/${dirOf(i)}/f${i}.rb`;
+      changes.push({ author: `p${i % 3}@t.test`, added: [file], touched: [file, "reg.yml"] });
+    }
+    for (let i = 0; i < 40; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+    return { changes, read: changes.length, bulk: 0, error: null };
+  };
+  const gateOf = (walk, tree, producer = "lib/*/*.rb") => pair(mineCochange(walk, { tree: new Set(tree) }).claims, producer, "reg.yml")?.gate;
+
+  // Every candidate came from lib/x, which is gone: an unrelated sibling at the tip is no evidence.
+  assert.equal(gateOf(spread(() => "x"), ["reg.yml", "lib/y/f0.rb"]), "exists");
+  assert.equal(gateOf(spread(() => "x"), ["reg.yml", "lib/y/f0.rb"], "lib/x/*.rb"), "exists");
+  // Two children, one of them still there.
+  assert.equal(gateOf(spread((i) => (i % 2 ? "x" : "y")), ["reg.yml", "lib/y/f0.rb"]), null);
+  // Two children, neither there, and a third the history never added to.
+  assert.equal(gateOf(spread((i) => (i % 2 ? "x" : "y")), ["reg.yml", "lib/z/f0.rb"]), "exists");
 });
 
 test("each gate past the ratio is the one a table built to fail it alone records", () => {

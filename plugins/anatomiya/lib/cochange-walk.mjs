@@ -49,6 +49,11 @@ export const COCHANGE = {
 
 const SEP = "\x1e";
 
+const getOrSet = (map, key, make) => {
+  if (!map.has(key)) map.set(key, make());
+  return map.get(key);
+};
+
 /**
  * Where the walk stops: the pin where it loads and is reachable, else HEAD's
  * fork point with the first base ref that resolves, else HEAD, or null with no
@@ -269,14 +274,27 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
   // The tip's tree, asked only about the classes a kept pair names.
   const asked = new Set(kept.flatMap(({ t, companion }) => [t, ...(companion.adds ? [companion.adds] : [])]));
   const atTip = new Map([...asked].map((cls) => [cls, [0, 0]]));
+  const dirOf = (p) => p.slice(0, p.lastIndexOf("/"));
+  // The child directories a spanning class still holds a file in at the tip.
+  const dirsAtTip = new Map();
   for (const p of tree ?? []) {
     for (const cls of classes(p)) {
       const at = atTip.get(cls);
       if (!at) continue;
       at[1]++;
       if (added.has(p)) at[0]++;
+      if (classParts(cls).spans) getOrSet(dirsAtTip, cls, () => new Set()).add(dirOf(p));
     }
   }
+  // A spanning class speaks for its children only where the history it was
+  // counted over came from two of them and one is still there: one child's
+  // habit, gone at the tip, is no evidence for a sibling the tree still holds.
+  const producerExists = (t) => {
+    if (!classParts(t).spans) return atTip.get(t)[1] > 0;
+    const from = new Set(candidatesOf.get(t).flatMap((i) => changes[i].added.filter((p) => classes(p).includes(t)).map(dirOf)));
+    const held = dirsAtTip.get(t);
+    return from.size >= 2 && [...from].some((d) => held?.has(d));
+  };
 
   const keysAt = new Map();
   const keysOfAt = (i) => keysAt.get(i) ?? (keysAt.set(i, keysOf(changes[i])), keysAt.get(i));
@@ -288,7 +306,7 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
     // A fifth of at least 35 candidates is at least 7, past the design's floor of 5.
     const recent = Math.ceil(of / 5);
     const met = flags.slice(0, recent).filter(Boolean).length;
-    const exists = (companion.edits !== undefined ? tree?.has(companion.edits) : atTip.get(companion.adds)[1] > 0) && atTip.get(t)[1] > 0;
+    const exists = (companion.edits !== undefined ? tree?.has(companion.edits) : atTip.get(companion.adds)[1] > 0) && producerExists(t);
     const gate =
       wilsonLower(n, of) < GATES.minRatio ? "evidence"
         : hands.size < required ? "authors"
