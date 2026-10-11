@@ -219,8 +219,7 @@ by this version, with times and build digests masked
 - `check` cost the square of the depth on a site holding sites, since each one walked everything
   under it for the bodies its identity leaves out and copied all of its text: 2,000 catches nested
   in catch bodies took 15 seconds per row against a base. Each file's bodies and collapsed text are
-  read once, a finding quotes at most 4,096 UTF-16 code units of its site, as many characters where
-  the site is ASCII, in `--format json` too, and the same file takes 0.1 seconds.
+  read once, and the same file takes 0.1 seconds.
 - `check` said a file nested about 1,500 levels deep `could not be parsed`, though the scan reads
   it: its tree overflows the stack the parser child sends it back with. It says the file crashed
   the parser, in every language, as for any file this tool could not finish.
