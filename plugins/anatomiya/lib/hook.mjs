@@ -483,7 +483,8 @@ const ECHO_READ_MOST = 1024 * 1024;
 
 // A batch claim this old is no batch's: its delivery has reached the transcript.
 const BATCH_CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
-const BATCH_CLAIM_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+)?)?$/;
+// A batch claim, its temp file, its lock, or a lock's token.
+const ECHO_FILE_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+)?)?$/;
 const BATCH_CLAIMS_LISTED_MOST = 4096;
 
 /**
@@ -684,6 +685,9 @@ function batchClaimPath(data, transcript, digest) {
 /** A hook is killed at its 5 s timeout (hooks.json), so a lock older than that was left by a call that died holding it. */
 export const LOCK_HELD_MOST_MS = 5000;
 
+// FAT and exFAT keep a file's mtime to 2 s, so a live lock can read that much older or newer than it is.
+const LOCK_MTIME_SLACK_MS = 2000;
+
 /**
  * Whether this call is the one in its batch that delivers.
  *
@@ -744,10 +748,10 @@ function locked(lock) {
       if (err?.code !== "EEXIST") throw err;
     }
     if (broken) return false;
-    const dead = statOf(lock);
-    if (dead === null) continue;
-    if (Math.abs(Date.now() - dead.mtimeMs) <= LOCK_HELD_MOST_MS) return false;
-    const token = `${lock}.${Math.round(dead.mtimeMs)}`;
+    const found = lstatOf(lock);
+    if (found === null) continue;
+    if (Math.abs(Date.now() - found.mtimeMs) <= LOCK_HELD_MOST_MS + LOCK_MTIME_SLACK_MS) return false;
+    const token = `${lock}.${Math.round(found.mtimeMs)}`;
     try {
       closeSync(openSync(token, "wx"));
     } catch (err) {
@@ -755,8 +759,8 @@ function locked(lock) {
       continue;
     }
     try {
-      const now = statOf(lock);
-      if (now !== null && now.ino === dead.ino && now.mtimeMs === dead.mtimeMs) rmSync(lock, { force: true });
+      const now = lstatOf(lock);
+      if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) rmSync(lock, { force: true });
     } finally {
       rmSync(token, { force: true });
     }
@@ -764,7 +768,7 @@ function locked(lock) {
 }
 
 /** A lock's stat, or null where it is gone. */
-function statOf(path) {
+function lstatOf(path) {
   try {
     return lstatSync(path);
   } catch {
@@ -788,7 +792,7 @@ function sweep(dir, kept) {
   const before = Date.now() - BATCH_CLAIM_KEPT_MS;
   for (const name of names) {
     const path = join(dir, name);
-    if (path === kept || !BATCH_CLAIM_NAME.test(name)) continue;
+    if (path === kept || !ECHO_FILE_NAME.test(name)) continue;
     try {
       if (lstatSync(path).mtimeMs < before) unlinkSync(path);
     } catch {

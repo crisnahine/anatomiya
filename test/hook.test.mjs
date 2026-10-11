@@ -1354,7 +1354,7 @@ test("the payload read gives itself less than half the timeout the declaration a
   );
 });
 
-test("an echo lock is broken only once it outlives every echo hook's declared timeout", () => {
+test("the longest an echo lock is held is the longest timeout an echo hook declares", () => {
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks;
   const echoes = Object.values(declared).flatMap((groups) => groups.flatMap((group) => group.hooks.filter((hook) => hook.command.endsWith(" echo"))));
   assert.equal(echoes.length, 3);
