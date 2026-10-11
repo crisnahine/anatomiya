@@ -47,6 +47,7 @@ import { TARGETS, isClaude, overviewName, parseTargets } from "../plugins/anatom
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { formatReport } from "../plugins/anatomiya/lib/check-report.mjs";
+import { classParts, statedClaims } from "../plugins/anatomiya/lib/cochange.mjs";
 
 const LAYOUT_HEADING = "## What lives where";
 
@@ -396,6 +397,28 @@ export function probeCell(plan, facts, named = false) {
   return stated ? "n.a. (no stated row one file breaks)" : "n.a. (no claim stated)";
 }
 
+/**
+ * One new producer of the first co-change claim the map stated, on a branch
+ * that touches no companion, or null where the map states none. A class that
+ * spans sibling directories gets a new sibling, which is where such a claim is
+ * decided. Empty, so it reads in every language.
+ */
+export function cochangePlan(facts) {
+  const [claim] = statedClaims(facts?.layout?.cochange);
+  if (!claim) return null;
+  const { dir, spans, suffix } = classParts(claim.producer);
+  const name = `zz_cochange_probe${suffix}`;
+  const path = dir === null ? name : spans ? `${dir}/zzcochange/${name}` : `${dir}/${name}`;
+  return { producer: claim.producer, path, body: "" };
+}
+
+/** The co-change column: the claim a finding named the probe for, that none did, or that the map states none. */
+export function cochangeCell(plan, report = null) {
+  if (!plan) return "n.a. (no claim stated)";
+  const named = (report?.findings ?? []).some((f) => f.dimension === "cochange" && f.path === plan.path);
+  return named ? `yes ${plan.producer}` : "no";
+}
+
 /** The paths the report's findings name, and nothing off the rest of it. */
 export function findingPaths(report) {
   return report.findings.map((f) => f.path);
@@ -414,6 +437,7 @@ export const COLUMNS = [
   "pin",
   "clean",
   "probe",
+  "cochange",
   "semantic",
   "seconds",
 ];
@@ -796,6 +820,26 @@ async function runRepo(name, source, scratchDir, targets) {
     if (plan) {
       if (row.probe === "no") fail(`no finding names ${probePath}, and ${plan.dimension} states ${plan.learned} in ${plan.area}`);
     } else if (named.length !== 0) fail(`a markdown file drew ${named.length} finding(s)`);
+
+    /* 7: a producer of a stated co-change claim, on a branch from the pin that touches no companion. */
+    const shipped = cochangePlan(mapped);
+    row.cochange = cochangeCell(shipped);
+    if (shipped) {
+      if (git(["checkout", "-q", "-b", "e2e/cochange", sha], clone).status !== 0) fail("could not branch the clone for the co-change probe");
+      if (existsSync(join(clone, shipped.path))) {
+        fail(`${shipped.path} already exists, so the co-change probe would overwrite real code`);
+        return { row, problems, head, summary };
+      }
+      mkdirSync(dirname(join(clone, shipped.path)), { recursive: true });
+      writeFileSync(join(clone, shipped.path), shipped.body);
+      git(["add", "--", shipped.path], clone);
+      const made = git(["-c", "user.name=e2e", "-c", "user.email=e2e@local", "commit", "-qm", "e2e co-change probe"], clone);
+      if (made.status !== 0) fail(`could not commit the co-change probe: ${made.err.split("\n")[0]}`);
+      const asked = anatomiya(["check", clone, "--base", base, "--format", "json"], scratchDir);
+      if (asked.status !== 0) fail(`check exited ${asked.status} on the co-change branch: ${asked.err.split("\n")[0]}`);
+      row.cochange = cochangeCell(shipped, readJson(asked.out));
+      if (row.cochange === "no") fail(`no co-change finding names ${shipped.path}, and the map states ${shipped.producer} ships with a companion`);
+    }
     return { row, problems, head, summary };
   } catch (err) {
     fail(err && err.stack ? err.stack : String(err));
