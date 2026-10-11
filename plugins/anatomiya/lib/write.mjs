@@ -523,10 +523,13 @@ export function commitMap(root, plan) {
     // A directory it removes nothing from goes on naming what the record on disk had left there.
     const carried = (id, stopped) => untouched(plan.targets[id]) || refused.has(id) || stopped.has(id);
     const removing = (stopped, done = false) =>
-      Object.fromEntries([
-        [TARGETS.claude.id, done ? [] : plan.remove],
-        ...Object.entries(plan.targets).map(([id, t]) => [id, carried(id, stopped) ? t.pending : done ? [] : t.remove.filter((n) => isMapName(n, TARGETS[id]))]),
-      ]);
+      Object.fromEntries(
+        TARGET_IDS.map((id) => {
+          if (isClaude(TARGETS[id])) return [id, done ? [] : plan.remove];
+          const t = plan.targets[id];
+          return [id, carried(id, stopped) ? t.pending : done ? [] : t.remove.filter((n) => isMapName(n, TARGETS[id]))];
+        })
+      );
     const holding = (stopped) => Object.fromEntries(Object.entries(names).map(([id, now]) => [id, stopped.has(id) ? plan.targets[id].was : now]));
     const recordTemp = stage(factsPath, factsJson(plan.result, names, removing(new Set())), STORE_DIR);
     staged.push([recordTemp, factsPath]);
