@@ -886,6 +886,16 @@ test("a file written inside one of the session's calls is the session's, whateve
   assert.doesNotMatch(answer.reason, /src\/e\.ts/, "written between calls");
 });
 
+test("a call with no result recorded charges the session with nothing", async (t) => {
+  // An interrupted turn, or a call still running: nothing says when it ended.
+  const { dir, write } = repo(t);
+  const { now, session } = pastSession(t, (at) => [call("Bash", "o1", at - 300_000, at - 299_000).slice(0, 1)]);
+  write("src/b.ts", NEW_B);
+  setTime(dir, "src/b.ts", now - 200_000);
+
+  assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
 test("a background call's writes are the session's until the transcript records it finished", async (t) => {
   // Its result returns as it starts; the completion is enqueued when it ends,
   // and the notification the model reads can land seconds after that.
