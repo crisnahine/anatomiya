@@ -221,7 +221,7 @@ by hand prints why and ends that retry until the checkout moves. A committed map
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
 
 A map written by 0.14.0 or earlier is rewritten by the first scan or refresh of 0.15.0. Its record
-always differs, and its overview or area files did on 22 of 60 measured repositories. A committed
+always differs, and its overview or area files did on 24 of 60 measured repositories. A committed
 map is not refreshed, so scan it by hand and commit the result. Expect:
 
 - fewer test files where a `__tests__` directory, or a test tree that mirrors the source, holds

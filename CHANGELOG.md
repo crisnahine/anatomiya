@@ -11,7 +11,7 @@ A scan reads the default branch's history and states what ships together: a chan
 cop also edits `config/default.yml`, and the area file, the notice before a write and `check` say
 so. Parallel tool calls carry one copy of the map between them, and the end-of-turn reuse check asks
 only about files the session's own tool calls wrote. A map written by 0.14.0 gets a new record on
-its first scan, and its overview or area files change in 22 of 60 measured repositories.
+its first scan, and its overview or area files change in 24 of 60 measured repositories.
 
 After updating, a map refreshes itself on the next session or HEAD move, as before, and a committed
 map is never refreshed: scan it by hand and commit the result. A repository at the area ceiling
@@ -22,7 +22,7 @@ so does a git older than 2.31. Nothing needs installing.
 
 ### What changes in an existing map
 
-A scan of this version writes every overview and area file as 0.14.0 wrote it in 38 of the 60
+A scan of this version writes every overview and area file as 0.14.0 wrote it in 36 of the 60
 measured repositories, and its record differs in all 60. The counts in this list are from one run: a
 copy of each of the 35 corpus repositories and the 25 of the seven languages, scanned by 0.14.0 and
 by this version, with times and build digests masked
@@ -30,8 +30,16 @@ by this version, with times and build digests masked
 
 - The record. `facts.json` and `layout.json` differ in all 60: they carry the co-change record,
   `layout.cochange`, empty where nothing was mined.
-- The overview differs in 20 of 60. Area files: 8,011 identical, 161 changed, 4 added and none
+- The overview differs in 20 of 60. Area files: 7,388 identical, 784 changed, 4 added and none
   removed.
+- The hooks claim's unstated line drops the claim's own full stop before its colon: `React's hooks
+  are called by their bare name, not through React: no convention.` where 0.14.0 printed `through
+  React.: no convention.` 0.14.0 printed that line in 650 area files of 18 repositories: supabase
+  122, canvas-lms 99, appsmith 97, backstage 82, next.js 81, Ghost 54, cal.diy 36, storybook 35,
+  react 12, forem 9, empire-flippers/client 8, mastodon 7, prisma 3, and element-plus, vscode,
+  openproject, plots2 and typeorm 1 each. 649 print the new form, and in one canvas-lms area the
+  give-back states the claim instead. In 623 of the 650 nothing else moves, and plots2 and typeorm
+  change for this alone. Two of next.js's three added areas print the new form too.
 - Support files under a test tree leave the test counts in 13 repositories: whitehall, appsmith,
   cal.diy, discourse, element-plus, forem, canvas-lms, openproject, prisma, react, rubocop,
   storybook and vitepress.
