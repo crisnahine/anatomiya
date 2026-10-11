@@ -418,11 +418,11 @@ from.
 
 ### The one place a hook writes outside the repository
 
-The echo hook keeps a claim per context window and map under the plugin's data directory,
+The echo hook keeps a batch claim per context window and map under the plugin's data directory,
 `${CLAUDE_PLUGIN_DATA}/echo/`, where Claude Code names one. That is outside every repository, and
 the repository chooses nothing in it. A name there is two hashes: the first 16 hex digits of the
 SHA-256 of the transcript's path, a dash, and the 12 hex digits that name the delivered map, so no
-path, file name or transcript text reaches a name. A claim holds one line, the transcript offset
+path, file name or transcript text reaches a name. A batch claim holds the transcript offset
 its maker had read to. The calls of one parallel batch decide under `<claim>.lock`, made with an
 exclusive create, and a call that finds the lock taken delivers nothing. A lock more than 5 seconds
 old, the echo hook's timeout, was left by a call that died holding it: a call renames it to

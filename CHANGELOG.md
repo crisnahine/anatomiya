@@ -166,9 +166,9 @@ version, with times and build digests masked.
 - Parallel tool calls each delivered a copy of the map. The calls of one batch run their hooks
   before any of their records reaches the transcript, so each read the window as empty: a session
   started above a checkout got one copy per call of its first batch. Where Claude Code names the
-  plugin a data directory, the calls of this version share a claim per transcript and map under
-  `${CLAUDE_PLUGIN_DATA}/echo/`, taken under a lock, and one of them delivers. Started 3 and 8 at
-  once for 20 rounds each, the echo delivered once in every round. Without that directory each
+  plugin a data directory, the calls of this version share a batch claim per transcript and map
+  under `${CLAUDE_PLUGIN_DATA}/echo/`, taken under a lock, and one of them delivers. Started 3 and 8
+  at once for 20 rounds each, the echo delivered once in every round. Without that directory each
   call answers alone, as before.
 - The end-of-turn reuse check asked about a file another session or an editor saved during the
   session. A file is the turn's work only when it was last written during one of the session's own
