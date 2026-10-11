@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { PROSE_NAMES, READS, checkDocs, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
@@ -454,6 +454,77 @@ test("the engines counted without the word parser are read against the registry"
 
   assert.equal(status, 1);
   assert.ok(output.includes(`docs/how-it-works.md: says "the four engines", the registry declares 3`), output);
+});
+
+test("a bare count of engines is read in the README, the walkthrough and the release note", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "README.md"), (text) => text.replace("three runtime dependencies", "three runtime dependencies across four engines"));
+  edit(join(dir, "docs", "how-it-works.md"), (text) => text.replace("drives the three parser engines", "drives 5 engines"));
+  edit(join(dir, "CHANGELOG.md"), (text) => text.replace("## [Unreleased]\n", "## [Unreleased]\n\nRead by six engines.\n"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  for (const said of ['README.md: says "four engines"', 'docs/how-it-works.md: says "5 engines"', 'CHANGELOG.md: says "six engines"']) {
+    assert.ok(output.includes(`${said}, the registry declares 3`), `${said}: ${output}`);
+  }
+});
+
+test("the build contract's engines are a pair a row compares, not a count", (t) => {
+  // A row says "spans two engines" of any two, so the gate reads no bare count there and keeps "parser engines".
+  const { output } = miscount(t, "DECISIONS.md", "No row spans two engines", "No row spans four engines");
+
+  assert.ok(!output.includes('DECISIONS.md: says "four engines"'), output);
+});
+
+test("a hyphenated count word is read whole, so its last word is never the count", (t) => {
+  // Read as "three", the sentence below would pass against a manifest declaring three.
+  const dir = repoCopy(t);
+  edit(join(dir, "SECURITY.md"), (text) => text.replace(/three runtime dependencies/i, "twenty-three runtime dependencies"));
+  edit(join(dir, "docs", "how-it-works.md"), (text) => text.replace("28 for JavaScript", "twenty-eight for JavaScript"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`SECURITY.md: says "twenty-three runtime dependencies", the plugin's manifest declares 3`), output);
+  assert.ok(!output.includes("twenty-eight"), output);
+});
+
+test("a count word stands for its number, to ninety-nine", () => {
+  const read = ["no", "None", "zero", "one", "Nine", "ten", "nineteen", "twenty", "Twenty-one", "fifty", "ninety-nine", "42"].map(counted);
+
+  assert.deepEqual(read, [0, 0, 0, 1, 9, 10, 19, 20, 21, 50, 99, 42]);
+});
+
+test("no, none and zero are counts of nothing", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "README.md"), (text) => text.replace("three runtime dependencies", "no runtime dependencies").replace("3 for PHP", "none for PHP"));
+  edit(join(dir, "CONTEXT.md"), (text) => text.replace("three parser engines", "zero parser engines"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  for (const said of [
+    `README.md: says "no runtime dependencies", the plugin's manifest declares 3`,
+    `README.md: says "none for PHP", the registry holds 3 asked of PHP`,
+    `CONTEXT.md: says "zero parser engines", the registry declares 3`,
+  ]) {
+    assert.ok(output.includes(said), `${said}: ${output}`);
+  }
+});
+
+test("a count word opening a sentence is the same count", (t) => {
+  const { status, output } = miscount(t, "README.md", "3 for PHP", "Four for PHP");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`README.md: says "Four for PHP", the registry holds 3 asked of PHP`), output);
+});
+
+test("the grammars counted as grammar packages are read against the registry", (t) => {
+  const { status, output } = miscount(t, "SECURITY.md", "packages of the seven grammars", "packages of the eight grammar packages");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`SECURITY.md: says "eight grammar packages", the registry routes 7 languages to tree-sitter`), output);
 });
 
 test("a caveat code the walkthrough does not document fails", (t) => {
