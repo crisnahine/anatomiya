@@ -637,3 +637,57 @@ test("a record whose counts are not numbers is not one the notice reads", () => 
   }
   assert.equal(said({}, "tests"), null, "and a tests field that is no list");
 });
+
+/* --- a new file a co-change claim's producer class holds --- */
+
+const shipsWith = (o = {}) => ({
+  producer: "lib/rubocop/cop/style/*.rb",
+  companion: { edits: "config/default.yml" },
+  candidates: 100,
+  conforming: 100,
+  newest: [20, 20],
+  authors: 22,
+  authorsRequired: 2,
+  lift: 9.5,
+  files: [266, 299],
+  area: "lib/rubocop/cop",
+  gate: null,
+  directive: true,
+  ...o,
+});
+
+test("a new file a stated claim's class holds is told what it ships with, before it is written", () => {
+  const layout = { roots: [], cochange: { from: "pin", claims: [shipsWith(), shipsWith({ companion: { adds: "changelog/*.md" }, conforming: 97 })] } };
+
+  assert.equal(
+    noticeFor("lib/rubocop/cop/style/new_cop.rb", layout),
+    [
+      "anatomiya: lib/rubocop/cop/style/new_cop.rb",
+      '  A .rb file added here ships with an edit to "config/default.yml": 100 of the last 100 changes that added one.',
+      '  A .rb file added here ships with a new .md file in "changelog": 97 of the last 100 changes that added one.',
+      "  Make those changes in the same change, or say why this file does not need them.",
+    ].join("\n")
+  );
+  assert.match(noticeFor("lib/rubocop/cop/style/x.rb", { roots: [], cochange: { claims: [shipsWith()] } }), /Make that edit in the same change, or say why this file does not need it\.$/);
+});
+
+test("the notice is silent for a path no stated claim's class holds", () => {
+  const layout = { roots: [], cochange: { claims: [shipsWith(), shipsWith({ producer: "app/*.rb", gate: "evidence", directive: false })] } };
+  assert.equal(noticeFor("lib/rubocop/cop/style/x_spec.rb", layout), null);
+  assert.equal(noticeFor("lib/rubocop/cop/style/deeper/x.rb", layout), null);
+  assert.equal(noticeFor("app/x.rb", layout), null);
+  assert.equal(noticeFor("lib/rubocop/cop/style/x.rb", { roots: [], cochange: { claims: [{ producer: "lib/rubocop/cop/style/*.rb" }] } }), null);
+});
+
+test("a precedent finding and a co-change claim share one notice under one header", () => {
+  const roots = [
+    root("app/mailers", { files: 4, companions: { with: 0, of: 4, root: null } }),
+    root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
+  ];
+  const claim = shipsWith({ producer: "spec/mailers/*_spec.rb", companion: { edits: "spec/support/mailers.rb" } });
+  const said = noticeFor("spec/mailers/invoice_mailer_spec.rb", { roots, cochange: { claims: [claim] } });
+
+  assert.equal(said.match(/^anatomiya: /gm).length, 1);
+  assert.match(said, /app\/mailers: 0 of 4/);
+  assert.match(said, /A _spec\.rb file added here ships with an edit to "spec\/support\/mailers\.rb"/);
+});
