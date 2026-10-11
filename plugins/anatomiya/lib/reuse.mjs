@@ -480,8 +480,9 @@ export function turnStart(transcriptPath) {
  */
 const inCall = (calls, ms) => calls.some((c) => c.from - 1000 <= ms && ms <= c.to + 1000);
 
-// The completion of a call run in the background names the call it ends.
-const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
+// The completion of a call run in the background opens with this tag, and the first id it names is the call it ends.
+const NOTIFICATION = "<task-notification>";
+const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/;
 
 /**
  * This session's tool calls, each from the moment its call was written to the
@@ -516,8 +517,9 @@ export function toolCalls(transcriptPath) {
     }
     const notice =
       entry.type === "queue-operation" ? entry.content : entry.attachment?.type === "queued_command" ? entry.attachment.prompt : entry.type === "user" ? content : null;
-    if (typeof notice !== "string") continue;
-    for (const [, id] of notice.matchAll(FINISHED_CALL)) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
+    // A prompt typed or pasted is queued and recorded the same way, and may quote any call's id.
+    const id = typeof notice === "string" && notice.startsWith(NOTIFICATION) ? notice.match(FINISHED_CALL)?.[1] : undefined;
+    if (id !== undefined) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
   }
   return [...started].flatMap(([id, from]) => (returned.has(id) ? [{ from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));
 }

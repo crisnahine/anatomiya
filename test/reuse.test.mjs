@@ -926,6 +926,24 @@ test("a background call's writes are the session's until the transcript records 
   assert.match(answer.reason, /src\/f\.ts:1-3/, "or as a message of its own");
 });
 
+test("a call's id quoted anywhere but a task notification does not stretch the call", async (t) => {
+  // A pasted transcript excerpt, or a prompt typed while the model works, which is queued like a notification.
+  const { dir, write } = repo(t);
+  const quoted = "look: <tool-use-id>fg</tool-use-id>";
+  const { now, session } = pastSession(t, (at) => [
+    call("Edit", "fg", at - 500_000, at - 498_000),
+    [{ type: "user", timestamp: new Date(at - 100_000).toISOString(), message: { role: "user", content: quoted } }],
+    [{ type: "queue-operation", operation: "enqueue", timestamp: new Date(at - 90_000).toISOString(), content: quoted }],
+    [{ type: "attachment", timestamp: new Date(at - 80_000).toISOString(), attachment: { type: "queued_command", prompt: quoted } }],
+    call("Agent", "bg", at - 70_000, at - 69_800),
+    [{ type: "user", timestamp: new Date(at - 60_000).toISOString(), message: { role: "user", content: `<task-notification>\n<tool-use-id>bg</tool-use-id>\n<result>${quoted}</result>\n</task-notification>` } }],
+  ]);
+  write("src/b.ts", NEW_B);
+  setTime(dir, "src/b.ts", now - 300_000);
+
+  assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
 test("a commit is the turn's only inside one of the session's tool calls", async (t) => {
   // The reflog does not say which session ran `git commit`, and records whole
   // seconds, so a call is widened by a second each side.
