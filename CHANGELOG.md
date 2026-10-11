@@ -22,10 +22,10 @@ so does a git older than 2.31. Nothing needs installing.
 
 ### What changes in an existing map
 
-A scan of this version writes every rule file as 0.14.0 wrote it in 38 of the 60 measured
-repositories, and its record differs in all 60. The counts in this list are from one run: a copy of
-each of the 35 corpus repositories and the 25 of the seven languages, scanned by 0.14.0 and by this
-version, with times and build digests masked
+A scan of this version writes every overview and area file as 0.14.0 wrote it in 38 of the 60
+measured repositories, and its record differs in all 60. The counts in this list are from one run: a
+copy of each of the 35 corpus repositories and the 25 of the seven languages, scanned by 0.14.0 and
+by this version, with times and build digests masked
 (`docs/measurements/2026-10-11-what-changes-in-an-existing-map.md`).
 
 - The record. `facts.json` and `layout.json` differ in all 60: they carry the co-change record,
@@ -56,8 +56,8 @@ version, with times and build digests masked
   737 match the model default` for `962 of 7654`, `732`: of the six more stated, five come from the
   give-back and one is a co-change claim.
 - Nothing moves for quoted names, since no directory name in the 60 that reaches a map holds a
-  space, and nothing for the family hold or `Class.method`, which are `check`'s. 22 repositories'
-  records gain `scope` on their slots, and no rule file moves for it.
+  space, and nothing for the test family rule or `Class.method`, which are `check`'s. 22
+  repositories' records gain `scope` on their slots, and no overview or area file moves for it.
 
 ### Added
 
@@ -83,17 +83,18 @@ version, with times and build digests masked
 - The block prints in the area file that holds the producers, after the directives, and gives way
   before any directive, so no directive line moves for it. A claim whose producers sit in no one
   area, or in one whose patterns do not reach them, is printed nowhere and still reaches the notice
-  and `check`. A printed claim counts as stated in the claims line and the overview's `N stated`:
-  rubocop reads `40 of 111 claims stated`.
+  and `check`. A claim an area file carries counts as stated in the claims line and the overview's
+  `N stated`: rubocop reads `40 of 111 claims stated`.
 - The notice before a write speaks for a new file of a producer class, one line per claim, and says
   to make the companion change in the same change or say why this file does not need it: `A .rb
   file added here ships with an edit to "config/default.yml": 100 of the last 100 changes that
   added one.`
 - `check` reports a branch that adds a producer without its companion, one finding per claim on the
   first such file, as `dimension: "cochange"`. MUST-FIX only where the history was read up to a pin
-  and every counted change conformed; FIX where it was read from a base branch or HEAD, where no
-  one area file carries the claim, where its block was dropped, where the branch touches more than
-  40 files, or where the record was not perfect.
+  and every counted change conformed; FIX where it was read from a base branch or HEAD, where no one
+  area file carries the claim, where its block was dropped, where the branch touches more than 40
+  files, where the run is capped or the area file's patterns do not reach the file, or where the
+  record was not perfect.
 - `check` and `doctor` say which of the files the map does not name the next scan removes: `the
   next scan removes "anatomiya-area-<id>.md", which the scan that wrote the map was about to
   remove`. `check --format json` lists them under `removing` beside `unknown`, only where there is
@@ -101,12 +102,13 @@ version, with times and build digests masked
 
 ### Changed
 
-- A file in a `__tests__` directory, or one under a test tree that mirrors a source path, is not a
-  test where its parse shows it exports something or, in Ruby, declares no case. Across 60
-  repositories those two rules took 645 files, and 339 of them were fixtures, helpers, mocks,
-  configs and Ruby support files; no real test is lost, and eslint's 294 mirrored rule tests stay.
-  Such a file is neither a test nor a source file in any count. vitepress's `docs` read `3 of 11
-  have a namesake test` and reads `0 of 11`. A file the parse could not read keeps the path rule.
+- In JavaScript and Ruby, a file in a `__tests__` directory, or one under a test tree that mirrors a
+  source path, is not a test where its parse shows it exports something or, in Ruby, declares no
+  case. Across 60 repositories those two rules took 645 files, and 339 of them were fixtures,
+  helpers, mocks, configs and Ruby support files; no real test is lost, and eslint's 294 mirrored
+  rule tests stay. Such a file is neither a test nor a source file in any count. vitepress's `docs`
+  read `3 of 10 have a namesake test` and reads `0 of 10`. A file the parse could not read keeps the
+  path rule.
 - The sibling-module count beside a root's components counts only the files a test could be
   written for, the namesake count's own definition, so helpers and fixtures under a test tree and
   empty files leave it. next.js's `test` root loses the clause, and vscode's `extensions` reads
@@ -122,33 +124,35 @@ version, with times and build digests masked
   gives the same 5 findings with that hold as without it.
 - A directory name that holds a space or a double quote prints quoted, as JSON quotes it, wherever
   the map names it: the root lines, the `under` clauses, the tests line, an area file's heading, the
-  Areas listing, the Cursor and Copilot lines naming patterns, the notice and `check`, so a name that is a sentence opens a bullet as a name.
-  102 tracked directory names in the 60 repositories hold a space, and none reaches a map, so no
-  map line moves. A directory named `the repository root` prints as `"the repository root"`.
+  Areas listing, the Cursor and Copilot lines naming patterns, the notice and `check`, so a name
+  that is a sentence opens a bullet as a name. 102 tracked directory names in the 60 repositories
+  hold a space, and none reaches a map, so no map line moves. A directory named `the repository
+  root` prints as `"the repository root"`.
 - A NIT on a slot the map left unstated prints the line the area file prints for that slot, in its
   words, with its scope clause and its gate: on fastapi, a typed function added in
   `docs_src/security` reads `functions declare no return type: no convention. 62 of 70 sites
   (ratio)` where it read `functions declare no return type`, which read as advice to drop the
-  annotation. The text report prints no reason line under such a NIT, since the claim already
-  names the gate, and the GitHub annotation carries the claim as its message with no title. JSON
-  keeps every field. Each slot of the record keeps the extensions its clause names, as `scope`.
+  annotation. The text report prints no reason line under such a NIT, since the claim already names
+  the gate, and the GitHub annotation carries the claim as its message with no title. JSON keeps
+  every field and adds `toldInClaim: true` to such a finding. Each slot of the record keeps the
+  extensions its clause names, as `scope`.
 - The scan's claims line says what is left exactly: no clause where nothing is, `, the other prints
   as a count` or `, it prints as a count` for one, and `, the rest print as counts` or `, they
   print as counts` for more. It said `the rest print as counts` at none and at one.
 - The echo measures its window in what the model reads: user and assistant messages and the
   attachments the build renders, 192 KiB of them, about 29.9k tokens at the 6.57 bytes per token
-  measured on Claude Code 2.1.292 to 2.1.296. It counted every transcript byte, so a prompt
-  snapshot of up to 130 KB pushed a delivery out within one tool call. The CLAUDE.md files count for
-  nothing, since the build places them at the head of the context. Replayed over 4,328 local
-  transcripts, it keeps 9,267 of 46,370 deliveries.
+  measured on Claude Code 2.1.292 to 2.1.296. It counted every transcript byte, so one 78 KB prompt
+  snapshot pushed a delivery out within one tool call on 2.1.296. The CLAUDE.md files count for
+  nothing, since one session's context held them at its head. Replayed over 4,328 local transcripts,
+  it keeps 9,267 of 46,370 deliveries.
 - A finding names the method it sits in under its class in JavaScript too, `B.run`, where it named
   `run`: `check` matches a site to its own method where two classes in one file each have one of
   that name and a branch adds a site above the old one, and reports the new site's line. A site in
   a callback takes the nearest named declaration around it, and a method of an object literal
   bound to a name is `api.run`, through nested literals, conditionals, `||`, `&&` and `??`, call and
   `new` arguments, `await`, `as`, `satisfies` and parentheses. `const X = class { m() {} }` is
-  `X.m`, as `class X` is, and a function declared inside a method is its own name, `helper`, not
-  `A.helper`.
+  `X.m`, as `class X` is, and a function declared inside a method or a static block is its own
+  name, `helper`, not `A.helper`.
 - A parse child loads its own engine's rows and no other engine's. A JavaScript child adds 1.42 MB
   at load where it added 1.92, and a tree-sitter child 1.50 MB where it added 1.94, in each of up
   to eight children. Maps are byte-identical.
@@ -192,11 +196,13 @@ version, with times and build digests masked
   directory the scan did not name, that directory is left alone instead. A `facts.json` or
   `layout.json` past 64 MiB, which no command reads, is replaced without being read and said once,
   and no hook reads any of a record that size: each read 64 MB of it on every tool call.
-- At the area ceiling, an area that counts nothing took a place from one that counts. The fold
-  runs before anything is counted, so next.js and canvas-lms each lost three. Their places go back
-  to the largest areas the fold took, in the scan and in the pin: next.js holds 500 areas where it
-  held 497, and canvas-lms 498. A pin of a repository at the ceiling parses it once, without the
-  checker, which took next.js from 8.1 to 14.5 seconds.
+- At the area ceiling, an area that counts nothing took a place from one that counts. The fold runs
+  before anything is counted, so next.js and canvas-lms each lost three. Their places go back to the
+  largest areas the fold took, in the scan and in the pin, up to twice the plain ceiling: next.js
+  gets all three back and holds 500 areas where it held 497, and canvas-lms gets one back and holds
+  498, since its other two dropped areas hold JavaScript, which never reads as counting nothing. A
+  pin of a repository at the ceiling parses it once, without the checker, which took next.js from
+  8.1 to 14.5 seconds.
 - At the area ceiling an edit that made an area count nothing moved the partition, and unrelated
   areas read as population changes until the next pin. A pin records the ceiling its give-back
   settled on, and a scan under it folds there and gives nothing back. A pin naming a ceiling past
@@ -213,15 +219,22 @@ version, with times and build digests masked
 - `check` cost the square of the depth on a site holding sites, since each one walked everything
   under it for the bodies its identity leaves out and copied all of its text: 2,000 catches nested
   in catch bodies took 15 seconds per row against a base. Each file's bodies and collapsed text are
-  read once, a finding quotes at most 4,096 characters of its site, and the same file takes 0.1
-  seconds.
-- `check` said a file nested about 2,000 levels deep `could not be parsed`, though the scan reads
+  read once, a finding quotes at most 4,096 UTF-16 code units of its site, as many characters where
+  the site is ASCII, in `--format json` too, and the same file takes 0.1 seconds.
+- `check` said a file nested about 1,500 levels deep `could not be parsed`, though the scan reads
   it: its tree overflows the stack the parser child sends it back with. It says the file crashed
-  the parser, as for any file this tool could not finish.
+  the parser, in every language, as for any file this tool could not finish.
 - `check` held a `.ts` file to a claim counted over `.js` files and quoted the clause that left it
   out: `module-level bindings are const, in .js files: no convention.` on `added_ts.ts`. A slot
-  whose scope names the kinds it was counted over now raises nothing on a file of another kind,
+  whose scope names the kinds it was counted over raises nothing on a file of another kind,
   stated or not.
+- A scan killed while `--targets` turned Cursor or Copilot off could leave that target's overview
+  behind, and the next plain scan or refresh read the target as on and wrote every file of it back.
+  The record names that overview among the files the killed scan was about to remove, and the next
+  scan leaves the target off and finishes removing them.
+- An area file's line for a slot the map left unstated put a claim's own full stop before the colon:
+  `React's hooks are called by their bare name, not through React.: no convention.` The line drops
+  that full stop, and `check` prints the same line for a NIT on such a slot.
 
 ## [0.14.0] - 2026-10-11
 
