@@ -660,8 +660,10 @@ function build(path, files) {
 function capCount(areas, maxAreas, twins) {
   if (areas.length <= maxAreas) return areas;
 
-  // By path within a size, so which of two equal areas folds is not the order the files arrived in.
-  const order = [...areas].sort((a, b) => a.fileCount - b.fileCount || byCode(a.path, b.path));
+  // Within a size, by each area's first file: the order git lists them in,
+  // read off the files rather than the order they arrived in.
+  const first = new Map(areas.map((a) => [a, a.files.reduce((m, f) => (byCode(f.rel, m) < 0 ? f.rel : m), a.files[0].rel)]));
+  const order = [...areas].sort((a, b) => a.fileCount - b.fileCount || byCode(first.get(a), first.get(b)));
   const byPath = new Map(areas.map((a) => [a.path, a]));
 
   const orphaned = [];
