@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsSymlinks } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { needsPathControl, needsPosixPaths, needsShebang, needsSymlinks } from "./platform.mjs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -2240,6 +2240,41 @@ test("a pinned scan walks from the pin, and two scans of one history write one m
   const before = files();
   writeMap(await scan(dir), {});
   assert.deepEqual(files(), before);
+});
+
+test("a scan that fails while the co-change walk runs stops the walk's git", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const dir = shippingHistory(t);
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-walk-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const pidFile = join(bin, "pid");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *--diff-merges*) echo $$ > '${pidFile}'; exec sleep 60;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  const until = async (done, ms = 20_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 50))) if (done()) return true;
+    return false;
+  };
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // The parse fails once the walk's git is running.
+  const parseFiles = async () => {
+    await until(() => existsSync(pidFile));
+    throw new Error("the parse failed");
+  };
+
+  await assert.rejects(scan(dir, { parseFiles }), /the parse failed/);
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  assert.ok(await until(() => !alive(pid), 5_000), `git log ${pid} still running after the scan failed`);
 });
 
 test("a repository with no commit records a walk that read nothing", async (t) => {

@@ -137,7 +137,7 @@ export function changeReader(onChange, own = () => false) {
  * blobless clone answers offline and a treeless one fails rather than fetching.
  * A git older than 2.31 refuses `--diff-merges`, which is an error and states nothing.
  */
-export async function walkCochange(root, tip) {
+export async function walkCochange(root, tip, { signal } = {}) {
   const changes = [];
   let read = 0;
   let bulk = 0;
@@ -157,7 +157,7 @@ export async function walkCochange(root, tip) {
         `--format=${SEP}%aE`, `--max-count=${COCHANGE.depth}`, "--",
       ],
       reader,
-      { terminated: false }
+      { terminated: false, signal }
     );
     reader.end();
   } catch (err) {
@@ -166,11 +166,11 @@ export async function walkCochange(root, tip) {
   return { changes, read, bulk, error: null };
 }
 
-/** The walk and the tip's tree, started together once the pin is known. */
-export async function startCochange(root, state) {
+/** The walk and the tip's tree, started together once the pin is known; `signal` stops the walk. */
+export async function startCochange(root, state, { signal } = {}) {
   const at = await cochangeTip(root, state);
   if (at === null) return { tip: null, from: null, walk: { changes: [], read: 0, bulk: 0, error: null }, tree: null };
-  const [walk, tree] = await Promise.all([walkCochange(root, at.tip), filesAt(root, at.tip)]);
+  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal }), filesAt(root, at.tip)]);
   return { ...at, walk, tree };
 }
 

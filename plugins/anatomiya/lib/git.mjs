@@ -523,12 +523,13 @@ export function gitStreamed(
   root,
   args,
   onField,
-  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false } = {}
+  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false, signal = null } = {}
 ) {
   const refused = refuse(args);
   if (refused) return Promise.reject(new Error(refused));
   return prepared(root, args, env, { lazyFetch, timeout }).then((call) => new Promise((fulfil, reject) => {
     if (call.unread) return reject(new Error(`git ${args[0]}: ${unreadConfig(call)}`));
+    if (signal?.aborted) return reject(new Error(`git ${args[0]} stopped by its caller`));
 
     const child = spawn("git", call.args, {
       cwd: root,
@@ -588,8 +589,9 @@ export function gitStreamed(
     });
 
     child.on("error", (err) => fail(new Error(`git ${args[0]} failed: ${err.message}`)));
+    signal?.addEventListener("abort", () => fail(new Error(`git ${args[0]} stopped by its caller`)), { once: true });
 
-    child.on("close", (code, signal) => {
+    child.on("close", (code, exitSignal) => {
       if (settled) return;
       // A walk this caller ended is not a walk that failed, however the killed
       // child exits.
@@ -600,7 +602,7 @@ export function gitStreamed(
       // A caller of a stream has already been handed part of the output, so
       // the only way to say "that was not the answer" is to refuse the whole
       // read (F13, F15).
-      if (code !== 0) return fail(new Error(`git ${args[0]} exited ${signal || code}: ${stderr.trim()}`));
+      if (code !== 0) return fail(new Error(`git ${args[0]} exited ${exitSignal || code}: ${stderr.trim()}`));
       // Whether a leftover is the final record or a cut-off one is a fact about
       // the command, not about the caller: `ls-files -z` terminates every entry
       // and `log --format=` terminates none of them.
