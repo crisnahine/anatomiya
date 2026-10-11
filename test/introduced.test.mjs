@@ -445,6 +445,21 @@ test("sites nested inside sites are judged in time linear in the depth, and each
 
 const functionStyle = rowByKey("function_style");
 
+test("two copies alike for longer than a finding quotes are still told apart by their whole text", () => {
+  // The quoted text is cut where it is built; matching it instead of the whole
+  // text took a copy added above for the old one and sent the reader below it.
+  const pad = "pad(); ".repeat(700);
+  const fn = (end) => `{ function f() { ${pad}${end} } }\n`;
+  const counter = area(stated("function_style", { states: "counter", counterClaim: functionStyle.counterClaim }));
+  const base = revision(fn("a();"), { file: "f.ts" });
+  const head = revision(fn("b();") + fn("a();"), { file: "f.ts" });
+
+  const found = only("function_style", newlyIntroduced({ area: counter, path: "src/a.ts", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.text.length]), [[1, 4097]]);
+});
+
+
 test("on the counter side the conforming sites are the findings, and the sentence is the counter-claim", () => {
   const counter = area(stated("function_style", { states: "counter", counterClaim: functionStyle.counterClaim }));
   const base = revision(`export const b = () => 1;`, { file: "f.ts" });
