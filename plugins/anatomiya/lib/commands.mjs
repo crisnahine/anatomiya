@@ -115,6 +115,9 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
   }
 
   const areas = await pinPartition(files, { parseFiles });
+  // The parse at the ceiling reads the tree for seconds more, so the tree it read is asked about again.
+  if ((await headSha(root)) !== sha) throw new Error(`HEAD moved from ${sha} while the pin was being taken`);
+  await refuseUnlikeHead(root);
   // No area is the empty population by another route: every area a later
   // commit makes postdates it.
   if (areas.length === 0) {
@@ -126,7 +129,7 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
         "every area made after it: pin once a directory holds enough source to be one"
     );
   }
-  const next = buildPin(areas, { sha, corpus: files.length });
+  const next = buildPin(areas, { sha, corpus: files.length, ceiling: areas.ceiling });
   // A pin on disk this build cannot read is compared against as nothing, and
   // replaced. Said, rather than printed as a first pin: it may be a conflict
   // somebody meant to resolve, or a newer build's.

@@ -4,7 +4,7 @@ import {
 import { existsSync, mkdirSync } from "node:fs";
 import { basename, join, dirname } from "node:path";
 
-import { areaLabel, areaOwner, dirCount } from "./areas.mjs";
+import { areaCeiling, areaLabel, areaOwner, dirCount } from "./areas.mjs";
 import { langsIn } from "./corpus.mjs";
 import { language } from "./langs.mjs";
 import { readAtRevision } from "./revision.mjs";
@@ -31,7 +31,7 @@ export const PIN_SCHEMA = 1;
  * sha goes unreachable, and stored counts are exactly the numbers this guard
  * exists to verify (E3).
  */
-export function buildPin(areas, { sha, corpus = null }) {
+export function buildPin(areas, { sha, corpus = null, ceiling = null }) {
   if (!isSha(sha)) throw new Error(`baseline sha is not a sha: ${sha}`);
   return {
     schema: PIN_SCHEMA,
@@ -40,6 +40,10 @@ export function buildPin(areas, { sha, corpus = null }) {
     // function of it, so without it one added file re-partitions the repository
     // and every area reads as a population change.
     ...(isCount(corpus) ? { corpus } : {}),
+    // The area ceiling the give-back settled on, where it rose past the plain
+    // one. A scan under the pin folds to it and gives nothing back, so an edit
+    // that makes an area count nothing moves no other area until the pin moves.
+    ...(isCount(ceiling) ? { ceiling } : {}),
     areas: [...areas]
       .map((a) => ({ id: a.id, path: a.path, files: a.files.map((f) => f.rel).sort() }))
       .sort((a, b) => byCode(a.path, b.path)),
@@ -143,6 +147,11 @@ function pinProblem(pin) {
   if (pin.corpus !== undefined) {
     const listed = new Set(pin.areas.flatMap((a) => a.files)).size;
     if (!isCount(pin.corpus) || pin.corpus < listed) return "the corpus size it names is not a count of its files";
+  }
+  // A give-back settles on the count of areas it returned, and only above the
+  // plain ceiling, so a value outside the two is one no pin wrote.
+  if (pin.ceiling !== undefined && (!isCount(pin.ceiling) || pin.ceiling > pin.areas.length || pin.ceiling <= areaCeiling(pin.corpus ?? 0))) {
+    return "the area ceiling it names is not a count of its areas";
   }
   return null;
 }
@@ -390,6 +399,7 @@ export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {})
       countsOnly: true,
       areas: indexAreas(pin),
       partitionSize: pin.corpus,
+      ceiling: pin.ceiling,
     });
   }
 
@@ -419,6 +429,7 @@ export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {})
   return state({
     status: "ok",
     partitionSize: pin.corpus,
+    ceiling: pin.ceiling,
     sha: pin.sha,
     countsOnly: false,
     areas,
@@ -472,6 +483,8 @@ function state(o) {
     // A count or nothing: a pin handed in directly never went through
     // `pinProblem`, and a negative size takes the floor's square root to NaN.
     partitionSize: isCount(o.partitionSize) ? o.partitionSize : null,
+    // The area ceiling the pin settled on, or null for the plain one.
+    ceiling: isCount(o.ceiling) ? o.ceiling : null,
     status: o.status,
     sha: o.sha ?? null,
     countsOnly: o.countsOnly,
