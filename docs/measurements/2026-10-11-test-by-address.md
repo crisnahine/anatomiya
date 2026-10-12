@@ -60,7 +60,7 @@ base, which moves 27 roots in 14 repositories. react's
 Every sibling-module count that moved, base to the producer definition, each cause counted file by
 file (the old definition over the new build, less `isProducer`). "Net" rows: the support rule had
 first added those support files to the count, so the difference is the empty files plus what support
-was already a non-test on base.
+was already a support file on base.
 
 | Repository | Root | Base | Now | Under a test tree | Empty file |
 |---|---|---|---|---|---|

@@ -37,7 +37,7 @@ const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel
 /**
  * Whether this root is, or is under, a test tree, at any depth.
  *
- * Its non-test files are what the tests run on, so a namesake count over them
+ * Its files that are not tests are what the tests run on, so a namesake count over them
  * is true and about nobody's question: webpack's `test` is 12,645 files of
  * which 2,607 are tests, and it read `1 of 7858 has a namesake test under test`
  * over the fixture modules the 2,607 exercise.
@@ -264,7 +264,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   const names = FAMILY_TEST_NAMES[family];
   if (names) return mirrored?.has(rel) === true || namesATest(rel, family);
   if (TEST_NAME.test(base)) return true;
-  // The Ruby form is the one a non-test file wears in earnest, so it is the one
+  // The Ruby form is the one a source file wears in earnest, so it is the one
   // that has to be corroborated by where the file sits. `software_spec.rb` is
   // Homebrew's `SoftwareSpec` class and has its own `software_spec_spec.rb`
   // under `test/`, and a RuboCop cop named for the `Rails.env.test?` guard it
@@ -584,7 +584,7 @@ export function layoutIndexes(files, mirrored = mirroredTests(files)) {
  *
  * Clauses that count nothing are absent rather than zero: a root with no
  * source file is not asked whether its files have tests, and neither is one
- * inside a test tree, whose non-test files are what the tests run on.
+ * inside a test tree, whose files that are not tests are what the tests run on.
  */
 export function rootFacts(root, { testFiles, mirrored, byStem }) {
   const dir = root.dir ?? (root.path === "." ? "" : root.path);

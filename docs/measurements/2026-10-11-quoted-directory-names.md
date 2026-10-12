@@ -5,18 +5,18 @@ Measured 2026-10-11 on both corpora (35 + 25 repositories), copies scanned in sc
 
 ## The candidate sets
 
-Every directory that holds a tracked file, 100,221 of them across the 60 repositories, asked which
-name segment each candidate set would quote:
+Every name segment of every directory that holds a tracked file, 100,221 directories across the 60
+repositories, each distinct (repository, segment) asked once which candidate set would quote it:
 
 | Set: quote a name holding | distinct (repository, segment) | characters that tripped it |
 |---|---|---|
-| a space | 102 | space |
-| a space or a quote | 102 | space (no tracked directory name holds `"`) |
-| anything but letters, marks, numbers and `._/-` | 459 | space, `[ ]` 219, `@` 76, `( )` 74, `+` 27, `=` 22, `#` 9, `%` 6, `{ }` 4, `$` 3, `&`, `~` |
-| the same plus `@+$` | 408 | space, `[ ]`, `( )`, `=`, `#`, `%`, `{ }`, `&`, `~` |
-| anything but ASCII letters, digits and `._/-` | 465 | the above plus the CJK and umlaut names |
+| a space | 113 | space |
+| a space or a quote | 113 | space (no tracked directory name holds `"`) |
+| anything but letters, marks, numbers and `._/-` | 618 | `[ ]` 260, `( )` 136, space 113, `@` 88, `=` 23, `+` 21, `#` 8, `$` 7, `%` 4, `{ }` 3, `~` 2, `&` 1 |
+| the same plus `@+$` | 522 | space, `[ ]`, `( )`, `=`, `#`, `%`, `{ }`, `&`, `~` |
+| anything but ASCII letters, digits and `._/-` | 624 | the above plus 6 CJK and umlaut names |
 
-The 102 names with a space read as words: babel's CLI fixtures (`dir --out-dir --watch with external
+The 113 names with a space read as words: babel's CLI fixtures (`dir --out-dir --watch with external
 dependencies`), fastlane's `with spaces` and `Target Support Files`, jellyfin's `Test Data`,
 vscode's `üm laut汉语`. The rest of the wider sets are ordinary paths: Next.js `[slug]` and
 `(group)`, `@scope` packages, SvelteKit `+page`, supabase's `$ref`.
@@ -34,7 +34,7 @@ would quote:
 | letters, marks, numbers and `._/-` | 18 | 3 (prisma `@prisma`, Next.js `@modal` `@babel` `@edge-runtime`, supabase `$ref` `$slug`) |
 | ASCII `._/-` | 18 | the same 3 |
 
-None of the 102 names with a space reaches a map: each sits under a fixture tree that folds.
+None of the 113 names with a space reaches a map: each sits under a fixture tree that folds.
 
 ## Identity
 

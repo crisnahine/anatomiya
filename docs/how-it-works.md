@@ -1932,7 +1932,7 @@ counts when it carries `.test.`, `.spec.`, `.cy.`, `-test.` or `-spec.`, or one 
 test spelled as a dotted segment of their own (`.unittest.`, `.basictest.`, `.longtest.`,
 `.spectest.`, `.stest.`, `.integrationTest.`, `.releaseTest.`), on the name alone, and when it
 carries `_spec.rb` or `_test.rb` and a test tree above it agrees. The Ruby form is the one a
-non-test file wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
+source file wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
 own `software_spec_spec.rb` under `test/`. The seven languages above each have a name of their own
 and answer by it alone, never by the forms here or the two rules below: a Go `_test.go` and a Python
 `test_*.py` or `*_test.py` on the name, because the compiler and pytest collect by it (578 Go files,
@@ -2028,9 +2028,10 @@ Every clause is dropped when it counts nothing.
   test, 3 under src/utils/__tests__`, the way a runner group prints `2 of 3 vitest specs under
   __tests__`. A root with a `test`, `tests`, `spec`,
   `cypress`, `e2e` or `__tests__` directory anywhere in its path is not asked the question: its
-  non-test files are what the tests run on, and webpack's `test` read `1 of 7858 has a namesake
-  test under test` over the fixture modules its 2,607 tests exercise. Any segment rather than the
-  first, because a monorepo nests each package's own tree under the package name: fastlane's
+  files that are not tests are what the tests run on, and webpack's `test` read `1 of 7858 has
+  a namesake test under test` over the fixture modules its 2,607 tests exercise. Any segment
+  rather than the first, because a monorepo nests each package's own tree under the package
+  name: fastlane's
   `gym/spec` stated `1 of 1 has a namesake test` over one empty `spec_helper.rb`. The denominator is over an extension the line already printed,
   or `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see: the commonest
   printed one that holds a file a test could be written for. Such a file is source this tool reads

@@ -33,7 +33,9 @@ about 40k and 46k.
 
 One subagent session on 2.1.296: the first delivery ended at offset 267,197, and the hook at offset
 569,042 delivered again, 301,845 bytes on. 78,191 of them were one `prompt_snapshot`. The window's
-count of the same stretch is under 223,654, so the echo stays silent.
+count of the same stretch is 217,920 bytes (`windowBytes` over each of its 41 lines): under 256 KiB,
+so the branch's first commit stayed silent there, and over 192 KiB, so 0.15.0 delivers again, about
+33k tokens on at the median, past A92's distance.
 
 ## The replay over the whole store
 

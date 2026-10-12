@@ -136,7 +136,7 @@ by this version, with times and build digests masked
 - A directory name that holds a space or a double quote prints quoted, as JSON quotes it, wherever
   the map names it: the root lines, the `under` clauses, the tests line, an area file's heading, the
   Areas listing, the Cursor and Copilot lines naming patterns, the notice and `check`, so a name
-  that is a sentence opens a bullet as a name. 102 tracked directory names in the 60 repositories
+  that is a sentence opens a bullet as a name. 113 tracked directory names in the 60 repositories
   hold a space, and none reaches a map, so no map line moves. A directory named `the repository
   root` prints as `"the repository root"`.
 - A NIT on a slot the map left unstated prints the line the area file prints for that slot, in its
