@@ -456,6 +456,16 @@ test("the echo stays silent over a delivery 150 KiB back and delivers again past
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(192 * 1024) }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
+test("the echo's window ends at exactly 192 KiB of what the model reads after a delivery", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  // A user line counts its JSON and its newline: 41 bytes past the filler's own.
+  const after = (counted) => transcript(t, [delivered(first), filler(counted - 41)]);
+
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(192 * 1024) }), {});
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(192 * 1024 + 1) }).hookSpecificOutput.additionalContext, /<repository-map /);
+});
+
 // What 2.1.296 writes for itself between two calls: a snapshot of the system
 // prompt, a bookkeeping line, and a hook's own stdout. None carries `rendered`.
 const own = (bytes) => [

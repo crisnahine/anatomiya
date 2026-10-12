@@ -4311,6 +4311,10 @@ test("a record or its layout file past the bound is replaced without being read,
     assert.equal(existsSync(join(dir, at)), false, `${leaf}: a rollback puts back nothing there`);
 
     tooLarge(join(dir, at));
+    const blind = result(dir, [a, b]);
+    blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+    assert.equal("oversized" in writeMap(blind), false, `${leaf}: a blind run writes nothing, so it replaces nothing either`);
+    assert.equal(statSync(join(dir, at)).size, TOO_LARGE, `${leaf}: and leaves it`);
     const plan = writeMap(result(dir, [a, b]));
     assert.deepEqual(plan.oversized, [{ at, size: TOO_LARGE }], leaf);
     assert.deepEqual(listRules(dir), mapOf(claude, a, b), leaf);
