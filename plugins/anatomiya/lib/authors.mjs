@@ -196,29 +196,54 @@ async function shallowHistory(root) {
  * where `-M` cannot work rather than everywhere.
  *
  * Any remote can be the promisor, not only `origin`: `git clone -o upstream
- * --filter=blob:none` marks `remote.upstream.promisor`, and a check of origin
- * alone took that clone for a full one and read no history at all. A clone
- * sets `extensions.partialClone` to its promisor's name, and each remote's own
+ * --filter=blob:none` marks `remote.upstream.promisor`. A clone sets
+ * `extensions.partialClone` to its promisor's name, and each remote's own
  * flag covers a promisor added after the clone: one read answers for both.
  *
- * It throws where git could not be asked. A call that timed out read as "not
- * partial", the walk ran with `-M` on a clone that needs `-M100%`, and the map
- * differed from one scan to the next.
+ * It throws where git cannot be asked, and where a flag holds a value git
+ * refuses as a boolean, which its own `log` dies on. "Not partial" is an
+ * answer, and one given on a guess picks `-M` for a clone that needs
+ * `-M100%`: the map then differs from one scan to the next.
  */
 async function isPartialClone(root) {
   const asked = await gitBuffered(root, ["config", "--null", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.promisor)$"]);
   // Exit code 1 is git saying neither key is set.
   if (!asked.ok && asked.code !== 1) throw new Error(`git could not say whether this clone is partial: ${asked.error.trim()}`);
-  // A key and its value a line apart, the last value of a key winning, and a key with no value alone.
-  const set = new Map(asked.stdout.split("\0").filter(Boolean).map((entry) => entry.split(/\n(.*)/s, 2)));
-  for (const [key, value] of set) {
-    if (key === "extensions.partialclone" ? value?.trim() : value === undefined || TRUE.test(value.trim())) return true;
+  let extension;
+  let flagged = false;
+  // A key and its value a line apart, and a key with no value alone.
+  for (const [key, value] of asked.stdout.split("\0").filter(Boolean).map((entry) => entry.split(/\n(.*)/s, 2))) {
+    if (key === "extensions.partialclone") {
+      extension = value;
+      continue;
+    }
+    const flag = gitBoolean(value);
+    if (flag === null) throw new Error(`git could not say whether this clone is partial: ${key} holds no boolean git reads`);
+    // git makes a promisor of the remote at the first value that is true, whatever a later one says.
+    flagged ||= flag;
   }
-  return false;
+  return flagged || Boolean(extension?.trim());
 }
 
-// What git reads as true: the three words in any case, and any number but zero.
-const TRUE = /^(?:true|yes|on|[+-]?0*[1-9]\d*[kmg]?)$/i;
+/**
+ * A configuration value as git reads a boolean, or null where git refuses it:
+ * a key with no value is true and an empty one false, then the words in any
+ * case, then an integer as `strtoimax` reads one with base 0 (`0x10`, `010`),
+ * which a `k`, `m` or `g` scales and which must fit an `int`. Any but zero is true.
+ */
+function gitBoolean(value) {
+  if (value === undefined) return true;
+  if (value === "") return false;
+  if (/^(?:true|yes|on)$/i.test(value)) return true;
+  if (/^(?:false|no|off)$/i.test(value)) return false;
+  const number = /^[ \t\n\v\f\r]*([+-]?)(0x[0-9a-f]+|0[0-7]*|[1-9][0-9]*)([kmg]?)$/i.exec(value);
+  if (number === null) return null;
+  const [, sign, digits, unit] = number;
+  const size = BigInt(/^0[0-7]/.test(digits) ? `0o${digits.slice(1)}` : digits) * 1024n ** BigInt(["", "k", "m", "g"].indexOf(unit.toLowerCase()));
+  // git 2.54 takes the least `int` and 2.39 refuses it; read as true, the log of a git that refuses it says so itself.
+  if (size > 2n ** 31n - (sign === "-" ? 0n : 1n)) return null;
+  return size !== 0n;
+}
 
 /**
  * Feed each NUL-delimited field of the log to the reader `open` answers with.

@@ -7,7 +7,6 @@ import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { authorsByFile, repoAuthorCount } from "../plugins/anatomiya/lib/authors.mjs";
-import { GIT } from "../plugins/anatomiya/lib/git.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 import * as scan from "../plugins/anatomiya/lib/scan.mjs";
 
@@ -274,21 +273,20 @@ test("a clone whose partial keys are not set is walked with -M, on one question"
   assert.match(logsOf(calls())[0], / -M /);
 });
 
+// Written into the file between quotes, so a space at either end and a leading dash stay part of the value.
+const flagged = (...values) => (d) => appendFileSync(join(d, ".git", "config"), `[remote "Late"]\n${values.map((value) => `\tpromisor = "${value}"\n`).join("")}`);
+const flags = (spellings) => Object.fromEntries(spellings.map((spelling) => [`a remote's flag set to "${spelling}"`, flagged(spelling)]));
+
 test("a clone is partial where the extension names a promisor or a remote's flag reads as true to git", { ...needsShebang, ...needsPathControl }, async (t) => {
-  // A flag with no value is true to git, and so is any number but zero.
-  const bare = (d) => appendFileSync(join(d, ".git", "config"), '[remote "late"]\n\tpromisor\n');
   const PARTIAL = {
     "the extension": (d, git) => git("config", "extensions.partialClone", "origin"),
-    "a flag with no value": bare,
-    ...Object.fromEntries(["true", "yes", "on", "1", "TRUE", "2"].map((spelling) => [`a remote's flag set to ${spelling}`, (d, git) => git("config", "remote.Late.promisor", spelling)])),
+    "a flag with no value": (d) => appendFileSync(join(d, ".git", "config"), '[remote "late"]\n\tpromisor\n'),
+    // Each answered `true` by `git config --type=bool`: the words in any case, and a number but zero in any base git's parser takes, scaled or not.
+    ...flags(["true", "yes", "on", "TRUE", "1", "2", "-1", "+1", "01", "010", "0x10", "0X1f", "1k", "1K", "1m", "1g", "017777777777", "0x7fffffff", "2147483647", "-2147483647", "-2147483648", " 1"]),
+    // git makes a promisor of the remote at the first value that is true, whatever a later one says.
+    "a flag set and then unset by a later value": flagged("true", "false"),
   };
-  const WHOLE = {
-    ...Object.fromEntries(["false", "no", "off", "0", ""].map((spelling) => [`a remote's flag set to "${spelling}"`, (d, git) => git("config", "remote.late.promisor", spelling)])),
-    "a flag set and then unset by a later value": (d, git) => {
-      git("config", "remote.late.promisor", "true");
-      git("config", "--add", "remote.late.promisor", "false");
-    },
-  };
+  const WHOLE = flags(["false", "no", "OFF", "", "0", "00", "-0", "0x0", "0k"]);
   for (const [flag, cases] of [["-M100%", PARTIAL], ["-M", WHOLE]]) {
     for (const [name, set] of Object.entries(cases)) {
       const dir = repo(t, (d, { git }) => set(d, git));
@@ -302,25 +300,40 @@ test("a clone is partial where the extension names a promisor or a remote's flag
   }
 });
 
+test("a promisor flag git refuses as a boolean is unread history, as the log git would die on", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // Each refused by `git config --type=bool` with "bad boolean config value".
+  const REFUSED = {
+    ...flags(["maybe", "08", "0x", "1.0", "1kb", "1 k", "2g", "2147483648", "020000000000", "0x80000000", "9999999999999999999999", "1 ", " true", "-", "+"]),
+    "a refused value before one git reads": flagged("maybe", "false"),
+  };
+  for (const [name, set] of Object.entries(REFUSED)) {
+    const dir = repo(t, (d, tools) => {
+      renamedWithEdit(d, tools);
+      set(d);
+    });
+    const calls = gitWatched(t);
+    const map = await authorsByFile(dir);
+    const made = calls();
+    calls.restore();
+    assert.equal(map.size, 0, name);
+    assert.match(map.error, /git could not say whether this clone is partial: remote\.Late\.promisor/, name);
+    assert.deepEqual(logsOf(made), [], name);
+  }
+});
+
 test("a git that cannot be asked whether the clone is partial is unread history, and no log is started on a guess", { ...needsShebang, ...needsPathControl }, async (t) => {
-  const was = GIT.timeoutMs;
-  t.after(() => {
-    GIT.timeoutMs = was;
-  });
   const NO_ANSWER = {
     "a git that dies on the question": "kill -9 $$",
     "a git that refuses it": "exit 129",
-    "a git that hangs on it": "exec sleep 30",
+    // The signal the runner stops a git with once its clock runs out, sent at once so no clock is waited on.
+    "a git stopped as one that hangs is": "kill -TERM $$",
   };
   for (const [name, how] of Object.entries(NO_ANSWER)) {
     const dir = repo(t, renamedWithEdit);
     const calls = gitWatched(t, `case " $* " in *" config "*promisor*) ${how};; esac`);
-    // Short only where the answer never comes, so a slow machine times out nothing else.
-    if (how.includes("sleep")) GIT.timeoutMs = 2000;
 
     const map = await authorsByFile(dir);
 
-    GIT.timeoutMs = was;
     const made = calls();
     calls.restore();
     assert.equal(map.size, 0, name);

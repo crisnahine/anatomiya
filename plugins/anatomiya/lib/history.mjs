@@ -39,6 +39,9 @@ export const HISTORY = {
   // The most a store inflates to, and so the most one is written with: a file
   // past it is refused before its bytes are held, however small it sits on disk.
   mostBytes: 256 * 1024 * 1024,
+  // The most tracked `.gitattributes` read off the disk for the stamp. The most
+  // among 60 measured repositories is 38, so one past this was not written by hand.
+  mostAttributeFiles: 1024,
 };
 
 // What the stamp means by "this layout": the header lines and the record framing below.
@@ -160,11 +163,16 @@ export async function saveHistory(root, history, { write = true } = {}) {
       atomic(join(dir, HISTORY_FILES[kind]), await zip(text, { level: GZIP_LEVEL }));
       history[kind].wrote = true;
     } catch (err) {
-      // What a disk or gzip refuses names itself with a code that is not Node's own; anything else is a bug here.
-      if (typeof err?.code !== "string" || err.code.startsWith("ERR_")) throw err;
+      // What a disk or gzip refuses names itself with a code that is not Node's own, and memory
+      // that ran out is a failed write too. Anything else is a bug here.
+      if (!outOfMemory(err) && (typeof err?.code !== "string" || err.code.startsWith("ERR_"))) throw err;
     }
   }
 }
+
+// V8 raises a `RangeError` with no code where an allocation fails, and Node gives its own one of these.
+const MEMORY_CODES = new Set(["ERR_MEMORY_ALLOCATION_FAILED", "ERR_BUFFER_TOO_LARGE", "ERR_STRING_TOO_LONG"]);
+const outOfMemory = (err) => (err instanceof RangeError && err.code === undefined) || MEMORY_CODES.has(err?.code);
 
 /**
  * The store for one walk: its stamp, and where each commit's record sits in
@@ -252,28 +260,44 @@ const STAMPED_ENV = [
 // Past this a mailmap or a list of grafts is not one anybody wrote, and the walk is cheaper than the read.
 const STAMPED_FILE_MOST = 8 * 1024 * 1024;
 
+/**
+ * The value of `key` among the entries `config --list --null` printed, or
+ * undefined. The last entry wins for a single-valued key, as git reads them.
+ * git lists the section and the variable's name in lower case and a
+ * subsection as it was written.
+ */
+export function configValue(config, key) {
+  const [first, last] = [key.indexOf("."), key.lastIndexOf(".")];
+  const listed = key.slice(0, first).toLowerCase() + key.slice(first, last) + key.slice(last).toLowerCase();
+  return config.findLast((entry) => entry.startsWith(`${listed}\n`))?.slice(listed.length + 1);
+}
+
 async function readBesides(root, env) {
   const ask = (args) => gitBuffered(root, args, { env });
-  const [version, listed, common, replaced, attributeFiles] = await Promise.all([
+  const [version, listed, common, replaced, attributeFiles, systemFile] = await Promise.all([
     ask(["version"]),
     ask(["config", "--list", "--null"]),
     ask(["rev-parse", "--git-common-dir"]),
     ask(["for-each-ref", "--format=%(refname) %(objectname)", "--", env.GIT_REPLACE_REF_BASE ?? "refs/replace/"]),
     // Every tracked `.gitattributes` with its blob, at any depth and in any letter case a folding volume would open.
     ask(["ls-files", "-s", "-z", "--", ":(glob,icase)**/.gitattributes"]),
+    ask(["var", "GIT_ATTR_SYSTEM"]),
   ]);
   if (![version, listed, common, replaced].every((r) => r.ok)) return null;
   const config = listed.stdout.split("\0").filter(Boolean);
-  // The last entry wins for a single-valued key, as git reads them, and git lists a key with no subsection in lower case.
-  const valueOf = (key) => config.findLast((entry) => entry.startsWith(`${key.toLowerCase()}\n`))?.slice(key.length + 1);
+  const valueOf = (key) => configValue(config, key);
 
   const gitDir = resolve(root, common.stdout.replace(/\r?\n$/, ""));
+  // git for Windows makes its own HOME where none is set, from HOMEDRIVE and HOMEPATH before USERPROFILE
+  // (`compat/mingw.c`). Where those name another directory than Node's, a file git reads there is not watched.
+  const home = env.HOME ?? (process.platform === "win32" ? homedir() : undefined);
   // A file a key names, where git would look for it: null where the key is not set, false where the
-  // spelling (`~user`, `:(optional)`) is git's to expand, so the file is not one this can watch.
+  // spelling (`~user`, `:(optional)`, `~` with no HOME) is git's to expand, so the file is not one this can watch.
   const named = (key) => {
     const value = valueOf(key);
     if (value === undefined) return null;
-    return /^(?:~[^/]|:\()/.test(value) ? false : resolve(root, value.replace(/^~(?=\/)/, homedir()));
+    if (/^(?:~[^/]|:\()/.test(value) || (home === undefined && /^~(?:\/|$)/.test(value))) return false;
+    return resolve(root, value.replace(/^~(?=\/|$)/, () => home));
   };
   const files = [
     join(root, ".mailmap"),
@@ -285,25 +309,44 @@ async function readBesides(root, env) {
   ].map(digestOf);
   if (files.includes(null)) return null;
 
-  const mapBlob = valueOf("mailmap.blob");
-  let blob = "unset";
-  if (mapBlob !== undefined) {
+  // The object a name stands for: "unset" where there is no name, "absent" where git says it is
+  // no object's, null where git will not say or the name would reach it as an option.
+  const idOf = async (name) => {
+    if (name === undefined) return "unset";
     // `rev-parse` takes no `--`, so a name that opens with a dash is an option to it.
-    if (mapBlob.startsWith("-")) return null;
-    const found = await ask(["rev-parse", "--verify", "--quiet", mapBlob]);
-    // Exit code 1 is git saying the name is no object's, and the walk reads no blob there either.
-    if (!found.ok && found.code !== 1) return null;
-    blob = found.ok ? found.stdout : "absent";
-  }
+    if (name.startsWith("-")) return null;
+    const found = await ask(["rev-parse", "--verify", "--quiet", name]);
+    if (found.ok) return found.stdout;
+    // Exit code 1 is git saying the name is no object's.
+    return found.code === 1 ? "absent" : null;
+  };
+  // Where the name is no object's the walk reads no blob either.
+  const blob = await idOf(valueOf("mailmap.blob"));
+  if (blob === null) return null;
 
   const shared = [version.stdout, digest(config.filter((entry) => !NOT_STAMPED.test(entry)).join("\0")), files, blob, replaced.stdout, STAMPED_ENV.map((name) => env[name] ?? null)];
-
-  // Where git reads attributes from, less two it reads that are not watched: a working
-  // tree `.gitattributes` whose bytes are not the staged ones, and the system-wide file.
-  const ownFile = named("core.attributesFile") ?? join(env.XDG_CONFIG_HOME || join(env.HOME ?? homedir(), ".config"), "git", "attributes");
-  const read = [digestOf(join(gitDir, "info", "attributes")), digestOf(ownFile === false ? false : resolve(root, ownFile))];
-  const attributes = attributeFiles.ok && !read.includes(null) ? [digest(attributeFiles.stdout), read, env.GIT_ATTR_SOURCE ?? null, env.GIT_ATTR_NOSYSTEM ?? null] : null;
-  return { shared, attributes };
+  // Where git reads attributes from. Two sources are not here, and a store taken under either keeps
+  // its rename pairing until something else moves the stamp: a `.gitattributes` below the root that
+  // git does not track, which only a walk of the tree finds, and the system-wide file on a git that
+  // cannot name it (before 2.42).
+  if (!attributeFiles.ok) return { shared, attributes: null };
+  // `<mode> <blob> <stage>`, a tab, the path. Read off the disk as well: git reads the
+  // working tree's file, and an edit that is not staged moves no index entry.
+  const tracked = attributeFiles.stdout.split("\0").filter(Boolean).map((entry) => entry.slice(entry.indexOf("\t") + 1));
+  if (tracked.length > HISTORY.mostAttributeFiles) return { shared, attributes: null };
+  // The root's whether tracked or not: git reads one that was never added.
+  const onDisk = [...new Set([".gitattributes", ...tracked])].map((rel) => digestOf(join(root, rel)));
+  // git reads `$XDG_CONFIG_HOME/git/attributes`, else `$HOME/.config/git/attributes` joined as text, else none.
+  const fallback = env.XDG_CONFIG_HOME ? `${env.XDG_CONFIG_HOME}/git/attributes` : home === undefined ? null : `${home}/.config/git/attributes`;
+  const own = named("core.attributesFile") ?? fallback;
+  // Exit code 1 is a git told to read no system-wide file, and 129 one that knows no such variable.
+  const system = systemFile.ok ? digestOf(resolve(root, systemFile.stdout.replace(/\r?\n$/, ""))) : systemFile.code === 1 || systemFile.code === 129 ? "unnamed" : null;
+  // A tree named by a branch moves with the branch, so the commit is stamped and not the name. A name
+  // that is no object's is no stamp: git dies on the variable, passes over the key, and an older one reads neither.
+  const trees = [await idOf(env.GIT_ATTR_SOURCE), await idOf(valueOf("attr.tree"))];
+  const read = [...onDisk, digestOf(join(gitDir, "info", "attributes")), digestOf(typeof own === "string" ? resolve(root, own) : own), system, ...trees];
+  const unread = read.includes(null) || trees.includes("absent");
+  return { shared, attributes: unread ? null : [digest(attributeFiles.stdout), read, env.GIT_ATTR_NOSYSTEM ?? null] };
 }
 
 // A digest of the file's bytes, "absent" where nothing is there, "unset" where no key names one, null where it cannot be read whole.

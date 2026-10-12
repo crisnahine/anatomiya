@@ -13,7 +13,7 @@ import { needsFoldingFilesystem, needsPathControl, needsPosixPaths, needsPosixSp
 import { authorsByFile } from "../plugins/anatomiya/lib/authors.mjs";
 import { walkCochange } from "../plugins/anatomiya/lib/cochange-walk.mjs";
 import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
-import { HISTORY, HISTORY_FILES, historyFields, saveHistory } from "../plugins/anatomiya/lib/history.mjs";
+import { HISTORY, HISTORY_FILES, configValue, historyFields, saveHistory } from "../plugins/anatomiya/lib/history.mjs";
 import { EXCLUDE_LINES, STORE_DIR } from "../plugins/anatomiya/lib/rules.mjs";
 import { READ_MOST } from "../plugins/anatomiya/lib/store.mjs";
 
@@ -228,6 +228,15 @@ test("an edited diff.orderFile refuses the store: git prints a commit's rows in 
   assert.deepEqual(after.said, { stored: 0, walked: 1, wrote: true });
 });
 
+test("a configuration key is looked up as git lists it: the section and the name in lower case, a subsection as written", () => {
+  // As `config --list --null` prints them: a key, a newline, its value.
+  const listed = ["diff.orderfile\n/first", "branch.Feature/X.Y.merge\nrefs/heads/x", "diff.orderfile\n/last"];
+  assert.equal(configValue(listed, "diff.orderFile"), "/last");
+  assert.equal(configValue(listed, "Branch.Feature/X.Y.Merge"), "refs/heads/x");
+  assert.equal(configValue(listed, "branch.feature/x.y.merge"), undefined, "a subsection in another case is another key");
+  assert.equal(configValue(listed, "diff.renames"), undefined);
+});
+
 /**
  * A rename git pairs only where it does not take the file for text: 40 short
  * CRLF lines, 16 of them edited, scores under half as text and 57% as bytes.
@@ -304,10 +313,46 @@ const ATTRIBUTES = [
     },
     answers: UNPAIRED,
   },
+  {
+    // Edited and not staged: the index entry stays as it was, and git reads the file.
+    name: "the bytes on disk of a tracked .gitattributes below the root",
+    before: ({ git, write }) => {
+      write("deep/.gitattributes", "# none\n");
+      git("add", "deep/.gitattributes");
+    },
+    change: ({ write }) => write("deep/.gitattributes", "*.txt -diff\n"),
+    answers: UNPAIRED,
+  },
+  { name: "a .gitattributes at the root that git does not track", change: ({ write }) => write(".gitattributes", "*.txt -diff\n") },
+  {
+    // Where the file sits is built into git, so a git in front names another. The real one reads its own, and pairs nothing.
+    name: "the system-wide file git names",
+    needs: { ...needsShebang, ...needsPathControl },
+    before: ({ dir }, t) => gitInFront(t, `case " $* " in *" var GIT_ATTR_SYSTEM "*) echo '${join(dir, ".git", "system.attributes")}'; exit 0;; esac`),
+    change: ({ dir }) => writeFileSync(join(dir, ".git", "system.attributes"), "*.txt -diff\n"),
+    answers: UNPAIRED,
+  },
+  ...["GIT_ATTR_SOURCE", "attr.tree"].map((source) => ({
+    // The name stays as it is and the commit under it moves. Which git reads the source at all is its version's to say.
+    name: `the commit behind the branch ${source} names`,
+    before: ({ git }, t) => {
+      git("branch", "attributes");
+      if (source === "attr.tree") return git("config", source, "attributes");
+      process.env[source] = "attributes";
+      t.after(() => delete process.env[source]);
+    },
+    change: ({ git, write, commit }) => {
+      git("checkout", "-q", "attributes");
+      write(".gitattributes", "*.txt -diff\n");
+      commit("attributes");
+      git("checkout", "-q", "main");
+    },
+    answers: null,
+  })),
 ];
 
-for (const { name, before = () => {}, change, answers = PAIRED } of ATTRIBUTES) {
-  test(`${name} refuses the authors store: an attribute decides whether a rename is paired`, async (t) => {
+for (const { name, needs = {}, before = () => {}, change, answers = PAIRED } of ATTRIBUTES) {
+  test(`${name} refuses the authors store: an attribute decides whether a rename is paired`, needs, async (t) => {
     const dir = repo(t, scored);
     before(tools(dir), t);
     const taken = await authorsWith(dir);
@@ -317,10 +362,11 @@ for (const { name, before = () => {}, change, answers = PAIRED } of ATTRIBUTES) 
 
     change(tools(dir), t);
     const expected = await authorsByFile(dir);
-    assert.deepEqual(flat(expected), answers);
+    if (answers !== null) assert.deepEqual(flat(expected), answers);
     const after = await authorsWith(dir);
     assert.deepEqual(flat(after.map), flat(expected));
     assert.deepEqual(after.said, { stored: 0, walked: taken.said.walked, wrote: true });
+    assert.equal((await authorsWith(dir)).said.stored, taken.said.walked, "and the store taken under the new stamp is read");
     // That walk reads no content, so no attribute reaches it.
     assert.equal((await changesWith(dir)).said.stored, taken.said.walked);
   });
@@ -581,6 +627,24 @@ test("a store that cannot be written is no error, and a fault that is not the di
   // What the write reports through: with it gone the write itself works, and what follows is a bug.
   delete broken.authors;
   await assert.rejects(saveHistory(dir, broken), TypeError);
+
+  // No allocation can be made to fail from a test, so each failure is raised where the write reports:
+  // what V8 raises when memory runs out, a code Node gives one, and a code of Node's that is a fault here.
+  const raised = async (fault) => {
+    const history = {};
+    // The write before this one landed, and a store that holds every commit leaves nothing to write.
+    rmSync(storeOf(dir, "authors"), { force: true });
+    await authorsByFile(dir, { history });
+    history.authors = {
+      set wrote(_) {
+        throw fault;
+      },
+    };
+    return saveHistory(dir, history);
+  };
+  await assert.doesNotReject(raised(new RangeError("Array buffer allocation failed")));
+  await assert.doesNotReject(raised(Object.assign(new RangeError("Cannot create a Buffer larger than the maximum"), { code: "ERR_BUFFER_TOO_LARGE" })));
+  await assert.rejects(raised(Object.assign(new RangeError("out of range"), { code: "ERR_OUT_OF_RANGE" })), RangeError);
 });
 
 const AUTHORS_WALK = { kind: "authors", renames: true, config: ["-c", "log.showRoot=true"], tip: [], walk: ["--no-merges"], diff: ["-M", "--name-status", "-z"], cap: [], env: process.env };
@@ -749,10 +813,14 @@ test("a git that will not say what a record depends on, or whether the store is 
     "whether the store is tracked": `case " $* " in *":(icase)"*) exit 129;; esac`,
     "which attribute files it tracks": `case " $* " in *".gitattributes"*) exit 129;; esac`,
     "what mailmap.blob names": `case " $* " in *" rev-parse --verify --quiet nothing:.mailmap "*) exit 128;; esac`,
+    // 128 is git failing. 1 and 129 are its two ways of saying it names no such file.
+    "where the system's attributes file is": `case " $* " in *" var GIT_ATTR_SYSTEM "*) exit 128;; esac`,
+    "what attr.tree names": `case " $* " in *" rev-parse --verify --quiet main "*) exit 128;; esac`,
   };
   const dir = repo(t, storied);
   // No such object: git says so with exit code 1, and the walk reads no blob.
   tools(dir).git("config", "mailmap.blob", "nothing:.mailmap");
+  tools(dir).git("config", "attr.tree", "main");
   await authorsWith(dir);
   const written = readFileSync(storeOf(dir, "authors"));
   for (const [name, script] of Object.entries(SILENT)) {
@@ -783,10 +851,33 @@ test("a mailmap this cannot read the way git does is the plain walk", async (t) 
 });
 
 test("an attribute source this cannot read is the plain walk for the authors, and the co-change store is still kept", async (t) => {
+  const tracked = ({ git, write }, rel) => {
+    write(rel, "# none\n");
+    git("add", rel);
+  };
   const UNREAD = {
     "a directory where info/attributes should be": ({ dir }) => mkdirSync(join(dir, ".git", "info", "attributes")),
     "a home directory only git can expand": ({ git }) => git("config", "core.attributesFile", "~nobody/attributes"),
+    "a directory where the root's .gitattributes should be": ({ dir }) => mkdirSync(join(dir, ".gitattributes")),
+    "a directory where a tracked .gitattributes was": (made) => {
+      tracked(made, "deep/.gitattributes");
+      rmSync(join(made.dir, "deep", ".gitattributes"));
+      mkdirSync(join(made.dir, "deep", ".gitattributes"));
+    },
+    "more tracked .gitattributes than are read": (made) => {
+      tracked(made, "one/.gitattributes");
+      tracked(made, "two/.gitattributes");
+      HISTORY.mostAttributeFiles = 1;
+    },
+    "an attr.tree that names no object": ({ git }) => git("config", "attr.tree", "nothing"),
+    // `rev-parse` takes no `--`, and this one is an option it knows.
+    "an attr.tree that reads as an option": ({ dir }) => appendFileSync(join(dir, ".git", "config"), "[attr]\n\ttree = --stdin\n"),
   };
+  const most = HISTORY.mostAttributeFiles;
+  const restore = () => {
+    HISTORY.mostAttributeFiles = most;
+  };
+  t.after(restore);
   for (const [name, change] of Object.entries(UNREAD)) {
     const dir = repo(t, storied);
     await authorsWith(dir);
@@ -794,7 +885,41 @@ test("an attribute source this cannot read is the plain walk for the authors, an
     change(tools(dir));
     await leftAlone(dir, written, name);
     assert.deepEqual((await changesWith(dir)).said, { stored: 0, walked: 5, wrote: true }, name);
+    restore();
   }
+});
+
+test("a git that names no system-wide attributes file keeps a store all the same", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // 129 is a git older than the variable, and 1 a git told to read no such file.
+  for (const code of [129, 1]) {
+    const dir = repo(t, scored);
+    const restore = gitInFront(t, `case " $* " in *" var GIT_ATTR_SYSTEM "*) exit ${code};; esac`);
+    assert.deepEqual((await authorsWith(dir)).said, { stored: 0, walked: 2, wrote: true }, `exit ${code}`);
+    assert.deepEqual((await authorsWith(dir)).said, { stored: 2, walked: 0, wrote: false }, `exit ${code}`);
+    restore();
+  }
+});
+
+test("with HOME empty the user's attributes file is the one git reads, under the filesystem's root", { skip: process.platform === "win32" && "an empty variable is no variable there" }, async (t) => {
+  const was = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
+  t.after(() => {
+    for (const [name, value] of Object.entries(was)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  process.env.HOME = "";
+  delete process.env.XDG_CONFIG_HOME;
+  const dir = repo(t, scored);
+  await authorsWith(dir);
+  // git joins the empty HOME to `/.config/git/attributes`. The same path under the repository is nobody's.
+  mkdirSync(join(dir, ".config", "git"), { recursive: true });
+  writeFileSync(join(dir, ".config", "git", "attributes"), "*.txt -diff\n");
+  const expected = await authorsByFile(dir);
+  assert.deepEqual(flat(expected), UNPAIRED, "git reads no attribute from it");
+  const after = await authorsWith(dir);
+  assert.deepEqual(flat(after.map), flat(expected));
+  assert.deepEqual(after.said, { stored: 2, walked: 0, wrote: false });
 });
 
 test("a mailmap.blob that reads as an option is never handed to git, and is the plain walk", { ...needsShebang, ...needsPathControl }, async (t) => {
