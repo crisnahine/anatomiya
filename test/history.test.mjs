@@ -1,20 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
-import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks } from "./platform.mjs";
+import { needsFoldingFilesystem, needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks } from "./platform.mjs";
 
 import { authorsByFile } from "../plugins/anatomiya/lib/authors.mjs";
 import { walkCochange } from "../plugins/anatomiya/lib/cochange-walk.mjs";
 import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
-import { HISTORY, HISTORY_FILES, saveHistory } from "../plugins/anatomiya/lib/history.mjs";
+import { HISTORY, HISTORY_FILES, historyFields, saveHistory } from "../plugins/anatomiya/lib/history.mjs";
 import { EXCLUDE_LINES, STORE_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { READ_MOST } from "../plugins/anatomiya/lib/store.mjs";
 
 /** A repository with the store's directory in place and excluded, as a scan leaves one. */
 function repo(t, build) {
@@ -108,9 +109,19 @@ test("a replay equals the full walk", async (t) => {
   // The side branch's edit is newer than the rename back, so git prints it first and it keeps the old name:
   // the answer depends on the order, which is why the order is asked of git every time.
   assert.deepEqual([...expected.get("src/b.ts")], ["side@t.test"]);
+  // Newest first, each path under the name it holds when git prints it.
+  const WHOLE = [
+    ["src/a.ts", ["four@t.test", "three@t.test", "two@t.test", "one@t.test", "first@t.test"]],
+    ["src/b.ts", ["side@t.test"]],
+    ["docs/x.md", ["three@t.test"]],
+    ["src/side.ts", ["side@t.test"]],
+    ["src/gone.ts", ["two@t.test", "first@t.test"]],
+    [".mailmap", ["first@t.test"]],
+  ];
+  assert.deepEqual(flat(expected), WHOLE);
   const replayed = await authorsWith(dir);
   // Insertion order too: every key and every set, as the full walk builds them.
-  assert.deepEqual(flat(replayed.map), flat(expected));
+  assert.deepEqual(flat(replayed.map), WHOLE);
   assert.deepEqual(replayed.said, { stored: 5, walked: 3, wrote: true }, "two side commits and one after, none of them a merge");
 
   const again = await authorsWith(dir);
@@ -192,6 +203,126 @@ for (const { name, before = () => {}, change } of BESIDES) {
     assert.deepEqual(after.map.shallow, expected.shallow);
     assert.equal(after.said.stored, 0);
     assert.equal(after.said.wrote, true, "and the store is taken again under the new stamp");
+  });
+}
+
+test("an edited diff.orderFile refuses the store: git prints a commit's rows in the order the file gives", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts");
+    write("src/b.ts");
+    commit("root");
+  });
+  // In the git directory, so no commit carries it.
+  const order = join(dir, ".git", "order");
+  writeFileSync(order, "src/b.ts\n");
+  tools(dir).git("config", "diff.orderFile", order);
+  const taken = await authorsWith(dir);
+  assert.deepEqual([...taken.map.keys()], ["src/b.ts", "src/a.ts"]);
+  assert.equal((await authorsWith(dir)).said.stored, 1, "read back before the file moves");
+
+  writeFileSync(order, "src/a.ts\n");
+  const expected = await authorsByFile(dir);
+  assert.deepEqual([...expected.keys()], ["src/a.ts", "src/b.ts"], "the one commit's rows swap");
+  const after = await authorsWith(dir);
+  assert.deepEqual(flat(after.map), flat(expected));
+  assert.deepEqual(after.said, { stored: 0, walked: 1, wrote: true });
+});
+
+/**
+ * A rename git pairs only where it does not take the file for text: 40 short
+ * CRLF lines, 16 of them edited, scores under half as text and 57% as bytes.
+ */
+function scored({ git, write, author, commit }) {
+  git("config", "core.autocrlf", "false");
+  const lines = (edited) => Array.from({ length: 40 }, (_, i) => (i < edited ? `x${i + 1}y\r\n` : `l${i + 1}\r\n`)).join("");
+  write("a.txt", lines(0));
+  commit("root");
+  author("mover@t.test");
+  git("mv", "a.txt", "b.txt");
+  write("b.txt", lines(16));
+  commit("rename and edit");
+}
+
+const PAIRED = [["b.txt", ["mover@t.test", "first@t.test"]]];
+const UNPAIRED = [["a.txt", ["mover@t.test", "first@t.test"]], ["b.txt", ["mover@t.test"]]];
+
+/** Where git reads an attribute from, each named with what `before` and `change` do to it. */
+const ATTRIBUTES = [
+  {
+    // Staged: the entry in the index is what the stamp reads.
+    name: "a staged .gitattributes",
+    change: ({ git, write }) => {
+      write(".gitattributes", "*.txt -diff\n");
+      git("add", ".gitattributes");
+    },
+  },
+  {
+    // It covers no file of this history, and which files one covers is git's to say.
+    name: "one below the root",
+    change: ({ git, write }) => {
+      write("deep/.gitattributes", "*.txt -diff\n");
+      git("add", "deep/.gitattributes");
+    },
+    answers: UNPAIRED,
+  },
+  { name: "info/attributes", change: ({ dir }) => writeFileSync(join(dir, ".git", "info", "attributes"), "*.txt -diff\n") },
+  {
+    name: "the file core.attributesFile names",
+    before: ({ git }) => git("config", "core.attributesFile", "mine.attributes"),
+    change: ({ dir }) => writeFileSync(join(dir, "mine.attributes"), "*.txt -diff\n"),
+  },
+  {
+    name: "the file git reads where that key is not set",
+    before: (_, t) => {
+      const was = process.env.XDG_CONFIG_HOME;
+      const home = mkdtempSync(join(tmpdir(), "anatomiya-history-xdg-"));
+      process.env.XDG_CONFIG_HOME = home;
+      t.after(() => {
+        if (was === undefined) delete process.env.XDG_CONFIG_HOME;
+        else process.env.XDG_CONFIG_HOME = was;
+        rmSync(home, { recursive: true, force: true });
+      });
+    },
+    change: () => {
+      mkdirSync(join(process.env.XDG_CONFIG_HOME, "git"));
+      writeFileSync(join(process.env.XDG_CONFIG_HOME, "git", "attributes"), "*.txt -diff\n");
+    },
+  },
+  {
+    name: "a variable that leaves the system's attributes out",
+    change: (_, t) => {
+      process.env.GIT_ATTR_NOSYSTEM = "1";
+      t.after(() => delete process.env.GIT_ATTR_NOSYSTEM);
+    },
+    answers: UNPAIRED,
+  },
+  {
+    name: "a variable that names the tree attributes are read from",
+    change: (_, t) => {
+      process.env.GIT_ATTR_SOURCE = "HEAD";
+      t.after(() => delete process.env.GIT_ATTR_SOURCE);
+    },
+    answers: UNPAIRED,
+  },
+];
+
+for (const { name, before = () => {}, change, answers = PAIRED } of ATTRIBUTES) {
+  test(`${name} refuses the authors store: an attribute decides whether a rename is paired`, async (t) => {
+    const dir = repo(t, scored);
+    before(tools(dir), t);
+    const taken = await authorsWith(dir);
+    assert.deepEqual(flat(taken.map), UNPAIRED);
+    assert.equal((await authorsWith(dir)).said.stored, taken.said.walked, "read back before anything moves");
+    await changesWith(dir);
+
+    change(tools(dir), t);
+    const expected = await authorsByFile(dir);
+    assert.deepEqual(flat(expected), answers);
+    const after = await authorsWith(dir);
+    assert.deepEqual(flat(after.map), flat(expected));
+    assert.deepEqual(after.said, { stored: 0, walked: taken.said.walked, wrote: true });
+    // That walk reads no content, so no attribute reaches it.
+    assert.equal((await changesWith(dir)).said.stored, taken.said.walked);
   });
 }
 
@@ -309,6 +440,17 @@ test("a store edited by hand is refused", async (t) => {
   await refused(dir);
 });
 
+test("a store that ends before its two head lines is refused", async (t) => {
+  const dir = repo(t, storied);
+  await authorsWith(dir);
+  const text = gunzipSync(readFileSync(storeOf(dir, "authors")));
+  // The stamp line and nothing after it, then part of a digest, then the whole head and no record.
+  for (const kept of [text.indexOf(10) + 1, 100, 129, 130]) {
+    writeFileSync(storeOf(dir, "authors"), gzipSync(text.subarray(0, kept)));
+    await assert.doesNotReject(refused(dir), `${kept} bytes`);
+  }
+});
+
 test("a store that is not records end to end is refused, however carefully it was sealed", async (t) => {
   const dir = repo(t, storied);
   await authorsWith(dir);
@@ -377,6 +519,91 @@ test("a store directory that leads out of the repository's own .claude is neithe
   assert.deepEqual(readFileSync(join(elsewhere, "anatomiya", HISTORY_FILES.authors)), before);
 });
 
+test("a directory at the store's name is not read, and the write that cannot replace it is no error", async (t) => {
+  const dir = repo(t, storied);
+  mkdirSync(join(storeOf(dir, "authors"), "inside"), { recursive: true });
+  for (let scans = 0; scans < 2; scans++) {
+    const after = await authorsWith(dir);
+    assert.deepEqual(flat(after.map), flat(await authorsByFile(dir)));
+    assert.equal(after.map.error, undefined);
+    assert.deepEqual(after.said, { stored: 0, walked: 5, wrote: false });
+  }
+  assert.equal(statSync(join(storeOf(dir, "authors"), "inside")).isDirectory(), true);
+  assert.deepEqual(readdirSync(join(dir, STORE_DIR)), [HISTORY_FILES.authors], "and no staged file is left beside it");
+});
+
+test("a fifo at the store's name is not waited on, and the next store replaces it", needsPosixSpecialFiles, async (t) => {
+  const dir = repo(t, storied);
+  execFileSync("mkfifo", [storeOf(dir, "authors")]);
+  // Nobody writes to it, so an open that waited would never come back.
+  await refused(dir);
+  assert.equal(lstatSync(storeOf(dir, "authors")).isFile(), true);
+});
+
+test("a store packed past what the store directory reads whole is not read", async (t) => {
+  const dir = repo(t, storied);
+  await authorsWith(dir);
+  // The real store with one more record after it, sealed: a record of noise, which packs to no less than it is.
+  const noise = randomBytes(READ_MOST);
+  noise[0] = 0x1e;
+  rewriteStore(dir, (records) => Buffer.concat([records, Buffer.from(`${"a".repeat(40)} ${noise.length}\n`), noise]), { sealed: true });
+  assert.ok(statSync(storeOf(dir, "authors")).size > READ_MOST);
+  await refused(dir);
+});
+
+test("a store git tracks under another letter case is this file where the volume folds case, and is never read", needsFoldingFilesystem, async (t) => {
+  const dir = repo(t, storied);
+  await authorsWith(dir);
+  const { git, commit } = tools(dir);
+  const shouted = join(STORE_DIR, HISTORY_FILES.authors.toUpperCase());
+  renameSync(storeOf(dir, "authors"), join(dir, shouted));
+  git("add", "-f", shouted);
+  commit("commit the store, shouted");
+  const committed = readFileSync(storeOf(dir, "authors"));
+
+  const after = await authorsWith(dir);
+  assert.deepEqual(flat(after.map), flat(await authorsByFile(dir)));
+  assert.deepEqual(after.said, { stored: 0, walked: null, wrote: false });
+  assert.deepEqual(readFileSync(storeOf(dir, "authors")), committed);
+});
+
+test("a store that cannot be written is no error, and a fault that is not the disk's is not swallowed", async (t) => {
+  const dir = repo(t, storied);
+  const history = {};
+  await authorsByFile(dir, { history });
+  rmSync(join(dir, STORE_DIR), { recursive: true });
+  await saveHistory(dir, history);
+  assert.deepEqual(history.authors, { stored: 0, walked: 5, wrote: false });
+
+  mkdirSync(join(dir, STORE_DIR));
+  const broken = {};
+  await authorsByFile(dir, { history: broken });
+  // What the write reports through: with it gone the write itself works, and what follows is a bug.
+  delete broken.authors;
+  await assert.rejects(saveHistory(dir, broken), TypeError);
+});
+
+const AUTHORS_WALK = { kind: "authors", renames: true, config: ["-c", "log.showRoot=true"], tip: [], walk: ["--no-merges"], diff: ["-M", "--name-status", "-z"], cap: [], env: process.env };
+
+test("a replay its caller has stopped feeds no commit after the stop", async (t) => {
+  const dir = repo(t, storied);
+  await authorsWith(dir);
+  const whole = { fed: 0, history: {} };
+  await historyFields(dir, AUTHORS_WALK, () => () => whole.fed++, { history: whole.history });
+  assert.deepEqual(whole.history.authors, { stored: 5, walked: 0, wrote: false }, "this walk is the one the store was taken for");
+  assert.ok(whole.fed > 5);
+
+  const stop = new AbortController();
+  let fed = 0;
+  // Stopped once the order is in hand and before the first commit is fed.
+  const open = () => {
+    stop.abort();
+    return () => fed++;
+  };
+  await assert.rejects(historyFields(dir, AUTHORS_WALK, open, { history: {}, signal: stop.signal }), /stopped by its caller/);
+  assert.equal(fed, 0);
+});
+
 test("a store past the bound is neither inflated nor written", async (t) => {
   const dir = repo(t, storied);
   await authorsWith(dir);
@@ -405,7 +632,7 @@ test("a store past the bound is neither inflated nor written", async (t) => {
   assert.deepEqual((await authorsWith(dir)).said, { stored: 5, walked: 1, wrote: true });
 });
 
-test("a rewritten history walks in full", async (t) => {
+test("a rewritten history replays the commits it still holds, and one with no commit left walks in full", async (t) => {
   const dir = repo(t, storied);
   await authorsWith(dir);
   const { git, write, author, commit } = tools(dir);
@@ -520,8 +747,12 @@ test("a git that will not say what a record depends on, or whether the store is 
     "what its configuration holds": `case " $* " in *" config --list "*) exit 129;; esac`,
     "which replace refs it holds": `case " $* " in *" for-each-ref "*) exit 129;; esac`,
     "whether the store is tracked": `case " $* " in *":(icase)"*) exit 129;; esac`,
+    "which attribute files it tracks": `case " $* " in *".gitattributes"*) exit 129;; esac`,
+    "what mailmap.blob names": `case " $* " in *" rev-parse --verify --quiet nothing:.mailmap "*) exit 128;; esac`,
   };
   const dir = repo(t, storied);
+  // No such object: git says so with exit code 1, and the walk reads no blob.
+  tools(dir).git("config", "mailmap.blob", "nothing:.mailmap");
   await authorsWith(dir);
   const written = readFileSync(storeOf(dir, "authors"));
   for (const [name, script] of Object.entries(SILENT)) {
@@ -549,6 +780,46 @@ test("a mailmap this cannot read the way git does is the plain walk", async (t) 
     change(tools(dir));
     await leftAlone(dir, written, name);
   }
+});
+
+test("an attribute source this cannot read is the plain walk for the authors, and the co-change store is still kept", async (t) => {
+  const UNREAD = {
+    "a directory where info/attributes should be": ({ dir }) => mkdirSync(join(dir, ".git", "info", "attributes")),
+    "a home directory only git can expand": ({ git }) => git("config", "core.attributesFile", "~nobody/attributes"),
+  };
+  for (const [name, change] of Object.entries(UNREAD)) {
+    const dir = repo(t, storied);
+    await authorsWith(dir);
+    const written = readFileSync(storeOf(dir, "authors"));
+    change(tools(dir));
+    await leftAlone(dir, written, name);
+    assert.deepEqual((await changesWith(dir)).said, { stored: 0, walked: 5, wrote: true }, name);
+  }
+});
+
+test("a mailmap.blob that reads as an option is never handed to git, and is the plain walk", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const dir = repo(t, storied);
+  await authorsWith(dir);
+  const written = readFileSync(storeOf(dir, "authors"));
+  // `rev-parse` takes no `--`, and this one is an option it knows.
+  appendFileSync(join(dir, ".git", "config"), "[mailmap]\n\tblob = --stdin\n");
+  const asked = join(dir, ".git", "asked");
+  gitInFront(t, `case " $* " in *" --verify --quiet --stdin "*) touch '${asked}'; exit 1;; esac`);
+  await leftAlone(dir, written);
+  assert.equal(existsSync(asked), false);
+});
+
+test("a line of the order that is no commit's name is the full walk, and nothing of the order reaches git", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const dir = repo(t, storied);
+  await authorsWith(dir);
+  tools(dir).commit("one more");
+  const expected = await authorsByFile(dir);
+  const asked = join(dir, ".git", "asked");
+  gitInFront(t, `case " $* " in *" rev-list "*) "$real" "$@"; echo "--all"; exit 0;; *" --no-walk=unsorted "*) cat > '${asked}'; exit 0;; esac`);
+  const after = await authorsWith(dir);
+  assert.deepEqual(flat(after.map), flat(expected));
+  assert.deepEqual(after.said, { stored: 0, walked: 6, wrote: true });
+  assert.equal(existsSync(asked), false, "the list was never handed over");
 });
 
 test("a mailmap that is a device and no file is the plain walk", needsPosixSpecialFiles, async (t) => {
@@ -646,8 +917,23 @@ test("the co-change walk replays the same way: a merged branch is one change, re
     ["four@t.test", ["src/new.ts"], ["src/new.ts", "src/a.ts"]],
     ["three@t.test", ["src/side.ts"], ["src/side.ts", "src/a.ts"]],
   ]);
+  // The root commit prints no row, so it is read and is no change.
+  const WHOLE = {
+    changes: [
+      { bulk: false, author: "four@t.test", added: ["src/new.ts"], touched: ["src/new.ts", "src/a.ts"] },
+      { bulk: false, author: "three@t.test", added: ["src/side.ts"], touched: ["src/side.ts", "src/a.ts"] },
+      { bulk: false, author: "three@t.test", added: ["docs/x.md"], touched: ["docs/x.md"] },
+      { bulk: false, author: "three@t.test", added: ["src/a.ts"], touched: ["src/a.ts"] },
+      { bulk: false, author: "two@t.test", added: [], touched: ["src/b.ts"] },
+      { bulk: false, author: "one@t.test", added: ["src/b.ts"], touched: ["src/b.ts"] },
+    ],
+    read: 7,
+    bulk: 0,
+    error: null,
+  };
+  assert.deepEqual(expected, WHOLE);
   const replayed = await changesWith(dir);
-  assert.deepEqual(replayed.walk, expected);
+  assert.deepEqual(replayed.walk, WHOLE);
   assert.deepEqual(replayed.said, { stored: 5, walked: 2, wrote: true });
   const again = await changesWith(dir);
   assert.deepEqual(again.walk, expected);
@@ -686,6 +972,8 @@ test("a scan keeps both stores, a dry run reads them and writes neither", async 
   const written = Object.keys(HISTORY_FILES).map((kind) => readFileSync(storeOf(dir, kind)));
   const again = await runScan(dir, { dryRun: true });
   assert.deepEqual(again.history, { authors: { stored: 5, walked: 1, wrote: false }, cochange: { stored: 5, walked: 1, wrote: false } });
+  // What the dry run read from git is dropped with it: nothing is left for a later write to find.
+  await saveHistory(dir, again.history);
   assert.deepEqual(Object.keys(HISTORY_FILES).map((kind) => readFileSync(storeOf(dir, kind))), written);
   const second = await runScan(dir);
   assert.deepEqual(second.history, { authors: { stored: 5, walked: 1, wrote: true }, cochange: { stored: 5, walked: 1, wrote: true } });

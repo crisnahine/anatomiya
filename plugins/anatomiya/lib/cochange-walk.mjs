@@ -137,6 +137,8 @@ export function changeReader(onChange, own = () => false) {
  * replayed and only the rest are asked of git (`history.mjs`).
  */
 export async function walkCochange(root, tip, { signal, history = null } = {}) {
+  if (!isSha(tip)) return { changes: [], read: 0, bulk: 0, error: "no commit to walk from" };
+  const own = ownOutput(root).asWritten;
   let changes, read, bulk, reader;
   // A read given up part way starts over, and the counts with it.
   const open = () => {
@@ -147,11 +149,9 @@ export async function walkCochange(root, tip, { signal, history = null } = {}) {
       read++;
       if (c.bulk) bulk++;
       else if (c.touched.length > 0) changes.push(c);
-    }, ownOutput(root).asWritten);
+    }, own);
     return reader;
   };
-  open();
-  if (!isSha(tip)) return { changes, read, bulk, error: "no commit to walk from" };
   try {
     await historyFields(
       root,

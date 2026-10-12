@@ -64,6 +64,7 @@ const unzip = promisify(gunzip);
 const PLAIN = `${SEP}%aE`;
 const NAMED = `${SEP}%H %aE`;
 const NAME = /^([0-9a-f]{64}|[0-9a-f]{40}) /;
+const SHA = /^(?:[0-9a-f]{64}|[0-9a-f]{40})$/;
 const FRAME = /^([0-9a-f]{64}|[0-9a-f]{40}) (\d{1,10})$/;
 
 // Nothing follows `--`, which is the rule for every git call here: no argument after it can be read as an option.
@@ -96,7 +97,7 @@ export async function historyFields(root, walk, open, { history = null, signal =
   const said = (history[walk.kind] = { stored: 0, walked: null, wrote: false });
   const store = await openStore(root, walk, history);
   if (store === null) return plain();
-  const leave = (body) => scanOf(history).pending.push({ kind: walk.kind, stamp: store.stamp, body });
+  const leave = (records) => scanOf(history).pending.push({ kind: walk.kind, stamp: store.stamp, records });
 
   if (store.at !== null) {
     const replay = await replayable(root, walk, store, run).catch(() => null);
@@ -106,6 +107,7 @@ export async function historyFields(root, walk, open, { history = null, signal =
       for (const [i, sha] of order.entries()) {
         // The walk it stands in for arrived a chunk at a time, and the scan's other work ran between the chunks.
         if (i % REPLAY_SLICE === REPLAY_SLICE - 1) await new Promise(setImmediate);
+        if (signal?.aborted) throw new Error("git log stopped by its caller");
         for (const field of read.get(sha) ?? fieldsAt(store, sha)) onField(field);
       }
       said.stored = order.length - read.size;
@@ -113,8 +115,13 @@ export async function historyFields(root, walk, open, { history = null, signal =
       // Written only for a commit it did not hold. One it holds and the order
       // no longer names goes at that write, and costs nothing until then.
       if (read.size > 0) {
-        const records = order.map((sha) => (read.has(sha) ? Buffer.from(framed(sha, read.get(sha))) : store.body.subarray(store.at.get(sha)[0], store.at.get(sha)[2])));
-        if (records.reduce((sum, record) => sum + record.length, HEAD_BYTES) <= HISTORY.mostBytes) leave(() => Buffer.concat(records));
+        const records = order.map((sha) => {
+          const fields = read.get(sha);
+          if (fields !== undefined) return Buffer.from(framed(sha, fields));
+          const [from, , end] = store.at.get(sha);
+          return store.body.subarray(from, end);
+        });
+        if (records.reduce((sum, record) => sum + record.length, HEAD_BYTES) <= HISTORY.mostBytes) leave(records);
       }
       return;
     }
@@ -130,21 +137,32 @@ export async function historyFields(root, walk, open, { history = null, signal =
   }
   const whole = split.end();
   said.walked = kept.count();
-  if (whole && kept.sound()) leave(kept.body);
+  if (whole && kept.sound()) leave(kept.records());
 }
 
-/** Write what each walk of one scan left to be kept. A store that cannot be written is the full walk next time. */
-export async function saveHistory(root, history) {
-  for (const { kind, stamp, body } of scanOf(history).pending.splice(0)) {
+/**
+ * Write what each walk of one scan left to be kept, or with `write` false drop
+ * it. A store that cannot be written is the full walk next time.
+ */
+export async function saveHistory(root, history, { write = true } = {}) {
+  const pending = scanOf(history).pending.splice(0);
+  if (!write) return;
+  for (const { kind, stamp, records } of pending) {
     try {
       // Resolved again: the walk asked before the map was written. The directory is the map's
       // to make, so where a scan made none the write fails and no history is kept either.
       const dir = resolveInside(root, STORE_DIR);
       if (dir === null) continue;
-      const records = body();
-      atomic(join(dir, HISTORY_FILES[kind]), await zip(Buffer.concat([Buffer.from(`${stamp}\n${digest(records)}\n`), records]), { level: GZIP_LEVEL }));
+      // Hashed a record at a time and joined once: the records are the size of the history.
+      const sealed = createHash("sha256");
+      for (const record of records) sealed.update(record);
+      const text = Buffer.concat([Buffer.from(`${stamp}\n${sealed.digest("hex")}\n`), ...records]);
+      atomic(join(dir, HISTORY_FILES[kind]), await zip(text, { level: GZIP_LEVEL }));
       history[kind].wrote = true;
-    } catch {}
+    } catch (err) {
+      // What a disk or gzip refuses names itself with a code that is not Node's own; anything else is a bug here.
+      if (typeof err?.code !== "string" || err.code.startsWith("ERR_")) throw err;
+    }
   }
 }
 
@@ -169,7 +187,8 @@ async function openStore(root, walk, history) {
     return none;
   }
   const head = Buffer.from(`${stamp}\n`);
-  if (!text.subarray(0, head.length).equals(head)) return none;
+  // A slice past the end throws, and a store cut short is no store.
+  if (text.length < HEAD_BYTES || !text.subarray(0, head.length).equals(head)) return none;
   // The records' own digest on the second line, so an edit that keeps every length is still seen.
   const body = text.subarray(HEAD_BYTES);
   if (text.latin1Slice(head.length, HEAD_BYTES) !== `${digest(body)}\n`) return none;
@@ -200,8 +219,11 @@ async function stampOf(root, walk, history) {
   // Read once for the two walks of one scan.
   const besides = await (scanOf(history).besides ??= readBesides(root, walk.env));
   if (besides === null) return null;
+  // An attribute says whether a file is text, and a rename is scored on that reading: only a walk that pairs renames depends on one.
+  const attributes = walk.renames ? besides.attributes : "unread";
+  if (attributes === null) return null;
   // The walk's arguments less where it starts: the tip is what is asked, and a record does not depend on it.
-  return digest(JSON.stringify([LAYOUT, buildVersion(), logArgs({ ...walk, tip: [] }, NAMED), besides]));
+  return digest(JSON.stringify([LAYOUT, buildVersion(), logArgs({ ...walk, tip: [] }, NAMED), besides.shared, attributes]));
 }
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -232,38 +254,62 @@ const STAMPED_FILE_MOST = 8 * 1024 * 1024;
 
 async function readBesides(root, env) {
   const ask = (args) => gitBuffered(root, args, { env });
-  const [version, listed, common, replaced] = await Promise.all([
+  const [version, listed, common, replaced, attributeFiles] = await Promise.all([
     ask(["version"]),
     ask(["config", "--list", "--null"]),
     ask(["rev-parse", "--git-common-dir"]),
-    ask(["for-each-ref", "--format=%(refname) %(objectname)", env.GIT_REPLACE_REF_BASE ?? "refs/replace/"]),
+    ask(["for-each-ref", "--format=%(refname) %(objectname)", "--", env.GIT_REPLACE_REF_BASE ?? "refs/replace/"]),
+    // Every tracked `.gitattributes` with its blob, at any depth and in any letter case a folding volume would open.
+    ask(["ls-files", "-s", "-z", "--", ":(glob,icase)**/.gitattributes"]),
   ]);
   if (![version, listed, common, replaced].every((r) => r.ok)) return null;
   const config = listed.stdout.split("\0").filter(Boolean);
-  // The last entry wins for a single-valued key, as git reads them.
-  const valueOf = (key) => config.findLast((entry) => entry.startsWith(`${key}\n`))?.slice(key.length + 1);
+  // The last entry wins for a single-valued key, as git reads them, and git lists a key with no subsection in lower case.
+  const valueOf = (key) => config.findLast((entry) => entry.startsWith(`${key.toLowerCase()}\n`))?.slice(key.length + 1);
 
   const gitDir = resolve(root, common.stdout.replace(/\r?\n$/, ""));
-  const mapFile = valueOf("mailmap.file");
-  // `~user` and the `:(optional)` spelling are git's to expand, so a file named that way is not one this can watch.
-  if (mapFile !== undefined && /^(?:~[^/]|:\()/.test(mapFile)) return null;
+  // A file a key names, where git would look for it: null where the key is not set, false where the
+  // spelling (`~user`, `:(optional)`) is git's to expand, so the file is not one this can watch.
+  const named = (key) => {
+    const value = valueOf(key);
+    if (value === undefined) return null;
+    return /^(?:~[^/]|:\()/.test(value) ? false : resolve(root, value.replace(/^~(?=\/)/, homedir()));
+  };
   const files = [
     join(root, ".mailmap"),
-    mapFile === undefined ? null : resolve(root, mapFile.replace(/^~(?=\/)/, homedir())),
+    named("mailmap.file"),
+    // The order a commit's rows are printed in, which is the order a reader meets them.
+    named("diff.orderFile"),
     env.GIT_SHALLOW_FILE ? resolve(root, env.GIT_SHALLOW_FILE) : join(gitDir, "shallow"),
     env.GIT_GRAFT_FILE ? resolve(root, env.GIT_GRAFT_FILE) : join(gitDir, "info", "grafts"),
-  ].map((path) => (path === null ? "unset" : fileDigest(path)));
+  ].map(digestOf);
   if (files.includes(null)) return null;
 
-  // Whatever the name resolves to, or nothing where git would find no blob there either.
   const mapBlob = valueOf("mailmap.blob");
-  const blob = mapBlob === undefined ? "unset" : (await ask(["rev-parse", "--verify", "--quiet", mapBlob])).stdout;
+  let blob = "unset";
+  if (mapBlob !== undefined) {
+    // `rev-parse` takes no `--`, so a name that opens with a dash is an option to it.
+    if (mapBlob.startsWith("-")) return null;
+    const found = await ask(["rev-parse", "--verify", "--quiet", mapBlob]);
+    // Exit code 1 is git saying the name is no object's, and the walk reads no blob there either.
+    if (!found.ok && found.code !== 1) return null;
+    blob = found.ok ? found.stdout : "absent";
+  }
 
-  return [version.stdout, digest(config.filter((entry) => !NOT_STAMPED.test(entry)).join("\0")), files, blob, replaced.stdout, STAMPED_ENV.map((name) => env[name] ?? null)];
+  const shared = [version.stdout, digest(config.filter((entry) => !NOT_STAMPED.test(entry)).join("\0")), files, blob, replaced.stdout, STAMPED_ENV.map((name) => env[name] ?? null)];
+
+  // Where git reads attributes from, less two it reads that are not watched: a working
+  // tree `.gitattributes` whose bytes are not the staged ones, and the system-wide file.
+  const ownFile = named("core.attributesFile") ?? join(env.XDG_CONFIG_HOME || join(env.HOME ?? homedir(), ".config"), "git", "attributes");
+  const read = [digestOf(join(gitDir, "info", "attributes")), digestOf(ownFile === false ? false : resolve(root, ownFile))];
+  const attributes = attributeFiles.ok && !read.includes(null) ? [digest(attributeFiles.stdout), read, env.GIT_ATTR_SOURCE ?? null, env.GIT_ATTR_NOSYSTEM ?? null] : null;
+  return { shared, attributes };
 }
 
-// A digest of the file's bytes, "absent" where nothing is there, null where it cannot be read whole.
-function fileDigest(path) {
+// A digest of the file's bytes, "absent" where nothing is there, "unset" where no key names one, null where it cannot be read whole.
+function digestOf(path) {
+  if (path === null) return "unset";
+  if (path === false) return null;
   let fd;
   try {
     fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
@@ -306,11 +352,16 @@ const fieldsAt = (store, sha) => store.body.toString("utf8", store.at.get(sha)[1
  * null where the two do not account for every commit exactly once.
  */
 async function replayable(root, walk, store, run) {
-  let listed = "";
-  await run(orderArgs(walk), (text) => {
-    listed += text;
-  });
-  const order = listed.split("\n").filter(Boolean);
+  const order = [];
+  let named = true;
+  // `log --stdin` reads an option off a line as readily as a commit, so a line that is no full name ends the read.
+  const line = (text) => {
+    if (!SHA.test(text)) return (named = false);
+    order.push(text);
+  };
+  // By the line: `rev-list` prints no NUL, and one field would hold every commit of the history.
+  await run(orderArgs(walk), line, { delimiter: 10, terminated: true });
+  if (!named) return null;
   const missing = order.filter((sha) => !store.at.has(sha));
   const read = new Map();
   if (missing.length === 0) return { order, read };
@@ -420,6 +471,6 @@ function keeper() {
       if (chunks !== null) flush();
       return chunks !== null && !twice;
     },
-    body: () => Buffer.concat(chunks),
+    records: () => chunks,
   };
 }

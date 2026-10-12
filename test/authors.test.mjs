@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { needsPathControl, needsPosixPaths, needsShebang } from "./platform.mjs";
+import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { authorsByFile, repoAuthorCount } from "../plugins/anatomiya/lib/authors.mjs";
+import { GIT } from "../plugins/anatomiya/lib/git.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 import * as scan from "../plugins/anatomiya/lib/scan.mjs";
 
@@ -224,6 +225,109 @@ test("a blobless clone whose remote is not called origin still answers offline",
 
   assert.equal(map.error, undefined, `history must read offline: ${map.error}`);
   assert.deepEqual(sorted(map.get("src/b.ts")), ["second@t.test"]);
+});
+
+/**
+ * A `git` ahead of the real one on PATH for this test, which writes each call's
+ * arguments down and then runs `script`, with `$real` the git it stands in front of.
+ * Answers with the calls made so far, and `restore` takes it off PATH before the test ends.
+ */
+function gitWatched(t, script = "") {
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-authors-bin-"));
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "calls"), "");
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nreal='${real}'\necho " $* " >> '${join(bin, "calls")}'\n${script}\nexec "$real" "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  const calls = () => readFileSync(join(bin, "calls"), "utf8").split("\n").filter(Boolean);
+  calls.restore = () => {
+    process.env.PATH = path;
+    rmSync(bin, { recursive: true, force: true });
+  };
+  t.after(calls.restore);
+  return calls;
+}
+
+/** A rename with an edit, which `-M` follows and `-M100%` does not. */
+function renamedWithEdit(d, { git, write, author, commit }) {
+  write("src/a.ts", "export const a = 1\nexport const b = 2\n");
+  commit("one");
+  author("second@t.test");
+  git("mv", "src/a.ts", "src/b.ts");
+  write("src/b.ts", "export const a = 1\nexport const b = 2\nexport const c = 3\n");
+  commit("rename and edit");
+}
+
+const ASKS_PARTIAL = / config .*promisor/;
+const logsOf = (calls) => calls.filter((call) => / log .*--name-status /.test(call));
+
+test("a clone whose partial keys are not set is walked with -M, on one question", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const dir = repo(t, renamedWithEdit);
+  const calls = gitWatched(t);
+
+  const map = await authorsByFile(dir);
+
+  assert.equal(map.error, undefined);
+  assert.deepEqual(sorted(map.get("src/b.ts")), ["first@t.test", "second@t.test"]);
+  assert.equal(calls().filter((call) => ASKS_PARTIAL.test(call)).length, 1);
+  assert.equal(calls().filter((call) => / (remote|config --get) /.test(call)).length, 0);
+  assert.match(logsOf(calls())[0], / -M /);
+});
+
+test("a clone is partial where the extension names a promisor or a remote's flag reads as true to git", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // A flag with no value is true to git, and so is any number but zero.
+  const bare = (d) => appendFileSync(join(d, ".git", "config"), '[remote "late"]\n\tpromisor\n');
+  const PARTIAL = {
+    "the extension": (d, git) => git("config", "extensions.partialClone", "origin"),
+    "a flag with no value": bare,
+    ...Object.fromEntries(["true", "yes", "on", "1", "TRUE", "2"].map((spelling) => [`a remote's flag set to ${spelling}`, (d, git) => git("config", "remote.Late.promisor", spelling)])),
+  };
+  const WHOLE = {
+    ...Object.fromEntries(["false", "no", "off", "0", ""].map((spelling) => [`a remote's flag set to "${spelling}"`, (d, git) => git("config", "remote.late.promisor", spelling)])),
+    "a flag set and then unset by a later value": (d, git) => {
+      git("config", "remote.late.promisor", "true");
+      git("config", "--add", "remote.late.promisor", "false");
+    },
+  };
+  for (const [flag, cases] of [["-M100%", PARTIAL], ["-M", WHOLE]]) {
+    for (const [name, set] of Object.entries(cases)) {
+      const dir = repo(t, (d, { git }) => set(d, git));
+      const calls = gitWatched(t);
+      await authorsByFile(dir);
+      const logs = logsOf(calls());
+      calls.restore();
+      assert.equal(logs.length, 1, name);
+      assert.equal(logs[0].includes(` ${flag} `), true, `${name}: ${logs[0]}`);
+    }
+  }
+});
+
+test("a git that cannot be asked whether the clone is partial is unread history, and no log is started on a guess", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const was = GIT.timeoutMs;
+  t.after(() => {
+    GIT.timeoutMs = was;
+  });
+  const NO_ANSWER = {
+    "a git that dies on the question": "kill -9 $$",
+    "a git that refuses it": "exit 129",
+    "a git that hangs on it": "exec sleep 30",
+  };
+  for (const [name, how] of Object.entries(NO_ANSWER)) {
+    const dir = repo(t, renamedWithEdit);
+    const calls = gitWatched(t, `case " $* " in *" config "*promisor*) ${how};; esac`);
+    // Short only where the answer never comes, so a slow machine times out nothing else.
+    if (how.includes("sleep")) GIT.timeoutMs = 2000;
+
+    const map = await authorsByFile(dir);
+
+    GIT.timeoutMs = was;
+    const made = calls();
+    calls.restore();
+    assert.equal(map.size, 0, name);
+    assert.match(map.error, /git could not say whether this clone is partial/, name);
+    assert.equal(made.filter((call) => ASKS_PARTIAL.test(call)).length, 1, name);
+    assert.deepEqual(logsOf(made), [], name);
+  }
 });
 
 test("the root commit's author counts whatever log.showRoot says", async (t) => {
