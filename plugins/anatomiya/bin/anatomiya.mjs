@@ -50,7 +50,7 @@ const USAGE = [
   "[path] picks the repository, not a subtree: every command covers the whole",
   "repository the path is in, and scan prints the root it resolved to. doctor",
   "and setup take no path: they answer about this installation. doctor also",
-  "prints a line for each Cursor or Copilot target whose overview is in the",
+  "prints a line for each Cursor or Copilot target that is on in the",
   "repository it is run in, which says off at the next scan where a killed",
   "scan was turning it off, and one for any directory the map is written to",
   "where the next scan removes files a killed scan was about to remove.",

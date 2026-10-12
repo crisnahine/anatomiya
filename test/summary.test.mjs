@@ -1146,6 +1146,7 @@ test("the scan record neutralises every value the repository named", () => {
       summary({
         root: "/repo/ev‮li",
         historyError: "fatal: bad object ‍head",
+        cochangeError: "fatal: bad object ‍head",
         rules: {
           foreign: ["ho‮use.md"],
           unknown: ["un‍known.md"],
@@ -1160,6 +1161,7 @@ test("the scan record neutralises every value the repository named", () => {
   const named = [
     s.root,
     s.historyError,
+    s.cochangeError,
     ...s.rules.foreign,
     ...s.rules.unknown,
     ...s.rules.unreadable,
@@ -1171,6 +1173,7 @@ test("the scan record neutralises every value the repository named", () => {
 test("an ASCII scan record comes back from the writer unchanged", () => {
   const s = summary({
     historyError: "fatal: not a git repository",
+    cochangeError: "fatal: bad revision 'HEAD'",
     rules: { foreign: ["house.md"], unknown: [], unreadable: [], listed: true, replaced: [] },
   });
 
@@ -1178,6 +1181,7 @@ test("an ASCII scan record comes back from the writer unchanged", () => {
 
   assert.equal(out.root, s.root);
   assert.equal(out.historyError, s.historyError);
+  assert.equal(out.cochangeError, s.cochangeError);
   assert.deepEqual(out.rules, s.rules);
 });
 

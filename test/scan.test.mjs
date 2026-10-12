@@ -2238,7 +2238,7 @@ test("a scan states what a class's additions ship with, and the area file says i
   writeMap(result, {});
   const file = readdirSync(join(dir, ".claude/rules")).find((n) => n !== "anatomiya-overview.md");
   const body = readFileSync(join(dir, ".claude/rules", file), "utf8");
-  assert.match(body, /^a \.ts file added to "src\/services" ships with an edit to "src\/registry\.ts"\n {2}40 of the last 40 changes that added one, 2 authors; 40 of 40 such files here came in a change it counted$/m, body);
+  assert.match(body, /^a \.ts file added to "src\/services" ships with an edit to "src\/registry\.ts"\n {2}40 of the last 40 changes that added one, 2 authors; 40 of 40 such files here came in a change the scan counted$/m, body);
   // The overview has no room for a per-pair line and is byte-stable without one.
   assert.doesNotMatch(readFileSync(join(dir, ".claude/rules/anatomiya-overview.md"), "utf8"), /ships with/);
   // The layout file carries it to the hooks.
