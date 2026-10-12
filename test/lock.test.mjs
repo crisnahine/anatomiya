@@ -140,7 +140,7 @@ test("a lock's owner and age say whether a worker can still hold it", (t) => {
     return judge(lock);
   };
   assert.equal(judge(lock), null, "gone");
-  assert.deepEqual(verdict(JSON.stringify({ pid: 1, at: now - 1000, nonce: "0123456789abcdef" })), { live: true });
+  assert.deepEqual(verdict(JSON.stringify({ pid: 1, at: now - 1000, nonce: "0123456789abcdef" })), { live: true, generation: "0123456789abcdef" });
   assert.equal(verdict(JSON.stringify({ pid: 1, at: now - 31 * 60 * 1000 })).live, false, "older than any scan");
   assert.equal(verdict(JSON.stringify({ pid: 1, at: now + 1 })).live, false, "stamped later than now");
   assert.equal(verdict(JSON.stringify({ pid: 2, at: now })).live, false, "its process is gone");

@@ -666,6 +666,10 @@ test("batch claims older than a day are swept when a new one is made", (t) => {
   const token = `${lock}.1700000000000`;
   writeFileSync(token, "");
   utimesSync(token, twoDays, twoDays);
+  // A token's own token, left by a call killed breaking a token.
+  const tokenOfToken = `${token}.1700000000001`;
+  writeFileSync(tokenOfToken, "");
+  utimesSync(tokenOfToken, twoDays, twoDays);
   const foreign = join(data, "echo", "notes.txt");
   writeFileSync(foreign, "");
   utimesSync(foreign, twoDays, twoDays);
@@ -675,6 +679,7 @@ test("batch claims older than a day are swept when a new one is made", (t) => {
   assert.equal(existsSync(old), false);
   assert.equal(existsSync(lock), false, "a lock left by a call that died");
   assert.equal(existsSync(token), false, "a lock token a call died holding");
+  assert.equal(existsSync(tokenOfToken), false, "and a token's token");
   assert.equal(existsSync(recent), true);
   assert.equal(existsSync(foreign), true, "only a name a batch claim has");
   assert.equal(readdirSync(join(data, "echo")).length, 3);

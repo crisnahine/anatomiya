@@ -49,6 +49,8 @@ export const RULES_DIR = TARGETS.claude.dir;
 export const STORE_DIR = ".claude/anatomiya";
 /** What the refresh worker last did, relative to the repository root. */
 export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
+/** The lock one refresh worker at a time holds, relative to the repository root. */
+export const REFRESH_LOCK = `${STORE_DIR}/refresh.lock`;
 // The one write outside the two above (A25). Here rather than beside the hook
 // that writes it, because this module is where every path a scan touches is
 // spelled, and the exclude line below has to be the same string.

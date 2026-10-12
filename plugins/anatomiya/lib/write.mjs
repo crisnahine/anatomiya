@@ -1,11 +1,14 @@
-import { lstatSync, mkdirSync, rmdirSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, rmdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { PIN_PATH } from "./baseline.mjs";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
 import { claimsIn } from "./cochange.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBackRecord, writePair } from "./facts.mjs";
+import { leftTokens, workerAge } from "./lock.mjs";
 import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import {
+  REFRESH_LOCK,
   REFRESH_STATE,
   RULES_DIR,
   STORE_DIR,
@@ -135,8 +138,8 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     remove: claude.stale,
     // The temporary files an earlier scan left in Claude Code's directory, removed with the rest.
     staged: claude.staged,
-    // And the ones a scan or a refresh left in the store, where the record is megabytes on a large repository.
-    storeStaged: blind ? [] : stagedInStore(storeDir, STORE_STAGED).filter(({ pid }) => !running(pid)).map(({ name }) => name),
+    // And the ones a scan, a refresh, a pin or a lock left in the store, where the record is megabytes on a large repository.
+    storeStaged: blind ? [] : leftInStore(storeDir),
     // The record and layout file past the bound this replaces without reading, only where there is one.
     ...(oversized.length > 0 && !blind ? { oversized } : {}),
     foreign: claude.foreign,
@@ -421,8 +424,38 @@ function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritabl
 // The files of ours the record on disk names in one directory, sorted.
 const recorded = (previous, target) => [...(knownNames(previous, target) ?? [])].sort();
 
-// The files a scan and a refresh stage in the store, by name.
-const STORE_STAGED = [FACTS_PATH, LAYOUT_PATH, REFRESH_STATE].map((path) => basename(path));
+// The files a scan, a refresh, a pin and a lock create stage in the store, by name.
+const STORE_STAGED = [FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK].map((path) => basename(path));
+
+// Where a build before the lock tokens moved a dead refresh lock aside to break it.
+const LOCK_ASIDE = /^refresh\.lock\.stale-(\d+)-[0-9a-f]{16}$/;
+
+/**
+ * What a stopped writer left in the store: the files it staged, the refresh lock's tokens a breaker
+ * that died left, and a dead lock an older build moved aside. Each of a process still running stays.
+ */
+function leftInStore(dir) {
+  const staged = stagedInStore(dir, STORE_STAGED).filter(({ pid }) => !running(pid)).map(({ name }) => name);
+  let names;
+  try {
+    names = readdirSync(dir);
+  } catch {
+    names = [];
+  }
+  const asides = names.filter((name) => {
+    const aside = LOCK_ASIDE.exec(name);
+    return aside !== null && !running(Number(aside[1])) && isFileAt(join(dir, name));
+  });
+  return [...staged, ...leftTokens(join(dir, basename(REFRESH_LOCK)), workerAge), ...asides].sort();
+}
+
+function isFileAt(path) {
+  try {
+    return lstatSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
 
 // Nobody read it, or the caller said to leave it alone: neither is written, cleared or turned off.
 const untouched = (o) => o.state === "unknown" || o.leftAlone === true;

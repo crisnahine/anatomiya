@@ -26,8 +26,9 @@ export const ECHO_READ_MOST = 1024 * 1024;
 
 // A batch claim this old is no batch's: its delivery has reached the transcript.
 const BATCH_CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
-// A batch claim, its temp file, its lock, or a lock token.
-const ECHO_FILE_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+)?)?$/;
+// A batch claim, its temp file, its lock, a lock token, or a token's own token: nothing breaks that
+// one, so a call killed holding it left the lock unbreakable until this takes it.
+const ECHO_FILE_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+){0,2})?$/;
 const BATCH_CLAIMS_LISTED_MOST = 4096;
 
 /**
