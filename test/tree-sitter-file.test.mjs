@@ -695,6 +695,10 @@ test("five hundred large parses leave the child's memory where it started", { ti
   // nobody deleted once the collector reaches it, and measured that hid a body
   // that deletes nothing: 443 MB after 500 parses against 340. The body may not
   // lean on the collector's timing, so this shell takes the finalizer away.
+  // It collects after every parse and reads the two heaps the body allocates in: the parser's,
+  // which V8 counts as external and which never shrinks, and the JavaScript heap. Resident size
+  // is no reading of either: on a Linux runner it grew 83 MB from the first hundred parses to the
+  // last with nothing held.
   const worker = join(dir, "measuring-worker.mjs");
   writeFileSync(
     worker,
@@ -703,33 +707,36 @@ import { readFileSync } from "node:fs";
 import { parseTreeFile } from ${JSON.stringify(pathToFileURL(BODY).href)};
 process.on("message", async ({ rel, abs, lang }) => {
   const r = await parseTreeFile(readFileSync(abs, "utf8"), rel, lang);
-  process.send({ rel, ok: r.ok, error: r.error, oneBranch: r.oneBranch === true, rss: process.memoryUsage().rss });
+  globalThis.gc();
+  const { rss, external, heapUsed } = process.memoryUsage();
+  process.send({ rel, ok: r.ok, error: r.error, oneBranch: r.oneBranch === true, rss, external, heapUsed });
 });
 process.send({ ready: true, engine: "tree-sitter", version: null });
 `,
   );
 
   // The clock is the machine's to lose here, not the parser's: a loaded runner must not turn this into a timeout test.
-  const pool = createPool({ size: 1, worker, engine: "tree-sitter", guards: { timeoutMs: 120_000 } });
+  const pool = createPool({ size: 1, worker, engine: "tree-sitter", execArgv: ["--expose-gc"], guards: { timeoutMs: 120_000 } });
   try {
-    const rss = [];
+    const reads = [];
     for (let i = 0; i < 500; i++) {
       const r = await pool.parse(i % 5 === 4 ? retried : big);
       assert.equal(r.ok, true, `parse ${i + 1}: ${r.error}`);
       assert.equal(r.oneBranch, i % 5 === 4, `parse ${i + 1}: the C# file is the one read on a retry`);
-      rss.push(r.rss);
+      reads.push(r);
     }
     const mb = (bytes) => Math.round(bytes / 1024 / 1024);
-    // The first ten are the heap growing to its working size, and one reading
-    // after them is not the floor: measured on a loaded machine, parse 10 read
-    // 200 MB in a run that ended at 316, and parse 50 read 253 between 356 and
-    // 340. So the middle reading of a hundred parses is held against the
-    // middle of the last hundred.
-    const middle = (from, to) => rss.slice(from, to).sort((a, b) => a - b)[(to - from) >> 1];
-    const [early, late] = [middle(10, 110), middle(400, 500)];
+    const rss = reads.map((r) => r.rss);
     t.diagnostic(`rss after 1: ${mb(rss[0])} MB, after 10: ${mb(rss[9])} MB, after 500: ${mb(rss[499])} MB, peak: ${mb(Math.max(...rss))} MB`);
-    t.diagnostic(`middle of parses 11 to 110: ${mb(early)} MB, of 401 to 500: ${mb(late)} MB`);
-    assert.ok(late - early < 64 * 1024 * 1024, `resident size grew ${mb(late - early)} MB between the first hundred parses and the last`);
+    // The parser's heap grows to its high-water mark on the first deep C# parse, the fifth, so the
+    // middle reading of parses 11 to 110 is held against the middle of the last hundred.
+    const middle = (key, from, to) => reads.slice(from, to).map((r) => r[key]).sort((a, b) => a - b)[(to - from) >> 1];
+    // Clean code reads both flat; the smallest leak tried grew the JavaScript heap 26 MB.
+    for (const [key, heap, most] of [["external", "the parser's heap", 8], ["heapUsed", "the JavaScript heap", 16]]) {
+      const [early, late] = [middle(key, 10, 110), middle(key, 400, 500)];
+      t.diagnostic(`${heap}: middle of parses 11 to 110 ${mb(early)} MB, of 401 to 500 ${mb(late)} MB`);
+      assert.ok(late - early < most * 1024 * 1024, `${heap} grew ${mb(late - early)} MB between the first hundred parses and the last`);
+    }
   } finally {
     await pool.close();
   }
