@@ -477,8 +477,8 @@ export function targetIn(payload, root, from) {
 /** How far back a delivery still counts, in bytes the model reads: about 29.9k tokens at the 6.57 per token measured on 2.1.292 to 2.1.296, A92's distance. */
 export const ECHO_WINDOW_BYTES = 192 * 1024;
 
-// How much transcript is read to find a window's worth of those records, which records that
-// count for nothing share (one prompt snapshot was 78,191 bytes). Past it the window counts as run out.
+// How much transcript is read to find a window's worth of those records. Records that count for nothing
+// take room in it too, one prompt snapshot 78,191 bytes. Past it the window counts as run out.
 const ECHO_READ_MOST = 1024 * 1024;
 
 // A batch claim this old is no batch's: its delivery has reached the transcript.
