@@ -139,8 +139,10 @@ function copyWithNoRepository(t) {
   for (const f of readdirSync(ROOT).filter((f) => f.endsWith(".md"))) cpSync(join(ROOT, f), join(dir, f));
   // The lockfile carries the version twice, and the checker reads both.
   for (const f of ["package.json", "package-lock.json"]) cpSync(join(ROOT, f), join(dir, f));
-  // The gate parses source files with oxc, which the copy reaches through this checkout's install.
+  // The gate parses source files with oxc, which the copy reaches through this checkout's install,
+  // and the ignore file keeps git on Windows from walking that link as part of the tree.
   symlinkSync(join(ROOT, "node_modules"), join(dir, "node_modules"), "junction");
+  cpSync(join(ROOT, ".gitignore"), join(dir, ".gitignore"));
   return dir;
 }
 
