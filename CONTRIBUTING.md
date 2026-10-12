@@ -126,11 +126,11 @@ and they do not get edited because a new implementation would be tidier.
 
 ## The glossary says what a word means, and only a reader keeps it true
 
-`CONTEXT.md` is the vocabulary: what each term is, and the words to avoid for it. It is a glossary and
-holds no implementation detail. Use its terms in a claim, an issue title, a test name and a comment,
-and never a word on a term's `_Avoid_` line. `check:docs` holds every entry of two or more words that
-carries no note in parentheses; a note such as `(for the counted set)` marks a word with another sense
-here, and a single word is a reader's to judge.
+`CONTEXT.md` is the vocabulary: what each term is, and the words to avoid for it. It is a glossary
+and holds no implementation detail. Use its terms in a claim, an issue title, a test name and a
+comment, and never a word on a term's `_Avoid_` line. `check:docs` holds every entry of two or more
+words, or hyphenated, that carries no note in parentheses, plural or not; a note such as `(for the
+counted set)` marks a word with another sense here, and a single word is a reader's to judge.
 
 A term the code has moved away from is worse than no term, because a reader trusts it. Eleven entries
 had drifted before anybody set the file beside the code: `Conforming` said "a candidate matching the

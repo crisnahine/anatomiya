@@ -33,7 +33,7 @@ export async function measure(root) {
       if (kind === "edits" ? change.touched.includes(path) : change.added.some((p) => classesOf(p).includes(path))) met++;
     }
   }
-  return { repo: basename(root), read: walk.read, counted: walk.changes.length, error: walk.error, stated: stated.length, mined: mined.length, held: [met, fired] };
+  return { repo: basename(root), read: walk.read, counted: walk.changes.length, error: walk.error, stated: stated.length, mined: mined.length, met, fired };
 }
 
 /** The totals the measurement file and the CHANGELOG cite. */
@@ -44,8 +44,8 @@ export function tally(rows) {
     statedIn: rows.filter((r) => r.stated > 0).length,
     mined: sum((r) => r.mined),
     minedIn: rows.filter((r) => r.mined > 0).length,
-    met: sum((r) => r.held[0]),
-    fired: sum((r) => r.held[1]),
+    met: sum((r) => r.met),
+    fired: sum((r) => r.fired),
   };
 }
 
