@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { doublingRatio, LINEAR } from "./growth.mjs";
+import { ATTEMPTS, doublingRatio, LINEAR, settled } from "./growth.mjs";
 
 test("a stall while the timed sides are sized leaves each side long enough to read on a coarse CPU clock", () => {
   // Windows counts CPU time in steps of about 15.6ms.
@@ -28,4 +28,30 @@ test("a stall while the timed sides are sized leaves each side long enough to re
   } finally {
     process.cpuUsage = real;
   }
+});
+
+/** A measure that hands back `reads` in turn, counting how many were taken. */
+function reading(reads) {
+  const measure = () => reads[measure.taken++];
+  measure.taken = 0;
+  return measure;
+}
+
+test("a ratio read past linear is read again, and the first read under it stands", () => {
+  const measure = reading([3.4, 2.1, 1.9]);
+  assert.equal(settled(measure), 2.1);
+  assert.equal(measure.taken, 2);
+});
+
+test("work that grows faster than linear reads past it every time it is read", () => {
+  const measure = reading([4.1, 3.9, 4.0, 1.9]);
+  assert.equal(settled(measure), 3.9);
+  assert.equal(measure.taken, ATTEMPTS);
+  assert.equal(ATTEMPTS, 3);
+});
+
+test("a read that could not be timed neither passes the work nor hides a read that could", () => {
+  assert.equal(settled(reading([NaN, 3.5, NaN])), 3.5);
+  assert.ok(Number.isNaN(settled(reading([NaN, NaN, NaN]))));
+  assert.equal(settled(reading([Infinity, 2.2])), 2.2);
 });
