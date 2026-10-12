@@ -2297,12 +2297,13 @@ file. The walk and the tip's tree took 3.35 seconds at most, on opf/openproject,
 A habit that changed in a class's newest additions stays stated until its newest fifth falls under
 0.90. rubocop moved cop registration out of `lib/rubocop.rb` on 2026-07-08 and has added one style
 cop since, so `a .rb file added to "lib/rubocop/cop/style" ships with an edit to "lib/rubocop.rb"`
-still states at 99 of the last 100, and two more such cops retire it, as three lint cops added since
-the move already retired the lint class's claim, at 17 of its newest 20. Its parent, mixin and
-layout classes carry the same claim. No layout cop has been added since the move, so that one states
-at 36 of 36: off a pin, `check` reports the first new layout cop's missing edit at MUST-FIX, since
-all 36 made it, and that cop's own merge retires the claim. Until then the notice's `or say why this
-file does not need them` is the way out.
+still states at 99 of the last 100, and `check` reports a new style cop's missing edit at FIX until
+two more such cops retire the claim. Three lint cops added since the move already retired the lint
+class's claim, at 17 of its newest 20. The parent class `lib/rubocop/cop/*.rb` and the mixin and
+layout classes carry the same lagging claim. No layout cop has been added since the move, so that
+one states at 36 of 36: off a pin, `check` reports the first new layout cop's missing edit at
+MUST-FIX, since all 36 made it, and that cop's merge retires the claim. While a claim lags like
+this, the notice's `or say why this file does not need them` is the way out.
 
 ### The budget
 
