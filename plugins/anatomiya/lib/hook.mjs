@@ -748,9 +748,21 @@ function locked(lock) {
     if (Math.abs(Date.now() - found.mtimeMs) <= LOCK_HELD_MOST_MS + LOCK_MTIME_SLACK_MS) return false;
     const token = `${lock}.${Math.round(found.mtimeMs)}`;
     if (!createdAlone(token)) continue;
-    const now = lstatOf(lock);
-    if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) removeQuietly(lock);
-    removeQuietly(token);
+    try {
+      const now = lstatOf(lock);
+      if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) removeDead(lock);
+    } finally {
+      removeQuietly(token);
+    }
+  }
+}
+
+/** Removes a dead lock; one the system will not let go of is thrown, so the call answers alone rather than silence the window for good. */
+function removeDead(lock) {
+  try {
+    unlinkSync(lock);
+  } catch (err) {
+    if (err?.code !== "ENOENT") throw err;
   }
 }
 
@@ -777,7 +789,7 @@ function createdAlone(path) {
 const DELETING_RETRIES = 7;
 const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
-/** Removes a lock or a lock token; one Windows refuses to remove stays, and the next exclusive create of the lock answers for it. */
+/** Removes a lock token; one the system refuses to remove names a generation no call breaks again, and the sweep takes it. */
 function removeQuietly(path) {
   try {
     unlinkSync(path);

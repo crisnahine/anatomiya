@@ -803,23 +803,45 @@ test("a lock token create refused while its name is being deleted is tried again
   assert.notEqual(readFileSync(claim, "utf8"), "0\n", "and the batch claim written");
 });
 
-test("a dead lock that cannot be removed holds the call, and the next call breaks it", needsRuby, async (t) => {
+test("a dead lock the system will not remove answers as the transcript alone does, and the next call breaks it", needsRuby, async (t) => {
+  // Holding instead would silence the window for good wherever the refusal lasts.
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
   const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
   call();
   const [name] = readdirSync(join(data, "echo"));
-  const lock = join(data, "echo", `${name}.lock`);
-  writeFileSync(join(data, "echo", name), "0\n");
+  const claim = join(data, "echo", name);
+  const lock = `${claim}.lock`;
+  writeFileSync(claim, "0\n");
   writeFileSync(lock, "");
   const dead = new Date(Date.now() - 60_000);
   utimesSync(lock, dead, dead);
 
-  assert.deepEqual(removalRefused((p) => p === lock, call), {});
+  assert.match(removalRefused((p) => p === lock, call).hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
   assert.deepEqual(readdirSync(join(data, "echo")).sort(), [name, `${name}.lock`], "the dead lock and the batch claim, and no lock token");
+  assert.equal(readFileSync(claim, "utf8"), "0\n", "no batch claim written by a call that answered alone");
   assert.match(call().hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "once the lock can be removed");
   assert.deepEqual(readdirSync(join(data, "echo")), [name]);
+});
+
+test("a lock create refused for any reason but a deletion is not tried again", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path });
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+
+  let tries = 0;
+  const answer = stubbed("openSync", (real, p, flags, ...rest) => {
+    if (flags === "wx" && String(p) === lock && ++tries === 1) throw Object.assign(new Error(`EACCES: permission denied, open '${p}'`), { code: "EACCES" });
+    return real(p, flags, ...rest);
+  }, call);
+  assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "answered alone");
+  assert.equal(tries, 1);
 });
 
 test("a call that broke a dead lock and finds a live one in its place holds", needsRuby, async (t) => {
