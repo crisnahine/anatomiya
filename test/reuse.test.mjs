@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
-import { transcript } from "./transcript.mjs";
-import { askedMarks, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason } from "../plugins/anatomiya/lib/reuse.mjs";
+import { snapshot, transcript } from "./transcript.mjs";
+import { askedMarks, askedMarksIn, continuedByReuse, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
@@ -610,6 +611,22 @@ test("the files a transcript already asked about or recorded are read back by th
   assert.deepEqual([...askedMarks(path)].sort(), ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"]);
 });
 
+test("the marks and the last block read off a transcript's text are what its path readers read", (t) => {
+  const path = transcript(t, [
+    blocked(`Before you finish, give one subagent this change's diff... (${REUSE_MARK} aaaaaaaaaaaa)`),
+    recorded(`anatomiya checked 1 changed file for existing functions (${REUSE_MARK} cccccccccccc)`),
+  ]);
+  const text = readFileSync(path, "utf8");
+
+  assert.deepEqual([...askedMarksIn(text)], [...askedMarks(path)]);
+  assert.deepEqual([...askedMarksIn(text)].sort(), ["aaaaaaaaaaaa", "cccccccccccc"]);
+  assert.equal(continuedByReuseIn(text), continuedByReuse(path));
+  assert.equal(continuedByReuseIn(text), true);
+  assert.equal(continuedByReuseIn(`${text}${JSON.stringify(blocked("another hook's reason"))}\n`), false, "another hook blocked last");
+  assert.equal(askedMarksIn(null).size, 0);
+  assert.equal(continuedByReuseIn(null), false);
+});
+
 test("a transcript that cannot be read has covered nothing", (t) => {
   // Unreadable is not evidence: the worst it costs is one more search.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-transcript-"));
@@ -1080,6 +1097,84 @@ test("the stop right after the check records what the check left, so the next tu
   append(session, recorded(after.systemMessage));
 
   assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
+/** Runs `call` with `fs[name]` replaced by `stub`, which is handed the real one, until its promise settles. */
+async function stubbedAsync(name, stub, call) {
+  const real = fs[name];
+  fs[name] = (...args) => stub(real, ...args);
+  syncBuiltinESMExports();
+  try {
+    return await call();
+  } finally {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  }
+}
+
+test("runReuse reads the transcript twice", async (t) => {
+  // The head once, and the tail once before the change set and once after it,
+  // where each reader once read a 64 MiB tail of its own. A recording stop runs
+  // all four readers. The snapshot puts the transcript past the head's 64 KiB,
+  // so a head read and a tail read differ in size.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const session = begun(t, [snapshot(70 * 1024), blocked(first.reason)]);
+  write("src/b.ts", "import { one } from \"./a.ts\";\nexport const b = () => one + 1;\n");
+  const size = fs.statSync(session).size;
+  const opened = new Set();
+  const reads = [];
+
+  const after = await stubbedAsync(
+    "openSync",
+    (real, path, ...rest) => {
+      const fd = real(path, ...rest);
+      // A closed descriptor's number is handed to the next file opened.
+      if (path === session) opened.add(fd);
+      else opened.delete(fd);
+      return fd;
+    },
+    () =>
+      stubbedAsync(
+        "readSync",
+        (real, fd, buf, ...rest) => {
+          if (opened.has(fd)) reads.push(buf.length === size ? "tail" : "head");
+          return real(fd, buf, ...rest);
+        },
+        () => runReuse(dir, stop(dir, { stop_hook_active: true, transcript_path: session }))
+      )
+  );
+
+  assert.deepEqual(Object.keys(after), ["systemMessage"], "every reader ran");
+  assert.ok(size > 64 * 1024, `the transcript is ${size} bytes`);
+  assert.deepEqual(reads.sort(), ["head", "tail", "tail"]);
+});
+
+test("askedMarks read after the change set sees a mark written meanwhile", async (t) => {
+  // The git reads take up to seconds, and an ask another stop wrote while they
+  // ran covers this change: asking again would pay a second search for it.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const session = begun(t);
+  const first = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.equal(first.decision, "block");
+  let written = false;
+
+  const again = await stubbedAsync(
+    "openSync",
+    (real, path, ...rest) => {
+      if (!written && String(path).endsWith(join("src", "b.ts"))) {
+        written = true;
+        append(session, blocked(first.reason));
+      }
+      return real(path, ...rest);
+    },
+    () => runReuse(dir, stop(dir, { transcript_path: session }))
+  );
+
+  assert.equal(written, true, "the change set read the file");
+  assert.deepEqual(again, {});
 });
 
 test("a stop another hook continued records nothing", async (t) => {

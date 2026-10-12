@@ -26,6 +26,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTailOf, realpathOrNull, resolveInside } from "./rules.mjs";
 import { locator } from "./encode.mjs";
 import { FACTS_PATH, readLayout, readRecord, schemaProblem } from "./facts.mjs";
+import { eventOf, parsed, windowBytes } from "./transcript.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
 export { SETTINGS_PATH };
@@ -609,50 +610,6 @@ function inWorkflowRun(workflows, file) {
 }
 
 /**
- * What one transcript line says about the echo: "compact" for a compaction
- * boundary, the texts of a hook's `additionalContext` for a delivery, or null.
- * Parsed rather than searched, so a tool result quoting a map is not a delivery.
- */
-export function echoEvent(line) {
-  if (!line.includes("compact_boundary") && !line.includes("hook_additional_context")) return null;
-  return eventOf(parsed(line));
-}
-
-/**
- * The bytes one transcript line adds to the window: the whole line where the
- * model reads it, none where the build wrote it for itself.
- *
- * A user or assistant message is read, and an attachment is read where it
- * carries `rendered`, which the build sets only on one that converts into a
- * message. A prompt snapshot, a hook's stdout and every bookkeeping line carry
- * none, and counted they pushed a delivery out within one tool call. The
- * CLAUDE.md files carry it, but the build places them at the head of the
- * context, ahead of the delivery they follow in the transcript.
- */
-export function windowBytes(line) {
-  return readBytes(parsed(line), line);
-}
-
-const readBytes = (entry, line) => (readByModel(entry) ? Buffer.byteLength(line) + 1 : 0);
-
-function parsed(line) {
-  try {
-    return JSON.parse(line);
-  } catch {
-    return null;
-  }
-}
-
-function eventOf(entry) {
-  if (entry?.type === "system" && entry.subtype === "compact_boundary") return "compact";
-  if (entry?.type !== "attachment" || entry.attachment?.type !== "hook_additional_context") return null;
-  return [].concat(entry.attachment.content ?? []).filter((text) => typeof text === "string");
-}
-
-const readByModel = (entry) =>
-  entry?.type === "user" || entry?.type === "assistant" || (entry?.type === "attachment" && Array.isArray(entry.rendered) && entry.attachment?.type !== "instructions");
-
-/**
  * Whether the window holds a delivery of this map with no compaction after it,
  * or a batch claim at offset `batchClaimAt` that stands in for one not written yet.
  */
@@ -670,7 +627,7 @@ function heldIn(tail, digest, batchClaimAt = null) {
     const event = eventOf(entry);
     if (event === "compact") return false;
     if (event?.some((text) => text.includes(mark))) return true;
-    counted += readBytes(entry, lines[i]);
+    counted += windowBytes(lines[i], entry);
     if (counted > ECHO_WINDOW_BYTES) return false;
   }
   return batchClaimAt !== null && end <= batchClaimAt;

@@ -657,6 +657,7 @@ const ECHO_LOADS = [
   "rules.mjs",
   "store.mjs",
   "targets.mjs",
+  "transcript.mjs",
   "version.mjs",
   "worktree.mjs",
 ];

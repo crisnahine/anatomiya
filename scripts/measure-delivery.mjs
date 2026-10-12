@@ -21,6 +21,7 @@ import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 
 import { checkOutput, invokedAs, readArgv } from "./entry.mjs";
+import { isCompaction } from "../plugins/anatomiya/lib/transcript.mjs";
 
 // What Claude Code calls the channel. A rule file and a nested CLAUDE.md arrive
 // through the same one, which is why this counts both and splits them by whether
@@ -39,7 +40,7 @@ const CANDIDATE = [DELIVERY, "compact_boundary", '"isCompactSummary":true'];
  * counted those as deliveries.
  */
 export function eventOf(entry) {
-  if (entry.isCompactSummary === true || entry.subtype === "compact_boundary") return { kind: "compact" };
+  if (isCompaction(entry)) return { kind: "compact" };
   if (entry.type !== "attachment" || entry.attachment?.type !== DELIVERY) return null;
   return {
     kind: "delivery",
