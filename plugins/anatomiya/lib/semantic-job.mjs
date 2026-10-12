@@ -1,11 +1,12 @@
 /**
- * The checker's job, in process: one program over the whole corpus, and
- * per-file hits and resolution handed to `send` as they come.
+ * The checker's job, in process: one program over the whole corpus, each
+ * file's resolution and sites handed to `send` as they come, and then each
+ * file's hits.
  *
  * Whole-program is the shape of the tool rather than a choice: narrowing the
  * file set was measured saving 3% of the time and driving unresolved types from
  * 3.1% to 36.2%, which is the number the whole tier exists to keep high. So one
- * program, one pass, and no tree in the channel.
+ * program, every file it holds, and no tree in the channel.
  *
  * Here rather than in the worker so the function the whole degraded verdict
  * rests on can be reached without forking a real typescript program. The
@@ -27,14 +28,10 @@ import { crossing } from "./walk.mjs";
  * refused config there is one pass, its `hits` the stubs. The rate is summed by
  * the reader, which is the side that knows which files a claim is counted over.
  *
- * `stopped` is asked before each file of the second pass: a reader that took
- * the tier for degraded keeps none of its rows, so once it answers true the
- * job says `{ done }` with the rest unwalked.
- *
  * Every failure is one message on the channel rather than a dead one: the
  * parent reads a channel that closes with nothing said as a crash.
  */
-export async function runJob(job, send, { load = loadTypeScript, stopped = () => false } = {}) {
+export async function runJob(job, send, { load = loadTypeScript } = {}) {
   try {
     const loaded = await load();
     if (!loaded) return send({ error: "typescript is not installed" });
@@ -60,22 +57,19 @@ export async function runJob(job, send, { load = loadTypeScript, stopped = () =>
     // tier keeps no type-checked row: where a row has a site is all the scan
     // reads, so the stubs are the answer and the checker is not asked.
     const refused = config.status === "degraded";
-    const held = [];
+    const answered = [];
     for (const file of job.files) {
       const source = program.getSourceFile(file.abs);
       if (!source) continue;
       const resolution = measureResolution(ts, program, checker, [file]);
       const sites = siteStubs(ts, source);
       send(refused ? { rel: file.rel, hits: sites, resolution } : { rel: file.rel, hits: {}, resolution, sites });
-      held.push({ file, source, resolution });
+      answered.push({ file, source, resolution });
     }
 
     if (!refused) {
       send({ sited: true });
-      for (const { file, source, resolution } of held) {
-        // A stop comes down the channel, which is read on a turn of the loop.
-        await new Promise(setImmediate);
-        if (stopped()) break;
+      for (const { file, source, resolution } of answered) {
         const hits = {};
         for (const dim of SEMANTIC_DIMENSIONS) {
           const out = [];

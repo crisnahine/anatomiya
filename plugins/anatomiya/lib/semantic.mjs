@@ -308,9 +308,9 @@ export function classifySemantic({ config, resolution }) {
  * `stopWhen` is asked once, when the job has answered every file's resolution
  * and sites and before it has walked a row: handed `{ records, config }` with
  * the stubs as hits, it answers whether the tier is degraded already. On yes
- * the job is told to stop and the stubs are the answer however the job then
- * ends, since a degraded tier keeps no row the walk would have counted. On no,
- * on a throw, or from a job that finished first, the walked hits are.
+ * the run ends there: the job is killed and the answer is the stubs, marked
+ * `stopped`, since a degraded tier keeps no row the walk would have counted.
+ * On no, on a throw, or from a job that finished first, the walked hits are.
  */
 export function runSemantic(root, files, { guards: given = null, workerPath = WORKER, cwd = tmpdir(), signal = null, stopWhen = null } = {}) {
   return new Promise((resolve) => {
@@ -320,7 +320,6 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
     const guards = guardsOver(SEMANTIC_GUARDS, given, "checker");
     const records = new Map();
     const sited = new Map();
-    let told = false;
     let config = null;
     let built = false;
     let done = false;
@@ -343,15 +342,17 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
     });
     const child = sup.child;
 
-    const finish = (error) => {
+    const settle = (answer) => {
       if (settled) return;
       settled = true;
       sup.settle();
       sup.kill("finished");
-      if (told) return resolve({ records: sited, config, ...classifySemantic({ config, resolution: summed(sited.keys(), sited) }), error: null });
-      if (error) return resolve({ records, config, status: "degraded", reason: TIER_FAILED, typedResolutionRate: null, error });
-      resolve({ records, config, ...classifySemantic({ config, resolution: summed(records.keys(), records) }), error: null });
+      resolve(answer);
     };
+    const measured = (over) => ({ records: over, config, ...classifySemantic({ config, resolution: summed(over.keys(), over) }), error: null });
+
+    const finish = (error) =>
+      settle(error ? { records, config, status: "degraded", reason: TIER_FAILED, typedResolutionRate: null, error } : measured(records));
 
     const arm = (ms) => {
       quiet = ms;
@@ -382,13 +383,13 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
         return arm(guards.idleMs);
       }
       if (msg.sited && stopWhen) {
-        // The job walks on while this is decided, so the clock is fed by its answers and not by the reader.
+        // The job walks on while this is decided, so the clock is fed by its
+        // answers and not by the reader. A reader that throws stops nothing:
+        // the scan's own fold runs the same reduction and throws for itself.
         Promise.resolve({ records: sited, config })
           .then(stopWhen)
           .then((yes) => {
-            if (!yes) return;
-            told = true;
-            child.send({ stop: true });
+            if (yes) settle({ ...measured(sited), stopped: true });
           })
           .catch(() => {});
       }

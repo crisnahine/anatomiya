@@ -7,11 +7,6 @@
  */
 import { runJob } from "./semantic-job.mjs";
 
-// The first message is the job, and `{ stop }` may follow it at any moment, more than once or after the answer.
-let stop = false;
-process.on("message", (msg) => {
-  if (msg?.stop) stop = true;
-  else runJob(msg, (answer) => process.send(answer), { stopped: () => stop });
-});
+process.on("message", (job) => runJob(job, (msg) => process.send(msg)));
 
 process.send({ ready: true });
