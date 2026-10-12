@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { doublingRatio, LINEAR, settled } from "./growth.mjs";
+import { doublingRatio, LINEAR, settled, timedRatio } from "./growth.mjs";
 
 test("a stall while the timed sides are sized leaves each side long enough to read on a coarse CPU clock", () => {
   // Windows counts CPU time in steps of about 15.6ms.
@@ -13,7 +13,8 @@ test("a stall while the timed sides are sized leaves each side long enough to re
   };
   let stalls = 3;
   try {
-    const ratio = doublingRatio((n) => () => {
+    // One read, since a second would come after the stalls and pass whatever the first did.
+    const ratio = timedRatio((n) => () => {
       if (stalls > 0) {
         stalls--;
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
@@ -53,4 +54,19 @@ test("a read that could not be timed neither passes the work nor hides a read th
   assert.equal(settled(reading([NaN, 3.5, NaN])), 3.5);
   assert.ok(Number.isNaN(settled(reading([NaN, NaN, NaN]))));
   assert.equal(settled(reading([Infinity, 2.2])), 2.2);
+});
+
+test("doubling work whose first read comes out past linear is read again", () => {
+  // The first rounds give the larger side four times the work, as a burst on a runner can.
+  let larger = 0;
+  const ratio = doublingRatio((n) => {
+    const size = n === 100 && larger++ < 3 ? 2 * n : n;
+    return () => {
+      let sum = 0;
+      for (let i = 0; i < size * 1000; i++) sum = (sum + i) | 0;
+      return sum;
+    };
+  }, 50);
+  assert.ok(larger > 3, "a second read was taken");
+  assert.ok(ratio > 1.5 && ratio < LINEAR, `twice the work read ${ratio} times as long`);
 });

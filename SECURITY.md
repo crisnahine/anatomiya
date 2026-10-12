@@ -437,16 +437,16 @@ remove is left for the sweep, and a dead lock it refuses to remove makes the cal
 exclusive create Windows refuses with EPERM, its answer for a name another process is still
 deleting, is tried again seven times, after waits doubling from 1 ms to 64 ms, before the call
 answers alone. A batch claim is written to `<batch claim>.<pid>` and renamed over the batch claim,
-so no reader sees one half written. After each batch claim it writes, the hook lists at most 4,096 names
-in that directory and removes those of these shapes last written more than a day ago; a name of any
-other shape is never touched. So the directory holds one small file per window and map of the last
-day. The transcript itself is read back from its end, at most 1 MiB per call. With no data
+so no reader sees one half written. After each batch claim it writes, the hook lists at most 4,096
+names in that directory and removes those of these shapes last written more than a day ago; a name
+of any other shape is never touched. So the directory holds one small file per window and map of the
+last day. The transcript itself is read back from its end, at most 1 MiB per call. With no data
 directory, a relative one, or one that cannot be written or read, nothing is written and each call
 answers from the transcript alone, which can deliver one copy per call of a batch. A call killed
 while it holds a lock token leaves that dead lock in place, so the echo for that window and map
 stays silent until a batch claim another window or map makes there a day or more later sweeps both.
-On a volume that keeps mtimes to 2 s, a lock token the system would not remove can carry the name
-of a later dead lock, and that window stays silent until the sweep too.
+After the clock is set back, a lock token the system would not remove can carry the name of a later
+dead lock, and that window stays silent until the sweep too.
 
 ### A committed record or pin is input too
 
