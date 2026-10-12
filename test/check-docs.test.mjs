@@ -1090,6 +1090,33 @@ test("a word an entry displaces is found where it is written, by file and line",
   assert.deepEqual(found, [{ rel: "docs/a.md", line: 2, word: "test folder", term: "Test tree" }]);
 });
 
+test("a plural is the same word", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "spec directory, non-test"));
+
+  const found = avoidedWords(terms, [["docs/a.md", "Two spec directories.\nSome non-tests.\n"]]);
+
+  assert.deepEqual(found.map((f) => [f.line, f.word]), [[1, "spec directory"], [2, "non-test"]]);
+});
+
+test("a test name or a claim written as a template is read, and so is a test named through each", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "test folder"));
+  const source = "test(`reads a test folder`, () => {});\nconst row = { claim: `files in a test folder` };\nit.each([1])(\"a test folder %s\", () => {});\n";
+
+  assert.deepEqual(avoidedWords(terms, [["t.test.mjs", source]]).map((f) => f.line), [1, 2, 3]);
+});
+
+test("a source file the parser rejects is read whole", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "test folder"));
+
+  assert.deepEqual(avoidedWords(terms, [["b.mjs", "const = ;\n// a test folder\n"]]).map((f) => f.line), [2]);
+});
+
+test("a word is not joined across a blank line, and a quote wrapped onto the next line is a quote", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "test folder"));
+
+  assert.deepEqual(avoidedWords(terms, [["docs/a.md", "Ends with test\n\nfolder starts this one.\nA `quoted test\nfolder` here.\n"]]), []);
+});
+
 test("a single word and a word with a sense note are left to a reader", () => {
   const { terms } = readGlossary(entry("Producer", "A file a test could be written for.", "source file (for the counted set), trigger"));
 

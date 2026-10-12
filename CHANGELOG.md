@@ -14,10 +14,11 @@ the release checklist gains a real session, `main`'s own CI and two scripts.
 
 ### Changed
 
-- `check:docs` holds every `_Avoid_` entry of two or more words that carries no note in parentheses,
-  in the documents and in the comments, test names and claims of every source file. 15 entries with
-  another sense here now carry a note naming the sense they displace, and two slips were rewritten:
-  `install directory` for the plugin root and `spec directory` for a test tree.
+- `check:docs` holds every `_Avoid_` entry of two or more words, or hyphenated, that carries no note
+  in parentheses, plural or not, in the documents and in the comments, test names and claims of
+  every source file. 18 entries with another sense here now carry a note naming the sense they
+  displace, and two slips were rewritten: `install directory` for the plugin root and `spec
+  directory` for a test tree.
 - `docs/releasing.md` asks for a real session with the plugin from the checkout before the tag, and
   for `main`'s own CI on the merge commit. `node scripts/line-endings.mjs` runs the line-ending pass,
   and `node scripts/measure-cochange.mjs` the co-change measurement the documents cite.

@@ -52,7 +52,7 @@ _Avoid_: session, calling a subagent's window the session's
 A markdown agent file standing in for a built-in agent type, holding a copy of that type's system
 prompt so a spawn of it can be given a setting the built-in has no way to take. Nothing in it says
 which build the copy was taken from.
-_Avoid_: override, custom agent, subagent definition
+_Avoid_: override, custom agent, subagent definition (for a shadow)
 
 ### The corpus and its shape
 
@@ -248,7 +248,7 @@ _Avoid_: rule, convention, guideline
 **Counter-claim**:
 The hand-written inverse sentence, present only where the other side is a style someone chose rather than
 a defect. Refusing one is part of the dimension, never an omission.
-_Avoid_: negation, inverse rule, anti-pattern
+_Avoid_: negation, inverse rule, anti-pattern (for a counter-claim)
 
 **Slot**:
 One dimension applied to one area. The unit that either states a directive or prints as counts.
@@ -383,7 +383,7 @@ _Avoid_: file set (for the population), scope, sample
 **Baseline**:
 The counts a dimension had over a population, read at the pinned commit and never from the working tree.
 Every gate reads these. Today's counts print beside them and decide nothing.
-_Avoid_: reference, previous run, snapshot
+_Avoid_: reference, previous run (for the baseline), snapshot
 
 **Drift**:
 How many files inside mapped areas the base has moved since the commit it shares with the pin, counting

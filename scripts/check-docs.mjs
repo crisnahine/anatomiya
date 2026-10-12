@@ -229,7 +229,9 @@ export function avoidedWords(terms, files) {
     for (const entry of (avoid ?? "").split(",")) {
       const word = entry.trim();
       if (!/[\s-]/.test(word) || word.includes("(")) continue;
-      const spelled = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      // The plural is the same word: `non-tests`, `spec directories`.
+      const spelled = escaped.endsWith("y") ? `${escaped.slice(0, -1)}(?:y|ies)` : `${escaped}(?:e?s)?`;
       held.push({ term, word, re: new RegExp(`(?<![\\w-])${spelled}(?![\\w-])`, "gi") });
     }
   }
@@ -239,8 +241,12 @@ export function avoidedWords(terms, files) {
     let joined = "";
     for (const line of (rel.endsWith(".mjs") ? spokenIn(rel, text) : text).split(/\r?\n/)) {
       starts.push(joined.length);
-      joined += `${line.replace(/`[^`]*`/g, (m) => " ".repeat(m.length)).replace(/^\s*(?:\/\/|\/\*\*?|\*(?!\/))?\s*/, "")} `;
+      const body = line.replace(/^\s*(?:\/\/|\/\*\*?|\*(?!\/))?\s*/, "");
+      // A blank line ends a paragraph, and no word runs across it.
+      joined += body.trim() ? `${body} ` : `${PARAGRAPH} `;
     }
+    // After the join, so a quote wrapped onto the next line is still a quote.
+    joined = joined.replace(QUOTED, (m) => " ".repeat(m.length));
     const lower = joined.toLowerCase();
     for (const { term, word, re } of held) {
       for (const m of joined.matchAll(re)) {
@@ -254,8 +260,10 @@ export function avoidedWords(terms, files) {
   return found;
 }
 
-const TEST_CALLS = new Set(["test", "it", "describe"]);
-const calleeName = (callee) => (callee?.type === "Identifier" ? callee.name : callee?.type === "MemberExpression" ? calleeName(callee.object) : null);
+const NAMES_A_TEST = new Set(["test", "it", "describe"]);
+// `test.skip(...)`, and `it.each(table)(...)`, name a test as `test(...)` does.
+const calleeName = (callee) =>
+  callee?.type === "Identifier" ? callee.name : callee?.type === "MemberExpression" ? calleeName(callee.object) : callee?.type === "CallExpression" ? calleeName(callee.callee) : null;
 
 /** The parts of a source file the glossary binds, its comments, test names and claims, each in place and the rest blanked. */
 export function spokenIn(rel, source) {
@@ -265,7 +273,11 @@ export function spokenIn(rel, source) {
   } catch {
     return source;
   }
+  // oxc reports a syntax error rather than throwing it, and a file it could not read is read whole.
+  if (parsed.errors.length > 0) return source;
   const spans = parsed.comments.map((c) => [c.start, c.end]);
+  // A test name or a claim written as a template keeps its text; only its delimiters go, so the quote rule leaves it.
+  const unquoted = [];
   // A stack, since a nested fixture would run a recursive walk out of stack.
   const stack = [parsed.program];
   while (stack.length) {
@@ -275,14 +287,26 @@ export function spokenIn(rel, source) {
       for (const n of node) stack.push(n);
       continue;
     }
-    if (node.type === "CallExpression" && TEST_CALLS.has(calleeName(node.callee)) && node.arguments[0]) spans.push([node.arguments[0].start, node.arguments[0].end]);
-    if (node.type === "Property" && !node.computed && (node.key?.name ?? node.key?.value) === "claim") spans.push([node.value.start, node.value.end]);
+    const said =
+      node.type === "CallExpression" && NAMES_A_TEST.has(calleeName(node.callee))
+        ? node.arguments[0]
+        : node.type === "Property" && !node.computed && (node.key?.name ?? node.key?.value) === "claim"
+          ? node.value
+          : null;
+    if (said) {
+      spans.push([said.start, said.end]);
+      if (said.type === "TemplateLiteral") unquoted.push(said.start, said.end - 1);
+    }
     for (const value of Object.values(node)) if (value && typeof value === "object") stack.push(value);
   }
   const out = source.replace(/[^\r\n]/g, " ").split("");
   for (const [from, to] of spans) for (let i = from; i < to; i++) out[i] = source[i];
+  for (const at of unquoted) out[at] = " ";
   return out.join("");
 }
+
+const PARAGRAPH = "\u00b6";
+const QUOTED = /`[^`\u00b6]*`/g;
 
 /** Whether an occurrence of `name` in `text` spans the stretch from `at` for `length`. */
 function covers(text, name, at, length) {
@@ -1008,7 +1032,7 @@ export function checkDocs() {
   }
   // CONTRIBUTING bars a word on an `_Avoid_` line from a claim, a test name and a comment, and the
   // documents keep to it as well.
-  const written = [...tracked].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md" && !RECORDS_THE_PAST.some((r) => r.test(rel)));
+  const written = [...tracked].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md");
   for (const { rel, line, word, term } of avoidedWords(glossary.terms, written.map((rel) => [rel, CHANGELOG.test(rel) ? unreleased(read(rel)) : read(rel)]))) {
     claim(`${rel}:${line}`, false, `says "${word}", a word the ${term} entry in CONTEXT.md displaces`);
   }
