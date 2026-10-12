@@ -17,6 +17,7 @@ import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
+import { readLayout } from "../plugins/anatomiya/lib/facts.mjs";
 
 const RULES = join(".claude", "rules");
 
@@ -143,6 +144,69 @@ test("a scan writes the files its summary counted", async (t) => {
   assert.equal(summary.dryRun, false);
   assert.equal(readdirSync(join(dir, RULES)).length, summary.wrote);
   assert.ok(summary.wrote > 0, "a repository with an area writes a map");
+});
+
+/** Every file under the repository's `.claude`, by path, with its bytes. */
+function claudeTree(dir) {
+  const out = {};
+  const walk = (rel) => {
+    for (const entry of readdirSync(join(dir, rel), { withFileTypes: true })) {
+      const path = join(rel, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else out[path] = readFileSync(join(dir, path));
+    }
+  };
+  walk(".claude");
+  return out;
+}
+
+test("a scan refused one rename after the record moved leaves the tree as the scan before it left it", async (t) => {
+  const dir = repo(t);
+  await runScan(dir);
+  await runScan(dir);
+  mkdirSync(join(dir, "lib"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(dir, "lib", `g${i}.ts`), `const b${i} = 1\nexport { b${i} }\n`);
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "lib"], { cwd: dir, stdio: "pipe" });
+  const before = claudeTree(dir);
+  // The scan writes under the resolved root, which on macOS is under /private.
+  const resolved = realpathSync(dir);
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  const renamed = [];
+  let refused = false;
+  fs.renameSync = (from, to) => {
+    if (!refused && String(to).startsWith(join(resolved, RULES))) {
+      refused = true;
+      throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+    }
+    renamed.push(String(to));
+    return real(from, to);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+
+  await assert.rejects(runScan(dir), /could not be replaced \(EPERM\), so the scan stopped and put back what it had replaced/);
+
+  const record = join(resolved, ".claude", "anatomiya", "facts.json");
+  assert.ok(refused && renamed.indexOf(record) === 0, "the record was replaced before the refusal, and put back after it");
+  const after = claudeTree(dir);
+  const layout = join(".claude", "anatomiya", "layout.json");
+  // The record put back is a new file with a new mtime, so its layout file alone is stamped again.
+  const unstamped = (bytes) => {
+    const parsed = JSON.parse(bytes);
+    delete parsed.record.mtimeMs;
+    return parsed;
+  };
+  assert.deepEqual(unstamped(after[layout]), unstamped(before[layout]));
+  delete after[layout];
+  delete before[layout];
+  assert.deepEqual(after, before, "every other file, byte for byte, and no temporary file beside them");
+  assert.notEqual(readLayout(dir), null, "and the layout file answers for the record put back");
 });
 
 test("a settings file the stale hook cannot be taken out of does not fail the scan", async (t) => {

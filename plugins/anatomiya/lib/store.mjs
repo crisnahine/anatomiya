@@ -1,7 +1,8 @@
 /**
  * How a file this tool writes reaches the disk: whole or not at all, staged
  * under a name a later sweep reads back to tell whose it was, and read whole to
- * put back only up to one bound.
+ * put back only up to one bound. A set of them is replaced together, and put
+ * back as it was when one of them fails.
  *
  * It imports only the path encoder, so the record, the map, the pin and the
  * refresh state all write through it without importing one another.
@@ -63,7 +64,7 @@ export function stagedInStore(dir, names) {
 
 /**
  * Write to a temp path in the same directory, then rename, so a crash never
- * leaves half a file. The pin, the refresh state and a record put back are
+ * leaves half a file. The pin, the refresh state and a file put back are
  * replaced through here; the map, the record's pair and the refresh lock stage
  * with `writeTemp` and decide for themselves how the file lands.
  *
@@ -134,7 +135,7 @@ export const tooLargeSentence = (at, size) => `${encodePath(at)} is ${size} byte
  * A regular file's bytes, `null` where nothing is, `undefined` where they cannot
  * be put back. Past `READ_MOST` it throws, with the size on `tooLarge`.
  */
-export function previousBytes(path) {
+function previousBytes(path) {
   let fd;
   try {
     // Opened then typed through the handle, so the file read is the file typed;
@@ -150,4 +151,174 @@ export function previousBytes(path) {
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
+}
+
+/** `previousBytes` of a record, `null` past the bound: no command reads one, so there is nothing in it to keep. */
+export function recordBytes(path) {
+  try {
+    return previousBytes(path);
+  } catch (err) {
+    if (err.tooLarge === undefined) throw err;
+    return null;
+  }
+}
+
+/**
+ * `previous`, from `previousBytes`, back at `path`: removed where nothing was,
+ * left where it could not be read, and otherwise replaced whole.
+ */
+export function putBack(path, previous) {
+  if (previous === undefined) return;
+  if (previous === null) unlinkSync(path);
+  else atomic(path, previous);
+}
+
+export const PUT_BACK = "stopped and put back what it had replaced";
+
+// What a rename or a removal answers where it is not allowed. On Windows: `EPERM` for a target held open or
+// read-only, `EBUSY` for a sharing violation. Elsewhere: `EPERM` for an immutable file, `EACCES` for a directory
+// that cannot be written.
+export const LOCKED = ["EPERM", "EACCES", "EBUSY"];
+
+// `locked` carries the sentence's first half, for the rollback to say what it put back.
+function lockedFile(err, at, verb) {
+  if (!LOCKED.includes(err.code)) return err;
+  return Object.assign(new Error(err.message, { cause: err }), { locked: `${at} could not be ${verb} (${err.code})` });
+}
+
+export const UNLOCK = "close what holds it or change its mode";
+
+const lockedSentence = (locked, did) => `${locked}, so the scan ${did}: the file is locked or read-only, so ${UNLOCK}, then scan again`;
+
+// `moved` names the directory, for the rollback to say what it could not reach.
+export function movedAway(dir, did) {
+  const sentence = `${dir} was replaced by something else while the map was being written, so the scan ${did}: look at what is at ${dir} now, then scan again`;
+  return Object.assign(new Error(sentence), { moved: dir });
+}
+
+/**
+ * Rename every staged file into place and remove the orphans, or put back what
+ * was there before the first one moved. `stillOwn` throws for a path whose
+ * directory is no longer where the plan found it. A path in `pair.leftover` is
+ * removed unread and never put back, and one whose removal fails goes on
+ * `pair.left` and stops nothing. One in `pair.records` past the bound is
+ * replaced without being read and taken back out on a rollback. The record at
+ * `pair.record` is put back by `pair.restore(previous)`, which writes its
+ * layout file again; every other path by `putBack`.
+ *
+ * A rename in a directory the temporary file was just created in still fails:
+ * Windows refuses one over a file another process holds open. `said` names a
+ * path for the sentence that failure gets.
+ *
+ * Where `pair.spared` answers for the path with a target, that failure stops
+ * the target's directory alone: `pair.settle` writes the record again to name
+ * what that directory held, then what was replaced there is put back and
+ * nothing more is done there. A
+ * permission in a directory another tool owns may not stop Claude Code's map.
+ * Answers the targets stopped that way, each with what stopped it.
+ */
+export function replaceAll(staged, removals, pair, stillOwn, said) {
+  // Read before the first rename, so the window between the facts and the last
+  // file holds renames and nothing else.
+  const kept = removals.filter((path) => !pair.leftover.has(path));
+  const before = new Map([...staged.map(([, path]) => path), ...kept].map((p) => [p, pair.records.has(p) ? recordBytes(p) : bytesToPutBack(p, said)]));
+  const undo = [];
+  const stopped = new Map();
+  const past = (path) => stopped.has(pair.spared(path)?.id);
+  // Put one directory back and go on without it, or throw for the whole scan to be put back.
+  const stop = (err, path) => {
+    const t = pair.spared(path);
+    if (t === null || !err.locked) throw err;
+    // The record first, so a process killed from here on leaves one that names the files the directory holds.
+    try {
+      pair.settle(new Set([...stopped.keys(), t.id]));
+    } catch (failed) {
+      throw lockedFile(failed, said(pair.record), "replaced");
+    }
+    for (let i = undo.length - 1; i >= 0; i--) {
+      const [done, previous] = undo[i];
+      if (pair.spared(done) !== t) continue;
+      try {
+        stillOwn(done);
+        putBack(done, previous);
+      } catch {
+        // Not as it was, so not a directory to go on without.
+        throw err;
+      }
+      undo.splice(i, 1);
+    }
+    for (const [tmp, to] of staged) if (pair.spared(to) === t) quietUnlink(tmp);
+    stopped.set(t.id, err.locked);
+  };
+  try {
+    for (const [tmp, path] of staged) {
+      if (past(path)) continue;
+      stillOwn(path);
+      try {
+        renameSync(tmp, path);
+      } catch (err) {
+        // A directory swapped since the look above fails here on an errno, so it is asked once more.
+        stillOwn(path);
+        stop(lockedFile(err, said(path), "replaced"), path);
+        continue;
+      }
+      undo.push([path, before.get(path)]);
+    }
+    for (const path of removals) {
+      if (past(path)) continue;
+      stillOwn(path);
+      try {
+        unlinkSync(path);
+      } catch (err) {
+        if (err.code === "ENOENT") continue;
+        // Litter, and never a reason to stop: one that will not go stays, and the scan says how many did.
+        if (pair.leftover.has(path)) {
+          pair.left.push(path);
+          continue;
+        }
+        stop(lockedFile(err, said(path), "removed"), path);
+        continue;
+      }
+      // A leftover has no bytes here, which the put-back reads as one to leave gone.
+      undo.push([path, before.get(path)]);
+    }
+    return stopped;
+  } catch (err) {
+    let lost = 0;
+    for (const [path, previous] of undo.reverse()) {
+      try {
+        // The layout file is stamped from the record alone, so only the
+        // record's put-back writes it again. Nothing is put back through a
+        // directory that stopped being the repository's own.
+        stillOwn(path);
+        if (path === pair.record) pair.restore(previous);
+        else putBack(path, previous);
+      } catch {
+        lost++;
+      }
+    }
+    // What this run had already put in a directory went with it when it moved.
+    if (err.moved && lost > 0) err.message = movedAway(err.moved, `${PUT_BACK} everywhere else`).message;
+    if (err.locked) err.message = lockedSentence(err.locked, lost > 0 ? "stopped part way" : PUT_BACK);
+    throw err;
+  }
+}
+
+// `previousBytes`, with a file grown past the bound since the plan refused by the repository's spelling of it.
+function bytesToPutBack(path, said) {
+  try {
+    return previousBytes(path);
+  } catch (err) {
+    if (err.tooLarge === undefined) throw err;
+    throw tooLarge(said(path), err.tooLarge);
+  }
+}
+
+export const MOVE_IT = "move or delete it";
+export const tooLarge = (at, size) => new Error(`${tooLargeSentence(at, size)}, so nothing was written: ${MOVE_IT} and scan again`);
+
+export function quietUnlink(path) {
+  try {
+    unlinkSync(path);
+  } catch {}
 }
