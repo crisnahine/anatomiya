@@ -58,9 +58,9 @@ base, which moves 27 roots in 14 repositories. react's
 .map` for `144 test files and 67 other`.
 
 Every sibling-module count that moved, base to the producer definition, each cause counted file by
-file (the old definition over the new build, less `isProducer`). "Net" rows: the support rule first
-added some support files to the count, so the column there is the files under a test tree taken out
-less the ones the support rule had put in.
+file (the old definition over the new build, less `isProducer`). "Net" rows: the support rule also
+put some files back into the count, so there the column is the files taken out under a test tree
+less the files put back.
 
 | Repository | Root | Base | Now | Under a test tree | Empty file |
 |---|---|---|---|---|---|

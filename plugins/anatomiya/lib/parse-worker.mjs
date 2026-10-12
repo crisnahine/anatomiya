@@ -30,8 +30,9 @@ process.on("message", async ({ rel, abs, lang, withProgram = false }) => {
       try {
         process.send(sendable(payload));
       } catch (err) {
-        // A tree nested past the stack JSON is written with, in the copy or when the channel writes it again.
-        // The parser read the file, so it is this tool's crash, never a file that could not be parsed.
+        // A tree nested past the stack JSON is written with, in the copy or when
+        // the channel writes it again. The parser read the file, so it is this
+        // tool's crash, never a file that could not be parsed.
         if (!(err instanceof RangeError)) throw err;
         process.send({ rel, ok: false, error: "the tree is too deep to send", crashed: true });
       }

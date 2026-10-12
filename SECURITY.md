@@ -428,28 +428,28 @@ path, file name or transcript text reaches a name. A batch claim holds the trans
 maker had read to. The calls of one parallel batch decide under `<batch claim>.lock`, made with an
 exclusive create, and a call that finds the lock taken delivers nothing. A lock whose mtime is more
 than 7 seconds from the clock, either way, was left by a call that died holding it: the echo hook's
-5 second timeout, plus the 2 seconds a FAT volume can be off by. No call breaks a lock younger than
-that: the right to remove a dead one goes to the call that creates its lock token, `<batch
-claim>.lock.<its mtime in ms>`, with an exclusive create, which removes the lock only while it is
-still the one it found dead, then removes that lock token. Every call then tries the one create of
-the lock, and those that lose it deliver nothing. A lock token the system refuses to remove is left
-for the sweep, and a dead lock it refuses to remove makes the call answer alone. An exclusive create
-Windows refuses with EPERM, its answer for a name another process is still deleting, is tried again
-seven times, after waits doubling from 1 ms to 64 ms, before the call answers alone. A batch claim
-is written to `<batch claim>.<pid>` and renamed over the batch claim, so no reader sees one half
-written. After each batch claim it writes, the hook lists at most 4,096 names in that directory and
-removes those of these shapes last written more than a day ago; a name of any other shape is never
-touched. So the directory holds one small file per window and map of the last day. The transcript
-itself is read back from its end, at most 1 MiB per call. With no data directory, a relative one, or
-one that cannot be written or read, nothing is written and each call answers from the transcript
-alone, which can deliver one copy per call of a batch. A call killed while it holds a lock token
-leaves that dead lock in place, so the echo for that window and map stays silent until a batch claim
-another window or map makes there a day or more later sweeps both. After the clock is set back, a
-lock token the system would not remove can carry the name of a later dead lock, and that window
-stays silent until the sweep too. A call suspended past 7 seconds while it holds the lock, a laptop
-asleep in those milliseconds, is taken for dead: the next call breaks its lock and decides beside
-it, and its release later removes whichever lock is there, so that batch can deliver a copy or two
-more.
+5 second timeout, plus the 2 seconds a FAT volume can be off by. No call breaks a lock nearer the
+clock than that: the right to remove a dead one goes to the call that creates its lock token,
+`<batch claim>.lock.<its mtime in ms>`, with an exclusive create, which removes the lock only while
+it is still the one it found dead, then removes that lock token. Every call then tries the one
+create of the lock, and those that lose it deliver nothing. A lock token the system refuses to
+remove is left for the sweep, and a dead lock it refuses to remove makes the call answer alone. An
+exclusive create Windows refuses with EPERM, its answer for a name another process is still
+deleting, is tried again seven times, after waits doubling from 1 ms to 64 ms, before the call
+answers alone. A batch claim is written to `<batch claim>.<pid>` and renamed over the batch claim,
+so no reader sees one half written. After each batch claim it writes, the hook lists at most 4,096
+names in that directory and removes those of these shapes last written more than a day ago; a name
+of any other shape is never touched. So the directory holds one small file per window and map of the
+last day. The transcript itself is read back from its end, at most 1 MiB per call. With no data
+directory, a relative one, or one that cannot be written or read, nothing is written and each call
+answers from the transcript alone, which can deliver one copy per call of a batch. A call killed
+while it holds a lock token leaves that dead lock in place, so the echo for that window and map
+stays silent until a batch claim another window or map makes there a day or more later sweeps both.
+After the clock is set back, a lock token the system would not remove can carry the name of a later
+dead lock, and that window stays silent until the sweep too. A call suspended past 7 seconds while
+it holds the lock, a laptop asleep in those milliseconds, is taken for dead: the next call breaks
+its lock and decides beside it, and its release later removes whichever lock is there, so that batch
+can deliver a copy or two more.
 
 ### A committed record or pin is input too
 
