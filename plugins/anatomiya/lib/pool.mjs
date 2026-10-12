@@ -316,7 +316,9 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
       workers.splice(0).map(
         (w) =>
           new Promise((resolve) => {
-            if (w.child.exitCode !== null || w.child.signalCode !== null) return resolve();
+            // A worker that never started has no exit to wait for, and a kill
+            // of one in the tick of its fork signals this process's own group.
+            if (w.child.pid === undefined || w.child.exitCode !== null || w.child.signalCode !== null) return resolve();
             w.child.once("exit", resolve);
             w.child.kill();
             const hard = setTimeout(() => w.child.kill("SIGKILL"), 1_000);

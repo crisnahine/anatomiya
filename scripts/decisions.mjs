@@ -63,12 +63,14 @@ const HEADINGS = ["## Decision", "## Why", "## Status"];
  * are written a sentence per line so a search answers with a sentence, and a
  * line break inside a paragraph is a space to Markdown as well.
  *
- * A byte order mark and the whitespace at a line's end are dropped, since a
- * fault in a character nobody can see is a report nobody can act on. A heading
- * written twice is refused: the second would read as the text of a cell.
+ * A byte order mark and the whitespace at a line's end are dropped, and so is
+ * the whitespace a cell's line opens with, since a fault in a character nobody
+ * can see is a report nobody can act on. A line ends at a CR, an LF or the
+ * pair. A heading written twice is refused: the second would read as the text
+ * of a cell.
  */
 export function readRowFile(text) {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).map((line) => line.trimEnd());
+  const lines = text.replace(/^\uFEFF/, "").split(/\r\n?|\n/).map((line) => line.trimEnd());
   const id = /^# ([A-H]\d+)$/.exec(lines[0])?.[1];
   const at = HEADINGS.map((heading) => lines.indexOf(heading));
   if (!id || at[0] < 0 || at[0] > at[1] || at[1] > at[2]) return null;
@@ -77,7 +79,7 @@ export function readRowFile(text) {
   const head = between(0, at[0]);
   const section = /^Section: (.+)$/.exec(head[0])?.[1];
   if (!section || head.length !== 1) return null;
-  const [decision, why, status] = [...at, lines.length].slice(1).map((to, i) => between(at[i], to).join(" "));
+  const [decision, why, status] = [...at, lines.length].slice(1).map((to, i) => between(at[i], to).map((line) => line.trimStart()).join(" "));
   return { id, section, decision, why, status };
 }
 

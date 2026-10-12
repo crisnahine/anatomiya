@@ -132,6 +132,15 @@ export const needsSpawnableNpm = WINDOWS
   ? { skip: "npm on Windows is a batch file, and running one needs a shell no command here may spawn" }
   : {};
 
+// `cat-file -Z` came with git 2.42. An older git hands every read to the
+// per-call reader, so a case that counts on the one child answering cannot be
+// set up there. Which git a run finds is the run's to choose.
+const [gitMajor, gitMinor] = /(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"]).toString()).slice(1).map(Number);
+export const needsBatchZ =
+  gitMajor > 2 || (gitMajor === 2 && gitMinor >= 42)
+    ? {}
+    : avoidable("needsBatchZ", `git ${gitMajor}.${gitMinor} is older than 2.42, so no child answers a read: run with a newer git first on PATH`);
+
 // Asked of the temp directory the fixtures live in, since folding belongs to the
 // filesystem: APFS and NTFS fold case by default, ext4 and a case-sensitive
 // APFS volume do not.

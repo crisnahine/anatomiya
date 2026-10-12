@@ -155,8 +155,9 @@ const TOKEN_AGE = mtimeAge({ heldMostMs: 60_000, slackMs: 2000 });
 /**
  * The refresh worker's judge, over the lock's `{pid, at, nonce}`: dead where it does not parse, its pid is
  * not an integer or its `at` not a number, it is older than `staleMs` or stamped later than now, or its
- * process is gone. Its generation is its nonce, and the whole content is what must still match; a lock
- * with no nonce of ours is named by a digest of what was read, so its token is still one name of ours.
+ * process is gone. Its generation is its nonce, and what must still match is the kind of entry at the name
+ * and at most its first 256 bytes; a lock with no nonce of ours is named by a digest of what was read, so
+ * its token is still one name of ours.
  */
 export const ownerAge = ({ staleMs, now = Date.now, alive = processAlive }) => (path) => {
   if (lstatOf(path) === null) return null;

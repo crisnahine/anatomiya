@@ -51,6 +51,17 @@ test("a row file reads as what it looks like: a space at a line's end and a byte
   assert.deepEqual(readRowFile(`\uFEFF${B2}`), B2_READ);
 });
 
+test("a space or a byte order mark at the start of a cell's line is not text either", () => {
+  assert.deepEqual(readRowFile(B2.replace("An `a || b`", " An `a || b`")), B2_READ);
+  assert.deepEqual(readRowFile(B2.replace("The second,", "\t The second,")), B2_READ);
+  assert.deepEqual(readRowFile(B2.replace("Guarded by", "\uFEFFGuarded by")), B2_READ);
+  assert.equal(readRowFile(B2.replace("## Why", " ## Why")), null, "an indented heading is still not one");
+});
+
+test("a row file whose lines end with a bare carriage return reads the same", () => {
+  assert.deepEqual(readRowFile(B2.replaceAll("\n", "\r")), B2_READ);
+});
+
 test("a file missing a heading, or carrying them out of order, is no row file", () => {
   assert.equal(readRowFile(B2.replace("## Why", "## Reason")), null);
   assert.equal(readRowFile(B2.replace("## Why", "## Status").replace(/## Status(?![\s\S]*## Status)/, "## Why")), null);

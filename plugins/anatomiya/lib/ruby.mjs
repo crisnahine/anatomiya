@@ -524,7 +524,8 @@ function onThread(files, job, resourceLimits) {
       else if (msg.out) resolve({ ...msg.out, results: charged(files, results, "its record never reached the parent") });
       else if (msg.spawn) children.set(msg.id, startFor(worker, msg));
       else if (msg.read) children.get(msg.id)?.read();
-      else if (msg.kill) children.get(msg.id)?.kill("SIGKILL");
+      // Only a child that started: a kill of one with no pid signals this process's own group.
+      else if (msg.kill && children.get(msg.id)?.pid) children.get(msg.id).kill("SIGKILL");
       else if (msg.stdin !== undefined) children.get(msg.id)?.stdin.end(msg.stdin);
     });
     worker.once("error", (err) => {

@@ -1647,7 +1647,7 @@ const BEFORE_PLAN = {
   held: [],
   blind: false,
 };
-// `staged` and `storeStaged` are the temporary files an earlier scan left: none where no scan stopped.
+// `staged` and `storeStaged` are the temporary files an earlier run left: none where no scan stopped.
 const BEFORE_KEYS = ["write", "remove", "staged", "storeStaged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
 const BEFORE_AREA = `---
 generator: anatomiya
@@ -3637,7 +3637,7 @@ const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
 // The names a scan, a refresh, a pin and a history walk stage in the store.
 const STORE_FILES = ["facts.json", "layout.json", "refresh.json", "baseline.json", "refresh.lock", "history-authors.gz", "history-cochange.gz"];
 
-test("a temporary file an earlier scan left is removed from every directory this scan writes, and counted", (t) => {
+test("a temporary file an earlier run left is removed from every directory this scan writes, and counted", (t) => {
   const dir = workspace(t);
   const a = area("src/services");
   writeMap(result(dir, [a]), { targets: ALL });
@@ -3776,7 +3776,7 @@ test("a fifo at a temporary file's name is never removed", needsPosixSpecialFile
   nonFileAtAStagedName(t, (path) => execFileSync("mkfifo", [path]));
 });
 
-test("a temporary file an earlier scan left is removed without a byte of it being read", async (t) => {
+test("a temporary file an earlier run left is removed without a byte of it being read", async (t) => {
   // Its bytes were read to be put back, and a 1.5 GB sparse file at such a name took a scan to 1,535 MB resident.
   const dir = workspace(t);
   const a = area("src/services");
@@ -3811,7 +3811,7 @@ test("a scan that stops after removing a temporary file does not put that file b
   assert.deepEqual(settled(dir), before, "the map that was there, and neither temporary file");
 });
 
-/** One temporary file an earlier scan left in the store and in each of the three rule directories, all three on. */
+/** One temporary file an earlier run left in the store and in each of the three rule directories, all three on. */
 function leftoverInEach(t) {
   const dir = workspace(t);
   const a = area("src/services");
@@ -3840,7 +3840,7 @@ function leftoverInEach(t) {
   return { dir, left, scanned, assertLeft };
 }
 
-test("a temporary file an earlier scan left that cannot be removed is left where it is and counted, in the store and in every rule directory", async (t) => {
+test("a temporary file an earlier run left that cannot be removed is left where it is and counted, in the store and in every rule directory", async (t) => {
   const lock = await refusing(t);
   const { dir, left, scanned, assertLeft } = leftoverInEach(t);
   // One more in the store, which nothing holds.
@@ -3913,7 +3913,7 @@ test("a temporary file made immutable is left where it is and counted, and the s
   }
 });
 
-test("a temporary file an earlier scan left in the store is removed, and nothing else there is", (t) => {
+test("a temporary file an earlier run left in the store is removed, and nothing else there is", (t) => {
   const dir = workspace(t);
   const a = area("src/services");
   writeMap(result(dir, [a]));

@@ -255,6 +255,7 @@ test("the oracle names an accessor opened on an added line, and an assignment th
   const php = "<?php\nfoo(\n    $a = 1\n);\n$a = 1;\n";
   assert.deepEqual(await named("php", php, [[3, 3]]), [[2, "function_call_expression"]]);
   assert.deepEqual(await named("php", php, [[5, 5]]), []);
+  assert.deepEqual(await named("php", "<?php\nfoo(\n    $a['k'] = 1\n);\n", [[3, 3]]), [[2, "function_call_expression"], [3, "write to subscript_expression"]]);
 });
 
 test("a bracket line that also ends a string spread over lines is charged to the call around it", async () => {
