@@ -428,7 +428,7 @@ path, file name or transcript text reaches a name. A batch claim holds the trans
 maker had read to. The calls of one parallel batch decide under `<batch claim>.lock`, made with an
 exclusive create, and a call that finds the lock taken delivers nothing. A lock whose mtime is more
 than 7 seconds from the clock, either way, was left by a call that died holding it: the echo hook's
-5 second timeout, plus the 2 seconds a FAT or exFAT volume can be off by. No call moves or removes a
+5 second timeout, plus the 2 seconds a FAT volume can be off by. No call moves or removes a
 lock that may be live: the right to remove a dead one goes to the call that creates its lock token,
 `<batch claim>.lock.<its mtime in ms>`, with an exclusive create, which removes the lock only while
 it is still the one it found dead, then removes that lock token. Every call then tries the one

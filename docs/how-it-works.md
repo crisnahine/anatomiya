@@ -1211,7 +1211,7 @@ the others read that offset as a delivery made there and stay silent. A batch cl
 while its offset is inside the window, judged against the transcript as it is when the batch claim
 is read. A call that finds the lock taken stays silent. A lock whose mtime is more than 7 seconds
 from the clock, either way, was left by a call that died holding it: the hook's 5 second timeout,
-plus the 2 seconds FAT and exFAT round an mtime to. No call moves or removes a lock that may be
+plus the 2 seconds FAT rounds an mtime to. No call moves or removes a lock that may be
 live: the call that creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while
 it is still the one found dead, and every call then goes to the one create of the lock, where the
 losers stay silent. A lock token the system refuses to remove is left for the sweep, and a dead lock

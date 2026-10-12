@@ -584,7 +584,7 @@ test("a lock held by another call holds this one, and a lock a minute old or a m
   };
 
   assert.deepEqual(held(0), {}, "a fresh lock");
-  // Past the 5 s hook timeout, inside the 2 s a FAT or exFAT mtime can be off by.
+  // Past the 5 s hook timeout, inside the 2 s a FAT mtime can be off by.
   assert.deepEqual(held(-6900), {}, "a lock 6.9 s old");
   assert.deepEqual(held(6900), {}, "a lock 6.9 s ahead");
 
