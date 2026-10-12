@@ -36,6 +36,8 @@ function rulesOf(lang) {
     unary: new Set(s.unary),
     collection: new Set(s.collection),
     comment: new Set(s.comment),
+    modifier: new Set(s.modifier ?? []),
+    targetChain: new Set(s.targetChain ?? []),
     annotation: s.annotation,
     interpolation: s.interpolation ?? [],
     bare: s.bareInterpolation ?? [],
@@ -67,19 +69,39 @@ function isLiteral(node, r) {
 
 const annotated = (node, r) => r.annotation.length > 0 && node.descendantsOfType(r.annotation).length > 0;
 
-/** A name bound to a literal, with no annotation on it. A binding with no value asks. */
+/** Whether every named node of a subtree is one of `types`. */
+function onlyOf(node, types) {
+  for (const todo = [node]; todo.length > 0; ) {
+    const n = todo.pop();
+    if (!types.has(n.type)) return false;
+    todo.push(...named(n));
+  }
+  return true;
+}
+
+/**
+ * A name bound to a literal, with no annotation on it. A binding with no
+ * value asks, and so does one whose target is more than a name or an attribute
+ * chain, or that carries a block to run when it does not match.
+ */
 function inertBinding(node, r) {
   if (annotated(node, r)) return false;
+  if (r.s.alternative && node.childForFieldName(r.s.alternative) !== null) return false;
+  const target = r.s.target ? node.childForFieldName(r.s.target) : null;
+  if (target !== null && !onlyOf(target, r.targetChain)) return false;
   const value = (r.s.value ? node.childForFieldName(r.s.value) : null) ?? node.lastNamedChild;
   return value !== null && isLiteral(value, r);
 }
 
-/** Bindings beside the modifiers and the type they share, every one of them inert. */
+/** Bindings beside the modifiers and the type they share, every one of them inert, and nothing else. */
 function inertDeclaration(node, r) {
   if (annotated(node, r)) return false;
-  return named(node).every(
-    (child) => (r.binding.has(child.type) ? inertBinding(child, r) : r.declaration.has(child.type) ? inertDeclaration(child, r) : true)
-  );
+  const typed = r.s.declaredType ? node.childForFieldName(r.s.declaredType) : null;
+  return named(node).every((child) => {
+    if (r.binding.has(child.type)) return inertBinding(child, r);
+    if (r.declaration.has(child.type)) return inertDeclaration(child, r);
+    return r.modifier.has(child.type) || r.comment.has(child.type) || (typed !== null && child.id === typed.id);
+  });
 }
 
 function inertNode(node, r) {
@@ -110,23 +132,26 @@ function rowsOf(start, end) {
 export async function treeInertLines(source, lang, deadline, { grammars } = {}) {
   const lines = source.split("\n");
   const unread = () => lines.map((line) => line.trim() === "");
-  let parsed;
   try {
-    parsed = await parseForLines(source, lang, { cancel: () => performance.now() > deadline, ...(grammars ? { grammars } : {}) });
+    const parsed = await parseForLines(source, lang, { cancel: () => performance.now() > deadline, ...(grammars ? { grammars } : {}) });
+    if (parsed === null) return null;
+    return parsed.tree ? walked(parsed.tree, lines, rulesFor(lang)) : unread();
   } catch {
-    // A trap or a heap at its cap: nothing here can say what the file holds.
+    // A trap or a heap at its cap, in the parse or the walk: nothing here can say what the file
+    // holds, and a throw past here reaches the hook's boundary, which answers nothing for the stop.
     return unread();
   }
-  if (parsed === null) return null;
-  if (!parsed.tree) return unread();
-  const r = rulesFor(lang);
+}
+
+/** The line rule over a parsed tree, which it deletes. */
+function walked(tree, lines, r) {
   const asks = new Array(lines.length).fill(false);
   const mark = ([from, to]) => {
     for (let row = from; row <= to; row++) asks[row] = true;
   };
-  const tree = parsed.tree;
-  const cursor = tree.walk();
+  let cursor = null;
   try {
+    cursor = tree.walk();
     // Each open node, and whether a named node was seen under it: a named node with none is a leaf.
     const open = [];
     for (;;) {
@@ -155,7 +180,7 @@ export async function treeInertLines(source, lang, deadline, { grammars } = {}) 
       }
     }
   } finally {
-    cursor.delete();
+    cursor?.delete();
     tree.delete();
   }
 }

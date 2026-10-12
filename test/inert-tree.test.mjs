@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { Tree } from "web-tree-sitter";
+
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { treeInertLines } from "../plugins/anatomiya/lib/inert-tree.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
@@ -47,6 +49,19 @@ test("a grammar that is not there is no parse at all", async (t) => {
   const empty = mkdtempSync(join(tmpdir(), "anatomiya-inert-tree-"));
   t.after(() => rmSync(empty, { recursive: true, force: true }));
   assert.equal(await parseForLines("X = 1\n", "python", { cancel: never, grammars: empty }), null);
+});
+
+test("a failure while the tree is walked asks about every non-blank line of that file", async () => {
+  // Past the parse, a trap reached the hook's boundary, which answers {} for the whole stop.
+  const walk = Tree.prototype.walk;
+  Tree.prototype.walk = () => {
+    throw new RangeError("trap");
+  };
+  try {
+    assert.deepEqual(await treeInertLines("# note\n\nX = 1\n", "python", Infinity), [false, true, false, true]);
+  } finally {
+    Tree.prototype.walk = walk;
+  }
 });
 
 test("every sample file is read, and its imports and comments ask nothing", async () => {
