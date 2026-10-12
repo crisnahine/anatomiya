@@ -189,6 +189,21 @@ test("the oracle names a sign on a literal that Kotlin or C# may bind to a user'
   assert.deepEqual(await named("python", 'A = -"a"\n', [[1, 1]]), []);
 });
 
+test("the oracle names a C# literal declared as a type spelt as a name, and passes a keyword type, a const and a null", async () => {
+  const source = ["class A {", "    Money a = 5;", '    Name n = "x";', "    Money? h = -1;", "    Money[] ms = { 1 };", "    static readonly Money F = 5;", "    int b = 5;", "    int?[] c = { 1 };", "    var v = 1;", "    const Money D = 5;", "    Foo f = null;", "    ulong[,] g = null;", "}", ""].join("\n");
+  assert.deepEqual(await named("csharp", source, [[2, 12]]), [[2, "literal declared as Money"], [3, "literal declared as Name"], [4, "literal declared as Money?"], [5, "literal declared as Money[]"], [6, "literal declared as Money"]]);
+});
+
+test("the oracle names a sign before a name outside a value, and passes one before a literal", async () => {
+  assert.deepEqual(await named("python", "a[-b] = 1\na[~b] = 1\nx: -b = 1\na[-1] = 1\n", [[1, 4]]), [1, 2, 3].map((line) => [line, "binding holding unary_operator"]));
+});
+
+test("the oracle names a declaration with no body that declares something callable", async () => {
+  assert.deepEqual(await named("go", "package m\n\ntype I interface {\n\tM(x int) error\n}\n\ntype S struct {\n\tn int\n}\n", [[4, 4], [8, 8]]), [[4, "method_elem"]]);
+  assert.deepEqual(await named("rust", 'trait T {\n    fn m(&self) -> u8;\n}\nextern "C" {\n    fn ext(x: i32) -> i32;\n}\n', [[2, 2], [5, 5]]), [[2, "function_signature_item"], [5, "function_signature_item"]]);
+  assert.deepEqual(await named("csharp", "class A {\n    int P => 1;\n    int b = 1;\n}\n", [[2, 3]]), [[2, "arrow_expression_clause"]]);
+});
+
 test("the oracle passes a string made of its own text and a struct type made of names, and names what either holds past that", async () => {
   for (const [lang, source, plain, odd, hit] of [
     // Each: the lines made of text and names, the lines past them, and what the oracle names there.

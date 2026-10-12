@@ -29,9 +29,13 @@ const UNION = "|";
 
 // Where a language lists what each sign may stand before, the list a sign reads.
 const SIGNS = { "-": "signed", "+": "signed", "~": "inverted", "!": "negated" };
-// An unsigned number has no `-` of its own.
+// A sign before an unsigned number asks. Kotlin defines no `-` for one. C# defines both signs and
+// takes the false ask, so one check serves both.
 const UNSIGNED = /(?:u|ul|lu)$/i;
 const BOOLEAN = /^(?:true|false)$/;
+
+// The modifier under which the compiler admits no conversion a user wrote.
+const CONSTANT = "const";
 
 /** The nodes that hold no callable, by kind, read once per language. */
 function rulesOf(lang) {
@@ -46,6 +50,8 @@ function rulesOf(lang) {
     docstring: docstring.length > 0 ? { statement: docstring[0], strings: new Set(docstring.slice(1)) } : null,
     literal: new Set(s.literal),
     literalPart: new Set(s.literalPart),
+    builtin: new Set(s.builtin ?? []),
+    nothing: new Set(s.nothing ?? []),
     word: new Set(s.word ?? []),
     unary: new Set(s.unary),
     collection: new Set(s.collection),
@@ -111,13 +117,25 @@ function plain(node, types, r, typed = false) {
 }
 
 /**
+ * Whether the type a literal is declared as may convert it with a function
+ * somebody wrote, where the language has such conversions: any type but its
+ * own, outside a constant.
+ */
+function converts(node, value, r) {
+  if (r.s.declared === undefined || value === null || r.nothing.has(value.type)) return false;
+  const type = node.parent.childForFieldName(r.s.declared);
+  if (type !== null && plain(type, r.builtin, r)) return false;
+  return !named(node.parent.parent).some((n) => n.text === CONSTANT);
+}
+
+/**
  * A name bound to a literal, or a constant that repeats the one above it or
  * is counted off its place in a group. Every named node outside the value, in
  * the target, the pattern, the type and the modifiers, is a literal or a kind
  * listed as computing nothing, so a call in an array's length asks. So does a
- * binding with no value, one with an annotation, one that carries a block to
- * run when it does not match, and an assignment that is part of a larger
- * expression.
+ * literal its declared type may convert, a binding with no value, one with an
+ * annotation, one that carries a block to run when it does not match, and an
+ * assignment that is part of a larger expression.
  */
 function inertBinding(node, r) {
   if (annotated(node, r)) return false;
@@ -128,6 +146,7 @@ function inertBinding(node, r) {
   const counted = r.counted.has(node.type);
   const value = own ?? (counted ? null : node.lastNamedChild);
   if (value === null ? !counted : !(counted ? plain(value, r.countedPart, r) : isLiteral(value, r))) return false;
+  if (converts(node, value, r)) return false;
   return named(node).every((n) => n.id === value?.id || r.comment.has(n.type) || plain(n, r.part, r));
 }
 

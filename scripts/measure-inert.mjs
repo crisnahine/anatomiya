@@ -9,16 +9,24 @@
  * The oracle re-parses every file holding a hunk the rule left out, a file
  * asked about for another hunk included, and names what a line of such a hunk
  * may define, build or compute: a function, a class, an accessor, a lambda, a
- * call, an object creation, an interpolation or a conditional holding a token
- * on an added line, a string on one that holds more than its own text, and a
- * binding that starts on one whose value holds anything but literals or whose
- * target, pattern, type or modifiers hold anything but names, types and
- * literals. It charges each token to the nodes above it, up to the statement
- * or member it belongs to. It is written apart from the rule's own walk: it
- * shares the table's literal kinds and none of the rule's lists of names,
- * types, string parts and signs, which it tells by how grammars spell them
- * and by a literal's own text. So the rule cannot pass by agreeing with
- * itself. Read-only: git is asked, nothing is checked out.
+ * call, an object creation, an interpolation, a conditional or a declaration
+ * with no body holding a token on an added line, a string on one that holds
+ * more than its own text, and a binding that starts on one whose value holds
+ * anything but literals, whose target, pattern, type or modifiers hold
+ * anything but names, types and literals, or whose declared type may convert
+ * its literal. It charges each token to the nodes above it, up to the
+ * statement or member it belongs to.
+ *
+ * It is written apart from the rule's own walk, and reads these of the rule's
+ * table: where a binding and its value are (`binding`, `declaration`, `value`,
+ * `alternative`, `collectionType`), which kinds a literal is made of
+ * (`literal`, `unary`, `collection`, `word`), `comment`, `interpolation` and
+ * `bareInterpolation`, and the definitions every reader of the table shares
+ * (`fn`, `cls`, `wrap`, `scope`, `annotation`). A kind that is wrongly on one
+ * of those lists passes the rule and the oracle alike, so neither shows the
+ * mistake. It reads none of the rule's lists of names, types, string parts,
+ * signs and predefined types, which it tells by how grammars spell them and
+ * by a node's own text. Read-only: git is asked, nothing is checked out.
  *
  * usage: node scripts/measure-inert.mjs [--commits N] [--samples N] <repository> [<repository> ...]
  */
@@ -35,14 +43,15 @@ import { ONE_OFF } from "../plugins/anatomiya/lib/reuse.mjs";
 import { SHAPES } from "../plugins/anatomiya/lib/tree-shapes.mjs";
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 
-// Past the shapes the plugin reads: what makes or runs a callable, per grammar.
+// Past the shapes the plugin reads: what makes, runs or declares a callable, per grammar. A method an
+// interface or a trait names and a foreign function have no body, and a property may be an expression.
 export const ORACLE = {
   python: ["lambda", "call", "conditional_expression", "list_comprehension", "dictionary_comprehension", "set_comprehension", "generator_expression"],
   php: ["property_hook", "anonymous_function", "arrow_function", "function_call_expression", "member_call_expression", "scoped_call_expression", "object_creation_expression", "conditional_expression"],
-  go: ["func_literal", "call_expression"],
+  go: ["func_literal", "call_expression", "method_elem"],
   java: ["lambda_expression", "method_reference", "method_invocation", "object_creation_expression", "ternary_expression", "template_expression"],
-  csharp: ["accessor_declaration", "lambda_expression", "anonymous_method_expression", "invocation_expression", "object_creation_expression", "implicit_object_creation_expression", "conditional_expression", "interpolated_string_expression"],
-  rust: ["closure_expression", "call_expression", "macro_invocation", "struct_expression", "if_expression", "match_expression"],
+  csharp: ["accessor_declaration", "lambda_expression", "anonymous_method_expression", "invocation_expression", "object_creation_expression", "implicit_object_creation_expression", "conditional_expression", "interpolated_string_expression", "arrow_expression_clause"],
+  rust: ["closure_expression", "call_expression", "macro_invocation", "struct_expression", "if_expression", "match_expression", "function_signature_item"],
   kotlin: ["getter", "setter", "secondary_constructor", "anonymous_initializer", "lambda_literal", "anonymous_function", "call_expression", "if_expression", "when_expression", "object_literal"],
 };
 
@@ -82,6 +91,10 @@ const OWN_SIGN = {
   csharp: /^(?:[-+]\s*(?![^]*(?:u.?|lu)$)[\d.](?:[\w.]|e[-+])*|[-+~]\s*'(?:[^'\\]|\\[^]+)'|~\s*\d\w*|!\s*(?:true|false))$/i,
 };
 
+// A C# literal declared as a type runs that type's `implicit operator` where it has one. A type is the
+// language's own where it is spelt as one of its keywords, with `?` or an array's brackets after it.
+const OWN_TYPE = { csharp: /^(?:bool|s?byte|char|decimal|double|float|n?u?int|u?long|u?short|object|string|var)(?:\s*\?|\s*\[[\d\s,]*\])*$/ };
+
 // How the seven grammars spell a name, a type, a modifier and a pattern of names. Every node under one
 // is read too, and nothing that calls or runs is spelt this way.
 const NAMING =
@@ -94,9 +107,8 @@ export const ACCESS = {
   go: ["field_declaration_list", "field_declaration"],
 };
 
-// The node that joins types where it stands under `within`, read by its text: any operator in it but `|` computes.
+// The node that joins types where it stands under `within`, read by its operator: any but `|` computes.
 export const UNION = { python: { node: "binary_operator", within: "type" } };
-const COMPUTES = /[-+*/%@&^<>~]/;
 
 /**
  * Every node that may add something callable and holds a token on an added
@@ -121,11 +133,13 @@ const COMPUTES = /[-+*/%@&^<>~]/;
  * when it does not match. A `COUNTED` binding with no value is no hit, and one
  * with a value is read by its leaves: each a literal or the counter. Outside
  * its value, a binding counts where a node is no literal and is not spelt as
- * a name, a type, a modifier or a pattern: in its target, its type, the type
- * of a composite literal, and the modifiers and type its declaration holds.
+ * a name, a type, a modifier or a pattern, or is a sign before anything but a
+ * literal: in its target, its type, the type of a composite literal, and the
+ * modifiers and type its declaration holds.
  *
  * A sign on a literal counts with them where `OWN_SIGN` has the language and
- * the text is not a pair it spells.
+ * the text is not a pair it spells. So does a literal other than `null` whose
+ * declared type is not one `OWN_TYPE` spells, outside a `const`.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];
@@ -180,7 +194,7 @@ export function oracleHits(tree, lang, added) {
   };
   const access = new Set(ACCESS[lang] ?? []);
   const joinsTypes = (n) => {
-    if (n.type !== UNION[lang]?.node || COMPUTES.test(n.text)) return false;
+    if (n.type !== UNION[lang]?.node || n.childForFieldName("operator")?.type !== "|") return false;
     for (let up = n.parent; up !== null; up = up.parent) if (up.type === UNION[lang].within) return true;
     return false;
   };
@@ -189,6 +203,8 @@ export function oracleHits(tree, lang, added) {
     for (const todo = [top]; todo.length > 0; ) {
       const n = todo.pop();
       if (!joinsTypes(n) && !NAMING.test(n.type) && !access.has(n.type) && !plain(n)) return n;
+      // A sign here stands before a literal, or before a name whose type may define the operator.
+      if (s.unary.includes(n.type) && oddLeaf(n) !== null) return n;
       for (const child of n.namedChildren) if (child) todo.push(child);
     }
     return null;
@@ -221,6 +237,12 @@ export function oracleHits(tree, lang, added) {
     for (let up = node.parent; up !== null; up = up.parent) if (s.literal.includes(up.type)) return true;
     return false;
   };
+  // The declared type of a literal that is not `null`, where it is no type of the language's own and the declaration no `const`.
+  const convertedBy = (node, value) => {
+    if (!OWN_TYPE[lang] || value === null || value.text === "null") return null;
+    const type = node.parent.childForFieldName("type")?.text ?? "";
+    return OWN_TYPE[lang].test(type) || node.parent.parent.children.some((n) => n?.text === "const") ? null : type;
+  };
   const hit = (node, why) => hits.push({ line: node.startPosition.row + 1, type: why, text: node.text.split("\n")[0].slice(0, 120) });
   const stack = [tree.rootNode];
   while (stack.length > 0) {
@@ -239,8 +261,10 @@ export function oracleHits(tree, lang, added) {
         const counter = COUNTED[lang]?.[node.type];
         const value = own ?? (counter ? null : node.lastNamedChild);
         const odd = value === null ? null : counter ? oddLeaf(value, counter) : firstOdd(value);
+        const declared = odd === null ? convertedBy(node, value) : null;
         if (odd !== null) hit(node, `binding to ${odd.type}`);
         else if (s.alternative && node.childForFieldName(s.alternative) !== null) hit(node, "binding with an alternative");
+        else if (declared !== null) hit(node, `literal declared as ${declared}`);
         beside(node, (child) => child.id === value?.id, "binding");
       } else if (s.declaration?.includes(node.type)) {
         beside(node, (child) => s.binding.includes(child.type) || s.declaration.includes(child.type), "declaration");
