@@ -558,7 +558,7 @@ function areaBlocks(area, cochange = []) {
   for (const c of cochange) {
     const lines = [
       claimSentence(c),
-      `  ${changesPhrase(c)}, ${hands(c.authors)}; ${c.files[0]} of ${c.files[1]} such ${filesOf(c.files[1])} here came in a change it counted`,
+      `  ${changesPhrase(c)}, ${hands(c.authors)}; ${c.files[0]} of ${c.files[1]} such ${filesOf(c.files[1])} here came in a change the scan counted`,
       "",
     ];
     rows.push({ lines, key: null, claim: null, sort: "stated", cochangeKey: claimKey(c) });

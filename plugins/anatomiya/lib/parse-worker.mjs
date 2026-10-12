@@ -28,11 +28,12 @@ process.on("message", async ({ rel, abs, lang, withProgram = false }) => {
       // bigint literal puts in the AST. Without the retry every file holding
       // one is charged as a parse failure.
       try {
-        process.send(sendable(payload, rel));
+        process.send(sendable(payload));
       } catch (err) {
-        // The channel writes the copy again, a few frames deeper than `sendable` did.
+        // A tree nested past the stack JSON is written with, in the copy or when the channel writes it again.
+        // The parser read the file, so it is this tool's crash, never a file that could not be parsed.
         if (!(err instanceof RangeError)) throw err;
-        process.send(tooDeep(rel));
+        process.send({ rel, ok: false, error: "the tree is too deep to send", crashed: true });
       }
     }
   } catch (err) {
@@ -45,18 +46,9 @@ process.on("message", async ({ rel, abs, lang, withProgram = false }) => {
   }
 });
 
-function sendable(payload, rel) {
-  try {
-    return JSON.parse(JSON.stringify(payload, (_key, v) => (typeof v === "bigint" ? v.toString() : v)));
-  } catch (err) {
-    if (!(err instanceof RangeError)) throw err;
-    return tooDeep(rel);
-  }
+function sendable(payload) {
+  return JSON.parse(JSON.stringify(payload, (_key, v) => (typeof v === "bigint" ? v.toString() : v)));
 }
-
-// A tree nested past the stack JSON is written with. The parser read the
-// file, so it is this tool's crash, never a file that could not be parsed.
-const tooDeep = (rel) => ({ rel, ok: false, error: "the tree is too deep to send", crashed: true });
 
 // The version rides the ready message because it is the one thing this shell
 // can say before it has been handed a file, and every worker answers the same.

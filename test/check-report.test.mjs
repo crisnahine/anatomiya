@@ -344,6 +344,7 @@ test("a writer drops a reason only where the finding says its claim told it", ()
   assert.equal(reasonLine({ claim: spoken, toldInClaim: true, where: "B.run" }), "  B.run");
   const named = { claim: spoken, toldInClaim: true, where: "typed", snippet: "typed" };
   assert.deepEqual(formatReport(report(named)).split("\n").slice(4), ["  typed", ""], "a name that is the whole snippet is shown once");
+  assert.deepEqual(formatReport(report({ ...named, toldInClaim: false })).split("\n").slice(4), ["  typed: no convention stated here (ratio)", "  typed", ""], "beside a reason the name stays");
   assert.equal(reasonLine({ claim: spoken }), "  no convention stated here (ratio)", "a claim that reads like one is not taken for one");
   assert.equal(reasonLine({ claim: "catch blocks use the error they caught" }), "  no convention stated here (ratio)");
   assert.equal(formatReportGithub(report({ claim: spoken, toldInClaim: true })).split("\n")[0], `::notice file=src/a.ts,line=12::${spoken}`, "one annotation says the gate once");
