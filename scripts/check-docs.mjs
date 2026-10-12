@@ -450,10 +450,10 @@ const dirOf = (rel) => rel.slice(0, rel.lastIndexOf("/"));
 // and what the row should say instead is a decision, not a typo.
 const DONE_UNHELD = new Set(["A42"]);
 
-/** A bare module name, the spelling most status cells use for a file of ours. */
+/** A bare module name, the spelling most rows' Status uses for a file of ours. */
 const DONE_BARE = /`([A-Za-z0-9._-]+\.mjs)`/g;
 
-// Bare names a status cell spells as an example in prose, not as a file here.
+// Bare names a Status spells as an example in prose, not as a file here.
 const DONE_EXAMPLES = new Set([
   // H25: the module a test of the companion table would credit by mistake.
   "defaults.mjs",
@@ -500,14 +500,14 @@ export function rowsCitedMissing(rows) {
  *
  * A row is written in two places, and every rule that reads what a row says
  * reads its file, so an index left behind is a table of contents for some other
- * record with every gate passing. `files` is row number to file text. An index
- * or a directory holding nothing is a fault too: with no row, each rule below
- * this one reads nothing and reports that as agreement.
+ * record with every gate passing. `rows` is the index as `indexRows` reads it,
+ * and `files` is row number to the file as `readRowFile` reads it. An index or
+ * a directory holding nothing is a fault too: with no row, each rule below this
+ * one reads nothing and reports that as agreement.
  */
-export function recordProblems(index, files) {
+export function recordProblems(rows, files) {
   const problems = [];
   const say = (where, detail) => problems.push({ where, detail });
-  const rows = indexRows(index);
   if (rows.length === 0) say("DECISIONS.md", "holds no row, so no decision was read");
   if (files.size === 0) {
     say(DECISIONS_DIR, "holds no row file, so no decision was read");
@@ -521,15 +521,18 @@ export function recordProblems(index, files) {
       say("DECISIONS.md", `${at} has no file ${rel}`);
       continue;
     }
-    const file = readRowFile(files.get(row.id));
+    const file = files.get(row.id);
     if (!file) {
-      say(rel, `is not a row file: \`# ${row.id}\`, a \`Section:\` line, then \`## Decision\`, \`## Why\` and \`## Status\` in that order`);
+      say(rel, `is not a row file: \`# ${row.id}\`, a \`Section:\` line, then \`## Decision\`, \`## Why\` and \`## Status\` in that order, each once`);
       continue;
     }
     if (file.id !== row.id) say(rel, `is headed # ${file.id}, and a row file is named by its number`);
     if (file.section !== row.section) say(rel, `says "Section: ${file.section}", and DECISIONS.md holds row ${row.id} under "${row.section}"`);
-    if (escaped(file.decision) !== row.decision) say(rel, `its Decision is not the Decision cell DECISIONS.md holds for ${at}: the two are one text, a \`|\` written \`\\|\` in the index`);
-    if (shortStatus(file.status) !== row.status) say(rel, `its Status opens "${shortStatus(file.status)}", and DECISIONS.md says "${row.status}" for ${at}`);
+    if (file.decision === "") say(rel, "has nothing under `## Decision`");
+    else if (escaped(file.decision) !== row.decision) say(rel, `its Decision is not the Decision cell DECISIONS.md holds for ${at}: the two are one text, a \`|\` written \`\\|\` in the index`);
+    const opens = shortStatus(file.status);
+    if (!opens) say(rel, "its Status opens with none of `**done**`, `partial` and `todo`, and the index says which of the three");
+    else if (opens !== row.status) say(rel, `its Status opens "${opens}", and DECISIONS.md says "${row.status}" for ${at}`);
   }
   const indexed = new Set(rows.map((row) => row.id));
   for (const name of files.keys()) {
@@ -738,8 +741,8 @@ export function checkDocs() {
 
   // A row whose cells outnumber the header's is a row whose tail GitHub drops,
   // silently: an unescaped `|` inside a code span splits the cell it sits in, and
-  // the Status column falls off the end. Three rows had it at once, one of them a
-  // whole `**done**` list. The escape is `\|`, which the file already uses.
+  // the File column falls off the end, the row's link with it. The escape is
+  // `\|`, which the file already uses.
   for (const row of indexed) {
     claim("DECISIONS.md", row.cells === 4, `row ${row.id} on line ${row.line} has ${row.cells} cells, not 4: escape a \`|\` inside a code span as \`\\|\``);
   }
@@ -749,9 +752,9 @@ export function checkDocs() {
 
   // The index says a row exists and its file says what the row is, so the two
   // are held to each other before anything below reads a row.
-  const rowTexts = rowFiles(root);
-  for (const { where, detail } of recordProblems(read("DECISIONS.md"), rowTexts)) claim(where, false, detail);
-  const record = [...rowTexts.values()].flatMap((text) => readRowFile(text) ?? []);
+  const rowsRead = new Map([...rowFiles(root)].map(([id, text]) => [id, readRowFile(text)]));
+  for (const { where, detail } of recordProblems(indexed, rowsRead)) claim(where, false, detail);
+  const record = [...rowsRead.values()].filter(Boolean);
 
   // "(B13)" read as the source of a rule another row holds, and nothing read it.
   // A number that names the wrong row still passes; one that names no row does not.
@@ -997,7 +1000,7 @@ export function checkDocs() {
     [`(${N})\\s+(?:vendored\\s+)?grammar(?:s|\\s+files|\\s+packages)\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
     [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
   ];
-  const rowDocs = [...rowTexts.keys()].map((name) => `${DECISIONS_DIR}/${name}.md`);
+  const rowDocs = [...rowsRead.keys()].map((name) => `${DECISIONS_DIR}/${name}.md`);
   const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", ...rowDocs, "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
   for (const rel of stating) {
     const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);

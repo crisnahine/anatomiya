@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { PROSE_NAMES, READS, avoidedWords, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
-import { DECISIONS_DIR } from "../scripts/decisions.mjs";
+import { DECISIONS_DIR, indexRows, readRowFile } from "../scripts/decisions.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
@@ -1057,21 +1057,21 @@ const INDEX = [
 ].join("\n");
 const rowFile = ({ id, section = "B. Engine", decision, status }) => `# ${id}\n\nSection: ${section}\n\n## Decision\n\n${decision}\n\n## Why\n\nBecause.\n\n## Status\n\n${status}\n`;
 const FILES = { B1: { id: "B1", decision: "One `a | b` site.", status: "**done** `walk.mjs`" }, B2: { id: "B2", decision: "Two.", status: "partial: half of it" } };
-const files = (over = {}) => new Map(Object.entries({ ...FILES, ...over }).filter(([, row]) => row).map(([name, row]) => [name, typeof row === "string" ? row : rowFile(row)]));
+const files = (over = {}) => new Map(Object.entries({ ...FILES, ...over }).filter(([, row]) => row).map(([name, row]) => [name, readRowFile(typeof row === "string" ? row : rowFile(row))]));
 
 test("an index and the row files that say the same have no problem", () => {
-  assert.deepEqual(recordProblems(INDEX, files()), []);
+  assert.deepEqual(recordProblems(indexRows(INDEX), files()), []);
 });
 
 test("an index row with no file, and a row file with no index row, are each named", () => {
-  assert.deepEqual(recordProblems(INDEX, files({ B2: null })), [{ where: "DECISIONS.md", detail: "row B2 on line 6 has no file docs/decisions/B2.md" }]);
-  assert.deepEqual(recordProblems(INDEX, files({ B7: { id: "B7", decision: "Seven.", status: "**done**" } })), [
+  assert.deepEqual(recordProblems(indexRows(INDEX), files({ B2: null })), [{ where: "DECISIONS.md", detail: "row B2 on line 6 has no file docs/decisions/B2.md" }]);
+  assert.deepEqual(recordProblems(indexRows(INDEX), files({ B7: { id: "B7", decision: "Seven.", status: "**done**" } })), [
     { where: "docs/decisions/B7.md", detail: "no row of DECISIONS.md has this number" },
   ]);
 });
 
 test("a row file that says another section, decision or status than its index row is named with both", () => {
-  const said = (over) => recordProblems(INDEX, files({ B2: { ...FILES.B2, ...over } }));
+  const said = (over) => recordProblems(indexRows(INDEX), files({ B2: { ...FILES.B2, ...over } }));
 
   assert.deepEqual(said({ section: "C. The counted-claim model" }), [
     { where: "docs/decisions/B2.md", detail: 'says "Section: C. The counted-claim model", and DECISIONS.md holds row B2 under "B. Engine"' },
@@ -1084,24 +1084,35 @@ test("a row file that says another section, decision or status than its index ro
   ]);
 });
 
+test("a row file with no Decision, or a Status that opens with none of the three words, is named even where the index agrees", () => {
+  const index = (cell, to) => INDEX.replace(cell, to);
+  const none = "its Status opens with none of `**done**`, `partial` and `todo`, and the index says which of the three";
+
+  assert.deepEqual(recordProblems(indexRows(INDEX), files({ B2: { ...FILES.B2, decision: "" } })), [{ where: "docs/decisions/B2.md", detail: "has nothing under `## Decision`" }]);
+  assert.deepEqual(recordProblems(indexRows(index("| Two. |", "|  |")), files({ B2: { ...FILES.B2, decision: "" } })), [{ where: "docs/decisions/B2.md", detail: "has nothing under `## Decision`" }]);
+  assert.deepEqual(recordProblems(indexRows(INDEX), files({ B2: { ...FILES.B2, status: "" } })), [{ where: "docs/decisions/B2.md", detail: none }]);
+  assert.deepEqual(recordProblems(indexRows(index("| partial |", "|  |")), files({ B2: { ...FILES.B2, status: "" } })), [{ where: "docs/decisions/B2.md", detail: none }]);
+  assert.deepEqual(recordProblems(indexRows(index("| partial |", "| see https |")), files({ B2: { ...FILES.B2, status: "see https://example.com: half of it" } })), [{ where: "docs/decisions/B2.md", detail: none }]);
+});
+
 test("a file under another row's name, a file that is no row file, and a row linking elsewhere are named", () => {
-  assert.deepEqual(recordProblems(INDEX, files({ B2: { ...FILES.B2, id: "B3" } })), [
+  assert.deepEqual(recordProblems(indexRows(INDEX), files({ B2: { ...FILES.B2, id: "B3" } })), [
     { where: "docs/decisions/B2.md", detail: "is headed # B3, and a row file is named by its number" },
   ]);
-  assert.deepEqual(recordProblems(INDEX, files({ B2: "Two.\n" })), [
-    { where: "docs/decisions/B2.md", detail: "is not a row file: `# B2`, a `Section:` line, then `## Decision`, `## Why` and `## Status` in that order" },
+  assert.deepEqual(recordProblems(indexRows(INDEX), files({ B2: "Two.\n" })), [
+    { where: "docs/decisions/B2.md", detail: "is not a row file: `# B2`, a `Section:` line, then `## Decision`, `## Why` and `## Status` in that order, each once" },
   ]);
-  assert.deepEqual(recordProblems(INDEX.replace("[B2](docs/decisions/B2.md)", "[B2](docs/decisions/B1.md)"), files()), [
+  assert.deepEqual(recordProblems(indexRows(INDEX.replace("[B2](docs/decisions/B2.md)", "[B2](docs/decisions/B1.md)")), files()), [
     { where: "DECISIONS.md", detail: "row B2 on line 6 does not link to its file: its last cell is `[B2](docs/decisions/B2.md)`" },
   ]);
 });
 
 test("an index of no rows, and a directory of no row files, are each a fault said aloud and never a pass", () => {
-  assert.deepEqual(recordProblems("## B. Engine\n", new Map()), [
+  assert.deepEqual(recordProblems(indexRows("## B. Engine\n"), new Map()), [
     { where: "DECISIONS.md", detail: "holds no row, so no decision was read" },
     { where: "docs/decisions", detail: "holds no row file, so no decision was read" },
   ]);
-  assert.equal(recordProblems(INDEX, new Map())[0].detail, "holds no row file, so no decision was read");
+  assert.equal(recordProblems(indexRows(INDEX), new Map())[0].detail, "holds no row file, so no decision was read");
 });
 
 test("an index row and its file disagreeing fails the check", (t) => {

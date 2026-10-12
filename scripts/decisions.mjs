@@ -18,12 +18,12 @@ import { ROOT } from "./plugins.mjs";
 export const DECISIONS_DIR = "docs/decisions";
 
 /** A row's line, in the index and in the one table alike, and the header line that tells the two apart. */
-export const ROW = /^\| ([A-H]\d+) \|/;
-export const INDEX_HEAD = "| # | Decision | Status | File |";
-export const TABLE_HEAD = "| # | Decision | Why | Status |";
+const ROW = /^\| ([A-H]\d+) \|/;
+const INDEX_HEAD = "| # | Decision | Status | File |";
+const TABLE_HEAD = "| # | Decision | Why | Status |";
 
 /** A line's cells as written. A `|` inside a cell is written `\|`, so a bare one is always a cell's edge. */
-export const cellsOf = (line) => line.split(/(?<!\\)\|/).slice(1, -1);
+const cellsOf = (line) => line.split(/(?<!\\)\|/).slice(1, -1);
 
 /**
  * Every row the index holds, in order: its number, the section heading above
@@ -44,24 +44,36 @@ export function indexRows(text) {
   return rows;
 }
 
-/** What the index says of a Status cell: `done`, or the word the cell opens with before its first colon. */
-export const shortStatus = (status) => (status.startsWith("**done**") ? "done" : status.split(":")[0]);
+/**
+ * What the index says of a Status: `done` where it opens with `**done**`,
+ * `partial` where it opens with `partial`, `todo` where it opens with `todo`,
+ * and null where it opens with none of the three.
+ */
+export function shortStatus(status) {
+  const opens = /^(?:\*\*(done)\*\*|(partial|todo)\b)/.exec(status);
+  return opens ? (opens[1] ?? opens[2]) : null;
+}
 
 const HEADINGS = ["## Decision", "## Why", "## Status"];
 
 /**
  * A row file's number, section and three cells, or null where the text is not one.
  *
- * Each cell comes back on one line, as a table holds it: the Why is written a
- * sentence per line so a search answers with a sentence, and a line break inside
- * a paragraph is a space to Markdown as well.
+ * Each cell comes back on one line, as a table holds it: the Why and the Status
+ * are written a sentence per line so a search answers with a sentence, and a
+ * line break inside a paragraph is a space to Markdown as well.
+ *
+ * A byte order mark and the whitespace at a line's end are dropped, since a
+ * fault in a character nobody can see is a report nobody can act on. A heading
+ * written twice is refused: the second would read as the text of a cell.
  */
 export function readRowFile(text) {
-  const lines = text.split(/\r?\n/);
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).map((line) => line.trimEnd());
   const id = /^# ([A-H]\d+)$/.exec(lines[0])?.[1];
   const at = HEADINGS.map((heading) => lines.indexOf(heading));
   if (!id || at[0] < 0 || at[0] > at[1] || at[1] > at[2]) return null;
-  const between = (from, to) => lines.slice(from + 1, to).filter((line) => line.trim() !== "");
+  if (HEADINGS.some((heading, i) => lines.includes(heading, at[i] + 1))) return null;
+  const between = (from, to) => lines.slice(from + 1, to).filter((line) => line !== "");
   const head = between(0, at[0]);
   const section = /^Section: (.+)$/.exec(head[0])?.[1];
   if (!section || head.length !== 1) return null;
@@ -72,14 +84,14 @@ export function readRowFile(text) {
 /** A cell's text as a table row has to spell it. */
 export const escaped = (text) => text.replaceAll("|", "\\|");
 
-// The one empty cell the record has is spelled `| |`, and every other is padded by a space each side.
+// An empty cell is spelled `| |`, and every other is padded by a space each side.
 const cell = (text) => (text === "" ? " " : ` ${escaped(text)} `);
 
 /**
- * The record as the one table it was before the split: the index line for
- * line, with each row's cells read from its file. `files` is row number to
- * file text. Throws on a row whose file is missing or is not a row file, since
- * a table with a hole in it is not the record.
+ * The record as one table, a whole row on each line: the index line for line,
+ * with each row's cells read from its file. `files` is row number to file
+ * text. Throws on a row whose file is missing or is not a row file, since a
+ * table with a hole in it is not the record.
  */
 export function rebuild(index, files) {
   return index

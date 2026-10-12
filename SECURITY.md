@@ -618,8 +618,8 @@ Say the quiet part plainly.
   lib files come from the plugin's own `typescript`, never the repository's, because a repository
   can ship its own and reading it runs its code in this process. A path's containment is decided on
   the path the system opens, so a `..` after a link is taken from where the link leads, and a path
-  that steps out of the repository that way is refused. Decisions B7 to B9 and B51 in
-  `DECISIONS.md` carry the measurements. A scan that leaves the checker off reads neither
+  that steps out of the repository that way is refused. The files of decisions B7 to B9 and B51
+  under `docs/decisions/` carry the measurements. A scan that leaves the checker off reads neither
   file. A background refresh runs the checker like any scan, except where the last run measured it
   as degraded, or the last two runs failed, and nothing it reads has changed: to compare, the refresh hashes up to the first
   megabyte of the root config through a bounded read and parses nothing, and a scan that runs the
