@@ -76,3 +76,32 @@ test("doubling work whose first read comes out past linear is read again", () =>
     process.cpuUsage = real;
   }
 });
+
+test("a side timed again runs close to as long as it should, not just past four of Windows' steps", () => {
+  // Windows' 15.6 ms CPU steps over a clock only the work moves, and a stall in the calibration
+  // alone, so the first timing reads nothing and the second about 80 ms.
+  const real = process.cpuUsage;
+  let spent = 0;
+  const step = (us) => Math.floor(us / 15_600) * 15_600;
+  process.cpuUsage = (since) => (since ? { user: step(spent) - since.user, system: 0 } : { user: step(spent), system: 0 });
+  let made = 0;
+  let larger = 0;
+  try {
+    const ratio = timedRatio((n) => {
+      let stalls = made++ === 0 ? 3 : 0;
+      if (n === 100) larger++;
+      const cost = n === 100 ? 5000 : 2500;
+      return () => {
+        if (stalls > 0) {
+          stalls--;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+        }
+        spent += cost;
+      };
+    }, 50, { rounds: 1 });
+    assert.equal(larger, 3, "timed a third time, past 200 ms");
+    assert.ok(ratio > 1.8 && ratio < 2.2, `twice the work read ${ratio} times as long`);
+  } finally {
+    process.cpuUsage = real;
+  }
+});
