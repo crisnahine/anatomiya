@@ -280,7 +280,9 @@ function renderText(report) {
     lines.push("");
     lines.push(`${f.severity}  ${quotePath(f.path)}:${f.line}  ${String(f.claim ?? "").replace(/\s+/g, " ").trim()}`);
     const reason = shownReason(f, quotePath);
-    if (f.where || reason) lines.push(`  ${[f.where, reason].filter(Boolean).join(": ")}`);
+    // A finding on a name quotes that name as its snippet, so print it once.
+    const where = reason || f.where !== f.snippet ? f.where : null;
+    if (where || reason) lines.push(`  ${[where, reason].filter(Boolean).join(": ")}`);
     if (f.snippet) lines.push(`  ${f.snippet}`);
   }
 
