@@ -700,7 +700,8 @@ file a grammar read is one its compiler rejects (`docs/measurements/2026-10-08-r
 | Kotlin | `*Test`, `*Tests`, `*IT` under a test tree | doc comments | handlers (repositories differ by 0.12); naming (0.95 to 1.00); imports (ktlint's default rule) |
 
 The bar is one repository under 0.90 and a spread of 0.15. No filename claim is asked of any of the
-seven, for the same reason. `DECISIONS.md` rows C50 to C54 and H52 hold the numbers.
+seven, for the same reason. The files of rows C50 to C54 and H52 under `docs/decisions/` hold the
+numbers.
 
 **A grammar reads less than its language.** A file a grammar cannot read is left out of every
 count, and the scan and the overview say how many there were: `82 files could not be read by this

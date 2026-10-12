@@ -104,9 +104,9 @@ Do write the thing that stops the next person undoing the work:
 This is the rule that keeps the repository from drifting back into guesses.
 
 If you write code whose shape is not obvious from reading it, there must be a row in `DECISIONS.md`
-that says why, and the code comment should be a short version of that row rather than a pointer to
-it. A comment may end with the row's id in parentheses, `(F17)`, and the shipped code is full of
-them: an id
+whose file says why, and the code comment should be a short version of that row rather than a
+pointer to it. A comment may end with the row's id in parentheses, `(F17)`, and the shipped code is
+full of them: an id
 here names this repository's own register rather than a ticket, and the row it points at is one file
 away, at `docs/decisions/<id>.md`. A ticket number, a PR number or a link to a conversation is none
 of that, and stays out.
@@ -147,7 +147,8 @@ To add a row:
 2. Write `docs/decisions/<id>.md` in the shape above: `# <id>`, a `Section:` line that repeats the
    section's heading in `DECISIONS.md` without the `## `, then `## Decision`, `## Why` and
    `## Status` in that order. Write the Why and the Status one sentence per line, so a search of the
-   directory answers with a sentence. `## Why` may have nothing under it.
+   directory answers with a sentence. A line may be long. `## Why` may have nothing under it, and
+   the other two may not. Each heading is written once.
 3. Add the row's line at the end of that section's table in `DECISIONS.md`: the id, the Decision,
    the short status, and a link to the file.
 
@@ -159,12 +160,17 @@ not:
 
 - The Decision is one text. In the row file a `|` is written bare, and in the index it is written
   `\|`, since the index is a table.
-- The short status is `done` where the file's Status opens with `**done**`. Anywhere else it is the
-  text before the Status's first colon, so `partial: the scan path only` is `partial` in the index.
+- The short status is one of three words: `done` where the file's Status opens with `**done**`,
+  `partial` where it opens with `partial`, and `todo` where it opens with `todo`. A Status that
+  opens with none of the three fails the gate.
 - The section is the one the row's line sits under.
 
 Every row has a file and every file has a row. `node scripts/decisions.mjs` prints the record as one
 table with a whole row on each line, for reading a section from top to bottom.
+
+Nothing checks where the line breaks fall in a Why or a Status. The reader joins the lines under a
+heading with a space, drops the blank ones and the whitespace at a line's end, so moving a break
+never changes a row's text. One sentence per line is for the search, and it is yours to keep.
 
 The Why is where the work is. "It seemed cleaner" is not a why. A measurement, a probe that
 overturned an assumption, or a concrete failure you reproduced is a why. Numbers beat adjectives:
@@ -603,7 +609,7 @@ So before a dimension is accepted:
    between the highest and lowest ratio must be at least 0.15. If every repository sits at or near
    1.0, the dimension is a language default and it does not ship, however sensible the claim sounds.
    The 0.15 is a working threshold set to make the test bite, not a measured constant; if you think
-   it is wrong, argue it with numbers and move it in `DECISIONS.md`.
+   it is wrong, argue it with numbers and move it in the decision row that holds it.
 4. **Sanity check the applicability predicate.** A wrongly narrow predicate gives ratio 1.0 over a
    small candidate set and reads as a strong convention. Compare `applicability` against the area's
    file count and be suspicious of anything under a quarter.
@@ -611,8 +617,8 @@ So before a dimension is accepted:
    restating it is noise. The map is for what the linter does not enforce.
 
 A claim that reads well and scores 1.0 everywhere is the failure mode this bar exists to catch. Kill
-it early. Rejecting a dimension is a good outcome and worth a row in `DECISIONS.md` explaining what
-the measurement showed, so nobody proposes it again.
+it early. Rejecting a dimension is a good outcome and worth a row in `DECISIONS.md`, its file
+explaining what the measurement showed, so nobody proposes it again.
 
 ## Pull requests
 

@@ -41,7 +41,8 @@ Each row of the index is `| # | Decision | Status | File |`, on one line.
 
 - **`#`** is the stable id, for example `B10`, `E4`, `F5`. Cite decisions by that id.
 - **`Decision`** is the decision, whole.
-- **`Status`** is short: `done`, or the word the row's Status opens with, `partial` or `todo`.
+- **`Status`** is one of three words: `done` where the row's Status opens with `**done**`, `partial`
+  where it opens with `partial`, `todo` where it opens with `todo`.
 - **`File`** links to `docs/decisions/<id>.md`.
 
 So `grep -n "B10" DECISIONS.md` answers with the row and every row that cites it in its Decision, a

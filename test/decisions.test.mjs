@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { indexRows, readRowFile, rebuild } from "../scripts/decisions.mjs";
+import { indexRows, readRowFile, rebuild, shortStatus } from "../scripts/decisions.mjs";
 
 const B2 = [
   "# B2",
@@ -19,25 +19,36 @@ const B2 = [
   "",
   "## Status",
   "",
-  "**done** `walk.mjs`",
+  "**done** `walk.mjs` (`a`).",
+  "Guarded by `walk.test.mjs`.",
   "",
 ].join("\n");
 
+const B2_READ = {
+  id: "B2",
+  section: "B. Engine",
+  decision: "An `a || b` chain is one site.",
+  why: "The first sentence. The second, with `x | y` in it.",
+  status: "**done** `walk.mjs` (`a`). Guarded by `walk.test.mjs`.",
+};
+
 test("a row file reads to its number, its section and its three cells, each on one line", () => {
-  assert.deepEqual(readRowFile(B2), {
-    id: "B2",
-    section: "B. Engine",
-    decision: "An `a || b` chain is one site.",
-    why: "The first sentence. The second, with `x | y` in it.",
-    status: "**done** `walk.mjs`",
-  });
+  assert.deepEqual(readRowFile(B2), B2_READ);
 });
 
 test("a row file with nothing under Why reads an empty cell, and one checked out with CRLF reads the same", () => {
   const empty = B2.replace("The first sentence.\nThe second, with `x | y` in it.\n\n", "");
 
   assert.equal(readRowFile(empty).why, "");
-  assert.deepEqual(readRowFile(B2.replaceAll("\n", "\r\n")), readRowFile(B2));
+  assert.deepEqual(readRowFile(B2.replaceAll("\n", "\r\n")), B2_READ);
+});
+
+test("a row file reads as what it looks like: a space at a line's end and a byte order mark are not text", () => {
+  assert.deepEqual(readRowFile(B2.replace("# B2", "# B2 ")), B2_READ);
+  assert.deepEqual(readRowFile(B2.replace("## Why", "## Why\t")), B2_READ);
+  assert.deepEqual(readRowFile(B2.replace("Section: B. Engine", "Section: B. Engine  ")), B2_READ);
+  assert.deepEqual(readRowFile(B2.replace("one site.", "one site. ").replace("The first sentence.", "The first sentence. ")), B2_READ);
+  assert.deepEqual(readRowFile(`\uFEFF${B2}`), B2_READ);
 });
 
 test("a file missing a heading, or carrying them out of order, is no row file", () => {
@@ -45,6 +56,27 @@ test("a file missing a heading, or carrying them out of order, is no row file", 
   assert.equal(readRowFile(B2.replace("## Why", "## Status").replace(/## Status(?![\s\S]*## Status)/, "## Why")), null);
   assert.equal(readRowFile(B2.replace("Section: B. Engine\n", "")), null);
   assert.equal(readRowFile(""), null);
+});
+
+test("a file holding one of the three headings twice is no row file", () => {
+  assert.equal(readRowFile(`${B2}\n## Status\n\ntodo\n`), null);
+  assert.equal(readRowFile(B2.replace("one site.", "one site.\n## Why\nand more.")), null);
+  assert.equal(readRowFile(B2.replace("## Decision", "## Decision\n\n## Decision")), null);
+});
+
+test("a file with two Section lines, or headed by no row number, is no row file", () => {
+  assert.equal(readRowFile(B2.replace("Section: B. Engine", "Section: B. Engine\nSection: B. Engine")), null);
+  assert.equal(readRowFile(B2.replace("# B2", "# Engine")), null);
+});
+
+test("the short status is the one of the three openings a Status has, and nothing where it has none", () => {
+  assert.equal(shortStatus("**done** `walk.mjs`"), "done");
+  assert.equal(shortStatus("partial: the scan path only, in `scan.mjs`"), "partial");
+  assert.equal(shortStatus("todo"), "todo");
+  assert.equal(shortStatus("see https://example.com: nothing here yet"), null);
+  assert.equal(shortStatus("done `walk.mjs`"), null);
+  assert.equal(shortStatus("partially there"), null);
+  assert.equal(shortStatus(""), null);
 });
 
 const B1 = "# B1\n\nSection: B. Engine\n\n## Decision\n\nOne.\n\n## Why\n\n## Status\n\npartial: half of it\n";
@@ -75,7 +107,7 @@ const TABLE = [
   "|---|---|---|---|",
   "| B1 | One. | | partial: half of it |",
   "",
-  "| B2 | An `a \\|\\| b` chain is one site. | The first sentence. The second, with `x \\| y` in it. | **done** `walk.mjs` |",
+  "| B2 | An `a \\|\\| b` chain is one site. | The first sentence. The second, with `x \\| y` in it. | **done** `walk.mjs` (`a`). Guarded by `walk.test.mjs`. |",
   "",
   "## What is not built",
   "",
@@ -84,11 +116,12 @@ const TABLE = [
 ].join("\n");
 
 test("an index row reads to its number, the section it sits under, its decision as written, its short status and its file", () => {
-  assert.deepEqual(indexRows(INDEX), [
+  const read = [
     { id: "B1", section: "B. Engine", decision: "One.", status: "partial", file: "docs/decisions/B1.md", cells: 4, line: 7 },
     { id: "B2", section: "B. Engine", decision: "An `a \\|\\| b` chain is one site.", status: "done", file: "docs/decisions/B2.md", cells: 4, line: 9 },
-  ]);
-  assert.deepEqual(indexRows(INDEX.replaceAll("\n", "\r\n")), indexRows(INDEX), "and a CRLF checkout reads the same");
+  ];
+  assert.deepEqual(indexRows(INDEX), read);
+  assert.deepEqual(indexRows(INDEX.replaceAll("\n", "\r\n")), read, "and a CRLF checkout reads the same");
 });
 
 test("an index row whose last cell is no link names no file, and one split by a bare pipe counts the cells it has", () => {
