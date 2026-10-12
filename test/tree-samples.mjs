@@ -21,6 +21,7 @@ LIMITS["high"] = 2
 RATES: Dict[str, a.Rate | None] = {}
 HOOKS: Callable[[int], tuple[int, ...]] = None
 FIRST: a.Rates[0] = None
+MODE: Literal["a"] | None = None
 EOL = "\\n"
 BRACES = f"{{}}"
 
@@ -166,6 +167,7 @@ var limits = map[string]float64{"low": -1, "high": 2.5}
 var marks = [...]string{"a\\n"}
 var cells = map[string][2]*fmt.State{}
 var extra = map[string]interface{}{}
+var boxed = struct{ v Box[int] }{}
 
 var (
 	ready, done = true, false

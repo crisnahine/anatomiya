@@ -276,3 +276,79 @@ test("a constant asks nothing whatever body holds it", async () => {
   assert.deepEqual(await asking("php", '<?php\nenum En: string {\n    const X = 1;\n    case A = "a";\n}\ninterface I {\n    const Y = 1;\n}\n', [4]), [2, 4, 6]);
   assert.deepEqual(await asking("java", "@interface An {\n    int E = 1;\n}\nrecord R(int x) {\n    static int d = 1;\n}\n"), [1, 4]);
 });
+
+test("a C# literal declared as a type spelt as a name asks, since the type may convert it, beside one declared as a predefined type", async () => {
+  const source = [
+    "class A {",
+    "    Money a = 5;",
+    "    int b = 5;",
+    '    Name n = "x";',
+    '    string s = "x";',
+    "    Money c = -1;",
+    "    int d = -1;",
+    "    private static readonly Money F = 5;",
+    "    private static readonly int G = 5;",
+    // An enum takes 0 by the language's own rule, and nothing here tells an enum from a struct.
+    "    MyEnum e = 0;",
+    "    Money? h = 5;",
+    "    Money[] ms = { 1, 2 };",
+    "    System.Int32 q = 5;",
+    "    List<int> ws = { 1 };",
+    "    dynamic y = 5;",
+    "    Money j = 5, k = null;",
+    "    Foo f = null;",
+    "    int? g = null;",
+    "    int[] xs = { 1, 2 };",
+    "    List<int> ys = null;",
+    "    object o = 5;",
+    "    nuint p = 1;",
+    "    int? t = 1;",
+    "    void M() {",
+    "        Money l = 5;",
+    "        var v = 1;",
+    "        Foo z = null;",
+    "        const int K = 1;",
+    "    }",
+    "}",
+    "",
+  ].join("\n");
+  assert.deepEqual(await asking("csharp", source), [1, 2, 4, 6, 8, 10, 11, 12, 13, 14, 15, 16, 24, 25]);
+});
+
+test("a C# const of a named type reads as inert: no user conversion is a constant expression, so the compiler refuses the line where one would run", async () => {
+  assert.deepEqual(await asking("csharp", "class A {\n    const Money D = 5;\n    const MyEnum E = 0;\n    void M() {\n        const Money L = 5;\n    }\n}\n"), [1, 4]);
+});
+
+test("a sign outside a value asks where it stands before a name, which may define the operator, and asks nothing before a literal", async () => {
+  assert.deepEqual(await asking("python", 'a[-b] = 1\na[~b] = 1\nx: -b = 1\na[-1] = 1\na[-"k"] = 1\na[-b.c] = 1\n'), [1, 2, 3, 6]);
+  assert.deepEqual(await asking("php", "<?php\n$a[-$b] = 1;\n$a[-1] = 1;\n"), [2]);
+  assert.deepEqual(await asking("go", "package m\n\nvar x [-n]int = [1]int{0}\nvar y [+3]int = [3]int{0}\n"), [3]);
+});
+
+test("a union or a generic type made of names and literals asks nothing, and one holding a call asks", async () => {
+  const python = "x: Literal['a-b'] | None = None\nx: Literal[f()] | None = None\nx: a | \"b-c\" = 1\nx: Literal['a'] | (b - c) = None\n";
+  assert.deepEqual(await asking("python", python), [2, 4]);
+  const go = "package m\n\nvar x = struct{ a T[int] }{}\nvar y = struct{ a T[[f()]int] }{}\nvar z pkg.T[int, string] = nil\nvar w = T[int]{}\n";
+  assert.deepEqual(await asking("go", go), [4]);
+});
+
+test("a declaration with no body asks: a method an interface or a trait names, a foreign function, a property that is an expression", async () => {
+  // The line that opens a Go type or a Rust foreign block, and an embedded type, ask as shapes no list names.
+  assert.deepEqual(await asking("go", "package m\n\ntype I interface {\n\tM(x int) error\n\tfmt.Stringer\n}\n", [3, 5]), [3, 4, 5]);
+  assert.deepEqual(await asking("rust", 'trait T {\n    fn m(&self) -> u8;\n}\nextern "C" {\n    fn ext(x: i32) -> i32;\n}\n', [4]), [1, 2, 4, 5]);
+  assert.deepEqual(await asking("csharp", "class A {\n    int P => 1;\n    int Q { get; } = 1;\n    int this[int i] => 1;\n}\n"), [1, 2, 3, 4]);
+});
+
+test("a C# enum member asks though it computes nothing: no list names it, and a false ask is the cost", async () => {
+  assert.deepEqual(await asking("csharp", "enum E {\n    A,\n    B = 2,\n}\n", [1, 2, 3]), [1, 2, 3]);
+});
+
+test("a literal declared as a named type asks nothing where the language converts none with a function somebody wrote", async () => {
+  // Python checks no annotation, Go converts an untyped constant itself, and the other four refuse the line.
+  assert.deepEqual(await asking("python", "x: Money = 5\n"), []);
+  assert.deepEqual(await asking("php", "<?php\nclass A {\n    public Money $a = 5;\n}\n"), [2]);
+  assert.deepEqual(await asking("go", "package m\n\nvar a Money = 5\n"), []);
+  assert.deepEqual(await asking("java", "class A {\n    Money a = 5;\n}\n"), [1]);
+  assert.deepEqual(await asking("rust", "const A: Money = 5;\nfn f() {\n    let a: Money = 5;\n}\n"), [2]);
+  assert.deepEqual(await asking("kotlin", "val a: Money = 5\n"), []);
+});

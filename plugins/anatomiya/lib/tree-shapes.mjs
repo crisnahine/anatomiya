@@ -32,7 +32,7 @@ export const SHAPES = {
     value: "right",
     // What a binding may hold outside its value: a target or an annotation made of names. Each is read by
     // its children, and a node of any other kind inside one asks.
-    part: ["identifier", "attribute", "subscript", "type", "generic_type", "type_parameter", "binary_operator", "list", "ellipsis"],
+    part: ["identifier", "attribute", "subscript", "type", "generic_type", "type_parameter", "union_type", "binary_operator", "list", "ellipsis"],
     // An annotation joins types with `|`, and any other operator computes.
     union: ["binary_operator"],
     // Where `|` joins: in a target it is an operator on values.
@@ -130,6 +130,9 @@ export const SHAPES = {
       "field_declaration_list",
       "field_declaration",
       "field_identifier",
+      "generic_type",
+      "type_arguments",
+      "type_elem",
     ],
     literal: ["int_literal", "float_literal", "imaginary_literal", "rune_literal", "interpreted_string_literal", "raw_string_literal", "true", "false", "nil"],
     literalPart: ["interpreted_string_literal_content", "raw_string_literal_content", "escape_sequence"],
@@ -215,12 +218,20 @@ export const SHAPES = {
     literal: ["integer_literal", "real_literal", "boolean_literal", "character_literal", "string_literal", "verbatim_string_literal", "raw_string_literal", "null_literal"],
     literalPart: ["string_literal_content", "character_literal_content", "escape_sequence", "raw_string_start", "raw_string_content", "raw_string_end"],
     unary: ["prefix_unary_expression"],
-    // An extension may define an operator a built-in type lacks, so a sign is part of a literal only
-    // before what the language itself pairs it with: `-` and `+`, `~`, and `!`.
+    // Assumed, and compiled nowhere: an extension may define an operator a built-in type lacks. So a
+    // sign is part of a literal only before what the language itself pairs it with: `-` and `+`, `~`,
+    // and `!`. Where no such operator can exist, the cost is a false ask.
     signed: ["integer_literal", "real_literal", "character_literal"],
     inverted: ["integer_literal", "character_literal"],
     negated: ["boolean_literal"],
     collection: ["initializer_expression"],
+    // A literal declared as a type with an `implicit operator` runs it, as `new Money(5)` would. So a
+    // declared type is read: a literal is inert under a type made of these, as a `const`, or where it
+    // is `null`, which the language converts itself. Given up: `Foo f = null;` where `Foo` is a
+    // struct that converts from a reference type.
+    declared: "type",
+    builtin: ["predefined_type", "implicit_type", "nullable_type", "array_type", "array_rank_specifier"],
+    nothing: ["null_literal"],
     // A directive that closes what another opened.
     closes: ["preproc_endregion"],
     declaration: ["field_declaration", "local_declaration_statement", "variable_declaration"],
