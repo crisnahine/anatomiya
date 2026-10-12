@@ -323,6 +323,7 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
     let config = null;
     let built = false;
     let done = false;
+    let asked = false;
     let settled = false;
     // The first silence is the whole program build and every silence after it
     // is a stall, so the window the clock is armed with moves once.
@@ -382,7 +383,8 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
         if (msg.sites) sited.set(msg.rel, { hits: msg.sites, resolution });
         return arm(guards.idleMs);
       }
-      if (msg.sited && stopWhen) {
+      if (msg.sited && stopWhen && !asked) {
+        asked = true;
         // The job walks on while this is decided, so the clock is fed by its
         // answers and not by the reader. A reader that throws stops nothing:
         // the scan's own fold runs the same reduction and throws for itself.
