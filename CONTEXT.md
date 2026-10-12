@@ -62,7 +62,7 @@ excluded directories, paths that escape the repository or are not a regular file
 files a generator wrote, and a second index entry for a file already counted under a name that differs
 only in case or Unicode form. The counts of where files live are taken over a wider set, every tracked file
 whether source or not.
-_Avoid_: codebase, file list, tree
+_Avoid_: codebase, file list (for the corpus), tree
 
 **Area**:
 A directory holding enough source files to be counted as a unit, together with the files beneath it that
@@ -77,7 +77,7 @@ _Avoid_: module, package, folder, scope
 A directory the "what lives where" counts give a line to, together with the files under it that no other
 root took. A different unit from an area: it is counted over every tracked file rather than source alone,
 and it says nothing about which area a file belongs to.
-_Avoid_: top-level directory, folder, package, area
+_Avoid_: top-level directory (for a root), folder, package, area
 
 **Fold**:
 What happens to files whose directory gets no unit of its own. A directory too small to be an area,
@@ -135,7 +135,7 @@ _Avoid_: single-file component, SFC, view
 The body of one `<script>` tag in a component, found by its framework's own rules. It is the only
 part of a component that is parsed, and a component's two blocks are read as one program at the
 file's own lines.
-_Avoid_: script tag, script section, inline script
+_Avoid_: script tag (for the block), script section, inline script
 
 **Family**:
 The languages a test may be written in and still answer a source file of another: JavaScript,
@@ -152,7 +152,7 @@ or in Rust its place directly under a crate's `tests`, or a `#[test]` in it with
 directory anywhere above it. In JavaScript and Ruby a `__tests__` segment, or a path that mirrors
 a source file from inside the tree, makes a test of a file nothing else names one only where the
 parse read nothing that says otherwise; where it did, the file is a **support file**.
-_Avoid_: test folder, test root, spec directory
+_Avoid_: test folder, test root (for a test tree), spec directory
 
 **Support file**:
 A file a test tree or a mirrored path would make a test, which the parse read and found to be
@@ -160,7 +160,7 @@ what the tests use instead: in JavaScript one that exports something, in Ruby on
 case. Fixtures, helpers, mocks, page objects and configs. It is neither a test nor a **producer**
 in any count. A file whose parse failed, or whose facets the parse could not finish, keeps the
 path rule.
-_Avoid_: fixture file, test helper, non-test
+_Avoid_: fixture file (for a support file), test helper, non-test
 
 **Producer**:
 A file a test could be written for: source this tool reads that holds something and is no test,
@@ -177,7 +177,7 @@ A Python package's `__init__.py` is asked for a test of its directory's name, si
 A root's count of them, `63 of 243 have a namesake test`, is taken over the files a test could be
 written for: source this tool reads that holds something and is no test, no story and no declaration
 file, outside every test tree of its family.
-_Avoid_: unit test, matching spec, paired test, sibling test
+_Avoid_: unit test (for a namesake), matching spec, paired test, sibling test (for a namesake)
 
 **Holds its own tests**:
 Said of a Rust source file with a `#[test]` function in it, in a `mod tests` or beside the code.
@@ -194,7 +194,7 @@ file of its stem at any depth of the paired tree. Where two source files there c
 answers neither, and it answers no file of that name outside the pair. A Python `tests`
 directory beside a package is paired too, and a test in it answers only the path it mirrors. No
 project file is read to find a pair.
-_Avoid_: test module, companion project, sibling project
+_Avoid_: test module (for the project), companion project, sibling project
 
 **Test by place**:
 A file that is a test because of where it sits, whatever its name and whatever it holds: a `.rs`
@@ -239,7 +239,7 @@ _Avoid_: unreadable, unparsed, broken, invalid
 **Dimension**:
 One yes-or-no question asked of every site of a construct, carrying the sentence to state when the answer
 is mostly yes and the sentence to state when it is mostly no.
-_Avoid_: rule, check, lint rule, metric
+_Avoid_: rule, check, lint rule (for a dimension), metric
 
 **Claim**:
 The sentence a dimension states when its sites conform.
@@ -272,7 +272,7 @@ _Avoid_: skipped, ignored, excluded
 **Eligible files**:
 The examined files a dimension could have spoken about at all: the ones written in its languages, less
 any whose syntax it could not read. The denominator applicability is printed and gated against.
-_Avoid_: candidates, area files, corpus
+_Avoid_: candidates, area files (for the eligible set), corpus
 
 **Applicability**:
 How many files in an area hold at least one candidate. Fewer than the eligible files it prints against,
@@ -335,7 +335,7 @@ child directories, at least half of them from ones that still hold a producer. T
 the first dot past any segment starting with a digit, Ruby's `_spec.rb` and `_test.rb` kept whole,
 and holds only ASCII letters, digits, `.`, `_` and `-`. A test's class is neither side of a
 co-change claim.
-_Avoid_: glob, pattern, file type
+_Avoid_: glob, pattern, file type (for a class)
 
 **Companion**:
 What a **co-change claim** says a producer class ships with: an edit to one named file, or a file
@@ -378,7 +378,7 @@ _Avoid_: block, freeze, lock
 **Population**:
 One area's slice of the pin: the files it held at the pinned commit, followed through renames to the names
 they carry today.
-_Avoid_: file set, scope, sample
+_Avoid_: file set (for the population), scope, sample
 
 **Baseline**:
 The counts a dimension had over a population, read at the pinned commit and never from the working tree.
@@ -411,7 +411,7 @@ _Avoid_: index, summary, README
 
 **Area file**:
 A map file scoped to one area's glob, so it loads when a file in that area is read.
-_Avoid_: rule file, doc, context file
+_Avoid_: rule file (for one of ours), doc, context file (for one of ours)
 
 **Target**:
 One of the three places a scan can write the map, each for one reader: `claude` for Claude Code,
@@ -465,7 +465,7 @@ or created. Nothing there is written or removed by that scan, and the rest of th
 The summary says so with a remedy, `--format json` carries `unwritable` on that target, and a
 refresh lists the directory under `stopped` in `refresh.json` and comes due again on its retry clock
 while it stays so. A scan that names the target refuses whole.
-_Avoid_: left alone, locked, skipped, failed
+_Avoid_: left alone (for a stopped file), locked, skipped, failed
 
 **Main checkout**:
 The checkout a linked worktree was added from, the one whose `.git` directory holds the worktree's
