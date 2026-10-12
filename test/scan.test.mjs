@@ -1,22 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsSymlinks } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { needsPathControl, needsPosixPaths, needsShebang, needsSymlinks } from "./platform.mjs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-import { scan } from "../plugins/anatomiya/lib/scan.mjs";
+import { countsNothingIn, scan } from "../plugins/anatomiya/lib/scan.mjs";
+import { collect as collectCorpus } from "../plugins/anatomiya/lib/corpus.mjs";
 import { renderArea, renderOverview } from "../plugins/anatomiya/lib/render.mjs";
 import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 import { factsJson } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanLines, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
-import { areaId, globsReach } from "../plugins/anatomiya/lib/areas.mjs";
+import { areaId, discover, globsReach } from "../plugins/anatomiya/lib/areas.mjs";
 import { echoContext, holdsTestIn, ownLayout } from "../plugins/anatomiya/lib/hook.mjs";
 import { isTestPath, noticeFor } from "../plugins/anatomiya/lib/precedent.mjs";
+import { runNotice } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
-import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
+import { buildPin, PIN_PATH, PIN_SCHEMA, readPin, resolve as resolveBaseline, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { defaultPoolSize } from "../plugins/anatomiya/lib/pool.mjs";
@@ -1754,7 +1757,7 @@ test("a package at the repository root gets an area file wherever a reader can b
   assert.match(first[`${copilot.dir}/anatomiya-overview${copilot.ext}`], /^- 1 area has no pattern GitHub Copilot can be given, so no file here covers it: the repository root\.$/m);
 
   // Two areas a reader could confuse, on two heads.
-  assert.ok(fileOf(claude, "the repository root").includes("# ./the repository root  6 files"));
+  assert.ok(fileOf(claude, "the repository root").includes('# "the repository root"  6 files'));
   for (const [name, body] of Object.entries(first)) {
     const lines = body.trimEnd().split("\n");
     assert.ok(lines.length - (lines.indexOf("---", 1) + 1) <= 43, `${name}: ${lines.length} lines`);
@@ -1990,4 +1993,351 @@ test("a Go test beside a Python file of its stem is no test of the Python file",
   const result = await scan(dir);
   const [shop] = result.layout.roots;
   assert.deepEqual([shop.companions.with, shop.companions.of, shop.companions.ext], [0, 3, ".py"]);
+});
+
+/** 120 three-file areas, exactly at the ceiling of 120, and a 20-file crate that states nothing. */
+function ceilingRepo(t) {
+  return repo(t, (d, { git, write }) => {
+    for (let a = 0; a < 120; a++) for (let i = 0; i < 3; i++) write(`m${String(a).padStart(3, "0")}/f${i}.ts`, moduleSource(i));
+    for (let i = 0; i < 20; i++) write(`crate/src/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+test("at the ceiling, a crate that counts nothing takes no place from an area that counts", async (t) => {
+  // The crate is the largest area, so the fold takes a three-file one for it,
+  // and then the crate is dropped for counting nothing.
+  const dir = ceilingRepo(t);
+
+  const first = await scan(dir);
+  assert.equal(first.areas.length, 120);
+  assert.equal(first.corpus.orphaned, 0, "no area is folded for the crate");
+  assert.ok(!first.areas.some((a) => a.path.startsWith("crate")));
+  assert.deepEqual(stable(await scan(dir)), stable(first));
+
+  // The pin gives the places back the way the scan did, so it holds the areas
+  // the scan printed, and a scan under it reads every one as the population pinned.
+  const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
+  const { pin } = await runPin(dir);
+  assert.deepEqual(pin.areas.map((a) => a.path).filter((p) => p !== "crate/src"), first.areas.map((a) => a.path));
+  const pinned = await scan(dir);
+  assert.equal(pinned.baseline.status, "ok");
+  assert.equal(pinned.areas.length, 120);
+  assert.equal(pinned.corpus.orphaned, 0);
+  assert.ok(pinned.areas.every((a) => a.baseline.status === "ok"), "every area reads the population its pin holds");
+});
+
+test("an area the checker reads is never one that counts nothing, so no pin or scan depends on the checker", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 3; i++) write(`a/f${i}.ts`, moduleSource(i));
+    for (let i = 0; i < 3; i++) write(`b/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const files = (await collectCorpus(dir)).files;
+  const countsNothing = countsNothingIn(files, new Map(), []);
+  const area = (path, lang) => ({ path, langs: [lang], files: files.filter((f) => f.lang === lang), fileCount: 3 });
+
+  assert.equal(countsNothing(area("a", "js")), false, "nothing parsed, and still the checker could count here");
+  assert.equal(countsNothing(area("b", "rust")), true);
+});
+
+test("at the ceiling, an area held for a language this run could not read keeps its place", async (t) => {
+  // Its file stays on disk as the last run wrote it, so it still takes a place
+  // in the listing although this run counted nothing in it.
+  const noRust = async (files, options) => {
+    const parsed = await parseAll(files, options);
+    for (const [rel, r] of parsed.records) if (rel.endsWith(".rs")) parsed.records.set(rel, { ...r, ok: false, crashed: true, hits: null });
+    return parsed;
+  };
+  const result = await scan(ceilingRepo(t), { parseFiles: noRust });
+
+  assert.deepEqual(result.parse.unreadable, ["rust"]);
+  assert.deepEqual(result.held.map((a) => a.path), ["crate/src"]);
+  assert.equal(result.areas.length + result.held.length, 120);
+  assert.equal(result.corpus.orphaned, 3);
+});
+
+/**
+ * At the ceiling of 120 under a host: `pkg` and 119 three-file areas inside it, a
+ * crate that states nothing, and a Python area that counts.
+ */
+function hostedCeilingRepo(t) {
+  return repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 3; i++) write(`pkg/p${i}.ts`, moduleSource(i));
+    for (let a = 0; a < 119; a++) for (let i = 0; i < 3; i++) write(`pkg/m${String(a).padStart(3, "0")}/f${i}.ts`, moduleSource(i));
+    for (let i = 0; i < 20; i++) write(`crate/src/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
+    for (let i = 0; i < 3; i++) write(`py/m${i}.py`, `def run${i}(a):\n    return a\n\n\nclass Job${i}:\n    pass\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+const statuses = (result) => {
+  const out = {};
+  for (const a of result.areas) out[a.baseline.status] = (out[a.baseline.status] ?? 0) + 1;
+  return out;
+};
+
+test("under a pin at the ceiling, an area that stops counting gives no place back and moves no area", async (t) => {
+  const dir = hostedCeilingRepo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
+  await runPin(dir);
+  const before = await scan(dir);
+  assert.ok(before.areas.some((a) => a.path === "py"), "the Python area counts at the pin");
+  assert.deepEqual(statuses(before), { ok: before.areas.length });
+
+  for (let i = 0; i < 3; i++) writeFileSync(join(dir, "py", `m${i}.py`), `X${i} = 1\n`);
+  git("commit", "-qam", "count nothing");
+  const after = await scan(dir);
+
+  assert.ok(!after.areas.some((a) => a.path === "py"), "the Python area now counts nothing");
+  assert.deepEqual(statuses(after), { ok: after.areas.length });
+  assert.deepEqual(after.areas.map((a) => a.path), before.areas.map((a) => a.path).filter((p) => p !== "py"));
+
+  // A pin whose commit is gone still names the partition the scan folds to.
+  const pinFile = join(dir, PIN_PATH);
+  writeFileSync(pinFile, JSON.stringify({ ...JSON.parse(readFileSync(pinFile, "utf8")), sha: "0".repeat(40) }));
+  const gone = await scan(dir);
+  assert.equal(gone.baseline.status, "unreachable");
+  assert.deepEqual(gone.areas.map((a) => a.path), after.areas.map((a) => a.path));
+});
+
+test("a pin that names no ceiling is read at the plain ceiling, so one taken before the give-back moves no area", async (t) => {
+  const dir = hostedCeilingRepo(t);
+  const { files } = await collectCorpus(dir);
+  const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
+  // What a pin from a build with no give-back holds: the plain fold.
+  const plain = discover(files);
+  assert.equal(plain.length, 120);
+  writePin(dir, buildPin(plain, { sha, corpus: files.length }));
+
+  const result = await scan(dir);
+  assert.equal(result.baseline.status, "ok");
+  assert.deepEqual(statuses(result), { ok: result.areas.length });
+  assert.ok(!result.areas.some((a) => a.path === "pkg/m000"), "the area folded at the pin stays folded");
+});
+
+test("a pin given back past twice its plain ceiling is one the next scan and check still read", async (t) => {
+  // 1,518 files: floor 6, plain ceiling 120. 200 of the 244 areas hold only
+  // constants, so the give-back would hand back all 244, past the 240 a pin may name.
+  const dir = repo(t, (d, { git, write }) => {
+    git("checkout", "-q", "-b", "main");
+    for (let a = 0; a < 200; a++) for (let i = 0; i < 6; i++) write(`c${String(a).padStart(3, "0")}/x${i}.py`, `X${i} = ${i}\n`);
+    for (let a = 0; a < 43; a++) for (let i = 0; i < 6; i++) write(`k${String(a).padStart(2, "0")}/m${i}.py`, `def run${i}(a):\n    return go(a)\n`);
+    for (let i = 0; i < 60; i++) write(`core/m${String(i).padStart(2, "0")}.py`, `def run${i}(a):\n    return go(a)\n\n\ndef pick${i}(a):\n    return a\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  // A child with a deadline, so a give-back that never settles fails here instead of hanging the run.
+  const bin = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "pin"], { cwd: dir, stdio: "pipe", timeout: 60_000 });
+
+  const { pin, unreadable } = readPin(dir);
+  assert.equal(unreadable ?? null, null);
+  assert.deepEqual([pin.corpus, pin.ceiling, pin.areas.length], [1518, 240, 240]);
+
+  const { runScan } = await import("../plugins/anatomiya/lib/commands.mjs");
+  const { result } = await runScan(dir);
+  assert.equal(result.baseline.status, "ok");
+
+  git("checkout", "-q", "-b", "work");
+  writeFileSync(join(dir, "core", "typed.py"), "def typed(a) -> int:\n    return a\n");
+  git("add", "core/typed.py");
+  git("commit", "-qm", "typed");
+  const { check } = await import("../plugins/anatomiya/lib/check.mjs");
+  const report = await check(dir, { baseRef: "main" });
+  assert.equal(report.staleReason, null);
+  assert.deepEqual(report.findings.map((f) => [f.path, f.severity]), [["core/typed.py", "MUST-FIX"]]);
+});
+
+test("an area's answer is asked again at each size a fold gives it", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 3; i++) write(`h/x${i}.py`, `X${i} = 1\n`);
+    for (let i = 0; i < 3; i++) write(`h/c/m${i}.py`, `def run${i}(a):\n    return a\n\n\nclass Job${i}:\n    pass\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const { files } = await collectCorpus(dir);
+  const { records } = await parseAll(files, { frameworks: [] });
+  const countsNothing = countsNothingIn(files, records, []);
+  const host = (fs) => ({ path: "h", langs: ["python"], files: fs, fileCount: fs.length });
+
+  // The host as it stands with its child folded in, then with the child given back.
+  assert.equal(countsNothing(host(files)), false, "the child's files count");
+  assert.equal(countsNothing(host(files.filter((f) => !f.rel.startsWith("h/c/")))), true);
+});
+
+test("a pin counts an area whose only row is a pairing, as the scan does", needsRuby, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let a = 0; a < 119; a++) for (let i = 0; i < 3; i++) write(`m${String(a).padStart(3, "0")}/f${i}.ts`, moduleSource(i));
+    for (let i = 0; i < 20; i++) write(`crate/src/r${i}.rs`, `fn helper${i}() -> i64 {\n    1\n}\n`);
+    for (let i = 0; i < 4; i++) write(`app/models/model${i}.rb`, `class Model${i}\nend\n`);
+    for (let i = 0; i < 4; i++) write(`spec/models/model${i}_spec.rb`, `RSpec.describe Model${i} do\n  it "works" do\n    expect(1).to eq(1)\n  end\nend\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const first = await scan(dir);
+  const models = first.areas.find((a) => a.path === "app/models");
+  assert.deepEqual(models?.dimensions.map((d) => d.key), ["model_spec"], "the fixture's model area counts through its pairing alone");
+
+  const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
+  const { pin } = await runPin(dir);
+  assert.deepEqual(pin.areas.map((a) => a.path).filter((p) => p !== "crate/src"), first.areas.map((a) => a.path));
+});
+
+/* --- what the default branch's changes touched together --- */
+
+/** Forty services, each landed with an entry in the registry by one of two people, between ten README edits. */
+function shippingHistory(t, { pinned = false, notes = false, solo = false } = {}) {
+  return repo(t, (dir, { git, write, author, pin }) => {
+    git("checkout", "-q", "-b", "main");
+    if (solo) author("a@t.test");
+    write("README.md", "# r\n");
+    write("src/registry.ts", "export const all = []\n");
+    git("add", "-A");
+    git("commit", "-qm", "root");
+    for (let i = 0; i < 40; i++) {
+      author(i % 2 && !solo ? "b@t.test" : "a@t.test");
+      write(`src/services/s${i}.ts`, `export const s${i} = ${i}\n`);
+      if (notes) write(`src/services/n${i}.md`, `# ${i}\n`);
+      write("src/registry.ts", `export const all = [${i}]\n`);
+      if (i % 4 === 0) write("README.md", `# r ${i}\n`);
+      git("add", "-A");
+      git("commit", "-qm", `service ${i}`);
+    }
+    for (let i = 0; i < 40; i++) {
+      write("README.md", `# readme ${i}\n`);
+      git("add", "-A");
+      git("commit", "-qm", `readme ${i}`);
+    }
+    if (pinned) pin([{ id: areaId("src/services"), path: "src/services", files: Array.from({ length: 40 }, (_, i) => `src/services/s${i}.ts`) }]);
+  });
+}
+
+test("a scan states what a class's additions ship with, and the area file says it after the directives", async (t) => {
+  const dir = shippingHistory(t);
+  const result = await scan(dir);
+  const { cochange } = result.layout;
+
+  assert.equal(cochange.unit, "first-parent");
+  assert.equal(cochange.from, "base");
+  // The root commit is read and counts as no change.
+  assert.equal(cochange.read, 81);
+  assert.equal(cochange.counted, 80);
+  assert.equal(cochange.shallow, false);
+  const stated = cochange.claims.filter((c) => c.directive);
+  assert.deepEqual(stated.map((c) => [c.producer, c.companion, c.candidates, c.conforming, c.authors, c.area]), [
+    ["src/services/*.ts", { kind: "edits", path: "src/registry.ts" }, 40, 40, 2, "src/services"],
+  ]);
+
+  writeMap(result, {});
+  const file = readdirSync(join(dir, ".claude/rules")).find((n) => n !== "anatomiya-overview.md");
+  const body = readFileSync(join(dir, ".claude/rules", file), "utf8");
+  assert.match(body, /^a \.ts file added to "src\/services" ships with an edit to "src\/registry\.ts"\n {2}40 of the last 40 changes that added one, 2 authors; 40 of 40 such files here came in a change the scan counted$/m, body);
+  // The overview has no room for a per-pair line and is byte-stable without one.
+  assert.doesNotMatch(readFileSync(join(dir, ".claude/rules/anatomiya-overview.md"), "utf8"), /ships with/);
+  // The layout file carries it to the hooks.
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".claude/anatomiya/layout.json"), "utf8")).layout.cochange, JSON.parse(JSON.stringify(cochange)));
+
+  // And the notice says it before a new service is written, and nothing for one that exists.
+  const write = (rel) => ({ hook_event_name: "PreToolUse", tool_name: "Write", cwd: dir, tool_input: { file_path: join(dir, rel) } });
+  const said = (await runNotice(dir, write("src/services/new.ts"))).hookSpecificOutput.additionalContext;
+  assert.match(said, /^ {2}A \.ts file added here ships with an edit to "src\/registry\.ts": 40 of the last 40 changes that added one\.$/m);
+  assert.deepEqual(await runNotice(dir, write("src/services/s0.ts")), {});
+  assert.deepEqual(await runNotice(dir, write("src/other/new.ts")), {});
+});
+
+test("a claim whose producers the area's globs never reach is carried by no area file", async (t) => {
+  const dir = shippingHistory(t, { notes: true });
+  const result = await scan(dir);
+  const stated = result.layout.cochange.claims.filter((c) => c.directive && c.companion.path === "src/registry.ts");
+  assert.deepEqual(stated.map((c) => [c.producer, c.area]), [
+    ["src/services/*.md", null],
+    ["src/services/*.ts", "src/services"],
+  ]);
+  writeMap(result, {});
+  const file = readdirSync(join(dir, ".claude/rules")).find((n) => n !== "anatomiya-overview.md");
+  const body = readFileSync(join(dir, ".claude/rules", file), "utf8");
+  assert.doesNotMatch(body, /\.md file added/, body);
+  assert.match(body, /^a \.ts file added to "src\/services"/m, body);
+});
+
+test("a repository one person wrote holds a claim to that one person's hands", async (t) => {
+  const [claim] = (await scan(shippingHistory(t, { solo: true }))).layout.cochange.claims.filter((c) => c.producer === "src/services/*.ts");
+  assert.deepEqual([claim.authors, claim.authorsRequired, claim.directive], [1, 1, true]);
+});
+
+test("a claim whose producers sit in an area this scan writes no file for has no area", async (t) => {
+  const dir = shippingHistory(t, { pinned: true });
+  // The pin keeps the area, and nothing read from its files leaves it nothing to say.
+  const parseFiles = async (files, options) => {
+    const parsed = await parseAll(files, options);
+    for (const rel of [...parsed.records.keys()]) if (rel.startsWith("src/services/")) parsed.records.delete(rel);
+    return parsed;
+  };
+  const result = await scan(dir, { parseFiles });
+  assert.equal(result.areas.some((a) => a.path === "src/services"), false);
+  const [claim] = result.layout.cochange.claims.filter((c) => c.producer === "src/services/*.ts");
+  assert.deepEqual([claim.directive, claim.area], [true, null]);
+});
+
+test("a pinned scan walks from the pin, and two scans of one history write one map", async (t) => {
+  const dir = shippingHistory(t, { pinned: true });
+  const first = await scan(dir);
+  assert.equal(first.layout.cochange.from, "pin");
+  writeMap(first, {});
+  const files = () => readdirSync(join(dir, ".claude/rules")).map((n) => readFileSync(join(dir, ".claude/rules", n), "utf8"));
+  const before = files();
+  writeMap(await scan(dir), {});
+  assert.deepEqual(files(), before);
+});
+
+test("a scan that fails while the co-change walk runs stops the walk's git", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const dir = shippingHistory(t);
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-walk-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const pidFile = join(bin, "pid");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *--diff-merges*) echo $$ > '${pidFile}'; exec sleep 60;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  const until = async (done, ms = 20_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 50))) if (done()) return true;
+    return false;
+  };
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // The parse fails once the walk's git is running.
+  const parseFiles = async () => {
+    await until(() => existsSync(pidFile));
+    throw new Error("the parse failed");
+  };
+
+  await assert.rejects(scan(dir, { parseFiles }), /the parse failed/);
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  assert.ok(await until(() => !alive(pid), 5_000), `git log ${pid} still running after the scan failed`);
+});
+
+test("a repository with no commit records a walk that read nothing", async (t) => {
+  const dir = repo(t, (d, { write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`);
+  });
+  const { cochange } = (await scan(dir)).layout;
+  assert.equal(cochange.read, 0);
+  assert.equal(cochange.tip, null);
+  assert.deepEqual(cochange.claims, []);
 });

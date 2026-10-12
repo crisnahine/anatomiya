@@ -6,7 +6,8 @@
  * roster rather than from the dimensions. `render.mjs` composes the file and
  * asks for these lines; nothing here knows what an area or a directive is.
  */
-import { encode, encodePath } from "./encode.mjs";
+import { encode, nameText, sanitisePath } from "./encode.mjs";
+import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { PRECEDENT_FLOOR, PRINCIPLES } from "./principles.mjs";
 import { RUNNER_LABELS, UNNAMED_RUNNER } from "./test-shape.mjs";
 
@@ -25,16 +26,15 @@ import { RUNNER_LABELS, UNNAMED_RUNNER } from "./test-shape.mjs";
 export const plural = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 /**
- * A directory name printed inside a sentence, without the quotes `encodePath`
- * puts round it. Parsed back rather than sliced, because a quote inside a
- * filename is escaped between them and slicing would leave the backslash.
+ * A directory name printed inside a sentence, quoted only where `nameText`
+ * quotes it.
  *
  * A name the encoder empties, `###` or a setext underline, would render as
  * `- : 30 .ts`, which is a bullet about nothing.
  *
  * Exported because the notice names a path and a root in the overview's spelling.
  */
-export const pathText = (p) => (p === "." ? ROOT_LABEL : JSON.parse(encodePath(p)) || "(unnamed)");
+export const pathText = (p) => (p === "." ? ROOT_LABEL : nameText(sanitisePath(p)) || "(unnamed)");
 
 // What a flat repository's one root is called, since "." reads as punctuation.
 export const ROOT_LABEL = "(repository root)";
@@ -97,7 +97,7 @@ export const namesakeClause = ({ with: withTest, of, root, under, inline = 0 }, 
   // for it: that line speaks for the whole repository, and `1046 of 1575 .rb
   // files have a namesake test` read repository-wide when 1575 was `app/services`
   // alone.
-  const place = over ? ` under ${pathText(over)}` : "";
+  const place = over ? ` under ${placeText(over)}` : "";
   // A file that holds its own tests is in neither number, so the line says how many there are.
   const held = (subject) => `${subject} ${inline === 1 ? "holds its" : "hold their"} own tests`;
   if (of === 0 && inline > 0) return held(`${noun === null ? inline : plural(inline, noun)}${place}`);
@@ -198,18 +198,33 @@ export const RUNNERS_SHOWN = 2;
 
 const TESTS_LABEL = "tests";
 
+// A root's path, whose words after a shell's own files are this tool's, so only the directory before them is quoted.
+const placeText = (p) =>
+  p.endsWith(LEVEL_ONLY_LABEL) ? `${pathText(p.slice(0, -LEVEL_ONLY_LABEL.length))}${LEVEL_ONLY_LABEL}` : pathText(p);
+
 // A root named exactly what the tests line is labelled prints as the directory it is, so no two bullets share a label.
 const rootLabel = (r) => {
-  const said = pathText(r.path);
+  const said = placeText(r.path);
   return said === TESTS_LABEL ? `${said}/` : said;
 };
 
+// A quoted name at the start of a label, escapes and all.
+const QUOTED = /^"(?:[^"\\]|\\.)*"/;
+
 /**
  * The path a root line's label names: the label, less the slash that keeps a
- * root named `tests` apart from the tests line. Exported because
- * `scripts/measure-layout.mjs` reads the label back.
+ * root named `tests` apart from the tests line, and less the quotes `nameText`
+ * put round a name. Exported because `scripts/measure-layout.mjs` reads the
+ * label back.
  */
-export const pathOfRootLabel = (label) => (label === `${TESTS_LABEL}/` ? TESTS_LABEL : label);
+export const pathOfRootLabel = (label) => {
+  const quoted = label.match(QUOTED);
+  if (quoted) return `${JSON.parse(quoted[0])}${label.slice(quoted[0].length)}`;
+  return label === `${TESTS_LABEL}/` ? TESTS_LABEL : label;
+};
+
+/** Where a root line's label ends, which is past any `: ` inside a quoted name. Exported for the same reader. */
+export const rootLabelEnd = (body) => body.indexOf(": ", body.match(QUOTED)?.[0].length ?? 0);
 
 /** One directory: what it holds, what tests it holds, what has a namesake. */
 function rootLine(r) {

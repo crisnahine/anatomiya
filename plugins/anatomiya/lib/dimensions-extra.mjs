@@ -1,4 +1,4 @@
-import { componentProps, optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
+import { componentProps, optionalChain, ownNodes, isFunctionLike, declName, value, whereOf } from "./walk.mjs";
 import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
@@ -241,25 +241,12 @@ function noteMetadataReads(n, names) {
   }
 }
 
-/**
- * The name to report a function-shaped site under. A method's name lives on
- * the `MethodDefinition` above it, not on the function it holds.
- */
-function siteName(fn, ctx) {
-  const own = declName(fn);
-  if (own) return own;
-  const e = ctx.enclosing;
-  return e && (e.type === "MethodDefinition" || e.type === "PropertyDefinition")
-    ? declName(e)
-    : null;
-}
-
 /** Returns belonging to this function, not to an arrow nested inside its body. */
 function ownReturns(fn) {
   const out = [];
   if (!fn.body || fn.body.type !== "BlockStatement") return out;
-  walk(fn.body, (n, ctx) => {
-    if (n.type === "ReturnStatement" && !ctx.fn) out.push(n);
+  ownNodes(fn.body, (n) => {
+    if (n.type === "ReturnStatement") out.push(n);
   });
   return out;
 }
@@ -633,7 +620,7 @@ export const EXTRA_DIMENSIONS = [
             const parent = ctx.ancestors[ctx.ancestors.length - 1];
             if (mixesWithNullish(n.left) || mixesWithNullish(parent)) return;
           }
-          add({ node: n, conforming: n.operator === "??", where: declName(ctx.fn) });
+          add({ node: n, conforming: n.operator === "??", where: whereOf(ctx.fn, ctx) });
         },
       };
     },
@@ -666,10 +653,10 @@ export const EXTRA_DIMENSIONS = [
             // tag heads a chain the grammar refuses to make optional.
             const { outer, allowed } = optionalChain(n, ctx.ancestors);
             if (outer === n || !allowed) return;
-            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+            return add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
           }
           if ((n.type === "MemberExpression" || n.type === "CallExpression") && n.optional === true) {
-            add({ node: n, conforming: true, where: declName(ctx.fn) });
+            add({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
           }
         },
       };
@@ -691,7 +678,7 @@ export const EXTRA_DIMENSIONS = [
       return {
         node(n, ctx) {
           if (!isFunctionLike(n)) return;
-          const where = siteName(n, ctx);
+          const where = whereOf(n, ctx);
           // React refuses `return null` from an effect in its own words, so
           // `undefined` there says "stop" rather than "an absent value is spelled
           // undefined", which is the same thing a bare return says.
@@ -747,12 +734,12 @@ export const EXTRA_DIMENSIONS = [
       return {
         node(n, ctx) {
           if (n.type === "ForOfStatement") {
-            return add({ node: n, conforming: true, where: declName(ctx.fn) });
+            return add({ node: n, conforming: true, where: whereOf(ctx.fn, ctx) });
           }
           if (n.type !== "CallExpression" || calleeName(n.callee) !== "forEach") return;
           if (n.callee.type !== "MemberExpression") return;
           if (!isArrayForEach(n)) return;
-          add({ node: n, conforming: false, where: declName(ctx.fn) });
+          add({ node: n, conforming: false, where: whereOf(ctx.fn, ctx) });
         },
       };
     },

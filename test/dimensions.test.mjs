@@ -3,9 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { parseSync } from "oxc-parser";
 import {
-  DIMENSIONS,
   ALL_DIMENSIONS,
-  dimensionsFor,
   assertPrecision,
   assertApplicability,
   assertClaimIsNotAVerdict,
@@ -17,6 +15,8 @@ import {
   PRECISIONS,
   walkFor,
 } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-base.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
@@ -80,9 +80,22 @@ test("a destructured catch parameter is a use of the error", () => {
   assert.deepEqual(r, { candidates: 1, conforming: 1 });
 });
 
-test("a catch inside a class method is attributed to the method", () => {
+test("a catch inside a class method is attributed to its class and the method", () => {
   const [hit] = hits("swallowed_error", `class C { m() { try { a() } catch (e) { } } }`);
-  assert.equal(hit.where, "m", "the site has to name the method it sits in");
+  assert.equal(hit.where, "C.m", "the site has to name the method it sits in, and its class");
+});
+
+test("a catch's own body decides: an inner throw counts for it, a default in its parameter does not", () => {
+  const conforming = (src) => hits("swallowed_error", src).map((h) => h.conforming);
+  assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (f) { throw f } }`), [true, true]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (e) { log(e) } }`), [false, true]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (f) { log(e) } }`), [true, false]);
+  assert.deepEqual(conforming(`try { a() } catch ({ message, code = message }) { x() }`), [false]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { let e = 1; log(e) }`), [true], "its body never hides it");
+  assert.deepEqual(conforming(`try { a() } catch (e) { if (x) { var e = 1; log(e) } }`), [true], "a var in a block assigns the caught binding");
+  assert.deepEqual(conforming(`try { a() } catch ({ a = () => { throw x } }) { y() }`), [false]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { const f = function e() { return e } }`), [false]);
+  assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (f) {} } throw e`), [false, false]);
 });
 
 // --- error_shape ---
@@ -163,6 +176,11 @@ test("an exported binding is still module state", () => {
 });
 
 // --- async_error_handling ---
+
+test("an async method is reported under its class and its own name", () => {
+  const [hit] = hits("async_error_handling", `class S { async load() { await go() } }`);
+  assert.equal(hit.where, "S.load");
+});
 
 test("an inner arrow's try does not satisfy the outer async function", () => {
   const r = counts("async_error_handling", `
@@ -258,15 +276,26 @@ test("every JS row reads a deeply nested file in time linear in its depth", () =
     chain: (n) => "export const x = " + Array(n).fill("a").join(" + ") + ";\n",
     functions: (n) => "export const x = " + "() => ".repeat(n) + "1;\n",
     blocks: (n) => "{ throw e; let v = 1; interface I {}\n".repeat(n) + "}".repeat(n) + "\n",
+    // A row reading a function's own returns or handlers, or a catch's own body,
+    // walked everything nested inside it again.
+    callbacks: (n) => "export function F() {\n" + "g(async function () { if (a) return null; try { h(<a/>) } catch {}\n".repeat(n) + "return <a/>; });".repeat(n) + "\n}\n",
+    classes: (n) => "export const X = " + "class extends B { m() { return 0,\n".repeat(n) + "1" + " } }".repeat(n) + ";\n",
+    objects: (n) => "export const o = " + "{ m() {}, c:\n".repeat(n) + "1" + "}".repeat(n) + ";\n",
+    catches: (n) => "try { a() } catch (e) { log(e); if (b) throw e;\n".repeat(n) + "}".repeat(n) + "\n",
+    // A row asking each `!` for the chain it heads climbed the whole chain again.
+    nonNull: (n) => "export const x = a" + "!.b".repeat(n) + "!;\n",
   };
-  const rows = dimensionsFor(["js", "jsx"]);
+  const NESTED = new Set(["callbacks", "classes", "objects", "catches"]);
+  const rows = dimensionsFor(["js", "jsx"], { rows: ALL_DIMENSIONS });
   for (const [name, source] of Object.entries(shapes)) {
     const read = (n) => {
       const { program, errors } = parseSync("f.tsx", source(n), { sourceType: "module" });
       assert.deepEqual(errors, [], name);
       return () => collectHits(program, rows, { comments: [], source: "", rel: "f.tsx" });
     };
-    const ratio = doublingRatio(read, name === "chain" ? 4000 : 1500);
+    // The parser's own stack ends between 2,000 and 2,400 levels of callbacks and classes on macOS.
+    // Below 1,200 the quadratic object literals read under 3 through every row; they parse to 4,000.
+    const ratio = doublingRatio(read, name === "chain" || name === "nonNull" ? 4000 : name === "objects" ? 1200 : NESTED.has(name) ? 600 : 1500);
     assert.ok(ratio < LINEAR, `${name}: twice the depth took ${ratio.toFixed(2)} times as long`);
   }
 });
@@ -322,14 +351,14 @@ test("dimension keys are unique across the whole registry", () => {
 });
 
 test("a Ruby area never selects a dimension that walks an oxc tree", () => {
-  const rb = dimensionsFor(["ruby"]);
+  const rb = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS });
   assert.ok(rb.length > 0);
   for (const d of rb) assert.ok(!d.langs.includes("js"), `${d.key} would run on a prism tree`);
-  for (const d of dimensionsFor(["js"])) {
+  for (const d of dimensionsFor(["js"], { rows: ALL_DIMENSIONS })) {
     assert.ok(!d.langs.includes("ruby"), `${d.key} would run on an oxc tree`);
   }
-  assert.equal(dimensionsFor([]).length, 0);
-  assert.equal(dimensionsFor(["cobol"]).length, 0);
+  assert.equal(dimensionsFor([], { rows: ALL_DIMENSIONS }).length, 0);
+  assert.equal(dimensionsFor(["cobol"], { rows: ALL_DIMENSIONS }).length, 0);
 });
 
 test("an empty program yields no candidates rather than throwing", () => {
@@ -348,8 +377,8 @@ test("a dimension a framework owns is not offered to a repository without it", (
   // Homebrew (123 sites), puppet (197), fastlane (97) and chef (96), and as a
   // NIT that check delivers onto a branch: "the current time is read through
   // the application time zone" on a repository with no Rails in it.
-  const withRails = dimensionsFor(["ruby"], { frameworks: ["rails"] }).map((d) => d.key);
-  const without = dimensionsFor(["ruby"], { frameworks: [] }).map((d) => d.key);
+  const withRails = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS, frameworks: ["rails"] }).map((d) => d.key);
+  const without = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS, frameworks: [] }).map((d) => d.key);
 
   assert.ok(withRails.includes("zone_aware_time"));
   assert.ok(withRails.includes("record_lookup"));
@@ -368,7 +397,7 @@ test("a caller that names no frameworks is offered everything", () => {
   // The parse worker has no repository to ask. It computes hits the reducer may
   // never read, which costs a walk and keeps the framework set out of every
   // parse job; the reducer is what decides which dimensions get a slot.
-  const all = dimensionsFor(["ruby"]).map((d) => d.key);
+  const all = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   assert.ok(all.includes("zone_aware_time"), "no answer is not the same as the answer 'none'");
 });
 
@@ -603,12 +632,12 @@ test("every registry row declares a tier, and an unknown one refuses to load", (
 test("the default caller is offered the syntactic tier only", () => {
   // A caller that forgets to ask for the semantic tier must not get a claim
   // that needs a checker nobody ran.
-  const keys = dimensionsFor(["js"]).map((d) => d.key);
+  const keys = dimensionsFor(["js"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const d of SEMANTIC_DIMENSIONS) assert.equal(keys.includes(d.key), false, `${d.key} leaked into the default set`);
 });
 
 test("asking for all tiers returns the semantic rows too", () => {
-  const keys = dimensionsFor(["js"], { tier: "all" }).map((d) => d.key);
+  const keys = dimensionsFor(["js"], { rows: ALL_DIMENSIONS, tier: "all" }).map((d) => d.key);
   for (const d of SEMANTIC_DIMENSIONS) assert.ok(keys.includes(d.key), `${d.key} is missing from the deep set`);
 });
 
@@ -735,7 +764,7 @@ test("a let const could have held is still a violation", () => {
 
 test("a member assignment does not excuse the binding that shares its name", () => {
   // `obj.x = 1` writes a property, not the binding, which is the distinction
-  // `usesParam` already draws for a catch parameter.
+  // `swallowed_error` draws for a caught error.
   assert.deepEqual(counts("module_state_const", `let x = 1\nobj.x = 1`), { candidates: 1, conforming: 0 });
 });
 
@@ -1070,6 +1099,8 @@ test("a nested binding of the same name does not use the caught error", () => {
     `try { a() } catch (e) { items.forEach(function (e) { log(e) }) }`,
     `try { a() } catch (e) { function f(e) { log(e) } f(1) }`,
     `try { a() } catch (e) { { const e = 1; log(e) } }`,
+    `try { a() } catch (e) { for (let e = 0; e < 1; e++) log(e) }`,
+    `try { a() } catch (e) { class K { static { let e = 1; log(e) } } }`,
   ]) {
     assert.deepEqual(counts("swallowed_error", src), { candidates: 1, conforming: 0 }, src);
   }

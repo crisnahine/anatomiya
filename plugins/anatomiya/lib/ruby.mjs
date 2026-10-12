@@ -827,7 +827,8 @@ function take(out, onResult, seen, line, dimensions, attempt, paths) {
     try {
       result.facets = facets.done();
     } catch {
-      result.facets = { testRunner: null, testCalls: false };
+      // Marked, so a reader that would decide something by what the file holds decides nothing (C33).
+      result.facets = { testRunner: null, testCalls: false, unread: true };
     }
     if (dimensions.length) {
       result.hits = hits;

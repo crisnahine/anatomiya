@@ -21,7 +21,11 @@ import { stemOf } from "./paths.mjs";
 // dotted-only, because `-cy.` is the tail of an ordinary word.
 // Two expressions rather than one alternation, because only the Ruby form is
 // anchored and a `$` that binds one branch of three reads as if it bound all.
-export const TEST_NAME = /[.-](?:test|spec)\.|\.cy\./;
+//
+// The closed list is every kind of test a repository spells as a dotted segment
+// of its own across 60 repositories, 226 files of webpack's jest `testMatch` and
+// vscode's suites. A wider shape takes `eslint.config.vitest.js`, a config.
+export const TEST_NAME = /[.-](?:test|spec)\.|\.cy\.|\.(?:unit|basic|long|spec|s)test\.|\.(?:integration|release)Test\./;
 export const RUBY_TEST_NAME = /_(?:spec|test)\.rb$/;
 
 // The `_test` half of the Ruby form alone, over the whole path: minitest's own
@@ -134,7 +138,7 @@ const JVM_NAMES = { camel: ["Tests", "Test", "IT"] };
  * `_test.py` is the other half of pytest's default and no measured repository
  * writes one, so it is here on pytest's word.
  *
- * A CamelCase suffix is a word a source file wears in earnest, junit's own
+ * A CamelCase suffix is a word a producer wears in earnest, junit's own
  * `RepeatedTest.java` and Laravel's `UnitTest.php` among them, so it names a
  * test only under a test tree, the way `_spec.rb` does: of 3,691 files so
  * named, 17 sit outside every test tree and 9 of those are no test. `Spec` is
@@ -241,7 +245,7 @@ export const isTestTree = (segment, family = null) =>
 /**
  * Whether a path's own name says its family's tool collects it: the name
  * alone where the tool reads nothing else, and under a test tree where the
- * name is a word a source file wears in earnest. False for a family with no
+ * name is a word a producer wears in earnest. False for a family with no
  * name, and for a language read by the JavaScript rule.
  *
  * Asked by the layout of a file it holds and by the placement finding of a

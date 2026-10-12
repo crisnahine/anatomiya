@@ -1,18 +1,20 @@
 import { collect, gitRoot, countUntrackedSource, frameworksIn, langsIn } from "./corpus.mjs";
 import { embeddedIn, langHas } from "./langs.mjs";
-import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
+import { discover, areaFloor, areaCeiling, areaIndex, dirCount, globsReach } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
 import { defaultPoolSize } from "./pool.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { checkerBlocked, failuresIn, runSemantic, semanticOver, standsIn, verdictStamp } from "./semantic.mjs";
-import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
+import { authorsRequired, blockOf, reduceArea, verdictFor } from "./reduce.mjs";
+import { cochangeRecord, startCochange } from "./cochange-walk.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
 import { resolve as resolveBaseline, measure as measureBaseline } from "./baseline.mjs";
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
 import { extOf, extOrName } from "./paths.mjs";
+import { scopeOf } from "./render.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 
 /**
@@ -50,7 +52,17 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * A failed run's verdict is carried from its second failure under one stamp
  * (`standsIn`): handed the first, the checker runs and the scan records the count.
  */
-export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null } = {}) {
+export async function scan(cwd, options = {}) {
+  // A scan that fails anywhere stops the walk, rather than leave `git log` running behind the error.
+  const stopWalk = new AbortController();
+  try {
+    return await scanning(cwd, options, stopWalk.signal);
+  } finally {
+    stopWalk.abort();
+  }
+}
+
+async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null }, walkSignal) {
   const started = Date.now();
   const scannedAt = new Date().toISOString();
   const root = await gitRoot(cwd);
@@ -89,7 +101,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   const stateRun = resolveState(root);
   stateRun.catch(() => {});
 
-  let state, areas, frameworks, head, headRun;
+  let state, frameworks, head, headRun, cochangeRun;
   try {
     // A claim that belongs to a framework cannot be judged without knowing the
     // repository uses it, and one file never says. Read from the corpus, so a
@@ -99,18 +111,10 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     headRun.catch(() => {});
 
     state = await stateRun;
-    // The areas are partitioned over the corpus the pin was built over where
-    // there is one. The floor is a step function of the corpus size, so deriving
-    // it from today's file count re-partitions the repository on one added file
-    // and every area then reads as a population change against a pin that knew
-    // the old one.
-    const partitionSize = state.partitionSize ?? files.length;
-    areas = discover(files, {
-      minFiles: areaFloor(partitionSize),
-      maxAreas: areaCeiling(partitionSize),
-      uncounted,
-    });
-
+    // The walk stops at the pin, so it starts once the pin has answered, and
+    // like the history read it needs nothing the parse makes.
+    cochangeRun = startCochange(root, state, { signal: walkSignal });
+    cochangeRun.catch(() => {});
     head = await headRun;
   } catch (err) {
     // Otherwise the process stays up until a checker nobody will read finishes.
@@ -131,6 +135,24 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   const corpusRels = new Set(files.map((f) => f.rel));
   applyPairings(head.records, corpusRels, langsIn(files));
   const headTruncated = corpusTruncated || head.truncated;
+
+  // The areas are partitioned over the corpus the pin was built over where
+  // there is one. The floor is a step function of the corpus size, so deriving
+  // it from today's file count re-partitions the repository on one added file
+  // and every area then reads as a population change against a pin that knew
+  // the old one.
+  //
+  // Under a pin the ceiling is the one it settled on and nothing is given back:
+  // the give-back reads file content, so an edit that adds no file would move
+  // areas against the pin. A pin that names none folds at the plain ceiling.
+  const partitionSize = state.partitionSize ?? files.length;
+  const pinned = state.status === "ok" || state.status === "unreachable";
+  const areas = discover(files, {
+    minFiles: areaFloor(partitionSize),
+    maxAreas: state.ceiling ?? areaCeiling(partitionSize),
+    uncounted,
+    countsNothing: pinned ? null : countsNothingIn(files, head.records, frameworks),
+  });
 
   const authors = await authorsRun;
   // Unread history and empty history both give every file zero authors, which
@@ -266,6 +288,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
 
     const current = { fileCount: area.fileCount, dirCount: dirCount(area.files.map((f) => f.rel)) };
 
+    const languages = { extsByLang: extsByLang(area.files), filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))) };
     const gated = dims.map((d) => {
       const baselineDim = measuredArea.dims.find((b) => b.key === d.key) || null;
       const source = baselineDim || d;
@@ -298,10 +321,9 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // The same counts a root line carries, over this area's own files.
       kinds: kinds(area),
       // For the renderer alone, which says where an area holds files a claim's
-      // row is never asked of. Not in the record: the map is written from this
-      // object, and nothing reads the scope back.
-      extsByLang: extsByLang(area.files),
-      filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))),
+      // row is never asked of. Not in the record: each slot keeps its answer as
+      // `scope`, which is all a reader of the record prints.
+      ...languages,
       // What a new file in here would import, and what to check for before
       // writing one. Read at HEAD like the roster: both are counts, and neither
       // is a claim anything is gated against.
@@ -309,9 +331,23 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // Over every record in the repository, not this area's: the question is
       // who else reaches in here.
       reused: hasImports ? mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels) : null,
-      dimensions: gated,
+      dimensions: gated.map((d) => ({ ...d, scope: scopeOf(languages, d) })),
     });
   }
+
+  // A claim belongs to the one area every producer at the tip sits in, and only
+  // to one whose file this scan writes and loads for a producer.
+  const areaFor = areaIndex(areas);
+  const written = new Set(out.map((a) => a.path));
+  const cochange = cochangeRecord(await cochangeRun, {
+    required: authorsRequired(repoAuthors, { shallow }),
+    shallow: shallow !== null,
+    areaOf: (rel) => {
+      const owner = areaFor(rel);
+      return owner && written.has(owner.path) ? owner.path : null;
+    },
+    reaches: (rel) => globsReach(areaFor(rel).globs, rel),
+  });
 
   // Off the corpus and not off what parsed, so the count holds on a busy machine.
   const scriptOnly = tally(files.filter((f) => embeddedIn(f.lang)).map((f) => extOf(f.rel)));
@@ -401,9 +437,46 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     // arbitrary subset and rendering it like a complete scan is worse than
     // reporting nothing.
     suppressAll: truncated,
-    layout,
+    // What ships together rides in the layout, which the hooks already read.
+    layout: { ...layout, cochange },
     areas: out,
   };
+}
+
+/**
+ * Which areas a scan drops for counting nothing, answered off the parse alone so
+ * a pin taken without the checker answers it the same way. An area of a language
+ * the checker reads is never one: whether the checker runs is not known to a pin.
+ * Nor is an area held for a language no file of which was read, whose file stays.
+ */
+export function countsNothingIn(files, records, frameworks) {
+  const capabilities = adoptedCapabilities(records);
+  const unreadable = unreadableLangs(files, records);
+  // Keyed by path and size: within one fold an area only grows, so the two name one file set.
+  const known = new Map();
+  return (area) => {
+    if (area.langs.some((l) => langHas(l, "semantic") || unreadable.includes(l))) return false;
+    const key = `${area.path}\u0000${area.fileCount}`;
+    if (!known.has(key)) {
+      const parsed = area.files.map((f) => records.get(f.rel)).filter(Boolean);
+      known.set(key, reduceArea(area, parsed, { frameworks, capabilities }).length === 0);
+    }
+    return known.get(key);
+  };
+}
+
+/**
+ * The areas a pin records: the partition a scan of this commit with no pin
+ * uses, so the places of areas that count nothing are given back here too. The
+ * parse runs only where the fold folded anything.
+ */
+export async function pinPartition(files, { parseFiles = parseAll } = {}) {
+  const areas = discover(files);
+  if (!areas.folded) return areas;
+  const frameworks = [...frameworksIn(files)];
+  const { records } = await parseFiles(files, { frameworks });
+  applyPairings(records, new Set(files.map((f) => f.rel)), langsIn(files));
+  return discover(files, { countsNothing: countsNothingIn(files, records, frameworks) });
 }
 
 /** Each language's extensions among these files, and the whole name of a file that has none. */

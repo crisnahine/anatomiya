@@ -178,14 +178,19 @@ alone. What the four do:
 - **The echo** re-delivers the map after a turn or a tool call when the context window does not
   already hold that same map.
 - **The notice** runs before a `Write`, an `Edit` or a `NotebookEdit`, and speaks only for a path
-  where a test is going into a directory whose kind of file has no test of its own anywhere: silent
-  on every other write, which is nearly all of them. It informs and never refuses. `check` asks the
-  same question of a whole branch, as `test_precedent`.
+  nothing is at yet: where a test is going into a directory whose kind of file has no test of its
+  own anywhere, or where the file is of a kind this repository's history adds together with another
+  change (`A .rb file added here ships with an edit to "config/default.yml": 100 of the last 100
+  changes that added one.`). It is silent on every other write, which is nearly all of them. It
+  informs and never refuses. `check` asks the same questions of a whole branch, as
+  `test_precedent` and `cochange`.
 - **The reuse check** runs when a turn ends, and only after a turn that added source code: it asks,
   once per change, for one subagent to look for an existing function the new code could call
   instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
   such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
-  could be written with are not asked about.
+  could be written with are not asked about. A file counts as the turn's work only when it was last
+  written during one of the session's own tool calls, so a file another session or an editor saved
+  in between is not asked about.
 
 > [!NOTE]
 > A session that is already running holds the overview it started with, and gets a changed one
@@ -215,21 +220,24 @@ or a missing write permission, is tried again each half hour for as long as it s
 by hand prints why and ends that retry until the checkout moves. A committed map's `.claude/anatomiya/layout.json` comes along but does
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
 
-A map written by 0.13.4 or earlier is rewritten by the first scan or refresh of 0.14.0, and it
-will differ. A committed map is not refreshed, so scan it by hand and commit the result. Expect:
+A map written by 0.14.0 or earlier is rewritten by the first scan or refresh of 0.15.0. Its record
+always differs, and its overview or area files did on 24 of 60 measured repositories. A committed
+map is not refreshed, so scan it by hand and commit the result. Expect:
 
-- one more "Not covered" line, or a longer one, for files in a language the map does not read
-  (`.erb`, `.haml`, `.scss`), and often one or two root lines fewer to make room for it;
-- a smaller `N of M` in a root's namesake count, where the root holds a test directory of its own:
-  the helpers and fixtures under it are not files a test could be written for, so they left M;
-- `, in .rb files` or the like on a claim line, where the area holds three or more files the claim
-  is never asked of;
-- areas, test counts and claims for Python, PHP, Go, Java, C#, Rust and Kotlin, and for the script
-  blocks of `.vue` and `.svelte` files, where the repository holds any;
-- no count line for the type-checked claim where the checker reads `degraded`;
-- at the 500-area ceiling, small areas giving their place to larger ones of a newly read language.
+- fewer test files where a `__tests__` directory, or a test tree that mirrors the source, holds
+  fixtures, helpers, mocks or configs: a file there that exports something is no test, and neither
+  is a Ruby file there that declares no case;
+- a smaller sibling-module count beside a root's components, which counts only the files a test
+  could be written for;
+- more test files where tests are named by a dotted kind, `.unittest.`, `.integrationTest.` and
+  five more;
+- a co-change block in an area file, counted in the claims line, where the repository's history
+  states one;
+- at the area ceiling, a few more areas, given back by areas that count nothing, and under a
+  pin 0.14.0 took, only once a pin is next taken;
+- a directory name that holds a space or a double quote printed in quotes.
 
-The 0.14.0 section of [CHANGELOG.md](CHANGELOG.md) has the counts, measured on 35 repositories.
+The 0.15.0 section of [CHANGELOG.md](CHANGELOG.md) has the counts, measured on 60 repositories.
 
 A session started in the directory that holds your checkouts, which has no map of its own, refreshes
 and watches each mapped checkout directly below it, and the reuse check reads each one's change,
@@ -327,7 +335,7 @@ first measured in
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
 - src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper; 6 of 32 JSX files inline a helper
-- src/utils: 52 .ts, 10 .js and 5 other; 2 of 3 vitest specs under __tests__; 3 of 51 have a namesake test, 2 under src/utils/__tests__; 59 sibling modules; 0 of 1 JSX file inline a helper
+- src/utils: 52 .ts, 10 .js and 5 other; 2 of 3 vitest specs under __tests__; 3 of 51 have a namesake test, 2 under src/utils/__tests__; 58 sibling modules; 0 of 1 JSX file inline a helper
 - and 4 more directories holding 397 files, 91 files in 19 directories too small for a line of their own, and 20 at the repository root
 - tests: 102 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files under src/pages have a namesake test
 
@@ -428,6 +436,11 @@ about one area, with a precision marker where the predicate cannot see every sit
   the base class and the included mixin, learned from the area's own plurality rather than declared.
 - **9 file-to-file obligations**: a model ships with its spec, a rake task with its spec, learned
   from where the repository actually keeps its companions.
+- **What ships together**: for a kind of file the default branch's changes added at least 35 times,
+  the one file those changes also edited, or the kind of file they also added, read from the newest
+  20,000 first-parent changes up to the pin where there is one. It reads history rather than code,
+  so any language can get one, and it is no dimension: of 60 measured repositories, 9 state one, 25
+  claims in all.
 - **The layout roster**: the "What lives where" section above, counted over every tracked file.
 - **Wrapper routing**: whether logging, HTTP and environment reads go through the repository's own
   module, offered only where the repository has adopted one.
@@ -443,7 +456,7 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 | Command | What it does |
 |---|---|
 | `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. With `--targets cursor,copilot` it writes the same map for those tools too ([Other tools](#other-tools)). |
-| `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
+| `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX or FIX, and as a NIT where it goes against a count the map printed without stating a rule or, for a new test, where the run could not tell what the change added. It also reports a new file whose kind the history adds together with another change the branch does not make. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
 | `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Exits 0 either way. |
 | `/anatomiya:setup` | Installs the packages the two node-hosted engines load, in the plugin's own directory. The grammar files are not packages: they ship in the plugin, and a damaged one is fixed by reinstalling the plugin. The only command that installs anything or reaches a package registry, and no other one runs it. On Windows it prints the command to run by hand. |
@@ -453,10 +466,13 @@ rather than as lines, for a CI job or another tool to read. `check` also takes `
 which prints one annotation per finding.
 
 `check` blocks nothing. MUST-FIX means the baseline population held zero violations of that claim,
-so this branch is the first. Severity caps at FIX whenever the map is stale, the predicate is
-partial, there was no merge base, or the area file never delivered the claim to that file in full,
-so a clean run under a cap is a weaker signal rather than a clean bill. Each finding says which cap
-applied.
+so this branch is the first; for a co-change claim, that every one of the last changes that added
+such a file also made the other change. Severity caps at FIX whenever the map is stale, the
+predicate is partial, there was no merge base, or the area file never delivered the claim to that
+file in full, and a co-change finding also where the history was read from a base branch or HEAD
+rather than a pin, where no one area file carries the claim, or where the branch touches more than
+40 files. A clean run under a cap is a weaker signal rather than a clean bill. Each finding says
+which cap applied.
 
 ## Other tools
 
@@ -485,19 +501,22 @@ area has no file there.
 
 You pass the flag once. A target stays on while its `anatomiya-overview` file is in its directory,
 so every later scan, and the background refresh, keeps writing it. Nothing else remembers the
-choice. The flag names the whole set: `--targets cursor` drops Copilot, and `--targets claude` turns
-both off and removes the files this tool wrote there. A scan that drops a target says so:
-`removed 4 files under .github/instructions`, then `.github/instructions is off now`. Deleting a target's overview file by hand
-turns it off as well, and the next scan removes the area files beside it. The two directories stay,
-holding none of this tool's files. In a clone that brings a committed overview file, the first scan
-says on that directory's line which file switched the target on and what switches it off:
+choice. A scan stopped part way through turning a target off still leaves it off: the next scan
+without `--targets` removes what that one left. The flag names the whole set: `--targets cursor`
+drops Copilot, and `--targets claude` turns both off and removes the files this tool wrote there. A
+scan that drops a target says so: `removed 4 files under .github/instructions`, then
+`.github/instructions is off now`. Deleting a target's overview file by hand turns it off as well,
+and the next scan removes the area files beside it. The two directories stay, holding none of this
+tool's files. In a clone that brings a committed overview file, the first scan says on that
+directory's line which file switched the target on and what switches it off:
 
 ```
 wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-overview.mdc switched on: `scan --targets claude` switches it off
 ```
 
-`/anatomiya:doctor`, run inside the repository, prints a line for
-each target that is on, and a second where its directory holds other entries named `anatomiya-*`.
+`/anatomiya:doctor`, run inside the repository, prints a line for each target that is on, or `off at
+the next scan` for one a killed scan was turning off, or `could not be read` for one the record
+names that it cannot read, and a second where its directory holds other entries named `anatomiya-*`.
 
 Both directories are ones people write rules in, so a scan is strict there. It never writes over a
 file it did not write: where one sits at a name the map needs, a scan that names the target refuses,
@@ -624,8 +643,11 @@ subdirectory, nothing loads until a file under it is touched, so a subagent that
 `cat`s receives nothing at all. Same ceiling as above, one level worse, and it is the exploration
 phase of a fan-out that it costs. Started one directory up, the echo has nothing to deliver on the
 prompt either, since a prompt names no file, so the first batch of parallel tool calls into a mapped
-checkout can each carry a copy of its overview: up to one per call, once per context window and per
-map. Inside the checkout the prompt delivers it first and the batch adds none.
+checkout carries the overview. It carries one copy between its calls where Claude Code gives the
+plugin a data directory (`CLAUDE_PLUGIN_DATA`): the first call to deliver leaves a batch claim there
+and the others read it. Without one, the batch can carry one copy per call, once per context window
+and per map. Inside the checkout the prompt delivers it first, so the first batch adds none; a batch
+that later finds the window run out delivers as above.
 
 **The measured preventable share is 8% to 15% of human review comments.** That is from 4,616 review
 comments at one company and 3,015 from ten public repositories, hand-classified. Those are the
@@ -728,6 +750,19 @@ on the repository the overview comes from, and the overview says so on every sca
 companions somewhere unusual scores zero against a habit it plainly has, which is why the count of
 companions found elsewhere prints beside the ratio.
 
+**At the area ceiling, a place goes to an area that counts something.** The fold that keeps a large
+repository under its area ceiling gives the places of areas that count nothing back to the largest
+areas it folded. An area that counts but states nothing still takes a place, and so does one holding
+JavaScript or TypeScript that counts nothing, since whether the type checker will count there is not
+known when a pin is taken. A pin of a repository at the ceiling parses it once to learn which areas
+count nothing, which took 5 to 14 seconds more on the four corpus repositories that reach it, two of
+which get places back. Under a pin the partition holds still until a pin is next taken.
+
+**What ships together needs history.** The co-change claims are read from the default branch's
+first-parent changes, so a shallow clone, such as a CI checkout at depth one, states none, and a git
+older than 2.31 states none either. A kind of file added fewer than 35 times in those changes gets
+no claim, so most repositories state none: 51 of 60 measured.
+
 **Who gets the most out of it**: repositories where a meaningful share of pull requests are
 agent-authored, with many directories and mechanical per-file obligations. A solo repository is not
 held back by the author gate: where the whole history has one author there is no second opinion to
@@ -740,7 +775,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 297 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 319 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

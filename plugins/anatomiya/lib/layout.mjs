@@ -11,7 +11,7 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
-import { embeddedIn, familyOf, language, placeTestsOf } from "./langs.mjs";
+import { embeddedIn, familyOf, langHas, language, placeTestsOf } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
 import {
@@ -37,7 +37,7 @@ const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel
 /**
  * Whether this root is, or is under, a test tree, at any depth.
  *
- * Its non-test files are what the tests run on, so a namesake count over them
+ * Its files that are not tests are what the tests run on, so a namesake count over them
  * is true and about nobody's question: webpack's `test` is 12,645 files of
  * which 2,607 are tests, and it read `1 of 7858 has a namesake test under test`
  * over the fixture modules the 2,607 exercise.
@@ -220,8 +220,9 @@ export function printedExtensions(own, mirrored = null) {
 
 /**
  * A test file is one the parse saw import a runner or call `describe`, one
- * whose own name says so, one sitting in a `__tests__` directory, or one
- * mirroring a source file from inside a test tree. Four claims about the file;
+ * whose own name says so, or, unless the parse read it as support, one
+ * sitting in a `__tests__` directory or mirroring a source file from inside a
+ * test tree. Four claims about the file;
  * where a repository files it is not one of them. A file the parse read and
  * found empty is none of them, whatever it is called.
  *
@@ -263,7 +264,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   const names = FAMILY_TEST_NAMES[family];
   if (names) return mirrored?.has(rel) === true || namesATest(rel, family);
   if (TEST_NAME.test(base)) return true;
-  // The Ruby form is the one a non-test file wears in earnest, so it is the one
+  // The Ruby form is the one a producer wears in earnest, so it is the one
   // that has to be corroborated by where the file sits. `software_spec.rb` is
   // Homebrew's `SoftwareSpec` class and has its own `software_spec_spec.rb`
   // under `test/`, and a RuboCop cop named for the `Rails.env.test?` guard it
@@ -273,6 +274,14 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // reason `test-shape.mjs` records: discourse writes 4,000 tests as
   // `login-test.js` and no other signal in them says so.
   if (RUBY_TEST_NAME.test(base) && underTestTree(dir)) return true;
+  // Past its name, a read file is a test by its address only where nothing in
+  // it says otherwise. One that exports is what the tests import: 328 of the
+  // 645 files the two claims below took across 60 repositories, every one a
+  // fixture, helper, mock or config, and none of eslint's 294 mirrored rule
+  // tests. A language with no import graph has no export to show, and where its
+  // parse names every runner, a file it read with no case is support: 11 of 11,
+  // page objects, factories and helpers.
+  if (facets && !facets.unread && (!langHas(lang, "importGraph") || facets.exports?.length > 0)) return false;
   if (mirrored?.has(rel)) return true;
   return dir !== "" && dir.split("/").some((seg) => TEST_DIRS.has(seg));
 }
@@ -532,10 +541,9 @@ const helperFacet = (own, jsxFiles, mirrored) => {
   // absence as "not a component" charged the sentence with unread files. A
   // story with no JSX in it is not a private helper either, or storybook's own
   // `input.stories.ts`, repeated once per package, tallied as the sentence's
-  // top stem.
-  const modules = own.filter(
-    (f) =>
-      f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && !isTestFile(f, mirrored) && !isStoryFile(f.rel));
+  // top stem. Held to the namesake count's producers, so a fixture under a test
+  // tree, which is no test, is no module beside the components either.
+  const modules = own.filter((f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && isProducer(f, mirrored));
   if (modules.length === 0) return null;
   return {
     siblingModules: modules.length,
@@ -576,7 +584,7 @@ export function layoutIndexes(files, mirrored = mirroredTests(files)) {
  *
  * Clauses that count nothing are absent rather than zero: a root with no
  * source file is not asked whether its files have tests, and neither is one
- * inside a test tree, whose non-test files are what the tests run on.
+ * inside a test tree, whose files that are not tests are what the tests run on.
  */
 export function rootFacts(root, { testFiles, mirrored, byStem }) {
   const dir = root.dir ?? (root.path === "." ? "" : root.path);

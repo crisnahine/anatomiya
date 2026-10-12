@@ -271,18 +271,20 @@ export function reuseRecord(files) {
  * A file's mark is taken over its content rather than its line numbers, since
  * two different edits can land on the same lines, and per file, so an edit to
  * one file does not make every other one look new. `since` leaves out a file
- * last written before that moment, which is work the session did not do, and
- * nothing is read while a merge or the like is unfinished, which is another
- * branch's. A migration, a schema dump and a file the corpus refuses (generated,
- * or a link) have no function anybody would reuse, and are left out, and so is
- * a hunk whose every added line provably defines nothing callable.
+ * last written before that moment, and `calls` one last written outside every
+ * one of the session's tool calls: either is work the session did not do.
+ * Nothing is read while a merge or the like is unfinished, which is another
+ * branch's. A migration, a schema dump and a file the corpus refuses
+ * (generated, or a link) have no function anybody would reuse, and are left
+ * out, and so is a hunk whose every added line provably defines nothing
+ * callable.
  *
  * `turnStart` adds what this turn committed: a turn told to write and commit
  * leaves the tree clean, and read against HEAD alone its work was never asked
  * about. The commits are found in the reflog rather than in state this writes,
  * since a marker file would be one more change `git status` reports (A91).
  */
-export async function pendingChange(root, { since = null, turnStart = null } = {}) {
+export async function pendingChange(root, { since = null, turnStart = null, calls = null } = {}) {
   // git names every path from the top of the checkout, which is where a scan
   // writes its record. A record further down came with a copy of another
   // project, and joined against it git's paths name files nobody changed.
@@ -300,7 +302,7 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   // One diff from before the turn's first commit to the tree reads what it
   // committed and what it left uncommitted together, so the reads in a row
   // stay two however many commits the turn made.
-  const base = turnStart === null ? null : await committedSince(root, gitdir, turnStart);
+  const base = turnStart === null ? null : await committedSince(root, gitdir, turnStart, calls);
   if (pending.present.length === 0 && base === null) return null;
   const edited = base !== null || pending.present.some((p) => p.status === "M");
   const ranges = edited ? await addedRanges(root, base ?? "HEAD", null, { timeout: REUSE_GIT_MS }) : new Map();
@@ -324,6 +326,7 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
     if (since !== null && entry.mtimeMs < since) continue;
+    if (calls !== null && !inCall(calls, entry.mtimeMs)) continue;
     const added =
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
@@ -362,21 +365,23 @@ async function gitDir(root) {
  * commits made after the turn's last checkout, pull, reset, merge or rebase
  * are its own, since each of those brings in work nobody in this session
  * wrote. A first commit has no parent to diff from and a merge commit holds
- * the other side's work, so either ends the run the way a move does.
+ * the other side's work, so either ends the run the way a move does, and so
+ * does a commit made outside every tool call of the session's, which the
+ * reflog cannot tell from one another session made.
  *
  * Read off the file where there is one, which costs no git read. The reftable
  * backend keeps no `logs/`, and there the same entries are asked of git: read
  * off the file alone, a turn that committed everything it wrote was never
  * asked about on reftable.
  */
-async function committedSince(root, gitdir, turnStart) {
+async function committedSince(root, gitdir, turnStart, calls) {
   const entries = headMoves(gitdir) ?? (await headMovesFromGit(root));
   if (entries === null) return null;
   let run = null;
   for (const { from, to, seconds, message } of entries) {
     // A second the reflog recorded is the turn's if any part of it is.
     if ((seconds + 1) * 1000 <= turnStart) continue;
-    if (!OWN_COMMIT.test(message)) run = null;
+    if (!OWN_COMMIT.test(message) || (calls !== null && !inCall(calls, seconds * 1000))) run = null;
     else if (from === null || run === null || run.to !== from) run = from === null ? null : { from, to };
     else run.to = to;
   }
@@ -467,6 +472,56 @@ export function turnStart(transcriptPath) {
     return Number.isFinite(ms) ? ms : null;
   }
   return null;
+}
+
+/**
+ * Whether a moment falls inside one of the session's calls, widened a second
+ * each side: some filesystems and the reflog keep whole seconds.
+ */
+const inCall = (calls, ms) => calls.some((c) => c.from - 1000 <= ms && ms <= c.to + 1000);
+
+// The completion of a call run in the background opens with this tag, and the first id it names is the call it ends.
+const NOTIFICATION = "<task-notification>";
+const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/;
+
+/**
+ * This session's tool calls, each from the moment its call was written to the
+ * moment it returned, or empty where the transcript stamps none.
+ *
+ * A call run in the background returns as it starts, so it runs on to the
+ * first record of its completion: the queue entry made as it ended, or the
+ * notification where there is no such entry. One with no completion recorded
+ * ends at its result, which misses its later writes rather than charging the
+ * session with somebody else's.
+ */
+export function toolCalls(transcriptPath) {
+  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
+  if (tail === null) return [];
+  const started = new Map();
+  const returned = new Map();
+  const finished = new Map();
+  for (const line of tail.split("\n")) {
+    if (!line.includes("tool_use") && !line.includes("<tool-use-id>")) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const ms = Date.parse(entry?.timestamp);
+    if (!Number.isFinite(ms)) continue;
+    const content = entry.message?.content;
+    for (const part of Array.isArray(content) ? content : []) {
+      if (part?.type === "tool_use" && typeof part.id === "string") started.set(part.id, ms);
+      if (part?.type === "tool_result" && typeof part.tool_use_id === "string") returned.set(part.tool_use_id, ms);
+    }
+    const notice =
+      entry.type === "queue-operation" ? entry.content : entry.attachment?.type === "queued_command" ? entry.attachment.prompt : entry.type === "user" ? content : null;
+    // A prompt typed or pasted is queued and recorded the same way, and may quote any call's id.
+    const id = typeof notice === "string" && notice.startsWith(NOTIFICATION) ? (notice.match(FINISHED_CALL)?.[1] ?? null) : null;
+    if (id !== null) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
+  }
+  return [...started].flatMap(([id, from]) => (returned.has(id) ? [{ from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));
 }
 
 /**

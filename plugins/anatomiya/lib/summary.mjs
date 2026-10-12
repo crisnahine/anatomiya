@@ -1,11 +1,12 @@
 import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
-import { statedSide } from "./facts.mjs";
+import { oversizedSentence, statedSide } from "./facts.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
 import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
+import { statedClaims } from "./cochange.mjs";
 
 /**
  * What a command answered, and the lines that say it.
@@ -50,6 +51,8 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
   const authorGated = slots.filter((d) => statedSide(d).gate === "authors").length;
   const stated = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true);
   const matching = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault === true);
+  // A co-change claim an area file carries is stated there; one no area file carries is said by the notice alone.
+  const carried = statedClaims(result.layout?.cochange).filter((c) => c.area !== null).length;
   const targets = targetSummaries(result, plan);
 
   return {
@@ -58,7 +61,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     durationMs: result.durationMs,
     root: result.root,
     untracked: result.corpus.untracked,
-    claims: { stated: stated.length, matchingDefault: matching.length, total: slots.length },
+    claims: { stated: stated.length + carried, matchingDefault: matching.length, total: slots.length + carried },
     // Which engines ran and what they are, so a map that moved under unchanged
     // source has somewhere to look before anyone reads the counts.
     engines: result.parse.engines ?? null,
@@ -108,6 +111,9 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // counts and then named a gate no slot was on.
     historyTruncated: result.authors.error ? null : truncatedHistoryLine(result.authors.shallow, authorGated),
     authorGated,
+    // The record is the only other place a co-change walk that failed says so; absent where it ran.
+    ...(result.layout?.cochange?.error ? { cochangeError: result.layout.cochange.error } : {}),
+    ...(result.layout?.cochange?.truncated === true ? { cochangeTruncated: true } : {}),
     rules: {
       foreign: plan.foreign,
       unknown: plan.unknown,
@@ -122,6 +128,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // And the ones that would not go: a file somebody holds, or made read-only.
     ...(plan.stagedLeft?.length ? { stagedLeft: plan.stagedLeft.length } : {}),
     ...(plan.storeStagedLeft?.length ? { storeStagedLeft: plan.storeStagedLeft.length } : {}),
+    ...(plan.oversized?.length ? { oversized: plan.oversized } : {}),
     wrote: plan.write.length,
     // A language read no file of is one of two facts, told apart by whether
     // anything else was read: `blind` is a run that wrote nothing at all, and
@@ -237,12 +244,17 @@ export function scanLines(s) {
     lines.push(
       `${untrackedSentence(s.untracked)}. The corpus is tracked files only, so nothing there was counted`
     );
+  const rest = s.claims.total - s.claims.stated - s.claims.matchingDefault;
   lines.push(
     `${s.claims.stated} of ${plural(s.claims.total, "claim")} stated` +
       (s.claims.matchingDefault
         ? `, ${s.claims.matchingDefault} ${s.claims.matchingDefault === 1 ? "matches" : "match"} the model default`
         : "") +
-      ", the rest print as counts"
+      (rest === 1
+        ? `, ${rest === s.claims.total ? "it" : "the other"} prints as a count`
+        : rest > 1
+          ? `, ${rest === s.claims.total ? "they" : "the rest"} print as counts`
+          : "")
   );
   // Beside the claims line, which is the count it explains: a tier that
   // answered nothing is why those slots print as counts.
@@ -263,6 +275,9 @@ export function scanLines(s) {
   if (s.historyError)
     lines.push(`history could not be read, so every claim fails the author gate: ${encode(firstLine(s.historyError))}`);
   if (s.historyTruncated) lines.push(s.historyTruncated);
+  if (s.cochangeError)
+    lines.push(`what ships together could not be read, so no co-change claim was stated: ${encode(firstLine(s.cochangeError))}`);
+  else if (s.cochangeTruncated) lines.push("what ships together stopped at the most pairs it counts, so no co-change claim was stated");
   // Named, not counted. The count was a number the reader then had to go and
   // resolve with `ls`, and the whole point of the line is that these files
   // reach the agent on every turn.
@@ -306,6 +321,7 @@ export function scanLines(s) {
   for (const [n, dir] of [[s.stagedLeft, RULES_DIR], [s.storeStagedLeft, STORE_DIR]]) {
     if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
   }
+  for (const record of s.oversized ?? []) lines.push(oversizedSentence(record, s.dryRun));
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.
   if (s.blind.length) {
@@ -355,6 +371,7 @@ function encodeScan(s) {
     ...s,
     root: locator(s.root),
     historyError: s.historyError == null ? null : encode(s.historyError),
+    ...(s.cochangeError == null ? {} : { cochangeError: encode(s.cochangeError) }),
     rules: {
       ...s.rules,
       foreign: s.rules.foreign.map(locator),

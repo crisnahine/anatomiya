@@ -91,8 +91,8 @@ function reachedFrom(entry, edges = graph()) {
 const WORKERS = ["parse-worker.mjs", "tree-sitter-worker.mjs"];
 
 test("no module the parse worker reaches imports node:child_process", () => {
-  // Every JS parse child loads `dimensions.mjs` for the registry, and the two
-  // Ruby dimension files took their walkers from `ruby.mjs`, the module that
+  // A parse child loading every engine's rows reaches the two Ruby dimension
+  // files, and those took their walkers from `ruby.mjs`, the module that
   // spawns Ruby. That put the spawn machinery and the inline prism script into
   // all eight forked workers, which is the exact cost `langs.mjs` and
   // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
@@ -242,13 +242,31 @@ test("a Ruby shard thread loads the prism rows and no other engine's", () => {
   assert.deepEqual([...TREE_SITTER_ONLY, "dimensions.mjs"].filter((file) => loaded.has(file)), []);
 });
 
+test("a JavaScript parse child loads the oxc rows and no tree-sitter module or prism row", () => {
+  const loaded = reachedFrom("parse-worker.mjs", graph(LIB, { dynamic: false }));
+  const others = [...TREE_SITTER_ONLY, "dimensions.mjs", "dimensions-ruby.mjs", "dimensions-rails.mjs"];
+  assert.deepEqual(others.filter((file) => loaded.has(file)), []);
+  assert.ok(loaded.has("dimensions-base.mjs"));
+});
+
 test("a parse child that reads no component loads no component scanner, and no child loads another engine's body", () => {
   // Counted from each shell's static imports: what a child holds before its first file.
   const loads = (shell) => reachedFrom(shell, graph(LIB, { dynamic: false }));
   assert.deepEqual(["blank.mjs", "script-blocks.mjs", "csharp-directives.mjs", "tree-sitter-file.mjs"].filter((file) => loads("parse-worker.mjs").has(file)), []);
-  assert.deepEqual(["script-blocks.mjs", "parse-file.mjs"].filter((file) => loads("tree-sitter-worker.mjs").has(file)), []);
+  assert.deepEqual(["script-blocks.mjs", "parse-file.mjs", "dimensions-base.mjs"].filter((file) => loads("tree-sitter-worker.mjs").has(file)), []);
   // Loaded on the first component instead, by the body that reads one.
   assert.ok(reachedFrom("parse-worker.mjs").has("script-blocks.mjs"));
+});
+
+test("no JavaScript row names a site by its function alone, without the class around it", () => {
+  // Two classes each holding a `run` are one place by the bare name, and the
+  // check then matches a new copy to the old one and reports the old line.
+  const bare = [];
+  for (const file of ["dimensions-base.mjs", "dimensions-extra.mjs", "dimensions-jsx.mjs", "dimensions-capability.mjs"]) {
+    const src = readFileSync(join(LIB, file), "utf8");
+    for (const m of src.matchAll(/where(?::|\s*=)\s*declName\(ctx\.\w+\)/g)) bare.push(`${file}: ${m[0]}`);
+  }
+  assert.deepEqual(bare, []);
 });
 
 test("a module that branches on a row's kind loads the registry that stamps it", () => {

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { needsColonInNames } from "./platform.mjs";
 
 import {
   LEARNED_ROWS,
@@ -15,7 +16,16 @@ import {
   overviewFor,
   parseArgs,
 } from "../scripts/measure-layout.mjs";
-import { namesakeClause, renderLayout, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS } from "../plugins/anatomiya/lib/render-layout.mjs";
+import {
+  namesakeClause,
+  pathOfRootLabel,
+  renderLayout,
+  rootLabelEnd,
+  runnerCount,
+  RUNNERS_SHOWN,
+  specCount,
+  TESTS_GROUPS,
+} from "../plugins/anatomiya/lib/render-layout.mjs";
 import { UNNAMED_RUNNER } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
@@ -418,10 +428,56 @@ test("the recount counts a root named tests, which prints with a slash so it is 
   assert.equal(run.section.split("\n").filter((line) => line.startsWith("- tests: ")).length, 1, "one bullet carries the label");
 });
 
+test("a root label the renderer printed reads back to the path it was printed from", () => {
+  const paths = ["src", "tests", 'a "b" c: d', "lib/my pkg (files at this level)", 'x\\" y (files at this level)'];
+  const layout = {
+    size: 100,
+    minFiles: 3,
+    roots: paths.map((path) => ({ path, dir: path, files: 4, source: 4, exts: [[".js", 4]], other: 0, jsx: 0, jsxExt: null, tests: [], testRoot: false })),
+    more: { roots: 0, files: 0 },
+    tests: [],
+    principles: [],
+  };
+  const bullets = renderLayout(layout).filter((l) => l.startsWith("- "));
+
+  assert.deepEqual(
+    bullets.map((l) => pathOfRootLabel(l.slice(2, 2 + rootLabelEnd(l.slice(2))))),
+    paths
+  );
+});
+
+test("the recount reads a root whose name is quoted, a separator inside the quotes included", needsColonInNames, (t) => {
+  const node = (name) => `import { test } from "node:test";\ntest("${name}", () => {});\n`;
+  const run = recountOf(t, {
+    ...Object.fromEntries([0, 1, 2, 3].map((i) => [`a: b/m${i}.js`, `export const m${i} = ${i};\n`])),
+    ...Object.fromEntries([0, 1, 2].map((i) => [`src/n${i}.js`, `export const n${i} = ${i};\n`])),
+    ...Object.fromEntries([0, 1].map((i) => [`test/m${i}.test.js`, node(`m${i}`)])),
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- "a: b": 4 \.js; 2 of 4 have a namesake test under test$/m);
+  assert.match(run.section, /^- tests: 2 node:test specs under test; 2 of 4 \.js files under "a: b" have a namesake test$/m);
+});
+
 test("a corpus directory that cannot be listed is refused by name, not with a stack", () => {
   const run = spawnSync(process.execPath, [script, join(tmpdir(), "anatomiya-no-such-corpus")], { encoding: "utf8" });
 
   assert.equal(run.status, 2, run.stderr);
   assert.match(run.stderr.split("\n")[0], /anatomiya-no-such-corpus cannot be listed/);
   assert.doesNotMatch(run.stderr, /\n\s+at /, "no stack trace");
+});
+
+test("the recount holds sibling modules to the producers, so a fixture under a test tree is in neither count", (t) => {
+  const component = (name) => `export default function ${name}() {\n  return <div />;\n}\n`;
+  const run = recountOf(t, {
+    "ui/C0.tsx": component("C0"),
+    "ui/C1.tsx": component("C1"),
+    "ui/C2.tsx": component("C2"),
+    "ui/types.ts": "export type T = string;\n",
+    "ui/__tests__/fixtures.ts": "export const data = 1;\n",
+    "ui/__tests__/C0.test.tsx": 'describe("C0", () => {\n  it("renders", () => {});\n});\n',
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.section, /^- ui: .*; 1 sibling module\b/m);
 });

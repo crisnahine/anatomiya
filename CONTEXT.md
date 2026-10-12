@@ -89,8 +89,24 @@ _Avoid_: merged, collapsed, hidden, dropped
 **Area ceiling**:
 The most areas one map may hold: a sixteenth of the source files, never under 120 and never over
 500. Past it the smallest areas fold first, by file count alone, whatever language they hold and
-whatever they state.
+whatever they state. An area dropped for counting nothing holds no place: see **give-back**. Under a
+pin the ceiling is the **pinned ceiling**.
 _Avoid_: area limit, area budget, cap
+
+**Give-back**:
+What happens at the **area ceiling** to the places of areas a scan drops for counting nothing: they
+go back to the areas the fold took last, the last taken first, which is the largest first, in a scan
+and in a pin alike, and never past twice the plain ceiling, the most a pin may name. An area holding
+JavaScript is never one that counts nothing, since the type checker may count there, and a held area
+keeps its place.
+_Avoid_: refill, reclaim, unfold
+
+**Pinned ceiling**:
+The area ceiling a pin records where its give-back raised the ceiling past the plain one. A scan
+under that pin folds to it and gives nothing back, so the partition holds still until the pin moves;
+a pin that records none folds at the plain ceiling. A pin that records one above twice the plain
+ceiling for its own corpus is refused.
+_Avoid_: saved ceiling, frozen ceiling, area limit
 
 **Engine**:
 One of the three parser engines a language is routed to: `oxc` for JavaScript, TypeScript and a
@@ -133,8 +149,25 @@ A directory whose name puts what is under it among the tests: `test`, `tests`, `
 which is a Gradle source set ending in `Test` or named `testFixtures`, a .NET project named `X.Tests` or `X.Test`, and
 a `Test` or `Tests` directory in PHP. Sitting in one does not make a file a test: its name does,
 or in Rust its place directly under a crate's `tests`, or a `#[test]` in it with a `tests`
-directory anywhere above it.
+directory anywhere above it. In JavaScript and Ruby a `__tests__` segment, or a path that mirrors
+a source file from inside the tree, makes a test of a file nothing else names one only where the
+parse read nothing that says otherwise; where it did, the file is a **support file**.
 _Avoid_: test folder, test root, spec directory
+
+**Support file**:
+A file a test tree or a mirrored path would make a test, which the parse read and found to be
+what the tests use instead: in JavaScript one that exports something, in Ruby one that declares no
+case. Fixtures, helpers, mocks, page objects and configs. It is neither a test nor a **producer**
+in any count. A file whose parse failed, or whose facets the parse could not finish, keeps the
+path rule.
+_Avoid_: fixture file, test helper, non-test
+
+**Producer**:
+A file a test could be written for: source this tool reads that holds something and is no test,
+no story and no declaration file, outside every test tree of its family. The namesake count and
+the sibling-module count are both taken over producers. The word has a second meaning in a
+**co-change claim**: the class of file whose additions the claim speaks for.
+_Avoid_: source file (for the counted set), trigger, cause
 
 **Namesake test**:
 A test file that answers one source file by carrying its stem. It says that file is tested, and nothing
@@ -222,7 +255,8 @@ One dimension applied to one area. The unit that either states a directive or pr
 _Avoid_: entry, row, result, finding
 
 **Candidate**:
-One site where a dimension's construct appears. The denominator of every ratio.
+One site where a dimension's construct appears. The denominator of every ratio. For a **co-change
+claim**, one change that added a file of the producer class.
 _Avoid_: match, occurrence, hit, instance
 
 **Conforming**:
@@ -270,7 +304,7 @@ _Avoid_: directive, rule, guideline, claim
 **Stated**:
 Which of a slot's two sentences the gates settled on, or neither. The map's own "N stated" is a smaller
 number: it counts only the slots rendered as directives, leaving out those whose side the model already
-writes unprompted.
+writes unprompted, and adds each stated **co-change claim** an area file carries.
 _Avoid_: passed, enabled, active
 
 **Gate**:
@@ -283,6 +317,30 @@ The words on a claim line that name the files it was counted over, `, in .rb fil
 where the area holds three or more source files of languages the dimension is never asked of, and
 it joins the line and adds none. One or two such files earn no clause.
 _Avoid_: qualifier, language suffix, filter
+
+**Co-change claim**:
+What a change adding a file of one **class** also touches: one named file edited, or a file of
+another class added, the **companion**. Counted over the default branch's newest 20,000
+first-parent changes up to the pin, each producer class over its newest 100 candidates, and never
+over the tree, so it needs no parser. A change here is one first-parent commit of the default
+branch, not a **change set**. It passes the gates every claim faces and three of its own, prints
+under its area's directives, is said by the **notice**, and `check` reports a branch that adds a
+producer without its companion.
+_Avoid_: dependency, coupling, co-occurrence rule
+
+**Class**:
+A directory and a file suffix, `lib/rubocop/cop/style/*.rb`, or the same suffix one directory up,
+`lib/rubocop/cop/*/*.rb`, which speaks for a sibling directory only where its changes came from two
+child directories, at least half of them from ones that still hold a producer. The suffix runs from
+the first dot past any segment starting with a digit, Ruby's `_spec.rb` and `_test.rb` kept whole,
+and holds only ASCII letters, digits, `.`, `_` and `-`. A test's class is neither side of a
+co-change claim.
+_Avoid_: glob, pattern, file type
+
+**Companion**:
+What a **co-change claim** says a producer class ships with: an edit to one named file, or a file
+of another class added. A file this tool writes is never one.
+_Avoid_: dependency, partner, sidecar
 
 **Author**:
 A person the history shows in an area's files, counted across the names those files used to carry. One
@@ -416,9 +474,23 @@ the text that reaches the agent says so.
 _Avoid_: parent repo, primary checkout, origin
 
 **Notice**:
-The one sentence handed to the agent before a file is written, saying where that kind of file's tests
-already go. No scan wrote it: it is composed for the path in hand, and no area file carries it.
+The one sentence handed to the agent before a file is written, saying where that kind of file's
+tests already go, or, for a path a stated **co-change claim**'s producer class holds, what a change
+adding that kind of file has shipped with, one line per claim. No scan wrote it: it is composed for
+the path in hand, and no area file carries it.
 _Avoid_: warning, hint, directive, message
+
+**Batch claim**:
+What one call of a parallel batch leaves, per transcript and map, so that only it delivers the map:
+how far into the transcript it had read, which the batch's other calls take as a delivery made
+there, since none of their records is in the transcript yet. Where the plugin has no data directory
+there is none, and each call answers alone.
+_Avoid_: claim (alone: that is a dimension's sentence), marker, token
+
+**Lock token**:
+What gives one call the right to break a dead lock beside a **batch claim**, for one generation of
+that lock: the lock file found dead, told apart from a later lock at the same name.
+_Avoid_: token (alone), lock (alone: that is the file it breaks)
 
 **Facts**:
 The machine record of every slot, gated or not, including which side was stated. The map is derivable from

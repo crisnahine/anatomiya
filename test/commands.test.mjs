@@ -11,7 +11,7 @@ import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
-import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
+import { PIN_PATH, readPin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
@@ -398,6 +398,61 @@ test("a pin writes the baseline and answers with the delta it accepted", async (
   assert.equal(delta.addedFiles, 8);
   assert.equal(delta.removedFiles, 0);
   assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).sha, pin.sha);
+});
+
+test("a pin under the ceiling parses nothing", async (t) => {
+  const dir = repo(t);
+  const parseFiles = () => {
+    throw new Error("parsed under the ceiling");
+  };
+
+  const { pin } = await runPin(dir, { parseFiles });
+  assert.equal(pin.areas.length, 1);
+});
+
+test("a pin at exactly the ceiling names no ceiling and reads back", async (t) => {
+  // 120 areas that each count, so nothing folds and nothing is given back.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  for (let a = 0; a < 119; a++) {
+    mkdirSync(join(dir, `m${a}`));
+    for (let i = 0; i < 3; i++) writeFileSync(join(dir, `m${a}`, `f${i}.ts`), `export const a${i} = 1\n`);
+  }
+  git("add", "-A");
+  git("commit", "-qm", "at the ceiling");
+
+  const { pin } = await runPin(dir);
+  assert.equal(pin.areas.length, 120);
+  assert.equal(pin.ceiling, undefined);
+  assert.notEqual(readPin(dir).pin, null);
+});
+
+test("a pin refuses a commit or an edit that lands while the ceiling's parse runs", async (t) => {
+  // 122 areas over a ceiling of 120, so the pin parses before it partitions.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  for (let a = 0; a < 121; a++) {
+    mkdirSync(join(dir, `m${a}`));
+    for (let i = 0; i < 3; i++) writeFileSync(join(dir, `m${a}`, `f${i}.ts`), `export const a${i} = 1\n`);
+  }
+  git("add", "-A");
+  git("commit", "-qm", "at the ceiling");
+  const during = (land) => async () => {
+    land();
+    return { records: new Map() };
+  };
+  const cases = [
+    ["a commit", /HEAD moved from [0-9a-f]+ while the pin was being taken/, () => {
+      writeFileSync(join(dir, "m0", "f0.ts"), "export const a0 = 2\n");
+      git("commit", "-qam", "during the parse");
+    }],
+    ["an edit", /commit or stash/, () => writeFileSync(join(dir, "m0", "f1.ts"), "export const a1 = 2\n")],
+  ];
+  for (const [name, refusal, land] of cases) {
+    await assert.rejects(() => runPin(dir, { parseFiles: during(land) }), refusal, name);
+    assert.equal(existsSync(join(dir, PIN_PATH)), false, name);
+    git("reset", "-q", "--hard");
+  }
 });
 
 test("a dry-run pin writes nothing", async (t) => {
@@ -990,6 +1045,54 @@ test("a doctor counts as a target's files what a scan counts as written, and the
   assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
     ".cursor/rules: on, 2 files",
     ".cursor/rules holds 3 entries named anatomiya-* that a scan neither writes nor removes",
+  ]);
+});
+
+test("a doctor says which keyed files the next scan removes, where the record was about to remove them", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  const rules = join(dir, ".cursor", "rules");
+  const keyed = readFileSync(join(rules, "anatomiya-overview.mdc"));
+  writeFileSync(join(rules, "anatomiya-area-deadbeef.mdc"), keyed);
+  writeFileSync(join(rules, "anatomiya-area-0badf00d.mdc"), keyed);
+  const record = join(dir, ".claude", "anatomiya", "facts.json");
+  writeFileSync(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), removing: { cursor: ["anatomiya-area-deadbeef.mdc"] } }));
+
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes",
+    ".cursor/rules holds 1 entry named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove it",
+  ]);
+
+  // A record that names no file there still says what it was about to remove, and a scan removes it.
+  const { targets, ...rest } = JSON.parse(readFileSync(record, "utf8"));
+  writeFileSync(record, JSON.stringify({ ...rest, targets: { copilot: targets.copilot ?? [] }, removing: { cursor: ["anatomiya-area-0badf00d.mdc", "anatomiya-area-deadbeef.mdc"] } }));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".cursor/rules: on, 2 files",
+    ".cursor/rules holds 2 entries named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove them",
+  ]);
+});
+
+test("a doctor says which keyed files the next scan removes from .claude/rules, in the same sentence", async (t) => {
+  const dir = repo(t);
+  const engines = (await runDoctor()).lines;
+  await runScan(dir);
+  const rules = join(dir, ".claude", "rules");
+  const keyed = readFileSync(join(rules, "anatomiya-overview.md"));
+  writeFileSync(join(rules, "anatomiya-area-deadbeef.md"), keyed);
+  writeFileSync(join(rules, "anatomiya-area-0badf00d.md"), keyed);
+  const record = join(dir, ".claude", "anatomiya", "facts.json");
+  const facts = JSON.parse(readFileSync(record, "utf8"));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [], "a keyed file the record does not name is the scan summary's to count");
+
+  writeFileSync(record, JSON.stringify({ ...facts, removing: { claude: ["anatomiya-area-deadbeef.md"] } }));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".claude/rules holds 1 entry named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove it",
+  ]);
+  writeFileSync(record, JSON.stringify({ ...facts, removing: { claude: ["anatomiya-area-deadbeef.md", "anatomiya-area-0badf00d.md"] } }));
+  assert.deepEqual((await runDoctor({ cwd: dir })).lines.slice(engines.length), [
+    ".claude/rules holds 2 entries named anatomiya-* that the next scan removes, since the scan that wrote the map was about to remove them",
   ]);
 });
 

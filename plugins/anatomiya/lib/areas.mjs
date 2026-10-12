@@ -58,6 +58,22 @@ export function areaOwner(path, areaPaths) {
   return owner;
 }
 
+/**
+ * Nested areas both contain the path; the deepest one carries its claims.
+ *
+ * Indexed once per area list rather than per call: this sits inside two
+ * per-file loops, and rebuilding the path list there cost one allocation and a
+ * second walk for every changed file.
+ */
+export function areaIndex(areas = []) {
+  const byPath = new Map(areas.map((a) => [a.path, a]));
+  const paths = [...byPath.keys()];
+  return (path) => {
+    const owner = areaOwner(path, paths);
+    return owner === null ? null : byPath.get(owner);
+  };
+}
+
 // The root is the least specific answer there is, and it is one character long,
 // so its length cannot stand in for its depth.
 const depth = (p) => (p === "." ? 0 : p.length);
@@ -561,11 +577,17 @@ function assignGlobs(areas, files, uncounted) {
  * `uncounted` is the tracked source the corpus left out as fixture or
  * generated code. It decides no area and counts toward none; it only keeps
  * the globs off it.
+ *
+ * `countsNothing` says which areas the map will drop for counting nothing, and
+ * is asked only where the ceiling binds.
+ * Those hold no place under the ceiling, so the places they took go back to
+ * the areas the fold took last.
  */
 export function discover(files, {
   minFiles = areaFloor(files.length),
   maxAreas = areaCeiling(files.length),
   uncounted = [],
+  countsNothing = null,
 } = {}) {
   const byDir = new Map();
   for (const f of files) {
@@ -623,12 +645,19 @@ export function discover(files, {
     else areas.push(build(path, fs));
   }
 
-  const capped = capCount(areas, maxAreas, twins);
+  const capped = countsNothing && areas.length > maxAreas
+    ? giveBack(areas, maxAreas, twins, countsNothing)
+    : capCount(areas, maxAreas, twins);
   const folded = capped.orphaned || [];
   const all = capped.sort((a, b) => byCode(a.path, b.path));
   // After the count is capped, never before: a glob is measured against the
   // areas that ended up existing, and a fold changes which subtrees are foreign.
   assignGlobs(all, files, uncounted);
+  // Whether the ceiling folded any area, which is when a pin has to parse.
+  all.folded = capped.orphaned !== undefined;
+  // The ceiling a give-back settled on, or null where it gave back nothing: a
+  // fold stops at exactly its bound, so that ceiling is the count it returned.
+  all.ceiling = all.length > maxAreas ? all.length : null;
   all.orphaned = orphaned.concat(folded);
   return all;
 }
@@ -655,7 +684,10 @@ function build(path, files) {
 function capCount(areas, maxAreas, twins) {
   if (areas.length <= maxAreas) return areas;
 
-  const order = [...areas].sort((a, b) => a.fileCount - b.fileCount);
+  // Within a size, by each area's first file: the order git lists them in,
+  // read off the files rather than the order they arrived in.
+  const first = new Map(areas.map((a) => [a, a.files.reduce((m, f) => (byCode(f.rel, m) < 0 ? f.rel : m), a.files[0].rel)]));
+  const order = [...areas].sort((a, b) => a.fileCount - b.fileCount || byCode(first.get(a), first.get(b)));
   const byPath = new Map(areas.map((a) => [a.path, a]));
 
   const orphaned = [];
@@ -708,6 +740,32 @@ function capCount(areas, maxAreas, twins) {
   const out = [...byPath.values()];
   out.orphaned = orphaned;
   return out;
+}
+
+/**
+ * The fold stopped earlier by as many places as the areas counting nothing
+ * hold, so the last folds, the largest areas, are the ones undone. The fold is
+ * the same sequence whatever its ceiling, so a higher one replays a prefix of
+ * it. Repeated, since an area given back may count nothing too, and stepped
+ * down where giving back would hold more counted areas than the ceiling. It
+ * stops at twice the ceiling, the most a pin of the corpus may name.
+ */
+function giveBack(areas, maxAreas, twins, countsNothing) {
+  const countedIn = (set) => set.filter((a) => !countsNothing(a)).length;
+  let best = capCount(areas, maxAreas, twins);
+  let room = maxAreas - countedIn(best);
+  while (room > 0) {
+    const next = capCount(areas, Math.min(best.length + room, 2 * maxAreas), twins);
+    const over = countedIn(next) - maxAreas;
+    if (over > 0) {
+      room -= over;
+      continue;
+    }
+    if (next.length <= best.length) break;
+    best = next;
+    room = maxAreas - countedIn(best);
+  }
+  return best;
 }
 
 // Put an area at its place in a queue kept smallest first, after any area of

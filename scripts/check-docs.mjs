@@ -226,6 +226,27 @@ export function proseNamed(names = PROSE_NAMES, hosted = hostedBy("tree-sitter")
 const TREE_LANGS = proseNamed();
 
 /**
+ * Every number word prose spells a count in, read by every count check below.
+ *
+ * Two tables went stale apart: one check read words to thirteen and the rest
+ * read digits, so "four for PHP" and "fourteen runtime dependencies" passed.
+ */
+const ONES = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const TEENS = ["ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const TENS = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+const NUMERALS = new Map([
+  ...["no", "none", "zero"].map((word) => [word, 0]),
+  ...ONES.map((word, i) => [word, i + 1]),
+  ...TEENS.map((word, i) => [word, i + 10]),
+  ...TENS.flatMap((ten, i) => [[ten, 20 + i * 10], ...ONES.map((one, j) => [`${ten}-${one}`, 21 + i * 10 + j])]),
+]);
+// A word opening a sentence is the same count, and so is each half of a compound in a title or split by a space.
+const spelled = (w) => w.split("-").map((part) => `[${part[0]}${part[0].toUpperCase()}]${part.slice(1)}`).join("(?:-|\\s+)");
+const N = `\\b(?:\\d+|${[...NUMERALS.keys()].map(spelled).join("|")})\\b`;
+/** The number a count spelled in digits or in words stands for. */
+export const counted = (word) => NUMERALS.get(word.toLowerCase().replace(/\s+/g, "-")) ?? Number(word);
+
+/**
  * Every file of this repository git can see, or `{ error }` holding git's own
  * first line where it cannot say.
  *
@@ -323,6 +344,15 @@ const dirOf = (rel) => rel.slice(0, rel.lastIndexOf("/"));
 // and what the row should say instead is a decision, not a typo.
 const DONE_UNHELD = new Set(["A42"]);
 
+/** A bare module name, the spelling most status cells use for a file of ours. */
+const DONE_BARE = /`([A-Za-z0-9._-]+\.mjs)`/g;
+
+// Bare names a status cell spells as an example in prose, not as a file here.
+const DONE_EXAMPLES = new Set([
+  // H25: the module a test of the companion table would credit by mistake.
+  "defaults.mjs",
+]);
+
 /**
  * Files a decision row's status cell names as done that this tree does not hold.
  *
@@ -330,9 +360,11 @@ const DONE_UNHELD = new Set(["A42"]);
  * renamed or deleted outright left its row pointing at nothing. The tree is the
  * discriminator here too: a path whose own directory holds no file is another
  * repository's (`test/models/user_test.rb`), and one whose directory does is ours.
+ * A bare `.mjs` name is held to the file names the tree holds at any depth.
  */
 export function doneFilesGone(text, tracked) {
   const dirs = new Set([...tracked].map(dirOf));
+  const names = new Set([...tracked].map((rel) => rel.slice(rel.lastIndexOf("/") + 1)));
   const gone = [];
   for (const line of text.split(/\r?\n/)) {
     const row = DECISION_ROW.exec(line)?.[1];
@@ -340,6 +372,9 @@ export function doneFilesGone(text, tracked) {
     if (!row || done < 0 || DONE_UNHELD.has(row)) continue;
     for (const [, spelled] of line.slice(done).matchAll(DOC_PATH)) {
       if (OWN_CODE.test(spelled) && !tracked.has(spelled) && dirs.has(dirOf(spelled))) gone.push({ row, spelled });
+    }
+    for (const [, spelled] of line.slice(done).matchAll(DONE_BARE)) {
+      if (names.size > 0 && !names.has(spelled) && !DONE_EXAMPLES.has(spelled)) gone.push({ row, spelled });
     }
   }
   return gone;
@@ -467,12 +502,6 @@ export function checkDocs() {
   const rubyRows = ruby - pairingsFor(["ruby"]).length;
   const typeChecked = REGISTRY.filter((d) => d.tier === "semantic").length;
 
-  // Prose spells a count of one as a word, and a phrasing nothing parses is a
-  // number that drifts in silence, which is what this file is for.
-  const WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen"];
-  const NUMERALS = new Map(WORDS.map((word, i) => [word, i + 1]));
-  const counted = (word) => NUMERALS.get(word.toLowerCase()) ?? Number(word);
-
   // A released entry states the number that shipped in it and stays true forever.
   // Reading the whole changelog made every past release a claim about today, so
   // the first number that ever changed would fail three entries that are correct.
@@ -482,48 +511,51 @@ export function checkDocs() {
   // is one more than a reader needs.
   for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
     const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
+    // Digits only: prose spells a share of the dimensions as a word ("one to
+    // three dimensions each"), and the total is always written as a number.
     for (const m of text.matchAll(/(\d+)\s+dimensions/g)) {
       claim(rel, Number(m[1]) === total, `says "${m[1]} dimensions", the registry holds ${total}`);
     }
-    for (const m of text.matchAll(/(\d+)\s+for\s+JavaScript(?!\s+and)/g)) {
-      claim(rel, Number(m[1]) === js, `says "${m[1]} for JavaScript", the registry holds ${js}`);
+    const said = (phrasing) => text.matchAll(new RegExp(phrasing.replaceAll("(N)", `(${N})`), "g"));
+    for (const m of said(`(N)\\s+for\\s+JavaScript`)) {
+      claim(rel, counted(m[1]) === js, `says "${m[1]} for JavaScript", the registry holds ${js}`);
     }
-    for (const m of text.matchAll(/(\d+)\s+reachable\s+in\s+JSX/g)) {
-      claim(rel, Number(m[1]) === jsx, `says "${m[1]} reachable in JSX", the registry holds ${jsx}`);
+    for (const m of said(`(N)\\s+reachable\\s+in\\s+JSX`)) {
+      claim(rel, counted(m[1]) === jsx, `says "${m[1]} reachable in JSX", the registry holds ${jsx}`);
     }
-    for (const m of text.matchAll(/(\d+)\s+for\s+Ruby/g)) {
-      claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", the registry holds ${ruby}`);
+    for (const m of said(`(N)\\s+for\\s+Ruby`)) {
+      claim(rel, counted(m[1]) === ruby, `says "${m[1]} for Ruby", the registry holds ${ruby}`);
     }
-    for (const m of text.matchAll(/(\d+)\s+for\s+(Vue|Svelte)\b/g)) {
-      claim(rel, Number(m[1]) === component[m[2]], `says "${m[1]} for ${m[2]}", the registry holds ${component[m[2]]} asked of a ${m[2]} script`);
+    for (const m of said(`(N)\\s+for\\s+(Vue|Svelte)\\b`)) {
+      claim(rel, counted(m[1]) === component[m[2]], `says "${m[1]} for ${m[2]}", the registry holds ${component[m[2]]} asked of a ${m[2]} script`);
     }
     for (const [name, id] of TREE_LANGS) {
-      for (const m of text.matchAll(new RegExp(`(\\d+)\\s+for\\s+${name.replace(/\W/g, "\\$&")}(?![\\w#])`, "g"))) {
-        claim(rel, Number(m[1]) === rowsForLangs([id]).length, `says "${m[1]} for ${name}", the registry holds ${rowsForLangs([id]).length} asked of ${name}`);
+      for (const m of said(`(N)\\s+for\\s+${name.replace(/\W/g, "\\$&")}(?![\\w#])`)) {
+        claim(rel, counted(m[1]) === rowsForLangs([id]).length, `says "${m[1]} for ${name}", the registry holds ${rowsForLangs([id]).length} asked of ${name}`);
       }
     }
-    for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
-      claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);
+    for (const m of said(`(N)\\s+file-to-file obligations`)) {
+      claim(rel, counted(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);
     }
-    for (const m of text.matchAll(/(\d+)\s+ship\b/g)) {
-      claim(rel, Number(m[1]) === shipping, `says "${m[1]} ship", the registry holds ${shipping} outside the obligations`);
+    for (const m of said(`(N)\\s+ship\\b`)) {
+      claim(rel, counted(m[1]) === shipping, `says "${m[1]} ship", the registry holds ${shipping} outside the obligations`);
     }
-    for (const m of text.matchAll(/(\d+)\s+that speak Ruby/g)) {
-      claim(rel, Number(m[1]) === rubyRows, `says "${m[1]} that speak Ruby", the registry holds ${rubyRows} outside the obligations`);
+    for (const m of said(`(N)\\s+that speak Ruby`)) {
+      claim(rel, counted(m[1]) === rubyRows, `says "${m[1]} that speak Ruby", the registry holds ${rubyRows} outside the obligations`);
     }
-    for (const m of text.matchAll(/plus the (\w+) type-checked rows?/g)) {
+    for (const m of said(`plus the (N) type-checked rows?`)) {
       claim(rel, counted(m[1]) === typeChecked, `says "${m[1]} type-checked", the registry holds ${typeChecked}`);
     }
     // The total spelled as a share of itself, and the JavaScript and JSX totals
     // spelled as the gap between them. Both drifted while every phrasing above
     // held, because nothing read them.
-    for (const m of text.matchAll(/One\s+of\s+the\s+(\d+)\b/g)) {
-      claim(rel, Number(m[1]) === total, `says "One of the ${m[1]}", the registry holds ${total}`);
+    for (const m of said(`One\\s+of\\s+the\\s+(N)`)) {
+      claim(rel, counted(m[1]) === total, `says "One of the ${m[1]}", the registry holds ${total}`);
     }
-    for (const m of text.matchAll(/JSX\s+total\s+(\d+)\s+rather\s+than\s+(\d+)/g)) {
+    for (const m of said(`JSX\\s+total\\s+(N)\\s+rather\\s+than\\s+(N)`)) {
       claim(
         rel,
-        Number(m[1]) === jsx && Number(m[2]) === js,
+        counted(m[1]) === jsx && counted(m[2]) === js,
         `says "JSX total ${m[1]} rather than ${m[2]}", the registry holds ${jsx} and ${js}`
       );
     }
@@ -547,8 +579,8 @@ export function checkDocs() {
   // are read against the table rather than against one another.
   const rows = [...read("DECISIONS.md").matchAll(/^\| [A-H]\d+ \|/gm)].length;
   for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
-    for (const m of read(rel).matchAll(/(\d+)\s+numbered (?:decisions|rows)/g)) {
-      claim(rel, Number(m[1]) === rows, `says "${m[1]} numbered", DECISIONS.md holds ${rows} rows`);
+    for (const m of read(rel).matchAll(new RegExp(`(${N})\\s+numbered (?:decisions|rows)`, "g"))) {
+      claim(rel, counted(m[1]) === rows, `says "${m[1]} numbered", DECISIONS.md holds ${rows} rows`);
     }
   }
 
@@ -804,21 +836,23 @@ export function checkDocs() {
 
   // Each of these is a count a third engine moved, and none was read: "two
   // runtime dependencies" stood in four documents beside a manifest declaring
-  // three. A number or a number word, so the phrasing a sentence reads best in
-  // is still a phrasing this parses.
-  const N = `\\d+|${WORDS.join("|")}`;
+  // three.
   const hosted = hostedBy("tree-sitter").length;
   const COUNTS = [
     [`(${N})\\s+runtime\\s+dependencies`, deps.length, (n) => `the plugin's manifest declares ${n}`],
     [`(${N})\\s+parser\\s+engines`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`],
     [`(${N})\\s+node-hosted\\s+engines`, Object.values(ENGINES).filter((e) => e.host === "node").length, (n) => `the registry declares ${n} hosted by node`],
-    [`(${N})\\s+(?:vendored\\s+)?grammars\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
+    // Told apart by the document: a build contract row says "spans two engines"
+    // of the pair it compares, where every other document counts them.
+    [`(?:(?:the|all)\\s+)?(${N})\\s+engines\\b`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`, "DECISIONS.md"],
+    [`(${N})\\s+(?:vendored\\s+)?grammar(?:s|\\s+files|\\s+packages)\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
     [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
   ];
   const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
   for (const rel of stating) {
     const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
-    for (const [phrasing, held, source] of COUNTS) {
+    for (const [phrasing, held, source, pairsIn] of COUNTS) {
+      if (rel === pairsIn) continue;
       for (const m of text.matchAll(new RegExp(phrasing, "gi"))) {
         claim(rel, counted(m[1]) === held, `says "${m[0]}", ${source(held)}`);
       }

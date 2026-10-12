@@ -12,7 +12,7 @@
  * module is stamped whichever list declared it.
  *
  * The parse worker must not reach this module. It runs `dimensionsFor` off
- * `dimensions.mjs`, has no program to run an obligation or a filename row
+ * its own engine's row tables, has no program to run an obligation or a filename row
  * against, and eight forked children pay for whatever it imports.
  */
 import { ALL_DIMENSIONS, assertRegistryRows, KINDS } from "./dimensions.mjs";

@@ -25,22 +25,30 @@ Run the check and report what it found.
 2. Report what came back, in this order:
    - the base ref it resolved, and how many files this branch changed against it, deletions
      included (the header says how many it removed)
-   - every MUST-FIX, then every FIX: path, line, and the claim the site broke
-   - the NIT count, listed one by one only if the user asks
+   - every MUST-FIX, then every FIX: path, line, and the claim the site broke. A co-change finding
+     names the companion the branch did not touch: an edit to a named file, or a new file of a kind
+   - the NIT count, listed one by one only if the user asks. A NIT on a slot the map left unstated
+     prints that area's count line, which is a count and not a rule the site broke
    - every `note:` line it printed, and the capped-severity line above them: no map on disk, no
      merge base, a shallow clone, files read from the working tree rather than from a commit,
      files it could not read or parse
    - any file in `.claude/rules/` this tool did not write, and any carrying our frontmatter that
-     the map on disk does not name, since both reach the agent on every turn
+     the map on disk does not name, since both reach the agent on every turn, and which of those the
+     next scan removes, where the report says so
 
 3. MUST-FIX means the baseline population held zero violations of that claim, so this branch is the
-   first. Nothing is blocked by it: fix the site, or say which exception it falls under. Severity
+   first. Nothing is blocked by it: fix the site, or say which exception it falls under. For a
+   co-change finding, MUST-FIX means every one of the last changes that added that kind of file
+   also made the companion change: make that edit or add that file in this branch, or say why this
+   file does not need it. Severity
    caps at FIX whenever the map is stale, the predicate is partial, or there was no merge base, so a
    run with no MUST-FIX under a cap is a weaker signal rather than a clean bill. A repository with
    no baseline pinned caps every finding at FIX for the same reason: there is no accepted population
    that says this site is the first of its kind. One finding is also capped when its area file did
    not deliver the claim in full: the block was dropped for room, or the area's globs do not reach
-   the file. Each finding's reason line says which cap applied.
+   the file. A co-change finding is also capped when the map's history ran from a base branch or
+   HEAD rather than a pin, when no one area file carries the claim, or when the branch touches more
+   than 40 files. Each finding's reason line says which cap applied.
 
 4. **Do not open the generated files with the Read tool.** Reading a context file permanently
    suppresses its automatic injection for the rest of the session, which turns the map off for the

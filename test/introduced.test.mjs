@@ -92,6 +92,13 @@ test("a site's identity is the node type and the normalised slice, never the lin
   );
 });
 
+test("a node outside the parsed tree reads its nested bodies as one cut body", () => {
+  const fn = (src) => parseSync("f.ts", src, { sourceType: "module" }).program.body[0];
+  const nested = "function f() { function g() { a() } return () => { b() } }";
+  const flat = "function f() { c() }";
+  assert.equal(siteIdentity("src/a.ts", "function_style", fn(nested), nested), siteIdentity("src/a.ts", "function_style", fn(flat), flat));
+});
+
 test("a node reporting no offsets is identified by its name, whatever line it sits on", () => {
   // prism reports no byte offsets (B5), so a Ruby site has only its name.
   const at = (line) => siteIdentity("app/w.rb", "class_base", { type: "ConstantReadNode", name: "Base", line }, "class X < Base\nend\n");
@@ -178,7 +185,48 @@ test("a site added above an identical one is reported where it was added, not wh
 
   const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base }));
 
-  assert.deepEqual(found.map((f) => [f.line, f.where]), [[3, "brandNew"]]);
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[3, "L.brandNew"]]);
+});
+
+test("a method added above a same-named one in another class is reported on the line the branch wrote", () => {
+  const slot = area(stated("swallowed_error"));
+  const cls = (name) => `export class ${name} {\n  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  }\n}\n`;
+  const base = revision(cls("A"), { file: "f.js" });
+  const head = revision(`${cls("B")}\n${cls("A")}`, { file: "f.js" });
+
+  const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/old.js", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[5, "B.run"]]);
+});
+
+for (const [shape, holder, where] of [
+  ["a callback inside a method", (name) => `export class ${name} {\n  run(list) {\n    list.forEach((go) => {\n      try {\n        go();\n      } catch (error) {}\n    });\n  }\n}\n`, "B.run"],
+  ["an object-literal method", (name) => `export const ${name} = {\n  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  },\n};\n`, "B.run"],
+  ["a component's method", (name) => `const ${name} = defineComponent({\n  methods: {\n    run(go) {\n      try {\n        go();\n      } catch (error) {}\n    },\n  },\n});\n`, "B.run"],
+]) {
+  test(`${shape} added above a same-named one under another name is reported on the line the branch wrote`, () => {
+    const slot = area(stated("swallowed_error"));
+    const base = revision(holder("A"), { file: "f.js" });
+    const head = revision(`${holder("B")}\n${holder("A")}`, { file: "f.js" });
+
+    const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/old.js", lang: "js", head, base }));
+
+    const line = holder("B").split("\n").findIndex((l) => l.includes("catch")) + 1;
+    assert.deepEqual(found.map((f) => [f.line, f.where]), [[line, where]]);
+  });
+}
+
+test("two same-named methods in one class are matched in source order alone", () => {
+  // Their name, their text and the lines around them are all equal, so the
+  // copy the base held is the first one and the one reported is the second.
+  const slot = area(stated("swallowed_error"));
+  const run = "  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  }\n";
+  const base = revision(`export class A {\n${run}}\n`, { file: "f.js" });
+  const head = revision(`export class A {\n${run}${run}}\n`, { file: "f.js" });
+
+  const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/old.js", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[10, "A.run"]]);
 });
 
 test("renaming the function around a site still introduces nothing", () => {
@@ -237,6 +285,26 @@ test("an edit inside a function or class body is not a site on the declaration t
     judged(`// why\nexport function f(a) {\n  return a\n}\n`, `// why\nexport function f(a) {\n  return a\n}\nexport function h(a) {\n  return a\n}\n`),
     ["function_style@5", "explicit_return_type@5"],
     "a function the branch adds is still new"
+  );
+});
+
+test("a site that is or opens an arrow's expression body keeps its text, so an edit inside it is new", () => {
+  const judged = (key, base, head) =>
+    only(key, newlyIntroduced({ area: area(stated(key)), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })).map(
+      (f) => `${f.line}:${f.text}`
+    );
+  assert.deepEqual(judged("optional_chaining", "export const f = () => props.a;\n", "export const f = () => props.b;\n"), ["1:props.b"]);
+  assert.deepEqual(judged("nullish_default", "export const g = (a) => a.x || 1;\n", "export const g = (a) => a.y || 2;\n"), ["1:a.y || 2"]);
+  assert.deepEqual(judged("nullish_default", "export const g = (a) => a.x || 1 ? b : c;\n", "export const g = (a) => a.y || 2 ? b : c;\n"), ["1:a.y || 2"], "a site opening a longer body");
+  assert.deepEqual(
+    judged("route_logging", "export const h = (e) => console.log?.(e);\n", "export const h = (e) => console.warn?.(e);\n"),
+    ["1:console.warn?.(e)"],
+    "a site inside a body of the same span"
+  );
+  assert.deepEqual(
+    judged("optional_chaining", "export const f = () => {\n  return props.a;\n};\n", "export const f = () => {\n  return props.b;\n};\n"),
+    ["2:props.b"],
+    "and in a block body"
   );
 });
 
@@ -369,9 +437,77 @@ test("a long group of alike copies edited at both ends is aligned in time linear
   assert.ok(ratio < LINEAR, `twice the copies took ${ratio.toFixed(2)} times as long`);
 });
 
+test("sites nested inside sites are judged in time linear in the depth, and each quotes a bounded text", () => {
+  // Each site walked its whole subtree for the bodies to leave out and copied
+  // its whole text, so a site holding sites paid for every level under it:
+  // 2,000 nested catches took 3.7 seconds and 50 MB of quoted text.
+  const shapes = {
+    swallowed_error: (d) => {
+      let s = "a();";
+      for (let i = 0; i < d; i++) s = `try { a${i}(); } catch (e) {\n${s}\n}`;
+      return s;
+    },
+    extends_base: (d) => {
+      let s = "x() {}";
+      for (let i = 0; i < d; i++) s = `m${i}() {\n  return class extends Other {\n${s}\n  }\n}`;
+      return `class Top extends Other {\n${s}\n}`;
+    },
+  };
+  for (const [key, shape] of Object.entries(shapes)) {
+    const slot = area(stated(key, key === "extends_base" ? { learned: "Base" } : {}));
+    const judged = (d) => {
+      const head = revision(shape(d), { file: "f.ts" });
+      const base = revision(shape(d - 1), { file: "f.ts" });
+      return () => newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base, rows: [rowByKey(key)] });
+    };
+    const found = judged(400)();
+    assert.equal(found.length, 1, key);
+    assert.ok(found[0].text.length < 5000, `${key} quoted ${found[0].text.length} characters`);
+    const ratio = doublingRatio(judged, 400);
+    assert.ok(ratio < LINEAR, `${key}: twice the depth took ${ratio.toFixed(2)} times as long`);
+  }
+});
+
 /* --- one polarity for both revisions --- */
 
 const functionStyle = rowByKey("function_style");
+
+test("two copies alike for longer than a finding quotes are still told apart by their whole text", () => {
+  // The quoted text is cut where it is built; matching it instead of the whole
+  // text took a copy added above for the old one and sent the reader below it.
+  const pad = "pad(); ".repeat(700);
+  const fn = (end) => `{ function f() { ${pad}${end} } }\n`;
+  const counter = area(stated("function_style", { states: "counter", counterClaim: functionStyle.counterClaim }));
+  const base = revision(fn("a();"), { file: "f.ts" });
+  const head = revision(fn("b();") + fn("a();"), { file: "f.ts" });
+
+  const found = only("function_style", newlyIntroduced({ area: counter, path: "src/a.ts", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.text.length]), [[1, 4097]]);
+});
+
+test("a catch rewritten past the length a finding quotes is matched by its whole text, not its quote", () => {
+  const pad = "pad(); ".repeat(700);
+  const c = (end) => `try {\n  x()\n} catch (e) {\n  later(() => { ${pad}${end} })\n}\n`;
+  const judged = (base, head) =>
+    only("swallowed_error", newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) }));
+
+  assert.deepEqual(judged(c("a();") + c("b();"), c("c();")).map((f) => f.line), [3], "two copies replaced by a third that differs from both");
+});
+
+test("a quote is cut on a whole character, and a slice past the end of the source is the source", () => {
+  const head = revision(`function f() { "${"a".repeat(4079)}😀" }\n`, { file: "f.ts" });
+  const counter = area(stated("function_style", { states: "counter", counterClaim: functionStyle.counterClaim }));
+  const [one] = only("function_style", newlyIntroduced({ area: counter, path: "src/a.ts", lang: "js", head }));
+
+  assert.equal(one.text.length, 4096);
+  assert.match(one.text, /a…$/);
+  assert.equal(
+    siteIdentity("src/a.ts", "hook_call_style", { type: "Identifier", start: 0, end: 99 }, "useState"),
+    siteIdentity("src/a.ts", "hook_call_style", { type: "Identifier", start: 0, end: 8 }, "useState")
+  );
+});
+
 
 test("on the counter side the conforming sites are the findings, and the sentence is the counter-claim", () => {
   const counter = area(stated("function_style", { states: "counter", counterClaim: functionStyle.counterClaim }));

@@ -10,13 +10,13 @@
  */
 import { createHash } from "node:crypto";
 
-import { dimensionsFor } from "./dimensions.mjs";
+import { ALL_DIMENSIONS } from "./dimensions.mjs";
 import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
 import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
-import { isFunctionLike, walk } from "./walk.mjs";
+import { dimensionsFor, isFunctionLike, walk } from "./walk.mjs";
 
 /**
  * The sites `head` holds that the branch introduced, judged against `base` or
@@ -85,7 +85,7 @@ export function newlyIntroduced({
  */
 export function declaredParents({ path, lang, frameworks, capabilities, rows, head }) {
   const out = new Map();
-  for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows })) {
+  for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows: rows ?? ALL_DIMENSIONS })) {
     if (!dim.learnedClasses || dim.groupedSites) continue;
     const parents = new Map();
     try {
@@ -109,41 +109,119 @@ export function declaredParents({ path, lang, frameworks, capabilities, rows, he
  * Every function and class body inside the node reads as `{}`: a row that
  * reports a whole declaration would otherwise give it a new identity for any
  * line added to its body, and the untouched declaration came back as new.
+ * `reader` is the revision as `readerOf` reads it, which a caller judging many
+ * sites of one file passes so the file is read once.
  */
-export function siteIdentity(keyPath, key, node, source) {
-  const text = located(node) ? normalise(withoutBodies(node, source)) : "";
-  return fingerprint(keyPath, key, node.type, text || node.name || "");
+export function siteIdentity(keyPath, key, node, source, reader = readerOf(source)) {
+  return fingerprint(keyPath, key, node.type, (located(node) ? reader.withoutBodies(node) : "") || node.name || "");
 }
 
 /** Whether the parser reported offsets for a node; prism reports none (B5). */
 const located = (node) => typeof node.start === "number" && typeof node.end === "number";
 
-function withoutBodies(node, source) {
-  const bodies = [];
-  walk(node, (n) => {
-    if ((isFunctionLike(n) || n.type === "ClassDeclaration" || n.type === "ClassExpression") && n.body && located(n.body)) {
-      bodies.push(n.body);
-    }
-  });
-  let text = "";
-  let at = node.start;
-  // A body inside one already cut starts before `at` and is skipped.
-  for (const b of bodies.sort((x, y) => x.start - y.start)) {
-    if (b.start < at) continue;
-    text += `${source.slice(at, b.start)}{}`;
-    at = b.end;
-  }
-  return text + source.slice(at, node.end);
-}
+const isBodied = (n) => (isFunctionLike(n) || n.type === "ClassDeclaration" || n.type === "ClassExpression") && n.body && located(n.body);
 
 /**
- * The normalised slice of the parsed string under a node, or nothing where the
- * parser reported no offsets. The same in-memory string the parser was handed,
- * never a disk buffer: oxc reports UTF-16 code units, a buffer is bytes, and
- * 5.4% of real files are non-ASCII, so indexing a buffer with a parser offset
- * corrupts silently (B5).
+ * One revision's text as its sites read it, each part built on first use.
+ *
+ * A site's text is a slice of the whole source with its whitespace collapsed,
+ * not a copy of its own, and the function and class bodies of an ESTree program
+ * are collected once and sorted, so a site finds the ones inside it by halving.
+ * Read per site, a site holding sites paid for every level under it: 2,000
+ * nested catches took 3.7 seconds. The slice is the same in-memory string the
+ * parser was handed, never a disk buffer: oxc reports UTF-16 code units, a
+ * buffer is bytes, and 5.4% of real files are non-ASCII, so indexing a buffer
+ * with a parser offset corrupts silently (B5).
  */
-const sliceOf = (node, source) => (located(node) ? normalise(source.slice(node.start, node.end)) : "");
+function readerOf(source, program = null) {
+  let flat = null;
+  let at = null;
+  let bodies = null;
+  let inTree = null;
+  // The text of [start, end) with every run of whitespace written as one space:
+  // `at` holds where each source offset lands in that flattened copy.
+  const collapsed = (start, end) => {
+    end = Math.min(end, source.length);
+    if (end <= start) return "";
+    if (flat === null) {
+      at = new Int32Array(source.length + 1);
+      let out = 0;
+      let from = 0;
+      for (const run of source.matchAll(/\s+/g)) {
+        for (; from < run.index; from++) at[from] = out++;
+        for (; from < run.index + run[0].length; from++) at[from] = out;
+        out++;
+      }
+      for (; from <= source.length; from++) at[from] = out++;
+      flat = source.replace(/\s+/g, " ");
+    }
+    return flat.slice(at[start], at[end - 1] + 1);
+  };
+  // The first body at or after an offset, in the sorted list.
+  const firstFrom = (offset) => {
+    let lo = 0;
+    let hi = bodies.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (bodies[mid].start < offset) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  // A node outside the collected tree, such as a site a row built for itself,
+  // is walked on its own.
+  const bodiesUnder = (node) => {
+    const own = [];
+    walk(node, (n) => {
+      if (isBodied(n)) own.push(n.body);
+    });
+    return own.sort((x, y) => x.start - y.start);
+  };
+  return {
+    slice: (start, end) => collapsed(start, end).trim(),
+    withoutBodies(node) {
+      if (bodies === null) {
+        bodies = [];
+        inTree = new WeakSet();
+        if (program?.type === "Program") {
+          walk(program, (n) => {
+            inTree.add(n);
+            if (isBodied(n)) bodies.push(n.body);
+          });
+        }
+        bodies.sort((x, y) => x.start - y.start);
+      }
+      const known = inTree.has(node);
+      const list = known ? bodies : bodiesUnder(node);
+      let text = "";
+      let from = node.start;
+      for (let i = known ? firstFrom(node.start) : 0; i < list.length && list[i].start < node.end; ) {
+        const b = list[i];
+        // An arrow's expression body that starts where the node does and reaches its end is the node or holds it.
+        if (b.start === node.start && b.end >= node.end) {
+          i++;
+          continue;
+        }
+        text += `${collapsed(from, b.start)}{}`;
+        from = b.end;
+        // The bodies inside one already cut start before its end and are passed over.
+        if (known) i = firstFrom(from);
+        else while (i < list.length && list[i].start < from) i++;
+      }
+      return (text + collapsed(from, node.end)).trim();
+    },
+  };
+}
+
+// Long enough that the report's 100-grapheme snippet is cut from it rather than from this.
+const QUOTED_UNITS = 4096;
+
+/** A site's text as a finding quotes it, cut where it is built so no report holds a whole file per site. */
+function quoted(text) {
+  if (text.length <= QUOTED_UNITS) return text;
+  const code = text.charCodeAt(QUOTED_UNITS - 1);
+  return `${text.slice(0, code >= 0xd800 && code <= 0xdbff ? QUOTED_UNITS - 1 : QUOTED_UNITS)}…`;
+}
 
 /**
  * The identity of one grouped body: what it declares, sorted, so two includes
@@ -231,15 +309,16 @@ const isOmission = (hit) => hit.class === undefined || hit.class === null;
 function breakingSites(program, source, lang, keyPath, { polarity, copies = new Map(), frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
   const { sides, learned, kinds, qualified, stated, reaching = new Map(), parents = new Map() } = polarity;
   const out = [];
-  // One index of line starts per revision, built on the first site that asks.
-  const lines = lazyLines(source);
+  // One reading and one index of line starts per revision, built on the first site that asks.
+  const reader = readerOf(source, program);
+  const lines = lazyLines(source, reader);
   // A tree that came back from the Flow retry has its annotations blanked, so
   // the dimensions whose question is the annotation would report a site
   // beside the line that satisfies it. The scan drops them for such a file and
   // this has to agree, or the map and the check disagree about the same file.
   // The rows are the ones the scan ran on this file, JSX rows included where
   // the head's tree holds JSX under a `.js` name.
-  for (const dim of dimensionsFor(spokenIn(lang, facets), { frameworks, capabilities, rows })) {
+  for (const dim of dimensionsFor(spokenIn(lang, facets), { frameworks, capabilities, rows: rows ?? ALL_DIMENSIONS })) {
     if (stripped && dim.blindWhenStripped) continue;
     // A plain JavaScript file cannot carry a type annotation, so the scan left
     // it out of this row's population and the check has to leave it out of the
@@ -266,19 +345,21 @@ function breakingSites(program, source, lang, keyPath, { polarity, copies = new 
       dim.learnedClasses
         ? sameConstant(hit.class, cls, hit.nesting) || isLearnedItself(hit, cls) || reachesThrough(hit.class, cls, chain)
         : hit.conforming;
-    const site = (hit, fp = siteIdentity(keyPath, dim.key, hit.node || {}, source)) => {
+    const site = (hit, fp = siteIdentity(keyPath, dim.key, hit.node || {}, source, reader)) => {
       const node = hit.node || {};
+      const text = located(node) ? reader.slice(node.start, node.end) : "";
       const found = {
         dimension: dim.key,
         claim: counter ? dim.counterClaim : dim.learnedClasses ? claimFor(dim, cls, qualified.get(dim.key)) : dim.claim,
         precision: dim.precision,
         where: hit.where || null,
         line: located(node) ? lines().lineAt(node.start) : node.line || 1,
-        text: sliceOf(node, source),
+        text: quoted(text),
         // Through the exported spelling, so the identity every pin imports is
         // the one written here, at the cost of slicing the node twice.
         fp,
       };
+      wholeText.set(found, text);
       if (located(node)) contextOf.set(found, lines().around(node.start, node.end));
       return found;
     };
@@ -302,9 +383,9 @@ function breakingSites(program, source, lang, keyPath, { polarity, copies = new 
         // order per identity, declaration and opening line.
         let copy = null;
         if (dim.judgesBody && located(hit.node)) {
-          const fp = siteIdentity(keyPath, dim.key, hit.node, source);
+          const fp = siteIdentity(keyPath, dim.key, hit.node, source, reader);
           const at = `${fp}\0${hit.where ?? ""}\0${lines().around(hit.node.start, hit.node.start)}`;
-          copy = { fp, text: sliceOf(hit.node, source), site: null };
+          copy = { fp, text: reader.slice(hit.node.start, hit.node.end), site: null };
           if (copies.has(at)) copies.get(at).push(copy);
           else copies.set(at, [copy]);
         }
@@ -406,7 +487,7 @@ function absorb(head, base, headCopies = new Map(), baseCopies = new Map()) {
 }
 
 function byIdentity(head, base) {
-  const id = (f) => (judged.has(f) ? `${f.fp}\0${f.text}` : f.fp);
+  const id = (f) => (judged.has(f) ? `${f.fp}\0${wholeText.get(f)}` : f.fp);
   const remaining = new Map();
   for (const f of base) remaining.set(id(f), (remaining.get(id(f)) || 0) + 1);
 
@@ -415,7 +496,7 @@ function byIdentity(head, base) {
   const spent = new Set();
   const held = new Set();
   for (const key of [
-    (f) => `${f.fp}\0${f.where ?? ""}\0${f.text}`,
+    (f) => `${f.fp}\0${f.where ?? ""}\0${wholeText.get(f)}`,
     (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
     (f) => `${id(f)}\0${f.where ?? ""}`,
   ]) {
@@ -504,8 +585,6 @@ function fingerprint(path, key, kind, text) {
   return createHash("sha256").update([path, key, kind, text].join("\0")).digest("hex").slice(0, 16);
 }
 
-const normalise = (s) => s.replace(/\s+/g, " ").trim();
-
 // The lines a located site sits on, normalised, which is what `absorb` tells
 // alike copies apart by. Beside the site rather than on it, so the record the
 // caller reads keeps the shape it had.
@@ -515,6 +594,9 @@ const contextOf = new WeakMap();
 // judges, so the whole text has to stand beside it.
 const judged = new WeakSet();
 
+// A site's text before it was cut for quoting, which is what copies are told apart by.
+const wholeText = new WeakMap();
+
 /**
  * Where each line of one source starts, found once and searched by halving.
  *
@@ -522,7 +604,7 @@ const judged = new WeakSet();
  * of the file: a 619 KB file holding 30,000 sites took 28 seconds. Built on
  * the first call, so a revision with no site pays nothing.
  */
-function lazyLines(source) {
+function lazyLines(source, reader) {
   let index = null;
   return () => {
     if (index) return index;
@@ -545,7 +627,7 @@ function lazyLines(source) {
       around: (start, end) => {
         const last = indexOf(Math.max(start, end - 1));
         const stop = last + 1 < starts.length ? starts[last + 1] : source.length;
-        return normalise(source.slice(starts[indexOf(start)], stop));
+        return reader.slice(starts[indexOf(start)], stop);
       },
     };
     return index;

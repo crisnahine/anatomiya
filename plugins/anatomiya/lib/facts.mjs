@@ -8,11 +8,12 @@
  * version at all.
  */
 import { randomBytes } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { outsideClaude, readHead, resolveInside, stagedPath } from "./rules.mjs";
 import { wilsonLower } from "./gates.mjs";
+import { encodePath } from "./encode.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
 
@@ -123,6 +124,9 @@ export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 // `semantic.failures` shares 19 too: how many runs in a row the checker has
 // failed under that stamp, which a refresh carries the failure from at two. A
 // record without it counts none.
+// `removing` shares 19 as well: the names a scan is about to remove in each
+// directory, which a scan killed before it removed them leaves for the next one.
+// An older reader ignores the key, and a record without it removes nothing more.
 export const FACTS_SCHEMA = 19;
 
 /**
@@ -232,7 +236,7 @@ const RECORD_MOST = 64 * 1024 * 1024;
  * and takes whatever size it finds, and every scan, check and hook reads one.
  */
 export function readRecord(path) {
-  const entry = readHead(path, RECORD_MOST + 1);
+  const entry = readHead(path, RECORD_MOST, { whole: true });
   if (entry.kind !== "file") return { record: null, oversize: false };
   if (entry.size > RECORD_MOST) return { record: null, oversize: true };
   try {
@@ -269,7 +273,7 @@ export function readFacts(root) {
   }
   const { record: parsed, oversize } = readRecord(path);
   if (oversize) {
-    return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MB this reads, so nothing was enforced from it` };
+    return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MiB this reads, so nothing was enforced from it` };
   }
   if (parsed === null) {
     const kind = readHead(path, 0).kind;
@@ -398,12 +402,12 @@ export function writeFacts(root, result) {
   // The record is renamed before its layout file, so a throw at the second
   // rename has already replaced it. Put back the way the map's own write does.
   const record = join(dir, basename(FACTS_PATH));
-  const previous = previousBytes(record);
+  const previous = recordBytes(record);
   const was = previous ? readLayout(root, record) : null;
   try {
     writePair(dir, factsJson(result), result.layout);
   } catch (err) {
-    const now = previousBytes(record);
+    const now = recordBytes(record);
     // Only where the failed write replaced what was there: still the same bytes
     // leaves nothing to put back, and `putBack` leaves a record it could not read.
     if (previous === null ? now !== null : !(now && previous?.equals(now))) {
@@ -427,15 +431,56 @@ export function putBack(path, previous, was) {
   else atomic(path, previous);
 }
 
-/** A regular file's bytes, `null` where nothing is, `undefined` where they cannot be put back. */
+// A scan reads whole to put back no more than any command reads of a record: 64 MiB, over six times
+// the largest file a scan of the corpus writes (9.7 MiB, vscode's facts.json).
+const PUT_BACK_MOST = RECORD_MOST;
+
+/**
+ * The size of a regular file at `path` past `PUT_BACK_MOST`, or null: what a
+ * scan asks before it plans to replace or remove the file.
+ */
+export function tooLargeToPutBack(path) {
+  try {
+    const entry = lstatSync(path);
+    return entry.isFile() && entry.size > PUT_BACK_MOST ? entry.size : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The refusal's first half for such a file, named by the repository's spelling of it. */
+export const tooLargeSentence = (at, size) => `${encodePath(at)} is ${size} bytes, past the ${PUT_BACK_MOST / 2 ** 20} MiB a scan reads to put a file back`;
+
+/** The line a scan gives a record past the bound, which it replaces without reading. */
+export const oversizedSentence = ({ at, size }, dryRun) =>
+  `${encodePath(at)} ${dryRun ? "is" : "was"} ${size} bytes, past the ${RECORD_MOST / 2 ** 20} MiB any command reads of a record, so it ${dryRun ? "would be" : "was"} replaced without being read`;
+
+/** `previousBytes` of a record, `null` past the bound: no command reads one, so there is nothing in it to keep. */
+export function recordBytes(path) {
+  try {
+    return previousBytes(path);
+  } catch (err) {
+    if (err.tooLarge === undefined) throw err;
+    return null;
+  }
+}
+
+/**
+ * A regular file's bytes, `null` where nothing is, `undefined` where they cannot
+ * be put back. Past `PUT_BACK_MOST` it throws, with the size on `tooLarge`.
+ */
 export function previousBytes(path) {
   let fd;
   try {
     // Opened then typed through the handle, so the file read is the file typed;
     // O_NOFOLLOW refuses a link the way lstat did.
     fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    return fstatSync(fd).isFile() ? readFileSync(fd) : undefined;
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return undefined;
+    if (stat.size > PUT_BACK_MOST) throw Object.assign(new Error(tooLargeSentence(path, stat.size)), { tooLarge: stat.size });
+    return readFileSync(fd);
   } catch (err) {
+    if (err.tooLarge !== undefined) throw err;
     return err.code === "ENOENT" ? null : undefined;
   } finally {
     if (fd !== undefined) closeSync(fd);
@@ -448,9 +493,9 @@ export function previousBytes(path) {
  * nothing. The record goes first because that rename is the one that can fail
  * with nothing moved: the old pair stays whole and still answers.
  */
-export function writePair(dir, recordBytes, layout, schema) {
+export function writePair(dir, bytes, layout, schema) {
   const record = join(dir, basename(FACTS_PATH));
-  const temps = [writeTemp(record, recordBytes)];
+  const temps = [writeTemp(record, bytes)];
   try {
     temps.push(writeTemp(join(dir, basename(LAYOUT_PATH)), stampedLayout(layout, temps[0], schema)));
     renameSync(temps[0], record);
@@ -468,10 +513,10 @@ export function writePair(dir, recordBytes, layout, schema) {
 /**
  * The record's bytes, for a writer that puts them on disk together with the map.
  * `targets` is the filenames that writer leaves in each directory besides
- * Claude Code's.
+ * Claude Code's, and `removing` the ones it is about to remove, by target.
  */
-export function factsJson(result, targets = {}) {
-  return JSON.stringify(factsRecord(result, targets), null, 2) + "\n";
+export function factsJson(result, targets = {}, removing = {}) {
+  return JSON.stringify(factsRecord(result, targets, removing), null, 2) + "\n";
 }
 
 /**
@@ -519,8 +564,9 @@ function statOf(path) {
   }
 }
 
-function factsRecord(result, targets = {}) {
+function factsRecord(result, targets = {}, removing = {}) {
   const named = Object.entries(targets).filter(([, names]) => names.length > 0);
+  const going = Object.entries(removing).filter(([, names]) => names.length > 0);
   return {
     schema: FACTS_SCHEMA,
     root: result.root,
@@ -553,6 +599,7 @@ function factsRecord(result, targets = {}) {
     })),
     // No key at all where nothing was written, which is every scan that names no other target.
     ...(named.length ? { targets: Object.fromEntries(named) } : {}),
+    ...(going.length ? { removing: Object.fromEntries(going) } : {}),
   };
 }
 
@@ -624,6 +671,9 @@ function dimensionRecord(d) {
     // states is one this number belongs to. Absent means none, so an older
     // record reads as an area that skipped nothing, which is what it printed.
     ...(d.declined === undefined ? {} : { declined: d.declined }),
+    // The files a claim was asked of, where its sentence names them. Absent on
+    // an older record, which prints the sentence bare, as its own map did.
+    ...(Array.isArray(d.scope) && d.scope.length > 0 ? { scope: d.scope } : {}),
     // Polarity is the one thing the rendered file deliberately does not say, so
     // this record is the only place the check can learn which of the two
     // sentences an area was handed (C6).

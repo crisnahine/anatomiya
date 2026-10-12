@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 
-import { walk, collectHits, fromVisitor } from "../plugins/anatomiya/lib/walk.mjs";
+import { walk, collectHits, fromVisitor, whereOf } from "../plugins/anatomiya/lib/walk.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const { program } = parseSync(
   "f.ts",
@@ -218,9 +219,10 @@ test("a case", () => { expect(Widget).toBeDefined(); assert.ok(1); });
 `;
 
 test("every JS row answers the same on the shared walk as walking alone, with a frozen ctx", async () => {
-  const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions.mjs");
+  const { ALL_DIMENSIONS } = await import("../plugins/anatomiya/lib/dimensions.mjs");
+  const { dimensionsFor } = await import("../plugins/anatomiya/lib/walk.mjs");
   await import("../plugins/anatomiya/lib/registry.mjs");
-  const rows = dimensionsFor(["js", "jsx"]);
+  const rows = dimensionsFor(["js", "jsx"], { rows: ALL_DIMENSIONS });
   const { program, comments } = parseSync("f.tsx", ROWS_SOURCE, { sourceType: "module" });
   const extra = { comments, source: ROWS_SOURCE, rel: "src/widget.tsx" };
 
@@ -238,4 +240,117 @@ test("every JS row answers the same on the shared walk as walking alone, with a 
   const visiting = rows.filter((d) => d.visitor).map((d) => d.key);
   const silent = visiting.filter((k) => !shared[k]);
   assert.ok(silent.length <= 3, `the fixture should reach most visitor rows; silent: ${silent.join(", ")}`);
+});
+
+test("a site's name carries the named class around its declaration, and only one around it", () => {
+  const names = (src) => {
+    const out = [];
+    walk(parseSync("a.ts", src, { sourceType: "module" }).program, (n, ctx) => {
+      if (n.type === "CatchClause") out.push(whereOf(ctx.enclosing, ctx));
+    });
+    return out;
+  };
+
+  assert.deepEqual(names(`class A { run() { try {} catch {} } }`), ["A.run"]);
+  assert.deepEqual(names(`class A { run = () => { try {} catch {} } }`), ["A.run"]);
+  assert.deepEqual(names(`class A { run() { function inner() { try {} catch {} } } }`), ["inner"], "only a class's own members carry its name");
+  assert.deepEqual(names(`class A { run() { const inner = () => { try {} catch {} } } }`), ["inner"]);
+  assert.deepEqual(names(`class A { run = () => { function inner() { try {} catch {} } } }`), ["inner"]);
+  assert.deepEqual(names(`function run() { try {} catch {} }`), ["run"]);
+  assert.deepEqual(names(`const A = class { run() { try {} catch {} } }`), ["A.run"], "a class expression bound to a name is that name");
+  assert.deepEqual(names(`const A = class { static { try {} catch {} } }`), ["A"]);
+  assert.deepEqual(names(`list.push(class { run() { try {} catch {} } })`), ["run"], "an unbound class names nothing");
+  assert.deepEqual(names(`class A { static { try {} catch {} } }`), ["A"], "the class is the declaration, not its own owner");
+  assert.deepEqual(names(`class A { static { function run() { try {} catch {} } } run() { try {} catch {} } }`), ["run", "A.run"], "a function in a static block is not a member");
+  assert.deepEqual(names(`class A { api = { run() { try {} catch {} } }; run() { try {} catch {} } }`), ["run", "A.run"], "nor is a method of a field's object literal");
+  assert.deepEqual(names(`class A { [k] = class { run() { try {} catch {} } } }`), ["A.run"], "an unnamed class held by a member names its members after the class around it");
+  assert.deepEqual(names(`class O { m() { class I { run() { try {} catch {} } } } }`), ["I.run"], "the innermost class");
+  assert.deepEqual(names(`function f() { class C {} try {} catch {} }`), ["f"], "a class closed before the site is not around it");
+  assert.deepEqual(names(`class A { run() { list.map(() => { try {} catch {} }) } }`), ["A.run"], "an unnamed callback takes the method around it");
+  assert.deepEqual(names(`function run() { go().then(function () { try {} catch {} }) }`), ["run"]);
+  assert.deepEqual(names(`list.forEach(() => { try {} catch {} })`), [null], "a callback with nothing named around it names nothing");
+});
+
+test("a method of an object literal bound to a name carries that name, through a call and a nested object", () => {
+  const names = (src) => {
+    const out = [];
+    walk(parseSync("a.ts", src, { sourceType: "module" }).program, (n, ctx) => {
+      if (n.type === "CatchClause") out.push(whereOf(ctx.enclosing, ctx));
+    });
+    return out;
+  };
+
+  assert.deepEqual(names(`const api = { run() { try {} catch {} } }`), ["api.run"]);
+  assert.deepEqual(names(`export const api = { run: () => { try {} catch {} } }`), ["api.run"]);
+  assert.deepEqual(names(`const api = { run() { list.forEach(() => { try {} catch {} }) } }`), ["api.run"]);
+  assert.deepEqual(names(`const C = defineComponent({ methods: { run() { try {} catch {} } } })`), ["C.run"]);
+  assert.deepEqual(names(`export default { methods: { run() { try {} catch {} } } }`), ["run"], "no binding, the method's own name");
+  assert.deepEqual(names(`export default defineComponent({ methods: { run() { try {} catch {} } } })`), ["run"]);
+  assert.deepEqual(names(`const api = ({ run() { try {} catch {} } }) as const`), ["api.run"]);
+  assert.deepEqual(names(`const api = { run() { try {} catch {} } } satisfies Api`), ["api.run"]);
+  assert.deepEqual(names(`const api = { [run]() { try {} catch {} } }`), [null], "a computed key names nothing");
+  assert.deepEqual(names(`const api = { run }; function run() { try {} catch {} }`), ["run"]);
+  assert.deepEqual(names(`const api = { run() { try {} catch {} } }.run`), ["run"], "a member read off the literal is not the literal");
+  assert.deepEqual(names(`const go = ({ run() { try {} catch {} } }).run()`), ["run"], "nor is a call on it");
+  assert.deepEqual(names(`const run = () => { try {} catch {} }`), ["run"], "a function bound directly is its own name");
+  assert.deepEqual(names(`class A { m() { const api = { run() { try {} catch {} } } } }`), ["api.run"], "the innermost owner");
+  assert.deepEqual(names(`const api = make(() => ({ run() { try {} catch {} } }))`), ["run"], "a function between them breaks the binding");
+  assert.deepEqual(names(`const vm = new Vue({ methods: { run() { try {} catch {} } } })`), ["vm.run"]);
+  assert.deepEqual(names(`const api = await make({ run() { try {} catch {} } })`), ["api.run"]);
+  assert.deepEqual(names(`const api = cond ? { run() { try {} catch {} } } : null`), ["api.run"], "through a conditional, as through a call");
+  assert.deepEqual(names(`const api = base || { run() { try {} catch {} } }`), ["api.run"]);
+  assert.deepEqual(names(`const api = base ?? { run() { try {} catch {} } }`), ["api.run"]);
+  assert.deepEqual(names(`const api = ok && { run() { try {} catch {} } }`), ["api.run"]);
+});
+
+test("a site's name costs the same at any depth of nested callbacks", () => {
+  const read = (n) => {
+    const src = "class A { run() {\n" + "g(() => { try {} catch {}\n".repeat(n) + "})".repeat(n) + "\n} }\n";
+    const { program } = parseSync("a.ts", src, { sourceType: "module" });
+    return () => {
+      let named = 0;
+      walk(program, (node, ctx) => {
+        if (node.type === "CatchClause" && whereOf(ctx.enclosing, ctx) === "A.run") named++;
+      });
+      assert.equal(named, n);
+    };
+  };
+  const ratio = doublingRatio(read, 600);
+  assert.ok(ratio < LINEAR, `twice the depth took ${ratio.toFixed(2)} times as long`);
+});
+
+test("a site's name costs the same at any depth of every nesting shape", () => {
+  // Each shape: its source, the function type counted, the name each one gets, and how many per level.
+  const shapes = {
+    alternating: [(n) => "const f = () => { g(() => {\n".repeat(n) + "}) }".repeat(n) + "\n", "ArrowFunctionExpression", "f", 2],
+    named: [(n) => "function f() {\n".repeat(n) + "}".repeat(n) + "\n", "FunctionDeclaration", "f", 1],
+    classes: [(n) => "export default " + "class extends B { m() { return 0,\n".repeat(n) + "1" + " } }".repeat(n) + ";\n", "FunctionExpression", "m", 1],
+    objects: [(n) => "const api = " + "{ m() {}, c:\n".repeat(n) + "1" + "}".repeat(n) + ";\n", "FunctionExpression", "api.m", 1],
+    calls: [(n) => "const api = " + "make({ m() {}, c:\n".repeat(n) + "1" + "})".repeat(n) + ";\n", "FunctionExpression", "api.m", 1],
+  };
+  for (const [shape, [source, type, name, per]] of Object.entries(shapes)) {
+    const read = (n) => {
+      const { program, errors } = parseSync("a.ts", source(n), { sourceType: "module" });
+      assert.deepEqual(errors, [], shape);
+      return () => {
+        let named = 0;
+        walk(program, (node, ctx) => {
+          if (node.type === type && whereOf(node, ctx) === name) named++;
+        });
+        assert.equal(named, per * n, shape);
+      };
+    };
+    // `alternating` nests two functions a level, and the parser's own stack ends short of 2,000 of its levels on macOS.
+    const ratio = doublingRatio(read, 600);
+    assert.ok(ratio < LINEAR, `${shape}: twice the depth took ${ratio.toFixed(2)} times as long`);
+  }
+});
+
+test("a static and an instance method of one name are one place, which is rare enough to leave", () => {
+  const out = [];
+  const src = `class A { static run() { try {} catch {} } run() { try {} catch {} } }`;
+  walk(parseSync("a.ts", src, { sourceType: "module" }).program, (n, ctx) => {
+    if (n.type === "CatchClause") out.push(whereOf(ctx.enclosing, ctx));
+  });
+  assert.deepEqual(out, ["A.run", "A.run"]);
 });

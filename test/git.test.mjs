@@ -169,6 +169,41 @@ test("a streamed read hands over one field per NUL-delimited record", async (t) 
   assert.deepEqual(seen, ["a.ts"]);
 });
 
+test("a streamed read whose signal was stopped before the call is refused and hands over no field", async (t) => {
+  // A listener added to a signal that already fired never fires, so the read would run to its end.
+  const { dir } = repo(t);
+  const seen = [];
+
+  await assert.rejects(
+    () => gitStreamed(dir, ["ls-files", "-z", "--"], (field) => seen.push(field), { signal: AbortSignal.abort() }),
+    /^Error: git ls-files stopped by its caller$/
+  );
+  assert.deepEqual(seen, []);
+});
+
+test("a streamed read names its git subcommand past any config option before it", async (t) => {
+  const { dir } = repo(t);
+  await assert.rejects(
+    () => gitStreamed(dir, ["-c", "core.quotePath=false", "ls-files", "-z", "--"], () => {}, { signal: AbortSignal.abort() }),
+    /^Error: git ls-files stopped by its caller$/
+  );
+  await assert.rejects(
+    () => gitStreamed(dir, ["-c", "core.quotePath=false", "ls-tree", "-z", "--name-only", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"], () => {}),
+    /^Error: git ls-tree exited /
+  );
+  await assert.rejects(
+    () => gitStreamed(dir, ["-c", "core.quotePath=false", "log", "--format=%ae", "--"], () => {}),
+    /^Error: git log output ended mid-record$/
+  );
+  // A config git cannot parse leaves which commands it names unread.
+  const { dir: broken } = repo(t);
+  writeFileSync(join(broken, ".git", "config"), "[core\n");
+  await assert.rejects(
+    () => gitStreamed(broken, ["-c", "core.quotePath=false", "log", "--format=%ae", "--"], () => {}),
+    /^Error: git log: could not read which commands this repository's config names/
+  );
+});
+
 test("a streamed read that git refused is rejected, not resolved as an empty answer", async (t) => {
   // The whole of F13 and F15: buffering an oversize log put it in the same
   // silent branch as a repository with no commits, and every file came back
@@ -264,6 +299,14 @@ test("a record that never ends is refused before it reaches V8's string limit", 
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
       }),
     /one record past 1024 bytes/
+  );
+  await assert.rejects(
+    () =>
+      gitStreamed(dir, ["-c", "core.quotePath=false", "ls-files", "-z", "--"], () => {}, {
+        maxFieldBytes: 1024,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      }),
+    /^Error: git ls-files sent one record past 1024 bytes$/
   );
 });
 

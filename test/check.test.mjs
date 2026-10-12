@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
-import fs, { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import fs, { chmodSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -13,11 +13,11 @@ import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
 import { renamesSkipped } from "../plugins/anatomiya/lib/changeset.mjs";
-import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
+import { formatReport, formatReportGithub, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
-import { renderArea } from "../plugins/anatomiya/lib/render.mjs";
+import { renderArea, unstatedLine } from "../plugins/anatomiya/lib/render.mjs";
 import { buildPin, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
@@ -1366,6 +1366,45 @@ test("the report names what each other target's directory holds, under that dire
   assert.ok(rendered.includes('\n1 file(s) in .cursor/rules the map on disk does not name:\n  "anatomiya-area-99999999.mdc"\n'), rendered);
   assert.equal(rendered.includes("team.mdc"), false, "a rule under another name is that tool's own");
   assert.deepEqual(JSON.parse(formatReportJson(r)).targets, r.targets);
+});
+
+test("a file the map does not name at a name the record was about to remove is said to go with the next scan", async (t) => {
+  const dir = await mappedFor(t, ["claude", "cursor"]);
+  const record = join(dir, ".claude", "anatomiya", "facts.json");
+  const facts = JSON.parse(readFileSync(record, "utf8"));
+  writeFileSync(record, JSON.stringify({ ...facts, removing: { claude: ["anatomiya-area-99999999.md"], cursor: ["anatomiya-area-99999999.mdc"] } }));
+  writeFileSync(join(dir, ".claude", "rules", "anatomiya-area-99999999.md"), "---\ngenerator: anatomiya\n---\n\nstale\n");
+  writeFileSync(join(dir, ".claude", "rules", "anatomiya-area-aaaaaaaa.md"), "---\ngenerator: anatomiya\n---\n\nstale\n");
+  writeFileSync(join(dir, ".cursor", "rules", "anatomiya-area-99999999.mdc"), KEYED);
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.unknown, ["anatomiya-area-99999999.md", "anatomiya-area-aaaaaaaa.md"], "the map still does not name it, and it still loads");
+  assert.deepEqual(r.removing, ["anatomiya-area-99999999.md"]);
+  assert.deepEqual(r.targets.cursor.removing, ["anatomiya-area-99999999.mdc"]);
+  const rendered = formatReport(r);
+  assert.ok(
+    rendered.includes(
+      '\n2 file(s) in .claude/rules the map on disk does not name:\n  "anatomiya-area-99999999.md"\n  "anatomiya-area-aaaaaaaa.md"\n' +
+        'the next scan removes "anatomiya-area-99999999.md", which the scan that wrote the map was about to remove\n'
+    ),
+    rendered
+  );
+  assert.ok(rendered.includes('the next scan removes "anatomiya-area-99999999.mdc", which the scan that wrote the map was about to remove\n'), rendered);
+  const json = JSON.parse(formatReportJson(r));
+  assert.deepEqual([json.removing, json.targets.cursor.removing], [r.removing, r.targets.cursor.removing]);
+});
+
+test("a target whose own overview the record was about to remove is off at the next scan, and its directory is still audited", async (t) => {
+  const dir = await mappedFor(t, ["claude", "cursor"]);
+  const record = join(dir, ".claude", "anatomiya", "facts.json");
+  const { targets, ...facts } = JSON.parse(readFileSync(record, "utf8"));
+  writeFileSync(record, JSON.stringify({ ...facts, removing: { cursor: targets.cursor } }));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.targets.cursor.state, "off");
+  assert.deepEqual(r.targets.cursor.removing, [...targets.cursor].sort());
 });
 
 test("a target that is off is not audited, so a check with none on reports what it did", async (t) => {
@@ -3126,6 +3165,56 @@ test("a rescue written above an old one, in a method of the same name in another
   assert.deepEqual(forKey(r, "rescue_uses_error").map((f) => [f.line, f.where]), [[4, "B#run"]]);
 });
 
+for (const [lang, file, wrap] of [
+  ["JavaScript", "web/lib/old.js", (s) => s],
+  ["Vue", "web/lib/Old.vue", (s) => `<script>\n${s}</script>\n`],
+  ["Svelte", "web/lib/Old.svelte", (s) => `<script>\n${s}</script>\n`],
+]) {
+  test(`${lang}: a catch written above an old one, in a method of the same name in another class, is reported on the line the branch wrote`, async (t) => {
+    const cls = (name) => `export class ${name} {\n  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  }\n}\n`;
+    const dir = repo(t, ({ git, write, commit }) => {
+      write(file, wrap(cls("A")));
+      commit("init");
+      git("checkout", "-q", "-b", "work");
+      write(file, wrap(`${cls("B")}\n${cls("A")}`));
+      commit("a second class, written first");
+    });
+    facts(dir, { sha: sha(dir, "main"), path: "web/lib", dimensions: [dim({ key: "swallowed_error" })] });
+
+    const r = await check(dir, { baseRef: "main" });
+
+    const line = wrap(cls("B")).split("\n").findIndex((l) => l.includes("catch")) + 1;
+    assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.line, f.where]), [[line, "B.run"]]);
+  });
+}
+
+for (const [lang, file, wrap] of [
+  ["JavaScript", "web/lib/old.js", (s) => s],
+  ["Vue", "web/lib/Old.vue", (s) => `<script>\n${s}</script>\n`],
+]) {
+  for (const [shape, holder] of [
+    ["a callback inside a method", (name) => `export class ${name} {\n  run(list) {\n    list.forEach((go) => {\n      try {\n        go();\n      } catch (error) {}\n    });\n  }\n}\n`],
+    ["an object-literal method", (name) => `export const ${name} = {\n  run(go) {\n    try {\n      go();\n    } catch (error) {}\n  },\n};\n`],
+    ["a component's method", (name) => `const ${name} = defineComponent({\n  methods: {\n    run(go) {\n      try {\n        go();\n      } catch (error) {}\n    },\n  },\n});\n`],
+  ]) {
+    test(`${lang}: a catch in ${shape}, written above an old one of the same name under another name, is reported on the line the branch wrote`, async (t) => {
+      const dir = repo(t, ({ git, write, commit }) => {
+        write(file, wrap(holder("A")));
+        commit("init");
+        git("checkout", "-q", "-b", "work");
+        write(file, wrap(`${holder("B")}\n${holder("A")}`));
+        commit("a second holder, written first");
+      });
+      facts(dir, { sha: sha(dir, "main"), path: "web/lib", dimensions: [dim({ key: "swallowed_error" })] });
+
+      const r = await check(dir, { baseRef: "main" });
+
+      const line = wrap(holder("B")).split("\n").findIndex((l) => l.includes("catch")) + 1;
+      assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.line, f.where]), [[line, "B.run"]]);
+    });
+  }
+}
+
 test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {
   // The grouped site's identity used to be the include call's own node, which
   // is `call include` for every body in the file, so one new violating body
@@ -4551,6 +4640,203 @@ test("an undelivered claim the gates suppressed is still only a NIT", async (t) 
   assert.equal(found.length, 1, JSON.stringify(r.findings));
   assert.equal(found[0].severity, "NIT", JSON.stringify(found[0]));
   assert.match(found[0].reason, /no convention stated here/);
+});
+
+test("a slot no gate stated speaks as the count its area file prints, not as the majority's sentence", async (t) => {
+  // An area typing 8 of 70 functions, unstated: a new typed function there drew
+  // "functions declare no return type", which reads as advice to drop it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("docs_src/security/one.py", `def one():\n    return 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("docs_src/security/two.py", `def two() -> int:\n    return 2\n`);
+    commit("add");
+  });
+  const unstated = dim({
+    key: "declared_return_type",
+    claim: "functions declare what they return",
+    counterClaim: "functions declare no return type",
+    states: null,
+    directive: false,
+    gate: "ratio",
+    counterGate: "ratio",
+    applicability: 20,
+    candidates: 70,
+    conforming: 8,
+    baseline: { candidates: 70, conforming: 8, exceptions: [] },
+  });
+  facts(dir, { sha: sha(dir, "main"), path: "docs_src/security", dimensions: [unstated] });
+
+  const r = await check(dir);
+  assertExamined(r, "docs_src/security/two.py");
+  const found = forKey(r, "declared_return_type");
+
+  assert.equal(found.length, 1, JSON.stringify(r.findings));
+  assert.equal(found[0].severity, "NIT");
+  assert.equal(found[0].claim, "functions declare no return type: no convention. 62 of 70 sites (ratio)");
+  assert.equal(found[0].claim, unstatedLine({}, unstated), "the area file's own line for the slot");
+  assert.equal(found[0].toldInClaim, true);
+});
+
+test("a filename class no gate stated speaks as its count too", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.ts", `export const b = 2;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [
+      dim({ key: "file_naming_case", learned: "kebab-case", claim: "files here are named kebab-case", states: null, directive: false, gate: "ratio", conforming: 50 }),
+    ],
+  });
+  const found = forKey(await check(dir), "file_naming_case");
+
+  assert.deepEqual(found.map((f) => [f.severity, f.claim, f.toldInClaim]), [["NIT", "files here are named kebab-case: no convention. 50 of 60 sites (ratio)", true]]);
+});
+
+test("a NIT on a claim that ends in a full stop prints no stop before its colon", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.tsx", `import { useState } from "react";\nexport function A() {\n  const [x] = useState(0);\n  return <div>{x}</div>;\n}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.tsx", `import React from "react";\nexport function B() {\n  const [y] = React.useState(0);\n  return <div>{y}</div>;\n}\n`);
+    commit("add");
+  });
+  facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ key: "hook_call_style", states: null, directive: false, gate: "ratio", conforming: 50 })] });
+  const found = forKey(await check(dir), "hook_call_style");
+
+  assert.deepEqual(found.map((f) => [f.severity, f.claim]), [["NIT", "React's hooks are called by their bare name, not through React: no convention. 50 of 60 sites (ratio)"]]);
+});
+
+test("a stated claim's finding is not taken for one whose claim told its reason", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export let a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.ts", `export let b = 2;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [
+      dim({ key: "file_naming_case", learned: "kebab-case", claim: "files here are named kebab-case", conforming: 50 }),
+      dim({ key: "module_state_const", claim: "module-level bindings are const", conforming: 50 }),
+    ],
+  });
+  const r = await check(dir);
+
+  for (const key of ["file_naming_case", "module_state_const"]) {
+    const [found] = forKey(r, key);
+    assert.ok(found, `${key}: ${JSON.stringify(r.findings)}`);
+    assert.equal("toldInClaim" in found, false, key);
+  }
+});
+
+test("a NIT says no convention and its gate once in the text, and the JSON keeps the reason", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.ts", `export const b = 2;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [
+      dim({ key: "file_naming_case", learned: "kebab-case", claim: "files here are named kebab-case", states: null, directive: false, gate: "ratio", conforming: 50 }),
+    ],
+  });
+  const r = await check(dir);
+
+  const text = formatReport(r);
+  assert.equal(text.match(/no convention/g)?.length, 1, text);
+  assert.equal(text.match(/\(ratio\)/g)?.length, 1, text);
+  assert.match(text, /^NIT {2}"src\/orderList\.ts":1 {2}files here are named kebab-case: no convention\. 50 of 60 sites \(ratio\)$/m);
+  const [json] = JSON.parse(formatReportJson(r)).findings;
+  assert.equal(json.reason, "no convention stated here (ratio)");
+  assert.equal(json.claim, "files here are named kebab-case: no convention. 50 of 60 sites (ratio)");
+  const github = formatReportGithub(r);
+  assert.equal(github.match(/\(ratio\)/g)?.length, 1, github);
+});
+
+test("a slot whose area file names the files it was asked of says the same in its NIT", async (t) => {
+  const caught = "try {\n  run();\n} catch (err) {\n  console.error(err);\n}\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (const name of ["load", "save", "list", "drop"]) {
+      write(`src/routes/${name}.ts`, `export const ${name} = 1;\n${caught}`);
+      write(`src/routes/${name}.svelte`, `<script>\n  let { data } = $props();\n${caught}</script>\n\n<p>{data}</p>\n`);
+    }
+    write("src/routes/old.js", "const old = 1;\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/routes/next.ts", "export let next = 1;\n");
+    commit("add");
+  });
+  git(dir, "checkout", "-q", "main");
+  writeMap(await scan(dir), {});
+  git(dir, "checkout", "-q", "work");
+  const areaFile = readdirSync(join(dir, ".claude/rules")).find((n) => n !== "anatomiya-overview.md");
+  const said = readFileSync(join(dir, ".claude/rules", areaFile), "utf8")
+    .split("\n")
+    .find((l) => l.startsWith("module-level bindings are const"));
+
+  const found = forKey(await check(dir), "module_state_const");
+
+  assert.match(said, /, in \.js and \.ts files: no convention\. /, "the area file says the scope");
+  assert.deepEqual(found.map((f) => [f.severity, f.claim]), [["NIT", said]]);
+});
+
+test("a slot counted over named kinds of file raises nothing on a file of another kind, stated or not", async (t) => {
+  // The claim was never counted over a `.ts` file, and quoting it there
+  // printed a scope clause that excluded the file it was on.
+  const swallowed = "try {\n  run();\n} catch (err) {}\n";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/keep.js", "export const keep = 1;\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/added.js", swallowed);
+    write("src/added_ts.ts", swallowed);
+    commit("add");
+  });
+  for (const [severity, over] of [
+    ["FIX", {}],
+    ["NIT", { states: null, directive: false, gate: "ratio", conforming: 50 }],
+  ]) {
+    facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ scope: [".js"], ...over })] });
+
+    const r = await check(dir);
+
+    assertExamined(r, "src/added_ts.ts");
+    assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.severity, f.path]), [[severity, "src/added.js"]]);
+  }
+  // No scan writes an empty scope; a record that holds one names no kind, so it is no scope.
+  facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ scope: [".js"] })] });
+  const record = join(dir, ".claude/anatomiya/facts.json");
+  const written = JSON.parse(readFileSync(record, "utf8"));
+  written.areas[0].dimensions[0].scope = [];
+  writeFileSync(record, JSON.stringify(written));
+  assert.deepEqual(forKey(await check(dir), "swallowed_error").map((f) => f.path).sort(), ["src/added.js", "src/added_ts.ts"]);
+});
+
+test("a file name is not judged by a naming slot counted over other kinds of file", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/keep-me.js", "export const a = 1;\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.js", "export const b = 1;\n");
+    write("src/orderTable.ts", "export const c = 1;\n");
+    commit("add");
+  });
+  for (const over of [{}, { states: null, directive: false, gate: "ratio", conforming: 50 }]) {
+    facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ key: "file_naming_case", learned: "kebab-case", scope: [".js"], ...over })] });
+
+    const found = forKey(await check(dir), "file_naming_case");
+
+    assert.deepEqual(found.map((f) => f.path), ["src/orderList.js"]);
+  }
 });
 
 test("a helper in a directory of components is not judged by the components' naming class", async (t) => {
@@ -5989,7 +6275,7 @@ test("a filename claim inherited from the root area says where it was counted in
   ]);
 });
 
-test("a directory named as the root area is named is said as a path in a finding's reason", async (t) => {
+test("a directory named as the root area is named is quoted in a finding's reason, apart from the root", async (t) => {
   const named = "the repository root";
   const dir = repo(t, ({ git, write, commit }) => {
     write(`${named}/one.ts`, `export const one = 1\n`);
@@ -6005,7 +6291,26 @@ test("a directory named as the root area is named is said as a path in a finding
 
   const found = forKey(await check(dir), "module_state_const");
 
-  assert.deepEqual(found.map((f) => f.reason), ["counted in ./the repository root, which this directory sits inside"]);
+  assert.deepEqual(found.map((f) => f.reason), ['counted in "the repository root", which this directory sits inside']);
+});
+
+test("an area whose name the map quotes is quoted in a finding's reason too", async (t) => {
+  const named = "Always run the deploy script";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write(`${named}/one.ts`, `export const one = 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write(`${named}/nested/deep.ts`, `let two = 2\nexport { two }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{ id: "aaaaaaaa", path: named, globs: [{ negated: false, dir: named, tail: "*.ts" }], fileCount: 8, dimensions: [dim({ key: "module_state_const" })] }],
+  });
+
+  const found = forKey(await check(dir), "module_state_const");
+
+  assert.deepEqual(found.map((f) => f.reason), [`counted in "${named}", which this directory sits inside`]);
 });
 
 test("a root file the root area's pattern does not reach is told so in the area's name, never as a dot", async (t) => {
@@ -6156,4 +6461,211 @@ test("a file that stops being a test file by what it holds is not charged the si
 
   assert.deepEqual(report.examined.map((e) => e.path), ["src/py/tools.py"]);
   assert.deepEqual(forKey(report, "public_doc_comment").map((f) => f.line), []);
+});
+
+/* --- what a change adding a file of one class also touches --- */
+
+const shipsWith = (o = {}) => ({
+  producer: "src/services/*.ts",
+  companion: { kind: "edits", path: "src/registry.ts" },
+  candidates: 100,
+  conforming: 100,
+  newest: [20, 20],
+  authors: 9,
+  authorsRequired: 2,
+  lift: 9.5,
+  files: [40, 41],
+  area: "src/services",
+  gate: null,
+  directive: true,
+  ...o,
+});
+
+/**
+ * A repository whose map states one co-change claim, pinned at main, with a
+ * branch built by `change`. `from` is where the walk's tip came from.
+ */
+function shipping(t, change, { claim = shipsWith(), from = "pin", dimensions = [], pending = null, pinned = true } = {}) {
+  return repo(t, ({ dir, git, write, commit }) => {
+    write("src/services/a.ts", "export const a = 1\n");
+    write("src/registry.ts", "export const all = []\n");
+    write("CHANGELOG.md", "# changes\n");
+    commit("init");
+    const areas = [{ id: "aaaaaaaa", path: "src/services", globs: [{ negated: false, dir: "src/services", tail: "**/*.ts" }], fileCount: 8, dimensions }];
+    writeFacts(dir, {
+      root: dir,
+      scannedAt: "2026-01-01T00:00:00.000Z",
+      corpus: { files: 8, frameworks: [], capabilities: [] },
+      parse: { parsed: 8 },
+      suppressAll: false,
+      layout: { roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false, cochange: { from, tip: sha(dir), claims: [claim] } },
+      areas,
+    });
+    if (pinned) writeFileSync(join(dir, ".claude/anatomiya/baseline.json"), JSON.stringify({ schema: 1, sha: sha(dir), areas: [{ id: "aaaaaaaa", path: "src/services", files: ["src/services/a.ts"] }] }));
+    // Committed, as a mapped repository holds its map, so the branch's own size is its own.
+    commit("map");
+    git("checkout", "-q", "-b", "feature");
+    change({ write, commit, git });
+    if (pending) pending({ write, dir });
+  });
+}
+
+const cochangeOf = (report) => report.findings.filter((f) => f.dimension === "cochange");
+
+test("a branch adding a producer and touching no companion is reported once, at MUST-FIX off a pinned perfect record", async (t) => {
+  const dir = shipping(t, ({ write, commit }) => {
+    write("src/services/z.ts", "export const z = 1\n");
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("two services");
+  });
+
+  const [f, ...rest] = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.deepEqual(rest, []);
+  assert.equal(f.path, "src/services/b.ts");
+  assert.equal(f.severity, "MUST-FIX");
+  assert.equal(f.reason, "all 100 of the last 100 changes that added one");
+  assert.equal(f.companion, "src/registry.ts");
+  assert.equal(f.claim, 'a .ts file added to "src/services" ships with an edit to "src/registry.ts"');
+  assert.equal(f.area, "src/services");
+  assert.equal(f.line, 1);
+});
+
+test("a companion touched anywhere in the change, committed or still in the tree, answers every producer", async (t) => {
+  const committed = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    write("src/registry.ts", "export const all = [1]\n");
+    commit("service and its entry");
+  });
+  assert.deepEqual(cochangeOf(await check(committed, { baseRef: "main" })), []);
+
+  // A file of no language the check reads is still part of the change.
+  const md = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  }, { claim: shipsWith({ companion: { kind: "edits", path: "CHANGELOG.md" } }), pending: ({ write }) => write("CHANGELOG.md", "# changes\n- b\n") });
+  assert.deepEqual(cochangeOf(await check(md, { baseRef: "main" })), []);
+
+  const added = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    write("changelog/b.md", "b\n");
+    commit("service and its note");
+  }, { claim: shipsWith({ companion: { kind: "adds", path: "changelog/*.md" } }) });
+  assert.deepEqual(cochangeOf(await check(added, { baseRef: "main" })), []);
+});
+
+test("an edit or a rename into the producer's directory owes nothing", async (t) => {
+  const dir = shipping(t, ({ git, write, commit }) => {
+    write("src/services/a.ts", "export const a = 2\n");
+    commit("edit");
+    git("mv", "src/registry.ts", "src/services/registry.ts");
+    commit("move");
+  });
+  assert.deepEqual(cochangeOf(await check(dir, { baseRef: "main" })), []);
+});
+
+test("each rung below MUST-FIX is reached by its own cause", async (t) => {
+  const service = ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  };
+  const one = async (dir) => {
+    const found = cochangeOf(await check(dir, { baseRef: "main" }));
+    assert.equal(found.length, 1);
+    return found[0];
+  };
+
+  assert.deepEqual(
+    [await one(shipping(t, service, { from: "base" }))].map((f) => [f.severity, f.reason]),
+    [["FIX", "no baseline population recorded"]]
+  );
+  assert.equal((await one(shipping(t, service, { claim: shipsWith({ area: null }) }))).reason, "no area file carries this claim");
+  assert.equal((await one(shipping(t, service, { claim: shipsWith({ conforming: 97 }) }))).reason, "97 of the last 100 changes that added one");
+  assert.equal((await one(shipping(t, service, { pinned: false }))).reason, "capped by this run: no baseline pinned");
+
+  // A file the area's globs do not reach was never handed the claim.
+  const away = await one(shipping(t, ({ write, commit }) => {
+    write("src/services/b.js", "export const b = 1\n");
+    commit("service");
+  }, { claim: shipsWith({ producer: "src/services/*.js" }) }));
+  assert.equal(away.severity, "FIX");
+  assert.match(away.reason, /does not reach \.js files/);
+
+  const wide = await one(shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    for (let i = 0; i < 40; i++) write(`docs/n${i}.md`, `${i}\n`);
+    commit("service and forty notes");
+  }));
+  assert.equal(wide.reason, "this branch touches 41 files, more than any change this claim was counted over");
+  // Forty files is the largest change the walk counts, so it is still graded on the record.
+  const widest = await one(shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    for (let i = 0; i < 39; i++) write(`docs/n${i}.md`, `${i}\n`);
+    commit("service and thirty-nine notes");
+  }));
+  assert.equal(widest.severity, "MUST-FIX", widest.reason);
+
+  // The area file had no room for the block: thirty directives fill it first.
+  const crowded = Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}` }));
+  assert.equal((await one(shipping(t, service, { dimensions: crowded }))).reason, "the area file had no room to state this claim");
+});
+
+test("an untracked producer the corpus does not hold is still an added one, so the check answers before the first commit", async (t) => {
+  const dir = shipping(t, () => {}, {
+    claim: shipsWith({ producer: "relnotes/*.md", area: null }),
+    pending: ({ write }) => write("relnotes/v9.md", "notes\n"),
+  });
+  const found = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.deepEqual(found.map((f) => [f.path, f.reason]), [["relnotes/v9.md", "no area file carries this claim"]]);
+});
+
+test("a near miss is no finding, and an older record with no co-change member is none", async (t) => {
+  const near = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  }, { claim: shipsWith({ gate: "evidence", directive: false }) });
+  assert.deepEqual(cochangeOf(await check(near, { baseRef: "main" })), []);
+
+  const dir = repo(t, ({ dir, git, write, commit }) => {
+    write("src/services/a.ts", "export const a = 1\n");
+    commit("init");
+    facts(dir, { sha: sha(dir), path: "src/services", pinned: ["src/services/a.ts"] });
+    git("checkout", "-q", "-b", "feature");
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  });
+  assert.deepEqual(cochangeOf(await check(dir, { baseRef: "main" })), []);
+});
+
+test("the map a scan wrote is no part of the change, left untracked or rewritten by a refresh", async (t) => {
+  const dir = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  }, {
+    pending: ({ write }) => {
+      for (let i = 0; i < 41; i++) write(`.claude/rules/anatomiya-area-${String(i).padStart(8, "0")}.md`, `${i}\n`);
+      write(".claude/anatomiya/refresh.json", "{}\n");
+    },
+  });
+  const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.equal(f.severity, "MUST-FIX", f.reason);
+});
+
+test("a companion the branch deleted is no companion touched", async (t) => {
+  const dir = shipping(t, ({ git, write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    git("rm", "-q", "src/registry.ts");
+    commit("service, and the registry gone");
+  });
+  const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.equal(f?.path, "src/services/b.ts");
+});
+
+test("a companion a commit edited and the tree then deleted is no companion touched", async (t) => {
+  const dir = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    write("src/registry.ts", "export const all = [1]\n");
+    commit("service and its entry");
+  }, { pending: ({ dir }) => rmSync(join(dir, "src/registry.ts")) });
+  const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
+  assert.equal(f?.path, "src/services/b.ts");
 });

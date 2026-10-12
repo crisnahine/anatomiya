@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 
-import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
+import { parseFile, ROWS } from "../plugins/anatomiya/lib/parse-file.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
-import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { engineOf, language } from "../plugins/anatomiya/lib/langs.mjs";
 import { scriptBlocks } from "../plugins/anatomiya/lib/script-blocks.mjs";
 
 // Linux is where a child's address space can be capped from a shell: macOS
@@ -522,4 +522,9 @@ test("a megabyte of markup around a two-line script parses inside the per-file c
   const r = await parseFile(source, "src/Big.vue", "vue");
   assert.equal(r.ok, true);
   assert.ok(performance.now() - from < 2_000, "linear in the file");
+});
+
+test("the child's own rows are every syntactic oxc tree row, in the registry's order", () => {
+  const oxc = ALL_DIMENSIONS.filter((d) => d.tier === "syntactic" && d.langs.every((l) => engineOf(l) === "oxc"));
+  assert.deepEqual(ROWS.filter((d) => d.tier === "syntactic").map((d) => d.key), oxc.map((d) => d.key));
 });

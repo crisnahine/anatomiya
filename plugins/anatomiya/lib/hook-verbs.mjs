@@ -43,7 +43,7 @@ export function runEcho(cwd, payload) {
   if (!event) return {};
   const root = answersFor(payload, cwd);
   if (root === null) return {};
-  const additionalContext = echoContext(root, { transcript: windowOf(payload) });
+  const additionalContext = echoContext(root, { transcript: windowOf(payload), data: process.env.CLAUDE_PLUGIN_DATA ?? null });
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }
@@ -103,16 +103,18 @@ export async function runReuse(cwd, payload) {
   if (checkouts.length === 0) return {};
   // Loaded here: the change it reads comes from the check, which the echo and
   // the notice must not pay for on every tool call.
-  const { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart, turnStart } = await import("./reuse.mjs");
+  const { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart, toolCalls, turnStart } = await import("./reuse.mjs");
   // Both halves of "once per change, and only this session's work" are read off
-  // the transcript: when the session began, and what it already asked. One that
-  // cannot be read says neither, so nothing is asked. Asking anyway blocked
-  // every turn, a question included, over a tree left dirty before the session,
-  // since no ask it made was ever recorded anywhere it could read back.
+  // the transcript: when the session began and which tool calls it made, and
+  // what it already asked. One that cannot be read says neither, so nothing is
+  // asked. Asking anyway blocked every turn, a question included, over a tree
+  // left dirty before the session, since no ask it made was ever recorded
+  // anywhere it could read back.
   const since = sessionStart(payload.transcript_path);
   if (since === null) return {};
   const turn = turnStart(payload.transcript_path);
-  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn })));
+  const calls = toolCalls(payload.transcript_path);
+  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls })));
   const change = checkouts.flatMap((c, i) => (changes[i] ?? []).map((file) => ({ ...file, path: c.prefix + file.path })));
   if (change.length === 0) return {};
   const asked = askedMarks(payload.transcript_path);
