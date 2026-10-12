@@ -4,7 +4,8 @@ import { parseSync } from "oxc-parser";
 
 import { CAPABILITY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-capability.mjs";
 import { stemWords } from "../plugins/anatomiya/lib/stems.mjs";
-import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { capabilitiesIn } from "../plugins/anatomiya/lib/corpus.mjs";
 
 const dim = (key) => CAPABILITY_DIMENSIONS.find((d) => d.key === key);
@@ -109,10 +110,10 @@ test("capabilitiesIn reads the corpus for wrapper-shaped files and directories",
 });
 
 test("dimensionsFor offers a capability row only where the corpus shows the wrapper", () => {
-  const with_ = dimensionsFor(["js"], { capabilities: new Set(["logging"]) }).map((d) => d.key);
+  const with_ = dimensionsFor(["js"], { rows: ALL_DIMENSIONS, capabilities: new Set(["logging"]) }).map((d) => d.key);
   assert.ok(with_.includes("route_logging"));
   assert.ok(!with_.includes("route_network"));
-  const unknown = dimensionsFor(["js"]).map((d) => d.key);
+  const unknown = dimensionsFor(["js"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   assert.ok(unknown.includes("route_logging"), "a caller that cannot know is offered everything");
 });
 

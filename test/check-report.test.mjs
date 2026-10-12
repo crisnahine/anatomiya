@@ -334,6 +334,24 @@ const finding = (o = {}) => ({
   ...o,
 });
 
+test("a writer drops a reason only where the finding says its claim told it", () => {
+  const spoken = "catch blocks use the error they caught: no convention. 8 of 9 sites (ratio)";
+  const unstated = { severity: "NIT", reason: "no convention stated here (ratio)", where: null };
+  const report = (o) => bare({ findings: [finding({ ...unstated, ...o })], counts: { "MUST-FIX": 0, FIX: 0, NIT: 1 } });
+  const reasonLine = (o) => formatReport(report(o)).split("\n")[4];
+
+  assert.equal(reasonLine({ claim: spoken, toldInClaim: true }), "  catch (e) { }", "the claim says it, so the snippet follows");
+  assert.equal(reasonLine({ claim: spoken, toldInClaim: true, where: "B.run" }), "  B.run");
+  const named = { claim: spoken, toldInClaim: true, where: "typed", snippet: "typed" };
+  assert.deepEqual(formatReport(report(named)).split("\n").slice(4), ["  typed", ""], "a name that is the whole snippet is shown once");
+  assert.deepEqual(formatReport(report({ ...named, toldInClaim: false })).split("\n").slice(4), ["  typed: no convention stated here (ratio)", "  typed", ""], "beside a reason the name stays");
+  assert.equal(reasonLine({ claim: spoken }), "  no convention stated here (ratio)", "a claim that reads like one is not taken for one");
+  assert.equal(reasonLine({ claim: "catch blocks use the error they caught" }), "  no convention stated here (ratio)");
+  assert.equal(formatReportGithub(report({ claim: spoken, toldInClaim: true })).split("\n")[0], `::notice file=src/a.ts,line=12::${spoken}`, "one annotation says the gate once");
+  assert.equal(formatReportGithub(report({ claim: spoken })).split("\n")[0], `::notice file=src/a.ts,line=12,title=${spoken.replaceAll(":", "%3A")}::no convention stated here (ratio)`);
+  assert.equal(JSON.parse(formatReportJson(report({ claim: spoken, toldInClaim: true }))).findings[0].reason, "no convention stated here (ratio)", "the record keeps the field");
+});
+
 test("the JSON writer answers the whole record, encoded", async (t) => {
   const dir = reportRepo(t);
   facts(dir);
@@ -550,6 +568,20 @@ test("a name in another target's directory reaches the record as a locator", () 
 
   const located = ["anatomiya-ev li.mdc", "anatomiya-a b.mdc"];
   assert.deepEqual({ foreign: out.foreign, unknown: out.unknown, unreadable: out.rules.unreadable }, { foreign: located, unknown: located, unreadable: located });
+});
+
+test("the files the next scan removes are named once under the list they sit in, and counted for a job", () => {
+  const r = bare({ unknown: ["anatomiya-area-11111111.md", "anatomiya-area-22222222.md"], removing: ["anatomiya-area-11111111.md", "anatomiya-ev‮li.md"] });
+
+  assert.ok(formatReport(r).endsWith('the next scan removes "anatomiya-area-11111111.md", "anatomiya-ev li.md", which the scan that wrote the map was about to remove\n'), formatReport(r));
+  assert.deepEqual(formatReportGithub(r).split("\n")[0], "::warning title=rules::0 file(s) in .claude/rules this tool did not write, 2 the map on disk does not name, 2 of them the next scan removes");
+  assert.deepEqual(JSON.parse(formatReportJson(r)).removing, ["anatomiya-area-11111111.md", "anatomiya-ev li.md"]);
+  const cursor = { dir: ".cursor/rules", state: "on", foreign: [], unknown: ["anatomiya-ev\u202eli.mdc"], removing: ["anatomiya-ev\u202eli.mdc"], rules: { escaped: false, listed: true, unreadable: [] } };
+  assert.deepEqual(JSON.parse(formatReportJson(bare({ targets: { cursor } }))).targets.cursor.removing, ["anatomiya-ev li.mdc"]);
+  assert.equal(formatReport(bare({ unknown: ["anatomiya-area-11111111.md"] })).includes("next scan"), false);
+  assert.equal("removing" in JSON.parse(formatReportJson(bare())), false, "no key where nothing is going");
+  const many = Array.from({ length: 22 }, (_, i) => `anatomiya-area-${String(i).padStart(8, "0")}.md`);
+  assert.ok(formatReport(bare({ unknown: many, removing: many })).endsWith('"anatomiya-area-00000019.md", and 2 more, which the scan that wrote the map was about to remove\n'));
 });
 
 test("the rule files nobody here wrote are counted, since only the text writer lists them", () => {

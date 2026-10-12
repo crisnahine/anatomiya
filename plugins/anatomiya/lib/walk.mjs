@@ -73,11 +73,64 @@ export function declName(node) {
   return NAMED.get(node) ?? null;
 }
 
-function bind(node) {
+/**
+ * The name a site inside `decl` reports: `Class.method` under the innermost
+ * named class around the declaration, the shape the tree rows give, `api.run`
+ * for a method of an object literal bound to `api`, and the bare name
+ * otherwise. Two classes each holding a `run` are two places. An unnamed
+ * function, such as a callback, reports the nearest named declaration around it.
+ */
+export function whereOf(decl, ctx) {
+  if (!decl) return null;
+  const name = declName(decl);
+  if (name === null) return AROUND.get(decl) ?? null;
+  const holder = HOLDER.get(decl);
+  if (holder) return `${holder}.${name}`;
+  const owner = OWNER.get(decl);
+  return owner ? `${owner}.${name}` : name;
+}
+
+// Kept per node as the walk passes: a site rescanning its ancestors is
+// quadratic in a callback nested a thousand deep. OWNER is the innermost named
+// class strictly around a declaration, so a site whose declaration is the class
+// reports the class alone.
+const AROUND = new WeakMap();
+const HOLDER = new WeakMap();
+const OWNER = new WeakMap();
+
+// What an object literal passes through on its way to a binding: `{ methods: { run } }`,
+// `defineComponent({ ... })` and `base || { ... }` all hold `run` under the binding, not under `methods`.
+const THROUGH = new Set([
+  "ObjectExpression",
+  "ConditionalExpression",
+  "LogicalExpression",
+  "Property",
+  "CallExpression",
+  "NewExpression",
+  "AwaitExpression",
+  "TSAsExpression",
+  "TSSatisfiesExpression",
+  "ParenthesizedExpression",
+]);
+
+/** The name a variable binds the object literal a node sits in to, or null; `above` is the parent's own answer. */
+const objectBinding = (parent, above) => {
+  if (THROUGH.has(parent.type)) return above;
+  return parent.type === "VariableDeclarator" ? (parent.id.name ?? null) : null;
+};
+
+function bind(node, holder) {
   const child = node.value ?? node.init;
-  if (!child || typeof child !== "object" || !isFn(child)) return;
+  if (!child || typeof child !== "object") return;
   const name = declName(node);
+  // `const X = class { m() {} }` is the class `X` its twin `class X { m() {} }` names.
+  if (child.type === "ClassExpression") {
+    if (name) NAMED.set(child, name);
+    return;
+  }
+  if (!isFn(child)) return;
   if (name) NAMED.set(child, name);
+  if (holder) HOLDER.set(child, holder);
 }
 
 /**
@@ -98,6 +151,9 @@ function bind(node) {
 export function walk(program, visit) {
   const stack = [];
   const ancestors = [];
+  // objectBinding per ancestor, indexed as `ancestors` is, so a member finds its
+  // literal's binding without climbing the chain. Set only where it is read.
+  const holders = [];
   // Kept on enter and leave so no visitor rescans the ancestors per node: that
   // made a 30,000-operand chain take 12 seconds.
   const fns = [];
@@ -144,7 +200,11 @@ export function walk(program, visit) {
     if (typeof node.type !== "string") continue;
 
     const isDecl = DECL.has(node.type);
-    if (BINDS.has(node.type)) bind(node);
+    const depth = ancestors.length;
+    const binds = BINDS.has(node.type);
+    const reads = depth > 0 && (binds || THROUGH.has(node.type));
+    holders[depth] = reads ? objectBinding(ancestors[depth - 1], holders[depth - 1]) : null;
+    if (binds) bind(node, holders[depth]);
     const ctx = {
       stack,
       ancestors,
@@ -153,6 +213,16 @@ export function walk(program, visit) {
       cls: classes.length ? classes[classes.length - 1] : null,
       within,
     };
+
+    if (isDecl) {
+      const up = ctx.enclosing;
+      // Only a class's own members carry its name: a function declared inside a method is its own.
+      const own = up !== null && (isClass(up) ? MEMBERS.has(node.type) : MEMBERS.has(up.type) && up.value === node);
+      OWNER.set(node, !own ? null : isClass(up) ? declName(up) ?? OWNER.get(up) : OWNER.get(up));
+      if (declName(node) === null) {
+        AROUND.set(node, up === null ? null : whereOf(up, ctx));
+      }
+    }
 
     visit(node, ctx);
 
@@ -187,6 +257,28 @@ export function walk(program, visit) {
   }
 }
 
+/**
+ * Visits `root` and the nodes under it that belong to it, in walk order: each
+ * declaration nested inside is visited but not entered, so asking this of every
+ * function costs one pass over the file however deep they nest.
+ */
+export function ownNodes(root, visit) {
+  const work = [root];
+  while (work.length) {
+    const node = work.pop();
+    if (!node || typeof node !== "object") continue;
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i--) work.push(node[i]);
+      continue;
+    }
+    if (typeof node.type !== "string") continue;
+    visit(node);
+    if (DECL.has(node.type)) continue;
+    const keys = CHILD_KEYS[node.type] ?? Object.keys(node).filter((k) => !SKIP.has(k));
+    for (let i = keys.length - 1; i >= 0; i--) work.push(node[keys[i]]);
+  }
+}
+
 // Popped after a node's children, to undo what entering it pushed.
 const LEAVE = Symbol("leave");
 const LEAVE_DECL = Symbol("leave-decl");
@@ -197,6 +289,8 @@ const isFn = (n) =>
   n.type === "ArrowFunctionExpression";
 
 const isClass = (n) => n.type === "ClassDeclaration" || n.type === "ClassExpression";
+
+const MEMBERS = new Set(["MethodDefinition", "PropertyDefinition", "AccessorProperty"]);
 
 export const isFunctionLike = isFn;
 
@@ -394,29 +488,34 @@ export function boundNames(pattern, out = []) {
  * dimension modules need it and neither can import the other.
  */
 export function optionalChain(node, ancestors) {
+  const climbed = [];
   let outer = node;
-  for (let i = ancestors.length - 1; i >= 0; i--) {
-    const p = ancestors[i];
-    if (p.type === "MemberExpression" && p.object === outer) {
-      outer = p;
-      continue;
-    }
-    if (p.type === "CallExpression" && p.callee === outer) {
-      outer = p;
-      continue;
-    }
+  let answer;
+  for (let i = ancestors.length - 1; answer === undefined; i--) {
+    climbed.push(outer);
+    const p = i >= 0 ? ancestors[i] : null;
     // A type wrapper is not the end of the chain. `o!.a!.b = 1` parses as
     // Assignment > Member > TSNonNull > Member, so a walk that stopped at the
     // `!` never reached the assignment and every refused position read as
     // allowed again. Same set `value` peels, for the same reason.
-    if (WRAPS.has(p.type) && (p.expression === outer || p.typeAnnotation === outer)) {
+    if (
+      p !== null &&
+      ((p.type === "MemberExpression" && p.object === outer) ||
+        (p.type === "CallExpression" && p.callee === outer) ||
+        (WRAPS.has(p.type) && (p.expression === outer || p.typeAnnotation === outer)))
+    ) {
       outer = p;
+      answer = CHAINS.get(outer);
       continue;
     }
-    return { outer, allowed: !refusesOptional(p, outer, ancestors[i - 1]) };
+    answer = { outer, allowed: p === null || !refusesOptional(p, outer, ancestors[i - 1]) };
   }
-  return { outer, allowed: true };
+  for (const link of climbed) CHAINS.set(link, answer);
+  return answer;
 }
+
+// Every climbed link keeps the answer, so a chain is climbed once whatever order its links are asked in.
+const CHAINS = new WeakMap();
 
 // The type and paren wrappers around a value. They sit inside a member or call
 // chain without ending it.
@@ -487,4 +586,51 @@ export function componentProps(program, rel) {
     for (const v of exported.declarations || []) props.add(v);
   }
   return props;
+}
+
+/**
+ * The dimensions that speak these languages, and where the caller knows which
+ * frameworks the repository uses, only those the repository could satisfy.
+ *
+ * A dimension carries `framework` when its claim is a framework's and it cannot
+ * see from one file which framework it is standing in. `zone_aware_time` is the
+ * case: `Time.now` is a drifting timestamp under Rails and correct without it,
+ * and with no counterClaim it can never state either side off-Rails, so
+ * it emits a line that can only ever read zero. `model_callbacks` and the
+ * migrations are not marked, because they already gate on an ActiveRecord
+ * superclass and find nothing off-Rails on their own.
+ *
+ * Naming no frameworks is not the same as naming none. A caller that cannot
+ * know, such as the parse worker, is offered everything and its extra hits go
+ * unread: the reducer and the check are the arbiters, both selecting here with
+ * the frameworks the corpus shows, so a hit no slot and no finding reads is a
+ * hit nobody counted. A framework row may therefore live on any language,
+ * whichever engine parses it.
+ *
+ * `adoptedCapabilities` is the one reader that takes hits without selecting
+ * here, and it is framework-blind. It stays safe because a row may not carry
+ * `framework` and `capability` at once, which `assertDeclaredFields` refuses:
+ * otherwise off-framework hits would vote for a capability's adoption.
+ *
+ * `rows` is the list the selection runs over, and the caller names it: the
+ * registry's tree rows in the parent, one engine's own tables in a parse child,
+ * so a child loads no other engine's rows. A reader that wants an obligation
+ * or a filename row asks the registry for it, because neither is a question
+ * asked of a walked tree.
+ */
+export function dimensionsFor(langs, { frameworks, tier = "syntactic", capabilities, rows }) {
+  const known = frameworks ? new Set(frameworks) : null;
+  // The same shape as frameworks: a routing claim is offered only where the
+  // corpus shows a wrapper for it, and a caller that cannot know is offered
+  // everything, whose extra hits go unread.
+  const caps = capabilities ?? null;
+  return rows.filter(
+    (d) =>
+      d.langs.some((l) => langs.includes(l)) &&
+      // A caller that does not ask for the semantic tier must never be handed
+      // a claim that needs a checker nobody ran.
+      (tier === "all" || d.tier === tier) &&
+      (!known || !d.framework || known.has(d.framework)) &&
+      (!caps || !d.capability || caps.has(d.capability))
+  );
 }

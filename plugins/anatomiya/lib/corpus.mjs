@@ -133,7 +133,8 @@ function excludedAt(path) {
 // `inAnyCase` asks with the directory in whatever case git lists it, which is this tool's own only where
 // the repository folds case: the writer follows the one the volume answers with. The name is held to its
 // own spelling, since no scan writes another.
-function ownOutput(root) {
+/** Whether a repository path is one this tool writes, asked as written and in any case. */
+export function ownOutput(root) {
   const dirs = Object.values(TARGETS).map((t) => [isClaude(t) ? trackedRulesDir(root) : t.dir, t]);
   const asked = (fold) => {
     const under = (path, dir) => fold(path.slice(0, dir.length + 1)) === fold(`${dir}/`);

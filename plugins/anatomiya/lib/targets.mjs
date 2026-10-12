@@ -124,7 +124,8 @@ const within = (dir, parent) => parent === "" || dir === parent || dir.startsWit
 
 /**
  * An area's globs as one target can read them, each spelled by the caller's
- * `spell`, which is told whether the target takes the root's anchor.
+ * `spell`, which is told whether the target takes the root's anchor, and the
+ * `dropped` and `unspellable` ones, which a sentence names, by `say`.
  *
  * `dropped` is the negations the target cannot be told, so its file's patterns
  * match more than the area. `unspellable` is the opposite: patterns that could
@@ -134,10 +135,11 @@ const within = (dir, parent) => parent === "" || dir === parent || dir.startsWit
  * with neither, so `app/*.rb` also matches `vendor/x/app/a.rb`. A pattern for
  * the repository root alone would match every depth there, so it is unspellable.
  */
-export function spelledGlobs(target, globs, spell) {
+export function spelledGlobs(target, globs, spell, say = spell) {
   const out = { patterns: [], widened: [], dropped: [], unspellable: [] };
   const unspellable = UNSPELLABLE[target.id];
   const text = (g) => spell(g, READS_ANCHOR[target.id]);
+  const named = (g) => say(g, READS_ANCHOR[target.id]);
   if (unspellable === null) return { ...out, patterns: globs.map(text) };
   // A pattern is for the root alone where the anchor changes its spelling. A reader that takes no
   // anchor and matches under every parent directory would be stating the root's claims of every
@@ -149,19 +151,19 @@ export function spelledGlobs(target, globs, spell) {
   for (const g of globs.filter((g) => !g.negated)) {
     const each = expanded(g).map((e) => text(e));
     if (each.some(cannot) || unanchored(g)) {
-      out.unspellable.push(text(g));
+      out.unspellable.push(named(g));
       continue;
     }
     out.patterns.push(...each);
     written.push(g);
   }
   if (out.patterns.length === 1 && MISREAD_ALONE[target.id]?.test(out.patterns[0])) {
-    out.unspellable.push(text(written.pop()));
+    out.unspellable.push(named(written.pop()));
     out.patterns = [];
   }
   // Only a pattern that recurses matches below its own directory.
   const reached = (g) => written.some(({ dir, tail }) => g.dir === dir || (tail.startsWith("**/") && within(g.dir, dir)));
-  out.dropped = globs.filter((g) => g.negated && reached(g)).map((g) => text({ ...g, negated: false }));
+  out.dropped = globs.filter((g) => g.negated && reached(g)).map((g) => named({ ...g, negated: false }));
   if (target.widens !== null) out.widened = out.patterns.filter((p) => !p.startsWith("**/"));
   return out;
 }

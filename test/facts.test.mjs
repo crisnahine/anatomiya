@@ -2,12 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { execFileSync, spawnSync } from "node:child_process";
 import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, factsJson, schemaProblem, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { atomic, factsJson, schemaProblem, writeFacts, readFacts, readLayout, readRecord, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { knownNames } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 
@@ -263,6 +265,15 @@ test("the count behind a declined-name line survives the trip to disk", (t) => {
   writeFacts(dir, result([dim({ key: "file_naming_case", declined: 3 })]));
 
   assert.equal(readFacts(dir).facts.areas[0].dimensions[0].declined, 3);
+});
+
+test("a slot with no scope writes no key, so an older record and a newer one agree there", () => {
+  const slotOf = (o) => JSON.parse(factsJson(result([dim(o)]))).areas[0].dimensions[0];
+
+  assert.equal("scope" in slotOf({ scope: null }), false);
+  assert.equal("scope" in slotOf({ scope: [] }), false);
+  assert.equal("scope" in slotOf({}), false);
+  assert.deepEqual(slotOf({ scope: [".ts"] }).scope, [".ts"]);
 });
 
 test("a row that declined nothing carries no such count", (t) => {
@@ -700,12 +711,50 @@ test("a record past the size cap is named as unread, not taken for a repository 
 
   const { facts, unreadable } = readFacts(dir);
   assert.equal(facts, null);
-  assert.match(unreadable ?? "", /64 MB/);
+  assert.match(unreadable ?? "", /64 MiB/);
+});
+
+test("a record of exactly the size cap is read, and one byte more is not", (t) => {
+  const dir = root(t);
+  const path = join(dir, "record.json");
+  const padded = (size) => {
+    const bytes = Buffer.alloc(size, 0x20);
+    bytes.write("{}");
+    return bytes;
+  };
+  writeFileSync(path, padded(64 * 2 ** 20));
+  assert.deepEqual(readRecord(path), { record: {}, oversize: false });
+  writeFileSync(path, padded(64 * 2 ** 20 + 1));
+  assert.deepEqual(readRecord(path), { record: null, oversize: true });
+});
+
+test("a record past the size cap is told by its size before a byte of it is read", (t) => {
+  // Every hook reads a record, so one committed past the cap cost each tool call a 64 MiB read.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), "");
+  truncateSync(join(dir, FACTS_PATH), 600 * 1024 * 1024);
+  let read = 0;
+  const real = fs.readSync;
+  fs.readSync = (...args) => {
+    const n = real(...args);
+    read += n;
+    return n;
+  };
+  syncBuiltinESMExports();
+  try {
+    assert.match(readFacts(dir).unreadable ?? "", /64 MiB/);
+  } finally {
+    fs.readSync = real;
+    syncBuiltinESMExports();
+  }
+  assert.equal(read, 0);
 });
 
 test("a record is measured by its bytes on disk, not by its decoded length", (t) => {
   // A byte that is not UTF-8 decodes to three, and 22 MB of them read as a
-  // record past the 64 MB cap in a sentence that named a size nobody measured.
+  // record past the 64 MiB cap in a sentence that named a size nobody measured.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-odd-record-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
@@ -863,6 +912,16 @@ test("a layout file that cannot answer for the record beside it is not read", (t
   assert.equal(readLayout(over), null, "a record past the cap");
 });
 
+test("a record past the cap is written over without being read", (t) => {
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  truncateSync(join(dir, FACTS_PATH), 70 * 2 ** 20);
+
+  writeFacts(dir, result([dim()]));
+
+  assert.equal(readFacts(dir).facts.schema, FACTS_SCHEMA);
+});
+
 test("the layout file is stamped from the record this writer renamed, not whatever is there after", async (t) => {
   // Another writer replacing the record right after this one's rename must
   // leave a layout file that refuses, so the reader goes to that writer's record.
@@ -986,4 +1045,28 @@ test("a directory with no record is answered before the layout file's path is re
     syncBuiltinESMExports();
   }
   assert.equal(resolved, 0);
+});
+
+test("what ships together rides in the layout under the same schema, and an older record states none of it", async (t) => {
+  const { statedClaims } = await import("../plugins/anatomiya/lib/cochange.mjs");
+  const claim = {
+    producer: "src/*.ts", companion: { kind: "edits", path: "src/index.ts" }, candidates: 40, conforming: 40, newest: [8, 8],
+    authors: 3, authorsRequired: 2, lift: 4.1, files: [40, 41], area: "src", gate: null, directive: true,
+  };
+  const cochange = { unit: "first-parent", depth: 20000, perClass: 100, tip: "a".repeat(40), from: "pin", read: 90, counted: 88, bulk: 1, shallow: false, error: null, truncated: false, claims: [claim] };
+  const layout = { roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false };
+  const dir = root(t);
+
+  writeFacts(dir, { ...result([dim()]), layout: { ...layout, cochange } });
+  const { facts } = readFacts(dir);
+  assert.equal(facts.schema, 19);
+  assert.deepEqual(facts.layout.cochange, cochange);
+  assert.deepEqual(readLayout(dir).layout.cochange, cochange);
+  assert.deepEqual(statedClaims(facts.layout.cochange), [claim]);
+
+  // A scan from before the walk wrote no member: no claim, no finding, no notice.
+  const older = root(t);
+  writeFacts(older, { ...result([dim()]), layout });
+  assert.equal(readFacts(older).facts.layout.cochange, undefined);
+  assert.deepEqual(statedClaims(readFacts(older).facts.layout.cochange), []);
 });

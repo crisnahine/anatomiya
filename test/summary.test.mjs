@@ -113,8 +113,24 @@ test("the untracked sentence reads at one and at many", () => {
 test("claims that match the model default are counted apart on the same line", () => {
   assert.equal(
     scanLines(summary({ claims: { stated: 3, matchingDefault: 6, total: 9 } }))[1],
-    "3 of 9 claims stated, 6 match the model default, the rest print as counts"
+    "3 of 9 claims stated, 6 match the model default"
   );
+});
+
+test("the clause after the claims says what is left, at none, one and many", () => {
+  // The rest is what neither stated nor matched the model default, the way scanSummary partitions the slots.
+  const claimsLine = (stated, matchingDefault, total) => scanLines(summary({ claims: { stated, matchingDefault, total } }))[1];
+
+  assert.equal(claimsLine(0, 0, 0), "0 of 0 claims stated");
+  assert.equal(claimsLine(0, 0, 1), "0 of 1 claim stated, it prints as a count", "with nothing beside it there is no other");
+  assert.equal(claimsLine(1, 0, 1), "1 of 1 claim stated");
+  assert.equal(claimsLine(0, 0, 2), "0 of 2 claims stated, they print as counts", "nothing stated leaves no rest");
+  assert.equal(claimsLine(0, 0, 9), "0 of 9 claims stated, they print as counts");
+  assert.equal(claimsLine(1, 0, 3), "1 of 3 claims stated, the rest print as counts");
+  assert.equal(claimsLine(1, 0, 2), "1 of 2 claims stated, the other prints as a count");
+  assert.equal(claimsLine(0, 1, 1), "0 of 1 claim stated, 1 matches the model default");
+  assert.equal(claimsLine(0, 1, 2), "0 of 2 claims stated, 1 matches the model default, the other prints as a count");
+  assert.equal(claimsLine(1, 1, 2), "1 of 2 claims stated, 1 matches the model default");
 });
 
 test("the engines that answered print with their versions, right after the head", () => {
@@ -193,6 +209,18 @@ test("unread history is reported with the reason it could not be read", () => {
       "history could not be read, so every claim fails the author gate: git log failed"
     )
   );
+});
+
+test("a co-change walk git refused, or one that stopped at its cap, says why nothing ships together", () => {
+  const walked = (cochange) => result({ layout: { roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false, cochange } });
+  const refused = scanSummary(walked({ error: "fatal: unrecognized argument: --diff-merges=first-parent", truncated: false, claims: [] }), plan());
+  assert.ok(
+    scanLines(refused).includes("what ships together could not be read, so no co-change claim was stated: fatal: unrecognized argument: --diff-merges=first-parent"),
+    scanLines(refused).join("\n")
+  );
+  const capped = scanSummary(walked({ error: null, truncated: true, claims: [] }), plan());
+  assert.ok(scanLines(capped).includes("what ships together stopped at the most pairs it counts, so no co-change claim was stated"));
+  assert.ok(!scanLines(scanSummary(result(), plan())).some((l) => l.includes("ships together")), "a walk that ran says nothing");
 });
 
 test("the terminal says the history was a window, how big it was, and what it cost", () => {
@@ -324,6 +352,15 @@ test("temporary files an earlier scan left are counted apart from the area files
   // None left, none said, and the record has no key for it.
   assert.equal("stagedRemoved" in scanSummary(result(), plan()), false);
   assert.equal("stagedRemoved" in scanSummary(result(), plan({ staged: [] })), false);
+});
+
+test("a record past the bound is said once per file, in the tense of the run, and absent where there is none", () => {
+  const oversized = [{ at: ".claude/anatomiya/layout.json", size: 73400320 }];
+  const dry = scanSummary(result(), plan({ oversized }), { dryRun: true });
+  assert.ok(scanLines(dry).includes(`".claude/anatomiya/layout.json" is 73400320 bytes, past the 64 MiB any command reads of a record, so it would be replaced without being read`), scanLines(dry).join("\n"));
+  assert.deepEqual(JSON.parse(scanJson(dry)).oversized, oversized);
+  assert.equal("oversized" in scanSummary(result(), plan({ oversized: [] })), false);
+  assert.equal("oversized" in JSON.parse(scanJson(scanSummary(result(), plan()))), false);
 });
 
 test("temporary files left in the store are counted apart from the ones left beside the map", () => {
@@ -606,6 +643,16 @@ const plan = (o = {}) => ({
   ...o,
 });
 
+test("a stated co-change claim an area file prints counts as a stated claim, and one printed nowhere does not", () => {
+  const claim = (o = {}) => ({
+    producer: "src/*.ts", companion: { kind: "edits", path: "src/index.ts" }, candidates: 40, conforming: 40, newest: [8, 8],
+    authors: 2, authorsRequired: 2, lift: 3, files: [40, 40], area: "src", gate: null, directive: true, ...o,
+  });
+  const cochange = { from: "pin", claims: [claim(), claim({ companion: { kind: "edits", path: "a.yml" }, area: null }), claim({ companion: { kind: "edits", path: "b.yml" }, gate: "evidence", directive: false })] };
+  const s = scanSummary(result({ layout: { roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false, cochange } }), plan());
+  assert.deepEqual(s.claims, { stated: 2, matchingDefault: 1, total: 4 });
+});
+
 test("the summary carries every fact the scan prints", () => {
   const s = scanSummary(result(), plan());
 
@@ -714,7 +761,7 @@ test("the summary and its lines agree on a whole scan", () => {
     "41 files, 1 area, 12ms, root /repo",
     "engines: oxc 0.144.0",
     "2 source files in the working tree are untracked. The corpus is tracked files only, so nothing there was counted",
-    "1 of 3 claims stated, 1 matches the model default, the rest print as counts",
+    "1 of 3 claims stated, 1 matches the model default, the other prints as a count",
     UNPINNED,
     "2 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell",
     "1 file in a directory nothing was counted in",
@@ -754,7 +801,7 @@ const others = (cursor = {}, copilot = {}) => ({ targets: { cursor: target(curso
 const BEFORE_LINES = [
   "40 files, 1 area, 12ms, root /repo",
   "engines: oxc 0.144.0",
-  "1 of 3 claims stated, 1 matches the model default, the rest print as counts",
+  "1 of 3 claims stated, 1 matches the model default, the other prints as a count",
   UNPINNED,
   "wrote 2 files",
   RUNNING_SESSION,
@@ -1099,6 +1146,7 @@ test("the scan record neutralises every value the repository named", () => {
       summary({
         root: "/repo/ev‮li",
         historyError: "fatal: bad object ‍head",
+        cochangeError: "fatal: bad object ‍head",
         rules: {
           foreign: ["ho‮use.md"],
           unknown: ["un‍known.md"],
@@ -1113,6 +1161,7 @@ test("the scan record neutralises every value the repository named", () => {
   const named = [
     s.root,
     s.historyError,
+    s.cochangeError,
     ...s.rules.foreign,
     ...s.rules.unknown,
     ...s.rules.unreadable,
@@ -1124,6 +1173,7 @@ test("the scan record neutralises every value the repository named", () => {
 test("an ASCII scan record comes back from the writer unchanged", () => {
   const s = summary({
     historyError: "fatal: not a git repository",
+    cochangeError: "fatal: bad revision 'HEAD'",
     rules: { foreign: ["house.md"], unknown: [], unreadable: [], listed: true, replaced: [] },
   });
 
@@ -1131,6 +1181,7 @@ test("an ASCII scan record comes back from the writer unchanged", () => {
 
   assert.equal(out.root, s.root);
   assert.equal(out.historyError, s.historyError);
+  assert.equal(out.cochangeError, s.cochangeError);
   assert.deepEqual(out.rules, s.rules);
 });
 

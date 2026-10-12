@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { EXTRA_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
-import { dimensionsFor, ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 
 const dim = (key) => EXTRA_DIMENSIONS.find((d) => d.key === key);
 
@@ -240,9 +241,19 @@ test("an arrow with an expression body returning null still counts", () => {
   assert.deepEqual(r, { candidates: 1, conforming: 1 });
 });
 
-test("a return inside a method is reported under the method name", () => {
+test("a return inside a method is reported under its class and the method name", () => {
   const h = hits("absent_is_null", `class K { m(x) { if (!x) return undefined; return x } }`);
-  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["m", false]]);
+  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["K.m", false]]);
+});
+
+test("an unnamed function in a class field is reported under the class and the field", () => {
+  const h = hits("absent_is_null", `class K { x = wrap(() => undefined) }`);
+  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["K.x", false]]);
+});
+
+test("an unnamed callback inside a method is reported under the method around it", () => {
+  const h = hits("absent_is_null", `class A { m() { list.map(() => { return undefined; }) } }`);
+  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["A.m", false]]);
 });
 
 test("a value returned by a nested callback does not make the outer function value-returning", () => {
@@ -372,15 +383,15 @@ test("keys are unique, so a reducer can key counts by them", () => {
 test("language selection returns only dimensions claiming that language", () => {
   // Through the one registry the product selects with. A second selector here
   // would let this file pass while the scan picked a different set.
-  const ruby = dimensionsFor(["ruby"]).map((d) => d.key);
+  const ruby = dimensionsFor(["ruby"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const d of EXTRA_DIMENSIONS) assert.ok(!ruby.includes(d.key), `${d.key} is a JS or TS claim`);
 
-  const js = dimensionsFor(["js"]).map((d) => d.key);
+  const js = dimensionsFor(["js"], { rows: ALL_DIMENSIONS }).map((d) => d.key);
   for (const d of EXTRA_DIMENSIONS) assert.ok(js.includes(d.key), `${d.key} is selected for js`);
 });
 
 test("an area with no languages selects nothing", () => {
-  assert.deepEqual(dimensionsFor([]), []);
+  assert.deepEqual(dimensionsFor([], { rows: ALL_DIMENSIONS }), []);
 });
 
 test("a dimension whose inverse loses a capability may not state that inverse", () => {

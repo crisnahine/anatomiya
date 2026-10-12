@@ -51,9 +51,19 @@ const blocked = (reason) => ({ type: "user", isMeta: true, message: { role: "use
 const recorded = (systemMessage) => ({ type: "attachment", attachment: { type: "hook_system_message", content: systemMessage, hookEvent: "Stop" } });
 const append = (path, entry) => writeFileSync(path, `${readFileSync(path, "utf8")}${JSON.stringify(entry)}\n`);
 
+// One tool call as 2.1.296 writes it: the call stamped when it streams, its
+// result when it returns.
+const call = (name, id, from, to) => [
+  { type: "assistant", timestamp: new Date(from).toISOString(), message: { role: "assistant", content: [{ type: "tool_use", id, name, input: {} }] } },
+  { type: "user", timestamp: new Date(to).toISOString(), message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "done" }] } },
+];
+
 // The transcript of a session that began a minute ago, which every real stop
 // names: 2.1.272 writes its first entry before the first prompt is answered.
-const begun = (t, entries = []) => transcript(t, [prompted(new Date(Date.now() - 60 * 1000)), ...entries]);
+// One call runs through the whole test, so whatever the test writes is the
+// session's own.
+const begun = (t, entries = []) =>
+  transcript(t, [prompted(new Date(Date.now() - 60 * 1000)), ...call("Bash", "toolu_w0", Date.now() - 59 * 1000, Date.now() + 10 * 60 * 1000), ...entries]);
 
 const NEW_B = "export function b() {\n  return 2;\n}\n";
 const hunksOf = (change) => change.map((f) => [f.path, f.hunks]);
@@ -678,7 +688,7 @@ test("a file left changed from before this session began is not asked about", as
   write("src/b.ts", NEW_B);
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
   utimesSync(join(dir, "src/b.ts"), hourAgo, hourAgo);
-  const session = transcript(t, [prompted(new Date(Date.now() - 60 * 1000))]);
+  const session = begun(t);
 
   assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
 
@@ -703,9 +713,14 @@ function turnAfterSetup(t) {
     });
   };
   // A tool's result is written as a user entry too, stamped after the commits
-  // it reports, and it is not where the turn began.
-  const toolResult = { type: "user", timestamp: new Date(began + 60 * 1000).toISOString(), message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "done" }] } };
-  const session = transcript(t, [prompted(new Date(began - 60 * 1000)), prompted(new Date(began)), toolResult]);
+  // it reports, and it is not where the turn began. The test writes its files
+  // inside the first call and commits inside the second.
+  const session = transcript(t, [
+    prompted(new Date(began - 60 * 1000)),
+    ...call("Write", "w1", began - 59 * 1000, began),
+    prompted(new Date(began)),
+    ...call("Bash", "t1", began, began + 60 * 1000),
+  ]);
   return { session, commitAt };
 }
 
@@ -823,6 +838,166 @@ test("what an earlier turn committed is not asked about again", async (t) => {
   const { session } = turnAfterSetup(t);
 
   assert.deepEqual(await runReuse(r.dir, stop(r.dir, { transcript_path: session })), {});
+});
+
+// --- whose work it is ---------------------------------------------------------
+
+// A session whose calls all ended before now, so the test places each write.
+function pastSession(t, calls) {
+  const now = Date.now();
+  return { now, session: transcript(t, [prompted(new Date(now - 10 * 60 * 1000)), ...calls(now).flat()]) };
+}
+const setTime = (dir, rel, ms) => utimesSync(join(dir, rel), new Date(ms), new Date(ms));
+
+test("a file another process wrote between two of the session's calls is not the session's", async (t) => {
+  // Another session, an editor or a formatter saving while this one waits for a
+  // prompt: measured, a session started above two checkouts was told to delete
+  // copies in files a second session was still writing.
+  const { dir, write } = repo(t);
+  const { now, session } = pastSession(t, (at) => [call("Read", "r1", at - 300_000, at - 299_000), call("Read", "r2", at - 100_000, at - 99_000)]);
+  write("src/b.ts", NEW_B);
+  setTime(dir, "src/b.ts", now - 200_000);
+
+  assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
+test("a file written inside one of the session's calls is the session's, whatever the tool", async (t) => {
+  // Bash needs no command parsed and a subagent's writes fall inside its Agent
+  // call. An unknown tool may write too: naming another session's work costs
+  // more than missing a copy.
+  const { dir, write } = repo(t);
+  const { now, session } = pastSession(t, (at) => [
+    call("Bash", "b1", at - 400_000, at - 390_000),
+    call("Agent", "a1", at - 300_000, at - 200_000),
+    call("mcp__tool__save", "m1", at - 150_000, at - 140_000),
+  ]);
+  write("src/b.ts", NEW_B);
+  write("src/c.ts", "export function c() {\n  return 3;\n}\n");
+  write("src/d.ts", "export function d() {\n  return 4;\n}\n");
+  write("src/e.ts", "export function e() {\n  return 5;\n}\n");
+  setTime(dir, "src/b.ts", now - 395_000);
+  setTime(dir, "src/c.ts", now - 250_000);
+  setTime(dir, "src/d.ts", now - 145_000);
+  setTime(dir, "src/e.ts", now - 170_000);
+
+  const answer = await runReuse(dir, stop(dir, { transcript_path: session }));
+
+  assert.match(answer.reason ?? "", /added functions: src\/b\.ts:1-3 \(new file\); src\/c\.ts:1-3 \(new file\); src\/d\.ts:1-3 \(new file\)\./);
+  assert.doesNotMatch(answer.reason, /src\/e\.ts/, "written between calls");
+});
+
+test("a call with no result recorded charges the session with nothing", async (t) => {
+  // An interrupted turn, or a call still running: nothing says when it ended.
+  const { dir, write } = repo(t);
+  const { now, session } = pastSession(t, (at) => [call("Bash", "o1", at - 300_000, at - 299_000).slice(0, 1)]);
+  write("src/b.ts", NEW_B);
+  setTime(dir, "src/b.ts", now - 200_000);
+
+  assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
+test("a background call's writes are the session's until the transcript records it finished", async (t) => {
+  // Its result returns as it starts; the completion is enqueued when it ends,
+  // and the notification the model reads can land seconds after that.
+  const { dir, write } = repo(t);
+  const notice = (id) => `<task-notification>\n<task-id>bg</task-id>\n<tool-use-id>${id}</tool-use-id>\n<status>completed</status>\n</task-notification>`;
+  const { now, session } = pastSession(t, (at) => [
+    call("Bash", "bg1", at - 400_000, at - 399_800),
+    [{ type: "queue-operation", operation: "enqueue", timestamp: new Date(at - 300_000).toISOString(), content: notice("bg1") }],
+    [{ type: "attachment", timestamp: new Date(at - 250_000).toISOString(), attachment: { type: "queued_command", prompt: notice("bg1"), timestamp: new Date(at - 250_000).toISOString() } }],
+    [{ type: "attachment", attachment: { type: "queued_command", prompt: notice("bg1") } }],
+    call("Bash", "bg2", at - 200_000, at - 199_800),
+    call("Bash", "bg3", at - 140_000, at - 139_800),
+    [{ type: "attachment", timestamp: new Date(at - 100_000).toISOString(), attachment: { type: "queued_command", prompt: notice("bg3") } }],
+    call("Agent", "bg4", at - 90_000, at - 89_800),
+    [{ type: "user", isMeta: true, timestamp: new Date(at - 50_000).toISOString(), message: { role: "user", content: notice("bg4") } }],
+  ]);
+  for (const [rel, ms] of [["src/b.ts", now - 350_000], ["src/c.ts", now - 280_000], ["src/d.ts", now - 150_000], ["src/e.ts", now - 120_000], ["src/f.ts", now - 70_000]]) {
+    write(rel, `export function ${rel[4]}() {\n  return 1;\n}\n`);
+    setTime(dir, rel, ms);
+  }
+
+  const answer = await runReuse(dir, stop(dir, { transcript_path: session }));
+
+  assert.match(answer.reason ?? "", /added functions: src\/b\.ts:1-3 \(new file\); src\/e\.ts/, "after the start and before the end it enqueued");
+  assert.doesNotMatch(answer.reason, /src\/c\.ts/, "after it was enqueued");
+  assert.doesNotMatch(answer.reason, /src\/d\.ts/, "a call with no completion recorded ends at its result");
+  assert.match(answer.reason, /src\/e\.ts:1-3/, "a completion recorded only as the notification");
+  assert.match(answer.reason, /src\/f\.ts:1-3/, "or as a message of its own");
+});
+
+test("a call's id quoted anywhere but a task notification does not stretch the call", async (t) => {
+  // A pasted transcript excerpt, or a prompt typed while the model works, which is queued like a notification.
+  const { dir, write } = repo(t);
+  const quoted = "look: <tool-use-id>fg</tool-use-id>";
+  const { now, session } = pastSession(t, (at) => [
+    call("Edit", "fg", at - 500_000, at - 498_000),
+    [{ type: "user", timestamp: new Date(at - 100_000).toISOString(), message: { role: "user", content: quoted } }],
+    [{ type: "queue-operation", operation: "enqueue", timestamp: new Date(at - 90_000).toISOString(), content: quoted }],
+    [{ type: "attachment", timestamp: new Date(at - 80_000).toISOString(), attachment: { type: "queued_command", prompt: quoted } }],
+    call("Agent", "bg", at - 70_000, at - 69_800),
+    [{ type: "user", timestamp: new Date(at - 60_000).toISOString(), message: { role: "user", content: `<task-notification>\n<tool-use-id>bg</tool-use-id>\n<result>${quoted}</result>\n</task-notification>` } }],
+  ]);
+  write("src/b.ts", NEW_B);
+  setTime(dir, "src/b.ts", now - 300_000);
+
+  assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
+});
+
+test("a commit is the turn's only inside one of the session's tool calls", async (t) => {
+  // The reflog does not say which session ran `git commit`, and records whole
+  // seconds, so a call is widened by a second each side.
+  for (const [what, offset, asked] of [
+    ["inside", 3, true],
+    ["a second before its start", 1, true],
+    ["a second past its end", 6, true],
+    ["outside", 9, false],
+    ["inside an Agent call, where a subagent commits", 12, true],
+    ["between calls", 18, false],
+  ]) {
+    const r = repo(t);
+    const began = Math.ceil(Date.now() / 1000) * 1000 + 1000;
+    const session = transcript(t, [
+      ...call("Write", "w1", began - 59_000, began),
+      prompted(new Date(began)),
+      ...call("Bash", "c1", began + 2000, began + 5000),
+      ...call("Agent", "a1", began + 11_000, began + 14_000),
+    ]);
+    r.write("src/b.ts", NEW_B);
+    r.git("add", "-A");
+    const at = began / 1000 + offset;
+    execFileSync("git", ["commit", "-qm", "b"], { cwd: r.dir, stdio: "pipe", env: { ...process.env, GIT_COMMITTER_DATE: `@${at} +0000`, GIT_AUTHOR_DATE: `@${at} +0000` } });
+
+    const answer = await runReuse(r.dir, stop(r.dir, { transcript_path: session }));
+
+    if (asked) assert.match(answer.reason ?? "", /src\/b\.ts:1-3/, what);
+    else assert.deepEqual(answer, {}, what);
+  }
+});
+
+test("a file written in a call's first whole second is the session's, on a filesystem that keeps whole seconds", async (t) => {
+  const { dir, write } = repo(t);
+  const second = Math.floor(Date.now() / 1000) * 1000 - 300_000;
+  const { session } = pastSession(t, () => [call("Write", "w1", second + 500, second + 900)]);
+  write("src/b.ts", NEW_B);
+  setTime(dir, "src/b.ts", second);
+
+  assert.match((await runReuse(dir, stop(dir, { transcript_path: session }))).reason ?? "", /src\/b\.ts:1-3/);
+});
+
+test("a transcript whose calls carry no timestamps charges the session with nothing", async (t) => {
+  // Nothing then says when the session wrote anything, and missing a copy costs
+  // less than naming another session's work as this one's.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const unstamped = (entry) => ({ ...entry, timestamp: undefined });
+
+  for (const [what, entries] of [
+    ["no entry stamped", [{ type: "user", message: { role: "user", content: "go" } }, ...call("Bash", "x1", Date.now() - 1000, Date.now() + 60_000).map(unstamped)]],
+    ["only the prompt stamped", [prompted(new Date(Date.now() - 60_000)), ...call("Bash", "x1", Date.now() - 1000, Date.now() + 60_000).map(unstamped)]],
+  ]) {
+    assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: transcript(t, entries) })), {}, what);
+  }
 });
 
 test("a stop whose transcript cannot be read asks about nothing", async (t) => {

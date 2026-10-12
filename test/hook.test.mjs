@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { aboutDir, echoContext, echoEvent, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { aboutDir, echoContext, echoEvent, fieldsIn, LOCK_HELD_MOST_MS, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
@@ -1352,6 +1352,13 @@ test("the payload read gives itself less than half the timeout the declaration a
     PAYLOAD_WAIT_MS * 2 <= DECLARED,
     `the read waits ${PAYLOAD_WAIT_MS}ms of the ${DECLARED}ms declared, leaving ${DECLARED - PAYLOAD_WAIT_MS}ms for everything else`
   );
+});
+
+test("the longest an echo lock is held is the longest timeout an echo hook declares", () => {
+  const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks;
+  const echoes = Object.values(declared).flatMap((groups) => groups.flatMap((group) => group.hooks.filter((hook) => hook.command.endsWith(" echo"))));
+  assert.equal(echoes.length, 3);
+  assert.equal(LOCK_HELD_MOST_MS, Math.max(...echoes.map((hook) => hook.timeout)) * 1000);
 });
 
 test("a payload that arrived whole is answered even when the pipe stays open", async (t) => {

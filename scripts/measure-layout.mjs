@@ -46,6 +46,7 @@ import {
   extNoun,
   namesakeClause,
   pathOfRootLabel,
+  rootLabelEnd,
   ROOT_LABEL,
   runnerCount,
   RUNNERS_SHOWN,
@@ -162,7 +163,7 @@ function recountRoot(path, corpus, testFiles, byStem) {
   if (stories.length > 0) out.stories = stories.length;
 
   const modules = own.filter(
-    (f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && !isTest(f) && !isStoryFile(f.rel));
+    (f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && isProducer(f, mirrored));
   if (jsxFiles.length > 0 && modules.length > 0) {
     out.helpers = {
       siblingModules: modules.length,
@@ -268,7 +269,7 @@ const take = (clauses, expected) => clauses.splice(0, expected.split("; ").lengt
  */
 function readRootLine(line) {
   const body = line.slice(2);
-  const at = body.indexOf(": ");
+  const at = rootLabelEnd(body);
   if (at === -1) return null;
   return { label: body.slice(0, at), clauses: body.slice(at + 2).split("; ") };
 }

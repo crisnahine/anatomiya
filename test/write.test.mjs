@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { caseSensitiveDir, needsBindableSocketPath, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync, truncateSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { writeFacts, writeTemp, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
+import { runDoctor } from "../plugins/anatomiya/lib/commands.mjs";
 
 const RULES = ".claude/rules";
 const STORE = ".claude/anatomiya";
@@ -2091,6 +2092,9 @@ test("a scan killed once a locked file stopped a directory leaves a record that 
     const plan = writeMap(result(dir, [a, c]));
     assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, c), `${dies.id}: the next scan writes the directory and removes what went stale`);
     assert.deepEqual([plan.targets.cursor.unknown, plan.targets.cursor.foreign], [[], []], `${dies.id}: and counts nothing left there`);
+    // Killed before their removals, so only the record written again names them.
+    assert.deepEqual(listRules(dir), mapOf(claude, a, c), `${dies.id}: and finishes Claude Code's`);
+    assert.deepEqual(namesIn(dir, copilot), mapOf(copilot, a, c), `${dies.id}: and Copilot's`);
   }
 });
 
@@ -3306,7 +3310,8 @@ test("the rename order is record, layout, claude, cursor, copilot", async (t) =>
   writeMap(result(dir, [a, c]));
   assert.deepEqual(
     renames.calls.map(([, to]) => kind(to)),
-    ["record", "layout", "claude", "claude", "claude", "cursor", "cursor", "cursor", "copilot", "copilot", "copilot"]
+    // Then the pair once more, once the stale files are removed and the record has nothing left to name for removal.
+    ["record", "layout", "claude", "claude", "claude", "cursor", "cursor", "cursor", "copilot", "copilot", "copilot", "record", "layout"]
   );
   for (const [from] of renames.calls) assert.match(String(from), /\.tmp-/, "each one a temporary file staged beside its destination");
 });
@@ -3614,7 +3619,11 @@ test("nothing is removed until every file has been renamed into place", async (t
   writeMap(result(dir, [stays]));
 
   const renames = 2 + 3 * 2;
-  assert.deepEqual(events, [...Array(renames).fill("renameSync"), "unlinkSync", "unlinkSync", "unlinkSync"], "the record, its layout file and two files in each directory, then one orphan in each");
+  assert.deepEqual(
+    events,
+    [...Array(renames).fill("renameSync"), "unlinkSync", "unlinkSync", "unlinkSync", "renameSync", "renameSync"],
+    "the record, its layout file and two files in each directory, then one orphan in each, then the pair naming nothing left to remove"
+  );
 });
 
 // A process id past the largest Linux and macOS hand out; Windows documents no range. The id of a
@@ -4066,4 +4075,312 @@ test("a directory holding a generated name in a target is reported, not an errno
   assert.equal(existsSync(join(dir, ".cursor")), false);
   // Left off, the shape is nobody's business.
   assert.deepEqual(writeMap(result(dir, [a])).targets.copilot.write, []);
+});
+
+/* --- a scan killed part way, and a file too large to put back --- */
+
+// A scan in a process of its own that kills itself once its `at`th rename or removal has landed, or prints how many it made.
+const KILLED_AT = `
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const { writer, result, at, options } = JSON.parse(process.env.ANATOMIYA_KILLED_AT);
+let steps = 0;
+for (const name of ["renameSync", "unlinkSync"]) {
+  const real = fs[name];
+  fs[name] = (...args) => {
+    const out = real(...args);
+    if (++steps === at) process.kill(process.pid, "SIGKILL");
+    return out;
+  };
+}
+syncBuiltinESMExports();
+const { writeMap } = await import(writer);
+writeMap(result, options);
+console.log(steps);
+`;
+
+/** Run a scan of `scan`, plain unless `options` say otherwise, in a child that dies after its `at`th step, and answer whether it did. */
+function killedAt(scan, at, options = {}) {
+  const writer = new URL("../plugins/anatomiya/lib/write.mjs", import.meta.url).href;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", KILLED_AT], {
+    env: { ...process.env, ANATOMIYA_KILLED_AT: JSON.stringify({ writer, result: scan, at, options }) },
+    encoding: "utf8",
+  });
+  return killedChild(child);
+}
+
+/** Whether a child that may have killed itself did, read the same on every platform. */
+function killedChild(child) {
+  if (child.status === 0) return false;
+  // Windows reports a process that kills itself as exit 1 with no signal.
+  if (child.signal !== null) assert.equal(child.signal, "SIGKILL", child.stderr);
+  assert.equal(child.stdout, "", "a killed child printed no step count");
+  assert.equal(child.stderr, "", "a killed child threw nothing");
+  return true;
+}
+
+test("a child reads as killed by its own hand however the platform reports it", () => {
+  assert.equal(killedChild({ status: null, signal: "SIGKILL", stdout: "", stderr: "" }), true);
+  assert.equal(killedChild({ status: 1, signal: null, stdout: "", stderr: "" }), true, "Windows");
+  assert.equal(killedChild({ status: 0, signal: null, stdout: "16\n", stderr: "" }), false);
+  assert.throws(() => killedChild({ status: 1, signal: null, stdout: "", stderr: "Error: thrown\n" }), "a throw is no kill");
+  assert.throws(() => killedChild({ status: 1, signal: null, stdout: "3\n", stderr: "" }), "a child that printed its count was not killed");
+  assert.throws(() => killedChild({ status: null, signal: "SIGTERM", stdout: "", stderr: "" }), "another signal is no self-kill");
+});
+
+test("a scan killed after any rename or removal is finished by the next plain scan, in every directory", (t) => {
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  // Keyed and under a name a scan gives a file, and no record ever planned to remove it.
+  const stray = areaName(claude, "0badf00d");
+  let points = 0;
+  for (let at = 1; ; at++) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    writeFileSync(join(rules(dir), stray), OURS);
+    if (!killedAt(result(dir, [a, c]), at)) break;
+    points++;
+
+    const plan = writeMap(result(dir, [a, c]));
+
+    assert.deepEqual(namesIn(dir, claude), [...mapOf(claude, a, c), stray].sort(), `killed after step ${at}`);
+    for (const target of OTHERS) assert.deepEqual(namesIn(dir, target), mapOf(target, a, c), `${target.id}, killed after step ${at}`);
+    assert.deepEqual(readdirSync(join(dir, STORE)).sort(), ["facts.json", "layout.json"], `killed after step ${at}`);
+    assert.deepEqual(plan.unknown, [stray], `killed after step ${at}: the stray is left and reported`);
+    assert.equal("removing" in readFacts(dir), false, `killed after step ${at}: a finished scan has nothing left to remove`);
+  }
+  // Two store files and three in each directory renamed, one area file removed from each, and the record written again.
+  assert.equal(points, 16, "the control: every step was a kill point");
+});
+
+test("a scan killed while turning the other targets off is finished by the next plain scan as the scan asked", (t) => {
+  const [a, b] = [area("src/services"), area("src/api")];
+  const control = workspace(t);
+  writeMap(result(control, [a, b]), { targets: ALL });
+  writeMap(result(control, [a, b]), { targets: ["claude"] });
+  let halfway = 0;
+  let points = 0;
+  for (let at = 1; ; at++) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    if (!killedAt(result(dir, [a, b]), at, { targets: ["claude"] })) break;
+    points++;
+    const left = namesIn(dir, cursor);
+    if (left.includes(overviewName(cursor)) && left.length < mapOf(cursor, a, b).length) halfway++;
+
+    writeMap(result(dir, [a, b]));
+
+    for (const target of [claude, ...OTHERS]) assert.deepEqual(namesIn(dir, target), namesIn(control, target), `${target.id}, killed after step ${at}`);
+    assert.deepEqual(readFacts(dir).targets, readFacts(control).targets, `killed after step ${at}`);
+    assert.equal("removing" in readFacts(dir), false, `killed after step ${at}`);
+  }
+  assert.ok(points > 0, "the control: the scan was killed");
+  assert.ok(halfway > 0, "the control: some kill left Cursor's overview behind with part of its directory removed");
+});
+
+test("doctor says a target a killed scan was turning off is off at the next scan", async (t) => {
+  const [a, b] = [area("src/services"), area("src/api")];
+  for (let at = 1; ; at++) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    assert.equal(killedAt(result(dir, [a, b]), at, { targets: ["claude"] }), true, "the control: some kill left Cursor's overview behind, named to remove");
+    if (!namesIn(dir, cursor).includes(overviewName(cursor)) || !readFacts(dir).removing?.cursor?.includes(overviewName(cursor))) continue;
+    execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
+
+    const { lines } = await runDoctor({ cwd: dir });
+
+    assert.ok(lines.includes(`${cursor.dir}: off at the next scan`), `killed after step ${at}:\n${lines.join("\n")}`);
+    assert.equal(lines.some((l) => l.startsWith(`${cursor.dir}: on`)), false, `killed after step ${at}`);
+    return;
+  }
+});
+
+test("the record a scan renames first names what it is about to remove in each directory", (t) => {
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  // Removed too, and named nowhere: it is no map file.
+  writeFileSync(join(dir, cursor.dir, stagedName(overviewName(cursor), gone())), "half a map\n");
+
+  assert.equal(killedAt(result(dir, [a, c]), 1), true);
+
+  assert.deepEqual(readFacts(dir).removing, { claude: [areaFilename(b)], cursor: [areaName(cursor, b.id)], copilot: [areaName(copilot, b.id)] });
+});
+
+test("a directory a scan leaves alone keeps its names to remove until a scan writes there", (t) => {
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  assert.equal(killedAt(result(dir, [a, c]), 1), true);
+
+  writeMap(result(dir, [a, c]), { leaveAlone: ["cursor"] });
+
+  assert.equal(namesIn(dir, cursor).includes(areaName(cursor, b.id)), true, "the control: Cursor's directory was left as it was");
+  assert.deepEqual(readFacts(dir).removing, { cursor: [areaName(cursor, b.id)] });
+  writeMap(result(dir, [a, c]));
+  assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, c));
+});
+
+test("a name to remove that a scan never gives a file is not removed", (t) => {
+  const a = area("src/services");
+  const dir = workspace(t);
+  writeMap(result(dir, [a]));
+  const facts = readFacts(dir);
+  writeFileSync(join(dir, STORE, "facts.json"), JSON.stringify({ ...facts, removing: { claude: ["anatomiya-notes.md", "../x.md"] } }));
+  writeFileSync(join(rules(dir), "anatomiya-notes.md"), OURS);
+
+  const plan = writeMap(result(dir, [a]));
+
+  assert.equal(existsSync(join(rules(dir), "anatomiya-notes.md")), true);
+  assert.deepEqual(plan.unknown, ["anatomiya-notes.md"]);
+});
+
+// Hand-counted, not imported: a bound read off the module under test moves with it.
+const PUT_BACK_MOST = 64 * 2 ** 20;
+const TOO_LARGE = PUT_BACK_MOST + 1;
+
+/** A sparse regular file one byte past the bound, opening with `head`. */
+function tooLarge(path, head = "") {
+  writeFileSync(path, head);
+  truncateSync(path, TOO_LARGE);
+}
+
+/** Every entry under the map's directories with its size, which a file of this size cannot be compared by. */
+function sizes(dir) {
+  const out = {};
+  for (const sub of [RULES, STORE, cursor.dir, copilot.dir]) {
+    if (!existsSync(join(dir, sub))) continue;
+    for (const name of readdirSync(join(dir, sub)).sort()) out[`${sub}/${name}`] = statSync(join(dir, sub, name)).size;
+  }
+  return out;
+}
+
+const refusedAsTooLarge = (at) => `"${at}" is ${TOO_LARGE} bytes, past the 64 MiB a scan reads to put a file back`;
+
+test("a file past the bound a scan would replace or remove in Claude Code's directory refuses the scan whole, dry run too", (t) => {
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  for (const [at, head] of [[`${RULES}/anatomiya-overview.md`, ""], [`${RULES}/${areaFilename(b)}`, OURS]]) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    tooLarge(join(dir, at), head);
+    const before = sizes(dir);
+
+    for (const dryRun of [true, false]) {
+      assert.throws(
+        () => writeMap(result(dir, [a, c]), { dryRun }),
+        { message: `${refusedAsTooLarge(at)}, so nothing was written: move or delete it and scan again` },
+        `${at}, dry run ${dryRun}`
+      );
+    }
+    assert.deepEqual(sizes(dir), before, at);
+  }
+});
+
+test("a file of exactly the bound is read and put back", async (t) => {
+  const lock = await refusing(t);
+  const [a, b] = [area("src/services"), area("src/api")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const at = join(dir, RULES, areaFilename(b));
+  writeFileSync(at, OURS);
+  truncateSync(at, PUT_BACK_MOST);
+  lock.on = (path) => (path.endsWith(`/${copilot.dir}/${overviewName(copilot)}`) ? "EPERM" : null);
+
+  assert.throws(() => writeMap(result(dir, [a, b]), { targets: ALL }), { message: /could not be replaced \(EPERM\)/ });
+
+  lock.on = null;
+  assert.equal(statSync(at).size, PUT_BACK_MOST);
+  assert.equal(readFileSync(at, "utf8").startsWith(OURS), true);
+});
+
+test("a record or its layout file past the bound is replaced without being read, and never put back", async (t) => {
+  const lock = await refusing(t);
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  for (const leaf of ["facts.json", "layout.json"]) {
+    const at = `${STORE}/${leaf}`;
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    tooLarge(join(dir, at));
+
+    const dry = writeMap(result(dir, [a, c]), { dryRun: true });
+    assert.deepEqual(dry.oversized, [{ at, size: TOO_LARGE }], `${leaf}: a dry run says so`);
+    assert.equal(statSync(join(dir, at)).size, TOO_LARGE, `${leaf}: and leaves it`);
+
+    lock.on = (path) => (path.endsWith(`/${copilot.dir}/${overviewName(copilot)}`) ? "EPERM" : null);
+    assert.throws(() => writeMap(result(dir, [a, c]), { targets: ALL }), { message: /could not be replaced \(EPERM\)/ }, leaf);
+    lock.on = null;
+    assert.equal(existsSync(join(dir, at)), false, `${leaf}: a rollback puts back nothing there`);
+
+    tooLarge(join(dir, at));
+    const blind = result(dir, [a, b]);
+    blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+    assert.equal("oversized" in writeMap(blind), false, `${leaf}: a blind run writes nothing, so it replaces nothing either`);
+    assert.equal(statSync(join(dir, at)).size, TOO_LARGE, `${leaf}: and leaves it`);
+    const plan = writeMap(result(dir, [a, b]));
+    assert.deepEqual(plan.oversized, [{ at, size: TOO_LARGE }], leaf);
+    assert.deepEqual(listRules(dir), mapOf(claude, a, b), leaf);
+    assert.deepEqual(readLayout(dir)?.layout, readFacts(dir).layout, `${leaf}: the pair answers again`);
+    assert.equal("oversized" in writeMap(result(dir, [a, b])), false, `${leaf}: and the scan after says nothing`);
+  }
+});
+
+test("a file past the bound in a directory nobody named leaves that directory alone, and named it refuses the scan", (t) => {
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const at = `${cursor.dir}/${areaName(cursor, b.id)}`;
+  tooLarge(join(dir, at), OURS);
+  const before = sizes(dir);
+
+  assert.throws(() => writeMap(result(dir, [a, c]), { targets: ALL }), {
+    message: `${refusedAsTooLarge(at)}, so ${cursor.dir} could not be written and nothing was written anywhere: move or delete it and scan again`,
+  });
+  assert.deepEqual(sizes(dir), before, "named: nothing anywhere");
+
+  const said = { state: "unknown", unwritable: true, reason: refusedAsTooLarge(at), remedy: "move or delete it" };
+  const dry = writeMap(result(dir, [a, c]), { dryRun: true }).targets.cursor;
+  assert.deepEqual({ state: dry.state, unwritable: dry.unwritable, reason: dry.reason, remedy: dry.remedy }, said, "a dry run says so");
+  const plan = writeMap(result(dir, [a, c]));
+  const t2 = plan.targets.cursor;
+  assert.deepEqual({ state: t2.state, unwritable: t2.unwritable, reason: t2.reason, remedy: t2.remedy }, said);
+  assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, b), "Cursor's directory as it was");
+  assert.equal(statSync(join(dir, at)).size, TOO_LARGE);
+  assert.deepEqual(listRules(dir), mapOf(claude, a, c), "and Claude Code's map written");
+  assert.deepEqual(namesIn(dir, copilot), mapOf(copilot, a, c));
+  assert.deepEqual(readFacts(dir).targets.cursor, mapOf(cursor, a, b), "the record goes on naming what is there");
+});
+
+test("a file that grew past the bound after the plan refuses the commit before any rename", (t) => {
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  const plan = planMap(result(dir, [a, c]));
+  const at = `${copilot.dir}/${overviewName(copilot)}`;
+  tooLarge(join(dir, at), OURS);
+  const before = sizes(dir);
+
+  assert.throws(() => commitMap(dir, plan), { message: `${refusedAsTooLarge(at)}, so nothing was written: move or delete it and scan again` });
+
+  assert.deepEqual(sizes(dir), before, "nothing renamed, and no temporary file left");
+});
+
+test("a directory a locked file or a refused create stops keeps its names to remove for the scan after", async (t) => {
+  const [a, b, c] = [area("src/services"), area("src/api"), area("src/hooks")];
+  const lock = await refusing(t);
+  const create = await refusingToStage(t);
+  const at = `/${cursor.dir}/${overviewName(cursor)}`;
+  for (const [stop, how, met] of [[lock, "EPERM", (path) => path.endsWith(at)], [create, "EACCES", (path) => path.includes(`${at}.tmp-`)]]) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a, b]), { targets: ALL });
+    assert.equal(killedAt(result(dir, [a, c]), 1), true);
+    stop.on = (path) => (met(path) ? how : null);
+
+    const plan = writeMap(result(dir, [a, c]));
+
+    stop.on = null;
+    assert.equal(plan.targets.cursor.unwritable, true, `${how}: the control, Cursor's directory was stopped`);
+    assert.equal(namesIn(dir, cursor).includes(areaName(cursor, b.id)), true, how);
+    assert.deepEqual(readFacts(dir).removing, { cursor: [areaName(cursor, b.id)] }, how);
+    writeMap(result(dir, [a, c]));
+    assert.deepEqual(namesIn(dir, cursor), mapOf(cursor, a, c), how);
+  }
 });

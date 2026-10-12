@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, fork } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { once } from "node:events";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { needsSymlinks } from "./platform.mjs";
@@ -381,6 +382,53 @@ test("a Ruby tree survives for the caller that asked for one", needsRuby, async 
   });
 
   assert.ok(out.records.get("a.rb").program, "no tree, no line number to report a finding on");
+});
+
+test("a tree too deep to send back is charged as a crash, not as a file that could not be read", async () => {
+  // The scan asks for counts and reads this file; the check asks for the tree,
+  // which overflows the stack JSON is written with past 1,500 levels on macOS,
+  // and the check told the reader their file could not be parsed.
+  let source = "a();";
+  for (let i = 0; i < 2500; i++) source = `try {} catch (e) {\n${source}\n}`;
+  const counted = await parseAll([{ rel: "deep.js", source, lang: "js" }]);
+  const tree = await parseAll([{ rel: "deep.js", source, lang: "js" }], { withProgram: true });
+
+  assert.equal(counted.records.get("deep.js").kind, "ok");
+  assert.equal(tree.records.get("deep.js").kind, "crashed");
+});
+
+test("a tree that cannot be sent for a reason other than its depth reports that reason, not a crash", async (t) => {
+  // The retry's writer is made to refuse with a TypeError, so only the depth's RangeError is charged as a crash.
+  const d = dir(t);
+  const abs = join(d, "big.js");
+  writeFileSync(abs, "export const n = 1n;\n");
+  const refuse = 'const s = JSON.stringify; JSON.stringify = (v, r, ...a) => { if (r) throw new TypeError("refused"); return s(v, r, ...a); };';
+  const child = fork(fileURLToPath(new URL("../plugins/anatomiya/lib/parse-worker.mjs", import.meta.url)), [], {
+    execArgv: [`--import=data:text/javascript,${encodeURIComponent(refuse)}`],
+  });
+  t.after(() => child.kill());
+  await once(child, "message");
+  child.send({ rel: "big.js", abs, lang: "js", withProgram: true });
+  const [reply] = await once(child, "message");
+
+  assert.deepEqual([reply.ok, reply.error, reply.crashed], [false, "refused", undefined]);
+});
+
+test("a copy too deep to send on the retry is charged as a crash too", async (t) => {
+  // The retry's copy fits one serialisation and the channel's own, a few frames deeper, can still overflow.
+  const d = dir(t);
+  const abs = join(d, "f.js");
+  writeFileSync(abs, "export const n = 1;\n");
+  const sends = 'const send = process.send.bind(process); let n = 0; process.send = (m, ...a) => { if (m && m.rel) { n++; if (n === 1) throw new TypeError("bigint"); if (n === 2) throw new RangeError("Maximum call stack size exceeded"); } return send(m, ...a); };';
+  const child = fork(fileURLToPath(new URL("../plugins/anatomiya/lib/parse-worker.mjs", import.meta.url)), [], {
+    execArgv: [`--import=data:text/javascript,${encodeURIComponent(sends)}`],
+  });
+  t.after(() => child.kill());
+  await once(child, "message");
+  child.send({ rel: "f.js", abs, lang: "js", withProgram: true });
+  const [reply] = await once(child, "message");
+
+  assert.deepEqual(reply, { rel: "f.js", ok: false, error: "the tree is too deep to send", crashed: true });
 });
 
 test("a file over the size cap is named apart from one that failed", async (t) => {

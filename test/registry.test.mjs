@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { REGISTRY, REGISTRY_KEYS, rowsOfKind, rowsForLangs, rowByKey, assertUniqueKeys } from "../plugins/anatomiya/lib/registry.mjs";
-import { ALL_DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { PAIRINGS, pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
 import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 
@@ -31,7 +32,7 @@ test("rowsForLangs is the union its readers used to spell by hand", () => {
   // meet because this one had no tier filter and every real reader needs one.
   for (const lang of ["js", "jsx", "ruby"]) {
     const spelled =
-      dimensionsFor([lang]).length +
+      dimensionsFor([lang], { rows: ALL_DIMENSIONS }).length +
       pairingsFor([lang]).length +
       rowsOfKind("corpus").filter((r) => r.langs.includes(lang)).length;
 

@@ -33,6 +33,16 @@ test("a map the window still holds is not kept again, even with another map betw
   assert.deepEqual(replayEcho(lines(entries), 1024), { made: 3, repeats: 0, kept: 2 });
 });
 
+test("records the build writes for itself move neither the window nor the bytes per token", () => {
+  const snapshot = { type: "attachment", attachment: { type: "prompt_snapshot", systemPrompt: ["x".repeat(4096)] } };
+  assert.deepEqual(replayEcho(lines([delivered(map("A")), snapshot, delivered(map("A"))]), 1024), { made: 2, repeats: 1, kept: 1 });
+
+  const turn = (cached) => ({ type: "assistant", message: { usage: { input_tokens: 0, cache_read_input_tokens: cached } } });
+  const text = lines([turn(0), snapshot, filler(1000), turn(1000)]);
+  const read = Buffer.byteLength(text[2]) + Buffer.byteLength(text[3]) + 2;
+  assert.equal(bytesPerToken(text, 1000), read / 1000);
+});
+
 test("transcript bytes per context token are read off the assistant's usage, main thread only", () => {
   const turn = (input, cached, sidechain = false) => ({
     type: "assistant",

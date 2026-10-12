@@ -15,6 +15,7 @@ import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { namesakeClause, pathText, testsParts } from "./render-layout.mjs";
 import { encode, locator } from "./encode.mjs";
 import { PRECEDENT_FLOOR } from "./principles.mjs";
+import { claimsFor, noticeLine } from "./cochange.mjs";
 
 /** Whether a root pairs enough of its files with tests to call that its habit. */
 function pairsTests(r) {
@@ -100,6 +101,10 @@ const countsAreNumbers = (r) =>
  * root of that project answers: a PHP `tests/Cache` is about the `src/Cache`
  * beside it, and a `Cache` in another tree is not its to answer for.
  *
+ * Only a root counting the test's own family answers it: a test of one family
+ * under a directory of another family's files says nothing about whether those
+ * are tested.
+ *
  * Answered with the directories the answer turns on, each with the family its
  * root counts: a tail shortened past directories is a test of something under
  * them, and where the change made one of them and put source of that family
@@ -113,6 +118,8 @@ function coveredRoot(rel, roots) {
   const parts = testedTail(rel).split("/").filter(Boolean);
   const family = namedFamily(rel);
   const inProject = family === null ? null : pairedWith(dirOf(rel), family);
+  // The family a root counts, or the test's own where the map recorded no extension for it.
+  const counted = (r) => familyOf(language(`x${r.companions.ext ?? extOf(rel)}`));
   // A root recorded for one level counts nothing its children hold, so its zero
   // says the level is untested and never the directory. React's
   // `react-reconciler/src` reads 0 of 81 with 78 tests in the `__tests__`
@@ -125,7 +132,8 @@ function coveredRoot(rel, roots) {
     (r) =>
       !r?.testRoot && typeof r?.dir === "string" && typeof r?.path === "string" && r?.companions && !r.path.endsWith(LEVEL_ONLY_LABEL) &&
       countsAreNumbers(r) &&
-      (inProject === null || inProject(r.dir))
+      (inProject === null || inProject(r.dir)) &&
+      counted(r) === familyOf(language(rel))
   );
   for (let end = parts.length; end > 0; end -= 1) {
     const tail = parts.slice(0, end).join("/");
@@ -133,8 +141,6 @@ function coveredRoot(rel, roots) {
     if (matches.length === 0) continue;
     if (matches.some(hasPrecedent)) return null;
     const below = parts.slice(end);
-    // The family a root counts, or the test's own where the map recorded no extension for it.
-    const counted = (r) => familyOf(language(`x${r.companions.ext ?? extOf(rel)}`));
     // Every directory from the root down to the test's own, nearest the root first: a package's `tests` holds none of its source.
     const turnsOn = matches.flatMap((r) => below.map((_, i) => ({ dir: [r.dir, ...below.slice(0, i + 1)].join("/"), family: counted(r) })));
     return { root: matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0], turnsOn };
@@ -287,11 +293,22 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
  */
 export function noticeFor(rel, layout, { holdsTest, from = null } = {}) {
   const [finding] = precedentFindings([rel], layout?.roots ?? [], holdsTest ? { holdsTest } : {});
-  if (!finding) return null;
+  // A file of a class whose additions ship with a companion, which is decided at
+  // the moment the file is, and the area file loads too late for it (A44).
+  const shipped = claimsFor(layout?.cochange, rel);
+  if (!finding && shipped.length === 0) return null;
   return [
     `anatomiya: ${pathText(rel)}`,
-    `  ${finding.reason}.`,
-    `  ${PRECEDENT_COUNTED} Put it where the siblings put theirs, or leave it out and say which rule you followed.`,
+    ...(finding ? [
+      `  ${finding.reason}.`,
+      `  ${PRECEDENT_COUNTED} Put it where the siblings put theirs, or leave it out and say which rule you followed.`,
+    ] : []),
+    ...shipped.map(noticeLine),
+    ...(shipped.length === 0 ? [] : [shipped.length > 1
+      ? "  Make those changes in the same change, or say why this file does not need them."
+      : shipped[0].companion.kind === "edits"
+        ? "  Make that edit in the same change, or say why this file does not need it."
+        : "  Add that file in the same change, or say why this file does not need it."]),
     // A worktree with no map of its own is answered from its main checkout's, named as the path it is opened by.
     ...(from === null ? [] : [`  Counted from this repository's main checkout at ${locator(from)}, not this worktree.`]),
   ].join("\n");

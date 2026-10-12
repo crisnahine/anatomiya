@@ -10,7 +10,8 @@
  * the direction that deletes.
  *
  * Ownership is three facts, or the file is left alone: our filename
- * prefix, our frontmatter key, and the map on disk naming it. The prefix alone
+ * prefix, our frontmatter key, and the map on disk naming it, as a file it
+ * holds or one it was about to remove. The prefix alone
  * is a filename anyone can type; the frontmatter alone is a file an older build
  * wrote and this one knows nothing about.
  */
@@ -258,6 +259,25 @@ export function knownNames(facts, target = TARGETS.claude) {
 }
 
 /**
+ * The filenames the map on disk was about to remove from one directory: an
+ * empty set where it names none, which is every record written before the list.
+ *
+ * The record is renamed before the first removal, so a scan killed between the
+ * two leaves a record that no longer names the file it was removing, and only
+ * this list says the file is still ours to remove.
+ */
+export function pendingNames(facts, target = TARGETS.claude) {
+  const listed = facts?.removing?.[target.id];
+  return new Set(Array.isArray(listed) ? listed.filter((n) => isMapName(n, target)) : []);
+}
+
+/** The names among `names` that the map on disk was about to remove from one directory. */
+export function pendingAmong(facts, target, names) {
+  const going = pendingNames(facts, target);
+  return names.filter((name) => going.has(name));
+}
+
+/**
  * Every `.md` in the rules directory, split by which of the three facts it
  * carries. In a Cursor or Copilot directory, only the names under our prefix:
  * the rest is that tool's own rules, which are meant to be there.
@@ -467,6 +487,11 @@ export function targetStatus(root, target) {
   return { state: isOwned(read.head) && listsExactly(dir, overviewName(target)) ? "on" : "off" };
 }
 
+/** Whether the record names a target's own overview among the files it was about to remove, which makes it off at the next scan. */
+export function turningOff(facts, target) {
+  return pendingNames(facts, target).has(overviewName(target));
+}
+
 // True where the directory cannot be listed: the `lstat` is then all there is to go on.
 function listsExactly(dir, name) {
   try {
@@ -672,9 +697,10 @@ function contains(base, target) {
  * The buffer is the smaller of the cap and the file, so an ordinary five-line
  * rule file costs five lines and only a large one pays the cap. `size` is the
  * file's bytes on disk: a cap asked of the decoded head counts each byte that
- * is not UTF-8 three times.
+ * is not UTF-8 three times. Asked for a `whole` read, a file past the cap is
+ * not read at all and comes back with a null head.
  */
-export function readHead(path, bytes = HEAD_BYTES) {
+export function readHead(path, bytes = HEAD_BYTES, { whole = false } = {}) {
   let fd;
   try {
     // Open first and stat the handle, so the file that is typed is the file
@@ -685,6 +711,7 @@ export function readHead(path, bytes = HEAD_BYTES) {
     fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     const stat = fstatSync(fd);
     if (!stat.isFile()) return { kind: "other" };
+    if (whole && stat.size > bytes) return { kind: "file", head: null, size: stat.size, mtimeMs: stat.mtimeMs };
     const want = Math.min(bytes, stat.size);
     if (want === 0) return { kind: "file", head: "", size: stat.size, mtimeMs: stat.mtimeMs };
     const buf = Buffer.alloc(want);
@@ -724,6 +751,11 @@ export function readHead(path, bytes = HEAD_BYTES) {
  * its reason: a fifo would block a plain open.
  */
 export function readTail(path, bytes) {
+  return readTailOf(path, bytes)?.text ?? null;
+}
+
+/** The same tail, with the offset in the file at which it ends. */
+export function readTailOf(path, bytes) {
   if (typeof path !== "string" || path === "") return null;
   let fd;
   try {
@@ -733,7 +765,7 @@ export function readTail(path, bytes) {
     const want = Math.min(bytes, stat.size);
     const buf = Buffer.alloc(want);
     const read = readSync(fd, buf, 0, want, stat.size - want);
-    return buf.subarray(0, read).toString("utf8");
+    return { text: buf.subarray(0, read).toString("utf8"), end: stat.size - want + read };
   } catch {
     return null;
   } finally {

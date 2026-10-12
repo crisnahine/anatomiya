@@ -100,6 +100,7 @@ export function encodeReport(report) {
     semantic: { ...report.semantic },
     foreign: report.foreign.map(locator),
     unknown: report.unknown.map(locator),
+    ...(report.removing ? { removing: report.removing.map(locator) } : {}),
     rules: { ...report.rules, unreadable: report.rules.unreadable.map(locator) },
     ...(report.targets ? { targets: Object.fromEntries(Object.entries(report.targets).map(([id, t]) => [id, encodeTarget(t)])) } : {}),
   };
@@ -109,11 +110,12 @@ const encodeTarget = (t) => ({
   ...t,
   foreign: t.foreign.map(locator),
   unknown: t.unknown.map(locator),
+  ...(t.removing ? { removing: t.removing.map(locator) } : {}),
   rules: { ...t.rules, unreadable: t.rules.unreadable.map(locator) },
 });
 
 // The Claude Code directory, whose lists sit at the top of the record, then each other one on it.
-const directories = (r) => [{ dir: RULES_DIR, foreign: r.foreign, unknown: r.unknown }, ...Object.values(r.targets ?? {})];
+const directories = (r) => [{ dir: RULES_DIR, foreign: r.foreign, unknown: r.unknown, removing: r.removing }, ...Object.values(r.targets ?? {})];
 
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -174,6 +176,9 @@ const ANNOTATION = { "MUST-FIX": "error", FIX: "warning", NIT: "notice" };
 // annotation carrying that line's quoting is quoting nobody asked for.
 const reasonFor = (f, place) => (f.companion == null ? f.reason : `${f.reason}; no ${place(f.companion)}`);
 
+// A slot no gate stated says so in its claim, gate and all, so no writer says it a second time.
+const shownReason = (f, place) => (f.toldInClaim === true ? null : reasonFor(f, place));
+
 /**
  * The report as GitHub workflow commands: one annotation per finding, on the
  * file and line it is about, then what the run could not answer, and the counts
@@ -188,8 +193,9 @@ const reasonFor = (f, place) => (f.companion == null ? f.reason : `${f.reason}; 
 export function formatReportGithub(report) {
   const r = encodeReport(report);
   const lines = r.findings.map((f) => {
-    const props = `file=${escapeProperty(f.path)},line=${f.line},title=${escapeProperty(f.claim)}`;
-    return `::${ANNOTATION[f.severity]} ${props}::${escapeMessage(reasonFor(f, (p) => p))}`;
+    const reason = shownReason(f, (p) => p);
+    const props = `file=${escapeProperty(f.path)},line=${f.line}${reason === null ? "" : `,title=${escapeProperty(f.claim)}`}`;
+    return `::${ANNOTATION[f.severity]} ${props}::${escapeMessage(reason ?? f.claim)}`;
   });
   if (r.stale) lines.push(annotation("stale", `severity capped at FIX: ${r.staleReason}`));
   for (const c of r.caveats) lines.push(annotation(c.code, c.message));
@@ -201,7 +207,8 @@ export function formatReportGithub(report) {
       annotation(
         "rules",
         `${d.foreign.length} file(s) in ${d.dir} this tool did not write, ` +
-          `${d.unknown.length} the map on disk does not name`
+          `${d.unknown.length} the map on disk does not name` +
+          (d.removing?.length ? `, ${d.removing.length} of them the next scan removes` : "")
       )
     );
   }
@@ -272,7 +279,10 @@ function renderText(report) {
   for (const f of report.findings) {
     lines.push("");
     lines.push(`${f.severity}  ${quotePath(f.path)}:${f.line}  ${String(f.claim ?? "").replace(/\s+/g, " ").trim()}`);
-    lines.push(`  ${f.where ? `${f.where}: ` : ""}${reasonFor(f, quotePath)}`);
+    const reason = shownReason(f, quotePath);
+    // A finding on a name quotes that name as its snippet, so print it once.
+    const where = reason || f.where !== f.snippet ? f.where : null;
+    if (where || reason) lines.push(`  ${[where, reason].filter(Boolean).join(": ")}`);
     if (f.snippet) lines.push(`  ${f.snippet}`);
   }
 
@@ -282,6 +292,11 @@ function renderText(report) {
     // somebody else's context to read, the other is this tool's own output from a
     // scan whose record is gone, and re-scanning is what clears it.
     listRules(lines, d.dir, d.unknown, "the map on disk does not name");
+    if (d.removing?.length) {
+      const { shown, rest } = listSome(d.removing, LISTED.report);
+      const names = [...shown.map(quotePath), ...(rest ? [`and ${rest} more`] : [])].join(", ");
+      lines.push(`the next scan removes ${names}, which the scan that wrote the map was about to remove`);
+    }
   }
 
   return lines.join("\n") + "\n";

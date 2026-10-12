@@ -160,6 +160,15 @@ export function quotePath(s) {
   return MIXED_MARKER.test(s) ? `"${s}"` : JSON.stringify(s);
 }
 
+/**
+ * An encoded directory name as a line of the map says it: as it is where it
+ * holds no space and no quote, and quoted the way `quotePath` quotes where it
+ * does, since a name with a space can read as a sentence and a bare name with a
+ * quote as a quoted one. Every other printable character is one some ordinary
+ * path holds: `[slug]`, `(group)`, `@scope`, `+page`.
+ */
+export const nameText = (s) => (/[ "]/.test(s) ? quotePath(s) : s);
+
 /** Encode a repository-controlled scalar for rendering; `encodePath` for a path. */
 export function encode(value, { max = MAX } = {}) {
   return capGraphemes(neutralise(value), max);

@@ -54,6 +54,26 @@ test("a name spelled with a hyphen is a test name too", () => {
   assert.equal(isTestFile(file("src/latest-thing.ts", "js")), false);
 });
 
+test("a kind of test spelled before the extension names a test file, whatever the file exports", () => {
+  // vscode's suites call `suite` or `ssuite`, which no case list reads, and a
+  // few export a fixture class beside them; webpack's wrap `describeCases`.
+  const exported = { exports: ["TestDiskFileSystemProvider"], testCalls: false };
+  for (const rel of [
+    "src/vs/platform/files/test/node/diskFileService.integrationTest.ts",
+    "src/vs/workbench/contrib/themes/test/node/colorRegistry.releaseTest.ts",
+    "extensions/copilot/test/inline/slashDoc.py.stest.ts",
+    "test/ConfigTestCases.basictest.js",
+    "test/WatchTestCases.longtest.js",
+    "test/ArrayQueue.unittest.js",
+    "test/html5lib.spectest.js",
+  ]) {
+    assert.equal(isTestFile(file(rel, "js", exported)), true, rel);
+  }
+  for (const rel of ["eslint.config.vitest.js", "src/CHANGELOG.latest.js", "src/contest.ts", "src/a.smoketest-utils.ts"]) {
+    assert.equal(isTestFile(file(rel, "js", exported)), false, rel);
+  }
+});
+
 test("a file in a test tree that mirrors a source file is that file's test", () => {
   // eslint names `tests/lib/rules/no-var.js` after the `lib/rules/no-var.js`
   // it covers and drives RuleTester, so nothing in the file says what it is.
@@ -952,7 +972,7 @@ test("one root reads the three indexes the corpus was walked for, and rebuilds n
 });
 
 test("a Ruby file named for a test is one only where a test tree also says so", () => {
-  // The Ruby form is the one a non-test file wears in earnest. A RuboCop cop
+  // The Ruby form is the one a producer wears in earnest. A RuboCop cop
   // named for the `Rails.env.test?` guard it enforces printed a test group of
   // its own in the overview, and Homebrew's `software_spec.rb` is the
   // `SoftwareSpec` class, which has its own `software_spec_spec.rb` under
@@ -1106,6 +1126,43 @@ test("a component is never a test, wherever it sits, whatever it is named and wh
     }
   }
   assert.equal(isTestFile(file("src/__tests__/Foo.tsx", "jsx", {})), true, "a module there is one");
+});
+
+test("a module that publishes something is what a test imports, wherever it sits, unless its name says test", () => {
+  const exporting = { exports: ["default"] };
+  const corpus = [
+    ...["config", "theme/index", "home", "nav"].map((s) => file(`docs/.site/${s}.ts`, "js", exporting)),
+    file("__tests__/e2e/.site/config.ts", "js", exporting),
+    file("__tests__/e2e/.site/theme/index.ts", "js", exporting),
+    file("__tests__/e2e/home.test.ts", "js", { testRunner: "vitest", testCalls: true }),
+  ];
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  assert.deepEqual(facts.tests.map((t) => [t.runner, t.files]), [["vitest", 1]]);
+  assert.deepEqual(facts.roots.find((r) => r.dir === "docs/.site").companions, { with: 0, of: 4, root: null, ext: ".ts" });
+
+  // A mirror that publishes nothing is still a test: eslint drives RuleTester at the top of the file.
+  const eslint = [file("lib/rules/no-var.js", "js", exporting), file("tests/lib/rules/no-var.js", "js", { exports: [] })];
+  assert.equal(isTestFile(eslint[1], mirroredTests(eslint)), true);
+  assert.equal(isTestFile(file("src/__tests__/Foo.ts", "js", { exports: [] })), true);
+  // A test name still wins, export or not, and a file nobody parsed is read by its path as before.
+  assert.equal(isTestFile(file("src/__tests__/Foo.test.ts", "js", exporting)), true);
+  assert.equal(isTestFile(file("src/__tests__/Foo.ts", "js")), true);
+  // A Ruby file the parse read declares its runner's cases or none: a page object or factory mirroring the app is support.
+  const ruby = [file("app/models/topic.rb", "ruby", {}), file("spec/models/topic.rb", "ruby", { testRunner: null, testCalls: false })];
+  assert.equal(isTestFile(ruby[1], mirroredTests(ruby)), false);
+  assert.equal(isTestFile(file("spec/models/topic.rb", "ruby"), mirroredTests(ruby)), true);
+});
+
+test("a support file under a test tree is neither a test nor a sibling module", () => {
+  const corpus = [
+    ...files(3, (i) => file(`ui/feature/C${i}.tsx`, "jsx", { jsx: true, exports: ["default"] })),
+    file("ui/feature/types.ts", "js", { exports: ["T"] }),
+    file("ui/feature/__tests__/fixtures.ts", "js", { exports: ["data"] }),
+    file("ui/feature/__tests__/C0.test.tsx", "jsx", { testRunner: "jest", testCalls: true }),
+  ];
+  const [record] = layoutFacts(corpus, { minFiles: 3 }).roots;
+  assert.equal(record.helpers.siblingModules, 1);
+  assert.deepEqual(record.tests, [{ runner: "jest", files: 1, sub: "__tests__", under: 1 }]);
 });
 
 test("a component in a tests directory is in neither number of the namesake count, and owns no test", () => {

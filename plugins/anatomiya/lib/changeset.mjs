@@ -232,6 +232,9 @@ export async function pendingPaths(root, { timeout } = {}) {
     // What left HEAD, for the report, read the way the committed diff reads it:
     // any path, and a move is no deletion.
     removed: all.flatMap((row) => !gone(row) ? [] : [row.orig ?? row.path]),
+    // Every path the tree adds or edits, corpus or not: a co-change companion
+    // is as often a YAML or Markdown file as source.
+    touched: all.filter((row) => !gone(row)).map((row) => ({ path: row.path, status: isNew(row) ? "A" : "M" })),
   };
 }
 

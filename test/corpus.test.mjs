@@ -4,7 +4,9 @@ import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, 
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { Worker } from "node:worker_threads";
 
 import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
@@ -1089,6 +1091,118 @@ test("a host that grows by a fold waits its turn at its new size", () => {
 
   assert.deepEqual(areas.map((a) => [a.path, a.fileCount]), [["a", 7], ["d", 7], ["e", 50]]);
   assert.equal(areas.orphaned.length, 6);
+});
+
+const filesIn = (dir, n, lang = "js") => fakeFiles(Array.from({ length: n }, (_, i) => `${dir}/f${i}.${lang === "rust" ? "rs" : "ts"}`), lang);
+const rustOnly = (a) => a.langs.every((l) => l === "rust");
+const counted = (areas, countsNothing) => areas.filter((a) => !countsNothing(a)).length;
+
+test("an area that counts nothing gives its place under the ceiling back to a folded one", () => {
+  // Five three-file areas and a crate that states nothing, under a ceiling of five:
+  // the crate is the largest, so a three-file area folded away for a place the
+  // crate then left empty.
+  const files = [...["a", "b", "c", "d", "e"].flatMap((d) => filesIn(d, 3)), ...filesIn("crate", 20, "rust")];
+
+  const without = discover(files, { minFiles: 3, maxAreas: 5 });
+  assert.equal(counted(without, rustOnly), 4, "the fold alone leaves a place empty");
+
+  const areas = discover(files, { minFiles: 3, maxAreas: 5, countsNothing: rustOnly });
+  assert.deepEqual(areas.map((a) => a.path), ["a", "b", "c", "crate", "d", "e"]);
+  assert.deepEqual(areas.orphaned, [], "no area is folded for the crate");
+});
+
+test("places go back to the largest folded areas first, in the order the fold ranks them", () => {
+  const files = [
+    ...filesIn("a", 3), ...filesIn("b", 4), ...filesIn("c", 5), ...filesIn("d", 6), ...filesIn("e", 7),
+    ...filesIn("r", 20, "rust"),
+  ];
+  const areas = discover(files, { minFiles: 3, maxAreas: 3, countsNothing: rustOnly });
+
+  assert.deepEqual(areas.map((a) => a.path), ["c", "d", "e", "r"]);
+  assert.deepEqual(areas.orphaned.map((f) => f.rel).sort(), [...filesIn("a", 3), ...filesIn("b", 4)].map((f) => f.rel).sort());
+});
+
+test("an area given back that counts nothing gives its own place back too", () => {
+  const files = [...filesIn("a", 3), ...filesIn("b", 4, "rust"), ...filesIn("c", 5), ...filesIn("d", 6), ...filesIn("r", 20, "rust")];
+  const areas = discover(files, { minFiles: 3, maxAreas: 3, countsNothing: rustOnly });
+
+  assert.deepEqual(areas.map((a) => a.path), ["a", "b", "c", "d", "r"]);
+  assert.equal(counted(areas, rustOnly), 3);
+});
+
+/**
+ * discover run in a worker, so a give-back that never settles fails at the
+ * deadline: a test's own timeout cannot interrupt a synchronous loop.
+ * `countsNothing` crosses as its source, so it may name nothing outside itself.
+ */
+async function discoverWithin(files, { countsNothing, ...options }, ms = 10_000) {
+  const lib = new URL("../plugins/anatomiya/lib/areas.mjs", import.meta.url).href;
+  const worker = new Worker(
+    `const { parentPort, workerData: w } = require("node:worker_threads");
+    import(w.lib).then(({ discover }) => {
+      const areas = discover(w.files, { ...w.options, countsNothing: eval(w.countsNothing) });
+      parentPort.postMessage({ areas: [...areas], ceiling: areas.ceiling, orphaned: areas.orphaned });
+    });`,
+    { eval: true, workerData: { lib, files, options, countsNothing: String(countsNothing) } }
+  );
+  let timer;
+  try {
+    const out = await Promise.race([
+      new Promise((resolve, reject) => worker.once("message", resolve).once("error", reject)),
+      new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`the give-back did not settle in ${ms} ms`)), ms))),
+    ]);
+    return Object.assign(out.areas, { ceiling: out.ceiling, orphaned: out.orphaned });
+  } finally {
+    clearTimeout(timer);
+    await worker.terminate();
+  }
+}
+
+test("giving places back stops at twice the ceiling, the most a pin of the corpus may name", async () => {
+  const files = [...filesIn("a", 3), ...[10, 11, 12, 13, 14].flatMap((n, i) => filesIn(`r${i}`, n, "rust"))];
+  const areas = await discoverWithin(files, { minFiles: 3, maxAreas: 2, countsNothing: rustOnly });
+
+  assert.deepEqual(areas.map((a) => a.path), ["r1", "r2", "r3", "r4"]);
+  assert.equal(areas.ceiling, 4);
+  assert.deepEqual(areas.orphaned.map((f) => f.rel).sort(), [...filesIn("a", 3), ...filesIn("r0", 10, "rust")].map((f) => f.rel).sort());
+});
+
+test("every area comes back when those counting nothing leave room for all of them", async () => {
+  const files = [...filesIn("a", 3), ...filesIn("r", 10, "rust"), ...filesIn("s", 20, "rust")];
+  const areas = await discoverWithin(files, { minFiles: 3, maxAreas: 2, countsNothing: rustOnly });
+
+  assert.deepEqual(areas.map((a) => a.path), ["a", "r", "s"]);
+  assert.deepEqual(areas.orphaned, []);
+});
+
+test("giving places back never holds more counted areas than the ceiling, whatever order the files came in", () => {
+  // A predicate no real reduce would answer, where a smaller area can count what
+  // a larger one did not, so a give-back can overshoot and has to step down.
+  let seed = 7;
+  const rand = (n) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % n;
+  const odd = (a) => createHash("sha1").update(`${a.path}:${a.fileCount}`).digest()[0] % 3 === 0;
+  const shape = (areas) => JSON.stringify([areas.map((a) => [a.path, a.files.map((f) => f.rel).sort()]), areas.orphaned.map((f) => f.rel).sort()]);
+  // Two rounds where giving back overshoots and steps down: areas and counted areas it settles on.
+  const settled = { 12: [5, 4], 28: [8, 5] };
+  for (let round = 0; round < 40; round++) {
+    const files = [];
+    for (let d = 0; d < 30; d++) {
+      const dir = ["p", "q", `p/s${rand(4)}`, `q/t${rand(3)}/u`][rand(4)] + `/d${d}`;
+      files.push(...fakeFiles(Array.from({ length: 3 + rand(9) }, (_, i) => `${dir}/f${i}.ts`)));
+    }
+    const maxAreas = 4 + rand(10);
+    const areas = discover(files, { minFiles: 3, maxAreas, countsNothing: odd });
+
+    assert.ok(counted(areas, odd) <= maxAreas, `round ${round}: ${counted(areas, odd)} counted over ${maxAreas}`);
+    if (settled[round]) assert.deepEqual([areas.length, counted(areas, odd)], settled[round], `round ${round}`);
+    assert.equal(areas.reduce((n, a) => n + a.fileCount, 0) + areas.orphaned.length, files.length, `round ${round}`);
+    const shuffled = [...files];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = rand(i + 1);
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    assert.equal(shape(discover(shuffled, { minFiles: 3, maxAreas, countsNothing: odd })), shape(areas), `round ${round}`);
+  }
 });
 
 test("a file whose only home would be the repository root is uncovered, not bucketed", () => {

@@ -15,6 +15,7 @@ import { engineOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { readiness } from "../plugins/anatomiya/lib/readiness.mjs";
+import { isTestFile } from "../plugins/anatomiya/lib/layout.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -2161,7 +2162,7 @@ test("facets that throw on a tree fall back on their own, and cost no row its si
     READY,
     `printf '%s\\n' '${JSON.stringify({ rel: "a.rb", ok: true, errors: 0, length: 1, ast })}'`,
   ]);
-  const fallback = { testRunner: null, testCalls: false };
+  const fallback = { testRunner: null, testCalls: false, unread: true };
 
   const scan = (await parseRuby(one, { ruby, dimensions: RUBY_DIMENSIONS })).results[0];
   assert.equal(scan.ok, true);
@@ -2172,6 +2173,10 @@ test("facets that throw on a tree fall back on their own, and cost no row its si
   const check = (await parseRuby(one, { ruby })).results[0];
   assert.deepEqual(check.facets, fallback);
   assert.deepEqual(check.program, ast);
+
+  // Facets the walk could not finish decide nothing, so the file under a test tree keeps the path rule.
+  const rel = "spec/models/topic.rb";
+  assert.equal(isTestFile({ rel, lang: "ruby", facets: scan.facets }, new Set([rel])), true);
 });
 
 test("failure class, an unreadable file: the interpreter names the error class and the rest still count", needsRuby, async () => {

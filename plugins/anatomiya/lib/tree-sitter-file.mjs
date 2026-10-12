@@ -13,9 +13,9 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync } fr
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { dimensionsFor } from "./dimensions.mjs";
+import { TREE_DIMENSIONS } from "./dimensions-tree.mjs";
 import { encode } from "./encode.mjs";
-import { collectHits } from "./walk.mjs";
+import { collectHits, dimensionsFor } from "./walk.mjs";
 import { withOneBranch } from "./csharp-directives.mjs";
 import { ENGINES, declOf, grammarFor, hostedBy, mayHoldDirectives } from "./langs.mjs";
 import { treeFacets } from "./tree-facets.mjs";
@@ -155,8 +155,8 @@ function errorsIn(tree) {
  *
  * `placed` is the caller's word that the language's tool collects this file by
  * where it sits. `grammars`, `rows` and `now` are defined-only test overrides: a
- * directory to load grammar files from, the rows to ask in place of the
- * registry's, and the clock a retry is weighed on.
+ * directory to load grammar files from, the rows to ask in place of this
+ * engine's own, and the clock a retry is weighed on.
  */
 export async function parseTreeFile(source, rel, lang, { withProgram = false, placed = false, grammars = GRAMMARS, rows, now = () => performance.now() } = {}) {
   const parser = await parserFor(grammarFor(lang, rel), grammars, lang);
@@ -211,7 +211,7 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, pl
   const payload = {
     rel,
     ok: true,
-    hits: collectHits(program, dimensionsFor([lang], rows ? { rows } : {}), { comments: [], source: parsed, rel, facets }, { walker: walkTree }),
+    hits: collectHits(program, dimensionsFor([lang], { rows: rows ?? TREE_DIMENSIONS }), { comments: [], source: parsed, rel, facets }, { walker: walkTree }),
     facets,
     errors: 0,
     // The source's, never the root's span: a file that opens with blank lines has a root that starts past them.

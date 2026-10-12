@@ -1,4 +1,5 @@
-import { dimensionsFor } from "./dimensions.mjs";
+import { ALL_DIMENSIONS } from "./dimensions.mjs";
+import { dimensionsFor } from "./walk.mjs";
 import { pairingsFor } from "./pairing.mjs";
 import { claimFor } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
@@ -92,7 +93,7 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
   const dims = [
     // `rows` governs the tree pool alone; the two lists below are added for the
     // area's languages whatever it holds.
-    ...dimensionsFor([...spoken], { frameworks, tier, capabilities, rows }),
+    ...dimensionsFor([...spoken], { frameworks, tier, capabilities, rows: rows ?? ALL_DIMENSIONS }),
     ...pairingsFor(area.langs),
     // Corpus rows ask about filenames, so they have no program to run against
     // and no worker hit to read; the fold builds their sites itself below.
@@ -294,7 +295,7 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // renderer prints this one only where there is something to disclose.
       ...(declined.size ? { declined: declined.size } : {}),
       files: [...perFile.keys()],
-      // For the renderer's scope clause, and left out of the record.
+      // For the renderer's scope clause; the record keeps only the answer, as `scope`.
       askedExts: [...new Set(examined.filter(eligible).map((e) => extOrName(e.rel)))].sort(),
       claimFiles,
       counterFiles,

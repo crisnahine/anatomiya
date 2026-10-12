@@ -1258,3 +1258,58 @@ test("a pinned corpus size that is not a count of files is not a pin", async (t)
   assert.equal(state.partitionSize, null);
   assert.deepEqual(buildPin([], { sha, corpus: -5 }).corpus, undefined);
 });
+
+test("a pinned area ceiling no give-back could have settled on is not a pin", async (t) => {
+  // A give-back returns as many areas as its ceiling and rises only past the
+  // plain one, which is 120 for a corpus this size.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const areas = Array.from({ length: 122 }, (_, i) => area(`m${i}`, [`m${i}/x.ts`]));
+  const good = buildPin(areas, { sha, corpus: 122, ceiling: 122 });
+  assert.equal(good.ceiling, 122);
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  const notACount = "the area ceiling it names is not a count of its areas";
+  const outside = "the area ceiling it names is outside what a pin of its corpus can settle on";
+  for (const [ceiling, why] of [[-1, notACount], [121.5, notACount], ["122", notACount], [null, notACount], [123, notACount], [120, outside]]) {
+    writeFileSync(join(dir, PIN_PATH), JSON.stringify({ ...good, ceiling }));
+    const read = readPin(dir);
+    assert.equal(read.pin, null, JSON.stringify(ceiling));
+    assert.equal(read.unreadable, why, JSON.stringify(ceiling));
+  }
+  // No pin this build writes names a ceiling without the corpus it was measured against.
+  const { corpus, ...uncounted } = good;
+  writeFileSync(join(dir, PIN_PATH), JSON.stringify({ ...uncounted, ceiling: 121 }));
+  assert.deepEqual(readPin(dir), { pin: null, unreadable: "the area ceiling it names comes with no corpus size" });
+  writeFileSync(join(dir, PIN_PATH), JSON.stringify(good));
+  assert.equal(loadPin(dir).ceiling, 122, "a give-back's own pin names its whole count");
+  writeFileSync(join(dir, PIN_PATH), JSON.stringify({ ...good, ceiling: 121 }));
+  assert.equal(loadPin(dir).ceiling, 121);
+  assert.equal((await resolve(dir, { baseRef: "main" })).ceiling, 121);
+  const gone = await resolve(dir, { pin: { ...good, ceiling: 121, sha: "0".repeat(40) }, baseRef: "main" });
+  assert.deepEqual([gone.status, gone.ceiling], ["unreachable", 121], "a pin past reach still names the partition");
+
+  assert.equal((await resolve(dir, { pin: { ...good, ceiling: -1 }, baseRef: "main" })).ceiling, null);
+  assert.equal(buildPin(areas, { sha, corpus: 122 }).ceiling, undefined, "no give-back names no ceiling");
+});
+
+test("a pinned area ceiling is bounded by twice the plain one, whatever the pin lists", async (t) => {
+  // The pin lists its own areas and sizes its own corpus, so only the plain
+  // ceiling of that corpus, itself clamped, may bound what a pin can lift.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  const pinOf = (n, corpus) => buildPin(Array.from({ length: n }, (_, i) => area(`zz${i}`, [`zz${i}/a.ts`])), { sha, corpus, ceiling: n });
+  // 1080 files: a plain ceiling of 120, and 80 forged areas on 120 real ones.
+  for (const [n, corpus, ok] of [[200, 1080, true], [240, 1080, true], [241, 1080, false], [1000, 1e9, true], [1001, 1e9, false]]) {
+    writeFileSync(join(dir, PIN_PATH), JSON.stringify(pinOf(n, corpus)));
+    const read = readPin(dir);
+    assert.equal(read.pin?.ceiling ?? null, ok ? n : null, `${n} areas on ${corpus} files`);
+    if (!ok) assert.equal(read.unreadable, "the area ceiling it names is outside what a pin of its corpus can settle on");
+  }
+});
