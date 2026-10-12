@@ -138,7 +138,7 @@ const JVM_NAMES = { camel: ["Tests", "Test", "IT"] };
  * `_test.py` is the other half of pytest's default and no measured repository
  * writes one, so it is here on pytest's word.
  *
- * A CamelCase suffix is a word a source file wears in earnest, junit's own
+ * A CamelCase suffix is a word a producer wears in earnest, junit's own
  * `RepeatedTest.java` and Laravel's `UnitTest.php` among them, so it names a
  * test only under a test tree, the way `_spec.rb` does: of 3,691 files so
  * named, 17 sit outside every test tree and 9 of those are no test. `Spec` is
@@ -245,7 +245,7 @@ export const isTestTree = (segment, family = null) =>
 /**
  * Whether a path's own name says its family's tool collects it: the name
  * alone where the tool reads nothing else, and under a test tree where the
- * name is a word a source file wears in earnest. False for a family with no
+ * name is a word a producer wears in earnest. False for a family with no
  * name, and for a language read by the JavaScript rule.
  *
  * Asked by the layout of a file it holds and by the placement finding of a

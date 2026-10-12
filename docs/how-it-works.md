@@ -1936,13 +1936,13 @@ counts when it carries `.test.`, `.spec.`, `.cy.`, `-test.` or `-spec.`, or one 
 test spelled as a dotted segment of their own (`.unittest.`, `.basictest.`, `.longtest.`,
 `.spectest.`, `.stest.`, `.integrationTest.`, `.releaseTest.`), on the name alone, and when it
 carries `_spec.rb` or `_test.rb` and a test tree above it agrees. The Ruby form is the one a
-source file wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
+producer wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
 own `software_spec_spec.rb` under `test/`. The seven languages above each have a name of their own
 and answer by it alone, never by the forms here or the two rules below: a Go `_test.go` and a Python
 `test_*.py` or `*_test.py` on the name, because the compiler and pytest collect by it (578 Go files,
 567 holding a case; 1,180 Python files, 1,168 holding one); a PHP `*Test.php`, a Java or Kotlin
 `*Test`, `*Tests` or `*IT`, and a C# `*Tests` or `*Test` where a test tree above it agrees, because
-a source file wears those words too (junit's own `RepeatedTest.java`, Laravel's `UnitTest.php`). Of
+a producer wears those words too (junit's own `RepeatedTest.java`, Laravel's `UnitTest.php`). Of
 3,691 files so named in twelve repositories, 17 sit outside every test tree and 9 of those are not
 tests; 141 sit inside one with no case of their own, most of them a subclass that inherits its
 cases. `IT` needs a lower-case letter or a digit before it, so `EXIT` is not one, and `Spec` is not

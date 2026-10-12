@@ -523,7 +523,7 @@ test("each of the seven languages' test names is one, read by the rule the layou
   }
   // The notice before a write is the same finding, said earlier.
   assert.match(noticeFor("bare/test_m9.py", { roots: [tested(".py", "tested"), bare(".py", "bare")] }), /^anatomiya: bare\/test_m9\.py\n  bare holds no other test; bare: 0 of 5 \.py files have a namesake test\.\n/);
-  // A word a source file wears in earnest names a test only under a test tree, and Rust names none.
+  // A word a producer wears in earnest names a test only under a test tree, and Rust names none.
   const roots = [tested(".java", "src/Tested"), bare(".java", "src/Bare")];
   for (const path of ["src/Bare/M9Test.java", "src/Bare/M9Test.php", "src/Bare/M9Tests.cs", "src/Bare/test_m9.go", "src/Bare/m9.test.py", "src/Bare/tests/m9.rs"]) {
     assert.deepEqual(precedentFindings([path], roots), [], path);
