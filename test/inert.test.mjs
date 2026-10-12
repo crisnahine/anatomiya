@@ -160,9 +160,9 @@ for (const [lang, { quiet, asked }] of Object.entries(CASES)) {
   });
 }
 
-test("a name or an attribute chain bound to a literal asks nothing, in Python and PHP", async () => {
-  assert.deepEqual(await asking("python", "a.b.c = 1\n"), []);
-  assert.deepEqual(await asking("php", "<?php\n$b->c = 1;\n"), []);
+test("a name bound to a literal asks nothing and a write through an attribute chain asks, in Python and PHP", async () => {
+  assert.deepEqual(await asking("python", "a = 1\na.b.c = 1\n"), [2]);
+  assert.deepEqual(await asking("php", "<?php\n$b = 1;\n$b->c = 1;\n"), [3]);
 });
 
 test("a declaration with modifiers and a type around a literal binding asks nothing", async () => {

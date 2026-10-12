@@ -84,6 +84,12 @@ test("every language names what the reuse check's line rule reads", () => {
     IDS.map((id) => [id, SHAPES[id].value ?? null]),
     [["python", "right"], ["php", "default_value"], ["go", "value"], ["java", "value"], ["csharp", null], ["rust", "value"], ["kotlin", null]],
   );
+  // The other five bind by declaration alone, so a write through a member is no binding of theirs to rule out.
+  assert.deepEqual(
+    IDS.filter((id) => SHAPES[id].target),
+    ["python", "php"],
+    "the languages where an assignment binds a name or writes through a member",
+  );
   assert.deepEqual(
     IDS.filter((id) => SHAPES[id].interpolation),
     ["python", "php", "java", "kotlin"],

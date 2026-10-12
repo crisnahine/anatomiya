@@ -127,11 +127,39 @@ async function asking(lang, source, unproven = []) {
   return inert.flatMap((quiet, i) => (quiet ? [] : [i + 1]));
 }
 
-test("a subscript or a static property bound to a literal asks nothing, and a target holding a call asks", async () => {
-  const python = 'CONFIG["k"] = 1\na[0] = 1\na[-1] = 1\nb.c[i] = 1\ncache[compute()] = 1\nf().attr = 1\na[f"{g()}"] = 1\n';
-  assert.deepEqual(await asking("python", python), [5, 6, 7]);
-  const php = "<?php\n$a['k'] = 1;\nself::$x = 1;\nA::$z = 3;\n$a[$i] = 1;\n$a[foo()] = 1;\nfoo()::$x = 1;\n";
-  assert.deepEqual(await asking("php", php), [6, 7]);
+test("a Python or PHP assignment binds where every target is a plain name, and a write through an attribute, a subscript or a property asks", async () => {
+  // A setter, __setattr__, __setitem__, __set or offsetSet may stand behind the write.
+  const python = ["x = 1", "x: int = 1", "a, b = 1, 2", "[a, b] = 1, 2", "(a, b) = (1, 2)", "*c, d = 1, 2", "a, (b, c) = 1, (2, 3)", "a.b = 1", "self.x = 0", 'CONFIG["k"] = 1', "a[0] = 1", "a[i] = 1", "a[-1] = 1", "b.c[i] = 1", "a.b: int = 1", "a.b, c = 1, 2", "[a[0], b] = 1, 2", "*a.b, c = 1, 2", "cache[compute()] = 1", "f().attr = 1", 'a[f"{g()}"] = 1', ""];
+  assert.deepEqual(await asking("python", python.join("\n")), [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+  const php = [
+    "<?php",
+    "$x = 1;",
+    "[$a, $b] = [1, 2];",
+    "list($a, $b) = [1, 2];",
+    "[, [$a, $b]] = [1, [2, 3]];",
+    "const A = 1;",
+    "class C {",
+    "    public $x = 1;",
+    "    public int $y = 1;",
+    "}",
+    "$a->b = 1;",
+    "$this->x = 1;",
+    "$a['k'] = 1;",
+    "$a[] = 1;",
+    "self::$x = 1;",
+    "Foo::$x = 1;",
+    "$a[$i] = 1;",
+    "$$x = 1;",
+    "${'a'} = 1;",
+    "[$a->b, $c] = [1, 2];",
+    "[$a[0], $c] = [1, 2];",
+    // A keyed pattern binds names too: a false ask, since the key is no name.
+    "['k' => $a] = [1];",
+    "$a[foo()] = 1;",
+    "foo()::$x = 1;",
+    "",
+  ];
+  assert.deepEqual(await asking("php", php.join("\n")), [7, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]);
 });
 
 test("a Python annotation that is a plain type expression asks nothing, and one holding a call or a lambda asks", async () => {
@@ -148,7 +176,7 @@ test("a Go constant with no value or counted off iota asks nothing, and one hold
 
 test("a PHP string that interpolates through ${...} is no literal, in a target or in a value", async () => {
   const source = ['<?php', '$a["${foo()}"] = 1;', 'self::$x["${foo()}"] = 1;', '$a->{"${foo()}"} = 1;', '$a["{${foo()}}"] = 1;', '$x = "${foo()}";', '$x = "{${foo()}}";', '$x = "plain\\n";', '$a["k"] = 1;', ""].join("\n");
-  assert.deepEqual(await asking("php", source), [2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(await asking("php", source), [2, 3, 4, 5, 6, 7, 9]);
 });
 
 test("a Rust binding whose type or pattern holds a call, a macro or a block asks, and one made of names and literals asks nothing", async () => {
@@ -223,7 +251,7 @@ test("a line that holds a keyword or an opening bracket and no name asks, since 
 });
 
 test("a PHP assignment that is an argument asks, where one that is a statement of its own asks nothing", async () => {
-  const source = ["<?php", "foo(", "    $a['k'] = 1", ");", "$o->run(", "    self::$x = 1,", ");", "$a['k'] = 1;", "self::$x = 1;", "if ($b = 1) {", "}", ""].join("\n");
+  const source = ["<?php", "foo(", "    $a = 1", ");", "$o->run(", "    [$b, $c] = [1, 2],", ");", "$a = 1;", "[$b, $c] = [1, 2];", "if ($b = 1) {", "}", ""].join("\n");
   assert.deepEqual(await asking("php", source, [10, 11]), [2, 3, 5, 6, 10, 11]);
 });
 
@@ -262,9 +290,9 @@ test("a Kotlin number with a fraction or an exponent is a literal", async () => 
   assert.deepEqual(await asking("kotlin", "val r = 2.5\nval s = 1e3\nval t = 1.5f\nval u = -1.0\nval v = f(2.5)\n"), [5]);
 });
 
-test("a | joins types in a Python annotation and computes in a target", async () => {
-  const source = "a[b | c] = 1\nx[b | c]: int = 1\na[[b | c]] = 1\na.b[c | d].e = 1\na[[b, c]] = 1\nx: a | b = 1\nx: list[a | b] = []\n";
-  assert.deepEqual(await asking("python", source), [1, 2, 3, 4]);
+test("a | joins types in a Python annotation, and a subscript target asks whatever it holds", async () => {
+  const source = "a[b | c] = 1\nx[b | c]: int = 1\na[[b | c]] = 1\na.b[c | d].e = 1\na[[b, c]] = 1\nx: a | b = 1\nx: list[a | b] = []\nx: t.Optional[a | b] = None\n";
+  assert.deepEqual(await asking("python", source), [1, 2, 3, 4, 5]);
 });
 
 test("a C# directive that closes a conditional or a region asks nothing, and one that opens or sets something asks", async () => {
@@ -320,8 +348,8 @@ test("a C# const of a named type reads as inert: no user conversion is a constan
 });
 
 test("a sign outside a value asks where it stands before a name, which may define the operator, and asks nothing before a literal", async () => {
-  assert.deepEqual(await asking("python", 'a[-b] = 1\na[~b] = 1\nx: -b = 1\na[-1] = 1\na[-"k"] = 1\na[-b.c] = 1\n'), [1, 2, 3, 6]);
-  assert.deepEqual(await asking("php", "<?php\n$a[-$b] = 1;\n$a[-1] = 1;\n"), [2]);
+  assert.deepEqual(await asking("python", 'x: -b = 1\nx: ~b = 1\nx: t[-b.c] = 1\nx: -1 = 1\nx: t[-"k"] = 1\na[-1] = 1\n'), [1, 2, 3, 6]);
+  assert.deepEqual(await asking("php", "<?php\n$a[-$b] = 1;\n$a[-1] = 1;\n"), [2, 3]);
   assert.deepEqual(await asking("go", "package m\n\nvar x [-n]int = [1]int{0}\nvar y [+3]int = [3]int{0}\n"), [3]);
 });
 

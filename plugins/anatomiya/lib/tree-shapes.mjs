@@ -30,19 +30,22 @@ export const SHAPES = {
     // What the reuse check reads as a name bound to a literal, which asks nothing.
     binding: ["assignment"],
     value: "right",
-    // What a binding may hold outside its value: a target or an annotation made of names. Each is read by
-    // its children, and a node of any other kind inside one asks.
+    // An assignment binds only where its target is made of these: a name, or a pattern of names. A
+    // write through an attribute or a subscript may run a setter, `__setattr__` or `__setitem__`.
+    target: "left",
+    bound: ["identifier", "pattern_list", "tuple_pattern", "list_pattern", "list_splat_pattern"],
+    // What a binding may hold outside its target and its value: an annotation made of names. Each is read
+    // by its children, and a node of any other kind inside one asks.
     part: ["identifier", "attribute", "subscript", "type", "generic_type", "type_parameter", "union_type", "binary_operator", "list", "ellipsis"],
     // An annotation joins types with `|`, and any other operator computes.
     union: ["binary_operator"],
-    // Where `|` joins: in a target it is an operator on values.
-    unionIn: ["type"],
     literal: ["integer", "float", "true", "false", "none", "string", "concatenated_string"],
     // What a string's own text is made of: anything else inside one is an interpolation.
     literalPart: ["string_start", "string_content", "string_end", "escape_sequence", "escape_interpolation"],
     interpolation: ["interpolation"],
     unary: ["unary_operator"],
-    collection: ["list", "tuple", "dictionary", "pair", "set"],
+    // `1, 2` with no brackets is a tuple all the same.
+    collection: ["list", "tuple", "expression_list", "dictionary", "pair", "set"],
   },
   php: {
     fn: ["function_definition", "method_declaration"],
@@ -75,13 +78,13 @@ export const SHAPES = {
     value: "default_value",
     // An assignment is an expression: it binds only where it is the whole of one of these.
     statement: ["expression_statement"],
+    // It binds only where its target is a variable or a pattern of them: a write through a property or
+    // a subscript may run `__set` or `offsetSet`, and `$$x` names nothing by itself.
+    target: "left",
+    bound: ["variable_name", "name", "list_literal"],
     part: [
       "variable_name",
       "name",
-      "member_access_expression",
-      "subscript_expression",
-      "scoped_property_access_expression",
-      "relative_scope",
       "visibility_modifier",
       "static_modifier",
       "final_modifier",

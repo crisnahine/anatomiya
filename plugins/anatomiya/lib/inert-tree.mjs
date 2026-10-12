@@ -58,7 +58,7 @@ function rulesOf(lang) {
     comment: new Set(s.comment),
     part: new Set(s.part),
     union: new Set(s.union ?? []),
-    unionIn: new Set(s.unionIn ?? []),
+    bound: new Set(s.bound ?? []),
     statement: new Set(s.statement ?? []),
     counted: new Set(s.counted ?? []),
     countedPart: new Set(s.countedPart ?? []),
@@ -106,15 +106,17 @@ const annotated = (node, r) => r.annotation.length > 0 && node.descendantsOfType
 
 /**
  * Whether every named node of a subtree is a literal or one of `types`, a kind
- * listed as computing nothing. `typed` says the subtree is inside a type, the
- * one place `|` joins and does not compute.
+ * listed as computing nothing. An operator is listed for the one that joins
+ * types, and any other computes.
  */
-function plain(node, types, r, typed = false) {
+function plain(node, types, r) {
   if (!types.has(node.type)) return isLiteral(node, r);
-  if (r.union.has(node.type) && (!typed || node.children.some((n) => n && !n.isNamed && n.type !== UNION))) return false;
-  const inside = typed || r.unionIn.has(node.type);
-  return named(node).every((n) => r.comment.has(n.type) || plain(n, types, r, inside));
+  if (r.union.has(node.type) && node.children.some((n) => n && !n.isNamed && n.type !== UNION)) return false;
+  return named(node).every((n) => r.comment.has(n.type) || plain(n, types, r));
 }
+
+/** Whether a target introduces names and nothing else: a name, or a pattern holding only names. */
+const binds = (node, r) => r.bound.has(node.type) && named(node).every((n) => binds(n, r));
 
 /**
  * Whether the type a literal is declared as may convert it with a function
@@ -134,8 +136,9 @@ function converts(node, value, r) {
  * the target, the pattern, the type and the modifiers, is a literal or a kind
  * listed as computing nothing, so a call in an array's length asks. So does a
  * literal its declared type may convert, a binding with no value, one with an
- * annotation, one that carries a block to run when it does not match, and an
- * assignment that is part of a larger expression.
+ * annotation, one that carries a block to run when it does not match, an
+ * assignment that is part of a larger expression, and one whose target is
+ * anything but names: a write through a member or a subscript may run a setter.
  */
 function inertBinding(node, r) {
   if (annotated(node, r)) return false;
@@ -147,7 +150,9 @@ function inertBinding(node, r) {
   const value = own ?? (counted ? null : node.lastNamedChild);
   if (value === null ? !counted : !(counted ? plain(value, r.countedPart, r) : isLiteral(value, r))) return false;
   if (converts(node, value, r)) return false;
-  return named(node).every((n) => n.id === value?.id || r.comment.has(n.type) || plain(n, r.part, r));
+  const target = r.s.target ? node.childForFieldName(r.s.target) : null;
+  if (target !== null && !binds(target, r)) return false;
+  return named(node).every((n) => n.id === value?.id || n.id === target?.id || r.comment.has(n.type) || plain(n, r.part, r));
 }
 
 /** Bindings, every one of them inert, beside modifiers and a type that compute nothing, and no other node. */
