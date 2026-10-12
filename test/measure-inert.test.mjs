@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Language } from "web-tree-sitter";
 
-import { CONTAINERS, COUNTED, measure, ORACLE, oracleHits, tally } from "../scripts/measure-inert.mjs";
+import { ACCESS, CONTAINERS, COUNTED, measure, ORACLE, oracleHits, tally, UNION } from "../scripts/measure-inert.mjs";
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 
@@ -46,9 +46,31 @@ test("each tree-sitter file a commit changed is asked or left out by the rule, a
   assert.deepEqual(result.langs.python.hits, []);
   assert.deepEqual(result.langs.python.skippedFiles.map((f) => [f.path, f.added]), [["svc/total.py", ["# Totals."]]]);
 
+  // The comment's hunk is left out and the function's is asked, in one file each: both counts are of hunks.
+  assert.deepEqual([result.langs.python.askedHunks, result.langs.python.skippedHunks], [1, 1]);
+
   const all = tally([result, result]);
   assert.equal(all.python.skipped, 2);
+  assert.deepEqual([all.python.askedHunks, all.python.skippedHunks], [2, 2]);
   assert.equal(typeof all.python.ms.p50, "number");
+});
+
+test("a hunk left out of a file that is asked about is read by the oracle too", async (t) => {
+  const { dir, commit } = repo(t);
+  commit({ "svc/total.py": "LIMIT = 3\n\n\ndef total(xs):\n    return sum(xs)\n" }, "init");
+  commit({ "svc/total.py": "# Totals.\nLIMIT = 3\n\n\ndef total(xs):\n    return sum(xs)\n\n\ndef mean(xs):\n    return total(xs) / len(xs)\n" }, "a comment and a function");
+
+  const handed = [];
+  const oracle = (tree, lang, added) => {
+    handed.push([lang, added]);
+    return [{ line: added[0][0], type: "probe", text: "" }];
+  };
+
+  const { python } = (await measure(dir, { commits: 200, samples: 5, oracle })).langs;
+
+  assert.deepEqual([python.asked, python.skipped, python.askedHunks, python.skippedHunks], [1, 0, 1, 1]);
+  assert.deepEqual(handed, [["python", [[1, 1]]]], "the comment's hunk and not the function's");
+  assert.deepEqual(python.hits.map((h) => [h.path, h.line, h.type]), [["svc/total.py", 1, "probe"]]);
 });
 
 test("the oracle names a function, a lambda, a call and a binding to a name that start on an added line", async () => {
@@ -122,6 +144,53 @@ test("the oracle passes a Go constant with no value or counted off iota, and nam
   }
 });
 
+/** What the oracle names on the added lines of a file, as `[line, type]` in order. */
+async function named(lang, source, added) {
+  const parsed = await parseForLines(source, lang, { cancel: () => false });
+  try {
+    return oracleHits(parsed.tree, lang, added).map((h) => [h.line, h.type]).sort((a, b) => a[0] - b[0] || a[1].localeCompare(b[1]));
+  } finally {
+    parsed.tree.delete();
+  }
+}
+
+test("the oracle names a Go constant converted from iota, and passes a bare one under a call", async () => {
+  const source = "package m\n\nconst (\n\tA = T(iota)\n\tB\n)\n\nconst (\n\tC = f()\n\tD\n)\n";
+  assert.deepEqual(await named("go", source, [[4, 4]]), [[4, "binding to identifier"], [4, "call_expression"]]);
+  assert.deepEqual(await named("go", source, [[5, 5], [10, 10]]), []);
+});
+
+test("the oracle names whatever a string holds past its own text, wherever the string stands", async () => {
+  const php = ['<?php', '$a["${foo()}"] = 1;', '$a->{"${foo()}"} = 1;', '$x = "{${foo()}}";', 'echo "a ${foo()}";', '$a["k\\n"] = "plain";', ""].join("\n");
+  assert.deepEqual((await named("php", php, [[2, 5]])).filter(([, type]) => type.startsWith("string")), [2, 3, 4, 5].map((line) => [line, "string holding dynamic_variable_name"]));
+  assert.deepEqual(await named("php", php, [[6, 6]]), []);
+});
+
+test("the oracle names a node in a binding's type, pattern or modifiers that is no name, type or literal", async () => {
+  for (const [lang, source, line, type] of [
+    ["rust", "const E: [u8; { N }] = [0];\nconst F: [u8; 3] = [0];\n", 1, "binding holding block"],
+    ["rust", "fn h() {\n    let const { N } = 1;\n    let (a, b) = (1, 2);\n}\n", 2, "binding holding const_block"],
+    ["go", "package m\n\nvar x = [size()]int{0}\nvar y = [3]int{0}\n", 3, "binding to call_expression"],
+    ["go", "package m\n\nconst N [f()]int = 1\nconst K Kind = 1\n", 3, "binding holding call_expression"],
+    ["csharp", "class A {\n    int[F()] e = null;\n    int[3] r = null;\n}\n", 2, "declaration holding invocation_expression"],
+    ["python", "x: a + b = 1\nx: a | b = 1\n", 1, "binding holding binary_operator"],
+  ]) {
+    assert.ok((await named(lang, source, [[line, line]])).some((h) => h[1] === type), `${lang}: ${type}`);
+    assert.deepEqual(await named(lang, source, [[line + 1, line + 1]]), [], `${lang}: the plain neighbour`);
+  }
+});
+
+test("the oracle names an accessor opened on an added line, and an assignment that is an argument by its call", async () => {
+  const kotlin = "class A {\n    val d: Int = 1\n        get() {\n            return h()\n        }\n    val e: Int = 1\n}\n";
+  assert.deepEqual(await named("kotlin", kotlin, [[3, 3]]), [[3, "getter"]]);
+  assert.deepEqual(await named("kotlin", kotlin, [[6, 6]]), []);
+  const csharp = "class A {\n    int X {\n        get {\n            return 1;\n        }\n    }\n}\n";
+  assert.deepEqual(await named("csharp", csharp, [[3, 3]]), [[3, "accessor_declaration"]]);
+  const php = "<?php\nfoo(\n    $a['k'] = 1\n);\n$a['k'] = 1;\n";
+  assert.deepEqual(await named("php", php, [[3, 3]]), [[2, "function_call_expression"]]);
+  assert.deepEqual(await named("php", php, [[5, 5]]), []);
+});
+
 test("a bracket line that also ends a string spread over lines is charged to the call around it", async () => {
   for (const [lang, source, line, type] of [
     ["rust", 'fn f() {\n    let x = run(r#"\na\nz"#);\n}\n', 4, "call_expression"],
@@ -137,10 +206,12 @@ test("a bracket line that also ends a string spread over lines is charged to the
   }
 });
 
-test("a constant added to a class body or a lambda is not taken for the class or the call", async () => {
+test("a constant added to a class body or a lambda, or an import added inside a conditional, is not taken for what holds it", async () => {
   const cases = [
     ["python", "class A:\n    X = 1\n    Y = 2\n", [[3, 3]]],
     ["kotlin", "fun f() {\n    run {\n        val x = 1\n    }\n}\n", [[3, 3]]],
+    // A conditional around a whole file holds its lines as a body does.
+    ["csharp", "#if HAVE_ASYNC\nusing System;\nusing System.Linq;\n#endif\n", [[3, 3]]],
   ];
   for (const [lang, source, added] of cases) {
     const parsed = await parseForLines(source, lang, { cancel: () => false });
@@ -164,7 +235,7 @@ test("a comment or a docstring added inside a definition is not taken for the de
 
 test("every node type the oracle names is one its grammar knows", async () => {
   const counted = (lang) => Object.entries(COUNTED[lang] ?? {}).flat();
-  for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l)]])) {
+  for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l), ...(ACCESS[l] ?? []), ...(UNION[l] ? [UNION[l]] : [])]])) {
     const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
     assert.deepEqual(types.filter((type) => language.idForNodeType(type, true) === null), [], lang);
   }

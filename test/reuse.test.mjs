@@ -161,20 +161,30 @@ test("a tree-sitter file reached after the stop's parse budget is asked about wh
 });
 
 test("a tree-sitter file whose grammar will not load asks nothing", async (t) => {
-  // Nothing read it, so nothing says it holds a function. The failed load is kept for the process, and no other test here reads Kotlin.
+  // Nothing read it, so nothing says it holds a function. Run as a process of its own, because a failed load is kept for the life of one.
   const { dir, write } = repo(t);
   write("app/Total.kt", "fun total(xs: List<Int>): Int {\n    return xs.sum()\n}\n");
+  const module = new URL("../plugins/anatomiya/lib/reuse.mjs", import.meta.url).href;
+  const script = `
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const real = fs.openSync;
+    let refused = 0;
+    fs.openSync = (path, ...rest) => {
+      if (!String(path).endsWith("kotlin.wasm")) return real(path, ...rest);
+      refused++;
+      throw Object.assign(new Error("ENOENT: no such file or directory, open"), { code: "ENOENT" });
+    };
+    syncBuiltinESMExports();
+    const { pendingChange } = await import(${JSON.stringify(module)});
+    process.stdout.write(JSON.stringify({ change: await pendingChange(${JSON.stringify(dir)}), refused: refused > 0 }));
+  `;
 
-  const change = await stubbedAsync(
-    "openSync",
-    (real, path, ...rest) => {
-      if (String(path).endsWith("kotlin.wasm")) throw Object.assign(new Error("ENOENT: no such file or directory, open"), { code: "ENOENT" });
-      return real(path, ...rest);
-    },
-    () => pendingChange(dir)
-  );
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60_000 });
 
-  assert.equal(change, null);
+  assert.equal(run.stderr, "");
+  assert.deepEqual(JSON.parse(run.stdout), { change: null, refused: true });
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/Total.kt", [{ from: 1, to: 3, created: true }]]], "with the grammar there, the file asks");
 });
 
 test("the parse budget starts at the first tree-sitter file and is shared by every checkout of the stop", async (t) => {

@@ -316,10 +316,10 @@ export function scanLines(s) {
     );
   }
   for (const [n, dir] of [[s.stagedRemoved, RULES_DIR], [s.storeStagedRemoved, STORE_DIR]]) {
-    if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} ${s.dryRun ? "would be removed" : n === 1 ? "was removed" : "were removed"}`);
+    if (n) lines.push(`${plural(n, "temporary file")} an earlier run left in ${dir} ${s.dryRun ? "would be removed" : n === 1 ? "was removed" : "were removed"}`);
   }
   for (const [n, dir] of [[s.stagedLeft, RULES_DIR], [s.storeStagedLeft, STORE_DIR]]) {
-    if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
+    if (n) lines.push(`${plural(n, "temporary file")} an earlier run left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
   }
   for (const record of s.oversized ?? []) lines.push(oversizedSentence(record, s.dryRun));
   // Nothing was written, and the reason is not "this repository has nothing in

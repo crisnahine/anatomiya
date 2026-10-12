@@ -2,11 +2,11 @@
  * The reuse check's line rule for the tree-sitter languages, read off the
  * file's tree rather than its text (A91).
  *
- * A line asks nothing where it is blank, holds only anonymous tokens (a
- * closing bracket, `else:`), or every named leaf on it sits under a node that
- * defines nothing callable: a comment, an import, a package line, a docstring,
- * or a name bound to a literal. Every other line asks. Like the line rules it
- * names what defines nothing, so a shape nobody listed asks.
+ * A line asks nothing where it is blank, or everything on it is a closing
+ * bracket, a separator, or part of a node that defines nothing callable: a
+ * comment, an import, a package line, a docstring, or a name bound to a
+ * literal. Every other line asks. Like the line rules it names what defines
+ * nothing, so a shape nobody listed asks.
  *
  * The tree is walked with a cursor and deleted before this returns: a wasm tree
  * is never collected, and a copy of a large one costs more than its parse.
@@ -20,6 +20,13 @@ const LINE_READ = 400;
 // The words this grammar spells as identifiers where others have literal nodes.
 const WORDS = new Set(["true", "false", "null"]);
 
+// The only tokens that open nothing: a closing bracket and a separator. Any other may open a callable
+// with no name on its line, as `get`, `func` and a lambda's `{` do.
+const CLOSER = /^[)\]};,]$/;
+
+// The one operator that joins types and computes nothing.
+const UNION = "|";
+
 /** The nodes that hold no callable, by kind, read once per language. */
 function rulesOf(lang) {
   const s = SHAPES[lang];
@@ -32,13 +39,14 @@ function rulesOf(lang) {
     declaration: new Set(s.declaration ?? []),
     docstring: docstring.length > 0 ? { statement: docstring[0], strings: new Set(docstring.slice(1)) } : null,
     literal: new Set(s.literal),
+    literalPart: new Set(s.literalPart),
     word: new Set(s.word ?? []),
     unary: new Set(s.unary),
     collection: new Set(s.collection),
     comment: new Set(s.comment),
-    modifier: new Set(s.modifier ?? []),
-    targetChain: new Set(s.targetChain ?? []),
-    typeExpr: new Set(s.typeExpr ?? []),
+    part: new Set(s.part),
+    union: new Set(s.union ?? []),
+    statement: new Set(s.statement ?? []),
     counted: new Set(s.counted ?? []),
     countedPart: new Set(s.countedPart ?? []),
     annotation: s.annotation,
@@ -57,56 +65,59 @@ function interpolates(node, r) {
   return r.bare.length > 0 && node.descendantsOfType(r.bare).some((n) => n.text === "$");
 }
 
+/** Whether a literal holds its own text and nothing else: an interpolation, however it is spelt, is no part of one. */
+const textOnly = (node, r) => named(node).every((n) => (r.literal.has(n.type) || r.literalPart.has(n.type)) && textOnly(n, r));
+
 /** Whether a value is a literal: a number, a string that interpolates nothing, a word, or a collection of literals. */
 function isLiteral(node, r) {
   const type = node.type;
-  if (r.literal.has(type)) return !interpolates(node, r);
+  if (r.literal.has(type)) return !interpolates(node, r) && textOnly(node, r);
   if (r.word.has(type)) return WORDS.has(node.text);
   const parts = named(node).filter((n) => !r.comment.has(n.type));
   if (r.unary.has(type)) return parts.length === 1 && isLiteral(parts[0], r);
   if (!r.collection.has(type)) return false;
-  // A composite literal's type says what it builds and is no value.
+  // A composite literal's type says what it builds: it is read as a type, and the rest as values.
   const typed = r.s.collectionType ? node.childForFieldName(r.s.collectionType) : null;
-  return parts.every((n) => (typed !== null && n.id === typed.id) || isLiteral(n, r));
+  return parts.every((n) => (n.id === typed?.id ? plain(n, r.part, r) : isLiteral(n, r)));
 }
 
 const annotated = (node, r) => r.annotation.length > 0 && node.descendantsOfType(r.annotation).length > 0;
 
-/** Whether a subtree holds literals and nodes of `types`, and nothing else. */
+/** Whether every named node of a subtree is a literal or one of `types`, a kind listed as computing nothing. */
 function plain(node, types, r) {
   if (!types.has(node.type)) return isLiteral(node, r);
+  if (r.union.has(node.type) && node.children.some((n) => n && !n.isNamed && n.type !== UNION)) return false;
   return named(node).every((n) => r.comment.has(n.type) || plain(n, types, r));
 }
 
 /**
- * A name bound to a literal, with no annotation on it, or a constant that
- * repeats the one above it or counts off its place in a group. Any other
- * binding with no value asks, and so does one whose target is more than
- * names, attributes and subscripts of those or of literals, whose type is more
- * than a type expression where its grammar reads one as an expression, or
- * that carries a block to run when it does not match.
+ * A name bound to a literal, or a constant that repeats the one above it or
+ * is counted off its place in a group. Every named node outside the value, in
+ * the target, the pattern, the type and the modifiers, is a literal or a kind
+ * listed as computing nothing, so a call in an array's length asks. So does a
+ * binding with no value, one with an annotation, one that carries a block to
+ * run when it does not match, and an assignment that is part of a larger
+ * expression.
  */
 function inertBinding(node, r) {
   if (annotated(node, r)) return false;
+  const parent = node.parent?.type;
+  if (r.statement.size > 0 && !r.statement.has(parent) && !r.declaration.has(parent)) return false;
   if (r.s.alternative && node.childForFieldName(r.s.alternative) !== null) return false;
-  const target = r.s.target ? node.childForFieldName(r.s.target) : null;
-  if (target !== null && !plain(target, r.targetChain, r)) return false;
-  const type = r.s.bindingType ? node.childForFieldName(r.s.bindingType) : null;
-  if (type !== null && !plain(type, r.typeExpr, r)) return false;
   const own = r.s.value ? node.childForFieldName(r.s.value) : null;
-  if (r.counted.has(node.type)) return own === null || plain(own, r.countedPart, r);
-  const value = own ?? node.lastNamedChild;
-  return value !== null && isLiteral(value, r);
+  const counted = r.counted.has(node.type);
+  const value = own ?? (counted ? null : node.lastNamedChild);
+  if (value === null ? !counted : !(counted ? plain(value, r.countedPart, r) : isLiteral(value, r))) return false;
+  return named(node).every((n) => n.id === value?.id || r.comment.has(n.type) || plain(n, r.part, r));
 }
 
-/** Bindings beside the modifiers and the type they share, every one of them inert, and nothing else. */
+/** Bindings, every one of them inert, beside modifiers and a type that compute nothing, and no other node. */
 function inertDeclaration(node, r) {
   if (annotated(node, r)) return false;
-  const typed = r.s.declaredType ? node.childForFieldName(r.s.declaredType) : null;
   return named(node).every((child) => {
     if (r.binding.has(child.type)) return inertBinding(child, r);
     if (r.declaration.has(child.type)) return inertDeclaration(child, r);
-    return r.modifier.has(child.type) || r.comment.has(child.type) || (typed !== null && child.id === typed.id);
+    return r.comment.has(child.type) || plain(child, r.part, r);
   });
 }
 
@@ -172,7 +183,7 @@ function walked(tree, lines, lang) {
           open.push({ rows, isNamed, sawNamed: false });
           continue;
         }
-        if (isNamed) mark(rows);
+        if (isNamed || !CLOSER.test(cursor.nodeType)) mark(rows);
       }
       for (;;) {
         if (cursor.gotoNextSibling()) break;

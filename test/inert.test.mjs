@@ -90,11 +90,11 @@ const CASES = {
       constant: 'class A\n{\n    private const string Usage = "u";\n    static readonly int[] Sizes = {1, -2};\n}\n',
     },
     asked: {
-      method: ["class A\n{\n    int Total()\n    {\n        return 0;\n    }\n}\n", [1, 3, 5]],
-      lambda: ["class A\n{\n    Func<int, int> Double = x => x * 2;\n}\n", [1, 3]],
-      call: ["class A\n{\n    int Limit = Compute();\n}\n", [1, 3]],
-      interpolated: ['class A\n{\n    string Name = $"hi {user}";\n}\n', [1, 3]],
-      annotated: ["class A\n{\n    [Obsolete]\n    public int X = 1;\n}\n", [1, 3, 4]],
+      method: ["class A\n{\n    int Total()\n    {\n        return 0;\n    }\n}\n", [1, 2, 3, 4, 5]],
+      lambda: ["class A\n{\n    Func<int, int> Double = x => x * 2;\n}\n", [1, 2, 3]],
+      call: ["class A\n{\n    int Limit = Compute();\n}\n", [1, 2, 3]],
+      interpolated: ['class A\n{\n    string Name = $"hi {user}";\n}\n', [1, 2, 3]],
+      annotated: ["class A\n{\n    [Obsolete]\n    public int X = 1;\n}\n", [1, 2, 3, 4]],
     },
   },
   rust: {
@@ -146,8 +146,9 @@ for (const [lang, { quiet, asked }] of Object.entries(CASES)) {
   test(`${lang}: a comment, an import, a constant or a package line added asks nothing`, async () => {
     for (const [what, source] of Object.entries(quiet)) {
       const lines = await asking(lang, source);
-      // A class around a constant asks on the line that opens it, and only there.
-      const opener = what === "constant" && /^class /.test(source) ? [1] : [];
+      // A class around a constant asks on the lines that open it, a brace on a line of its own among
+      // them: a brace may open a lambda, and only a closing one is known to open nothing.
+      const opener = what === "constant" && /^class /.test(source) ? (source.split("\n")[1] === "{" ? [1, 2] : [1]) : [];
       assert.deepEqual(lines, opener, `${lang} ${what}`);
     }
   });

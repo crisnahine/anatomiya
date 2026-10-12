@@ -340,15 +340,15 @@ test("the tail of every rule file listing agrees with its count", () => {
   );
 });
 
-test("temporary files an earlier scan left are counted apart from the area files that went", () => {
+test("temporary files an earlier run left are counted apart from the area files that went", () => {
   const one = scanSummary(result(), plan({ staged: ["anatomiya-overview.md.tmp-1-0123456789abcdef"] }));
   assert.equal(one.stagedRemoved, 1);
   assert.equal(one.removed, 0);
-  assert.ok(scanLines(one).includes("1 temporary file an earlier scan left in .claude/rules was removed"), scanLines(one).join("\n"));
+  assert.ok(scanLines(one).includes("1 temporary file an earlier run left in .claude/rules was removed"), scanLines(one).join("\n"));
   const many = scanSummary(result(), plan({ staged: ["a", "b"], remove: ["anatomiya-area-1.md"] }), { dryRun: true });
-  assert.ok(scanLines(many).includes("2 temporary files an earlier scan left in .claude/rules would be removed"));
+  assert.ok(scanLines(many).includes("2 temporary files an earlier run left in .claude/rules would be removed"));
   assert.ok(scanLines(many).includes("1 area file would be removed: its area is gone or states nothing"));
-  assert.ok(scanLines({ ...many, dryRun: false }).includes("2 temporary files an earlier scan left in .claude/rules were removed"));
+  assert.ok(scanLines({ ...many, dryRun: false }).includes("2 temporary files an earlier run left in .claude/rules were removed"));
   // None left, none said, and the record has no key for it.
   assert.equal("stagedRemoved" in scanSummary(result(), plan()), false);
   assert.equal("stagedRemoved" in scanSummary(result(), plan({ staged: [] })), false);
@@ -366,10 +366,10 @@ test("a record past the bound is said once per file, in the tense of the run, an
 test("temporary files left in the store are counted apart from the ones left beside the map", () => {
   const one = scanSummary(result(), plan({ staged: ["a", "b"], storeStaged: ["facts.json.tmp-1-0123456789abcdef"] }));
   assert.deepEqual([one.stagedRemoved, one.storeStagedRemoved], [2, 1]);
-  assert.ok(scanLines(one).includes("1 temporary file an earlier scan left in .claude/anatomiya was removed"), scanLines(one).join("\n"));
-  assert.ok(scanLines(one).includes("2 temporary files an earlier scan left in .claude/rules were removed"));
+  assert.ok(scanLines(one).includes("1 temporary file an earlier run left in .claude/anatomiya was removed"), scanLines(one).join("\n"));
+  assert.ok(scanLines(one).includes("2 temporary files an earlier run left in .claude/rules were removed"));
   const many = scanSummary(result(), plan({ storeStaged: ["a", "b"] }), { dryRun: true });
-  assert.ok(scanLines(many).includes("2 temporary files an earlier scan left in .claude/anatomiya would be removed"));
+  assert.ok(scanLines(many).includes("2 temporary files an earlier run left in .claude/anatomiya would be removed"));
   assert.equal("stagedRemoved" in many, false);
   assert.equal("storeStagedRemoved" in scanSummary(result(), plan()), false);
   assert.equal("storeStagedRemoved" in scanSummary(result(), plan({ storeStaged: [] })), false);
@@ -379,9 +379,9 @@ test("a temporary file that could not be removed is counted as left, apart from 
   const one = scanSummary(result(), plan({ staged: ["a"], stagedLeft: ["anatomiya-overview.md.tmp-1-0123456789abcdef"], storeStagedLeft: ["b", "c"] }));
   assert.deepEqual([one.stagedRemoved, one.stagedLeft, one.storeStagedLeft, "storeStagedRemoved" in one], [1, 1, 2, false]);
   const lines = scanLines(one);
-  assert.ok(lines.includes("1 temporary file an earlier scan left in .claude/rules was removed"), lines.join("\n"));
-  assert.ok(lines.includes("1 temporary file an earlier scan left in .claude/rules could not be removed, so it was left as it is"), lines.join("\n"));
-  assert.ok(lines.includes("2 temporary files an earlier scan left in .claude/anatomiya could not be removed, so they were left as they are"), lines.join("\n"));
+  assert.ok(lines.includes("1 temporary file an earlier run left in .claude/rules was removed"), lines.join("\n"));
+  assert.ok(lines.includes("1 temporary file an earlier run left in .claude/rules could not be removed, so it was left as it is"), lines.join("\n"));
+  assert.ok(lines.includes("2 temporary files an earlier run left in .claude/anatomiya could not be removed, so they were left as they are"), lines.join("\n"));
   // None left, none said, and the record has no key for it.
   for (const key of ["stagedLeft", "storeStagedLeft"]) {
     assert.equal(key in scanSummary(result(), plan()), false);
