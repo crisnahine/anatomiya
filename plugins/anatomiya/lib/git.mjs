@@ -85,6 +85,14 @@ const FLAGS = new Set([
   "--no-ext-diff",
   "--no-merges",
   "--no-textconv",
+  // The commits a history store lacks, named on stdin and read in the order
+  // given, with nothing walked from them (`history.mjs`).
+  "--no-walk=unsorted",
+  "--stdin",
+  // What that store is stamped with: the whole effective configuration, and
+  // the directory `shallow` and `info/grafts` sit in, a worktree's shared one.
+  "--list",
+  "--git-common-dir",
   "--others",
   "--porcelain",
   "--quiet",
@@ -536,7 +544,7 @@ export function gitStreamed(
   root,
   args,
   onField,
-  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false, signal = null } = {}
+  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false, signal = null, input = null } = {}
 ) {
   const refused = refuse(args);
   if (refused) return Promise.reject(new Error(refused));
@@ -547,10 +555,13 @@ export function gitStreamed(
 
     const child = spawn("git", call.args, {
       cwd: root,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
       timeout,
       env: call.env,
     });
+    // A git that exits before it has read `input` closes the pipe, and its exit code is what says so.
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(input);
     let rest = Buffer.alloc(0);
     let stderr = "";
     let stopped = false;

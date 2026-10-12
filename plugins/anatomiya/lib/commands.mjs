@@ -20,6 +20,7 @@ import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, p
 import { otherEntries, pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { removeStaleHook } from "./hook.mjs";
+import { saveHistory } from "./history.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -36,9 +37,12 @@ import { removeStaleHook } from "./hook.mjs";
  * `leaveAlone` is the other targets whose files this scan leaves as they are.
  * `carried` is the checker's last measured verdict, which only a refresh hands
  * in: the scan then does not run the checker, and a scan a person runs always does.
+ * `history` in the answer says, per history walk, how many commits its store
+ * supplied, how many git was asked for, and whether the store was written.
  */
 export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone = [], carried = null } = {}) {
-  const result = await (carried !== null ? scan(cwd, { carried }) : scan(cwd));
+  const history = {};
+  const result = await scan(cwd, carried !== null ? { carried, history } : { history });
   // Only where it left nothing to read (B13). An engine missing for one
   // language costs that language's files and the scan goes on for the rest:
   // refusing here gave a TypeScript repository with one Gemfile no map at all
@@ -47,6 +51,9 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
   const plan = writeMap(result, { dryRun, targets, leaveAlone });
+  // After the map, into the directory it made, and never on a dry run: the
+  // history stores are a cache beside the record, in no plan and no summary.
+  if (!dryRun) await saveHistory(result.root, history);
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
   // settings, where `${CLAUDE_PLUGIN_ROOT}` is never substituted and Claude Code
   // refuses the hook by name on every prompt and every tool call. The plugin
@@ -54,7 +61,7 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   // answers with a refusal rather than throwing one; the reasons are in
   // `removeStaleHook`.
   const hook = removeStaleHook(result.root, { dryRun });
-  return { result, plan, hook, summary: scanSummary(result, plan, { dryRun, hook }) };
+  return { result, plan, hook, history, summary: scanSummary(result, plan, { dryRun, hook }) };
 }
 
 /**

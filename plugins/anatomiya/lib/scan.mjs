@@ -51,6 +51,8 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * are the checker's, and none is kept from a run that measures the tier degraded.
  * A failed run's verdict is carried from its second failure under one stamp
  * (`standsIn`): handed the first, the checker runs and the scan records the count.
+ * `history` is what the two history walks read their stores through and leave
+ * for `saveHistory` to write: a scan itself writes nothing.
  */
 export async function scan(cwd, options = {}) {
   // A scan that fails anywhere stops the walk, rather than leave `git log` running behind the error.
@@ -62,7 +64,7 @@ export async function scan(cwd, options = {}) {
   }
 }
 
-async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null }, walkSignal) {
+async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null, history = null }, walkSignal) {
   const started = Date.now();
   const scannedAt = new Date().toISOString();
   const root = await gitRoot(cwd);
@@ -107,7 +109,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   // Neither needs the parse, so both start first; the checker only with a core
   // to spare, or it slows the parse's one worker. The catches are for a throw below.
   const semanticRun = defaultPoolSize() > 1 ? startChecker() : null;
-  const authorsRun = authorsByFile(root);
+  const authorsRun = authorsByFile(root, { history });
   semanticRun?.catch(() => {});
   authorsRun.catch(() => {});
 
@@ -129,7 +131,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     state = await stateRun;
     // The walk stops at the pin, so it starts once the pin has answered, and
     // like the history read it needs nothing the parse makes.
-    cochangeRun = startCochange(root, state, { signal: walkSignal });
+    cochangeRun = startCochange(root, state, { signal: walkSignal, history });
     cochangeRun.catch(() => {});
     head = await headRun;
     // Which routing claims this repository can be asked at all: at least three
