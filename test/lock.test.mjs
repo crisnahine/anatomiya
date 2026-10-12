@@ -159,7 +159,8 @@ test("a token left by a breaker that died is removed, and the live generation's 
   const dir = workspace(t);
   const lock = join(dir, "refresh.lock");
   const keep = ["refresh.lock", "refresh.lock.aaaaaaaaaaaaaaaa", "refresh.lock.tmp-1-0123456789abcdef", "refresh.lock.0123", "refresh.json"];
-  for (const name of [...keep, "refresh.lock.0123456789abcdef"]) writeFileSync(join(dir, name), "");
+  // And a token's own token, left by a call killed breaking that token.
+  for (const name of [...keep, "refresh.lock.0123456789abcdef", "refresh.lock.0123456789abcdef.1700000000000"]) writeFileSync(join(dir, name), "");
 
   removeLeftTokens(lock, "aaaaaaaaaaaaaaaa");
 

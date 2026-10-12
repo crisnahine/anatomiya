@@ -82,13 +82,23 @@ const PAUSE = new Int32Array(new SharedArrayBuffer(4));
  * call removes the lock only while it is still that generation. Every other call goes to the one create,
  * and the losers stay out. Moving a dead lock aside instead freed the name for a third call while the
  * first holder still held it.
+ *
+ * A token older than any break could hold it was left by a call killed mid-break, and left in place it
+ * turned every later call away from that dead lock for good. So a token is itself a lock, judged by its
+ * mtime and broken by this same protocol, one level down and no further. Unlinked by age alone, two calls
+ * finding one old token could both remove it, the second taking the first's fresh one. What is left: a
+ * breaker suspended past the bound, which the next call takes for dead (A92 accepts the same of a holder).
  */
 export function takeDeadLock(lock, judge, content = null) {
+  return broken(lock, judge, content, 1);
+}
+
+function broken(lock, judge, content, levels) {
   const found = judge(lock);
   if (found?.live) return false;
   if (found !== null) {
     const token = `${lock}.${found.generation}`;
-    if (createdAlone(token)) {
+    if (createdAlone(token) || (levels > 0 && broken(token, TOKEN_AGE, null, levels - 1))) {
       try {
         const now = judge(lock);
         if (now !== null && !now.live && sameGeneration(now, found)) removeDeadLock(lock);
@@ -135,6 +145,9 @@ export const mtimeAge = ({ heldMostMs, slackMs, now = Date.now }) => (path) => {
   if (Math.abs(now() - Number(found.mtimeMs)) <= heldMostMs + slackMs) return { live: true };
   return { live: false, generation: String(found.mtimeMs), identity: `${found.ino}:${found.mtimeNs}` };
 };
+
+// A break takes microseconds; a minute, plus the 2 s a FAT mtime can be off by, is far past any live breaker.
+const TOKEN_AGE = mtimeAge({ heldMostMs: 60_000, slackMs: 2000 });
 
 /**
  * The refresh worker's judge, over the lock's `{pid, at, nonce}`: dead where it does not parse, its pid is
@@ -223,7 +236,8 @@ export function removeLeftTokens(lock, live) {
     return;
   }
   for (const name of names) {
-    const generation = name.startsWith(prefix) ? name.slice(prefix.length) : null;
+    // A token's own token, `<generation>.<its mtime in ms>`, goes with it.
+    const generation = name.startsWith(prefix) ? name.slice(prefix.length).replace(/\.\d+$/, "") : null;
     if (generation === null || generation === live || !GENERATION.test(generation)) continue;
     removeLockToken(join(dir, name));
   }
