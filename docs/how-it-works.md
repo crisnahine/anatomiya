@@ -1211,21 +1211,21 @@ the others read that offset as a delivery made there and stay silent. A batch cl
 while its offset is inside the window, judged against the transcript as it is when the batch claim
 is read. A call that finds the lock taken stays silent. A lock whose mtime is more than 7 seconds
 from the clock, either way, was left by a call that died holding it: the hook's 5 second timeout,
-plus the 2 seconds FAT rounds an mtime to. No call breaks a lock younger than that: the call that
-creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while it is still the one
-found dead, and every call then goes to the one create of the lock, where the losers stay silent. A
-call suspended past 7 seconds while it holds the lock, a laptop asleep in those milliseconds, is
-taken for dead: the next call breaks its lock and decides beside it, and its release later removes
-whichever lock is there, so that batch can deliver a copy or two more. A lock token the system
-refuses to remove is left for the sweep, and a dead lock it refuses to remove makes the call answer
-alone. An exclusive create Windows refuses with EPERM, its answer for a name another process is
-still deleting, is tried again seven times, after waits doubling from 1 ms to 64 ms, before the call
-answers alone. Batch claims, locks and lock tokens older than a day are swept, at most 4,096 names
-read. Started 3 and 8 at once, 20 rounds each, with no batch claim and with a stale one, the echo
-delivered once in every round, and 50 rounds each over a dead lock delivered once and left no lock
-or lock token. Without that directory, or where it cannot be written, the worst case is one copy per
-call. Inside a mapped checkout the prompt has already delivered the map before the first batch, so
-that batch adds none; a batch that later finds the window run out delivers as above.
+plus the 2 seconds FAT rounds an mtime to. No call breaks a lock nearer the clock than that: the
+call that creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while it is
+still the one found dead, and every call then goes to the one create of the lock, where the losers
+stay silent. A call suspended past 7 seconds while it holds the lock, a laptop asleep in those
+milliseconds, is taken for dead: the next call breaks its lock and decides beside it, and its
+release later removes whichever lock is there, so that batch can deliver a copy or two more. A lock
+token the system refuses to remove is left for the sweep, and a dead lock it refuses to remove makes
+the call answer alone. An exclusive create Windows refuses with EPERM, its answer for a name another
+process is still deleting, is tried again seven times, after waits doubling from 1 ms to 64 ms,
+before the call answers alone. Batch claims, locks and lock tokens older than a day are swept, at
+most 4,096 names read. Started 3 and 8 at once, 20 rounds each, with no batch claim and with a stale
+one, the echo delivered once in every round, and 50 rounds each over a dead lock delivered once and
+left no lock or lock token. Without that directory, or where it cannot be written, the worst case is
+one copy per call. Inside a mapped checkout the prompt has already delivered the map before the
+first batch, so that batch adds none; a batch that later finds the window run out delivers as above.
 `scripts/measure-echo.mjs` replays the rule over a transcript store: on 4,328 local transcripts on
 2026-10-11 it kept 9,267 of 46,370 deliveries. The hook reads back at most 1 MiB and parses each
 line of it. The measurements behind the rule are in
@@ -1606,14 +1606,15 @@ A target that was off and stays off prints nothing, whatever its directory holds
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
 that is on (`.cursor/rules: on, 4 files`, counting the files the record names, or with no record the
 files under a map name that carry the key, and `.cursor/rules: off at the next scan` where the
-record names its overview under `removing`, as `check --format json` gives that target
-`state: "off"`), a second where that directory holds other entries under the prefix
-(`.cursor/rules holds 1 entry named anatomiya-* that a scan neither writes nor removes`), and a
-third for the entries at a name the record lists under `removing`
-(`... that the next scan removes, since the scan that wrote the map was about to remove it`), the
-one line it prints for `.claude/rules` too, and `pin` leaves the generated names of all three
-directories out of its clean-tree test. The record names the files written for each target under an
-optional `targets` key, present only where one was written, with no change of schema (C10).
+record names its overview under `removing`, as `check --format json` gives that target `state:
+"off"`), a second where that directory holds other entries under the prefix (`.cursor/rules holds 1
+entry named anatomiya-* that a scan neither writes nor removes`), and a third for the entries at a
+name the record lists under `removing` (`... that the next scan removes, since the scan that wrote
+the map was about to remove it`), the one line it prints for `.claude/rules` too. A target the
+record names whose overview or directory it cannot read prints `.cursor/rules: could not be read
+(<reason>)`. `pin` leaves the generated names of all three directories out of its clean-tree test.
+The record names the files written for each target under an optional `targets` key, present only
+where one was written, with no change of schema (C10).
 
 Whether either copy reaches a model is not measured (A106). For Cursor the delivery was read from
 the 3.20.21 client's code, where a rule with `globs` goes to the agent with its first read of a
@@ -2275,8 +2276,9 @@ a .rb file added to "lib/rubocop/cop/style" ships with an edit to "config/defaul
   100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here came in a change the scan counted
 ```
 
-The last count is over every change the walk counted, so it can be larger than the claim's 100. A
-file a bulk change added, or one older than the walk reaches, is left out of it.
+The last count is over every change the scan counted, so it can be larger than the claim's 100. A
+file a bulk change added, one a change moved there, or one older than the walk reaches, is left out
+of it.
 
 A claim an area file carries counts as stated, in the scan's claims line and in the overview's `N
 stated`; one no area file carries counts in neither. A shallow clone, such as a CI checkout at depth

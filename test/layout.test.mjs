@@ -972,7 +972,7 @@ test("one root reads the three indexes the corpus was walked for, and rebuilds n
 });
 
 test("a Ruby file named for a test is one only where a test tree also says so", () => {
-  // The Ruby form is the one a source file wears in earnest. A RuboCop cop
+  // The Ruby form is the one a producer wears in earnest. A RuboCop cop
   // named for the `Rails.env.test?` guard it enforces printed a test group of
   // its own in the overview, and Homebrew's `software_spec.rb` is the
   // `SoftwareSpec` class, which has its own `software_spec_spec.rb` under

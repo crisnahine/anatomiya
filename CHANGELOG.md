@@ -127,9 +127,10 @@ by this version, with times and build digests masked
 - Seven kinds of test spelled as a dotted segment of the name make a test file: `.unittest.`,
   `.basictest.`, `.longtest.`, `.spectest.`, `.stest.`, `.integrationTest.` and `.releaseTest.`.
   Across 60 repositories 235 names carry a dotted segment ending in `test` that the name rule
-  missed; these seven take 226 of them, all real tests, and none of the other 9, whose one test,
-  element-plus's `.vitest.tsx`, already reads as a test through its runner import. vscode's `src/vs`
-  reads 1720 test files where it read 1669, and webpack's `test` 163 where it read 159.
+  missed; these seven take 226 of them, all real tests, and none of the other 9. Of those 9, only
+  element-plus's `.vitest.tsx` is a test, and it already reads as one through its runner import.
+  vscode's `src/vs` reads 1720 test files where it read 1669, and webpack's `test` 163 where it read
+  159.
 - `check` and the notice answer a new test only from a source root of its own family: a
   `_spec.rb` under a directory of `.js` files is not told those files have no namesake test.
   Asked of every one of the 46,820 tests the 60 repositories track, as if each were new, the rule

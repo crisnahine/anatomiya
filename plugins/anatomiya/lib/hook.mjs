@@ -736,9 +736,10 @@ function batchClaimed(path, transcript, tail, digest) {
 /**
  * Takes the lock, breaking it once where it outlived any hook; false where another call holds it.
  *
- * A lock younger than the dead-lock age is never broken: the right to remove one dead generation goes
- * to whichever call creates the lock token named by its mtime, and that call removes it only while the
- * lock is still that generation. Every other call goes to the one create, and the losers stay silent.
+ * A lock whose mtime is within the dead-lock age of the clock, either way, is never broken: the right to
+ * remove one dead generation goes to whichever call creates the lock token named by its mtime, and that
+ * call removes it only while the lock is still that generation. Every other call goes to the one create,
+ * and the losers stay silent.
  */
 function takeLock(lock) {
   for (let broken = false; ; broken = true) {
