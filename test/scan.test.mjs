@@ -1171,11 +1171,6 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
 test("an area only the checker counted in is described by no scan whose checker degraded", async (t) => {
   // A carried verdict folds no type-checked row, so such an area is one
   // nothing was counted in. A scan that measures the verdict has to agree.
-  const onlyTyped = async (files, options) => {
-    const parsed = await parseAll(files, options);
-    for (const r of parsed.records.values()) r.hits = {};
-    return parsed;
-  };
   const rows = (r) => r.areas.flatMap((a) => a.dimensions.map((d) => d.key));
 
   assert.deepEqual(rows(await scan(typedRepo(t), { parseFiles: onlyTyped })), ["law_of_demeter"], "the fixture counts another row");
@@ -1186,6 +1181,112 @@ test("an area only the checker counted in is described by no scan whose checker 
   assert.equal(measured.semantic.status, "degraded");
   assert.deepEqual(measured.areas, []);
   assert.deepEqual((await scan(dir, { parseFiles: onlyTyped, carried: CARRIED })).areas, []);
+});
+
+/** A scan's answer less the moments it was taken at. */
+const still = (r) => ({ ...r, scannedAt: null, durationMs: null, semantic: { ...r.semantic, measuredAt: null } });
+
+/** The parse with every hit taken out, so an area is counted in only by the checker. */
+const onlyTyped = async (files, options) => {
+  const parsed = await parseAll(files, options);
+  for (const r of parsed.records.values()) r.hits = {};
+  return parsed;
+};
+
+/** The checker's run with every site it answered charged as a violation in a named function, which no stub is. */
+const walkedAsViolations = async (...args) => {
+  const whole = await runSemantic(...args);
+  for (const record of whole.records.values()) {
+    if (record.hits.law_of_demeter) record.hits = { law_of_demeter: [{ conforming: false, where: "label" }] };
+  }
+  return whole;
+};
+
+test("a refused config writes the facts a run that walked every row writes", async (t) => {
+  if (!(await loadTypeScript())) return t.skip("typescript is not installed");
+  const dir = typedRepo(t);
+  writeFileSync(join(dir, "tsconfig.json"), "{ this is not json");
+
+  const stubbed = await scan(dir, { parseFiles: onlyTyped });
+  const walked = await scan(dir, { parseFiles: onlyTyped, runChecker: walkedAsViolations });
+
+  assert.equal(stubbed.semantic.reason, "unparseable");
+  // Taken over the area's files, so the area was folded on its sites alone.
+  assert.equal(stubbed.semantic.typedResolutionRate, 1);
+  assert.deepEqual(still(stubbed), still(walked));
+});
+
+/** The real checker, with what the scan answered when asked whether to stop it, and what the checker then answered. */
+function watchedChecker({ ask = true } = {}) {
+  const seen = { stop: [], hits: null };
+  const runChecker = async (root, files, options) => {
+    const stopWhen = async (sited) => {
+      const answer = await options.stopWhen(sited);
+      seen.stop.push(answer);
+      return answer;
+    };
+    const whole = await runSemantic(root, files, ask ? { ...options, stopWhen } : { ...options, stopWhen: null });
+    seen.hits = [...whole.records.values()].flatMap((r) => r.hits.law_of_demeter ?? []);
+    return whole;
+  };
+  return { seen, runChecker };
+}
+
+/** Eight files whose chains run through a package that is not installed, and one chain through two types of their own. */
+function untypedRepo(t, { pinned = false } = {}) {
+  return repo(t, (d, { git, write, pin }) => {
+    write("tsconfig.json", `{"compilerOptions":{"strict":true}}`);
+    write(".gitignore", "node_modules\n");
+    for (let i = 0; i < 8; i++) {
+      write(
+        `src/models/m${i}.ts`,
+        `import { make } from "absent";\nclass B { v() { return 1 } }\nclass A { b() { return new B() } }\nexport const own${i} = new A().b().v();\nexport const far${i} = make().a.b.c.d.e.f.g.h.i.j();\n`
+      );
+    }
+    write("node_modules/left-pad/index.js", "");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    if (pinned) pin([{ path: "src/models", files: Array.from({ length: 8 }, (_, i) => `src/models/m${i}.ts`) }]);
+  });
+}
+
+test("a degraded rate stops the dimension walk, and the facts are the ones a whole walk writes", async (t) => {
+  if (!(await loadTypeScript())) return t.skip("typescript is not installed");
+  const dir = untypedRepo(t);
+  const stopping = watchedChecker();
+  const walking = watchedChecker({ ask: false });
+
+  // Only the checker counts in the area, so its files are in the rate on the strength of the stubs alone.
+  const stopped = await scan(dir, { parseFiles: onlyTyped, runChecker: stopping.runChecker });
+  const walked = await scan(dir, { parseFiles: onlyTyped, runChecker: walking.runChecker });
+
+  assert.deepEqual(stopping.seen.stop, [true]);
+  assert.deepEqual(stopping.seen.hits, Array(8).fill({ conforming: true, where: null }), "the stubs, and no row the checker walked");
+  assert.equal(walking.seen.hits.filter((h) => !h.conforming).length, 8, "the fixture's own chains are violations to a checker that walks");
+  assert.deepEqual({ status: stopped.semantic.status, reason: stopped.semantic.reason }, { status: "degraded", reason: "low-resolution" });
+  assert.ok(stopped.semantic.typedResolutionRate > 0 && stopped.semantic.typedResolutionRate < 0.8, `resolved ${stopped.semantic.typedResolutionRate}`);
+  assert.deepEqual(still(stopped), still(walked));
+  // With every other row counted too, so the areas are written and not only the
+  // verdict, and against a pin, whose baseline is folded from the same hits.
+  for (const whole of [dir, untypedRepo(t, { pinned: true })]) {
+    const written = await scan(whole, { runChecker: stopping.runChecker });
+    assert.ok(written.areas.length > 0);
+    assert.deepEqual(still(written), still(await scan(whole, { runChecker: walking.runChecker })));
+  }
+  assert.deepEqual(stopping.seen.stop, [true, true, true]);
+});
+
+test("an ok rate waits for the real hits", async (t) => {
+  if (!(await loadTypeScript())) return t.skip("typescript is not installed");
+  const { seen, runChecker } = watchedChecker();
+
+  const r = await scan(typedRepo(t), { runChecker });
+
+  assert.deepEqual(seen.stop, [false]);
+  assert.equal(r.semantic.status, "ok");
+  const row = r.areas.flatMap((a) => a.dimensions).find((d) => d.key === "law_of_demeter");
+  // Every chain here runs through two types. A stub would have counted all eight as conforming.
+  assert.deepEqual([row.candidates, row.conforming], [8, 0]);
 });
 
 test("the resolution rate is taken over the areas the map describes", async (t) => {
