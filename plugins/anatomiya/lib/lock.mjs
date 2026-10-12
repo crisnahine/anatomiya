@@ -161,11 +161,18 @@ export const ownerAge = ({ staleMs, now = Date.now, alive = processAlive }) => (
   // planted as a link to `/dev/zero` read whole never returned. Ours is under 100 bytes.
   const entry = readHead(path, 256);
   const content = entry.kind === "file" ? entry.head : null;
-  if (!ownerGone(content, staleMs, now, alive)) return { live: true };
   const identity = `${entry.kind}:${content ?? ""}`;
-  const nonce = nonceOf(content);
-  return { live: false, generation: nonce ?? createHash("sha256").update(identity).digest("hex").slice(0, 16), identity };
+  // A live lock names its generation too, so the store sweep can tell its tokens from a gone one's.
+  const generation = nonceOf(content) ?? createHash("sha256").update(identity).digest("hex").slice(0, 16);
+  return ownerGone(content, staleMs, now, alive) ? { live: false, generation, identity } : { live: true, generation };
 };
+
+/**
+ * The refresh worker's lock as the worker and the scan's store sweep both judge it. A worker holds it
+ * for one scan, and the largest measured takes about two minutes, so a lock older than half an hour
+ * belongs to a worker that is not coming back, whatever its pid now names.
+ */
+export const workerAge = ownerAge({ staleMs: 30 * 60 * 1000 });
 
 // What the refresh worker writes as a nonce, and so the one shape its tokens are named by.
 const GENERATION = /^[0-9a-f]{16}$/;
@@ -215,30 +222,54 @@ function lstatOf(path) {
 // The store holds a handful of files; a directory past this is not ours to walk.
 const TOKENS_LISTED_MOST = 256;
 
-/**
- * Removes the tokens of `lock` that `ownerAge` names, but `live`'s. Called by the holder, so every other
- * generation is gone, and a token one names is a breaker's that died before removing it: left, it would
- * turn away the break of a later lock that repeats its name. A breaker still running finds the lock is
- * not the generation it judged and leaves it, so taking its token from under it breaks nothing.
- */
-export function removeLeftTokens(lock, live) {
-  const dir = dirname(lock);
+// A token's name past the lock's: its generation, and for a token's own token the token's mtime in ms.
+const TOKEN = /^([0-9a-f]{16})(\.\d+)?$/;
+
+/** The tokens beside `lock` by name, each with the generation it names and whether it is a token's own token. */
+function tokensOf(lock) {
   const prefix = `${basename(lock)}.`;
   const names = [];
   try {
-    const listing = opendirSync(dir);
+    const listing = opendirSync(dirname(lock));
     try {
       for (let entry; names.length < TOKENS_LISTED_MOST && (entry = listing.readSync()) !== null; ) names.push(entry.name);
     } finally {
       listing.closeSync();
     }
   } catch {
-    return;
+    return [];
   }
-  for (const name of names) {
-    // A token's own token, `<generation>.<its mtime in ms>`, goes with it.
-    const generation = name.startsWith(prefix) ? name.slice(prefix.length).replace(/\.\d+$/, "") : null;
-    if (generation === null || generation === live || !GENERATION.test(generation)) continue;
-    removeLockToken(join(dir, name));
-  }
+  return names.flatMap((name) => {
+    const token = name.startsWith(prefix) ? TOKEN.exec(name.slice(prefix.length)) : null;
+    return token === null ? [] : [{ name, generation: token[1], ofToken: token[2] !== undefined }];
+  });
+}
+
+/**
+ * Removes the tokens of `lock` that `ownerAge` names, but `live`'s. Called by the holder, so every other
+ * generation is gone, and a token one names is a breaker's that died before removing it: left, it would
+ * turn away the break of a later lock that repeats its name. A breaker still running finds the lock is
+ * not the generation it judged and leaves it, so taking its token from under it breaks nothing. A
+ * token's own token goes with it.
+ */
+export function removeLeftTokens(lock, live) {
+  for (const { name, generation } of tokensOf(lock)) if (generation !== live) removeLockToken(join(dirname(lock), name));
+}
+
+/**
+ * The tokens of `lock` a breaker that died left, by name, as `judge` reads the lock now: every one of a
+ * generation it does not name, and a token's own token of the dead generation it names once older than
+ * any break holds one. Nothing breaks a token's token, so a breaker killed holding one left that lock
+ * unbreakable for good. Never a live lock's, and never an entry that is not a regular file.
+ */
+export function leftTokens(lock, judge) {
+  const now = judge(lock);
+  return tokensOf(lock)
+    .filter(({ name, generation, ofToken }) => {
+      const path = join(dirname(lock), name);
+      if (lstatOf(path)?.isFile() !== true) return false;
+      if (generation !== now?.generation) return true;
+      return ofToken && !now.live && TOKEN_AGE(path)?.live === false;
+    })
+    .map(({ name }) => name);
 }

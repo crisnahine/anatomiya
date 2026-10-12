@@ -10,26 +10,19 @@ import { basename, join } from "node:path";
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
-import { createdAlone, ownerAge, removeLeftTokens, takeDeadLock } from "./lock.mjs";
+import { createdAlone, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
 import { atomic } from "./store.mjs";
 import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
-import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_LOCK, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
 import { isClaude, overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
-
-const LOCK_FILE = "refresh.lock";
 
 // Left by a worker that found the lock taken, for the holder to read after it
 // lets go.
 const AGAIN_FILE = "refresh.again";
-
-// A worker holds the lock for one scan, and the largest measured takes about
-// two minutes. A lock older than this belongs to a worker that is not coming
-// back, whatever its pid now names.
-const LOCK_STALE_MS = 30 * 60 * 1000;
 
 // How long a failed rescan of an unchanged checkout waits before it is tried
 // again. A failure can be the machine's rather than the checkout's (a temp
@@ -82,7 +75,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
   if (await mapTracked(root)) return { reason: "tracked", pinned: false };
   if (await gitBusy(root)) return { reason: "git-busy", pinned: false };
 
-  const lockPath = join(store, LOCK_FILE);
+  const lockPath = join(store, basename(REFRESH_LOCK));
   const again = join(store, AGAIN_FILE);
   let lock = acquire(lockPath);
   if (!lock) {
@@ -474,7 +467,7 @@ export function acquire(path) {
   const nonce = randomBytes(8).toString("hex");
   const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce });
   try {
-    if (!createdAlone(path, content) && !takeDeadLock(path, ownerAge({ staleMs: LOCK_STALE_MS }), content)) return null;
+    if (!createdAlone(path, content) && !takeDeadLock(path, workerAge, content)) return null;
   } catch {
     return null;
   }
