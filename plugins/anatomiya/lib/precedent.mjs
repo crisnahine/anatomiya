@@ -8,7 +8,7 @@
  * instead, and answers it from counts the scan already took (H38).
  */
 import { byCode, dirOf, extOf } from "./paths.mjs";
-import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, namesATest, pairedWith, sitsWhereItsToolReads, withoutTree } from "./test-shape.mjs";
+import { FAMILY_TEST_NAMES, TEST_DIRS, TEST_ROOTS, namesATestFile, pairedWith, sitsWhereItsToolReads, withoutTree } from "./test-shape.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
@@ -36,7 +36,9 @@ const namedFamily = (rel) => {
 /**
  * Whether this path names a test file, in its language's spelling: the two
  * JavaScript and Ruby share, or the one its own tool collects by. Rust has no
- * name, cargo collecting by place, so no `.rs` path is one.
+ * name, cargo collecting by place, so no `.rs` path is one. A path is all
+ * this holds, so a Ruby name reads as a test outside a test tree too
+ * (`namesATestFile`).
  *
  * Held to a source extension as well as to the name, because the name alone
  * admits `Component.test.tsx.snap`, `seed.test.sql`, `button.test.png` and
@@ -50,9 +52,7 @@ const namedFamily = (rel) => {
  * four findings became none.
  */
 export function isTestPath(rel) {
-  if (!isCorpusPath(rel)) return false;
-  const family = namedFamily(rel);
-  return family === null ? TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel) : namesATest(rel, family);
+  return isCorpusPath(rel) && namesATestFile(rel, familyOf(language(rel)));
 }
 
 /**

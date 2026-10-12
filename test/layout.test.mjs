@@ -20,6 +20,8 @@ import {
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
 import { roster } from "../plugins/anatomiya/lib/layout-scan.mjs";
+import { isTestPath } from "../plugins/anatomiya/lib/precedent.mjs";
+import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import { PRECEDENT_FLOOR } from "../plugins/anatomiya/lib/principles.mjs";
 
 const file = (rel, lang = null, facets = null) => ({ rel, lang, facets });
@@ -1591,4 +1593,18 @@ test("a root's count is over the commonest printed extension that holds a file a
   assert.deepEqual(record.exts, [[".d.ts", 4], [".js", 3]]);
   assert.deepEqual(record.companions, { with: 0, of: 3, root: null, ext: ".js" });
   assert.deepEqual(printedExtensions(corpus.slice(0, 4)).counted, [null, null], "and none where no printed extension holds one");
+});
+
+test("the path reader and the file reader agree on a name wherever the file's contents and address say nothing more", () => {
+  // Left out on purpose: a `__tests__` path with no test name, a component, and a Ruby name outside a test tree.
+  const names = [
+    "src/cart.test.ts", "src/cart.spec.jsx", "tests/acceptance/login-test.js", "cypress/e2e/login.cy.ts",
+    "src/vs/base/test/a.unittest.ts", "src/cart.ts", "src/latest/a.ts", "a.test.d/x.js", "spec/cart_spec.rb",
+    "test/models/user_test.rb", "app/models/user.rb", "shop/test_cart.py", "shop/cart.py", "shop/cart_test.go",
+    "tests/CartTest.php", "src/CartTest.php", "src/test/java/shop/CartIT.java", "src/main/java/shop/RepeatedTest.java",
+    "test/Shop.Tests/CartTests.cs", "tests/cart.rs",
+  ];
+  for (const rel of names) {
+    assert.equal(isTestPath(rel), isTestFile({ rel, lang: language(rel), facets: {} }), rel);
+  }
 });
