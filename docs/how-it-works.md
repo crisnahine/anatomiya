@@ -558,6 +558,19 @@ taken from where the link leads, so a path that steps out of the root that way i
 collapses `..` as text before it opens a path, so there the text is what is checked, and elsewhere
 a backslash is a character in a name rather than a separator.
 
+The checker's job answers in two passes (B72). After the build it sends, for each file, its
+resolution and where each type-checked row has a site, read off the tree with no type, then one
+message saying every file is answered, `sited`. Only then does it walk the rows and send each file
+again with what the checker counted. A degraded tier keeps no type-checked row, so those first
+answers are all a scan reads of one: the scan has discovered its areas by then, folds them over the
+sites, and where the rate over the counted files is under 0.80 it takes the verdict there and kills
+the job, with no message sent back. Under a refused config the job walks no row at all. The scan's
+own fold decides the verdict again from what the run answered, and a run stopped as degraded
+that the fold reads as anything else throws, since its sites would print as counted. The map is
+the one a whole walk writes. On prisma, 3,647 checked files degraded at 0.659, the row walk this
+saves is 1.9 to 2.1 seconds of a 40.8 to 42.8 second job, about 5%, measured in process at a load
+average of 80 to 310.
+
 ## 4. Dimensions and the three numbers
 
 A dimension is one claim about one area. 52 ship, the filename row included: 28 for JavaScript, 33
@@ -1201,7 +1214,11 @@ It stays silent when those bytes hold a delivery of the same map with no compact
 map carries a `digest` of its body, so a re-scan is delivered on the next call, and a copy further
 back than the window is delivered again, about every 29.9k tokens at the 6.57 bytes per token
 measured on 2.1.292 to 2.1.296. A subagent or a workflow stage is answered from its own transcript.
-Anything the hook cannot read answers with a delivery.
+Anything the hook cannot read answers with a delivery. The decision is one function, `echoDue` in
+`echo.mjs`, over the map's digest, the window's transcript and the plugin's data directory; the map,
+its digest and the stamp around it stay in `hook.mjs`. What a transcript record says, a delivery, a
+compaction or bytes the model reads, is read in `transcript.mjs`, which the end-of-turn check reads
+its own moments through too (A116, A119).
 
 Parallel tool calls in one batch each run before any of the batch's deliveries is written, so none
 sees the others'. Where Claude Code names the plugin a data directory, `CLAUDE_PLUGIN_DATA`, the
@@ -1214,20 +1231,24 @@ from the clock, either way, was left by a call that died holding it: the hook's 
 plus the 2 seconds FAT rounds an mtime to. No call breaks a lock nearer the clock than that: the
 call that creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while it is
 still the one found dead, and every call then goes to the one create of the lock, where the losers
-stay silent. A call suspended past 7 seconds while it holds the lock, a laptop asleep in those
+stay silent. A lock token older than 62 seconds, a minute plus those 2 seconds, was left by a call
+killed while it broke the lock: it is a dead lock itself and is broken the same way, under
+`<lock token>.<its mtime in ms>`, one level down and no further, so a call killed there silences
+that window and map for about a minute (A117). A call suspended past 7 seconds while it holds the lock, a laptop asleep in those
 milliseconds, is taken for dead: the next call breaks its lock and decides beside it, and its
 release later removes whichever lock is there, so that batch can deliver a copy or two more. A lock
 token the system refuses to remove is left for the sweep, and a dead lock it refuses to remove makes
 the call answer alone. An exclusive create Windows refuses with EPERM, its answer for a name another
 process is still deleting, is tried again seven times, after waits doubling from 1 ms to 64 ms,
-before the call answers alone. Batch claims, locks and lock tokens older than a day are swept, at
-most 4,096 names read. Started 3 and 8 at once, 20 rounds each, with no batch claim and with a stale
+before the call answers alone. Batch claims, locks, lock tokens and a token's own token older than a
+day are swept, at most 4,096 names read; that sweep is what clears a lock whose breaker was killed
+holding a token's own token. Started 3 and 8 at once, 20 rounds each, with no batch claim and with a stale
 one, the echo delivered once in every round, and 50 rounds each over a dead lock delivered once and
 left no lock or lock token. Without that directory, or where it cannot be written, the worst case is
 one copy per call. Inside a mapped checkout the prompt has already delivered the map before the
 first batch, so that batch adds none; a batch that later finds the window run out delivers as above.
-`scripts/measure-echo.mjs` replays the rule over a transcript store: on 4,328 local transcripts on
-2026-10-11 it kept 9,267 of 46,370 deliveries. The hook reads back at most 1 MiB and parses each
+`scripts/measure-echo.mjs` replays the rule over a transcript store through `heldIn`, the walk the
+hook runs: on 3,848 local transcripts on 2026-10-12 it kept 8,063 of 32,591 deliveries. The hook reads back at most 1 MiB and parses each
 line of it. The measurements behind the rule are in
 `docs/research/what-a-repeated-hook-context-costs.md` and
 `docs/research/what-a-2-1-296-transcript-holds.md`. There is still no flag for it: nothing a scan
@@ -1286,7 +1307,9 @@ site follows, and the gates' meanings lived only in this file and the README. It
 rather than taking its own, so it costs the roster nothing on an overview at its bound.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
-context file. `.claude/anatomiya/facts.json` holds every count, gated or not, `layout.json` beside
+context file. One module holds how that is done, `store.mjs`, and the map, the record, the pin and
+the refresh state all write through it: the name a file is staged under, the write, the put-back of
+one file and the replace of a set (A115). `.claude/anatomiya/facts.json` holds every count, gated or not, `layout.json` beside
 it holds the record's layout on its own, and the record, its layout file and the rendered files are
 replaced as one: every one is written to its temp file before any rename, the facts are renamed
 first and stale area files removed last, and a rename or removal that fails puts back what it had
@@ -1522,10 +1545,16 @@ A temporary file a scan left behind, by a kill or through a directory swapped un
 by the next scan that writes or removes in that directory: a regular file named as a map file plus
 `.tmp-<pid>-<16 hex>`, where no process of that id is running. The summary counts the ones under
 `.claude/rules`, `1 temporary file an earlier scan left in .claude/rules was removed`.
-`.claude/anatomiya` is swept for three names, `facts.json`, `layout.json` and `refresh.json` plus
+`.claude/anatomiya` is swept for five names, `facts.json`, `layout.json`, `refresh.json`,
+`baseline.json` and `refresh.lock` plus
 that suffix (`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier scan
-left in .claude/anatomiya were removed`. The pin's and the refresh lock's temporary files are not
-swept. A leftover is removed without being opened, where every other file about to be replaced or
+left in .claude/anatomiya were removed`. So what a killed pin or a killed create of the refresh
+lock staged goes too. The same sweep takes, and counts with them, what a killed breaker of the
+refresh lock left (A118): a lock token of a generation the lock does not name, a token's own token
+of the dead lock it names once that is older than 62 seconds, and a
+`refresh.lock.stale-<pid>-<16 hex>` an older build moved aside, where no process of that id is
+running. A lock token of the generation the lock names stays, as does a token's own token while the
+lock is live and anything that is not a regular file. A leftover is removed without being opened, where every other file about to be replaced or
 removed is read whole first for the put-back, up to 64 MiB (past that a scan refuses, leaves a
 Cursor or Copilot directory it did not name alone, or replaces a record unread), so its size costs
 the scan nothing and a scan that fails later does not put it back. A leftover whose removal fails,
@@ -1664,7 +1693,18 @@ The worker keeps its state beside `facts.json`. It is its own module, `refresh-r
 refresh module that loads the scan; the hook, `refresh.mjs`, only starts it. It takes an exclusive
 lock, read bounded and typed since the directory can come with the repository, and a worker that
 finds it taken leaves word for the holder to run once more after letting go, so a move landing after
-the holder's last look at HEAD is not lost. It stamps what a scan depends on (HEAD, the index as
+the holder's last look at HEAD is not lost. The lock is the one `lock.mjs` gives the echo too, with
+the worker's own judge of what is dead: a lock whose process is gone, that is older than half an
+hour, that is stamped later than now or that does not parse. Such a lock is taken over by the
+worker that wins the exclusive create of the lock token `refresh.lock.<the dead lock's nonce>`,
+which removes the lock only while it still holds the content judged dead; every worker then makes
+the one create, and the one that takes the lock removes any lock token of another generation beside it.
+Moving a dead lock aside let two workers hold the lock in 1 of 200 rounds at
+3 workers and 11 of 200 at 8 (A95, A117). A lock token a killed worker left is broken the same way once
+it is older than 62 seconds. One case is left: a worker killed while it holds a token's own token
+leaves a dead lock no worker breaks, every refresh of that checkout then finds the lock taken and
+does nothing, and the map there stays as it was until a scan run by hand sweeps the token's own token
+(A118). Neither `doctor`, the summary nor the delivered map says the refresh is stuck meanwhile. It stamps what a scan depends on (HEAD, the index as
 `ls-files -s`, the pin's bytes, the plugin version, whether the repository holds packages and where
 `typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
 map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
@@ -1937,7 +1977,12 @@ test spelled as a dotted segment of their own (`.unittest.`, `.basictest.`, `.lo
 `.spectest.`, `.stest.`, `.integrationTest.`, `.releaseTest.`), on the name alone, and when it
 carries `_spec.rb` or `_test.rb` and a test tree above it agrees. The Ruby form is the one a
 producer wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
-own `software_spec_spec.rb` under `test/`. The seven languages above each have a name of their own
+own `software_spec_spec.rb` under `test/`. That is how a file the parse has read is told
+(`isTestFile`). Where only a path is in hand, as for the notice and the placement finding
+(`isTestPath`), the Ruby name counts outside a test tree too: asked the strict rule, that reader
+moved 51 of 377,420 corpus paths and was wrong for 43 of them, specs the parse reads as tests before
+their name is asked. Both readings are one function, `namesATestFile`, told which by its caller
+(H57). The seven languages above each have a name of their own
 and answer by it alone, never by the forms here or the two rules below: a Go `_test.go` and a Python
 `test_*.py` or `*_test.py` on the name, because the compiler and pytest collect by it (578 Go files,
 567 holding a case; 1,180 Python files, 1,168 holding one); a PHP `*Test.php`, a Java or Kotlin

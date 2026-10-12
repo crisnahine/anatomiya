@@ -488,9 +488,16 @@ there is none, and each call answers alone.
 _Avoid_: claim (alone: that is a dimension's sentence), marker, token
 
 **Lock token**:
-What gives one call the right to break a dead lock beside a **batch claim**, for one generation of
-that lock: the lock file found dead, told apart from a later lock at the same name.
-_Avoid_: token (alone), lock (alone: that is the file it breaks)
+What gives one call the right to break a dead lock, for one generation of that lock: the lock file
+found dead, told apart from a later lock at the same name. The echo's lock beside a **batch claim**
+and the refresh's lock in the **store** are each broken through one. A lock token whose maker died
+is a dead lock too, broken through a lock token of its own, which is written "a token's own token".
+_Avoid_: token (alone, but for that one phrase), lock (alone: that is the file it breaks)
+
+**Store**:
+The directory a scan keeps its own files in, `.claude/anatomiya`: the **facts**, the **layout
+file**, the **pin**, and what the refresh leaves there. The **map** is not in it.
+_Avoid_: cache, data directory (that is the plugin's own, outside the repository)
 
 **Facts**:
 The machine record of every slot, gated or not, including which side was stated. The map is derivable from
