@@ -43,7 +43,8 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] `npm run coverage` passes its floors. It reads them off an lcov record rather than off the
       total, so the files in a scope are each held to one: an aggregate over a scope says nothing
       about one file inside it, whichever scope it is drawn around.
-- [ ] The line-ending pass shows nothing new. It runs the suite as a Windows runner checks it out:
+- [ ] The line-ending pass shows nothing new: `node scripts/line-endings.mjs`. It runs the suite as a
+      Windows runner checks it out:
       clone the checkout with `git -c core.autocrlf=true clone`, copy `node_modules` into the clone,
       write a file holding `[core]` and `autocrlf = true`, and run every test file in the clone one
       at a time with `GIT_CONFIG_SYSTEM` pointing at that file, so every `git init` a test makes
@@ -60,6 +61,14 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] The corpus run reports no findings, for a change that touches counting. Leave the checkout
       alone while it runs: it shells out to the binary in the working tree per repository, so a file
       edited mid-run puts two builds in one report and the failures it invents cannot be reproduced.
+- [ ] For a change to the co-change walk or its gates, `node scripts/measure-cochange.mjs` over the
+      44 repositories `docs/measurements/2026-10-11-cochange.md` names gives the numbers the documents
+      cite, and they still match.
+- [ ] A real session runs the plugin from the checkout: `claude -p "<a task that adds a file>"
+      --plugin-dir plugins/anatomiya --setting-sources project,local` in a corpus copy, and its
+      transcript under `~/.claude/projects/` holds the map's one delivery, the area file for a file it
+      read and the notice before it wrote a new producer. 0.15.0's run found rubocop's `lib/rubocop.rb`
+      claims stale after 4,403 tests and both corpora had passed.
 
 ## The version
 
@@ -92,6 +101,8 @@ upstreams and are not meant to move together.
 - [ ] `DECISIONS.md` has no `todo` row that this release actually closed, and every `**done**` note
       names the symbols that exist today.
 - [ ] Merge to `main` and pull it.
+- [ ] `main`'s own CI on the merge commit is green. The tree the pull request tested can still fail
+      there: 0.15.0's merge commit failed a memory test the pull request had passed twice.
 - [ ] `git tag -a <tag> -m "<version>"` then `git push origin <tag>`, with the tag from the table.
       The tag is what releases; a merge alone does not, and a release made by hand turns the run red.
 - [ ] The release workflow went green.

@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { PROSE_NAMES, READS, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, avoidedWords, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
@@ -139,6 +139,10 @@ function copyWithNoRepository(t) {
   for (const f of readdirSync(ROOT).filter((f) => f.endsWith(".md"))) cpSync(join(ROOT, f), join(dir, f));
   // The lockfile carries the version twice, and the checker reads both.
   for (const f of ["package.json", "package-lock.json"]) cpSync(join(ROOT, f), join(dir, f));
+  // The gate parses source files with oxc, which the copy reaches through this checkout's install,
+  // and the ignore file keeps git on Windows from walking that link as part of the tree.
+  symlinkSync(join(ROOT, "node_modules"), join(dir, "node_modules"), "junction");
+  cpSync(join(ROOT, ".gitignore"), join(dir, ".gitignore"));
   return dir;
 }
 
@@ -1079,6 +1083,74 @@ test("a changelog names the paths its releases had", (t) => {
 // --- the glossary -----------------------------------------------------------
 
 const entry = (name, body, avoid) => `**${name}**:\n${body}\n_Avoid_: ${avoid}\n`;
+
+test("a word an entry displaces is found where it is written, by file and line", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "test folder, spec directory"));
+
+  const found = avoidedWords(terms, [["docs/a.md", "One line.\nThe specs sit in a test folder here.\n"]]);
+
+  assert.deepEqual(found, [{ rel: "docs/a.md", line: 2, word: "test folder", term: "Test tree" }]);
+});
+
+test("a plural is the same word", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "spec directory, non-test"));
+
+  const found = avoidedWords(terms, [["docs/a.md", "Two spec directories.\nSome non-tests.\n"]]);
+
+  assert.deepEqual(found.map((f) => [f.line, f.word]), [[1, "spec directory"], [2, "non-test"]]);
+});
+
+test("a test name or a claim written as a template is read, and so is a test named through each", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "test folder"));
+  const source = "test(`reads a test folder`, () => {});\nconst row = { claim: `files in a test folder` };\nit.each([1])(\"a test folder %s\", () => {});\n";
+
+  assert.deepEqual(avoidedWords(terms, [["t.test.mjs", source]]).map((f) => f.line), [1, 2, 3]);
+});
+
+test("a source file the parser rejects is read whole", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "test folder"));
+
+  assert.deepEqual(avoidedWords(terms, [["b.mjs", "const = ;\n// a test folder\n"]]).map((f) => f.line), [2]);
+});
+
+test("a word is not joined across a blank line, and a quote wrapped onto the next line is a quote", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "test folder"));
+
+  assert.deepEqual(avoidedWords(terms, [["docs/a.md", "Ends with test\n\nfolder starts this one.\nA `quoted test\nfolder` here.\n"]]), []);
+});
+
+test("a single word and a word with a sense note are left to a reader", () => {
+  const { terms } = readGlossary(entry("Producer", "A file a test could be written for.", "source file (for the counted set), trigger"));
+
+  assert.deepEqual(avoidedWords(terms, [["docs/a.md", "A source file can trigger a scan.\n"]]), []);
+});
+
+test("a quote, and a term's own longer name, are not the word", () => {
+  const glossary = entry("Namesake test", "A test named for its file.", "paired test") + "\n" + entry("Paired test project", "A project of tests.", "companion project");
+  const { terms } = readGlossary(glossary);
+
+  assert.deepEqual(avoidedWords(terms, [["docs/a.md", "The `paired test` label, and a Paired Test Project beside it.\n"]]), []);
+});
+
+test("a word wrapped across two lines is found at the line it starts on, in prose and in a comment", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "spec directory"));
+
+  const found = avoidedWords(terms, [
+    ["docs/a.md", "First.\nIt reads a spec\n  directory whole.\n"],
+    ["lib/b.mjs", "const a = 1;\n// asks a spec\n// directory for specs\n"],
+  ]);
+
+  assert.deepEqual(found.map((f) => [f.rel, f.line]), [["docs/a.md", 2], ["lib/b.mjs", 2]]);
+});
+
+test("a source file is read in its comments, test names and claims, and not in its other strings", () => {
+  const { terms } = readGlossary(entry("Test tree", "A directory a runner reads tests from.", "test folder, spec directory"));
+  const source = 'test("reads a test folder", () => {\n  const fixture = "a spec directory";\n});\n// one test folder\nconst row = { claim: "files sit in a test folder" };\n';
+
+  const found = avoidedWords(terms, [["test/a.test.mjs", source]]);
+
+  assert.deepEqual(found.map((f) => [f.line, f.word]), [[1, "test folder"], [4, "test folder"], [5, "test folder"]]);
+});
 
 test("an entry parses to its definition and the words it displaces", () => {
   const { terms, problems } = readGlossary(entry("Area", "A directory holding enough source files.", "module, package"));

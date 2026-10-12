@@ -303,7 +303,7 @@ SchemaStore, a third party, not Anthropic. It resolves (HTTP 200).
 ## 3. `${CLAUDE_PLUGIN_ROOT}`
 
 There are three variables, not one:
-`${CLAUDE_PLUGIN_ROOT}` (the plugin's install directory), `${CLAUDE_PLUGIN_DATA}` (a persistent directory
+`${CLAUDE_PLUGIN_ROOT}` (the plugin root), `${CLAUDE_PLUGIN_DATA}` (a persistent directory
 that survives updates, at `~/.claude/plugins/data/{id}/`), and `${CLAUDE_PROJECT_DIR}` (the project root)
 (L677-681).
 
