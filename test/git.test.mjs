@@ -863,7 +863,10 @@ test("a submodule's filter driver never runs through the superproject's status",
   const clean = tripwire(out, "subclean", "cat");
   execFileSync("git", ["config", "filter.sf.clean", clean.path], { cwd: join(dir, "sub") });
   git("config", "submodule.sub.ignore", "none");
-  writeFileSync(join(dir, "sub", "s.txt"), "jello\n");
+  // The length the checkout holds, CRLF or not: git calls a file whose size moved changed
+  // without reading it, and no driver runs for one, whatever is configured.
+  const held = join(dir, "sub", "s.txt");
+  writeFileSync(held, readFileSync(held, "utf8").replace("hello", "jello"));
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
 
   for (const read of [
