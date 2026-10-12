@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsShebang } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -153,6 +153,22 @@ test("a parent class covering a tenth more candidates than its directory's own i
 
   const changeset = claims.filter((c) => c.companion.path === ".changeset/*.md");
   assert.deepEqual(changeset.filter((c) => c.directive).map((c) => c.producer), ["plugins/*/*.json"]);
+  assert.equal(changeset.find((c) => c.producer === "plugins/one/*.json").gate, "pair");
+});
+
+test("a parent class covering exactly a tenth more candidates is the one stated, counted whole", () => {
+  // 55 against 50: as floats, 1.1 * 50 comes out past 55 and the parent lost its own boundary.
+  const changes = [];
+  for (let i = 0; i < 55; i++) {
+    const json = i < 50 ? `plugins/one/f${i}.json` : `plugins/p${i}/package.json`;
+    changes.push({ author: `p${i % 2}@t.test`, added: [json, `.changeset/c${i}.md`], touched: [json, `.changeset/c${i}.md`] });
+  }
+  for (let i = 0; i < 100; i++) changes.push({ author: "q@t.test", added: [], touched: ["README.md"] });
+  const tree = new Set(["plugins/one/f0.json", "plugins/p50/package.json", ".changeset/c0.md"]);
+  const { claims } = mineCochange({ changes, read: changes.length, bulk: 0, error: null }, { tree });
+
+  const changeset = claims.filter((c) => c.companion.path === ".changeset/*.md");
+  assert.deepEqual(changeset.filter((c) => c.directive).map((c) => [c.producer, c.candidates]), [["plugins/*/*.json", 55]]);
   assert.equal(changeset.find((c) => c.producer === "plugins/one/*.json").gate, "pair");
 });
 
@@ -388,6 +404,7 @@ test("the record says how much history was read and puts a claim in the one area
 
   const split = cochangeRecord(started, { areaOf: (p) => (p.endsWith("c0.rb") ? "lib" : "lib/cops") });
   assert.equal(pair(split.claims).area, null);
+  assert.equal(cochangeRecord(started, { shallow: true }).shallow, true, "a shallow clone says so in the record");
   assert.equal(cochangeRecord({ ...started, tree: null }).error, "the tip's tree could not be read");
   assert.deepEqual(cochangeRecord({ ...started, tree: null }).claims, []);
 });
@@ -503,6 +520,25 @@ test("a shallow clone's walk reads the window it holds, its grafted boundary as 
   assert.equal(walk.error, null);
   assert.equal(walk.read, 3);
   assert.deepEqual(walk.changes.map((c) => c.added), [["lib/f5.rb"], ["lib/f4.rb"]]);
+});
+
+test("a walk git stops partway keeps nothing it read, so no claim is mined from half a history", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`lib/f${i}.rb`);
+      commit(`f${i}`);
+    }
+  });
+  // The tree three commits back is gone, so git hands over two whole changes and then fails.
+  const tree = sha(dir, "HEAD~3^{tree}");
+  const object = join(dir, ".git", "objects", tree.slice(0, 2), tree.slice(2));
+  // git writes an object read-only, which Windows will not delete as it stands.
+  chmodSync(object, 0o644);
+  rmSync(object);
+
+  const walk = await walkCochange(dir, sha(dir));
+  assert.notEqual(walk.error, null);
+  assert.deepEqual([walk.changes, walk.read, walk.bulk], [[], 0, 0]);
 });
 
 test("the map a scan wrote is no part of a change, so a repository that commits it mines no claim on it", async (t) => {

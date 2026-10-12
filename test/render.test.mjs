@@ -4586,7 +4586,7 @@ test("a co-change claim is three lines after the directives and before the descr
   const at = lines.indexOf('a .ts file added to "src/services" ships with an edit to "src/registry.ts"');
 
   assert.ok(at > lines.indexOf("catch blocks use the error they caught"), out);
-  assert.equal(lines[at + 1], "  97 of the last 100 changes that added one, 21 authors; 266 of 299 such files here arrived that way");
+  assert.equal(lines[at + 1], "  97 of the last 100 changes that added one, 21 authors; 266 of 299 such files here came in a change it counted");
   assert.equal(lines[at + 2], "");
   assert.ok(lines.findIndex((l) => l.startsWith("most files here import")) > at, out);
 });

@@ -20,7 +20,7 @@ map is never refreshed: scan it by hand and commit the result. A repository at t
 whose pin 0.14.0 took keeps that pin's partition, with no area read as a population change, until a
 pin is next taken, by the refresh or by `/anatomiya:pin`; the places of areas that count nothing
 come back then. What ships together needs the history: a shallow clone at depth one states none, and
-so does a git older than 2.31. Nothing needs installing.
+so does a git older than 2.31, which the scan's summary names. Nothing needs installing.
 
 ### What changes in an existing map
 
@@ -78,7 +78,7 @@ by this version, with times and build digests masked
 
   ```
   a .rb file added to "lib/rubocop/cop/style" ships with an edit to "config/default.yml"
-    100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here arrived that way
+    100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here came in a change it counted
   ```
 
   A file's class is its directory and its kind (`lib/rubocop/cop/style/*.rb`), or the same kind one

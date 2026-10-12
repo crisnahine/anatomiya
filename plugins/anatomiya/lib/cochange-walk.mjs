@@ -352,7 +352,8 @@ function onePerPair(claims) {
   for (const parent of stated.filter((c) => classParts(c.producer).spans)) {
     const children = stated.filter((c) => same(c, parent) && upOf(c.producer) === parent.producer);
     if (children.length === 0) continue;
-    if (!children.every((c) => parent.candidates >= 1.1 * c.candidates)) drop(parent);
+    // In whole numbers: 1.1 * 50 is past 55 as a float.
+    if (!children.every((c) => 10 * parent.candidates >= 11 * c.candidates)) drop(parent);
     else for (const c of children) drop(c);
   }
   const shipsWithAdded = (c, cls) => c.companion.kind === "adds" && c.companion.path === cls;
