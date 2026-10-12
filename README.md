@@ -514,9 +514,9 @@ directory's line which file switched the target on and what switches it off:
 wrote 3 files under .cursor/rules for Cursor, which .cursor/rules/anatomiya-overview.mdc switched on: `scan --targets claude` switches it off
 ```
 
-`/anatomiya:doctor`, run inside the repository, prints a line for
-each target that is on, or `off at the next scan` for one a killed scan was turning off, and a
-second where its directory holds other entries named `anatomiya-*`.
+`/anatomiya:doctor`, run inside the repository, prints a line for each target that is on, or `off at
+the next scan` for one a killed scan was turning off, or `could not be read` for one the record
+names that it cannot read, and a second where its directory holds other entries named `anatomiya-*`.
 
 Both directories are ones people write rules in, so a scan is strict there. It never writes over a
 file it did not write: where one sits at a name the map needs, a scan that names the target refuses,

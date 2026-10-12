@@ -264,7 +264,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   const names = FAMILY_TEST_NAMES[family];
   if (names) return mirrored?.has(rel) === true || namesATest(rel, family);
   if (TEST_NAME.test(base)) return true;
-  // The Ruby form is the one a source file wears in earnest, so it is the one
+  // The Ruby form is the one a producer wears in earnest, so it is the one
   // that has to be corroborated by where the file sits. `software_spec.rb` is
   // Homebrew's `SoftwareSpec` class and has its own `software_spec_spec.rb`
   // under `test/`, and a RuboCop cop named for the `Rails.env.test?` guard it

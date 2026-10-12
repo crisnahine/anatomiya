@@ -52,7 +52,7 @@ const USAGE = [
   "and setup take no path: they answer about this installation. doctor also",
   "prints a line for each Cursor or Copilot target that is on in the",
   "repository it is run in, which says off at the next scan where a killed",
-  "scan was turning it off; one for a target the map names that it cannot",
+  "scan was turning it off; one for a target the record names that it cannot",
   "read; and one for any directory the map is written to where the next scan",
   "removes files a killed scan was about to remove.",
   "",
