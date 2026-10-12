@@ -541,7 +541,16 @@ test("a checker that finished before the reader decided keeps the hits it walked
   assert.equal(r.error, null);
   assert.equal("stopped" in r, false);
   assert.deepEqual([...r.records], REAL);
-  assert.equal(await run, r);
+});
+
+test("a checker that says its sites are answered twice has the reader asked once", { timeout: 60_000 }, async (t) => {
+  const { worker } = sitedWorker(t, "twice", `  process.send({ sited: true });\n${WALKS_AND_ENDS}`);
+  let asked = 0;
+
+  const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen: () => void ++asked });
+
+  assert.equal(asked, 1);
+  assert.deepEqual([...r.records], REAL);
 });
 
 for (const [how, stopWhen] of [

@@ -91,10 +91,8 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
       const stubs = sited.records.get(f.rel)?.hits;
       return record?.ok && stubs ? { ...record, hits: { ...record.hits, ...stubs } } : record;
     };
-    const folded = areas.filter((area) => {
-      const areaParsed = area.files.map(withSites).filter(Boolean);
-      return areaParsed.length > 0 && reduceArea(area, areaParsed, { frameworks, capabilities, tier: "all" }).length > 0;
-    });
+    // "all" is the tier the fold below takes for a run with a checker answer.
+    const folded = areas.filter((area) => foldedArea(area, withSites, { frameworks, capabilities, tier: "all" }));
     return semanticOver(sited, countedIn(files, areas, folded, sited.records)).status === "degraded";
   };
   const startChecker = async () => {
@@ -237,11 +235,9 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   // scanning a subtree answers differently from scanning the whole of it.
   const folded = [];
   for (const area of areas) {
-    const areaParsed = area.files.map((f) => head.records.get(f.rel)).filter(Boolean);
-    if (areaParsed.length === 0) continue;
-
-    const dims = reduceArea(area, areaParsed, { frameworks, capabilities, tier });
-    if (dims.length === 0) continue;
+    const counted = foldedArea(area, (f) => head.records.get(f.rel), { frameworks, capabilities, tier });
+    if (!counted) continue;
+    const { areaParsed, dims } = counted;
 
     // `measure` writes a record for every area it was handed, so a miss is a
     // caller measuring one list and reading another. Said out loud, because the
@@ -461,6 +457,14 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     layout: { ...layout, cochange },
     areas: out,
   };
+}
+
+/** An area's parsed records and the rows they reduce to, or null where it has none of either. */
+function foldedArea(area, recordOf, options) {
+  const areaParsed = area.files.map(recordOf).filter(Boolean);
+  if (areaParsed.length === 0) return null;
+  const dims = reduceArea(area, areaParsed, options);
+  return dims.length === 0 ? null : { areaParsed, dims };
 }
 
 /**
