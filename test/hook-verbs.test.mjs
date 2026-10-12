@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs, { appendFileSync, existsSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync } from "node:fs";
+import fs, { appendFileSync, existsSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { syncBuiltinESMExports } from "node:module";
@@ -701,6 +701,36 @@ test("a dead lock replaced by a live one before it is broken holds the call, and
   assert.deepEqual(readdirSync(join(data, "echo")).sort(), [name, `${name}.lock`], "and nowhere else");
 });
 
+test("a dead lock replaced by another at the same mtime before it is broken is another generation, and stays", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  let replaced = false;
+  const answer = stubbed("openSync", (real, p, flags, ...rest) => {
+    if (!replaced && flags === "wx" && String(p).startsWith(`${lock}.`)) {
+      // Made before the old one goes, so it cannot be handed the old one's inode.
+      replaced = true;
+      writeFileSync(`${lock}.next`, "another");
+      utimesSync(`${lock}.next`, dead, dead);
+      renameSync(`${lock}.next`, lock);
+    }
+    return real(p, flags, ...rest);
+  }, call);
+
+  assert.equal(replaced, true);
+  assert.deepEqual(answer, {});
+  assert.equal(readFileSync(lock, "utf8"), "another", "the other generation's lock is left to the call that made it");
+});
+
 /** Runs `call` with every removal of a path `refuses` names failing as Windows fails one another process holds. */
 function removalRefused(refuses, call) {
   const busy = (real, p, ...rest) => {
@@ -770,17 +800,19 @@ test("a lock create refused for longer than a deletion takes answers as the tran
   writeFileSync(join(data, "echo", name), "0\n");
 
   // Past nine tries the stub stops answering EPERM, so a retry that never ends fails here instead of hanging.
-  let tries = 0;
+  const tries = [];
   const started = Date.now();
   const answer = stubbed("openSync", (real, p, flags, ...rest) => {
     if (flags === "wx" && String(p) === lock) {
-      tries++;
-      throw Object.assign(new Error(`open '${p}'`), { code: tries > 9 ? "ESTOPPED" : "EPERM" });
+      tries.push(performance.now());
+      throw Object.assign(new Error(`open '${p}'`), { code: tries.length > 9 ? "ESTOPPED" : "EPERM" });
     }
     return real(p, flags, ...rest);
   }, call);
   assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
-  assert.equal(tries, 8, "the first try and seven more");
+  assert.equal(tries.length, 8, "the first try and seven more");
+  // Back to back, all eight would land inside the one deletion they wait out.
+  assert.ok(tries[7] - tries[0] >= 100, `the tries spread over ${Math.round(tries[7] - tries[0])}ms`);
   assert.ok(Date.now() - started < 2000, `answered after ${Date.now() - started}ms`);
 });
 
