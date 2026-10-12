@@ -144,7 +144,7 @@ export function statedClaims(record) {
 export const claimsIn = (record, areaPath) => statedClaims(record).filter((c) => c.area === areaPath);
 
 /** The stated claims whose producer class holds this path. */
-export const claimsFor = (rel, record) => {
+export const claimsFor = (record, rel) => {
   const classes = classesOf(rel);
   return statedClaims(record).filter((c) => classes.includes(c.producer));
 };

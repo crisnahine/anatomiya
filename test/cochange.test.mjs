@@ -155,7 +155,7 @@ test("a reader takes at most the first hundred stated claims of a record, howeve
   const read = statedClaims({ claims: many });
   assert.equal(read.length, 100);
   assert.equal(read[99].companion.path, "config/c99.yml");
-  assert.equal(claimsFor("lib/rubocop/cop/style/x.rb", { claims: many }).length, 100);
+  assert.equal(claimsFor({ claims: many }, "lib/rubocop/cop/style/x.rb").length, 100);
   assert.equal(claimsIn({ claims: many }, "lib/rubocop/cop").length, 100);
   // A hundred near misses ahead of them still leave room for a hundred stated.
   const behind = [...Array.from({ length: 100 }, () => claim({ gate: "evidence", directive: false })), ...many];

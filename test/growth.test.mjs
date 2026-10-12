@@ -57,16 +57,22 @@ test("a read that could not be timed neither passes the work nor hides a read th
 });
 
 test("doubling work whose first read comes out past linear is read again", () => {
-  // The first rounds give the larger side four times the work, as a burst on a runner can.
+  // A CPU clock only the work moves, so each read is exact and no side is timed twice.
+  const real = process.cpuUsage;
+  let spent = 0;
+  process.cpuUsage = (since) => (since ? { user: spent - since.user, system: 0 } : { user: spent, system: 0 });
+  // The first read's three rounds give the larger side four times the work, as a burst on a runner can.
   let larger = 0;
-  const ratio = doublingRatio((n) => {
-    const size = n === 100 && larger++ < 3 ? 2 * n : n;
-    return () => {
-      let sum = 0;
-      for (let i = 0; i < size * 1000; i++) sum = (sum + i) | 0;
-      return sum;
-    };
-  }, 50);
-  assert.ok(larger > 3, "a second read was taken");
-  assert.ok(ratio > 1.5 && ratio < LINEAR, `twice the work read ${ratio} times as long`);
+  try {
+    const ratio = doublingRatio((n) => {
+      const cost = n === 100 && larger++ < 3 ? 2 * n : n;
+      return () => {
+        spent += cost;
+      };
+    }, 50);
+    assert.equal(larger, 6, "the first read's three rounds and the second's");
+    assert.equal(ratio, 2);
+  } finally {
+    process.cpuUsage = real;
+  }
 });

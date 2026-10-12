@@ -295,7 +295,7 @@ export function noticeFor(rel, layout, { holdsTest, from = null } = {}) {
   const [finding] = precedentFindings([rel], layout?.roots ?? [], holdsTest ? { holdsTest } : {});
   // A file of a class whose additions ship with a companion, which is decided at
   // the moment the file is, and the area file loads too late for it (A44).
-  const shipped = claimsFor(rel, layout?.cochange);
+  const shipped = claimsFor(layout?.cochange, rel);
   if (!finding && shipped.length === 0) return null;
   return [
     `anatomiya: ${pathText(rel)}`,

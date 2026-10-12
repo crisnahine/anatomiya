@@ -694,10 +694,10 @@ const LOCK_MTIME_SLACK_MS = 2000;
  * The calls of a parallel batch run their hooks before any of their records
  * reach the transcript, so each would read the window as empty. The batch
  * claim names the transcript offset its maker read up to, and the others read
- * it as a delivery made there, so it holds them only while that offset is
+ * it as a delivery made there, so it keeps them silent only while that offset is
  * inside the window, judged against the transcript as it is when the batch
  * claim is read. The decision is taken under a lock made with an exclusive
- * create, and a call that finds the lock taken holds; the batch claim is
+ * create, and a call that finds the lock taken stays silent; the batch claim is
  * replaced by a rename, so no reader sees it half written. Anything that
  * cannot be written or read answers as the transcript alone does.
  */
@@ -706,7 +706,7 @@ function batchClaimed(path, transcript, tail, digest) {
   const lock = `${path}.lock`;
   try {
     mkdirSync(dirname(path), { recursive: true });
-    if (!locked(lock)) return false;
+    if (!takeLock(lock)) return false;
   } catch {
     return true;
   }
@@ -737,9 +737,9 @@ function batchClaimed(path, transcript, tail, digest) {
  *
  * A lock that may be live is never moved or removed: the right to remove one dead generation goes
  * to whichever call creates the lock token named by its mtime, and that call removes it only while the
- * lock is still that generation. Every other call goes to the one create, and the losers hold.
+ * lock is still that generation. Every other call goes to the one create, and the losers stay silent.
  */
-function locked(lock) {
+function takeLock(lock) {
   for (let broken = false; ; broken = true) {
     if (createdAlone(lock)) return true;
     if (broken) return false;
@@ -791,7 +791,7 @@ const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
 /**
  * Removes a lock token; one the system refuses to remove is left for the sweep. It names a generation no
- * call breaks again: a later dead lock takes its name only after the clock is set back, and that window then holds.
+ * call breaks again: a later dead lock takes its name only after the clock is set back, and that window then stays silent.
  */
 function removeLockToken(path) {
   try {

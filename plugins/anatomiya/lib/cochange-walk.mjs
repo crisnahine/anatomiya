@@ -269,6 +269,7 @@ export function mineCochange(walk, { tree, required = GATES.authorEvidence }) {
 
   // The tip's tree, asked only about the classes a kept pair names.
   const asked = new Set(kept.flatMap(({ producer, companion }) => [producer, ...(companion.kind === "adds" ? [companion.path] : [])]));
+  // Per class: [files at the tip a counted change added, files at the tip], the record's `files`.
   const atTip = new Map([...asked].map((cls) => [cls, [0, 0]]));
   // The child directories a spanning class still holds a file in at the tip.
   const dirsAtTip = new Map();

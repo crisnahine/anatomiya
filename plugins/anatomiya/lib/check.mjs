@@ -1163,7 +1163,7 @@ function addCochangeFindings(root, findings, { rows = [], pending, areas, capped
   const claims = statedClaims(cochange);
   if (claims.length === 0) return;
   const gone = new Set([...(pending?.deleted ?? []), ...(pending?.removed ?? [])]);
-  // The map a scan wrote, the walk leaves out too: an untracked map is no 41st file.
+  // The map a scan wrote, the walk leaves out too: an untracked map takes no change past CHANGE_MOST files.
   const own = ownOutput(root).asWritten;
   const added = new Set();
   const touched = new Set();

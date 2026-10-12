@@ -73,8 +73,8 @@ by this version, with times and build digests masked
 ### Added
 
 - What ships together. A scan reads the newest 20,000 first-parent changes of the default branch up
-  to the pin, and for a kind of file those changes added at least 35 times it states the one file
-  they also edited, or the kind of file they also added. On rubocop:
+  to the pin where there is one, and for a kind of file those changes added at least 35 times it
+  states the one file they also edited, or the kind of file they also added. On rubocop:
 
   ```
   a .rb file added to "lib/rubocop/cop/style" ships with an edit to "config/default.yml"
