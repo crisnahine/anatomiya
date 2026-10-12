@@ -85,12 +85,13 @@ by this version, with times and build digests masked
   directory up. Each class is judged on its newest 100 additions, and a claim states only past the
   ratio and Wilson bound every claim faces, the author bar, and three gates of its own: the
   companion is touched at twice its base rate, it and a producer exist at the tip, and the newest
-  fifth of the additions conforms. Tests are neither side, a change past 40 files is not counted,
-  and the map's own files are no part of a change. It needs no parser, so any language can get
-  one. Over 60 repositories a scan states 25 claims in 9, 16 of them in an area file. Mined on the
-  older four fifths of 44 repositories' changes and held out on the newest fifth, 1,563 of 1,633
-  held-out additions came with their companion (95.7%). The record keeps it under
-  `layout.cochange`, at most 100 stated claims and 100 near misses.
+  fifth of the additions conforms, so a habit that changed in the newest additions stays stated
+  until that fifth falls under 0.90. Tests are neither side, a change past 40 files is not counted,
+  and the map's own files are no part of a change. It needs no parser, so any language can get one.
+  Over 60 repositories a scan states 25 claims in 9, 16 of them in an area file. Mined on the older
+  four fifths of 44 repositories' changes and held out on the newest fifth, 1,563 of 1,633 held-out
+  additions came with their companion (95.7%). The record keeps it under `layout.cochange`, at most
+  100 stated claims and 100 near misses.
 - The block prints in the area file that holds the producers, after the directives, and gives way
   before any directive, so no directive line moves for it. A claim whose producers sit in no one
   area, or in one whose patterns do not reach them, is printed nowhere and still reaches the notice
