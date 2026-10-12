@@ -220,7 +220,7 @@ export function walk(program, visit) {
       const own = up !== null && (isClass(up) ? MEMBERS.has(node.type) : MEMBERS.has(up.type) && up.value === node);
       OWNER.set(node, !own ? null : isClass(up) ? declName(up) ?? OWNER.get(up) : OWNER.get(up));
       if (declName(node) === null) {
-        AROUND.set(node, up === null ? null : declName(up) === null ? AROUND.get(up) ?? null : whereOf(up, ctx));
+        AROUND.set(node, up === null ? null : whereOf(up, ctx));
       }
     }
 

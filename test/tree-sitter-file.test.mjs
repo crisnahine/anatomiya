@@ -9,6 +9,9 @@ import { pathToFileURL } from "node:url";
 import { ENGINE, ENGINE_VERSION, RETRY_BUDGET_MS, ensureRuntime, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
 import { GUARDS, createPool } from "../plugins/anatomiya/lib/pool.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { TREE_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-tree.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { ANATOMIYA, ROOT } from "../scripts/plugins.mjs";
 import { needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
@@ -729,5 +732,15 @@ process.send({ ready: true, engine: "tree-sitter", version: null });
     assert.ok(late - early < 64 * 1024 * 1024, `resident size grew ${mb(late - early)} MB between the first hundred parses and the last`);
   } finally {
     await pool.close();
+  }
+});
+
+test("the child's own rows are every row the registry selects for a tree-sitter language, in its order", () => {
+  // A row another table declared for one of these languages would be checked and never counted.
+  const tree = LANGUAGES.filter((l) => l.engine === "tree-sitter").map((l) => l.id);
+  assert.equal(tree.length, 7);
+  for (const lang of tree) {
+    const keys = (rows) => dimensionsFor([lang], { rows }).map((d) => d.key);
+    assert.deepEqual(keys(TREE_DIMENSIONS), keys(ALL_DIMENSIONS), lang);
   }
 });

@@ -27,7 +27,13 @@ process.on("message", async ({ rel, abs, lang, withProgram = false }) => {
       // The IPC channel serialises with JSON, which throws on the BigInt a
       // bigint literal puts in the AST. Without the retry every file holding
       // one is charged as a parse failure.
-      process.send(sendable(payload, rel));
+      try {
+        process.send(sendable(payload, rel));
+      } catch (err) {
+        // The channel writes the copy again, a few frames deeper than `sendable` did.
+        if (!(err instanceof RangeError)) throw err;
+        process.send(tooDeep(rel));
+      }
     }
   } catch (err) {
     process.send({
@@ -44,11 +50,13 @@ function sendable(payload, rel) {
     return JSON.parse(JSON.stringify(payload, (_key, v) => (typeof v === "bigint" ? v.toString() : v)));
   } catch (err) {
     if (!(err instanceof RangeError)) throw err;
-    // A tree nested past the stack JSON is written with. The parser read the
-    // file, so it is this tool's crash, never a file that could not be parsed.
-    return { rel, ok: false, error: "tree too deep to send", crashed: true };
+    return tooDeep(rel);
   }
 }
+
+// A tree nested past the stack JSON is written with. The parser read the
+// file, so it is this tool's crash, never a file that could not be parsed.
+const tooDeep = (rel) => ({ rel, ok: false, error: "the tree is too deep to send", crashed: true });
 
 // The version rides the ready message because it is the one thing this shell
 // can say before it has been handed a file, and every worker answers the same.

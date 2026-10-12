@@ -69,7 +69,7 @@ was already a support file on base.
 | TryGhost/Ghost | apps/shade | 23 | 22 | 1 (`test/.eslintrc.cjs`) | 0 |
 | TryGhost/Ghost | apps/portal | 38 | 36 | 2 | 0 |
 | angular/angular | adev/shared-docs | 173 | 164 | 9 (extraction `test` fixtures) | 0 |
-| appsmithorg/appsmith | app/client | 2974 | 2826 | 146 (`cypress/` support and fixtures) | 3 |
+| appsmithorg/appsmith | app/client | 2974 | 2826 | 147 (`cypress/` 94, `test/` 40, `tests/` 13: support and fixtures) | 1 |
 | backstage/backstage | plugins | 2590 | 2587 | 2 (`src/tests/performance/lib`) | 1 |
 | calcom/cal.diy | apps/web | 279 | 274 | 5 (`test/jest-setup.js` and kin) | 0 |
 | calcom/cal.diy | packages/features | 697 | 695 | 1 net | 1 |

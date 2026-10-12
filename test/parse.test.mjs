@@ -414,6 +414,23 @@ test("a tree that cannot be sent for a reason other than its depth reports that 
   assert.deepEqual([reply.ok, reply.error, reply.crashed], [false, "refused", undefined]);
 });
 
+test("a copy too deep to send on the retry is charged as a crash too", async (t) => {
+  // The retry's copy fits one serialisation and the channel's own, a few frames deeper, can still overflow.
+  const d = dir(t);
+  const abs = join(d, "f.js");
+  writeFileSync(abs, "export const n = 1;\n");
+  const sends = 'const send = process.send.bind(process); let n = 0; process.send = (m, ...a) => { if (m && m.rel) { n++; if (n === 1) throw new TypeError("bigint"); if (n === 2) throw new RangeError("Maximum call stack size exceeded"); } return send(m, ...a); };';
+  const child = fork(fileURLToPath(new URL("../plugins/anatomiya/lib/parse-worker.mjs", import.meta.url)), [], {
+    execArgv: [`--import=data:text/javascript,${encodeURIComponent(sends)}`],
+  });
+  t.after(() => child.kill());
+  await once(child, "message");
+  child.send({ rel: "f.js", abs, lang: "js", withProgram: true });
+  const [reply] = await once(child, "message");
+
+  assert.deepEqual(reply, { rel: "f.js", ok: false, error: "the tree is too deep to send", crashed: true });
+});
+
 test("a file over the size cap is named apart from one that failed", async (t) => {
   // Checked with `stat` before the file is dispatched, so nothing reads these
   // bytes. It is a generated or minified file, which is nobody's to fix.
