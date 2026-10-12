@@ -17,7 +17,8 @@ USAGE = (
 )
 LIMITS = {"low": -1, "flags": [True, None], "pair": (2.5,), "set": {False}}
 GREETING = f"{USAGE}"
-LIMITS["high"] = 2
+LOW, HIGH = 1, 2
+[FIRST, (*REST, LAST)] = 1, (2, 3)
 RATES: Dict[str, a.Rate | None] = {}
 HOOKS: Callable[[int], tuple[int, ...]] = None
 FIRST: a.Rates[0] = None
@@ -115,7 +116,7 @@ const NOTE = <<<'TEXT'
 plain
 TEXT;
 $greeting = "hello $name";
-$limits['high'] = 2;
+[$low, $high] = [1, 2];
 const EOL = "\\n";
 
 function format_total(int $cents): string

@@ -161,9 +161,9 @@ test("the oracle names a Go constant converted from iota, and passes a bare one 
 });
 
 test("the oracle names whatever a string holds past its own text, wherever the string stands", async () => {
-  const php = ['<?php', '$a["${foo()}"] = 1;', '$a->{"${foo()}"} = 1;', '$x = "{${foo()}}";', 'echo "a ${foo()}";', '$a["k\\n"] = "plain";', ""].join("\n");
+  const php = ['<?php', '$a["${foo()}"] = 1;', '$a->{"${foo()}"} = 1;', '$x = "{${foo()}}";', 'echo "a ${foo()}";', '$a["k\\n"] = "plain";', '$x = "plain\\n";', ""].join("\n");
   assert.deepEqual((await named("php", php, [[2, 5]])).filter(([, type]) => type.startsWith("string")), [2, 3, 4, 5].map((line) => [line, "string holding dynamic_variable_name"]));
-  assert.deepEqual(await named("php", php, [[6, 6]]), []);
+  assert.deepEqual(await named("php", php, [[6, 7]]), [[6, "write to subscript_expression"]]);
 });
 
 test("the oracle names a node in a binding's type, pattern or modifiers that is no name, type or literal", async () => {
@@ -195,7 +195,24 @@ test("the oracle names a C# literal declared as a type spelt as a name, and pass
 });
 
 test("the oracle names a sign before a name outside a value, and passes one before a literal", async () => {
-  assert.deepEqual(await named("python", "a[-b] = 1\na[~b] = 1\nx: -b = 1\na[-1] = 1\n", [[1, 4]]), [1, 2, 3].map((line) => [line, "binding holding unary_operator"]));
+  assert.deepEqual(await named("python", "x: t[-b] = 1\nx: ~b = 1\nx: -b = 1\nx: -1 = 1\n", [[1, 4]]), [1, 2, 3].map((line) => [line, "binding holding unary_operator"]));
+});
+
+test("the oracle names a Python or PHP assignment whose target is not a plain name, whatever its value, and passes a pattern of plain names", async () => {
+  const python = ["x = 1", "x: int = 1", "a, b = 1, 2", "[a, (b, *c)] = 1, 2", "naïve = 1", "a.b = 1", 'CONFIG["k"] = 1', "a.b, c = 1, 2", "[a[0], b] = 1, 2", "a.b: int = 1", ""].join("\n");
+  assert.deepEqual(await named("python", python, [[1, 5]]), []);
+  assert.deepEqual(await named("python", python, [[6, 10]]), [[6, "write to attribute"], [7, "write to subscript"], [8, "write to pattern_list"], [9, "write to list_pattern"], [10, "write to attribute"]]);
+  const php = ["<?php", "$x = 1;", "[$a, $b] = [1, 2];", "list($a, list($b, $c)) = [1, [2, 3]];", "const A = 1;", "$a->b = 1;", "$a['k'] = 1;", "$a[] = 1;", "self::$x = 1;", "Foo::$x = 1;", "$$x = 1;", "[$a->b, $c] = [1, 2];", ""].join("\n");
+  assert.deepEqual(await named("php", php, [[2, 5]]), []);
+  assert.deepEqual(await named("php", php, [[6, 12]]), [
+    [6, "write to member_access_expression"],
+    [7, "write to subscript_expression"],
+    [8, "write to subscript_expression"],
+    [9, "write to scoped_property_access_expression"],
+    [10, "write to scoped_property_access_expression"],
+    [11, "write to dynamic_variable_name"],
+    [12, "write to list_literal"],
+  ]);
 });
 
 test("the oracle names a declaration with no body that declares something callable", async () => {
@@ -218,9 +235,9 @@ test("the oracle passes a string made of its own text and a struct type made of 
   }
 });
 
-test("the oracle reads | as joining types inside a Python annotation, and as an operator in a target", async () => {
+test("the oracle reads | as joining types inside a Python annotation, and names a subscript target whatever it holds", async () => {
   const source = "a[b | c] = 1\nx[b | c]: int = 1\nx: a | b = 1\nx: list[a | b] = []\n";
-  assert.deepEqual(await named("python", source, [[1, 4]]), [[1, "binding holding binary_operator"], [2, "binding holding binary_operator"]]);
+  assert.deepEqual(await named("python", source, [[1, 4]]), [[1, "write to subscript"], [2, "write to subscript"]]);
 });
 
 test("a C# directive that closes a conditional is no hit, and the one that opens it is", async () => {
@@ -235,7 +252,7 @@ test("the oracle names an accessor opened on an added line, and an assignment th
   assert.deepEqual(await named("kotlin", kotlin, [[6, 6]]), []);
   const csharp = "class A {\n    int X {\n        get {\n            return 1;\n        }\n    }\n}\n";
   assert.deepEqual(await named("csharp", csharp, [[3, 3]]), [[3, "accessor_declaration"]]);
-  const php = "<?php\nfoo(\n    $a['k'] = 1\n);\n$a['k'] = 1;\n";
+  const php = "<?php\nfoo(\n    $a = 1\n);\n$a = 1;\n";
   assert.deepEqual(await named("php", php, [[3, 3]]), [[2, "function_call_expression"]]);
   assert.deepEqual(await named("php", php, [[5, 5]]), []);
 });

@@ -13,9 +13,10 @@
  * with no body holding a token on an added line, a string on one that holds
  * more than its own text, and a binding that starts on one whose value holds
  * anything but literals, whose target, pattern, type or modifiers hold
- * anything but names, types and literals, or whose declared type may convert
- * its literal. It charges each token to the nodes above it, up to the
- * statement or member it belongs to.
+ * anything but names, types and literals, whose declared type may convert
+ * its literal, or which assigns to anything but names in Python or PHP. It
+ * charges each token to the nodes above it, up to the statement or member it
+ * belongs to.
  *
  * It is written apart from the rule's own walk, and reads these of the rule's
  * table: where a binding and its value are (`binding`, `declaration`, `value`,
@@ -25,8 +26,9 @@
  * (`fn`, `cls`, `wrap`, `scope`, `annotation`). A kind that is wrongly on one
  * of those lists passes the rule and the oracle alike, so neither shows the
  * mistake. It reads none of the rule's lists of names, types, string parts,
- * signs and predefined types, which it tells by how grammars spell them and
- * by a node's own text. Read-only: git is asked, nothing is checked out.
+ * signs, predefined types and targets, which it tells by how grammars spell
+ * them and by a node's own text. Read-only: git is asked, nothing is checked
+ * out.
  *
  * usage: node scripts/measure-inert.mjs [--commits N] [--samples N] <repository> [<repository> ...]
  */
@@ -100,12 +102,17 @@ const OWN_TYPE = { csharp: /^(?:bool|s?byte|char|decimal|double|float|n?u?int|u?
 const NAMING =
   /(?:^|_)(?:identifier|name|type|modifiers?|specifier|lifetime|dimensions|wildcard|scope|pattern)$|^(?:type_arguments|type_argument_list|type_parameter|type_projection|type_elem|variable_declaration|multi_variable_declaration|crate|self|super)$/;
 
-// What a target, an annotation or a struct type is made of where its grammar spells one as neither a name nor a type.
+// What an annotation or a struct type is made of where its grammar spells one as neither a name nor a type.
 export const ACCESS = {
   python: ["attribute", "subscript", "ellipsis"],
-  php: ["member_access_expression", "subscript_expression", "scoped_property_access_expression"],
   go: ["field_declaration_list", "field_declaration"],
 };
+
+// An assignment's target that binds names and writes through nothing, by its text: names between
+// commas, a pattern's brackets opening before a name and closing after one. A slot may be empty.
+const targets = (open, name) => new RegExp(`^(?:${open})*(?:${name})?(?:[\\s)\\]]*,(?:${open})*(?:${name})?)*[\\s)\\]]*$`, "iu");
+const NAME = "[\\p{L}_][\\p{L}\\p{N}_]*";
+const NAMES = { python: targets("[\\s(\\[*]", NAME), php: targets("\\s|\\[|list\\s*\\(", `\\$${NAME}`) };
 
 // The node that joins types where it stands under `within`, read by its operator: any but `|` computes.
 export const UNION = { python: { node: "binary_operator", within: "type" } };
@@ -136,6 +143,10 @@ export const UNION = { python: { node: "binary_operator", within: "type" } };
  * a name, a type, a modifier or a pattern, or is a sign before anything but a
  * literal: in its target, its type, the type of a composite literal, and the
  * modifiers and type its declaration holds.
+ *
+ * A Python or PHP assignment counts, whatever its value, where its target's
+ * text is anything but names: a write through an attribute, a subscript or a
+ * property may run a setter. A target that reads as names is read no further.
  *
  * A sign on a literal counts with them where `OWN_SIGN` has the language and
  * the text is not a pair it spells. So does a literal other than `null` whose
@@ -262,10 +273,12 @@ export function oracleHits(tree, lang, added) {
         const value = own ?? (counter ? null : node.lastNamedChild);
         const odd = value === null ? null : counter ? oddLeaf(value, counter) : firstOdd(value);
         const declared = odd === null ? convertedBy(node, value) : null;
+        const target = NAMES[lang] ? node.childForFieldName("left") : null;
+        if (target !== null && !NAMES[lang].test(target.text)) hit(node, `write to ${target.type}`);
         if (odd !== null) hit(node, `binding to ${odd.type}`);
         else if (s.alternative && node.childForFieldName(s.alternative) !== null) hit(node, "binding with an alternative");
         else if (declared !== null) hit(node, `literal declared as ${declared}`);
-        beside(node, (child) => child.id === value?.id, "binding");
+        beside(node, (child) => child.id === value?.id || child.id === target?.id, "binding");
       } else if (s.declaration?.includes(node.type)) {
         beside(node, (child) => s.binding.includes(child.type) || s.declaration.includes(child.type), "declaration");
       }
