@@ -183,7 +183,7 @@ const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.
 export function scopeOf(area, d) {
   const scope = d.scope !== undefined ? d.scope : askedOf(area, d);
   // A record is committed, so a branch writes this list and check prints it once per finding.
-  return Array.isArray(scope) && scope.length <= SCOPE_MOST && scope.every((e) => typeof e === "string" && SCOPE_ENTRY.test(e)) ? scope : null;
+  return Array.isArray(scope) && scope.length > 0 && scope.length <= SCOPE_MOST && scope.every((e) => typeof e === "string" && SCOPE_ENTRY.test(e)) ? scope : null;
 }
 
 const SCOPE_MOST = 16;

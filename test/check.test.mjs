@@ -4812,6 +4812,13 @@ test("a slot counted over named kinds of file raises nothing on a file of anothe
     assertExamined(r, "src/added_ts.ts");
     assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.severity, f.path]), [[severity, "src/added.js"]]);
   }
+  // No scan writes an empty scope; a record that holds one names no kind, so it is no scope.
+  facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ scope: [".js"] })] });
+  const record = join(dir, ".claude/anatomiya/facts.json");
+  const written = JSON.parse(readFileSync(record, "utf8"));
+  written.areas[0].dimensions[0].scope = [];
+  writeFileSync(record, JSON.stringify(written));
+  assert.deepEqual(forKey(await check(dir), "swallowed_error").map((f) => f.path).sort(), ["src/added.js", "src/added_ts.ts"]);
 });
 
 test("a file name is not judged by a naming slot counted over other kinds of file", async (t) => {
