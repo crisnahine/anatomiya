@@ -20,6 +20,8 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { parseSync } from "oxc-parser";
+
 import { invokedAs } from "./entry.mjs";
 import { REL } from "./plugins.mjs";
 import { RELEASES, notesFor, tagFor } from "./release.mjs";
@@ -208,6 +210,86 @@ export function readGlossary(text) {
   }
   close();
   return { terms, problems };
+}
+
+/**
+ * Each word a glossary entry displaces, found in a document or a source file, by file and line.
+ *
+ * Held only where the sense cannot be another: an entry of two or more words, or a hyphenated one,
+ * with no note in parentheses. A single word (`rule`, `check`) and a noted one (`source file (for
+ * the counted set)`) have another sense here that only a reader can tell apart. A quote in
+ * backticks is a quote, and a match inside a term's own longer name (`paired test` in `paired test
+ * project`) is that term. A comment's markers and a line's indent are read past, so a word wrapped
+ * onto the next line is still found.
+ */
+export function avoidedWords(terms, files) {
+  const names = [...terms.keys()].map((n) => n.toLowerCase());
+  const held = [];
+  for (const [term, { avoid }] of terms) {
+    for (const entry of (avoid ?? "").split(",")) {
+      const word = entry.trim();
+      if (!/[\s-]/.test(word) || word.includes("(")) continue;
+      const spelled = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      held.push({ term, word, re: new RegExp(`(?<![\\w-])${spelled}(?![\\w-])`, "gi") });
+    }
+  }
+  const found = [];
+  for (const [rel, text] of files) {
+    const starts = [];
+    let joined = "";
+    for (const line of (rel.endsWith(".mjs") ? spokenIn(rel, text) : text).split(/\r?\n/)) {
+      starts.push(joined.length);
+      joined += `${line.replace(/`[^`]*`/g, (m) => " ".repeat(m.length)).replace(/^\s*(?:\/\/|\/\*\*?|\*(?!\/))?\s*/, "")} `;
+    }
+    const lower = joined.toLowerCase();
+    for (const { term, word, re } of held) {
+      for (const m of joined.matchAll(re)) {
+        if (names.some((n) => n.length > word.length && covers(lower, n, m.index, m[0].length))) continue;
+        let line = 0;
+        while (line + 1 < starts.length && starts[line + 1] <= m.index) line++;
+        found.push({ rel, line: line + 1, word, term });
+      }
+    }
+  }
+  return found;
+}
+
+const TEST_CALLS = new Set(["test", "it", "describe"]);
+const calleeName = (callee) => (callee?.type === "Identifier" ? callee.name : callee?.type === "MemberExpression" ? calleeName(callee.object) : null);
+
+/** The parts of a source file the glossary binds, its comments, test names and claims, each in place and the rest blanked. */
+export function spokenIn(rel, source) {
+  let parsed;
+  try {
+    parsed = parseSync(rel, source);
+  } catch {
+    return source;
+  }
+  const spans = parsed.comments.map((c) => [c.start, c.end]);
+  // A stack, since a nested fixture would run a recursive walk out of stack.
+  const stack = [parsed.program];
+  while (stack.length) {
+    const node = stack.pop();
+    if (node === null || typeof node !== "object") continue;
+    if (Array.isArray(node)) {
+      for (const n of node) stack.push(n);
+      continue;
+    }
+    if (node.type === "CallExpression" && TEST_CALLS.has(calleeName(node.callee)) && node.arguments[0]) spans.push([node.arguments[0].start, node.arguments[0].end]);
+    if (node.type === "Property" && !node.computed && (node.key?.name ?? node.key?.value) === "claim") spans.push([node.value.start, node.value.end]);
+    for (const value of Object.values(node)) if (value && typeof value === "object") stack.push(value);
+  }
+  const out = source.replace(/[^\r\n]/g, " ").split("");
+  for (const [from, to] of spans) for (let i = from; i < to; i++) out[i] = source[i];
+  return out.join("");
+}
+
+/** Whether an occurrence of `name` in `text` spans the stretch from `at` for `length`. */
+function covers(text, name, at, length) {
+  for (let i = text.indexOf(name); i !== -1 && i <= at; i = text.indexOf(name, i + 1)) {
+    if (i + name.length >= at + length) return true;
+  }
+  return false;
 }
 
 /**
@@ -923,6 +1005,12 @@ export function checkDocs() {
     for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
       claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
     }
+  }
+  // CONTRIBUTING bars a word on an `_Avoid_` line from a claim, a test name and a comment, and the
+  // documents keep to it as well.
+  const written = [...tracked].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md" && !RECORDS_THE_PAST.some((r) => r.test(rel)));
+  for (const { rel, line, word, term } of avoidedWords(glossary.terms, written.map((rel) => [rel, CHANGELOG.test(rel) ? unreleased(read(rel)) : read(rel)]))) {
+    claim(`${rel}:${line}`, false, `says "${word}", a word the ${term} entry in CONTEXT.md displaces`);
   }
   for (const { row, spelled } of doneFilesGone(read("DECISIONS.md"), tracked)) {
     claim("DECISIONS.md", false, `row ${row} names \`${spelled}\` as done, and no such file is here`);

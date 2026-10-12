@@ -229,7 +229,7 @@ export const rootLabelEnd = (body) => body.indexOf(": ", body.match(QUOTED)?.[0]
 /** One directory: what it holds, what tests it holds, what has a namesake. */
 function rootLine(r) {
   // More than half of it is tests, so its extension counts are the specs
-  // themselves and the namesake clause would ask a spec directory for specs.
+  // themselves and the namesake clause would ask a test tree for specs.
   //
   // Counted by runner and not by what sits in the directory: whitehall's
   // `test/` holds 766 files of which 538 are minitest specs, and calling all
