@@ -35,6 +35,8 @@ export const SHAPES = {
     part: ["identifier", "attribute", "subscript", "type", "generic_type", "type_parameter", "binary_operator", "list", "ellipsis"],
     // An annotation joins types with `|`, and any other operator computes.
     union: ["binary_operator"],
+    // Where `|` joins: in a target it is an operator on values.
+    unionIn: ["type"],
     literal: ["integer", "float", "true", "false", "none", "string", "concatenated_string"],
     // What a string's own text is made of: anything else inside one is an interpolation.
     literalPart: ["string_start", "string_content", "string_end", "escape_sequence", "escape_interpolation"],
@@ -213,7 +215,14 @@ export const SHAPES = {
     literal: ["integer_literal", "real_literal", "boolean_literal", "character_literal", "string_literal", "verbatim_string_literal", "raw_string_literal", "null_literal"],
     literalPart: ["string_literal_content", "character_literal_content", "escape_sequence", "raw_string_start", "raw_string_content", "raw_string_end"],
     unary: ["prefix_unary_expression"],
+    // An extension may define an operator a built-in type lacks, so a sign is part of a literal only
+    // before what the language itself pairs it with: `-` and `+`, `~`, and `!`.
+    signed: ["integer_literal", "real_literal", "character_literal"],
+    inverted: ["integer_literal", "character_literal"],
+    negated: ["boolean_literal"],
     collection: ["initializer_expression"],
+    // A directive that closes what another opened.
+    closes: ["preproc_endregion"],
     declaration: ["field_declaration", "local_declaration_statement", "variable_declaration"],
     // An array's rank is read by its children, so a call in one asks.
     part: ["identifier", "modifier", "predefined_type", "implicit_type", "nullable_type", "qualified_name", "generic_name", "type_argument_list", "array_type", "array_rank_specifier"],
@@ -281,7 +290,7 @@ export const SHAPES = {
     binding: ["property_declaration"],
     // What a property may hold outside its value: its name, its modifiers and a type made of names.
     part: ["variable_declaration", "identifier", "user_type", "nullable_type", "type_arguments", "type_projection", "modifiers", "visibility_modifier", "property_modifier", "member_modifier"],
-    literal: ["number_literal", "character_literal", "string_literal", "multiline_string_literal"],
+    literal: ["number_literal", "float_literal", "character_literal", "string_literal", "multiline_string_literal"],
     literalPart: ["string_content", "escape_sequence"],
     // This grammar has no boolean or null literal: `true`, `false` and `null` are identifiers with that text.
     word: ["identifier"],
@@ -289,6 +298,10 @@ export const SHAPES = {
     // It also reads `$name` in a one-line string as a content node holding the lone `$`.
     bareInterpolation: ["string_content"],
     unary: ["unary_expression"],
+    // An `operator fun` extension stands behind any operator a built-in type lacks, so a sign is part
+    // of a literal only before what the language itself pairs it with: `-` and `+`, and `!`.
+    signed: ["number_literal", "float_literal"],
+    negated: ["identifier"],
     // `listOf(...)` is a call, so nothing here is a collection literal.
     collection: [],
   },

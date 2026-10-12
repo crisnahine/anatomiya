@@ -16,9 +16,9 @@
  * literals. It charges each token to the nodes above it, up to the statement
  * or member it belongs to. It is written apart from the rule's own walk: it
  * shares the table's literal kinds and none of the rule's lists of names,
- * types and string parts, which it tells by how grammars spell them. So the
- * rule cannot pass by agreeing with itself. Read-only: git is asked, nothing
- * is checked out.
+ * types, string parts and signs, which it tells by how grammars spell them
+ * and by a literal's own text. So the rule cannot pass by agreeing with
+ * itself. Read-only: git is asked, nothing is checked out.
  *
  * usage: node scripts/measure-inert.mjs [--commits N] [--samples N] <repository> [<repository> ...]
  */
@@ -50,9 +50,9 @@ export const ORACLE = {
 // and the statement or member it belongs to, so a constant added to a class body is not the class.
 export const CONTAINERS = {
   python: ["module", "block"],
-  php: ["program", "compound_statement", "declaration_list"],
+  php: ["program", "compound_statement", "declaration_list", "enum_declaration_list"],
   go: ["source_file", "statement_list", "field_declaration_list"],
-  java: ["program", "block", "class_body", "interface_body", "enum_body", "enum_body_declarations"],
+  java: ["program", "block", "class_body", "interface_body", "annotation_type_body", "enum_body", "enum_body_declarations"],
   // A conditional around whole members holds them as a body does, so a `using` added inside one is not the conditional.
   csharp: ["compilation_unit", "declaration_list", "block", "preproc_if", "preproc_elif", "preproc_else"],
   rust: ["source_file", "declaration_list", "block"],
@@ -64,29 +64,38 @@ const defining = (lang) => {
   return [...s.fn, ...s.cls, ...(s.wrap ?? []), ...(s.scope ?? []), ...s.annotation];
 };
 
-// A closing bracket or a separator: a line of these alone opens nothing.
-const CLOSING = /^[)\]};,]$/;
+// A closing bracket, a separator or the end of a conditional: a line of these alone opens nothing.
+const CLOSING = /^(?:[)\]};,]|#endif)$/;
 
 // The binding that may repeat the one above it or count off its place in a group, and the counter's node.
 export const COUNTED = { go: { const_spec: "iota" } };
 
 // What a literal value may hold below its own node: the parts of a string, a
 // number's sign, the members of a collection.
-const LITERAL_PARTS = /^(?:string_(?:start|end|content|fragment|literal_content)|multiline_string_fragment|escape_sequence|interpreted_string_literal_content|raw_string_(?:literal_content|start|content|end)|nowdoc_(?:body|string)|comment|line_comment|block_comment)$/;
+const LITERAL_PARTS =
+  /^(?:string_(?:start|end|content|fragment|literal_content)|character_literal_content|multiline_string_fragment|escape_(?:sequence|interpolation)|interpreted_string_literal_content|raw_string_(?:literal_content|start|content|end)|nowdoc_(?:body|string)|heredoc_(?:start|end)|comment|line_comment|block_comment)$/;
+
+// Where a user may define an operator a built-in type lacks, a sign and its literal by their text: a
+// number that is not unsigned after `-` or `+`, a boolean after `!`. Any other pair is a call.
+const OWN_SIGN = {
+  kotlin: /^(?:[-+]\s*(?![^]*u.?$)[\d.](?:[\w.]|e[-+])*|!\s*(?:true|false))$/i,
+  csharp: /^(?:[-+]\s*(?![^]*(?:u.?|lu)$)[\d.](?:[\w.]|e[-+])*|[-+~]\s*'(?:[^'\\]|\\[^]+)'|~\s*\d\w*|!\s*(?:true|false))$/i,
+};
 
 // How the seven grammars spell a name, a type, a modifier and a pattern of names. Every node under one
 // is read too, and nothing that calls or runs is spelt this way.
 const NAMING =
   /(?:^|_)(?:identifier|name|type|modifiers?|specifier|lifetime|dimensions|wildcard|scope|pattern)$|^(?:type_arguments|type_argument_list|type_parameter|type_projection|type_elem|variable_declaration|multi_variable_declaration|crate|self|super)$/;
 
-// The expressions a target or an annotation is made of where its grammar has no type of its own for one.
+// What a target, an annotation or a struct type is made of where its grammar spells one as neither a name nor a type.
 export const ACCESS = {
   python: ["attribute", "subscript", "ellipsis"],
   php: ["member_access_expression", "subscript_expression", "scoped_property_access_expression"],
+  go: ["field_declaration_list", "field_declaration"],
 };
 
-// The node that joins types, read by its text: any operator in it but `|` computes.
-export const UNION = { python: "binary_operator" };
+// The node that joins types where it stands under `within`, read by its text: any operator in it but `|` computes.
+export const UNION = { python: { node: "binary_operator", within: "type" } };
 const COMPUTES = /[-+*/%@&^<>~]/;
 
 /**
@@ -114,6 +123,9 @@ const COMPUTES = /[-+*/%@&^<>~]/;
  * its value, a binding counts where a node is no literal and is not spelt as
  * a name, a type, a modifier or a pattern: in its target, its type, the type
  * of a composite literal, and the modifiers and type its declaration holds.
+ *
+ * A sign on a literal counts with them where `OWN_SIGN` has the language and
+ * the text is not a pair it spells.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];
@@ -152,7 +164,8 @@ export function oracleHits(tree, lang, added) {
   }
   const spansAdded = (node) => added.some(([from, to]) => node.startPosition.row + 1 <= to && node.endPosition.row + 1 >= from);
   const hits = [];
-  const plain = (n) => literalish.has(n.type) || LITERAL_PARTS.test(n.type) || (s.word?.includes(n.type) && /^(?:true|false|null)$/.test(n.text));
+  const ownSign = (n) => !s.unary.includes(n.type) || !OWN_SIGN[lang] || OWN_SIGN[lang].test(n.text);
+  const plain = (n) => (literalish.has(n.type) && ownSign(n)) || LITERAL_PARTS.test(n.type) || (s.word?.includes(n.type) && /^(?:true|false|null)$/.test(n.text));
   const firstOdd = (top) => {
     for (const todo = [top]; todo.length > 0; ) {
       const n = todo.pop();
@@ -166,12 +179,16 @@ export function oracleHits(tree, lang, added) {
     return null;
   };
   const access = new Set(ACCESS[lang] ?? []);
+  const joinsTypes = (n) => {
+    if (n.type !== UNION[lang]?.node || COMPUTES.test(n.text)) return false;
+    for (let up = n.parent; up !== null; up = up.parent) if (up.type === UNION[lang].within) return true;
+    return false;
+  };
   // The first node of a subtree that is no literal and is not spelt as a name or a type.
   function unnamed(top) {
     for (const todo = [top]; todo.length > 0; ) {
       const n = todo.pop();
-      const union = n.type === UNION[lang] && !COMPUTES.test(n.text);
-      if (!union && !NAMING.test(n.type) && !access.has(n.type) && !plain(n)) return n;
+      if (!joinsTypes(n) && !NAMING.test(n.type) && !access.has(n.type) && !plain(n)) return n;
       for (const child of n.namedChildren) if (child) todo.push(child);
     }
     return null;

@@ -20,12 +20,18 @@ const LINE_READ = 400;
 // The words this grammar spells as identifiers where others have literal nodes.
 const WORDS = new Set(["true", "false", "null"]);
 
-// The only tokens that open nothing: a closing bracket and a separator. Any other may open a callable
-// with no name on its line, as `get`, `func` and a lambda's `{` do.
-const CLOSER = /^[)\]};,]$/;
+// The only tokens that open nothing: a closing bracket, a separator and the end of a conditional. Any
+// other may open a callable with no name on its line, as `get`, `func` and a lambda's `{` do.
+const CLOSER = /^(?:[)\]};,]|#endif)$/;
 
 // The one operator that joins types and computes nothing.
 const UNION = "|";
+
+// Where a language lists what each sign may stand before, the list a sign reads.
+const SIGNS = { "-": "signed", "+": "signed", "~": "inverted", "!": "negated" };
+// An unsigned number has no `-` of its own.
+const UNSIGNED = /(?:u|ul|lu)$/i;
+const BOOLEAN = /^(?:true|false)$/;
 
 /** The nodes that hold no callable, by kind, read once per language. */
 function rulesOf(lang) {
@@ -33,7 +39,7 @@ function rulesOf(lang) {
   const docstring = s.docstring ?? [];
   return {
     s,
-    whole: new Set([...s.comment, ...s.import]),
+    whole: new Set([...s.comment, ...s.import, ...(s.closes ?? [])]),
     header: new Set(s.header ?? []),
     binding: new Set(s.binding),
     declaration: new Set(s.declaration ?? []),
@@ -46,6 +52,7 @@ function rulesOf(lang) {
     comment: new Set(s.comment),
     part: new Set(s.part),
     union: new Set(s.union ?? []),
+    unionIn: new Set(s.unionIn ?? []),
     statement: new Set(s.statement ?? []),
     counted: new Set(s.counted ?? []),
     countedPart: new Set(s.countedPart ?? []),
@@ -74,20 +81,33 @@ function isLiteral(node, r) {
   if (r.literal.has(type)) return !interpolates(node, r) && textOnly(node, r);
   if (r.word.has(type)) return WORDS.has(node.text);
   const parts = named(node).filter((n) => !r.comment.has(n.type));
-  if (r.unary.has(type)) return parts.length === 1 && isLiteral(parts[0], r);
+  if (r.unary.has(type)) return parts.length === 1 && isLiteral(parts[0], r) && paired(node, parts[0], r);
   if (!r.collection.has(type)) return false;
   // A composite literal's type says what it builds: it is read as a type, and the rest as values.
   const typed = r.s.collectionType ? node.childForFieldName(r.s.collectionType) : null;
   return parts.every((n) => (n.id === typed?.id ? plain(n, r.part, r) : isLiteral(n, r)));
 }
 
+/** Whether a sign stands before what its language pairs it with, where it lists pairs: any other pair may be a user's operator. */
+function paired(node, operand, r) {
+  if (r.s.signed === undefined) return true;
+  const list = SIGNS[node.firstChild.type];
+  if (list === undefined || node.childCount !== 2 || !(r.s[list] ?? []).includes(operand.type)) return false;
+  return list === "negated" ? BOOLEAN.test(operand.text) : list !== "signed" || !UNSIGNED.test(operand.text);
+}
+
 const annotated = (node, r) => r.annotation.length > 0 && node.descendantsOfType(r.annotation).length > 0;
 
-/** Whether every named node of a subtree is a literal or one of `types`, a kind listed as computing nothing. */
-function plain(node, types, r) {
+/**
+ * Whether every named node of a subtree is a literal or one of `types`, a kind
+ * listed as computing nothing. `typed` says the subtree is inside a type, the
+ * one place `|` joins and does not compute.
+ */
+function plain(node, types, r, typed = false) {
   if (!types.has(node.type)) return isLiteral(node, r);
-  if (r.union.has(node.type) && node.children.some((n) => n && !n.isNamed && n.type !== UNION)) return false;
-  return named(node).every((n) => r.comment.has(n.type) || plain(n, types, r));
+  if (r.union.has(node.type) && (!typed || node.children.some((n) => n && !n.isNamed && n.type !== UNION))) return false;
+  const inside = typed || r.unionIn.has(node.type);
+  return named(node).every((n) => r.comment.has(n.type) || plain(n, types, r, inside));
 }
 
 /**
