@@ -131,20 +131,21 @@ process.send = (msg, ...rest) => {
     }
   });
 
-  // Each start paired with the end that follows it; a killed attempt has none.
+  // Each start paired with the end that follows it; a killed attempt has none. Placed by line, not by
+  // stamp: every child appends to the one log, and two children's clocks can disagree on Windows.
   const spans = [];
   const open = new Map();
-  for (const line of readFileSync(log, "utf8").trim().split("\n")) {
-    const [what, rel, at] = line.split(" ");
-    if (what === "start") open.set(rel, { rel, from: Number(at) });
-    else spans.push({ ...open.get(rel), to: Number(at) });
-  }
+  readFileSync(log, "utf8").trim().split("\n").forEach((line, at) => {
+    const [what, rel] = line.split(" ");
+    if (what === "start") open.set(rel, { rel, from: at });
+    else spans.push({ ...open.get(rel), to: at });
+  });
   const retries = spans.filter((s) => s.rel.startsWith("hang"));
   assert.equal(retries.length, 2);
   for (const r of retries) {
     for (const s of spans) {
       if (s === r) continue;
-      assert.ok(s.to <= r.from || s.from >= r.to, `${s.rel} ran beside the retry of ${r.rel}`);
+      assert.ok(s.to < r.from || s.from > r.to, `${s.rel} ran beside the retry of ${r.rel}`);
     }
   }
 });
