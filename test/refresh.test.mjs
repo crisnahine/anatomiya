@@ -2165,6 +2165,39 @@ test("three workers over a dead lock leave one holder", async (t) => {
   }
 });
 
+// A dead lock and the token of a worker that died breaking it, `ms` ago.
+function deadBreak(t, ms) {
+  const dir = lockDir(t);
+  const lock = join(dir, "refresh.lock");
+  writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() - 31 * 60 * 1000, nonce: "0123456789abcdef" }));
+  const token = `${lock}.0123456789abcdef`;
+  writeFileSync(token, "");
+  const at = new Date(Date.now() - ms);
+  utimesSync(token, at, at);
+  return { dir, lock, token };
+}
+
+test("a token a killed worker left does not stop later refreshes", (t) => {
+  const { dir, lock } = deadBreak(t, 5 * 60 * 1000);
+
+  const held = acquire(lock);
+
+  assert.ok(held, "the lock is taken");
+  assert.equal(readFileSync(lock, "utf8"), held.content);
+  assert.deepEqual(readdirSync(dir), ["refresh.lock"], "and only the lock is left");
+});
+
+test("a token younger than the bound is left alone", (t) => {
+  // Its breaker may still be running.
+  const { dir, lock, token } = deadBreak(t, 1000);
+  const before = readFileSync(lock, "utf8");
+
+  assert.equal(acquire(lock), null);
+  assert.equal(readFileSync(lock, "utf8"), before);
+  assert.ok(existsSync(token));
+  assert.deepEqual(readdirSync(dir).sort(), ["refresh.lock", "refresh.lock.0123456789abcdef"]);
+});
+
 test("a token a worker died holding is removed by the next worker to take the lock", (t) => {
   const dir = lockDir(t);
   const lock = join(dir, "refresh.lock");
