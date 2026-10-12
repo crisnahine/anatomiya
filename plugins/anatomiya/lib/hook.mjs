@@ -725,8 +725,8 @@ function batchClaimed(path, transcript, tail, digest) {
     try {
       unlinkSync(lock);
     } catch {
-      // Taken out by a call that read it as stale; nothing is left to release. A holder suspended past
-      // the dead-lock age removes its successor's lock here, which costs that batch one copy more.
+      // Taken out by a call that read it as stale; nothing is left to release. A holder suspended past the
+      // dead-lock age removes whichever lock is there now, and a check before it would only narrow that window.
     }
   }
   sweep(dirname(path), path);
@@ -736,7 +736,7 @@ function batchClaimed(path, transcript, tail, digest) {
 /**
  * Takes the lock, breaking it once where it outlived any hook; false where another call holds it.
  *
- * A lock that may be live is never moved or removed: the right to remove one dead generation goes
+ * A lock younger than the dead-lock age is never broken: the right to remove one dead generation goes
  * to whichever call creates the lock token named by its mtime, and that call removes it only while the
  * lock is still that generation. Every other call goes to the one create, and the losers stay silent.
  */
