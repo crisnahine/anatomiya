@@ -24,9 +24,10 @@ read was between 1.83 and 2.49: neither the size nor plain CPU contention moves 
 
 Run 38188845786 ran the whole suite on all six legs, every growth test logging two reads of the same
 rounds: the harness's, where the larger side runs as many calls as the smaller and so twice as long,
-and one where the larger side runs half the calls, so both run as long. Over 130 paired reads on the
-five legs that finished, 6 of the harness's reads and 8 of the other's are 2.5 or more, and one of
-each passed 3, on the same test in the same round (`rules.test.mjs`, 3.105 and 3.050). Running the
+and one where the larger side runs half the calls, so both run as long. Over 156 paired reads, 9 of
+the harness's reads and 10 of the other's are 2.5 or more, and 1 of the harness's and 3 of the
+other's passed 3: `rules.test.mjs`, a directory of names in another case, 3.105 and 3.050 in the
+same round, and `walk.test.mjs`'s nested shapes at 3.030 and 3.162 for the other alone. Running the
 two sides equally long is not what keeps a read under 3.
 
 ## What the harness does
