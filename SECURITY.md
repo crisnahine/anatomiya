@@ -446,7 +446,9 @@ answers from the transcript alone, which can deliver one copy per call of a batc
 while it holds a lock token leaves that dead lock in place, so the echo for that window and map
 stays silent until a batch claim another window or map makes there a day or more later sweeps both.
 After the clock is set back, a lock token the system would not remove can carry the name of a later
-dead lock, and that window stays silent until the sweep too.
+dead lock, and that window stays silent until the sweep too. A call suspended past 7 seconds while it
+holds the lock, a laptop asleep in those milliseconds, removes the next holder's lock as it releases
+its own, and that batch delivers one copy more.
 
 ### A committed record or pin is input too
 

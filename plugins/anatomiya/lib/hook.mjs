@@ -725,7 +725,8 @@ function batchClaimed(path, transcript, tail, digest) {
     try {
       unlinkSync(lock);
     } catch {
-      // Taken out by a call that read it as stale; nothing is left to release.
+      // Taken out by a call that read it as stale; nothing is left to release. A holder suspended past
+      // the dead-lock age removes its successor's lock here, which costs that batch one copy more.
     }
   }
   sweep(dirname(path), path);
