@@ -17,13 +17,13 @@ import { PRECEDENT_FLOOR } from "./principles.mjs";
 import {
   FAMILY_TEST_NAMES,
   TEST_DIRS,
-  TEST_NAME,
-  RUBY_TEST_NAME,
   TEST_ROOTS,
   UNNAMED_RUNNER,
-  isTestTree,
-  namesATest,
+  namesATestFile,
+  underTestTree,
 } from "./test-shape.mjs";
+
+export { underTestTree };
 
 /**
  * The floor rises with the corpus, so a directory earns a line by holding a
@@ -33,30 +33,6 @@ import {
 export const minRootFiles = (n) => Math.max(3, Math.ceil(0.01 * n));
 
 const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel.indexOf("/")));
-
-/**
- * Whether this root is, or is under, a test tree, at any depth.
- *
- * Its files that are not tests are what the tests run on, so a namesake count over them
- * is true and about nobody's question: webpack's `test` is 12,645 files of
- * which 2,607 are tests, and it read `1 of 7858 has a namesake test under test`
- * over the fixture modules the 2,607 exercise.
- *
- * Every segment, not only the first: a monorepo nests each package's own tree
- * one level under the package name, so a check that only reads the first
- * segment never engages there at all. fastlane's `gym/spec` stated "1 of 1
- * has a namesake test" over a single empty `spec_helper.rb`, and decidim's
- * `decidim-dev/lib/decidim/dev/test` scanned 46 files of shared RSpec tooling
- * as application code, both by this exact route.
- *
- * `family` adds the names one language's own build gives a test tree, for a
- * file or a root of that language and no other: `commonTest` is a Gradle
- * source set and an ordinary directory name in a JavaScript repository.
- *
- * Exported for its own test.
- */
-export const underTestTree = (dir, family = null) =>
-  dir !== "" && dir.split("/").some((seg) => isTestTree(seg, family));
 
 /**
  * What a root's label carries when its record covers one level and not the
@@ -256,24 +232,13 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // and reading that absence as "not a test" costs vscode 1,864 of its 2,366
   // (`test` nested inside `suite`) and this client's whole Cypress suite.
   if (facets?.empty === true) return false;
-  const base = baseOf(rel);
-  const dir = dirOf(rel);
-  // A language with a test name of its own answers by it and by nothing
-  // written for another: no dotted form, no mirror, no `__tests__`.
+  // The name answers first, read as a reader holding the parse reads it. A
+  // language with a test name of its own answers by it and by nothing written
+  // for another: no dotted form, no mirror, no `__tests__`.
   const family = familyOf(lang);
-  const names = FAMILY_TEST_NAMES[family];
-  if (names) return mirrored?.has(rel) === true || namesATest(rel, family);
-  if (TEST_NAME.test(base)) return true;
-  // The Ruby form is the one a producer wears in earnest, so it is the one
-  // that has to be corroborated by where the file sits. `software_spec.rb` is
-  // Homebrew's `SoftwareSpec` class and has its own `software_spec_spec.rb`
-  // under `test/`, and a RuboCop cop named for the `Rails.env.test?` guard it
-  // enforces printed a test group of its own in the overview.
-  //
-  // The dotted and hyphen forms keep answering on the name alone, for the
-  // reason `test-shape.mjs` records: discourse writes 4,000 tests as
-  // `login-test.js` and no other signal in them says so.
-  if (RUBY_TEST_NAME.test(base) && underTestTree(dir)) return true;
+  const named = namesATestFile(rel, family, { read: true });
+  if (named || FAMILY_TEST_NAMES[family]) return named || mirrored?.has(rel) === true;
+  const dir = dirOf(rel);
   // Past its name, a read file is a test by its address only where nothing in
   // it says otherwise. One that exports is what the tests import: 328 of the
   // 645 files the two claims below took across 60 repositories, every one a

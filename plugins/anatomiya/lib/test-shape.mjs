@@ -13,7 +13,7 @@
  * because `facets.mjs` reads it and the parser child reads the facets.
  */
 import { assertKeyed, hostedBy } from "./langs.mjs";
-import { stemOf } from "./paths.mjs";
+import { baseOf, dirOf, stemOf } from "./paths.mjs";
 
 // `_spec.rb` and `_test.rb` are how Ruby spells the same thing the dotted forms
 // spell, and the hyphen is how Ember spells it: discourse writes 4,000 tests as
@@ -255,6 +255,55 @@ export function namesATest(rel, family) {
   const names = FAMILY_TEST_NAMES[family];
   if (!names || coveredStem(stemOf(rel), family) === null) return false;
   return names.alone === true || rel.split("/").slice(0, -1).some((segment) => isTestTree(segment, family));
+}
+
+/**
+ * Whether this directory is, or is under, a test tree, at any depth.
+ *
+ * Its files that are not tests are what the tests run on, so a namesake count over them
+ * is true and about nobody's question: webpack's `test` is 12,645 files of
+ * which 2,607 are tests, and it read `1 of 7858 has a namesake test under test`
+ * over the fixture modules the 2,607 exercise.
+ *
+ * Every segment, not only the first: a monorepo nests each package's own tree
+ * one level under the package name, so a check that only reads the first
+ * segment never engages there at all. fastlane's `gym/spec` stated "1 of 1
+ * has a namesake test" over a single empty `spec_helper.rb`, and decidim's
+ * `decidim-dev/lib/decidim/dev/test` scanned 46 files of shared RSpec tooling
+ * as application code, both by this exact route.
+ *
+ * `family` adds the names one language's own build gives a test tree, for a
+ * file or a root of that language and no other: `commonTest` is a Gradle
+ * source set and an ordinary directory name in a JavaScript repository.
+ *
+ * Asked of a root by the roster, and of a file's directory by the Ruby name
+ * rule in `namesATestFile`.
+ */
+export const underTestTree = (dir, family = null) =>
+  dir !== "" && dir.split("/").some((seg) => isTestTree(seg, family));
+
+/**
+ * Whether a path's name says it is a test file: its family's own name where it
+ * has one, else a dotted or hyphen form on the basename, else the Ruby form.
+ * A directory named like a test is no test, `a.test.d/x.js` nor anything under
+ * `__tests__`, which is an address and not a name.
+ *
+ * `read` is the evidence the caller holds. The Ruby form is the one a producer
+ * wears in earnest, `software_spec.rb` is Homebrew's `SoftwareSpec` class, so a
+ * reader that parsed the file and found no case asks a test tree to corroborate
+ * it (H35). A reader holding only the path keeps the name alone: the tree rule
+ * there would be wrong for 43 of the 51 corpus paths it moves, canvas-lms's 39
+ * `gems/plugins/<plugin>/spec_canvas` specs among them, each of which its parse
+ * reads as a test before its name is asked.
+ *
+ * The dotted and hyphen forms answer on the name alone for either reader:
+ * discourse writes 4,000 tests as `login-test.js` and no other signal in them
+ * says so.
+ */
+export function namesATestFile(rel, family, { read = false } = {}) {
+  if (FAMILY_TEST_NAMES[family]) return namesATest(rel, family);
+  const base = baseOf(rel);
+  return TEST_NAME.test(base) || (RUBY_TEST_NAME.test(base) && (!read || underTestTree(dirOf(rel))));
 }
 
 /**
