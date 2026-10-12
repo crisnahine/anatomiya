@@ -5,8 +5,8 @@
  * mtime against the hook timeout (A92), the refresh worker its owner's pid and
  * age (A95).
  *
- * A judge answers `null` where the lock is gone, `{ live: true }`, or
- * `{ live: false, generation, identity }`: `generation` names the lock's token,
+ * A judge answers `null` where the lock is gone, `{ live: true }`, which may
+ * name its `generation` too, or `{ live: false, generation, identity }`: `generation` names the lock's token,
  * and the lock is removed only while the judge, asked again under that token,
  * still answers it dead with the same `identity` (the generation where it gives
  * none).
@@ -87,7 +87,10 @@ const PAUSE = new Int32Array(new SharedArrayBuffer(4));
  * turned every later call away from that dead lock for good. So a token is itself a lock, judged by its
  * mtime and broken by this same protocol, one level down and no further. Unlinked by age alone, two calls
  * finding one old token could both remove it, the second taking the first's fresh one. What is left: a
- * breaker suspended past the bound, which the next call takes for dead (A92 accepts the same of a holder).
+ * breaker suspended past the bound, which the next call takes for dead (A92 accepts the same of a holder);
+ * and a breaker killed holding a token's own token, which nothing here breaks, so the lock stays taken
+ * until a sweep clears it: the echo's day-old sweep, or for the refresh worker, which answers busy till
+ * then, the scan's store sweep (`leftTokens`).
  */
 export function takeDeadLock(lock, judge, content = null) {
   return broken(lock, judge, content, 1);
