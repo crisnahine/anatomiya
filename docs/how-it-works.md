@@ -1550,11 +1550,12 @@ by the next scan that writes or removes in that directory: a regular file named 
 that suffix (`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier scan
 left in .claude/anatomiya were removed`. So what a killed pin or a killed create of the refresh
 lock staged goes too. The same sweep takes, and counts with them, what a killed breaker of the
-refresh lock left (A118): a lock token of a generation the lock does not name, a token's own token
-of the dead lock it names once that is older than 62 seconds, and a
+refresh lock left (A118): a lock token or a token's own token of a generation the lock does not
+name, which is all of them where the lock is gone, a token's own token of the dead generation the
+lock names whose own mtime is more than 62 seconds from the clock, and a
 `refresh.lock.stale-<pid>-<16 hex>` an older build moved aside, where no process of that id is
-running. A lock token of the generation the lock names stays, as does a token's own token while the
-lock is live and anything that is not a regular file. A leftover is removed without being opened, where every other file about to be replaced or
+running. A lock token of the generation the lock names stays, as does a token's own token of the
+generation a live lock names and anything that is not a regular file. A leftover is removed without being opened, where every other file about to be replaced or
 removed is read whole first for the put-back, up to 64 MiB (past that a scan refuses, leaves a
 Cursor or Copilot directory it did not name alone, or replaces a record unread), so its size costs
 the scan nothing and a scan that fails later does not put it back. A leftover whose removal fails,
@@ -1702,8 +1703,8 @@ the one create, and the one that takes the lock removes any lock token of anothe
 Moving a dead lock aside let two workers hold the lock in 1 of 200 rounds at
 3 workers and 11 of 200 at 8 (A95, A117). A lock token a killed worker left is broken the same way once
 it is older than 62 seconds. One case is left: a worker killed while it holds a token's own token
-leaves a dead lock no worker breaks, every refresh of that checkout then finds the lock taken and
-does nothing, and the map there stays as it was until a scan run by hand sweeps the token's own token
+leaves a dead lock no worker breaks, every refresh of that checkout then leaves `refresh.again` and
+scans nothing, and the map there stays as it was until a scan run by hand sweeps the token's own token
 (A118). Neither `doctor`, the summary nor the delivered map says the refresh is stuck meanwhile. It stamps what a scan depends on (HEAD, the index as
 `ls-files -s`, the pin's bytes, the plugin version, whether the repository holds packages and where
 `typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no

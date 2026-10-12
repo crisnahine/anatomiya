@@ -502,7 +502,7 @@ _Avoid_: cache, data directory (that is the plugin's own, outside the repository
 **Facts**:
 The machine record of every slot, gated or not, including which side was stated. The map is derivable from
 it, and the check reads it rather than reading the map.
-_Avoid_: cache, state, database, store
+_Avoid_: cache, state, database, store (alone, for the facts: the **store** is the directory they sit in)
 
 **Layout file**:
 The facts' layout written again on its own beside them, stamped with the size and mtime of the facts
