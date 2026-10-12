@@ -23,7 +23,8 @@ test("a stall while the timed sides are sized leaves each side long enough to re
       for (let i = 0; i < n * 1000; i++) sum = (sum + i) | 0;
       return sum;
     }, 50);
-    assert.ok(Number.isFinite(ratio) && ratio < LINEAR, `twice the work read ${ratio} times as long`);
+    // Above 1.5 as well: sides too short to read come out near 1, whatever the work.
+    assert.ok(Number.isFinite(ratio) && ratio > 1.5 && ratio < LINEAR, `twice the work read ${ratio} times as long`);
   } finally {
     process.cpuUsage = real;
   }
