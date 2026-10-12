@@ -21,9 +21,9 @@ export function doublingRatio(make, n, options) {
 /**
  * The smallest of up to three reads of `measure`, stopping at the first under LINEAR.
  *
- * On a shared runner linear work now and then reads past LINEAR (3.11 to 3.51 on five tests) and
- * under it on the next read, while quadratic work reads about 4 every time. A read that could not
- * be timed is no answer while another read is one.
+ * On a shared runner linear work now and then reads past LINEAR (3.10 to 3.51 on six tests), each
+ * time on one leg of a run whose other legs read it under, while quadratic work reads about 4. A read
+ * that could not be timed is no answer while another read is one.
  */
 export function settled(measure) {
   const reads = [];
@@ -34,7 +34,8 @@ export function settled(measure) {
   return timed.length ? Math.min(...timed) : reads.at(-1);
 }
 
-function timedRatio(make, n, { rounds = 3 } = {}) {
+/** One read: the larger side's fastest time over the smaller's. */
+export function timedRatio(make, n, { rounds = 3 } = {}) {
   // Windows counts CPU time in steps of about 15.6ms, so a short side reads as
   // none or rounds by a whole step. Each side runs long enough that a step is noise.
   // Sized from warmed calls: the first runs unoptimised, measured at twice a

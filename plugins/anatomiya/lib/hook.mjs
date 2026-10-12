@@ -745,12 +745,12 @@ function locked(lock) {
     if (broken) return false;
     const found = lstatOf(lock);
     if (found === null) continue;
-    if (Math.abs(Date.now() - found.mtimeMs) <= LOCK_HELD_MOST_MS + LOCK_MTIME_SLACK_MS) return false;
-    const token = `${lock}.${Math.round(found.mtimeMs)}`;
+    if (Math.abs(Date.now() - Number(found.mtimeMs)) <= LOCK_HELD_MOST_MS + LOCK_MTIME_SLACK_MS) return false;
+    const token = `${lock}.${found.mtimeMs}`;
     if (!createdAlone(token)) continue;
     try {
       const now = lstatOf(lock);
-      if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) removeDeadLock(lock);
+      if (now !== null && now.ino === found.ino && now.mtimeNs === found.mtimeNs) removeDeadLock(lock);
     } finally {
       removeLockToken(token);
     }
@@ -791,7 +791,7 @@ const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
 /**
  * Removes a lock token; one the system refuses to remove is left for the sweep. It names a generation no
- * call breaks again, unless a volume keeping mtimes to 2 s gives a later dead lock its name: that window holds until the sweep.
+ * call breaks again: a later dead lock takes its name only after the clock is set back, and that window then holds.
  */
 function removeLockToken(path) {
   try {
@@ -801,10 +801,10 @@ function removeLockToken(path) {
   }
 }
 
-/** A lock's stat, or null where it is gone. */
+/** A lock's stat, or null where it is gone. Exact: an NTFS file id runs past what a float holds. */
 function lstatOf(path) {
   try {
-    return lstatSync(path);
+    return lstatSync(path, { bigint: true });
   } catch {
     return null;
   }

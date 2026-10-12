@@ -253,8 +253,8 @@ by this version, with times and build digests masked
 ### Fixed in the tests themselves
 
 - A growth test's ratio of 3 or more is read again, up to three reads, and the smallest stands. On
-  the CI runners linear work read past 3 now and then, 3.11 to 3.51 on five tests, and under 3 on
-  the run's other legs and in later runs (`docs/measurements/2026-10-12-growth-reads-on-runners.md`).
+  the CI runners linear work read past 3 now and then, 3.10 to 3.51 on six tests, and under 3 on the
+  run's other legs and in later runs (`docs/measurements/2026-10-12-growth-reads-on-runners.md`).
 - A growth side too short for Windows' 15.6 ms CPU clock to read is timed again, scaled to as long
   as it should have run. A stall while the sides were sized left both under one step, and the ratio
   read as no number at all.

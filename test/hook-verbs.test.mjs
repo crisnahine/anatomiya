@@ -731,6 +731,34 @@ test("a dead lock replaced by another at the same mtime before it is broken is a
   assert.equal(readFileSync(lock, "utf8"), "another", "the other generation's lock is left to the call that made it");
 });
 
+test("a dead lock whose file id changed only past 2^53, as an NTFS id can, is another generation", needsRuby, async (t) => {
+  const dir = await railsish(t);
+  const data = pluginData(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => lockEnds(() => runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }));
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const lock = join(data, "echo", `${name}.lock`);
+  writeFileSync(join(data, "echo", name), "0\n");
+  writeFileSync(lock, "live");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  // Each read of the lock names the next id: two files a float rounds to one id.
+  let reads = 0;
+  const answer = stubbed("lstatSync", (real, p, options) => {
+    const stat = real(p, options);
+    if (String(p) !== lock) return stat;
+    const id = 2n ** 60n + BigInt(reads++);
+    stat.ino = options?.bigint ? id : Number(id);
+    return stat;
+  }, call);
+
+  assert.equal(reads, 2);
+  assert.deepEqual(answer, {});
+  assert.equal(readFileSync(lock, "utf8"), "live");
+});
+
 /** Runs `call` with every removal of a path `refuses` names failing as Windows fails one another process holds. */
 function removalRefused(refuses, call) {
   const busy = (real, p, ...rest) => {
@@ -912,7 +940,7 @@ test("a dead lock whose lock token another call holds is left to that call", nee
   writeFileSync(lock, "");
   const dead = new Date(Date.now() - 60_000);
   utimesSync(lock, dead, dead);
-  const token = `${name}.lock.${Math.round(statSync(lock).mtimeMs)}`;
+  const token = `${name}.lock.${statSync(lock, { bigint: true }).mtimeMs}`;
   writeFileSync(join(data, "echo", token), "");
 
   assert.deepEqual(call(), {});
