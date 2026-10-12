@@ -4,7 +4,8 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rm
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { setTimeout as wait } from "node:timers/promises";
 import { promisify } from "node:util";
 
@@ -1372,6 +1373,13 @@ test("an answer one caller edits is not the answer the next caller of the same s
 
 const GITLINK = "1".repeat(40);
 
+// `cat-file -Z` came with git 2.42. An older git hands every read to the
+// per-call reader, so a case that counts on the one child answering cannot be
+// set up there.
+const [gitMajor, gitMinor] = /(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"]).toString()).slice(1).map(Number);
+const needsBatchZ =
+  gitMajor > 2 || (gitMajor === 2 && gitMinor >= 42) ? {} : { skip: "this git is older than 2.42, so no child answers a read" };
+
 /**
  * One commit holding every kind of path a read can be asked for, and what the
  * per-call reader is known to say about each. The answers are written out, so
@@ -1483,7 +1491,7 @@ function gone(pidFile) {
 // made fails here.
 const PROMPT = { timeout: 60_000 };
 
-test("every read at a revision is answered by one child", needsShebang, async (t) => {
+test("every read at a revision is answered by one child", { ...needsShebang, ...needsBatchZ }, async (t) => {
   const { dir, sha } = oneCommit(t);
   const shim = gitShim(t);
   const reader = blobReader(dir, sha, { env: shim.env });
@@ -1527,7 +1535,9 @@ test("a child killed mid-reply hands the rest to the per-call reader", { ...need
 test("a child that stalls past the caller's timeout hands the rest to the per-call reader", { ...needsShebang, ...PROMPT }, async (t) => {
   const { dir, sha } = oneCommit(t);
   const shim = gitShim(t, () => "exec sleep 300");
-  const reader = blobReader(dir, sha, { env: shim.env, timeout: 5000 });
+  // The same clock bounds the read of the config and each per-call read after
+  // the hand-over, so it is one a real git answers inside on a loaded machine.
+  const reader = blobReader(dir, sha, { env: shim.env, timeout: 10_000 });
   t.after(() => reader.close());
 
   const answers = await Promise.all(["a.ts", "gone.ts"].map((rel) => reader.read(rel)));
@@ -1596,7 +1606,7 @@ test("the reads after a blob over the cap and after a directory still answer", a
   assert.deepEqual(answers.map(answerOf), [A_TS, { ok: false, reason: "over size cap" }, A_TS, ABSENT, ABSENT, A_TS]);
 });
 
-test("a reply whose body is not wanted ends that child, and the next read starts another", needsShebang, async (t) => {
+test("a reply whose body is not wanted ends that child, and the next read starts another", { ...needsShebang, ...needsBatchZ }, async (t) => {
   // The header carries the size, so a blob over the cap is refused before a
   // byte of it is read; a child left running would send it anyway.
   const { dir, sha } = withBigBlob(t);
@@ -1683,9 +1693,13 @@ test("a reader that has handed over still fetches, and still gives up on its cal
   t.after(() => fetching.close());
   assert.deepEqual(answerOf(await fetching.read("a.ts")), A_TS);
 
-  const stalled = blobReader(dir, head, { timeout: 2000, env: gitShim(t, refusesZ, () => "exec sleep 300").env });
+  const slow = gitShim(t, refusesZ, ({ bin }) => `echo $$ > '${bin}/pid'; exec sleep 300`);
+  const stalled = blobReader(dir, head, { timeout: 10_000, env: slow.env });
   t.after(() => stalled.close());
   assert.deepEqual(answerOf(await stalled.read("a.ts")), ABSENT);
+  // A config read that ran out of time answers absent too, with no per-call read started.
+  assert.equal(existsSync(join(slow.bin, "pid")), true, "the per-call read was running");
+  assert.equal(gone(join(slow.bin, "pid")), true, "and the caller's clock ended it");
 });
 
 test("a reader nobody closed does not hold its process open", PROMPT, async (t) => {
@@ -1720,9 +1734,11 @@ test("a closed reader leaves no clock running", async (t) => {
 
 test("closing a reader ends its child by closing stdin", { ...needsShebang, ...PROMPT }, async (t) => {
   const { dir, sha } = oneCommit(t);
-  // Stands in for a git that answers nothing: it reads to the end of stdin and says so.
-  const shim = gitShim(t, ({ bin }) => `cat > /dev/null; touch '${bin}/eof'; exit 0`);
-  const reader = blobReader(dir, sha, { env: shim.env });
+  // Stands in for a git that answers nothing: it reads to the end of stdin
+  // and says so, after longer than a reader waits on a child by default.
+  const shim = gitShim(t, ({ bin }) => `cat > /dev/null; sleep 2; touch '${bin}/eof'; exit 0`);
+  // A grace no loaded machine outlasts, so only the end of stdin can be what ended the child.
+  const reader = blobReader(dir, sha, { env: shim.env, closeGrace: 30_000 });
 
   const read = reader.read("a.ts");
   await until(t, () => shim.batches() === 1);
@@ -1741,8 +1757,8 @@ test("closing a reader kills a child that will not leave", { ...needsShebang, ..
   await until(t, () => existsSync(join(shim.bin, "pid")) && readFileSync(join(shim.bin, "pid"), "utf8").trim() !== "");
   await reader.close();
 
+  assert.equal(gone(join(shim.bin, "pid")), true, "the child is gone by the time close answers");
   assert.deepEqual(answerOf(await read), A_TS);
-  await until(t, () => gone(join(shim.bin, "pid")));
 });
 
 test("a reader closed before its child started never starts one", needsShebang, async (t) => {
@@ -1760,4 +1776,208 @@ test("a reader closed before its child started never starts one", needsShebang, 
     assert.equal(shim.batches(), 0);
     assert.equal(shim.perCall(), 1);
   }
+});
+
+test("a reader with no descriptors left for a child answers as the per-call reader does", { ...needsShebang, ...PROMPT }, async (t) => {
+  const { dir, sha } = oneCommit(t);
+  const lib = new URL("../plugins/anatomiya/lib/git.mjs", import.meta.url).href;
+  const said = `(asked) => asked.then((answer) => answer ?? "resolved", (err) => "rejected: " + err.message)`;
+  const script = `
+    import { closeSync, openSync } from "node:fs";
+    import { blobReader, showBlob } from ${JSON.stringify(lib)};
+    const [dir, sha] = ${JSON.stringify([dir, sha])};
+    const said = ${said};
+    // The repository's config is read while a git can still be started.
+    const out = { warm: (await showBlob(dir, sha, "a.ts")).ok };
+    const held = [];
+    try {
+      for (;;) held.push(openSync("/dev/null", "r"));
+    } catch {
+      // Every descriptor this process may hold is open.
+    }
+    try {
+      const reader = blobReader(dir, sha);
+      out.perCall = await said(showBlob(dir, sha, "a.ts"));
+      out.first = await said(reader.read("a.ts"));
+      out.second = await said(reader.read("a.ts"));
+      out.closed = await said(reader.close());
+      out.again = await said(reader.close());
+    } finally {
+      for (const fd of held) closeSync(fd);
+    }
+    process.stdout.write(JSON.stringify(out));
+  `;
+
+  // The limit is lowered for this one child, so the machine's own table is
+  // never the one that fills. In a process group of its own, because a kill
+  // sent to a child that never started is a kill of the sender's group.
+  const starved = spawn("sh", ["-c", 'ulimit -n 64 && exec "$0" --input-type=module -e "$1"', process.execPath, script], {
+    detached: true,
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let stdout = "";
+  starved.stdout.on("data", (chunk) => (stdout += chunk));
+  const [code, signal] = await once(starved, "close");
+
+  assert.deepEqual({ code, signal }, { code: 0, signal: null });
+  assert.deepEqual(JSON.parse(stdout), {
+    warm: true,
+    perCall: ABSENT,
+    first: ABSENT,
+    second: ABSENT,
+    closed: "resolved",
+    again: "resolved",
+  });
+});
+
+test("a child whose start throws hands every read to the per-call reader", async (t) => {
+  const { dir, sha } = oneCommit(t);
+  // Node refuses a NUL in an environment value before it starts anything, and
+  // the config already read for this repository is not asked for again.
+  const env = { ...process.env, ANATOMIYA_NUL: "a\0b" };
+  assert.deepEqual(answerOf(await showBlob(dir, sha, "a.ts")), A_TS);
+  const reader = blobReader(dir, sha, { env });
+
+  assert.deepEqual(answerOf(await showBlob(dir, sha, "a.ts", { env })), ABSENT, "what the per-call reader says");
+  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
+  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
+  await reader.close();
+  await reader.close();
+});
+
+test("a read never rejects, where the per-call reader itself would", async (t) => {
+  // The same environment with the repository's config not yet read: the read
+  // of it is what throws, in the reader's start and in the per-call read alike.
+  const { dir, sha } = oneCommit(t);
+  const env = { ...process.env, ANATOMIYA_NUL: "a\0b" };
+  const reader = blobReader(dir, sha, { env });
+
+  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
+  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
+  await reader.close();
+});
+
+test("a fetching reader's child never fetches, and the blobs a clone does not hold are fetched side by side", { ...needsShebang, ...needsBatchZ, ...PROMPT }, async (t) => {
+  const origin = repo(t);
+  const unheld = ["b.ts", "c.ts", "d.ts"];
+  for (const rel of unheld) writeFileSync(join(origin.dir, rel), `export const ${rel[0]} = 1\n`);
+  origin.git("add", "-A");
+  origin.git("commit", "-qm", "more");
+  origin.git("config", "uploadpack.allowFilter", "true");
+  const dir = scratch(t, "anatomiya-git-partial-");
+  execFileSync("git", ["clone", "-q", "--no-checkout", "--filter=blob:none", `file://${origin.dir}`, dir], { stdio: "pipe" });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
+  // One blob the clone holds, fetched by a plain git.
+  execFileSync("git", ["cat-file", "blob", `${head}:a.ts`], { cwd: dir, stdio: "pipe" });
+  const shim = gitShim(
+    t,
+    ({ bin, real }) => `echo "\${GIT_NO_LAZY_FETCH-unset}" > '${bin}/batch-no-lazy-fetch'; exec '${real}' "$@"`,
+    // Each per-call read waits for a second one to be running before it asks
+    // git, so reads made in turn never get past the first. Bounded so that one
+    // nobody joins does not outlive the test.
+    ({ bin, real }) => [
+      `: > '${bin}/alive.'$$`,
+      "n=0",
+      `while [ "$(ls '${bin}' | grep -c '^alive')" -lt 2 ] && [ $n -lt 2400 ]; do sleep 0.05; n=$((n+1)); done`,
+      `exec '${real}' "$@"`,
+    ].join("; ")
+  );
+  const reader = blobReader(dir, head, { lazyFetch: true, env: shim.env });
+  t.after(() => reader.close());
+
+  // The held blob last, so a child that left over a missing one could not answer it.
+  const answers = await Promise.all([...unheld, "a.ts"].map((rel) => reader.read(rel)));
+
+  assert.deepEqual(answers.map((blob) => blob.ok && blob.content.toString()), [
+    "export const b = 1\n",
+    "export const c = 1\n",
+    "export const d = 1\n",
+    "export const a = 1\n",
+  ]);
+  assert.equal(readFileSync(join(shim.bin, "batch-no-lazy-fetch"), "utf8"), "1\n", "the child was told not to fetch");
+  assert.equal(shim.batches(), 1, "and it stayed up to answer what the clone holds");
+  assert.equal(shim.perCall(), 3, "one per-call read for each blob the clone did not hold");
+});
+
+test("a child that has closed its stdin hands the next read to the per-call reader", { ...needsShebang, ...PROMPT }, async (t) => {
+  // Nobody holds the other end, so a request written to it is an EPIPE: the
+  // second on a pipe, and already the first where the streams are sockets.
+  const { dir, sha } = oneCommit(t);
+  const shim = gitShim(t, () => `exec <&-; printf '${sha}:gone.ts missing\\000'; exec sleep 300`);
+  const reader = blobReader(dir, sha, { env: shim.env });
+  t.after(() => reader.close());
+
+  assert.deepEqual(answerOf(await reader.read("gone.ts")), ABSENT);
+  // Under the 120 s a read waits on a silent child, so only the error on stdin ends this in time.
+  assert.deepEqual(answerOf(await reader.read("a.ts")), A_TS);
+  assert.equal(shim.batches(), 1);
+});
+
+test("a header that arrives in two pieces is read as one", { ...needsShebang, ...PROMPT }, async (t) => {
+  const { dir, sha } = oneCommit(t);
+  const oid = "a".repeat(40);
+  const shim = gitShim(t, ({ bin }) => [
+    // Cut inside the type, so the second piece alone is no header at all.
+    `printf '${oid} bl'`,
+    `: > '${bin}/half'`,
+    `while [ ! -e '${bin}/go' ]; do sleep 0.05; done`,
+    `printf 'ob 19\\000export const a = 1\\n\\000'`,
+    "exec sleep 300",
+  ].join("; "));
+  const reader = blobReader(dir, sha, { env: shim.env });
+  t.after(() => reader.close());
+
+  const read = reader.read("a.ts");
+  await until(t, () => existsSync(join(shim.bin, "half")));
+  // Time for the first piece to be read on its own. One that arrives joined
+  // to the second is the easier case, so a slow machine cannot fail this.
+  await wait(200);
+  writeFileSync(join(shim.bin, "go"), "");
+
+  assert.deepEqual(answerOf(await read), A_TS);
+  assert.equal(shim.perCall(), 0, "answered by the child");
+});
+
+test("a child that sends more than a header can hold with no end to it hands over", { ...needsShebang, ...PROMPT }, async (t) => {
+  // Under the 120 s a read waits on a silent child, so only the bound on a header ends this in time.
+  const { dir, sha } = oneCommit(t);
+  const shim = gitShim(t, () => "printf '%0500d' 0; exec sleep 300");
+  const reader = blobReader(dir, sha, { env: shim.env });
+  t.after(() => reader.close());
+
+  assert.deepEqual(answerOf(await reader.read("a.ts")), A_TS);
+  assert.equal(shim.perCall(), 1);
+});
+
+test("closing a reader whose child has already exited does not wait for it", { ...needsShebang, ...PROMPT }, async (t) => {
+  // The shell leaves and a process it started keeps the pipes: an exited
+  // child whose streams have not closed, so the reader has not heard of it.
+  const { dir, sha } = oneCommit(t);
+  const shim = gitShim(t, ({ bin }) => `sleep 300 & echo $! > '${bin}/holder'; echo $$ > '${bin}/pid'; exit 0`);
+  t.after(() => {
+    try {
+      process.kill(Number(readFileSync(join(shim.bin, "holder"), "utf8")), "SIGKILL");
+    } catch {
+      // Never started, or gone already.
+    }
+  });
+  // A grace past this test's own bound, so a close that waits it out fails.
+  const reader = blobReader(dir, sha, { env: shim.env, closeGrace: 600_000 });
+
+  const read = reader.read("a.ts");
+  await until(t, () => existsSync(join(shim.bin, "pid")) && gone(join(shim.bin, "pid")));
+  await reader.close();
+
+  assert.deepEqual(answerOf(await read), A_TS);
+});
+
+test("a child ended for a reply nobody wanted is gone when its reader has closed", needsShebang, async (t) => {
+  const { dir, sha } = withBigBlob(t);
+  const shim = gitShim(t, ({ bin, real }) => `echo $$ > '${bin}/pid'; exec '${real}' "$@"`);
+  const reader = blobReader(dir, sha, { env: shim.env });
+
+  assert.deepEqual(answerOf(await reader.read("big.ts")), { ok: false, reason: "over size cap" });
+  await reader.close();
+
+  assert.equal(gone(join(shim.bin, "pid")), true);
 });

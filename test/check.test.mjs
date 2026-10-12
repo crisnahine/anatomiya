@@ -5802,7 +5802,14 @@ test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, asyn
   assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
 });
 
-test("check spawns two cat-file children for a base and a head", needsShebang, async (t) => {
+// `cat-file -Z` came with git 2.42. An older git hands every read to the
+// per-call reader, so a case that counts on the one child answering cannot be
+// set up there.
+const [gitMajor, gitMinor] = /(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"]).toString()).slice(1).map(Number);
+const needsBatchZ =
+  gitMajor > 2 || (gitMajor === 2 && gitMinor >= 42) ? {} : { skip: "this git is older than 2.42, so no child answers a read" };
+
+test("check spawns two cat-file children for a base and a head", { ...needsShebang, ...needsBatchZ }, async (t) => {
   const rels = ["src/f1.ts", "src/f2.ts", "src/f3.ts"];
   const dir = repo(t, ({ dir, git, write, commit }) => {
     for (const rel of rels) write(rel, "export const f = 1\n");

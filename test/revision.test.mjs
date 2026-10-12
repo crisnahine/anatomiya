@@ -34,6 +34,13 @@ function repo(t, build) {
   }
 }
 
+// `cat-file -Z` came with git 2.42. An older git hands every read to the
+// per-call reader, so a case that counts on the one child answering cannot be
+// set up there.
+const [gitMajor, gitMinor] = /(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"]).toString()).slice(1).map(Number);
+const needsBatchZ =
+  gitMajor > 2 || (gitMajor === 2 && gitMinor >= 42) ? {} : { skip: "this git is older than 2.42, so no child answers a read" };
+
 const FIRST = "export const n = 1\n";
 const SECOND = "export const n = 2\n";
 
@@ -264,7 +271,7 @@ test("two paths that differ only in how their accents are encoded are written wh
   assert.equal(new Set(out.files.map((f) => f.abs.normalize("NFC").toLowerCase())).size, 2);
 });
 
-test("every file at a revision is read by one child, and it is gone when the read is done", needsShebang, async (t) => {
+test("every file at a revision is read by one child, and it is gone when the read is done", { ...needsShebang, ...needsBatchZ }, async (t) => {
   const rels = Array.from({ length: 20 }, (_, i) => `src/f${i}.js`);
   let sha;
   const dir = repo(t, (d, { write, commit }) => {
@@ -299,7 +306,8 @@ test("every file at a revision is read by one child, and it is gone when the rea
 
 test("a git that never answers is given up on at the caller's clock", { ...needsShebang, timeout: 60_000 }, async (t) => {
   // The test's own bound is under the 120 s a read waits by default, so only
-  // the caller's two seconds can end this in time.
+  // the caller's clock can end this in time: once on the one child, once on
+  // the per-call read it hands over to.
   let sha;
   const dir = repo(t, (d, { write, commit }) => {
     write("a.js", FIRST);
@@ -308,16 +316,24 @@ test("a git that never answers is given up on at the caller's clock", { ...needs
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-revision-bin-"));
   t.after(() => rmSync(bin, { recursive: true, force: true }));
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
-  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$1" in cat-file) exec sleep 300;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh\ncase "$1" in cat-file) echo $$ >> '${bin}/pids'; exec sleep 300;; esac\nexec '${real}' "$@"\n`,
+    { mode: 0o755 }
+  );
   const path = process.env.PATH;
   process.env.PATH = `${bin}:${path}`;
   let out;
   try {
-    out = await readAtRevision(dir, sha, [{ rel: "a.js" }], { timeout: 2000 });
+    out = await readAtRevision(dir, sha, [{ rel: "a.js" }], { timeout: 10_000 });
   } finally {
     process.env.PATH = path;
   }
   t.after(out.dispose);
 
   assert.deepEqual(out.missing, [{ rel: "a.js", reason: "absent" }]);
+  // A config read that ran out of time answers absent as well, having started neither.
+  const stalled = readFileSync(join(bin, "pids"), "utf8").trim().split("\n").map(Number);
+  assert.equal(stalled.length, 2, "the one child and the per-call read were both started");
+  for (const pid of stalled) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "and both were ended");
 });
