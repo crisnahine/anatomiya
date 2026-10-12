@@ -30,6 +30,9 @@ export const SHAPES = {
     // What the reuse check reads as a name bound to a literal, which asks nothing.
     binding: ["assignment"],
     value: "right",
+    // An assignment's target holds an expression, so it must be a name or an attribute chain.
+    target: "left",
+    targetChain: ["identifier", "attribute"],
     literal: ["integer", "float", "true", "false", "none", "string", "concatenated_string"],
     interpolation: ["interpolation"],
     unary: ["unary_operator"],
@@ -64,6 +67,8 @@ export const SHAPES = {
     renamed: "alias",
     binding: ["const_element", "assignment_expression", "property_element"],
     value: "default_value",
+    target: "left",
+    targetChain: ["variable_name", "name", "member_access_expression"],
     literal: ["integer", "float", "boolean", "null", "string", "encapsed_string", "nowdoc"],
     // A double-quoted string interpolates any variable it names.
     interpolation: ["variable_name"],
@@ -71,6 +76,9 @@ export const SHAPES = {
     collection: ["array_creation_expression", "array_element_initializer"],
     // What holds bindings beside the modifiers and the type they share.
     declaration: ["const_declaration", "property_declaration"],
+    // The only other things a declaration may hold: anything else, a property hook among them, asks.
+    modifier: ["visibility_modifier", "static_modifier", "final_modifier", "readonly_modifier", "var_modifier"],
+    declaredType: "type",
   },
   go: {
     fn: ["function_declaration", "method_declaration"],
@@ -140,6 +148,8 @@ export const SHAPES = {
     unary: ["unary_expression"],
     collection: ["array_initializer"],
     declaration: ["field_declaration", "local_variable_declaration", "constant_declaration"],
+    modifier: ["modifiers"],
+    declaredType: "type",
   },
   csharp: {
     fn: ["method_declaration", "local_function_statement"],
@@ -165,6 +175,8 @@ export const SHAPES = {
     unary: ["prefix_unary_expression"],
     collection: ["initializer_expression"],
     declaration: ["field_declaration", "local_declaration_statement", "variable_declaration"],
+    modifier: ["modifier"],
+    declaredType: "type",
   },
   rust: {
     fn: ["function_item"],
@@ -185,6 +197,8 @@ export const SHAPES = {
     renamed: "alias",
     binding: ["const_item", "static_item", "let_declaration"],
     value: "value",
+    // A let-else runs its block when the pattern does not match.
+    alternative: "alternative",
     literal: ["integer_literal", "float_literal", "boolean_literal", "char_literal", "string_literal", "raw_string_literal"],
     unary: ["unary_expression"],
     collection: ["array_expression", "tuple_expression"],

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Language } from "web-tree-sitter";
 
-import { measure, ORACLE, oracleHits, tally } from "../scripts/measure-inert.mjs";
+import { CONTAINERS, measure, ORACLE, oracleHits, tally } from "../scripts/measure-inert.mjs";
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 
@@ -63,8 +63,57 @@ test("the oracle names a function, a lambda, a call and a binding to a name that
   }
 });
 
+test("the oracle names a call whose arguments or closing bracket were added, and the shapes the review found", async () => {
+  const call = await parseForLines("x = run(\n    1,\n)\n", "python", { cancel: () => false });
+  try {
+    assert.deepEqual(oracleHits(call.tree, "python", [[2, 2]]).map((h) => h.type), ["call"]);
+    assert.deepEqual(oracleHits(call.tree, "python", [[3, 3]]).map((h) => h.type), ["call"]);
+    assert.deepEqual(oracleHits(call.tree, "python", [[1, 1]]).map((h) => h.type).sort(), ["binding to call", "call"]);
+  } finally {
+    call.tree.delete();
+  }
+  for (const [lang, source, type] of [
+    ["python", "cache[compute()] = 1\n", "call"],
+    ["php", "<?php\nclass A {\n    public string $x = 'a' {\n        get => 1;\n    }\n}\n", "property_hook"],
+    ["rust", "fn f() {\n    let y = 1 else { return };\n}\n", "binding with an alternative"],
+  ]) {
+    const parsed = await parseForLines(source, lang, { cancel: () => false });
+    try {
+      const lines = source.split("\n").length;
+      assert.ok(oracleHits(parsed.tree, lang, [[1, lines]]).some((h) => h.type === type), `${lang}: ${type}`);
+    } finally {
+      parsed.tree.delete();
+    }
+  }
+});
+
+test("a constant added to a class body or a lambda is not taken for the class or the call", async () => {
+  const cases = [
+    ["python", "class A:\n    X = 1\n    Y = 2\n", [[3, 3]]],
+    ["kotlin", "fun f() {\n    run {\n        val x = 1\n    }\n}\n", [[3, 3]]],
+  ];
+  for (const [lang, source, added] of cases) {
+    const parsed = await parseForLines(source, lang, { cancel: () => false });
+    try {
+      assert.deepEqual(oracleHits(parsed.tree, lang, added), [], lang);
+    } finally {
+      parsed.tree.delete();
+    }
+  }
+});
+
+test("a comment or a docstring added inside a definition is not taken for the definition", async () => {
+  const source = 'class A:\n    """Doc."""\n\n    def f(self):\n        # note\n        return run(\n            # why\n            1,\n        )\n';
+  const parsed = await parseForLines(source, "python", { cancel: () => false });
+  try {
+    assert.deepEqual(oracleHits(parsed.tree, "python", [[2, 2], [5, 5], [7, 7]]), []);
+  } finally {
+    parsed.tree.delete();
+  }
+});
+
 test("every node type the oracle names is one its grammar knows", async () => {
-  for (const [lang, types] of Object.entries(ORACLE)) {
+  for (const [lang, types] of Object.entries({ ...ORACLE, ...Object.fromEntries(Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c]])) })) {
     const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
     assert.deepEqual(types.filter((type) => language.idForNodeType(type, true) === null), [], lang);
   }

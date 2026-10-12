@@ -33,6 +33,8 @@ const CASES = {
       interpolated: ['NAME = f"{user}"\n', [1]],
       unvalued: ["LIMIT: int\n", [1]],
       negated: ["LIMIT = -other\n", [1]],
+      "call in a subscript target": ["cache[compute()] = 1\n", [1]],
+      "call in an attribute target": ["f().attr = 1\n", [1]],
     },
   },
   php: {
@@ -48,6 +50,8 @@ const CASES = {
       call: ["<?php\n$limit = compute();\n", [2]],
       interpolated: ['<?php\n$name = "hi $user";\n', [2]],
       annotated: ["<?php\nclass A {\n    #[Inject]\n    private $x = null;\n}\n", [2, 3, 4]],
+      "call in a subscript target": ["<?php\n$a[foo()] = 1;\n", [2]],
+      "property hook": ["<?php\nclass A {\n    public string $x = 'a' {\n        get => strtoupper($this->x);\n    }\n}\n", [2, 3, 4]],
     },
   },
   go: {
@@ -105,6 +109,7 @@ const CASES = {
       lambda: ["const DOUBLE: fn(i32) -> i32 = |x| x * 2;\n", [1]],
       call: ["const LIMIT: usize = compute();\n", [1]],
       annotated: ["#[allow(dead_code)]\nconst X: i32 = 1;\n", [1]],
+      "let-else": ["fn f() {\n    let y = 1 else { panic!() };\n}\n", [1, 2]],
     },
   },
   kotlin: {
@@ -153,6 +158,22 @@ for (const [lang, { quiet, asked }] of Object.entries(CASES)) {
     }
   });
 }
+
+test("a name or an attribute chain bound to a literal asks nothing, in Python and PHP", async () => {
+  assert.deepEqual(await asking("python", "a.b.c = 1\n"), []);
+  assert.deepEqual(await asking("php", "<?php\n$b->c = 1;\n"), []);
+});
+
+test("a declaration with modifiers and a type around a literal binding asks nothing", async () => {
+  const php = "<?php\nclass A {\n    public static ?int $y = 1;\n    final public const int Z = 1;\n    var $v = 2;\n}\n";
+  assert.deepEqual(await asking("php", php), [2]);
+});
+
+test("a failure while the file is read asks about every non-blank line, and the stop still answers", async () => {
+  // A trap reaching the hook's boundary answers {} for the whole stop, its JavaScript and Ruby files included.
+  const deadline = { valueOf() { throw new RangeError("trap"); } };
+  assert.deepEqual(await asking("python", "# note\n\nX = 1\n", { deadline }), [1, 3]);
+});
 
 test("a Python docstring asks nothing, and a string that interpolates does", async () => {
   assert.deepEqual(await asking("python", 'def f():\n    """Say what f does."""\n'), [1]);

@@ -125,7 +125,13 @@ function parse_total(string $text): int
 final class Rate
 {
     public int $cents = 0;
+    public static ?int $limit = 1;
+    final public const int SCALE = 100;
+    protected readonly array $parts;
+    var $legacy = 2;
 }
+
+$rate->cents = 1;
 ?>
 <p>Totals are in cents.</p>
 `;
@@ -365,6 +371,9 @@ mod units {
 
 pub fn describe(order: &Order) -> String {
     let scale = 100;
+    let Some(first) = order.prices.first() else {
+        return USAGE.to_string();
+    };
     if order.prices.is_empty() {
         return USAGE.to_string();
     }

@@ -32,7 +32,7 @@ import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs"
 // Past the shapes the plugin reads: what makes or runs a callable, per grammar.
 export const ORACLE = {
   python: ["lambda", "call", "conditional_expression", "list_comprehension", "dictionary_comprehension", "set_comprehension", "generator_expression"],
-  php: ["anonymous_function", "arrow_function", "function_call_expression", "member_call_expression", "scoped_call_expression", "object_creation_expression", "conditional_expression"],
+  php: ["property_hook", "anonymous_function", "arrow_function", "function_call_expression", "member_call_expression", "scoped_call_expression", "object_creation_expression", "conditional_expression"],
   go: ["func_literal", "call_expression"],
   java: ["lambda_expression", "method_reference", "method_invocation", "object_creation_expression", "ternary_expression", "template_expression"],
   csharp: ["lambda_expression", "anonymous_method_expression", "invocation_expression", "object_creation_expression", "implicit_object_creation_expression", "conditional_expression", "interpolated_string_expression"],
@@ -40,9 +40,21 @@ export const ORACLE = {
   kotlin: ["lambda_literal", "anonymous_function", "call_expression", "if_expression", "when_expression", "object_literal"],
 };
 
-const own = (lang) => {
+// What holds statements or members: a token on an added line is charged to the nodes between it
+// and the statement or member it belongs to, so a constant added to a class body is not the class.
+export const CONTAINERS = {
+  python: ["module", "block"],
+  php: ["program", "compound_statement", "declaration_list"],
+  go: ["source_file", "statement_list", "field_declaration_list"],
+  java: ["program", "block", "class_body", "interface_body", "enum_body", "enum_body_declarations"],
+  csharp: ["compilation_unit", "declaration_list", "block"],
+  rust: ["source_file", "declaration_list", "block"],
+  kotlin: ["source_file", "class_body", "enum_class_body", "block", "lambda_literal"],
+};
+
+const defining = (lang) => {
   const s = SHAPES[lang];
-  return [...s.fn, ...s.cls, ...(s.wrap ?? []), ...(s.scope ?? []), ...s.annotation, ...ORACLE[lang]];
+  return [...s.fn, ...s.cls, ...(s.wrap ?? []), ...(s.scope ?? []), ...s.annotation];
 };
 
 // What a literal value may hold below its own node: the parts of a string, a
@@ -50,15 +62,39 @@ const own = (lang) => {
 const LITERAL_PARTS = /^(?:string_(?:start|end|content|fragment|literal_content)|escape_sequence|interpreted_string_literal_content|raw_string_literal_content|comment|line_comment|block_comment)$/;
 
 /**
- * Every node that starts on an added line and may add something callable, as
- * `{ line, type, text }`. A binding counts where its value holds a named node
- * of a type no literal list names.
+ * Every node that may add something callable and holds a token on an added
+ * line, as `{ line, type, text }`: a definition, a call, a lambda, a
+ * conditional or an interpolation between the token and the statement or
+ * member it belongs to, so a call's added argument or closing bracket counts
+ * and a constant added inside a class body does not count for the class. A
+ * token inside a comment or a string's text is no token here, and an
+ * interpolation counts on any added line it spans. A binding counts where it
+ * starts on an added line and its value holds a named node of a type no
+ * literal list names, or it carries a block to run when it does not match.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];
-  const flagged = new Set(own(lang));
+  const flagged = new Set(defining(lang));
+  const computing = new Set(ORACLE[lang]);
   const literalish = new Set([...s.literal, ...s.unary, ...s.collection, ...(s.word ?? [])]);
-  const onAdded = (row) => added.some(([from, to]) => row + 1 >= from && row + 1 <= to);
+  const onAddedRow = (row) => added.some(([from, to]) => row + 1 >= from && row + 1 <= to);
+  const containers = new Set(CONTAINERS[lang]);
+  const charged = new Map();
+  const quiet = new Set([...s.comment, ...s.literal]);
+  for (const todo = [[tree.rootNode, false]]; todo.length > 0; ) {
+    const [node, inside] = todo.pop();
+    if (node.childCount > 0) {
+      for (const child of node.children) if (child) todo.push([child, inside || quiet.has(node.type)]);
+      continue;
+    }
+    // A token inside a comment or a string's text is no token here.
+    if (inside || s.comment.includes(node.type) || !onAddedRow(node.startPosition.row)) continue;
+    for (let up = node.parent; up !== null; up = up.parent) {
+      if (flagged.has(up.type) || computing.has(up.type)) charged.set(up.id, up);
+      if (containers.has(up.type) || (up.parent !== null && containers.has(up.parent.type))) break;
+    }
+  }
+  const spansAdded = (node) => added.some(([from, to]) => node.startPosition.row + 1 <= to && node.endPosition.row + 1 >= from);
   const hits = [];
   const plain = (n) => literalish.has(n.type) || LITERAL_PARTS.test(n.type) || (s.word?.includes(n.type) && /^(?:true|false|null)$/.test(n.text));
   const firstOdd = (top) => {
@@ -79,15 +115,16 @@ export function oracleHits(tree, lang, added) {
   const stack = [tree.rootNode];
   while (stack.length > 0) {
     const node = stack.pop();
-    if (onAdded(node.startPosition.row)) {
-      if (flagged.has(node.type)) hit(node, node.type);
-      // A PHP variable is an interpolation only inside a string.
-      else if (s.interpolation?.includes(node.type) && insideString(node)) hit(node, `interpolation ${node.type}`);
-      else if (s.bareInterpolation?.includes(node.type) && node.text === "$") hit(node, "bare interpolation");
-      else if (s.binding.includes(node.type)) {
+    if (charged.has(node.id)) hit(node, node.type);
+    // An interpolation sits inside a string's text, so it counts on any added line it spans; a PHP variable is one only inside a string.
+    else if (s.interpolation?.includes(node.type) && spansAdded(node) && insideString(node)) hit(node, `interpolation ${node.type}`);
+    else if (s.bareInterpolation?.includes(node.type) && node.text === "$" && spansAdded(node)) hit(node, "bare interpolation");
+    else if (onAddedRow(node.startPosition.row)) {
+      if (s.binding.includes(node.type)) {
         const value = (s.value ? node.childForFieldName(s.value) : null) ?? node.lastNamedChild;
         const odd = value === null ? null : firstOdd(value);
         if (odd !== null) hit(node, `binding to ${odd.type}`);
+        else if (s.alternative && node.childForFieldName(s.alternative) !== null) hit(node, "binding with an alternative");
       }
     }
     for (const child of node.namedChildren) if (child) stack.push(child);
