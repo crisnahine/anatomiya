@@ -1182,6 +1182,8 @@ test("giving places back never holds more counted areas than the ceiling, whatev
   const rand = (n) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % n;
   const odd = (a) => createHash("sha1").update(`${a.path}:${a.fileCount}`).digest()[0] % 3 === 0;
   const shape = (areas) => JSON.stringify([areas.map((a) => [a.path, a.files.map((f) => f.rel).sort()]), areas.orphaned.map((f) => f.rel).sort()]);
+  // Two rounds where giving back overshoots and steps down: areas and counted areas it settles on.
+  const settled = { 12: [5, 4], 28: [8, 5] };
   for (let round = 0; round < 40; round++) {
     const files = [];
     for (let d = 0; d < 30; d++) {
@@ -1192,6 +1194,7 @@ test("giving places back never holds more counted areas than the ceiling, whatev
     const areas = discover(files, { minFiles: 3, maxAreas, countsNothing: odd });
 
     assert.ok(counted(areas, odd) <= maxAreas, `round ${round}: ${counted(areas, odd)} counted over ${maxAreas}`);
+    if (settled[round]) assert.deepEqual([areas.length, counted(areas, odd)], settled[round], `round ${round}`);
     assert.equal(areas.reduce((n, a) => n + a.fileCount, 0) + areas.orphaned.length, files.length, `round ${round}`);
     const shuffled = [...files];
     for (let i = shuffled.length - 1; i > 0; i--) {
