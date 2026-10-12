@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ATTEMPTS, doublingRatio, LINEAR, settled } from "./growth.mjs";
+import { doublingRatio, LINEAR, settled } from "./growth.mjs";
 
 test("a stall while the timed sides are sized leaves each side long enough to read on a coarse CPU clock", () => {
   // Windows counts CPU time in steps of about 15.6ms.
@@ -46,8 +46,7 @@ test("a ratio read past linear is read again, and the first read under it stands
 test("work that grows faster than linear reads past it every time it is read", () => {
   const measure = reading([4.1, 3.9, 4.0, 1.9]);
   assert.equal(settled(measure), 3.9);
-  assert.equal(measure.taken, ATTEMPTS);
-  assert.equal(ATTEMPTS, 3);
+  assert.equal(measure.taken, 3);
 });
 
 test("a read that could not be timed neither passes the work nor hides a read that could", () => {

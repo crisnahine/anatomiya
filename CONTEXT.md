@@ -492,9 +492,10 @@ _Avoid_: claim (alone: that is a dimension's sentence), marker, token
 
 **Lock token**:
 The file named by the mtime of a dead lock beside a **batch claim**, `<lock>.<mtime in ms>`, whose
-exclusive create gives one call the right to remove that lock. That call removes the lock only while
-it is still the one it found dead, then removes the lock token; every call then tries the one create
-of the lock, and those that lose it stay silent.
+exclusive create gives one call the right to remove that lock's generation: the lock file it found
+dead, told apart from a later lock at the same name by its inode and its mtime. That call removes the
+lock only while it is still that generation, then removes the lock token; every call then tries the
+one create of the lock, and those that lose it stay silent.
 _Avoid_: token (alone), lock (alone: that is the file it breaks)
 
 **Facts**:

@@ -801,7 +801,7 @@ test("a lock create refused for longer than a deletion takes answers as the tran
 
   // Past nine tries the stub stops answering EPERM, so a retry that never ends fails here instead of hanging.
   const tries = [];
-  const started = Date.now();
+  const started = performance.now();
   const answer = stubbed("openSync", (real, p, flags, ...rest) => {
     if (flags === "wx" && String(p) === lock) {
       tries.push(performance.now());
@@ -813,7 +813,7 @@ test("a lock create refused for longer than a deletion takes answers as the tran
   assert.equal(tries.length, 8, "the first try and seven more");
   // Back to back, all eight would land inside the one deletion they wait out.
   assert.ok(tries[7] - tries[0] >= 100, `the tries spread over ${Math.round(tries[7] - tries[0])}ms`);
-  assert.ok(Date.now() - started < 2000, `answered after ${Date.now() - started}ms`);
+  assert.ok(performance.now() - started < 2000, `answered after ${Math.round(performance.now() - started)}ms`);
 });
 
 test("a lock token create refused while its name is being deleted is tried again, and the dead lock is broken", needsRuby, async (t) => {

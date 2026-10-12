@@ -12,10 +12,9 @@ batch helper printed every call's lines for a round that did not deliver once. T
 `windows-latest` only, Node 22 and Node 24, and ran the batch tests three times on each: 2 processes
 for 20 rounds over a dead lock, 3 and 8 for 20 rounds each with no batch claim and with a stale one,
 and 3 and 8 for 50 rounds each over a dead lock. The same build was then run with the exclusive
-create tried again on EPERM (84caad8f), printing each refused create. The two runs are
-https://github.com/crisnahine/anatomiya/actions/runs/38179920206 (8b63517a) and
-https://github.com/crisnahine/anatomiya/actions/runs/38180569792 (84caad8f); their logs hold 6 and
-12 lines naming EPERM, one per refused create.
+create tried again on EPERM (84caad8f), printing each refused create. The two runs are 38179920206
+(8b63517a) and 38180569792 (84caad8f); their logs hold 6 and 12 lines naming EPERM, one per refused
+create.
 
 ## What it showed
 

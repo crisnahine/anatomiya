@@ -19,18 +19,17 @@ export function doublingRatio(make, n, options) {
 }
 
 /**
- * The smallest of up to `attempts` reads of `measure`, stopping at the first under LINEAR.
+ * The smallest of up to three reads of `measure`, stopping at the first under LINEAR.
  *
- * A shared runner now and then slows the larger side alone by half again, past LINEAR on work
- * that reads 2 everywhere else (3.15 and 3.51 in one CI run), and a second read does not. Work
- * that grows faster than linear reads past it every time. A read that could not be timed is no
- * answer while another read is one.
+ * On a shared runner linear work now and then reads past LINEAR (3.11 to 3.51 on five tests) and
+ * under it on the next read, while quadratic work reads about 4 every time. A read that could not
+ * be timed is no answer while another read is one.
  */
-export function settled(measure, attempts = ATTEMPTS) {
+export function settled(measure) {
   const reads = [];
   do {
     reads.push(measure());
-  } while (reads.length < attempts && !(reads.at(-1) < LINEAR));
+  } while (reads.length < ATTEMPTS && !(reads.at(-1) < LINEAR));
   const timed = reads.filter(Number.isFinite);
   return timed.length ? Math.min(...timed) : reads.at(-1);
 }
@@ -88,4 +87,4 @@ const collect = runInNewContext("gc");
 /** Under 3: past linear's 2 with room for noise, short of quadratic's 4. */
 export const LINEAR = 3;
 
-export const ATTEMPTS = 3;
+const ATTEMPTS = 3;
