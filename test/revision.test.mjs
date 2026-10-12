@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
+import { needsShebang } from "./platform.mjs";
 import { readAtRevision } from "../plugins/anatomiya/lib/revision.mjs";
 import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
 
@@ -261,4 +262,62 @@ test("two paths that differ only in how their accents are encoded are written wh
   assert.equal(out.files.length, 2);
   for (const f of out.files) assert.equal(readFileSync(f.abs, "utf8"), `export const which = '${want[f.rel]}'\n`, f.rel);
   assert.equal(new Set(out.files.map((f) => f.abs.normalize("NFC").toLowerCase())).size, 2);
+});
+
+test("every file at a revision is read by one child, and it is gone when the read is done", needsShebang, async (t) => {
+  const rels = Array.from({ length: 20 }, (_, i) => `src/f${i}.js`);
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    for (const rel of rels) write(rel, FIRST);
+    sha = commit("first");
+  });
+  // The reader takes no environment, so the shim goes on this process's own PATH.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-revision-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh\necho "$*" >> '${bin}/calls'\ncase "$1 $2" in 'cat-file --batch') echo $$ > '${bin}/pid';; esac\nexec '${real}' "$@"\n`,
+    { mode: 0o755 }
+  );
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  let out;
+  try {
+    out = await readAtRevision(dir, sha, [...rels.map((rel) => ({ rel })), { rel: "src/gone.js" }]);
+  } finally {
+    process.env.PATH = path;
+  }
+  t.after(out.dispose);
+
+  assert.equal(out.files.length, 20);
+  assert.deepEqual(out.missing, [{ rel: "src/gone.js", reason: "absent" }]);
+  const reads = readFileSync(join(bin, "calls"), "utf8").trim().split("\n").filter((c) => c.startsWith("cat-file "));
+  assert.deepEqual(reads, ["cat-file --batch -Z"]);
+  assert.throws(() => process.kill(Number(readFileSync(join(bin, "pid"), "utf8")), 0), { code: "ESRCH" }, "the child outlived the read");
+});
+
+test("a git that never answers is given up on at the caller's clock", { ...needsShebang, timeout: 60_000 }, async (t) => {
+  // The test's own bound is under the 120 s a read waits by default, so only
+  // the caller's two seconds can end this in time.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("a.js", FIRST);
+    sha = commit("first");
+  });
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-revision-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$1" in cat-file) exec sleep 300;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  let out;
+  try {
+    out = await readAtRevision(dir, sha, [{ rel: "a.js" }], { timeout: 2000 });
+  } finally {
+    process.env.PATH = path;
+  }
+  t.after(out.dispose);
+
+  assert.deepEqual(out.missing, [{ rel: "a.js", reason: "absent" }]);
 });

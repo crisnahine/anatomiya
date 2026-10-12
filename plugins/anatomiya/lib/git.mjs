@@ -15,6 +15,9 @@
  * from inside Node's own exit handler and `maxBuffer` does not protect against
  * it. Both carry the same battery: a timeout, a byte bound, and an exit code no
  * caller may read output without.
+ *
+ * `blobReader` is the one child that outlives a call. It answers every blob
+ * read at a commit, and hands a read it cannot answer to `gitBuffered`.
  */
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -133,6 +136,10 @@ const FLAGS = new Set([
   "--diff-merges=first-parent",
   "--no-renames",
   "--max-count=20000",
+  // One child answering every blob read at a revision, with NUL ending each
+  // request and each reply so a path holding a newline is one request (`blobReader`).
+  "--batch",
+  "-Z",
 ]);
 
 // `--format=<pattern>` carries a pattern this tool composes; the value is not
@@ -835,6 +842,151 @@ export async function showBlob(root, sha, path, { timeout, env, lazyFetch = fals
   });
   if (r.ok) return { ok: true, content: r.stdout };
   return { ok: false, reason: r.oversize ? "over size cap" : "absent" };
+}
+
+const BATCH = ["cat-file", "--batch", "-Z"];
+
+// How long a closed reader's child gets to exit on its own before it is killed.
+const CLOSE_GRACE_MS = 1000;
+
+/**
+ * Every blob read at one commit through one `git cat-file --batch -Z` child,
+ * each answered as `showBlob` answers it.
+ *
+ * One process per blob was 297 of the 310 git processes a check of 246 changed
+ * files started. One child answers them all, one request in flight at a time.
+ * `-Z` is git 2.42's, so a git that refuses it is a path users take: a child
+ * that will not start, exits, breaks the framing or outlasts `timeout` on one
+ * request hands that read and every later one to `showBlob`, and an answer
+ * already given stands.
+ *
+ * Never `--buffer`: git flushes each reply without it, which is what lets one
+ * be read before the next request is written.
+ */
+export function blobReader(root, sha, { timeout = GIT.timeoutMs, env = process.env, lazyFetch = false } = {}) {
+  const perCall = (path) => showBlob(root, sha, path, { timeout, env, lazyFetch });
+  let fallen = !isSha(sha) || refuse(BATCH) !== null;
+  let child = null;
+  let pending = null;
+  let last = Promise.resolve();
+
+  const settle = (answer) => {
+    const { timer, resolve: done } = pending;
+    pending = null;
+    clearTimeout(timer);
+    done(answer);
+  };
+
+  const kill = () => {
+    child?.kill("SIGKILL");
+    child = null;
+  };
+
+  const fall = () => {
+    fallen = true;
+    kill();
+    if (pending) settle(null);
+  };
+
+  // The body of this reply is not wanted, so the child goes before it can be
+  // sent: a blob of any size is never pulled through the pipe to be refused.
+  const refused = (reason) => {
+    kill();
+    settle({ ok: false, reason });
+  };
+
+  const feed = (chunk) => {
+    // Bytes nobody asked for: whose reply they belong to cannot be known.
+    if (!pending) return fall();
+    const buf = pending.got.length ? Buffer.concat([pending.got, chunk]) : chunk;
+    pending.got = buf;
+    if (pending.size === null) {
+      const end = buf.indexOf(0);
+      if (end === -1) return;
+      const header = buf.subarray(0, end);
+      // `<request> missing`, and `ambiguous`, `excluded` and `submodule` the
+      // same way: matched against the bytes sent, since a path can hold a space.
+      if (header.subarray(0, pending.echo.length).equals(pending.echo)) {
+        return buf.length === end + 1 ? settle({ ok: false, reason: "absent" }) : fall();
+      }
+      const reply = /^[0-9a-f]+ ([a-z]+) (\d+)$/.exec(header.toString("latin1"));
+      if (!reply) return fall();
+      // A directory answers with its tree, where `cat-file blob` errors.
+      if (reply[1] !== "blob") return refused("absent");
+      if (Number(reply[2]) > MAX_FILE_BYTES) return refused("over size cap");
+      pending.size = Number(reply[2]);
+      pending.from = end + 1;
+    }
+    // Exactly the size the header gave, then one NUL: a body can hold both.
+    const stop = pending.from + pending.size;
+    if (buf.length <= stop) return;
+    if (buf.length > stop + 1 || buf[stop] !== 0) return fall();
+    settle({ ok: true, content: Buffer.from(buf.subarray(pending.from, stop)) });
+  };
+
+  const start = async () => {
+    const call = await prepared(root, BATCH, env, { lazyFetch, timeout });
+    // Closed while the repository's config was being read, or it could not be read.
+    if (fallen || call.unread) return fall();
+    const mine = spawn("git", call.args, { cwd: root, stdio: ["pipe", "pipe", "ignore"], env: call.env });
+    child = mine;
+    const live = (then) => (...args) => (child === mine ? then(...args) : undefined);
+    mine.on("error", live(fall));
+    // A git older than 2.42 prints its usage and exits here, before any reply.
+    mine.on("close", live(fall));
+    mine.stdout.on("data", live(feed));
+    // A write that races the child's death is an EPIPE here, and `close` reports the death.
+    mine.stdin.on("error", () => {});
+    // A reader nobody closed must not hold the process open. The clock on the
+    // request in flight is what keeps it running while an answer is owed.
+    mine.unref();
+    mine.stdout.unref();
+  };
+
+  const ask = async (request) => {
+    if (!child) await start();
+    if (fallen) return null;
+    return new Promise((done) => {
+      pending = {
+        resolve: done,
+        echo: Buffer.from(`${request} `),
+        got: Buffer.alloc(0),
+        size: null,
+        from: 0,
+        // From the moment it is the oldest request unanswered, which is the moment it is written.
+        timer: setTimeout(fall, timeout),
+      };
+      child.stdin.write(`${request}\0`);
+    });
+  };
+
+  return {
+    read(path) {
+      const request = `${sha}:${path}`;
+      // A NUL would end the request early and leave a second one nobody is waiting on.
+      if (fallen || request.includes("\0")) return perCall(path);
+      const answer = last.then(() => ask(request));
+      last = answer;
+      return answer.then((blob) => blob ?? perCall(path));
+    },
+    close() {
+      fallen = true;
+      const closing = child;
+      if (!closing) return Promise.resolve();
+      return new Promise((done) => {
+        // Stdin closing makes git answer what it holds and exit; a child that will not is killed.
+        const timer = setTimeout(() => {
+          fall();
+          done();
+        }, CLOSE_GRACE_MS);
+        closing.once("exit", () => {
+          clearTimeout(timer);
+          done();
+        });
+        closing.stdin.end();
+      });
+    },
+  };
 }
 
 /**

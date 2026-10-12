@@ -5802,6 +5802,25 @@ test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, asyn
   assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
 });
 
+test("check spawns two cat-file children for a base and a head", needsShebang, async (t) => {
+  const rels = ["src/f1.ts", "src/f2.ts", "src/f3.ts"];
+  const dir = repo(t, ({ dir, git, write, commit }) => {
+    for (const rel of rels) write(rel, "export const f = 1\n");
+    commit("init");
+    facts(dir, { sha: sha(dir) });
+    git("checkout", "-q", "-b", "feature");
+    for (const rel of rels) write(rel, "export const f = 2\n");
+    commit("edit");
+  });
+
+  const { report, calls } = await checkThroughShim(t, dir);
+
+  assert.equal(report.examined.length, 3, "the fixture reached both sides of three files");
+  // Not the commit probe and not the index read of `.gitattributes`: neither reads a revision's blob.
+  const reads = calls.filter((c) => c.startsWith("cat-file ") && !/^cat-file (-e |blob :)/.test(c));
+  assert.deepEqual(reads, ["cat-file --batch -Z", "cat-file --batch -Z"], calls.join("\n"));
+});
+
 test("a merge base that cannot say whether it held a directory states no finding about a test for it, and says it could not", needsShebang, async (t) => {
   const dir = repo(t, ({ write, commit }) => {
     for (const [rel, body] of [...PY_TREE, pyIn("src/bare/old", 9)]) write(rel, body);
