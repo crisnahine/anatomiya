@@ -78,7 +78,7 @@ by this version, with times and build digests masked
 
   ```
   a .rb file added to "lib/rubocop/cop/style" ships with an edit to "config/default.yml"
-    100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here came in a change it counted
+    100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here came in a change the scan counted
   ```
 
   A file's class is its directory and its kind (`lib/rubocop/cop/style/*.rb`), or the same kind one
@@ -127,8 +127,9 @@ by this version, with times and build digests masked
 - Seven kinds of test spelled as a dotted segment of the name make a test file: `.unittest.`,
   `.basictest.`, `.longtest.`, `.spectest.`, `.stest.`, `.integrationTest.` and `.releaseTest.`.
   Across 60 repositories 235 names carry a dotted segment ending in `test` that the name rule
-  missed; these seven take all 226 real tests among them and none of the other 9. vscode's
-  `src/vs` reads 1720 test files where it read 1669, and webpack's `test` 163 where it read 159.
+  missed; these seven take 226 of them, all real tests, and none of the other 9, whose one test,
+  element-plus's `.vitest.tsx`, already reads as a test through its runner import. vscode's `src/vs`
+  reads 1720 test files where it read 1669, and webpack's `test` 163 where it read 159.
 - `check` and the notice answer a new test only from a source root of its own family: a
   `_spec.rb` under a directory of `.js` files is not told those files have no namesake test.
   Asked of every one of the 46,820 tests the 60 repositories track, as if each were new, the rule
@@ -227,10 +228,9 @@ by this version, with times and build digests masked
   at 800 to 1,600 levels each doubling cost about four times. In this version every row and every
   site name takes one pass however deep a file nests, and ordinary code runs its JavaScript rows 1%
   to 7% faster.
-- A record could make `check` slow and put its own text into a finding through the extensions a
-  slot names. 30 findings over a forged record of a million names took 208 seconds. `scope` is
-  kept and read only as at most 16 extensions or file names, and its clause is built once per area
-  and slot.
+- A record could make `check` slow and put its own text into a finding through the extensions a slot
+  names. 30 findings over a forged record of a million names took 208 seconds. `scope` is kept and
+  read only as 1 to 16 extensions or file names, and its clause is built once per area and slot.
 - `check` cost the square of the depth on a site holding sites, since each one walked everything
   under it for the bodies its identity leaves out and copied all of its text: 2,000 catches nested
   in catch bodies took 15 seconds per row against a base. Each file's bodies and collapsed text are

@@ -1211,21 +1211,24 @@ the others read that offset as a delivery made there and stay silent. A batch cl
 while its offset is inside the window, judged against the transcript as it is when the batch claim
 is read. A call that finds the lock taken stays silent. A lock whose mtime is more than 7 seconds
 from the clock, either way, was left by a call that died holding it: the hook's 5 second timeout,
-plus the 2 seconds FAT rounds an mtime to. No call moves or removes a lock that may be live: the
-call that creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while it is
-still the one found dead, and every call then goes to the one create of the lock, where the losers
-stay silent. A lock token the system refuses to remove is left for the sweep, and a dead lock it
-refuses to remove makes the call answer alone. An exclusive create Windows refuses with EPERM, its
-answer for a name another process is still deleting, is tried again seven times, after waits
-doubling from 1 ms to 64 ms, before the call answers alone. Batch claims, locks and lock tokens
-older than a day are swept, at most 4,096 names read. Started 3 and 8 at once, 20 rounds each, with
-no batch claim and with a stale one, the echo delivered once in every round, and 50 rounds each over
-a dead lock delivered once and left no lock or lock token. Without that directory, or where it
-cannot be written, the worst case is one copy per call. Inside a mapped checkout the prompt has
-already delivered the map before the first batch, so that batch adds none; a batch that later finds
-the window run out delivers as above. `scripts/measure-echo.mjs` replays the rule over a transcript
-store: on 4,328 local transcripts on 2026-10-11 it kept 9,267 of 46,370 deliveries. The hook reads
-back at most 1 MiB and parses each line of it. The measurements behind the rule are in
+plus the 2 seconds FAT rounds an mtime to. No call breaks a lock younger than that: the call that
+creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while it is still the one
+found dead, and every call then goes to the one create of the lock, where the losers stay silent. A
+call suspended past 7 seconds while it holds the lock, a laptop asleep in those milliseconds, is
+taken for dead: the next call breaks its lock and decides beside it, and its release later removes
+whichever lock is there, so that batch can deliver a copy or two more. A lock token the system
+refuses to remove is left for the sweep, and a dead lock it refuses to remove makes the call answer
+alone. An exclusive create Windows refuses with EPERM, its answer for a name another process is
+still deleting, is tried again seven times, after waits doubling from 1 ms to 64 ms, before the call
+answers alone. Batch claims, locks and lock tokens older than a day are swept, at most 4,096 names
+read. Started 3 and 8 at once, 20 rounds each, with no batch claim and with a stale one, the echo
+delivered once in every round, and 50 rounds each over a dead lock delivered once and left no lock
+or lock token. Without that directory, or where it cannot be written, the worst case is one copy per
+call. Inside a mapped checkout the prompt has already delivered the map before the first batch, so
+that batch adds none; a batch that later finds the window run out delivers as above.
+`scripts/measure-echo.mjs` replays the rule over a transcript store: on 4,328 local transcripts on
+2026-10-11 it kept 9,267 of 46,370 deliveries. The hook reads back at most 1 MiB and parses each
+line of it. The measurements behind the rule are in
 `docs/research/what-a-repeated-hook-context-costs.md` and
 `docs/research/what-a-2-1-296-transcript-holds.md`. There is still no flag for it: nothing a scan
 takes tunes a hook.
@@ -2000,118 +2003,115 @@ Every clause is dropped when it counts nothing.
   `app/models/edition/foo.rb` is answered by `spec/models/edition/foo_spec.rb` and not by
   `spec/services/foo_spec.rb`. The tail is asked twice. Whole first, then with the seven tree names
   (`app`, `lib`, `src`, `spec`, `test`, `tests`, `__tests__`) dropped from both sides, because a
-  repository that splits a source tree from a spec tree writes the same path on both halves and
-  only the word for the tree differs: `modules/budgets/spec/models/budget_spec.rb` answers
+  repository that splits a source tree from a spec tree writes the same path on both halves and only
+  the word for the tree differs: `modules/budgets/spec/models/budget_spec.rb` answers
   `modules/budgets/app/models/budget.rb`, and `src/vs/base/test/common/foo.test.ts` answers
   `src/vs/base/common/foo.ts`. Only those seven names drop, so `spec/support/user.rb` still answers
-  no `app/models/user.rb`: `support` against `models` is left to compare. One last question is asked of every
-  candidate the whole tail refused: whether it imports the producer outright. A test that writes
-  `from "../lib/counters.mjs"` has named what it covers, which is evidence a
-  path cannot carry, and it is the only thing separating a nested source answered by a flat test
-  root from the decoy that looks exactly like it. The stem still has to match, so the sentence
-  stays the one it always was, and a specifier that carries an extension has to agree on it: a
-  compiled `./foo.js` answers the TypeScript spellings it is emitted from and never the
-  `./foo.json` beside them. Nothing is resolved against the filesystem, so a directory reached
-  through its own `index` reads as no evidence rather than as a guess, and a language whose tests
-  never name what they cover gains nothing here. An edge is evidence that a file is
-  tested and none about where a root keeps its tests, so it never wins the trailing `under <root>`
-  against shared structure: a root any candidate shares wins it, and the test's own directory is
-  named only where no candidate shared one. The root the namesakes
-  share is named, by a count of votes rather than by the first match, a mirrored match voting for
-  the tree the two paths part on. A file several candidates answer votes once, for the first of them
-  by path that names a tree at all: the total is halved against the count of answered files, so a
-  file counted once has to vote once, and a mirror parting on an ordinary name leaves the vote to
-  the next candidate rather than spending it on nothing. A top vote under half the matched files
-  names no root at all, since a repository with one `__tests__` per component directory has an
-  answer for every file and no one place to name. Half is enough to name one, so where the top vote
-  is fewer than the matched files the count there prints before the name: `4 of 63 have a namesake
-  test, 3 under src/utils/__tests__`, the way a runner group prints `2 of 3 vitest specs under
-  __tests__`. A root with a `test`, `tests`, `spec`,
-  `cypress`, `e2e` or `__tests__` directory anywhere in its path is not asked the question: its
-  files that are not tests are what the tests run on, and webpack's `test` read `1 of 7858 has
-  a namesake test under test` over the fixture modules its 2,607 tests exercise. Any segment
-  rather than the first, because a monorepo nests each package's own tree under the package
-  name: fastlane's
-  `gym/spec` stated `1 of 1 has a namesake test` over one empty `spec_helper.rb`. The denominator is over an extension the line already printed,
-  or `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see: the commonest
-  printed one that holds a file a test could be written for. Such a file is source this tool reads
-  that holds something and is no test, no story, no declaration file and under no test tree of its
-  own family below the root, so the helpers and fixtures of a `test` directory inside a root are in
-  neither number: Newtonsoft.Json's `Src` reads `63 of 243`, where its 388 files under
-  `Src/Newtonsoft.Json.Tests` would make it `63 of 631`. Real source under a directory named for
-  tests leaves with them: storybook's `code/core/src/test` (6 files), `django/test` (7) and puppet's
-  `lib/puppet/test` (1). Where one of the two printed extensions is a component's, `.vue` or
-  `.svelte`, the other gets a count of its own, whichever of the two is first, and both clauses
-  name their extension: `85 of 745 .ts files have a namesake test; 81 of 164 .vue files have a
-  namesake test` on element-plus's `packages/components`, and `1 of 66 .vue files has a namesake
-  test; 6 of 20 .ts files have a namesake test under __tests__/unit/client/theme-default` on
-  vitepress's `src/client/theme-default`. The two are never summed. The smaller of the two
-  populations gets its clause from three files up, the floor the precedent rule reads a directory
-  at, or where a test credits at least one of its files, so ten components beside one `index.ts`
-  print one count, bare, and no `0 of 1 .ts file have a namesake test`, and seven modules beside
-  two components print `1 of 2 .vue files has a namesake test` where one of the two has a test.
-  Where several components carry one stem a test answers one of them: the one under the test's own
-  directory, less the test tree words that directory ends in, or failing that the closest mirror,
-  and an import that names another leaves it with none. That is asked apart
-  from which module the test answers, so one test covers `button.vue` and the `button.ts` beside
-  it, and element-plus's `docs/examples/autocomplete/autocomplete.vue` is not credited with the
-  test of the packaged `autocomplete.vue`. Otherwise it prints wherever the repository holds any test file at
-  all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
-  cannot carry, because it treats a missing companion as an absence rather than as a habit.
-  Each of the seven tree-sitter languages strips its own spelling and no other, and only a test of
-  the same language answers: `auth_test.go` covers `auth.go`, `test_auth.py` and `auth_test.py`
-  cover `auth.py`, `FooTest.java`, `FooTests.kt` and `FooIT.java` cover `Foo`, `FooTests.cs` covers
+  no `app/models/user.rb`: `support` against `models` is left to compare. One last question is asked
+  of every candidate the whole tail refused: whether it imports the producer outright. A test that
+  writes `from "../lib/counters.mjs"` has named what it covers, which is evidence a path cannot
+  carry, and it is the only thing separating a nested source answered by a flat test root from the
+  decoy that looks exactly like it. The stem still has to match, so the sentence stays the one it
+  always was, and a specifier that carries an extension has to agree on it: a compiled `./foo.js`
+  answers the TypeScript spellings it is emitted from and never the `./foo.json` beside them.
+  Nothing is resolved against the filesystem, so a directory reached through its own `index` reads
+  as no evidence rather than as a guess, and a language whose tests never name what they cover gains
+  nothing here. An edge is evidence that a file is tested and none about where a root keeps its
+  tests, so it never wins the trailing `under <root>` against shared structure: a root any candidate
+  shares wins it, and the test's own directory is named only where no candidate shared one. The root
+  the namesakes share is named, by a count of votes rather than by the first match, a mirrored match
+  voting for the tree the two paths part on. A file several candidates answer votes once, for the
+  first of them by path that names a tree at all: the total is halved against the count of answered
+  files, so a file counted once has to vote once, and a mirror parting on an ordinary name leaves
+  the vote to the next candidate rather than spending it on nothing. A top vote under half the
+  matched files names no root at all, since a repository with one `__tests__` per component
+  directory has an answer for every file and no one place to name. Half is enough to name one, so
+  where the top vote is fewer than the matched files the count there prints before the name:
+  `4 of 63 have a namesake test, 3 under src/utils/__tests__`, the way a runner group prints `2 of 3
+  vitest specs under __tests__`. A root with a `test`, `tests`, `spec`, `cypress`, `e2e` or
+  `__tests__` directory anywhere in its path is not asked the question: its files that are not tests
+  are what the tests run on, and webpack's `test` read `1 of 7858 has a namesake test under test`
+  over the fixture modules its 2,607 tests exercise. Any segment rather than the first, because a
+  monorepo nests each package's own tree under the package name: fastlane's `gym/spec` stated
+  `1 of 1 has a namesake test` over one empty `spec_helper.rb`. The denominator is over an extension
+  the line already printed, or `0 of 620` stands beside `504 .tsx` and counts something the reader
+  cannot see: the commonest printed one that holds a file a test could be written for. Such a file
+  is source this tool reads that holds something and is no test, no story, no declaration file and
+  under no test tree of its own family below the root, so the helpers and fixtures of a `test`
+  directory inside a root are in neither number: Newtonsoft.Json's `Src` reads `63 of 243`, where
+  its 388 files under `Src/Newtonsoft.Json.Tests` would make it `63 of 631`. Real source under a
+  directory named for tests leaves with them: storybook's `code/core/src/test` (6 files),
+  `django/test` (7) and puppet's `lib/puppet/test` (1). Where one of the two printed extensions is a
+  component's, `.vue` or `.svelte`, the other gets a count of its own, whichever of the two is
+  first, and both clauses name their extension: `85 of 745 .ts files have a namesake test; 81 of 164
+  .vue files have a namesake test` on element-plus's `packages/components`, and `1 of 66 .vue files
+  has a namesake test; 6 of 20 .ts files have a namesake test under
+  __tests__/unit/client/theme-default` on vitepress's `src/client/theme-default`. The two are never
+  summed. The smaller of the two populations gets its clause from three files up, the floor the
+  precedent rule reads a directory at, or where a test credits at least one of its files, so ten
+  components beside one `index.ts` print one count, bare, and no `0 of 1 .ts file have a namesake
+  test`, and seven modules beside two components print `1 of 2 .vue files has a namesake test` where
+  one of the two has a test. Where several components carry one stem a test answers one of them: the
+  one under the test's own directory, less the test tree words that directory ends in, or failing
+  that the closest mirror, and an import that names another leaves it with none. That is asked apart
+  from which module the test answers, so one test covers `button.vue` and the `button.ts` beside it,
+  and element-plus's `docs/examples/autocomplete/autocomplete.vue` is not credited with the test of
+  the packaged `autocomplete.vue`. Otherwise it prints wherever the repository holds any test file
+  at all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
+  cannot carry, because it treats a missing companion as an absence rather than as a habit. Each of
+  the seven tree-sitter languages strips its own spelling and no other, and only a test of the same
+  language answers: `auth_test.go` covers `auth.go`, `test_auth.py` and `auth_test.py` cover
+  `auth.py`, `FooTest.java`, `FooTests.kt` and `FooIT.java` cover `Foo`, `FooTests.cs` covers
   `Foo.cs`, `FooTest.php` covers `Foo.php`, and a Rust file under `tests` covers the source of its
-  own stem. Each also reads its own tree words out of both sides of a mirror, beside the seven above.
-  A Java or Kotlin path is its package, which is what follows the last `java` or `kotlin` directory,
-  so `src/main/java/a` mirrors `src/test/java/a` whatever the source set or the module is called:
-  okhttp's `commonJvmAndroid` reads 55 of 152, 49 of them under `jvmTest`. A package written as one
-  dotted directory, `java/tools.fastlane.screengrab`, is the package a directory per name spells. Where no such directory
-  exists a Gradle source set drops out, so `core/commonMain/src/k` mirrors `core/jvmTest/src/k`. The
-  rest: the `.Tests` or `.Test` on a .NET project, so
-  `test/Serilog.Tests/Core` mirrors `src/Serilog/Core`; a `Test` or `Tests` directory for PHP, so composer's
-  `tests/Composer/Test/Util` mirrors `src/Composer/Util` and symfony's `Component/Cache/Tests/Adapter`
-  mirrors `Component/Cache/Adapter`. A Python package directly under `src` is
-  read as the top of the tree, which is where every import puts it, so a flat `tests/test_cli.py`
-  answers `src/flask/cli.py`. A package's `__init__.py` answers as the module its directory is, so
-  `tests/test_json.py` answers `src/flask/json/__init__.py`: flask reads 10 of 24 under `src/flask`. A Python test tree files its tests by feature below its top level, so a test
-  there answers a package at the top of the tree from the tree's own top level or from the path
-  that mirrors the source's, and from nowhere deeper: fastapi's
+  own stem. Each also reads its own tree words out of both sides of a mirror, beside the seven
+  above. A Java or Kotlin path is its package, which is what follows the last `java` or `kotlin`
+  directory, so `src/main/java/a` mirrors `src/test/java/a` whatever the source set or the module is
+  called: okhttp's `commonJvmAndroid` reads 55 of 152, 49 of them under `jvmTest`. A package written
+  as one dotted directory, `java/tools.fastlane.screengrab`, is the package a directory per name
+  spells. Where no such directory exists a Gradle source set drops out, so `core/commonMain/src/k`
+  mirrors `core/jvmTest/src/k`. The rest: the `.Tests` or `.Test` on a .NET project, so
+  `test/Serilog.Tests/Core` mirrors `src/Serilog/Core`; a `Test` or `Tests` directory for PHP, so
+  composer's `tests/Composer/Test/Util` mirrors `src/Composer/Util` and symfony's
+  `Component/Cache/Tests/Adapter` mirrors `Component/Cache/Adapter`. A Python package directly under
+  `src` is read as the top of the tree, which is where every import puts it, so a flat
+  `tests/test_cli.py` answers `src/flask/cli.py`. A package's `__init__.py` answers as the module
+  its directory is, so `tests/test_json.py` answers `src/flask/json/__init__.py`: flask reads
+  10 of 24 under `src/flask`. A Python test tree files its tests by feature below its top level, so
+  a test there answers a package at the top of the tree from the tree's own top level or from the
+  path that mirrors the source's, and from nowhere deeper: fastapi's
   `tests/test_telemetry/test_exceptions.py` tests OpenTelemetry spans and does not answer
-  `fastapi/exceptions.py`, and `fastapi` reads 3 of 50. A `tests`
-  directory beside a package mirrors that package directory for directory, where one source file
-  beside it carries the stem: `examples/tutorial/tests/test_auth.py` covers
-  `examples/tutorial/flaskr/auth.py`, and flask's `examples` reads 4 of 10. Four families pair a whole project with its tests, and there a test covers the one source
-  file of its stem at any depth: a .NET test project and the project its name carries
-  (`Serilog.Tests` and `Serilog`), a Maven or Gradle `src/test`, `<set>Test` or `testFixtures` source set and what
-  sits beside it, a PHP `tests` and the `src` or `app` beside it. serilog keeps
-  `test/Serilog.Tests/Core/BatchingSinkTests.cs` for `src/Serilog/Core/Sinks/Batching/BatchingSink.cs`
-  and reads 28 of 113; gson reads 34 of 80 and Laravel 267 of 1,630. Two source files of one stem in the project are credited with
-  nothing by it, since the stem cannot say which the test was written for. A test so paired with one
-  source answers no other file of that name, in another module or another tree: Laravel's `types`
-  holds PHPStan assertions named for the class they type, and reads 6 of 60 where the tests paired
-  to the classes under `src` had lent it three more. A PHP test whose name
-  is its directory's name, alone or with a class after it, covers, by the pairing, only a source
-  under a directory of that name: Laravel's `tests/Session/SessionStoreTest.php` tests
-  `Illuminate\Session\Store` and does not answer `Cache/SessionStore.php`, and
-  `tests/Cookie/CookieTest.php` tests `CookieJar` and does not answer the `Cookie` facade. Ten
-  Laravel files and one of composer's lose a credit to that, seven of them credited to a test of
-  another class and four rightly (`Cache/DatabaseLock.php`, tested from
+  `fastapi/exceptions.py`, and `fastapi` reads 3 of 50. A `tests` directory beside a package mirrors
+  that package directory for directory, where one source file beside it carries the stem:
+  `examples/tutorial/tests/test_auth.py` covers `examples/tutorial/flaskr/auth.py`, and flask's
+  `examples` reads 4 of 10. Four families pair a whole project with its tests, and there a test
+  covers the one source file of its stem at any depth: a .NET test project and the project its name
+  carries (`Serilog.Tests` and `Serilog`), a Maven or Gradle `src/test`, `<set>Test` or
+  `testFixtures` source set and what sits beside it, a PHP `tests` and the `src` or `app` beside it.
+  serilog keeps `test/Serilog.Tests/Core/BatchingSinkTests.cs` for
+  `src/Serilog/Core/Sinks/Batching/BatchingSink.cs` and reads 28 of 113; gson reads 34 of 80 and
+  Laravel 267 of 1,630. Two source files of one stem in the project are credited with nothing by it,
+  since the stem cannot say which the test was written for. A test so paired with one source answers
+  no other file of that name, in another module or another tree: Laravel's `types` holds PHPStan
+  assertions named for the class they type, and reads 6 of 60 where the tests paired to the classes
+  under `src` had lent it three more. A PHP test whose name is its directory's name, alone or with a
+  class after it, covers, by the pairing, only a source under a directory of that name: Laravel's
+  `tests/Session/SessionStoreTest.php` tests `Illuminate\Session\Store` and does not answer
+  `Cache/SessionStore.php`, and `tests/Cookie/CookieTest.php` tests `CookieJar` and does not answer
+  the `Cookie` facade. Ten Laravel files and one of composer's lose a credit to that, seven of them
+  credited to a test of another class and four rightly (`Cache/DatabaseLock.php`, tested from
   `tests/Integration/Database`, is one). The hold applies only where a source directory of the
   paired tree carries the test directory's name: `tests/Unit` and `tests/Feature` mirror no
   directory under `app`, so `tests/Unit/UnitConverterTest.php` covers
-  `app/Services/UnitConverter.php`.
-  A flat test directory
-  is no pairing: ktor keeps `<module>/jvm/test`, and about half of the stem matches there are
-  another class's. Such a match votes for the place the mirrored tests name, where it sits inside
-  one. A Rust file holding its own tests has no other file carrying its stem, so it is
-  in neither number of the namesake count and the clause after it says how many there are:
-  ripgrep's `crates` reads `0 of 56 have a namesake test; 34 hold their own tests`, and tokio's
-  `tokio` reads `2 of 297` with 47 more that hold theirs. Counted as having a namesake, 80 of the
-  101 Rust files credited in three repositories were credited for a module inside themselves under
-  words that name another file. Where every file a root would ask holds its own tests the namesake
-  count is dropped and the clause stands alone, `4 hold their own tests`. The tests line and an
-  area's kinds line carry the same clause.
+  `app/Services/UnitConverter.php`. A flat test directory is no pairing: ktor keeps
+  `<module>/jvm/test`, and about half of the stem matches there are another class's. Such a match
+  votes for the place the mirrored tests name, where it sits inside one. A Rust file holding its own
+  tests has no other file carrying its stem, so it is in neither number of the namesake count and
+  the clause after it says how many there are: ripgrep's `crates` reads `0 of 56 have a namesake
+  test; 34 hold their own tests`, and tokio's `tokio` reads `2 of 297` with 47 more that hold
+  theirs. Counted as having a namesake, 80 of the 101 Rust files credited in three repositories were
+  credited for a module inside themselves under words that name another file. Where every file a
+  root would ask holds its own tests the namesake count is dropped and the clause stands alone, `4
+  hold their own tests`. The tests line and an area's kinds line carry the same clause.
 - The helper facet, JavaScript and JSX roots only: how many `.ts` and `.js` modules sit beside the
   JSX files, counted over the files a test could be written for, the namesake count's own
   definition, so no test, story, empty file, declaration file or file under a test tree is one:
@@ -2272,14 +2272,18 @@ and the notice and `check` still speak for it. The area file prints it after the
 
 ```
 a .rb file added to "lib/rubocop/cop/style" ships with an edit to "config/default.yml"
-  100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here came in a change it counted
+  100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here came in a change the scan counted
 ```
+
+The last count is over every change the walk counted, so it can be larger than the claim's 100. A
+file a bulk change added, or one older than the walk reaches, is left out of it.
 
 A claim an area file carries counts as stated, in the scan's claims line and in the overview's `N
 stated`; one no area file carries counts in neither. A shallow clone, such as a CI checkout at depth
 one, reads too few changes to state anything, and a git older than 2.31 refuses `--diff-merges`, so
-the walk states nothing there either. Where git refused the walk, or the walk stopped at the most
-pairs it counts, the scan's summary says so in one line.
+the walk states nothing there either. Where the walk failed, git refusing it or the git runner's
+clock or field cap stopping it, or it stopped at the most pairs it counts, the scan's summary says
+so in one line.
 
 Measured with the build's own walk and gates on 44 repositories, mined on the older four fifths of
 each one's changes and held out on the newest fifth: 24 claims in 11 repositories, and 1,563 of the

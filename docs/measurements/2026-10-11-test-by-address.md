@@ -37,10 +37,10 @@ The 11 Ruby files: `test/support/*_helpers.rb`, `spec/support/helpers.rb`, page 
 is a test. The Ruby parse names rspec, minitest and beaker, so a file it read with no case is
 support.
 
-The 306 that stay: eslint's 294 mirrored rule tests (RuleTester at the top level, no export), and
-12 JavaScript files that export nothing: one real test (react's `NoRefAccessInRender-tests.ts`,
-calling a local `testRule`), and 11 non-tests the rule does not reach, 7 declaration files, 2 setup
-files, 1 shim and 1 build script.
+The 306 that stay: eslint's 294 mirrored rule tests (RuleTester at the top level, no export), and 12
+JavaScript files that export nothing: one real test (react's `NoRefAccessInRender-tests.ts`, calling
+a local `testRule`), and 11 files that are not tests, which the rule does not reach: 7 declaration
+files, 2 setup files, 1 shim and 1 build script.
 
 Every namesake count that moved, all of them false credits from a support file:
 
@@ -58,9 +58,9 @@ base, which moves 27 roots in 14 repositories. react's
 .map` for `144 test files and 67 other`.
 
 Every sibling-module count that moved, base to the producer definition, each cause counted file by
-file (the old definition over the new build, less `isProducer`). "Net" rows: the support rule had
-first added those support files to the count, so the difference is the empty files plus what support
-was already a support file on base.
+file (the old definition over the new build, less `isProducer`). "Net" rows: the support rule first
+added some support files to the count, so the column there is the files under a test tree taken out
+less the ones the support rule had put in.
 
 | Repository | Root | Base | Now | Under a test tree | Empty file |
 |---|---|---|---|---|---|
