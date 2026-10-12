@@ -651,7 +651,7 @@ test("two calls that both find a dead lock deliver one copy between them", needs
   }
 });
 
-test("three and eight calls that find a dead lock deliver one copy per batch and leave no lock or token", needsRuby, async (t) => {
+test("three and eight calls that find a dead lock deliver one copy per batch and leave no lock or lock token", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -900,7 +900,7 @@ test("a call that broke a dead lock and finds a live one in its place holds", ne
   assert.deepEqual(answer, {});
 });
 
-test("a dead lock whose token another call holds is left to that call", needsRuby, async (t) => {
+test("a dead lock whose lock token another call holds is left to that call", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -934,14 +934,14 @@ test("a dead lock released before the call could break it is taken", needsRuby, 
 
   let tokens = 0;
   const answer = stubbed("openSync", (real, p, flags, ...rest) => {
-    // Its holder releases it after this call took the token to break it.
+    // Its holder releases it after this call took the lock token to break it.
     if (p.startsWith(`${lock}.`) && ++tokens === 1) rmSync(lock);
     return real(p, flags, ...rest);
   }, call);
 
   assert.equal(tokens, 1);
   assert.match(answer.hookSpecificOutput?.additionalContext ?? "", /<repository-map /);
-  assert.deepEqual(readdirSync(join(data, "echo")), [name], "no lock and no token left");
+  assert.deepEqual(readdirSync(join(data, "echo")), [name], "no lock and no lock token left");
 });
 
 test("a batch claim write that fails partway leaves the batch claim it replaces whole", needsRuby, async (t) => {
@@ -1065,7 +1065,7 @@ test("batch claims older than a day are swept when a new one is made", needsRuby
 
   assert.equal(existsSync(old), false);
   assert.equal(existsSync(lock), false, "a lock left by a call that died");
-  assert.equal(existsSync(token), false, "a token a call died holding");
+  assert.equal(existsSync(token), false, "a lock token a call died holding");
   assert.equal(existsSync(recent), true);
   assert.equal(existsSync(foreign), true, "only a name a batch claim has");
   assert.equal(readdirSync(join(data, "echo")).length, 3);
