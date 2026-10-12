@@ -80,9 +80,9 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   const checked = files.filter((f) => langHas(f.lang, "semantic"));
   const kept = carried !== null && standsIn(carried) ? carried : null;
   const stopChecker = new AbortController();
-  // A degraded tier keeps no type-checked row, so the checker is told to stop
-  // once its rate, and where its rows have sites, say that is the verdict.
-  // The fold below decides it again over the same files, stubs for hits.
+  // A degraded tier keeps no type-checked row, so the checker's run ends once
+  // its rate, and where its rows have sites, say that is the verdict. The
+  // fold below decides it again over the same files, stubs for hits.
   const partitioned = Promise.withResolvers();
   const degradedAlready = async (sited) => {
     const { areas, capabilities } = await partitioned.promise;
@@ -158,7 +158,8 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
       uncounted,
       countsNothing: pinned ? null : countsNothingIn(files, head.records, frameworks),
     });
-    // Before the checker's answer is waited for, so its reader can ask while the checker still walks.
+    // Before the checker's answer is waited for, so its reader can ask while
+    // the checker still walks.
     partitioned.resolve({ areas, capabilities });
   } catch (err) {
     // Otherwise the process stays up until a checker nobody will read finishes.
@@ -258,6 +259,11 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   // in no area stand in, so root code below the floor is still measured whether
   // the areas beside it were folded or held.
   const semantic = semanticOver(whole, countedIn(files, areas, folded.map((f) => f.area), whole?.records));
+  // A stopped run holds a stub for every site, each one conforming. Said out
+  // loud, because a tier that read ok would print them as what was counted.
+  if (whole?.stopped && semantic.status !== "degraded") {
+    throw new Error(`the checker was stopped as degraded and the fold reads it ${semantic.status}, so its rows were never counted`);
+  }
   // A checker that resolved too few types counted nothing to print, so its
   // rows leave the fold here, as they never enter it where the verdict is
   // carried: the two scans write the same map.
@@ -457,7 +463,10 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   };
 }
 
-/** The files the checker's rate is taken over: those of the folded areas, or those in no area where the checker read none of them. */
+/**
+ * The files the checker's rate is taken over: those of the folded areas, or
+ * those in no area where the checker read none of them.
+ */
 function countedIn(files, areas, foldedAreas, checkerRecords) {
   const areaFiles = foldedAreas.flatMap((area) => area.files.map((f) => f.rel));
   if (areaFiles.some((rel) => checkerRecords?.has(rel))) return areaFiles;

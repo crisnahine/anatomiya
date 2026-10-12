@@ -1202,7 +1202,7 @@ const walkedAsViolations = async (...args) => {
   return whole;
 };
 
-test("a refused config writes the facts a run that walked every row writes", async (t) => {
+test("under a refused config the facts do not move with what the type-checked hits say", async (t) => {
   if (!(await loadTypeScript())) return t.skip("typescript is not installed");
   const dir = typedRepo(t);
   writeFileSync(join(dir, "tsconfig.json"), "{ this is not json");
@@ -1274,6 +1274,22 @@ test("a degraded rate stops the dimension walk, and the facts are the ones a who
     assert.deepEqual(still(written), still(await scan(whole, { runChecker: walking.runChecker })));
   }
   assert.deepEqual(stopping.seen.stop, [true, true, true]);
+});
+
+test("a run stopped as degraded that the fold reads as ok is refused, not written", async (t) => {
+  // The stubs credit every site as conforming. Kept by a tier that reads ok, they would print as counted.
+  const dir = typedRepo(t);
+  const stoppedAsOk = async (root, files) => ({
+    records: new Map(files.map((f) => [f.rel, { hits: { law_of_demeter: [{ conforming: true, where: null }] }, resolution: { resolved: 9, total: 10 } }])),
+    config: { status: "ok", reason: null },
+    status: "degraded",
+    reason: "low-resolution",
+    typedResolutionRate: 0.1,
+    error: null,
+    stopped: true,
+  });
+
+  await assert.rejects(scan(dir, { runChecker: stoppedAsOk }), /the checker was stopped as degraded and the fold reads it ok/);
 });
 
 test("an ok rate waits for the real hits", async (t) => {
