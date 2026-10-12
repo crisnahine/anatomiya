@@ -57,6 +57,9 @@ const defining = (lang) => {
   return [...s.fn, ...s.cls, ...(s.wrap ?? []), ...(s.scope ?? []), ...s.annotation];
 };
 
+// A closing bracket, or the separator that follows one.
+const CLOSING = /^[)\]};,]$/;
+
 // What a literal value may hold below its own node: the parts of a string, a
 // number's sign, the members of a collection.
 const LITERAL_PARTS = /^(?:string_(?:start|end|content|fragment|literal_content)|escape_sequence|interpreted_string_literal_content|raw_string_literal_content|comment|line_comment|block_comment)$/;
@@ -68,7 +71,10 @@ const LITERAL_PARTS = /^(?:string_(?:start|end|content|fragment|literal_content)
  * member it belongs to, so a call's added argument or closing bracket counts
  * and a constant added inside a class body does not count for the class. A
  * token inside a comment or a string's text is no token here, and an
- * interpolation counts on any added line it spans. A binding counts where it
+ * interpolation counts on any added line it spans. An added line holding only
+ * closing brackets is not charged: A91's rule calls a closing bracket inert
+ * for every engine, since such a line starts no definition and no call, and
+ * it is what a removed argument or a removed body leaves behind. A binding counts where it
  * starts on an added line and its value holds a named node of a type no
  * literal list names, or it carries a block to run when it does not match.
  */
@@ -81,14 +87,23 @@ export function oracleHits(tree, lang, added) {
   const containers = new Set(CONTAINERS[lang]);
   const charged = new Map();
   const quiet = new Set([...s.comment, ...s.literal]);
+  const tokens = [];
+  // The added rows that hold anything but closing brackets and the separators after them.
+  const opening = new Set();
   for (const todo = [[tree.rootNode, false]]; todo.length > 0; ) {
     const [node, inside] = todo.pop();
     if (node.childCount > 0) {
       for (const child of node.children) if (child) todo.push([child, inside || quiet.has(node.type)]);
       continue;
     }
-    // A token inside a comment or a string's text is no token here.
-    if (inside || s.comment.includes(node.type) || !onAddedRow(node.startPosition.row)) continue;
+    if (s.comment.includes(node.type) || !onAddedRow(node.startPosition.row)) continue;
+    if (node.isNamed || !CLOSING.test(node.type)) opening.add(node.startPosition.row);
+    // A token inside a string's text is no token here.
+    if (!inside) tokens.push(node);
+  }
+  for (const node of tokens) {
+    // A line of closing brackets alone starts no definition and no call (A91).
+    if (!opening.has(node.startPosition.row)) continue;
     for (let up = node.parent; up !== null; up = up.parent) {
       if (flagged.has(up.type) || computing.has(up.type)) charged.set(up.id, up);
       if (containers.has(up.type) || (up.parent !== null && containers.has(up.parent.type))) break;

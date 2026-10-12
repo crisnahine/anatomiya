@@ -63,11 +63,11 @@ test("the oracle names a function, a lambda, a call and a binding to a name that
   }
 });
 
-test("the oracle names a call whose arguments or closing bracket were added, and the shapes the review found", async () => {
+test("the oracle names a call whose arguments were added, and the shapes the review found", async () => {
   const call = await parseForLines("x = run(\n    1,\n)\n", "python", { cancel: () => false });
   try {
     assert.deepEqual(oracleHits(call.tree, "python", [[2, 2]]).map((h) => h.type), ["call"]);
-    assert.deepEqual(oracleHits(call.tree, "python", [[3, 3]]).map((h) => h.type), ["call"]);
+    assert.deepEqual(oracleHits(call.tree, "python", [[3, 3]]), [], "the closing bracket alone is no hit");
     assert.deepEqual(oracleHits(call.tree, "python", [[1, 1]]).map((h) => h.type).sort(), ["binding to call", "call"]);
   } finally {
     call.tree.delete();
@@ -81,6 +81,29 @@ test("the oracle names a call whose arguments or closing bracket were added, and
     try {
       const lines = source.split("\n").length;
       assert.ok(oracleHits(parsed.tree, lang, [[1, lines]]).some((h) => h.type === type), `${lang}: ${type}`);
+    } finally {
+      parsed.tree.delete();
+    }
+  }
+});
+
+test("a closing bracket left as the only added line is no hit, and a call added on a bracket line is", async (t) => {
+  // A removed argument leaves `)` behind as the one added line (A91: a closing bracket is inert).
+  const { dir, commit } = repo(t);
+  commit({ "svc/a.py": "x = run(\n    1,\n    2,\n).real\n" }, "init");
+  commit({ "svc/a.py": "x = run(\n    1,\n    2,\n)\n" }, "drop the attribute");
+  const result = await measure(dir, { commits: 200, samples: 5 });
+  assert.equal(result.langs.python.skipped, 1);
+  assert.deepEqual(result.langs.python.skippedFiles[0].added, [")"]);
+  assert.deepEqual(result.langs.python.hits, []);
+
+  for (const [lang, source, line, type] of [
+    ["python", "x = run(\n    1,\n) + compute()\n", 3, "call"],
+    ["kotlin", "val x = build {\n    1\n}.also { run() }\n", 3, "call_expression"],
+  ]) {
+    const parsed = await parseForLines(source, lang, { cancel: () => false });
+    try {
+      assert.ok(oracleHits(parsed.tree, lang, [[line, line]]).some((h) => h.type === type), `${lang}: ${type}`);
     } finally {
       parsed.tree.delete();
     }
