@@ -1,8 +1,8 @@
 # What a parse child loads before its first file
 
-2026-10-11, macOS arm64, Node 22.22.3. The base build is eac5b08; the head build is 2900857, which
-moves the five base oxc rows and `dimensionsFor` into `dimensions-base.mjs` and has each engine body
-name its own row tables.
+2026-10-11, macOS arm64, Node 22.22.3. The base build is eac5b08; the head build is eac5b08 with
+the change of 8842be06, which moves the five base oxc rows and `dimensionsFor` into
+`dimensions-base.mjs` and has each engine body name its own row tables.
 
 ## Method
 
@@ -29,7 +29,9 @@ A JavaScript child holds 0.50 MB less after load and a tree-sitter child 0.44 MB
 
 In 0.15.0 `dimensionsFor` sits in `walk.mjs`, beside the walk, and not in
 `dimensions-base.mjs`. Every child loads `walk.mjs` already, through the rows it runs, so 0.15.0's
-children load the same modules as 2900857's. DECISIONS B69 cites these figures.
+JavaScript children load the same modules as the head build's, and its tree-sitter children one
+fewer: `dimensions-base.mjs`, which they loaded only for `dimensionsFor`. DECISIONS B69 cites these
+figures.
 
 ## Maps
 

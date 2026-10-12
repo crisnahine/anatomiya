@@ -19,7 +19,7 @@ README's "its overview or area files did on 24 of 60", come from this run.
 
 ## Totals
 
-- Every rule file (the overview and every area file) identical in 36 of 60.
+- Every overview and area file identical in 36 of 60.
 - The overview differs in 20 of 60.
 - Area files: 7,388 identical, 784 changed, 4 added, 0 removed. Of the 784, 623 change only by the
   hooks claim's full stop and 161 by the other causes below, 27 of those by the full stop as well.
