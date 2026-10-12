@@ -477,13 +477,13 @@ export function targetIn(payload, root, from) {
 /** How far back a delivery still counts, in bytes the model reads: about 29.9k tokens at the 6.57 per token measured on 2.1.292 to 2.1.296, A92's distance. */
 export const ECHO_WINDOW_BYTES = 192 * 1024;
 
-// How much transcript is read to find a window's worth of those records: a
-// prompt snapshot alone runs to 130 KB. Past it the window counts as run out.
+// How much transcript is read to find a window's worth of those records, which records that
+// count for nothing share (one prompt snapshot was 78,191 bytes). Past it the window counts as run out.
 const ECHO_READ_MOST = 1024 * 1024;
 
 // A batch claim this old is no batch's: its delivery has reached the transcript.
 const BATCH_CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
-// A batch claim, its temp file, its lock, or a lock's token.
+// A batch claim, its temp file, its lock, or a lock token.
 const ECHO_FILE_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+)?)?$/;
 const BATCH_CLAIMS_LISTED_MOST = 4096;
 
@@ -736,7 +736,7 @@ function batchClaimed(path, transcript, tail, digest) {
  * Takes the lock, breaking it once where it outlived any hook; false where another call holds it.
  *
  * A lock that may be live is never moved or removed: the right to remove one dead generation goes
- * to whichever call creates the token named by its mtime, and that call removes it only while the
+ * to whichever call creates the lock token named by its mtime, and that call removes it only while the
  * lock is still that generation. Every other call goes to the one create, and the losers hold.
  */
 function locked(lock) {
@@ -750,15 +750,15 @@ function locked(lock) {
     if (!createdAlone(token)) continue;
     try {
       const now = lstatOf(lock);
-      if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) removeDead(lock);
+      if (now !== null && now.ino === found.ino && now.mtimeMs === found.mtimeMs) removeDeadLock(lock);
     } finally {
-      removeQuietly(token);
+      removeLockToken(token);
     }
   }
 }
 
 /** Removes a dead lock; one the system will not let go of is thrown, so the call answers alone rather than silence the window for good. */
-function removeDead(lock) {
+function removeDeadLock(lock) {
   try {
     unlinkSync(lock);
   } catch (err) {
@@ -785,12 +785,15 @@ function createdAlone(path) {
   }
 }
 
-// Seven waits doubling from 1 ms, 127 ms in all.
+// Seven waits doubling from 1 ms: 127 ms asked for, longer on a coarse timer.
 const DELETING_RETRIES = 7;
 const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
-/** Removes a lock token; one the system refuses to remove names a generation no call breaks again, and the sweep takes it. */
-function removeQuietly(path) {
+/**
+ * Removes a lock token; one the system refuses to remove is left for the sweep. It names a generation no
+ * call breaks again, unless a volume keeping mtimes to 2 s gives a later dead lock its name: that window holds until the sweep.
+ */
+function removeLockToken(path) {
   try {
     unlinkSync(path);
   } catch {
@@ -807,7 +810,7 @@ function lstatOf(path) {
   }
 }
 
-/** Takes out batch claims, locks and tokens older than a day, so they stay bounded however many sessions run. */
+/** Takes out batch claims, locks and lock tokens older than a day, so they stay bounded however many sessions run. */
 function sweep(dir, kept) {
   const names = [];
   try {
