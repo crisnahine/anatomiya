@@ -13,7 +13,7 @@ import { basename, dirname, join } from "node:path";
 import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
 import { wilsonLower } from "./gates.mjs";
 import { encodePath } from "./encode.mjs";
-import { READ_MOST, atomic, previousBytes, writeTemp } from "./store.mjs";
+import { READ_MOST, putBack, recordBytes, writeTemp } from "./store.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
 
@@ -356,10 +356,10 @@ export function writeFacts(root, result) {
   } catch (err) {
     const now = recordBytes(record);
     // Only where the failed write replaced what was there: still the same bytes
-    // leaves nothing to put back, and `putBack` leaves a record it could not read.
+    // leaves nothing to put back, and `putBackRecord` leaves a record it could not read.
     if (previous === null ? now !== null : !(now && previous?.equals(now))) {
       try {
-        putBack(record, previous, was);
+        putBackRecord(record, previous, was);
       } catch {}
     }
     throw err;
@@ -367,30 +367,18 @@ export function writeFacts(root, result) {
 }
 
 /**
- * `previous`, from `previousBytes`, back at `path`: removed where nothing was,
- * left where it could not be read, and where `was` is the layout file that
- * answered for it, the pair written again so the restored record has one.
+ * The record's `previous` bytes back at `path`, as the store's `putBack` puts
+ * any file back, except that where `was` is the layout file that answered for
+ * it, the pair is written again so the restored record has one.
  */
-export function putBack(path, previous, was) {
-  if (previous === undefined) return;
-  if (previous === null) unlinkSync(path);
-  else if (was !== null) writePair(dirname(path), previous, was.layout, was.schema);
-  else atomic(path, previous);
+export function putBackRecord(path, previous, was) {
+  if (previous === undefined || previous === null || was === null) putBack(path, previous);
+  else writePair(dirname(path), previous, was.layout, was.schema);
 }
 
 /** The line a scan gives a record past the bound, which it replaces without reading. */
 export const oversizedSentence = ({ at, size }, dryRun) =>
   `${encodePath(at)} ${dryRun ? "is" : "was"} ${size} bytes, past the ${RECORD_MOST / 2 ** 20} MiB any command reads of a record, so it ${dryRun ? "would be" : "was"} replaced without being read`;
-
-/** `previousBytes` of a record, `null` past the bound: no command reads one, so there is nothing in it to keep. */
-export function recordBytes(path) {
-  try {
-    return previousBytes(path);
-  } catch (err) {
-    if (err.tooLarge === undefined) throw err;
-    return null;
-  }
-}
 
 /**
  * The record's bytes and the layout file stamped from them, both written whole

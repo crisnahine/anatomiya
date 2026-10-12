@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { atomic, stagedPath, writeTemp } from "../plugins/anatomiya/lib/store.mjs";
+import { atomic, putBack, replaceAll, stagedPath, writeTemp } from "../plugins/anatomiya/lib/store.mjs";
 import { stagedBy } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 
@@ -121,4 +121,53 @@ test("the name a staged file is given is the name a later scan knows as one", (t
       assert.equal(stagedBy(name, target), null, `${target.id}: ${name}`);
     }
   }
+});
+
+test("putBack removes a file that was not there", (t) => {
+  const path = join(workspace(t), "facts.json");
+  writeFileSync(path, "new\n");
+
+  putBack(path, null);
+
+  assert.equal(existsSync(path), false);
+});
+
+test("putBack leaves a file it could not read", (t) => {
+  const path = join(workspace(t), "facts.json");
+  writeFileSync(path, "new\n");
+
+  putBack(path, undefined);
+
+  assert.equal(readFileSync(path, "utf8"), "new\n");
+});
+
+test("replaceAll undoes every rename when one fails", async (t) => {
+  const dir = workspace(t);
+  const [a, b] = [join(dir, "a.md"), join(dir, "b.md")];
+  writeFileSync(a, "old a\n");
+  writeFileSync(b, "old b\n");
+  const staged = [[writeTemp(a, "new a\n"), a], [writeTemp(b, "new b\n"), b]];
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  let calls = 0;
+  fs.renameSync = (...args) => {
+    if (++calls === 2) throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+  const pair = { record: null, records: new Set(), leftover: new Set(), left: [], spared: () => null, settle() {}, restore() {} };
+
+  assert.throws(
+    () => replaceAll(staged, [], pair, () => {}, (path) => path.slice(dir.length + 1)),
+    /^Error: b\.md could not be replaced \(EPERM\), so the scan stopped and put back what it had replaced/
+  );
+
+  assert.equal(calls, 3, "the second rename refused, and the first was put back by one more");
+  assert.equal(readFileSync(a, "utf8"), "old a\n");
+  assert.equal(readFileSync(b, "utf8"), "old b\n");
 });
