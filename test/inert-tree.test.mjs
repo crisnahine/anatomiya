@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +9,6 @@ import { Tree } from "web-tree-sitter";
 
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { treeInertLines } from "../plugins/anatomiya/lib/inert-tree.mjs";
-import { SHAPES } from "../plugins/anatomiya/lib/tree-shapes.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
 
 const never = () => false;
@@ -65,23 +65,27 @@ test("a failure while the tree is walked asks about every non-blank line of that
   }
 });
 
-test("a failure before the walk still deletes the tree", async () => {
-  // Kotlin's rules are built on its first file and kept, so this is the first test here to read one.
-  const { kotlin } = SHAPES;
-  const remove = Tree.prototype.delete;
-  let deleted = 0;
-  Tree.prototype.delete = function () {
-    deleted++;
-    return remove.call(this);
-  };
-  SHAPES.kotlin = null;
-  try {
-    assert.deepEqual(await treeInertLines("val x = 1\n", "kotlin", Infinity), [false, true]);
-  } finally {
-    SHAPES.kotlin = kotlin;
-    Tree.prototype.delete = remove;
-  }
-  assert.equal(deleted, 1);
+test("a failure before the walk still deletes the tree", () => {
+  // A language's rules are built on its first file and kept, so the failure needs a process that has read none.
+  const lib = (name) => JSON.stringify(new URL(`../plugins/anatomiya/lib/${name}.mjs`, import.meta.url).href);
+  const script = `
+    import { Tree } from ${JSON.stringify(import.meta.resolve("web-tree-sitter"))};
+    import { SHAPES } from ${lib("tree-shapes")};
+    import { treeInertLines } from ${lib("inert-tree")};
+    const remove = Tree.prototype.delete;
+    let deleted = 0;
+    Tree.prototype.delete = function () {
+      deleted++;
+      return remove.call(this);
+    };
+    SHAPES.kotlin = null;
+    process.stdout.write(JSON.stringify({ inert: await treeInertLines("val x = 1\\n", "kotlin", Infinity), deleted }));
+  `;
+
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60_000 });
+
+  assert.equal(run.stderr, "");
+  assert.deepEqual(JSON.parse(run.stdout), { inert: [false, true], deleted: 1 });
 });
 
 test("every sample file is read, and its imports and comments ask nothing", async () => {
@@ -113,5 +117,102 @@ test("a Python annotation that is a plain type expression asks nothing, and one 
 
 test("a Go constant with no value or counted off iota asks nothing, and one holding a call or another name asks", async () => {
   const source = "package m\n\nconst (\n\tA = iota\n\tB\n\tC Color = 1 << iota\n\tD, E = iota, (iota + 1) * 2\n\tF = -iota\n\tG = len(x)\n\tH = other\n\tI = Color(1)\n\tJ = iota + other\n)\n\nvar v int\nvar w = 1 << 2\n";
-  assert.deepEqual(await asking("go", source), [9, 10, 11, 12, 15, 16]);
+  // The line that opens the group asks with it: the group is read whole only where every constant in it asks nothing.
+  assert.deepEqual(await asking("go", source), [3, 9, 10, 11, 12, 15, 16]);
+  assert.deepEqual(await asking("go", "package m\n\nconst (\n\tA = iota\n\tB\n\tC Color = 1 << iota\n)\n"), []);
+});
+
+test("a PHP string that interpolates through ${...} is no literal, in a target or in a value", async () => {
+  const source = ['<?php', '$a["${foo()}"] = 1;', 'self::$x["${foo()}"] = 1;', '$a->{"${foo()}"} = 1;', '$a["{${foo()}}"] = 1;', '$x = "${foo()}";', '$x = "{${foo()}}";', '$x = "plain\\n";', '$a["k"] = 1;', ""].join("\n");
+  assert.deepEqual(await asking("php", source), [2, 3, 4, 5, 6, 7]);
+});
+
+test("a Rust binding whose type or pattern holds a call, a macro or a block asks, and one made of names and literals asks nothing", async () => {
+  const items = [
+    "const A: [u8; f()] = [0; 3];",
+    "static B: [u8; f()] = [0, 1];",
+    "const C: Foo<{ f() }> = 1;",
+    "const E: [u8; { g() }] = [0];",
+    "const G: [u8; size_of::<T>()] = [0; 4];",
+    "const D: t!() = 1;",
+    "const I: [u8; m!(3)] = [0];",
+    "const J: [[u8; f()]; 2] = [1, 2];",
+    'const K: &[u8; f()] = "a";',
+    "const L: (u8, [u8; f()]) = (1, 2);",
+    "const M: fn([u8; f()]) = 1;",
+    "const N: [u8; 3] = [0; 3];",
+    "static O: [[u8; LEN]; 2] = [1, 2];",
+    'pub(crate) const P: &\'static str = "a";',
+    "const Q: (u8, Option<std::num::NonZeroU8>) = (1, 2);",
+    "static mut R: *const u8 = 0;",
+  ];
+  assert.deepEqual(await asking("rust", `${items.join("\n")}\n`), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  const locals = ["fn h() {", "    let x: [u8; f()] = [0; 3];", "    let x: Vec<[u8; f()]> = 1;", "    let p!() = 1;", "    let const { f() } = 1;", "    let y: [u8; 3] = [0; 3];", "    let z: Vec<[u8; 3]> = 1;", "    let (a, b) = (1, 2);", '    let mut c = "s";', "}"];
+  assert.deepEqual(await asking("rust", `${locals.join("\n")}\n`), [1, 2, 3, 4, 5]);
+});
+
+test("a Go binding whose type holds a call asks, in its own type and in the type of a composite literal", async () => {
+  const source = [
+    "package m",
+    "var x = [size()]int{0}",
+    "var y [size()]int = [1]int{0}",
+    "var z = map[string][f()]int{}",
+    "var o = map[[f()]int]string{}",
+    "var n = [][f()]int{{1}}",
+    "var w = struct{ a [f()]int }{}",
+    "const M = [f()]int{}",
+    "const N [f()]int = 1",
+    "const X = struct{ a [f()]int }{}",
+    "var a = [3]int{0}",
+    "var b [3]int = [1]int{0}",
+    "var c = map[string][]int{}",
+    "var d = map[[2]int]string{}",
+    "var e = [][size]*pkg.T{{1}}",
+    'var g = [...]string{"a"}',
+    'var h = map[string]interface{}{"a": 1}',
+    "var i = struct{ a int }{}",
+    'const K Kind = "x"',
+    "",
+  ].join("\n");
+  assert.deepEqual(await asking("go", source), [2, 3, 4, 5, 6, 7, 8, 9, 10]);
+});
+
+test("a Go constant converted from iota asks, and a bare one under a call asks nothing on its own line", async () => {
+  assert.deepEqual(await asking("go", "package m\n\nconst (\n\tA = T(iota)\n\tB\n)\n\nconst (\n\tC = f()\n\tD\n)\n"), [3, 4, 8, 9]);
+});
+
+test("a C# declaration with a call in its array rank asks, as a field and as a local", async () => {
+  const source = ["class A {", "    int[F()] e = null;", "    int[F(), 2] q = null;", "    int[3] r = null;", "    private static readonly System.Collections.Generic.List<string?> s = null;", "    void M() {", "        int[G()] u = null;", "        int[3] v = null;", '        var w = "x";', "    }", "}", ""].join("\n");
+  assert.deepEqual(await asking("csharp", source), [1, 2, 3, 6, 7]);
+});
+
+test("a Kotlin accessor asks on the line that opens it, and a property with none asks nothing", async () => {
+  const source = ["class A {", "    val d: Int = 1", "        get() {", "            return h()", "        }", "    val e: Int = 1", '    var f: String = "a"', "        set(value) {", "            field = value", "        }", "    private val g: Map<String, Int?>? = null", "}", ""].join("\n");
+  assert.deepEqual(await asking("kotlin", source), [1, 2, 3, 4, 7, 8, 9]);
+});
+
+test("a line that holds a keyword or an opening bracket and no name asks, since it may open a callable", async () => {
+  assert.deepEqual(await asking("go", "package m\n\nfunc f() {\n\tgo func() {\n\t}()\n}\n"), [3, 4, 5]);
+  assert.deepEqual(await asking("php", "<?php\nfoo(\n    function () {\n        return 1;\n    }\n);\n"), [2, 3, 4]);
+  assert.deepEqual(await asking("csharp", "class A {\n    int X {\n        get {\n            return 1;\n        }\n    }\n}\n"), [1, 2, 3, 4]);
+  assert.deepEqual(await asking("kotlin", "val f = run(\n    {\n        1\n    }\n)\n"), [1, 2, 3]);
+});
+
+test("a PHP assignment that is an argument asks, where one that is a statement of its own asks nothing", async () => {
+  const source = ["<?php", "foo(", "    $a['k'] = 1", ");", "$o->run(", "    self::$x = 1,", ");", "$a['k'] = 1;", "self::$x = 1;", "if ($b = 1) {", "}", ""].join("\n");
+  assert.deepEqual(await asking("php", source), [2, 3, 5, 6, 10, 11]);
+});
+
+test("a Python annotation joined by anything but | asks", async () => {
+  assert.deepEqual(await asking("python", "x: a | b = 1\nx: a + b = 1\nx: a | b + c = 1\n"), [2, 3]);
+});
+
+test("a string made of its own text is a literal however it is quoted, and a character is one too", async () => {
+  assert.deepEqual(await asking("python", 'A = f"{{}}"\nB = b"\\x00"\nC = f"{{{x}}}"\n'), [3]);
+  assert.deepEqual(await asking("php", "<?php\nconst A = <<<'T'\nplain\nT;\nconst B = \"a\\n\";\n"), []);
+  assert.deepEqual(await asking("csharp", "class A {\n    char a = 'x';\n    char b = '\\n';\n    string c = \"\"\"\n        raw\n        \"\"\";\n}\n"), [1]);
+  assert.deepEqual(await asking("java", 'class A {\n    char a = \'x\';\n    String b = """\n        text\\n\n        """;\n}\n'), [1]);
+  assert.deepEqual(await asking("kotlin", "val a = 'x'\nval b = '\\n'\nval c = \"\"\"\n    raw\n\"\"\"\n"), []);
+  assert.deepEqual(await asking("rust", "const A: char = '\\n';\nconst B: &str = r#\"raw\"#;\nconst C: &[u8] = b\"x\\n\";\n"), []);
+  assert.deepEqual(await asking("go", "package m\n\nconst A = '\\n'\nconst B = `raw`\nconst C = \"a\\n\"\n"), []);
 });

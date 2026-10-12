@@ -21,6 +21,8 @@ LIMITS["high"] = 2
 RATES: Dict[str, a.Rate | None] = {}
 HOOKS: Callable[[int], tuple[int, ...]] = None
 FIRST: a.Rates[0] = None
+EOL = "\\n"
+BRACES = f"{{}}"
 
 
 class Order(Record):
@@ -113,6 +115,7 @@ plain
 TEXT;
 $greeting = "hello $name";
 $limits['high'] = 2;
+const EOL = "\\n";
 
 function format_total(int $cents): string
 {
@@ -160,6 +163,9 @@ const (
 )
 
 var limits = map[string]float64{"low": -1, "high": 2.5}
+var marks = [...]string{"a\\n"}
+var cells = map[string][2]*fmt.State{}
+var extra = map[string]interface{}{}
 
 var (
 	ready, done = true, false
@@ -208,6 +214,8 @@ public class Totals extends Money implements Summable {
     char mark = 'x';
     boolean on = true, off = false;
     Object none = null;
+    java.util.List<String> names = null;
+    String eol = "\\n";
     String greeting = STR."hello \\{USAGE}";
 
     // The sum of every price, or zero when the order cannot be read.
@@ -286,10 +294,12 @@ namespace Billing
         bool On = true;
         string Root = @"c:\\x";
         object None = null;
+        System.Collections.Generic.List<int?> Marks = null;
 
         public int Total(Order order)
         {
             const int scale = 100;
+            var eol = "\\n";
             int Cents(decimal price)
             {
                 return (int)(price * 100);
@@ -352,6 +362,8 @@ usage: totals FILE
 static LIMITS: [i64; 3] = [1, -2, 3];
 const RATE: (f64, bool, char) = (2.5, true, 'x');
 const RAW: &str = r"raw";
+pub(crate) static EOL: &'static str = "\\n";
+static mut HEAD: *const u8 = 0;
 
 /// One order and its prices.
 #[derive(Debug)]
@@ -382,6 +394,7 @@ mod units {
 
 pub fn describe(order: &Order) -> String {
     let scale = 100;
+    let (low, high) = (1, 2);
     let Some(first) = order.prices.first() else {
         return USAGE.to_string();
     };
@@ -412,6 +425,8 @@ val USAGE = """
 
 @Suppress("unused")
 class Totals(private val orders: List<Order>) {
+    override val unit = "cents\\n"
+
     fun total(): Int {
         try {
             return orders.sumOf { it.price }

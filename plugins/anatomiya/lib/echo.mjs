@@ -135,7 +135,10 @@ function takeLock(lock) {
   return createdAlone(lock) || takeDeadLock(lock, mtimeAge({ heldMostMs: LOCK_HELD_MOST_MS, slackMs: LOCK_MTIME_SLACK_MS }));
 }
 
-/** Takes out batch claims, their temp files, locks, lock tokens and a token's own token older than a day, so they stay bounded however many sessions run. */
+/**
+ * Takes out batch claims, their temp files, locks, lock tokens and a token's own token older than a day,
+ * so they stay bounded however many sessions run.
+ */
 function sweep(dir, kept) {
   const names = [];
   try {

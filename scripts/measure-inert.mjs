@@ -1,19 +1,24 @@
 #!/usr/bin/env node
 /**
- * How many changed tree-sitter files the reuse check's line rule leaves out,
- * and whether any of them added something callable, measured as A91 measured
- * the oxc and prism rules: over each repository's last non-merge commits, the
- * hunks `diff -U0` gives a file and the rule's answer on the file as that
- * commit left it.
+ * How many changed tree-sitter files and hunks the reuse check's line rule
+ * leaves out, and whether any of them added something callable, measured as
+ * A91 measured the oxc and prism rules: over each repository's last non-merge
+ * commits, the hunks `diff -U0` gives a file and the rule's answer on the file
+ * as that commit left it.
  *
- * The oracle re-parses every file the rule left out and names what an added
- * line may define, build or compute: a function, a class, a lambda, a call, an
- * object creation, an interpolation or a conditional holding a token on an
- * added line, and a binding that starts on one whose value holds anything but
+ * The oracle re-parses every file holding a hunk the rule left out, a file
+ * asked about for another hunk included, and names what a line of such a hunk
+ * may define, build or compute: a function, a class, an accessor, a lambda, a
+ * call, an object creation, an interpolation or a conditional holding a token
+ * on an added line, a string on one that holds more than its own text, and a
+ * binding that starts on one whose value holds anything but literals or whose
+ * target, pattern, type or modifiers hold anything but names, types and
  * literals. It charges each token to the nodes above it, up to the statement
- * or member it belongs to, and is written apart from the rule's own walk, so
- * the rule cannot pass by agreeing with itself. Read-only: git is asked,
- * nothing is checked out.
+ * or member it belongs to. It is written apart from the rule's own walk: it
+ * shares the table's literal kinds and none of the rule's lists of names,
+ * types and string parts, which it tells by how grammars spell them. So the
+ * rule cannot pass by agreeing with itself. Read-only: git is asked, nothing
+ * is checked out.
  *
  * usage: node scripts/measure-inert.mjs [--commits N] [--samples N] <repository> [<repository> ...]
  */
@@ -36,9 +41,9 @@ export const ORACLE = {
   php: ["property_hook", "anonymous_function", "arrow_function", "function_call_expression", "member_call_expression", "scoped_call_expression", "object_creation_expression", "conditional_expression"],
   go: ["func_literal", "call_expression"],
   java: ["lambda_expression", "method_reference", "method_invocation", "object_creation_expression", "ternary_expression", "template_expression"],
-  csharp: ["lambda_expression", "anonymous_method_expression", "invocation_expression", "object_creation_expression", "implicit_object_creation_expression", "conditional_expression", "interpolated_string_expression"],
+  csharp: ["accessor_declaration", "lambda_expression", "anonymous_method_expression", "invocation_expression", "object_creation_expression", "implicit_object_creation_expression", "conditional_expression", "interpolated_string_expression"],
   rust: ["closure_expression", "call_expression", "macro_invocation", "struct_expression", "if_expression", "match_expression"],
-  kotlin: ["lambda_literal", "anonymous_function", "call_expression", "if_expression", "when_expression", "object_literal"],
+  kotlin: ["getter", "setter", "secondary_constructor", "anonymous_initializer", "lambda_literal", "anonymous_function", "call_expression", "if_expression", "when_expression", "object_literal"],
 };
 
 // What holds statements or members: a token on an added line is charged to the nodes between it
@@ -48,7 +53,8 @@ export const CONTAINERS = {
   php: ["program", "compound_statement", "declaration_list"],
   go: ["source_file", "statement_list", "field_declaration_list"],
   java: ["program", "block", "class_body", "interface_body", "enum_body", "enum_body_declarations"],
-  csharp: ["compilation_unit", "declaration_list", "block"],
+  // A conditional around whole members holds them as a body does, so a `using` added inside one is not the conditional.
+  csharp: ["compilation_unit", "declaration_list", "block", "preproc_if", "preproc_elif", "preproc_else"],
   rust: ["source_file", "declaration_list", "block"],
   kotlin: ["source_file", "class_body", "enum_class_body", "block", "lambda_literal"],
 };
@@ -66,7 +72,22 @@ export const COUNTED = { go: { const_spec: "iota" } };
 
 // What a literal value may hold below its own node: the parts of a string, a
 // number's sign, the members of a collection.
-const LITERAL_PARTS = /^(?:string_(?:start|end|content|fragment|literal_content)|escape_sequence|interpreted_string_literal_content|raw_string_literal_content|comment|line_comment|block_comment)$/;
+const LITERAL_PARTS = /^(?:string_(?:start|end|content|fragment|literal_content)|multiline_string_fragment|escape_sequence|interpreted_string_literal_content|raw_string_(?:literal_content|start|content|end)|nowdoc_(?:body|string)|comment|line_comment|block_comment)$/;
+
+// How the seven grammars spell a name, a type, a modifier and a pattern of names. Every node under one
+// is read too, and nothing that calls or runs is spelt this way.
+const NAMING =
+  /(?:^|_)(?:identifier|name|type|modifiers?|specifier|lifetime|dimensions|wildcard|scope|pattern)$|^(?:type_arguments|type_argument_list|type_parameter|type_projection|type_elem|variable_declaration|multi_variable_declaration|crate|self|super)$/;
+
+// The expressions a target or an annotation is made of where its grammar has no type of its own for one.
+export const ACCESS = {
+  python: ["attribute", "subscript", "ellipsis"],
+  php: ["member_access_expression", "subscript_expression", "scoped_property_access_expression"],
+};
+
+// The node that joins types, read by its text: any operator in it but `|` computes.
+export const UNION = { python: "binary_operator" };
+const COMPUTES = /[-+*/%@&^<>~]/;
 
 /**
  * Every node that may add something callable and holds a token on an added
@@ -83,10 +104,16 @@ const LITERAL_PARTS = /^(?:string_(?:start|end|content|fragment|literal_content)
  * removed body leaves behind. A bracket beside anything else is charged, the
  * last line of a string spread over lines included.
  *
+ * A string counts on any added line it spans where it holds a named node that
+ * is no part of a string's text, in a target and in an argument alike.
+ *
  * A binding counts where it starts on an added line and its value holds a
  * named node of a type no literal list names, or it carries a block to run
  * when it does not match. A `COUNTED` binding with no value is no hit, and one
- * with a value is read by its leaves: each a literal or the counter.
+ * with a value is read by its leaves: each a literal or the counter. Outside
+ * its value, a binding counts where a node is no literal and is not spelt as
+ * a name, a type, a modifier or a pattern: in its target, its type, the type
+ * of a composite literal, and the modifiers and type its declaration holds.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];
@@ -130,9 +157,37 @@ export function oracleHits(tree, lang, added) {
     for (const todo = [top]; todo.length > 0; ) {
       const n = todo.pop();
       if (!plain(n)) return n;
-      // What a composite literal builds is named by its type, which holds no value.
+      // What a composite literal builds is named by its type, which is read as a type.
       const typed = s.collectionType && s.collection.includes(n.type) ? n.childForFieldName(s.collectionType) : null;
+      const odd = typed ? unnamed(typed) : null;
+      if (odd !== null) return odd;
       for (const child of n.namedChildren) if (child && child.id !== typed?.id) todo.push(child);
+    }
+    return null;
+  };
+  const access = new Set(ACCESS[lang] ?? []);
+  // The first node of a subtree that is no literal and is not spelt as a name or a type.
+  function unnamed(top) {
+    for (const todo = [top]; todo.length > 0; ) {
+      const n = todo.pop();
+      const union = n.type === UNION[lang] && !COMPUTES.test(n.text);
+      if (!union && !NAMING.test(n.type) && !access.has(n.type) && !plain(n)) return n;
+      for (const child of n.namedChildren) if (child) todo.push(child);
+    }
+    return null;
+  }
+  const beside = (node, kept, what) => {
+    for (const child of node.namedChildren) {
+      const odd = child && !kept(child) ? unnamed(child) : null;
+      if (odd !== null) hit(node, `${what} holding ${odd.type}`);
+    }
+  };
+  const foreign = (top) => {
+    for (const todo = [...top.namedChildren]; todo.length > 0; ) {
+      const n = todo.pop();
+      if (n === null) continue;
+      if (!LITERAL_PARTS.test(n.type) && !s.literal.includes(n.type)) return n;
+      todo.push(...n.namedChildren);
     }
     return null;
   };
@@ -153,6 +208,10 @@ export function oracleHits(tree, lang, added) {
   const stack = [tree.rootNode];
   while (stack.length > 0) {
     const node = stack.pop();
+    if (s.literal.includes(node.type) && spansAdded(node)) {
+      const odd = foreign(node);
+      if (odd !== null) hit(node, `string holding ${odd.type}`);
+    }
     if (charged.has(node.id)) hit(node, node.type);
     // An interpolation sits inside a string's text, so it counts on any added line it spans; a PHP variable is one only inside a string.
     else if (s.interpolation?.includes(node.type) && spansAdded(node) && insideString(node)) hit(node, `interpolation ${node.type}`);
@@ -165,6 +224,9 @@ export function oracleHits(tree, lang, added) {
         const odd = value === null ? null : counter ? oddLeaf(value, counter) : firstOdd(value);
         if (odd !== null) hit(node, `binding to ${odd.type}`);
         else if (s.alternative && node.childForFieldName(s.alternative) !== null) hit(node, "binding with an alternative");
+        beside(node, (child) => child.id === value?.id, "binding");
+      } else if (s.declaration?.includes(node.type)) {
+        beside(node, (child) => s.binding.includes(child.type) || s.declaration.includes(child.type), "declaration");
       }
     }
     for (const child of node.namedChildren) if (child) stack.push(child);
@@ -178,12 +240,15 @@ function percentile(sorted, p) {
   return sorted.length === 0 ? null : sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 }
 
-/** One repository: per language, the files asked and left out, the oracle's hits, the parse times, and a few left-out files to read. */
-export async function measure(root, { commits = 200, samples = 3 } = {}) {
+/**
+ * One repository: per language, the files and the hunks asked and left out, the oracle's hits on the
+ * hunks left out, the parse times, and a few left-out files to read. `oracle` is a test override.
+ */
+export async function measure(root, { commits = 200, samples = 3, oracle = oracleHits } = {}) {
   const byName = await corpusByName(root);
   const shas = git(root, ["log", "--no-merges", `-n${commits}`, "--format=%H %P"]).split("\n").filter(Boolean);
   const langs = {};
-  const row = (lang) => (langs[lang] ??= { asked: 0, skipped: 0, unread: 0, rejected: 0, slow: 0, hits: [], times: [], skippedFiles: [] });
+  const row = (lang) => (langs[lang] ??= { asked: 0, skipped: 0, askedHunks: 0, skippedHunks: 0, unread: 0, rejected: 0, slow: 0, hits: [], times: [], skippedFiles: [] });
   let unreadDiffs = 0;
   for (const line of shas) {
     const [sha, parent] = line.split(" ");
@@ -214,20 +279,26 @@ export async function measure(root, { commits = 200, samples = 3 } = {}) {
       }
       r.times.push(took);
       if (took > REUSE_PARSE_MS) r.slow++;
-      const defining = hunks.some(([from, to]) => !inert.slice(from - 1, to).every(Boolean));
-      if (defining) {
+      const left = hunks.filter(([from, to]) => inert.slice(from - 1, to).every(Boolean));
+      r.askedHunks += hunks.length - left.length;
+      r.skippedHunks += left.length;
+      if (left.length === 0) {
         r.asked++;
         continue;
       }
-      r.skipped++;
       const parsed = await parseForLines(source, lang, { cancel: () => false });
       if (parsed?.tree) {
         try {
-          for (const h of oracleHits(parsed.tree, lang, hunks)) r.hits.push({ repo: basename(root), sha: sha.slice(0, 10), path, ...h });
+          for (const h of oracle(parsed.tree, lang, left)) r.hits.push({ repo: basename(root), sha: sha.slice(0, 10), path, ...h });
         } finally {
           parsed.tree.delete();
         }
       }
+      if (left.length < hunks.length) {
+        r.asked++;
+        continue;
+      }
+      r.skipped++;
       if (r.skippedFiles.length < samples) {
         const lines = source.split("\n");
         r.skippedFiles.push({ repo: basename(root), sha: sha.slice(0, 10), path, added: hunks.flatMap(([from, to]) => lines.slice(from - 1, to)).slice(0, 12) });
@@ -237,13 +308,13 @@ export async function measure(root, { commits = 200, samples = 3 } = {}) {
   return { repo: basename(root), commits: shas.length, unreadDiffs, langs };
 }
 
-/** Per language over every repository: asked, left out, unread, the oracle's hits and the parse-time distribution. */
+/** Per language over every repository: files and hunks asked and left out, unread, the oracle's hits and the parse-time distribution. */
 export function tally(results) {
   const out = {};
   for (const { langs } of results) {
     for (const [lang, r] of Object.entries(langs)) {
-      const t = (out[lang] ??= { asked: 0, skipped: 0, unread: 0, slow: 0, hits: [], times: [], skippedFiles: [] });
-      for (const key of ["asked", "skipped", "unread", "slow"]) t[key] += r[key];
+      const t = (out[lang] ??= { asked: 0, skipped: 0, askedHunks: 0, skippedHunks: 0, unread: 0, slow: 0, hits: [], times: [], skippedFiles: [] });
+      for (const key of ["asked", "skipped", "askedHunks", "skippedHunks", "unread", "slow"]) t[key] += r[key];
       t.hits.push(...r.hits);
       t.times.push(...r.times);
       t.skippedFiles.push(...r.skippedFiles);

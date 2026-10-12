@@ -136,7 +136,7 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   return {
     write: [...bodies.keys()],
     remove: claude.stale,
-    // The temporary files an earlier scan left in Claude Code's directory, removed with the rest.
+    // The temporary files an earlier run left in Claude Code's directory, removed with the rest.
     staged: claude.staged,
     // And the ones a scan, a refresh, a pin or a lock left in the store, where the record is megabytes on a large repository.
     storeStaged: blind ? [] : leftInStore(storeDir),
@@ -401,7 +401,7 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
     was: onRecord.was,
     first: laid.first,
     write: [...bodies].map(([name, body]) => ({ name, body })),
-    // A temporary file an earlier scan left is counted with what this one removes.
+    // A temporary file an earlier run left is counted with what this one removes.
     remove: [...laid.stale, ...laid.staged],
     foreign: laid.foreign,
     unknown: laid.unknown,

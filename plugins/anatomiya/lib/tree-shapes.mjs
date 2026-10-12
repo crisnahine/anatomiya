@@ -30,13 +30,14 @@ export const SHAPES = {
     // What the reuse check reads as a name bound to a literal, which asks nothing.
     binding: ["assignment"],
     value: "right",
-    // An assignment's target holds an expression, so it must be names, attributes and subscripts, or a literal inside one.
-    target: "left",
-    targetChain: ["identifier", "attribute", "subscript"],
-    // An annotation is an expression too: these are the nodes of one that only names types.
-    bindingType: "type",
-    typeExpr: ["type", "identifier", "attribute", "subscript", "generic_type", "type_parameter", "binary_operator", "list", "ellipsis"],
+    // What a binding may hold outside its value: a target or an annotation made of names. Each is read by
+    // its children, and a node of any other kind inside one asks.
+    part: ["identifier", "attribute", "subscript", "type", "generic_type", "type_parameter", "binary_operator", "list", "ellipsis"],
+    // An annotation joins types with `|`, and any other operator computes.
+    union: ["binary_operator"],
     literal: ["integer", "float", "true", "false", "none", "string", "concatenated_string"],
+    // What a string's own text is made of: anything else inside one is an interpolation.
+    literalPart: ["string_start", "string_content", "string_end", "escape_sequence", "escape_interpolation"],
     interpolation: ["interpolation"],
     unary: ["unary_operator"],
     collection: ["list", "tuple", "dictionary", "pair", "set"],
@@ -70,18 +71,32 @@ export const SHAPES = {
     renamed: "alias",
     binding: ["const_element", "assignment_expression", "property_element"],
     value: "default_value",
-    target: "left",
-    targetChain: ["variable_name", "name", "member_access_expression", "subscript_expression", "scoped_property_access_expression", "relative_scope"],
+    // An assignment is an expression: it binds only where it is the whole of one of these.
+    statement: ["expression_statement"],
+    part: [
+      "variable_name",
+      "name",
+      "member_access_expression",
+      "subscript_expression",
+      "scoped_property_access_expression",
+      "relative_scope",
+      "visibility_modifier",
+      "static_modifier",
+      "final_modifier",
+      "readonly_modifier",
+      "var_modifier",
+      "primitive_type",
+      "optional_type",
+      "named_type",
+    ],
     literal: ["integer", "float", "boolean", "null", "string", "encapsed_string", "nowdoc"],
+    literalPart: ["string_content", "escape_sequence", "heredoc_start", "nowdoc_body", "nowdoc_string", "heredoc_end"],
     // A double-quoted string interpolates any variable it names.
     interpolation: ["variable_name"],
     unary: ["unary_op_expression"],
     collection: ["array_creation_expression", "array_element_initializer"],
-    // What holds bindings beside the modifiers and the type they share.
+    // What holds bindings beside the modifiers and the type they share. Anything else, a property hook among them, asks.
     declaration: ["const_declaration", "property_declaration"],
-    // The only other things a declaration may hold: anything else, a property hook among them, asks.
-    modifier: ["visibility_modifier", "static_modifier", "final_modifier", "readonly_modifier", "var_modifier"],
-    declaredType: "type",
   },
   go: {
     fn: ["function_declaration", "method_declaration"],
@@ -97,13 +112,31 @@ export const SHAPES = {
     receiver: "receiver",
     binding: ["const_spec", "var_spec"],
     value: "value",
+    // An array type is read by its children, so a length that is a call asks.
+    part: [
+      "identifier",
+      "type_identifier",
+      "qualified_type",
+      "package_identifier",
+      "pointer_type",
+      "slice_type",
+      "array_type",
+      "implicit_length_array_type",
+      "map_type",
+      "interface_type",
+      "struct_type",
+      "field_declaration_list",
+      "field_declaration",
+      "field_identifier",
+    ],
     literal: ["int_literal", "float_literal", "imaginary_literal", "rune_literal", "interpreted_string_literal", "raw_string_literal", "true", "false", "nil"],
+    literalPart: ["interpreted_string_literal_content", "raw_string_literal_content", "escape_sequence"],
     unary: ["unary_expression"],
     collection: ["expression_list", "composite_literal", "literal_value", "literal_element", "keyed_element"],
-    // A composite literal's type says what it builds, and holds no value.
+    // A composite literal's type says what it builds: it is read as a type, where the rest are values.
     collectionType: "type",
     declaration: ["const_declaration", "var_declaration", "var_spec_list"],
-    // A constant in a group repeats the one above it or counts off `iota`: it has no value, or one of these and literals.
+    // A constant repeats the one above it or is counted off `iota`: it has no value, or one of these and literals.
     counted: ["const_spec"],
     countedPart: ["iota", "expression_list", "binary_expression", "unary_expression", "parenthesized_expression"],
   },
@@ -149,13 +182,13 @@ export const SHAPES = {
       "string_literal",
       "null_literal",
     ],
+    literalPart: ["string_fragment", "multiline_string_fragment", "escape_sequence"],
     // A string template's `\{...}` sits inside its string literal.
     interpolation: ["string_interpolation"],
     unary: ["unary_expression"],
     collection: ["array_initializer"],
     declaration: ["field_declaration", "local_variable_declaration", "constant_declaration"],
-    modifier: ["modifiers"],
-    declaredType: "type",
+    part: ["identifier", "modifiers", "type_identifier", "scoped_type_identifier", "integral_type", "floating_point_type", "boolean_type", "generic_type", "type_arguments", "array_type", "dimensions"],
   },
   csharp: {
     fn: ["method_declaration", "local_function_statement"],
@@ -178,11 +211,12 @@ export const SHAPES = {
     // A declarator's value has no field: it is its last named child.
     binding: ["variable_declarator"],
     literal: ["integer_literal", "real_literal", "boolean_literal", "character_literal", "string_literal", "verbatim_string_literal", "raw_string_literal", "null_literal"],
+    literalPart: ["string_literal_content", "character_literal_content", "escape_sequence", "raw_string_start", "raw_string_content", "raw_string_end"],
     unary: ["prefix_unary_expression"],
     collection: ["initializer_expression"],
     declaration: ["field_declaration", "local_declaration_statement", "variable_declaration"],
-    modifier: ["modifier"],
-    declaredType: "type",
+    // An array's rank is read by its children, so a call in one asks.
+    part: ["identifier", "modifier", "predefined_type", "implicit_type", "nullable_type", "qualified_name", "generic_name", "type_argument_list", "array_type", "array_rank_specifier"],
   },
   rust: {
     fn: ["function_item"],
@@ -205,7 +239,27 @@ export const SHAPES = {
     value: "value",
     // A let-else runs its block when the pattern does not match.
     alternative: "alternative",
+    // An array type is read by its children, so a length that is a call, a macro or a block asks.
+    part: [
+      "identifier",
+      "visibility_modifier",
+      "crate",
+      "mutable_specifier",
+      "tuple_pattern",
+      "primitive_type",
+      "type_identifier",
+      "scoped_type_identifier",
+      "scoped_identifier",
+      "generic_type",
+      "type_arguments",
+      "array_type",
+      "tuple_type",
+      "reference_type",
+      "pointer_type",
+      "lifetime",
+    ],
     literal: ["integer_literal", "float_literal", "boolean_literal", "char_literal", "string_literal", "raw_string_literal"],
+    literalPart: ["string_content", "escape_sequence"],
     unary: ["unary_expression"],
     collection: ["array_expression", "tuple_expression"],
   },
@@ -225,7 +279,10 @@ export const SHAPES = {
     name: "name",
     // A property's value has no field: it is its last named child.
     binding: ["property_declaration"],
+    // What a property may hold outside its value: its name, its modifiers and a type made of names.
+    part: ["variable_declaration", "identifier", "user_type", "nullable_type", "type_arguments", "type_projection", "modifiers", "visibility_modifier", "property_modifier", "member_modifier"],
     literal: ["number_literal", "character_literal", "string_literal", "multiline_string_literal"],
+    literalPart: ["string_content", "escape_sequence"],
     // This grammar has no boolean or null literal: `true`, `false` and `null` are identifiers with that text.
     word: ["identifier"],
     interpolation: ["interpolation"],
