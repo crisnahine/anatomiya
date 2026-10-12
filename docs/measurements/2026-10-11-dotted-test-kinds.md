@@ -25,7 +25,8 @@ extension, the first segment excepted: 16,435. `TEST_NAME` at 50ec65a already re
 | `.vitest.json` | 1 | element-plus | `tsconfig.vitest.json` | no language |
 | `.latest.md` | 1 | fastlane | `CHANGELOG.latest.md` | no language |
 
-Real tests by name: 226. Of them 108 did not read as tests: 4 webpack and all 104 vscode.
+Real tests by name: 227, 226 of them in the seven kinds; the other, `.vitest.tsx`, already reads as a
+test through its runner import. Of the 226, 108 did not read as tests: 4 webpack and all 104 vscode.
 
 The first segment (`latest.ts`, `contest.ts`, `conftest.py`, `vitest.config.ts`, `configtest.js`)
 holds 7,167 tracked names, most of them `_test.go`, `-test.js` and other forms a rule already reads;

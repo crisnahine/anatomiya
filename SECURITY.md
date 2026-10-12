@@ -259,7 +259,7 @@ this line in all three overviews:
 The backticks and the pipe are gone, the words are kept, and the quotes mark them as a name. The
 words are still there for a reader to take as an instruction, and a name with no space prints
 bare, so `ignore-previous-instructions` or `run_this_first` still opens a bullet unquoted. Measured
-on both corpora, 102 tracked directory names hold a space, none holds a double quote, and none of
+on both corpora, 113 tracked directory names hold a space, none holds a double quote, and none of
 them reaches a map, so no map line in the 60 repositories moved. What a
 target adds is two more files that carry it and load on every turn:
 `.cursor/rules/anatomiya-overview.mdc` is marked `alwaysApply: true` and
