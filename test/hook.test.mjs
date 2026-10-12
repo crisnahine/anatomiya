@@ -7,12 +7,13 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { aboutDir, echoContext, echoEvent, fieldsIn, LOCK_HELD_MOST_MS, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { aboutDir, echoContext, fieldsIn, LOCK_HELD_MOST_MS, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { delivered, transcript } from "./transcript.mjs";
+import { echoEvent } from "../plugins/anatomiya/lib/transcript.mjs";
 import { addWorktree, initWithCommit, scratch } from "./git-worktrees.mjs";
 
 /** The three entries 0.2.4 through 0.2.6 wrote into a scanned repository. */

@@ -21,6 +21,7 @@ import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
+import { sessionStartIn, toolCallsIn, turnStartIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -39,7 +40,7 @@ const MARKED_MOST = 200;
 
 // This session's own asks sit at the end of its transcript, and its first
 // entry at the start.
-const TRANSCRIPT_MOST = 64 * 1024 * 1024;
+export const TRANSCRIPT_MOST = 64 * 1024 * 1024;
 const TRANSCRIPT_HEAD = 64 * 1024;
 
 // A turn's commits are the last lines of the reflog, and one kept for years
@@ -427,52 +428,15 @@ async function headMovesFromGit(root) {
 
 const lineCount = (text) => (text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0));
 
-/**
- * The moment this session's transcript began, or null where it cannot be read.
- *
- * Its first entry carrying a timestamp, which 2.1.272 writes before the first
- * prompt is answered.
- */
+/** When this session's transcript began, off its head (`sessionStartIn`), or null where it cannot be read. */
 export function sessionStart(transcriptPath) {
   if (typeof transcriptPath !== "string" || transcriptPath === "") return null;
   const entry = readHead(transcriptPath, TRANSCRIPT_HEAD);
-  if (entry.kind !== "file") return null;
-  for (const line of entry.head.split("\n")) {
-    const at = /"timestamp":"([^"]+)"/.exec(line);
-    const ms = at ? Date.parse(at[1]) : NaN;
-    if (Number.isFinite(ms)) return ms;
-  }
-  return null;
+  return entry.kind === "file" ? sessionStartIn(entry.head) : null;
 }
 
-/**
- * The moment this turn's prompt arrived, or null where the transcript names none.
- *
- * The last user entry that a person wrote: a tool's result and a hook's block
- * reason are written as user entries too, and either would move the turn's
- * start past the commits it made. Read from the end, so a long session parses
- * only the lines after its last prompt.
- */
-export function turnStart(transcriptPath) {
-  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
-  if (tail === null) return null;
-  const lines = tail.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (!lines[i].includes("\"user\"")) continue;
-    let entry;
-    try {
-      entry = JSON.parse(lines[i]);
-    } catch {
-      continue;
-    }
-    if (entry?.type !== "user" || entry.isMeta === true) continue;
-    const content = entry.message?.content;
-    if (Array.isArray(content) && content.some((part) => part?.type === "tool_result")) continue;
-    const ms = Date.parse(entry.timestamp);
-    return Number.isFinite(ms) ? ms : null;
-  }
-  return null;
-}
+/** When this turn's prompt arrived, off the transcript's tail (`turnStartIn`). */
+export const turnStart = (transcriptPath) => turnStartIn(readTail(transcriptPath, TRANSCRIPT_MOST));
 
 /**
  * Whether a moment falls inside one of the session's calls, widened a second
@@ -480,76 +444,39 @@ export function turnStart(transcriptPath) {
  */
 const inCall = (calls, ms) => calls.some((c) => c.from - 1000 <= ms && ms <= c.to + 1000);
 
-// The completion of a call run in the background opens with this tag, and the first id it names is the call it ends.
-const NOTIFICATION = "<task-notification>";
-const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/;
+/** This session's tool calls, off the transcript's tail (`toolCallsIn`). */
+export const toolCalls = (transcriptPath) => toolCallsIn(readTail(transcriptPath, TRANSCRIPT_MOST));
 
 /**
- * This session's tool calls, each from the moment its call was written to the
- * moment it returned, or empty where the transcript stamps none.
- *
- * A call run in the background returns as it starts, so it runs on to the
- * first record of its completion: the queue entry made as it ended, or the
- * notification where there is no such entry. One with no completion recorded
- * ends at its result, which misses its later writes rather than charging the
- * session with somebody else's.
- */
-export function toolCalls(transcriptPath) {
-  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
-  if (tail === null) return [];
-  const started = new Map();
-  const returned = new Map();
-  const finished = new Map();
-  for (const line of tail.split("\n")) {
-    if (!line.includes("tool_use") && !line.includes("<tool-use-id>")) continue;
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const ms = Date.parse(entry?.timestamp);
-    if (!Number.isFinite(ms)) continue;
-    const content = entry.message?.content;
-    for (const part of Array.isArray(content) ? content : []) {
-      if (part?.type === "tool_use" && typeof part.id === "string") started.set(part.id, ms);
-      if (part?.type === "tool_result" && typeof part.tool_use_id === "string") returned.set(part.tool_use_id, ms);
-    }
-    const notice =
-      entry.type === "queue-operation" ? entry.content : entry.attachment?.type === "queued_command" ? entry.attachment.prompt : entry.type === "user" ? content : null;
-    // A prompt typed or pasted is queued and recorded the same way, and may quote any call's id.
-    const id = typeof notice === "string" && notice.startsWith(NOTIFICATION) ? (notice.match(FINISHED_CALL)?.[1] ?? null) : null;
-    if (id !== null) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
-  }
-  return [...started].flatMap(([id, from]) => (returned.has(id) ? [{ from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));
-}
-
-/**
- * The marks this session's transcript already holds, from an ask or a record.
+ * The marks a transcript's tail already holds, from an ask or a record.
  *
  * A transcript that cannot be read holds none: the worst that costs is one more
  * search, where a mark read that was never there would skip a file nobody checked.
  */
-export function askedMarks(transcriptPath) {
+export function askedMarksIn(tail) {
   const marks = new Set();
-  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
-  if (tail === null) return marks;
+  if (typeof tail !== "string") return marks;
   for (const [, list] of tail.matchAll(MARKS_READ)) {
     for (const mark of list.trim().split(" ")) marks.add(mark);
   }
   return marks;
 }
 
+/** The marks this session's transcript already holds (`askedMarksIn`). */
+export const askedMarks = (transcriptPath) => askedMarksIn(readTail(transcriptPath, TRANSCRIPT_MOST));
+
 /**
- * Whether the last block this session saw at a stop was this hook's own.
+ * Whether the last block a transcript's tail holds at a stop was this hook's own.
  *
  * `stop_hook_active` says some hook continued the turn, not which one, and
  * recording after another hook's block would mark a file checked that no search
  * read.
  */
-export function continuedByReuse(transcriptPath) {
-  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
-  if (tail === null) return false;
+export function continuedByReuseIn(tail) {
+  if (typeof tail !== "string") return false;
   const last = tail.lastIndexOf("Stop hook feedback:");
   return last !== -1 && tail.indexOf(REASON_OPENING, last) !== -1;
 }
+
+/** Whether the last block this session saw at a stop was this hook's own (`continuedByReuseIn`). */
+export const continuedByReuse = (transcriptPath) => continuedByReuseIn(readTail(transcriptPath, TRANSCRIPT_MOST));

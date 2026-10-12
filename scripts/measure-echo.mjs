@@ -7,7 +7,7 @@
  *
  * A repeat is a delivery whose map equals the one before it with no compaction
  * between. The replay applies the rule `heldIn` applies at run time, reading
- * each line through the hook's own `echoEvent`: a map is kept unless the same
+ * each line through the echo's own `echoEvent`: a map is kept unless the same
  * map was kept within the window and no compaction came after it. It differs
  * in one place: maps written before A92 carry no digest, so they are compared
  * by body, with the opening tag left out because it holds the timestamp.
@@ -18,7 +18,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 
 import { invokedAs } from "./entry.mjs";
 import { transcripts } from "./measure-delivery.mjs";
-import { ECHO_WINDOW_BYTES, echoEvent, windowBytes } from "../plugins/anatomiya/lib/hook.mjs";
+import { ECHO_WINDOW_BYTES } from "../plugins/anatomiya/lib/hook.mjs";
+import { echoEvent, windowBytes } from "../plugins/anatomiya/lib/transcript.mjs";
 
 const OPENING = /^<repository-map[^>]*>/;
 

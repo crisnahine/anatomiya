@@ -1,0 +1,112 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { compact, delivered, filler, instructions, notification, prompted, snapshot, toolCall, transcript } from "./transcript.mjs";
+import {
+  echoEvent,
+  isCompactBoundary,
+  isCompaction,
+  parsed,
+  readByModel,
+  sessionStartIn,
+  toolCallsIn,
+  transcriptTail,
+  turnStartIn,
+  windowBytes,
+} from "../plugins/anatomiya/lib/transcript.mjs";
+import { sessionStart, toolCalls, turnStart } from "../plugins/anatomiya/lib/reuse.mjs";
+
+const MINUTE = 60 * 1000;
+
+// A session as 2.1.296 writes one: bookkeeping first, a prompt, a call in the
+// foreground, one in the background with its completion in each of its three
+// records, a hook's block reason, and a later prompt.
+function session(t, at = Date.parse("2026-10-11T04:00:00.000Z")) {
+  return transcript(t, [
+    { type: "permission-mode", permissionMode: "default", sessionId: "s" },
+    prompted(new Date(at)),
+    instructions("# rules"),
+    snapshot(64),
+    ...toolCall("fg", at + 1000, at + 2000),
+    ...toolCall("bg", at + 3000, at + 3200, { background: true }),
+    notification("bg", at + 9000, "queue"),
+    notification("bg", at + 9100, "attachment"),
+    notification("bg", at + 9200, "user"),
+    { type: "user", isMeta: true, message: { role: "user", content: "Stop hook feedback:\nnot yet" } },
+    prompted(new Date(at + MINUTE)),
+    ...toolCall("open", at + MINUTE + 1000, at + MINUTE + 1500, { name: "Agent" }),
+  ]);
+}
+
+test("each record reader over a transcript's text answers what its path reader answers over the same bytes", (t) => {
+  const path = session(t);
+  const text = readFileSync(path, "utf8");
+  const at = Date.parse("2026-10-11T04:00:00.000Z");
+
+  assert.equal(sessionStartIn(text), sessionStart(path));
+  assert.equal(turnStartIn(text), turnStart(path));
+  assert.deepEqual(toolCallsIn(text), toolCalls(path));
+
+  assert.equal(sessionStartIn(text), at, "the first record carrying a timestamp");
+  assert.equal(turnStartIn(text), at + MINUTE, "the last prompt, past a block reason and a result");
+  assert.deepEqual(toolCallsIn(text), [
+    { from: at + 1000, to: at + 2000 },
+    { from: at + 3000, to: at + 9000 },
+    { from: at + MINUTE + 1000, to: at + MINUTE + 1500 },
+  ]);
+});
+
+test("text that cannot be read answers what an unreadable transcript does", () => {
+  assert.equal(sessionStartIn(null), null);
+  assert.equal(turnStartIn(null), null);
+  assert.deepEqual(toolCallsIn(null), []);
+  assert.equal(sessionStartIn(""), null);
+  assert.equal(turnStartIn("{\"type\":\"user\",\"timesta"), null, "a half-written last line");
+});
+
+test("a transcript's tail carries the offset it ends at and its lines", (t) => {
+  const path = transcript(t, [prompted(new Date(0)), filler(10)]);
+  const whole = readFileSync(path, "utf8");
+
+  const tail = transcriptTail(path, 20);
+  assert.equal(tail.end, Buffer.byteLength(whole));
+  assert.equal(tail.text, whole.slice(-20));
+  assert.deepEqual(tail.lines(), whole.slice(-20).split("\n"));
+  assert.equal(transcriptTail(`${path}.missing`, 20), null);
+});
+
+test("a compaction is either shape to the delivery measurement, and only the system record to the echo", () => {
+  const boundary = compact();
+  const summary = { type: "user", isCompactSummary: true, message: { content: "summary" } };
+
+  assert.equal(isCompaction(boundary), true);
+  assert.equal(isCompaction(summary), true);
+  assert.equal(isCompactBoundary(boundary), true);
+  assert.equal(isCompactBoundary(summary), false);
+  assert.equal(isCompactBoundary({ type: "user", subtype: "compact_boundary" }), false, "the echo checks the record type");
+  assert.equal(isCompaction({ type: "user", subtype: "compact_boundary" }), true, "the measurement does not");
+  assert.equal(isCompaction(null), false);
+  assert.equal(isCompactBoundary(null), false);
+});
+
+test("the window counts what the model reads and nothing the build keeps for itself", () => {
+  const line = (entry) => JSON.stringify(entry);
+  const read = line(delivered("map", { rendered: true }));
+
+  assert.equal(windowBytes(read), Buffer.byteLength(read) + 1, "a rendered delivery, with its newline");
+  assert.equal(windowBytes(line(delivered("map"))), 0, "an unrendered one, as builds before 2.1.263 wrote it");
+  assert.equal(windowBytes(line(snapshot(100))), 0);
+  assert.equal(windowBytes(line(instructions("# rules"))), 0, "placed at the head of the context");
+  assert.equal(windowBytes(line(notification("x", 0, "queue"))), 0);
+  assert.equal(windowBytes("{\"type\":\"user\""), 0, "a half-written line");
+  assert.equal(readByModel(prompted()), true);
+  assert.equal(readByModel(parsed(line(toolCall("x", 0, 1)[0]))), true);
+  assert.equal(parsed("not json"), null);
+});
+
+test("an echo event is read the same off a rendered delivery as off an unrendered one", () => {
+  assert.deepEqual(echoEvent(JSON.stringify(delivered("map", { rendered: true }))), ["map"]);
+  assert.deepEqual(echoEvent(JSON.stringify(delivered("map"))), ["map"]);
+  assert.equal(echoEvent(JSON.stringify(compact())), "compact");
+});
