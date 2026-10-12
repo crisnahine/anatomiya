@@ -6,11 +6,11 @@
  * records the model reads, which is what the window counts.
  *
  * A repeat is a delivery whose map equals the one before it with no compaction
- * between. The replay applies the rule `heldIn` applies at run time, reading
- * each line through the echo's own `echoEvent`: a map is kept unless the same
- * map was kept within the window and no compaction came after it. It differs
- * in one place: maps written before A92 carry no digest, so they are compared
- * by body, with the opening tag left out because it holds the timestamp.
+ * between. The replay asks the echo's own `heldIn` at each delivery, over the
+ * tail a call would have read there: at most `ECHO_READ_MOST` bytes of the
+ * transcript up to that line, with the deliveries the rule drops left out. It
+ * differs in one place: maps written before A92 carry no digest, so they are
+ * compared by body, with the opening tag left out because it holds the timestamp.
  *
  * Read-only over the transcript store.
  */
@@ -18,7 +18,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 
 import { invokedAs } from "./entry.mjs";
 import { transcripts } from "./measure-delivery.mjs";
-import { ECHO_WINDOW_BYTES } from "../plugins/anatomiya/lib/hook.mjs";
+import { ECHO_READ_MOST, ECHO_WINDOW_BYTES, heldIn } from "../plugins/anatomiya/lib/echo.mjs";
 import { echoEvent, windowBytes } from "../plugins/anatomiya/lib/transcript.mjs";
 
 const OPENING = /^<repository-map[^>]*>/;
@@ -30,31 +30,43 @@ const RATIO_SPAN_TOKENS = 50000;
 /** The echo's counts over one transcript's lines, in the order it holds them. */
 export function replayEcho(lines, window = ECHO_WINDOW_BYTES) {
   const out = { made: 0, repeats: 0, kept: 0 };
-  let offset = 0;
+  // The transcript as it would read had the rule run: every line, less the deliveries it drops.
+  const kept = [];
+  const sizes = [];
+  let total = 0;
   let previous = null;
-  let held = [];
   for (const line of lines) {
-    const at = offset;
-    offset += windowBytes(line);
     const event = echoEvent(line);
-    if (event === null) continue;
-    if (event === "compact") {
-      previous = null;
-      held = [];
-      continue;
+    if (event === "compact") previous = null;
+    const maps = Array.isArray(event) ? event.filter((text) => OPENING.test(text)) : [];
+    let dropped = 0;
+    if (maps.length > 0) {
+      const tail = tailBefore(kept, sizes, total);
+      for (const text of maps) {
+        const body = text.replace(OPENING, "");
+        out.made++;
+        if (body === previous) out.repeats++;
+        previous = body;
+        if (heldIn(tail, (t) => OPENING.test(t) && t.replace(OPENING, "") === body, { window })) dropped++;
+        else out.kept++;
+      }
     }
-    for (const text of event) {
-      if (!OPENING.test(text)) continue;
-      const body = text.replace(OPENING, "");
-      out.made++;
-      if (body === previous) out.repeats++;
-      previous = body;
-      if (held.some((h) => h.body === body && at - h.at <= window)) continue;
-      out.kept++;
-      held.push({ body, at });
-    }
+    // shortcut: a line that also carries a text the rule keeps stays whole, held copies included; rewrite its record if one shows up.
+    if (dropped > 0 && dropped === event.length) continue;
+    kept.push(`${line}\n`);
+    sizes.push(Buffer.byteLength(kept.at(-1)));
+    total += sizes.at(-1);
   }
   return out;
+}
+
+/** The last `ECHO_READ_MOST` bytes of the kept lines, cut mid-line where they fall, as the hook's read cuts them. */
+function tailBefore(kept, sizes, total) {
+  let from = kept.length;
+  let bytes = 0;
+  while (from > 0 && bytes < ECHO_READ_MOST) bytes += sizes[--from];
+  const text = kept.slice(from).join("");
+  return { text: bytes > ECHO_READ_MOST ? Buffer.from(text).subarray(bytes - ECHO_READ_MOST).toString("utf8") : text, end: total };
 }
 
 /**

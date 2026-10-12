@@ -647,6 +647,7 @@ function armReach(verb, { lazy = false } = {}) {
 // Written out rather than counted, so a module joining the echo's load shows by name.
 const ECHO_LOADS = [
   "child.mjs",
+  "echo.mjs",
   "encode.mjs",
   "facts.mjs",
   "gates.mjs",
