@@ -56,7 +56,7 @@ line each.
 - **`## Why`** is the evidence the decision rests on, usually a measurement, one sentence per line. A row
   whose `Why` names a number was settled by a probe, not by preference. A few rows have none.
 - **`## Status`** is **what the code does today**, not what it should do, one sentence per line.
-  `**done**` means shipped, often with the owning module named. `partial:` means shipped in some paths
+  `**done**` means shipped, often with the owning module named. `partial` means shipped in some paths
   and not others, and the text says which. `todo` means not built.
 
 `grep -rn "<word>" docs/decisions` answers with the sentences that hold the word, each under its row's

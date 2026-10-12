@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 319 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 327 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -151,6 +151,8 @@ To add a row:
    the other two may not. Each heading is written once.
 3. Add the row's line at the end of that section's table in `DECISIONS.md`: the id, the Decision,
    the short status, and a link to the file.
+4. Raise the count of numbered rows by one in the three places that state it: the first paragraph
+   of this file, `README.md` and `docs/why.md`. The gate holds each to the number of rows.
 
 To change a row, edit its file. The line in `DECISIONS.md` moves only when the Decision or the short
 status did.
@@ -176,9 +178,9 @@ The Why is where the work is. "It seemed cleaner" is not a why. A measurement, a
 overturned an assumption, or a concrete failure you reproduced is a why. Numbers beat adjectives:
 "271x faster, 0.84s against 103s" is a why; "much faster" is not.
 
-The Status says what the code does today, not what it should do. `todo`, `partial:` with the file
-name, or `**done**` with the file name. Moving a row from `todo` to `done` is part of the change that
-does it, in the row's file and in its line of the index.
+The Status says what the code does today, not what it should do. It opens with `todo`, with
+`partial` and the file name, or with `**done**` and the file name. Moving a row from `todo` to
+`done` is part of the change that does it, in the row's file and in its line of the index.
 
 Changing an existing row means saying what new evidence overturned the old one. Rows are not opinions
 and they do not get edited because a new implementation would be tidier.
@@ -256,6 +258,23 @@ Where the code goes:
   against. `reduceArea` composes both
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
+
+Four modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+lock is taken, what a transcript record says or when the echo delivers goes in the one that owns it:
+
+- `plugins/anatomiya/lib/store.mjs` how a file this tool writes reaches the disk: the staged name
+  and its reading, `writeTemp` and `atomic`, the 64 MiB bound on a read, `putBack`, and
+  `replaceAll`, which replaces a set of files and puts every one back when one fails. It imports
+  only the path encoder, so the record, the map, the pin and the refresh state write through it
+  without importing one another (A115)
+- `plugins/anatomiya/lib/lock.mjs` the one lock the echo and the refresh worker take: an exclusive
+  create, and a dead lock broken through a lock token. What makes a lock dead is a judge the caller
+  passes, `mtimeAge` or `ownerAge` (A117)
+- `plugins/anatomiya/lib/transcript.mjs` what Claude Code's transcript records say, by functions
+  that take text, so a hook reads the transcript once for several answers (A116)
+- `plugins/anatomiya/lib/echo.mjs` whether the echo delivers on a call: `echoDue` over a digest, a
+  transcript and the plugin's data directory, and `heldIn`, the walk of the window that
+  `scripts/measure-echo.mjs` replays through (A119, A92)
 
 The shape:
 

@@ -309,9 +309,14 @@ that one is removed with no key asked, where no process of that id is running, b
 writes or removes in the directory. `.claude/anatomiya` is swept the same way for three names: a regular
 file there named `facts.json`, `layout.json` or `refresh.json` plus that suffix, whose
 stager is not running, is removed by a scan that writes, and the summary counts them (`3 temporary
-files an earlier scan left in .claude/anatomiya were removed`). `baseline.json.tmp-...` and
-`refresh.lock.tmp-...` are not swept, and neither is a link, a directory or a fifo at any of these
-names. A dry run removes none and says how many a scan would. No temporary file is opened before it
+files an earlier scan left in .claude/anatomiya were removed`). `baseline.json` and
+`refresh.lock` plus that suffix are swept the same way, and so is what a killed breaker of the
+refresh lock left: a lock token, `refresh.lock.<16 hex>`, of a generation the lock does not name, a
+token's own token, `refresh.lock.<16 hex>.<digits>`, of the dead lock it names once that is older
+than 62 seconds, and a `refresh.lock.stale-<pid>-<16 hex>` an older build moved aside, where no
+process of that id is running. A lock token of the generation the lock names is never removed, nor
+a token's own token while the lock is live, nor a link, a directory or a fifo at any of these
+names, nor a file under any other name. A dry run removes none and says how many a scan would. No temporary file is opened before it
 is removed. One whose removal fails, whatever the removal answers, is left where it is and stops
 nothing: the scan writes the map and counts it (`1 temporary file an earlier scan left in
 .claude/anatomiya could not be removed, so it was left as it is`, `stagedLeft` and
@@ -432,7 +437,10 @@ than 7 seconds from the clock, either way, was left by a call that died holding 
 clock than that: the right to remove a dead one goes to the call that creates its lock token,
 `<batch claim>.lock.<its mtime in ms>`, with an exclusive create, which removes the lock only while
 it is still the one it found dead, then removes that lock token. Every call then tries the one
-create of the lock, and those that lose it deliver nothing. A lock token the system refuses to
+create of the lock, and those that lose it deliver nothing. A lock token last written more than 62
+seconds ago was left by a call killed while it broke the lock, and is broken the same way under a
+token of its own, `<batch claim>.lock.<mtime in ms>.<the token's mtime in ms>`, one level down and
+no further. A lock token the system refuses to
 remove is left for the sweep, and a dead lock it refuses to remove makes the call answer alone. An
 exclusive create Windows refuses with EPERM, its answer for a name another process is still
 deleting, is tried again seven times, after waits doubling from 1 ms to 64 ms, before the call
@@ -444,9 +452,12 @@ last day. The transcript itself is read back from its end, at most 1 MiB per cal
 directory, a relative one, or one that cannot be written or read, nothing is written and each call
 answers from the transcript alone, which can deliver one copy per call of a batch. A call killed
 while it holds a lock token leaves that dead lock in place, so the echo for that window and map
-stays silent until a batch claim another window or map makes there a day or more later sweeps both.
+stays silent for the 62 seconds until the lock token reads as dead and the next call breaks both. A call
+killed while it holds a token's own token leaves all three in place, and that window and map stay
+silent until a batch claim another window or map makes there a day or more later sweeps them.
 After the clock is set back, a lock token the system would not remove can carry the name of a later
-dead lock, and that window stays silent until the sweep too. A call suspended past 7 seconds while
+dead lock: that window stays silent while the lock token reads as live, and each call answers
+alone after that, until it can be removed or the sweep takes it. A call suspended past 7 seconds while
 it holds the lock, a laptop asleep in those milliseconds, is taken for dead: the next call breaks
 its lock and decides beside it, and its release later removes whichever lock is there, so that batch
 can deliver a copy or two more.
@@ -498,6 +509,12 @@ worker: the plugin's own `bin/anatomiya.mjs refresh-run <root>` under the `node`
 already running, started by the `refresh` hook, detached, with every stdio closed, `cwd` outside the
 repository and a 20 minute clock. It runs only in a checkout that already holds a map of its own,
 and does what `scan` and `pin` do there, under the conditions `docs/how-it-works.md` states.
+Beside what they write, it writes in `.claude/anatomiya` its state, `refresh.json`; its lock,
+`refresh.lock`, staged beside that name and linked into place; the empty `refresh.again`, a
+worker's word to the lock's holder to run once more; and, while it breaks a lock whose owner is
+gone, a lock token, `refresh.lock.<16 hex>`, or that name and `.<digits>`. A lock token is empty, made with an exclusive create that refuses any entry already at
+the name, a link included, and removed by the worker that made it; one a killed worker left is
+removed by the next worker to take the lock, or by a scan.
 
 `npm` runs from `anatomiya setup` and from nothing else. `scan`, `check` and `pin` never call it,
 which is the whole reason the install is a command of its own rather than something a scan does on
