@@ -92,6 +92,7 @@ test("a catch's own body decides: an inner throw counts for it, a default in its
   assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (f) { log(e) } }`), [true, false]);
   assert.deepEqual(conforming(`try { a() } catch ({ message, code = message }) { x() }`), [false]);
   assert.deepEqual(conforming(`try { a() } catch (e) { let e = 1; log(e) }`), [true], "its body never hides it");
+  assert.deepEqual(conforming(`try { a() } catch (e) { if (x) { var e = 1; log(e) } }`), [true], "a var in a block assigns the caught binding");
   assert.deepEqual(conforming(`try { a() } catch ({ a = () => { throw x } }) { y() }`), [false]);
   assert.deepEqual(conforming(`try { a() } catch (e) { const f = function e() { return e } }`), [false]);
   assert.deepEqual(conforming(`try { a() } catch (e) { try { b() } catch (f) {} } throw e`), [false, false]);
