@@ -538,13 +538,13 @@ function subcommandAt(args) {
 
 /**
  * The other entry point: output read off the stream, one NUL-delimited field at
- * a time (F6).
+ * a time (F6). `delimiter` is the byte that ends a field where git prints no NUL.
  */
 export function gitStreamed(
   root,
   args,
   onField,
-  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false, signal = null, input = null } = {}
+  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false, signal = null, input = null, delimiter = 0 } = {}
 ) {
   const refused = refuse(args);
   if (refused) return Promise.reject(new Error(refused));
@@ -594,7 +594,7 @@ export function gitStreamed(
       let buf = rest.length ? Buffer.concat([rest, chunk]) : chunk;
       try {
         let at;
-        while ((at = buf.indexOf(0)) !== -1) {
+        while ((at = buf.indexOf(delimiter)) !== -1) {
           const field = buf.subarray(0, at).toString("utf8");
           buf = buf.subarray(at + 1);
           if (onField(field) === false) return stop();

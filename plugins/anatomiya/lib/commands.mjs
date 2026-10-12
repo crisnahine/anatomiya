@@ -51,9 +51,10 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
   const plan = writeMap(result, { dryRun, targets, leaveAlone });
-  // After the map, into the directory it made, and never on a dry run: the
-  // history stores are a cache beside the record, in no plan and no summary.
-  if (!dryRun) await saveHistory(result.root, history);
+  // After the map, into the directory it made, and never on a dry run, which
+  // drops what its walks read: the history stores are a cache beside the
+  // record, in no plan and no summary.
+  await saveHistory(result.root, history, { write: !dryRun });
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
   // settings, where `${CLAUDE_PLUGIN_ROOT}` is never substituted and Claude Code
   // refuses the hook by name on every prompt and every tool call. The plugin

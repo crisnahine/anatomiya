@@ -2,7 +2,8 @@ import { gitBuffered } from "./git.mjs";
 import { SEP, historyFields } from "./history.mjs";
 
 /**
- * Distinct authors per file, from ONE pass over history.
+ * Distinct authors per file, from one read of history in git's order: one
+ * `git log` pass, or the same commits replayed from a store (`history.mjs`).
  *
  * Measured: one `git log` pass is 0.03s to 0.84s regardless of file count,
  * against 103s for per-file calls on an eight-year repository, and the two
@@ -197,20 +198,27 @@ async function shallowHistory(root) {
  * Any remote can be the promisor, not only `origin`: `git clone -o upstream
  * --filter=blob:none` marks `remote.upstream.promisor`, and a check of origin
  * alone took that clone for a full one and read no history at all. A clone
- * sets `extensions.partialClone` to its promisor's name, so that answers first;
- * each remote's own flag covers a promisor added after the clone.
+ * sets `extensions.partialClone` to its promisor's name, and each remote's own
+ * flag covers a promisor added after the clone: one read answers for both.
+ *
+ * It throws where git could not be asked. A call that timed out read as "not
+ * partial", the walk ran with `-M` on a clone that needs `-M100%`, and the map
+ * differed from one scan to the next.
  */
 async function isPartialClone(root) {
-  const ext = await gitBuffered(root, ["config", "--get", "extensions.partialClone"]);
-  if (ext.ok && ext.stdout.trim() !== "") return true;
-  const remotes = await gitBuffered(root, ["remote"]);
-  if (!remotes.ok) return false;
-  for (const name of remotes.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    const r = await gitBuffered(root, ["config", "--get", `remote.${name}.promisor`]);
-    if (r.ok && /^(true|yes|on|1)$/i.test(r.stdout.trim())) return true;
+  const asked = await gitBuffered(root, ["config", "--null", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.promisor)$"]);
+  // Exit code 1 is git saying neither key is set.
+  if (!asked.ok && asked.code !== 1) throw new Error(`git could not say whether this clone is partial: ${asked.error.trim()}`);
+  // A key and its value a line apart, the last value of a key winning, and a key with no value alone.
+  const set = new Map(asked.stdout.split("\0").filter(Boolean).map((entry) => entry.split(/\n(.*)/s, 2)));
+  for (const [key, value] of set) {
+    if (key === "extensions.partialclone" ? value?.trim() : value === undefined || TRUE.test(value.trim())) return true;
   }
   return false;
 }
+
+// What git reads as true: the three words in any case, and any number but zero.
+const TRUE = /^(?:true|yes|on|[+-]?0*[1-9]\d*[kmg]?)$/i;
 
 /**
  * Feed each NUL-delimited field of the log to the reader `open` answers with.
