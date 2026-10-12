@@ -20,11 +20,12 @@
  * lives: yours, on this machine, not committed.
  */
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, opendirSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTailOf, realpathOrNull, resolveInside } from "./rules.mjs";
 import { locator } from "./encode.mjs";
+import { createdAlone, mtimeAge, takeDeadLock } from "./lock.mjs";
 import { FACTS_PATH, readLayout, readRecord, schemaProblem } from "./facts.mjs";
 import { eventOf, parsed, windowBytes } from "./transcript.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
@@ -693,80 +694,11 @@ function batchClaimed(path, transcript, tail, digest) {
 /**
  * Takes the lock, breaking it once where it outlived any hook; false where another call holds it.
  *
- * A lock whose mtime is within the dead-lock age of the clock, either way, is never broken: the right to
- * remove one dead generation goes to whichever call creates the lock token named by its mtime, and that
- * call removes it only while the lock is still that generation. Every other call goes to the one create,
- * and the losers stay silent.
+ * A lock whose mtime is within the dead-lock age of the clock, either way, is never broken; a dead one is
+ * broken by the call holding the lock token named by its mtime (`takeDeadLock`).
  */
 function takeLock(lock) {
-  for (let broken = false; ; broken = true) {
-    if (createdAlone(lock)) return true;
-    if (broken) return false;
-    const found = lstatOf(lock);
-    if (found === null) continue;
-    if (Math.abs(Date.now() - Number(found.mtimeMs)) <= LOCK_HELD_MOST_MS + LOCK_MTIME_SLACK_MS) return false;
-    const token = `${lock}.${found.mtimeMs}`;
-    if (!createdAlone(token)) continue;
-    try {
-      const now = lstatOf(lock);
-      if (now !== null && now.ino === found.ino && now.mtimeNs === found.mtimeNs) removeDeadLock(lock);
-    } finally {
-      removeLockToken(token);
-    }
-  }
-}
-
-/** Removes a dead lock; one the system will not let go of is thrown, so the call answers alone rather than silence the window for good. */
-function removeDeadLock(lock) {
-  try {
-    unlinkSync(lock);
-  } catch (err) {
-    if (err?.code !== "ENOENT") throw err;
-  }
-}
-
-/**
- * Creates `path` with an exclusive create: true where this call made it, false where a file holds the name.
- *
- * Windows answers EPERM, not EEXIST, for a name another process is still deleting, which frees in
- * milliseconds; a refusal that outlasts the backoff is thrown, and the call answers alone.
- */
-function createdAlone(path) {
-  for (let tries = 0; ; tries++) {
-    try {
-      closeSync(openSync(path, "wx"));
-      return true;
-    } catch (err) {
-      if (err?.code === "EEXIST") return false;
-      if (err?.code !== "EPERM" || tries === DELETING_RETRIES) throw err;
-    }
-    Atomics.wait(PAUSE, 0, 0, 2 ** tries);
-  }
-}
-
-// Seven waits doubling from 1 ms: 127 ms asked for, longer on a coarse timer.
-const DELETING_RETRIES = 7;
-const PAUSE = new Int32Array(new SharedArrayBuffer(4));
-
-/**
- * Removes a lock token; one the system refuses to remove is left for the sweep. It names a generation no
- * call breaks again: a later dead lock takes its name only after the clock is set back, and that window then stays silent.
- */
-function removeLockToken(path) {
-  try {
-    unlinkSync(path);
-  } catch {
-    // Still there, or gone already.
-  }
-}
-
-/** A lock's stat, or null where it is gone. Exact: an NTFS file id runs past what a float holds. */
-function lstatOf(path) {
-  try {
-    return lstatSync(path, { bigint: true });
-  } catch {
-    return null;
-  }
+  return createdAlone(lock) || takeDeadLock(lock, mtimeAge({ heldMostMs: LOCK_HELD_MOST_MS, slackMs: LOCK_MTIME_SLACK_MS }));
 }
 
 /** Takes out batch claims, locks and lock tokens older than a day, so they stay bounded however many sessions run. */

@@ -4,13 +4,14 @@
  * the scan to answer with a watch list.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, linkSync, lstatSync, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, lstatSync, openSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
-import { atomic, writeTemp } from "./store.mjs";
+import { createdAlone, ownerAge, removeLeftTokens, takeDeadLock } from "./lock.mjs";
+import { atomic } from "./store.mjs";
 import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
@@ -464,70 +465,21 @@ const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.
  * Take the lock, or answer null when a live worker holds it.
  *
  * Created exclusively, so two workers cannot both create it. One whose owner is
- * gone, or which is older than any scan runs, is taken over by renaming it
- * aside rather than unlinking it: two workers that both judged it stale race
- * for one rename of one entry, and only one of them gets it. A worker whose
- * rename caught a lock somebody created after it judged the old one stale
- * finds bytes it did not judge, and puts that lock back.
+ * gone, or which is older than any scan runs, is broken by the one worker
+ * holding the token named by its nonce (`takeDeadLock`), and taken by the one
+ * create after. A token a worker died holding names a generation that is gone
+ * once this one holds the lock, so it is removed here.
  */
-function acquire(path) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(8).toString("hex") });
-    try {
-      create(path, content);
-      return { path, content };
-    } catch (err) {
-      if (err?.code !== "EEXIST") return null;
-      const judged = contentOf(path);
-      if (!stale(judged)) return null;
-      const aside = `${path}.stale-${process.pid}-${randomBytes(8).toString("hex")}`;
-      try {
-        renameSync(path, aside);
-      } catch {
-        return null;
-      }
-      if (contentOf(aside) !== judged) {
-        try {
-          linkSync(aside, path);
-        } catch {
-          // Somebody holds it already; either way it is not ours.
-        }
-        remove(aside);
-        return null;
-      }
-      remove(aside);
-    }
-  }
-  return null;
-}
-
-/**
- * The lock file, appearing whole or not at all. Opened with `wx` and filled in
- * after, it was empty for a moment; a second worker reading it then (a checkout
- * rewrites `HEAD` and `logs/HEAD` within milliseconds) found nothing parsable,
- * judged it abandoned and took it over, and two scans ran at once. The content
- * is written beside it and linked into place, which fails with EEXIST exactly
- * as `wx` does. A filesystem with no hard links takes the `wx` path.
- */
-function create(path, content) {
-  const temp = writeTemp(path, content);
+export function acquire(path) {
+  const nonce = randomBytes(8).toString("hex");
+  const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce });
   try {
-    linkSync(temp, path);
-  } catch (err) {
-    if (err?.code === "EEXIST") throw err;
-    const direct = openSync(path, "wx");
-    try {
-      writeSync(direct, content);
-    } finally {
-      closeSync(direct);
-    }
-  } finally {
-    try {
-      unlinkSync(temp);
-    } catch {
-      // Already gone; nothing of ours is left.
-    }
+    if (!createdAlone(path, content) && !takeDeadLock(path, ownerAge({ staleMs: LOCK_STALE_MS }), content)) return null;
+  } catch {
+    return null;
   }
+  removeLeftTokens(path, nonce);
+  return { path, content };
 }
 
 // Bounded and typed, since the directory can come with the repository: a lock
@@ -535,30 +487,6 @@ function create(path, content) {
 function contentOf(path) {
   const entry = readHead(path, 256);
   return entry.kind === "file" ? entry.head : null;
-}
-
-function stale(content) {
-  let held;
-  try {
-    held = JSON.parse(content);
-  } catch {
-    return true;
-  }
-  if (!Number.isInteger(held?.pid) || !Number.isFinite(held?.at)) return true;
-  // A moment that has not come yet is no worker's on this machine.
-  const age = Date.now() - held.at;
-  if (age < 0 || age > LOCK_STALE_MS) return true;
-  return !alive(held.pid);
-}
-
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    // EPERM is a process that exists and belongs to somebody else.
-    return err?.code === "EPERM";
-  }
 }
 
 /**

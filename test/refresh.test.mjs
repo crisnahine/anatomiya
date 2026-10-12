@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { runPin, runScan } from "../plugins/anatomiya/lib/commands.mjs";
@@ -11,7 +12,7 @@ import { buildPin, loadPin, PIN_PATH, writePin } from "../plugins/anatomiya/lib/
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
 import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
-import { noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
+import { acquire, noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { gitBuffered } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
@@ -2020,6 +2021,159 @@ test("a checkout's name in the held notice carries no control, bidi override or 
   for (const name of ["#api", "> api", "1. api", "`api`", "api|v2", "===", "\uff46\uff55\uff4c\uff4c", "caf\u0065\u0301"]) {
     assert.ok(holdNotice(dir, name).includes(`inside ${JSON.stringify(name)}.`), name);
   }
+});
+
+/* --- a dead lock is broken by one worker, and taken by one --- */
+
+// Older than any scan runs, so dead whatever its pid names, on every platform.
+const deadLock = () => JSON.stringify({ pid: process.pid, at: Date.now() - 31 * 60 * 1000 });
+
+function lockDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-lock-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+/** Runs `call` with each `fs` function in `stubs` replaced, each stub handed the real one. */
+function stubbing(stubs, call) {
+  const real = Object.fromEntries(Object.keys(stubs).map((name) => [name, fs[name]]));
+  for (const [name, stub] of Object.entries(stubs)) fs[name] = (...args) => stub(real[name], ...args);
+  syncBuiltinESMExports();
+  try {
+    return call();
+  } finally {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  }
+}
+
+test("the rename-aside protocol let a third worker in", (t) => {
+  // B judges the lock dead. Before B's first change to it, A breaks it and takes its own; before B's
+  // second, C runs whole. Renamed aside, B's move caught A's lock and C took the name before B could
+  // put A's back, so A and C both held.
+  const dir = lockDir(t);
+  const lock = join(dir, "refresh.lock");
+  writeFileSync(lock, deadLock());
+  const others = [];
+  let judged = false;
+  let changes = 0;
+  let inside = false;
+  const runOthers = (p) => {
+    if (inside || !judged || !String(p).startsWith(lock)) return;
+    changes++;
+    if (changes > 2) return;
+    inside = true;
+    try {
+      others.push(acquire(lock));
+    } finally {
+      inside = false;
+    }
+  };
+  const changing = (real, p, ...rest) => {
+    runOthers(p);
+    return real(p, ...rest);
+  };
+  const b = stubbing(
+    {
+      renameSync: changing,
+      linkSync: changing,
+      unlinkSync: changing,
+      openSync: (real, p, flags, ...rest) => {
+        if (flags === "wx") runOthers(p);
+        const fd = real(p, flags, ...rest);
+        if (!inside && typeof flags === "number" && p === lock) judged = true;
+        return fd;
+      },
+    },
+    () => acquire(lock)
+  );
+
+  assert.equal(changes >= 2, true, `B changed the lock ${changes} times after judging it`);
+  const holders = [b, ...others].filter(Boolean);
+  assert.equal(holders.length, 1, `${holders.length} workers hold the lock`);
+  assert.equal(readFileSync(lock, "utf8"), holders[0].content);
+});
+
+const REFRESH_RUN = new URL("../plugins/anatomiya/lib/refresh-run.mjs", import.meta.url).href;
+
+// Says it is up, takes the lock when told to, says what it holds, and holds it until its stdin ends.
+const LOCK_WORKER = `
+import { acquire } from ${JSON.stringify(REFRESH_RUN)};
+process.stdout.write("up\\n");
+process.stdin.once("data", () => {
+  // Spread, as workers started by one checkout arrive.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.random() * 5);
+  const lock = acquire(process.env.ANATOMIYA_LOCK);
+  process.stdout.write(JSON.stringify(lock?.content ?? null) + "\\n");
+  process.stdin.on("end", () => process.exit(0));
+  process.stdin.resume();
+});
+`;
+
+// Holds each read of a lock's content up to 2 ms, so workers that judge one lock dead interleave their
+// changes to it. With a start spread over 5 ms, the rename-aside protocol let two hold in 1 of 200 rounds
+// at 3 workers and 11 of 200 at 8.
+const SLOW_LOCK_READ = `data:text/javascript,${encodeURIComponent(`
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const real = fs.openSync;
+const pause = new Int32Array(new SharedArrayBuffer(4));
+fs.openSync = (path, flags, ...rest) => {
+  if (typeof flags === "number" && String(path).startsWith(process.env.ANATOMIYA_LOCK)) Atomics.wait(pause, 0, 0, Math.random() * 2);
+  return real(path, flags, ...rest);
+};
+syncBuiltinESMExports();
+`)}`;
+
+/** What each of `n` workers holds after all are told at once to take the lock at `lock`. */
+async function lockWorkers(lock, n) {
+  const runs = [];
+  for (let i = 0; i < n; i++) {
+    const child = spawn(process.execPath, [`--import=${SLOW_LOCK_READ}`, "--input-type=module", "-e", LOCK_WORKER], { env: { ...process.env, ANATOMIYA_LOCK: lock }, timeout: 60_000 });
+    const lines = [];
+    const waiters = [];
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+      for (let at; (at = out.indexOf("\n")) >= 0; out = out.slice(at + 1)) lines.push(out.slice(0, at));
+      while (waiters.length > 0 && waiters[0].count <= lines.length) waiters.shift().done();
+    });
+    const line = (count) => new Promise((done) => (count <= lines.length ? done() : waiters.push({ count, done })));
+    runs.push({ child, lines, line, closed: new Promise((done) => child.on("close", done)) });
+  }
+  // Every worker has its module loaded before any is told to go.
+  await Promise.all(runs.map((run) => run.line(1)));
+  for (const { child } of runs) child.stdin.write("go\n");
+  await Promise.all(runs.map((run) => run.line(2)));
+  const held = runs.map((run) => JSON.parse(run.lines[1]));
+  for (const { child } of runs) child.stdin.end();
+  await Promise.all(runs.map((run) => run.closed));
+  return held.filter((content) => content !== null);
+}
+
+test("three workers over a dead lock leave one holder", async (t) => {
+  const dir = lockDir(t);
+  const lock = join(dir, "refresh.lock");
+  for (const n of [3, 8]) {
+    for (let round = 0; round < 50; round++) {
+      writeFileSync(lock, deadLock());
+      const held = await lockWorkers(lock, n);
+      assert.equal(held.length, 1, `${n} at once, round ${round}: ${held.length} hold it`);
+      assert.equal(readFileSync(lock, "utf8"), held[0], `${n} at once, round ${round}: the holder's lock is on disk`);
+      assert.deepEqual(readdirSync(dir), ["refresh.lock"], `${n} at once, round ${round}: no token or lock moved aside left`);
+    }
+  }
+});
+
+test("a token a worker died holding is removed by the next worker to take the lock", (t) => {
+  const dir = lockDir(t);
+  const lock = join(dir, "refresh.lock");
+  writeFileSync(`${lock}.0123456789abcdef`, "");
+
+  const held = acquire(lock);
+
+  assert.ok(held);
+  assert.deepEqual(readdirSync(dir), ["refresh.lock"]);
 });
 
 /* --- the lock is given back only while it is still this worker's --- */
