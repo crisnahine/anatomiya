@@ -448,8 +448,8 @@ about one area, with a precision marker where the predicate cannot see every sit
 A claim states only when it clears every gate: ratio at least 0.90, a Wilson lower bound on the
 same counts, evidence spread over enough files and authors, and a pinned baseline population so an
 agent's own output cannot raise the bar it is judged against. Gates and thresholds are in
-[docs/how-it-works.md](docs/how-it-works.md); the reasons they sit where they sit are in
-[DECISIONS.md](DECISIONS.md).
+[docs/how-it-works.md](docs/how-it-works.md); the reasons they sit where they sit are in the rows
+[DECISIONS.md](DECISIONS.md) lists.
 
 ## The commands
 
@@ -775,9 +775,10 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 319 numbered decisions, each with the
-  measurement or the review finding that forced it. Why a threshold is where it is, why the parser
-  runs in child processes, why no hook carries the map on its own: that is the file.
+- [DECISIONS.md](DECISIONS.md) is the build contract: 319 numbered decisions, a line each, and each
+  links to its own file under [docs/decisions](docs/decisions) with the measurement or the review
+  finding that forced it. Why a threshold is where it is, why the parser runs in child processes, why
+  no hook carries the map on its own: that is where to look.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
 - [docs/how-it-works.md](docs/how-it-works.md) is the mechanical walkthrough, close enough to
   predict what the tool prints on your repository before you run it.

@@ -2,7 +2,9 @@
 
 Read `DECISIONS.md` first. It is 319 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
-have about why something is shaped the way it is are answered there in one line.
+have about why something is shaped the way it is are answered there. The file is the index: one short
+line per row, with the decision, a one-word status and a link. The measurement behind a row and what
+the code does about it today are in the row's own file, `docs/decisions/<id>.md`.
 
 ## Setup and tests
 
@@ -106,20 +108,71 @@ that says why, and the code comment should be a short version of that row rather
 it. A comment may end with the row's id in parentheses, `(F17)`, and the shipped code is full of
 them: an id
 here names this repository's own register rather than a ticket, and the row it points at is one file
-away. A ticket number, a PR number or a link to a conversation is none of that, and stays out.
+away, at `docs/decisions/<id>.md`. A ticket number, a PR number or a link to a conversation is none
+of that, and stays out.
 
-If there is no row yet, add one. A row needs three things:
+If there is no row yet, add one. A row is written in two places, and `npm run check:docs` fails when
+they disagree.
 
-| # | Decision | Why | Status |
-|---|---|---|---|
+The first is its own file, named by its id. This is `docs/decisions/E4.md`, whole:
 
-The `Why` column is where the work is. "It seemed cleaner" is not a why. A measurement, a probe that
+```
+# E4
+
+Section: E. Baseline and drift
+
+## Decision
+
+An area whose candidates all postdate the baseline emits no directive
+
+## Why
+
+Greenfield directories are where agents write most
+
+## Status
+
+**done** `reduce.mjs` (`blockedFor`, ordered ahead of the gates by `verdictFor`), `baseline.mjs` (`areaBlock`)
+```
+
+The second is one line in `DECISIONS.md`, in the table of the section the file names:
+
+```
+| E4 | An area whose candidates all postdate the baseline emits no directive | done | [E4](docs/decisions/E4.md) |
+```
+
+To add a row:
+
+1. Take the section's letter and the next number after its last row. An id is never reused, and a
+   row is never renumbered, because the code cites rows by id.
+2. Write `docs/decisions/<id>.md` in the shape above: `# <id>`, a `Section:` line that repeats the
+   section's heading in `DECISIONS.md` without the `## `, then `## Decision`, `## Why` and
+   `## Status` in that order. Write the Why and the Status one sentence per line, so a search of the
+   directory answers with a sentence. `## Why` may have nothing under it.
+3. Add the row's line at the end of that section's table in `DECISIONS.md`: the id, the Decision,
+   the short status, and a link to the file.
+
+To change a row, edit its file. The line in `DECISIONS.md` moves only when the Decision or the short
+status did.
+
+Three things have to agree between the two, and the gate names the file and the row when one does
+not:
+
+- The Decision is one text. In the row file a `|` is written bare, and in the index it is written
+  `\|`, since the index is a table.
+- The short status is `done` where the file's Status opens with `**done**`. Anywhere else it is the
+  text before the Status's first colon, so `partial: the scan path only` is `partial` in the index.
+- The section is the one the row's line sits under.
+
+Every row has a file and every file has a row. `node scripts/decisions.mjs` prints the record as one
+table with a whole row on each line, for reading a section from top to bottom.
+
+The Why is where the work is. "It seemed cleaner" is not a why. A measurement, a probe that
 overturned an assumption, or a concrete failure you reproduced is a why. Numbers beat adjectives:
 "271x faster, 0.84s against 103s" is a why; "much faster" is not.
 
-The `Status` column says what the code does today, not what it should do. `todo`, `partial` with the
-file name, or `**done**` with the file name. Moving a row from `todo` to `done` is part of the change
-that does it.
+The Status says what the code does today, not what it should do. `todo`, `partial:` with the file
+name, or `**done**` with the file name. Moving a row from `todo` to `done` is part of the change that
+does it, in the row's file and in its line of the index.
 
 Changing an existing row means saying what new evidence overturned the old one. Rows are not opinions
 and they do not get edited because a new implementation would be tidier.
@@ -430,7 +483,7 @@ A language new to the engine is these sites, in order:
 8. the sentences `npm run check:docs` holds to the registry: `SECURITY.md` names the grammar's
    `package@version`, every sentence that counts the grammars, in words or digits (`seven grammars`,
    `7 grammar files`), counts one more,
-   and so does the count of declarations in DECISIONS B21 (`The registry holds twelve
+   and so does the count of declarations in `docs/decisions/B21.md` (`The registry holds twelve
    declarations`)
 9. by hand, every place that lists the languages by name. No gate reads these, so a list left at
    seven names passes:
@@ -439,7 +492,7 @@ A language new to the engine is these sites, in order:
      the paragraph, its table and the share each language's grammar leaves unread
    - `CONTEXT.md`: Engine and Family
    - `SECURITY.md`: the names beside the grammar packages
-   - `DECISIONS.md`: B60, which names the seven
+   - `docs/decisions/B60.md`, which names the seven
    - this file: `The other seven dev dependencies`, the line for `dimensions-tree.mjs`, and the
      sentence above on which grammars sit at which ABI
    - `plugins/anatomiya/README.md`, and `doctor.md`, `scan.md` and `setup.md` under
@@ -455,7 +508,7 @@ A language new to the engine is these sites, in order:
 
 `test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids and fail until the
 new one is in it. Before anything ships, measure how much of three real repositories the grammar
-leaves unread, and write the rate into DECISIONS beside B63's.
+leaves unread, and write the rate into `docs/decisions/B63.md` beside the others.
 
 A component language, a third beside `.vue` and `.svelte` such as `.astro`, is no grammar of this
 engine. Its script blocks are read on the `oxc` engine (B52), and it is these sites, in order:
