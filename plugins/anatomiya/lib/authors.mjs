@@ -1,7 +1,5 @@
-import { gitBuffered, gitStreamed } from "./git.mjs";
-
-// A record separator git will never find inside an email address or a path.
-const SEP = "\x1e";
+import { gitBuffered } from "./git.mjs";
+import { SEP, historyFields } from "./history.mjs";
 
 /**
  * Distinct authors per file, from ONE pass over history.
@@ -30,8 +28,35 @@ const SEP = "\x1e";
  *
  * Returns a Map of path to a Set of emails, carrying `error` when git itself
  * failed, so a scan can tell an empty history from an unread one.
+ *
+ * `history` is one scan's: with it the commits a store already holds are
+ * replayed and only the rest are asked of git (`history.mjs`).
  */
-export async function authorsByFile(root) {
+export async function authorsByFile(root, { history = null } = {}) {
+  // Asked before the log rather than after it: the map carries the answer
+  // however the log goes, a repository with nothing committed included.
+  const shallow = await shallowHistory(root);
+  let reader = authorsReader();
+  let error;
+  try {
+    // A read given up part way starts over, and the reader with it.
+    await logStream(root, () => (reader = authorsReader()).onField, history);
+  } catch (err) {
+    // A repository with no commits yields no authors, and `git log` fails on
+    // it. That is a gap the author gate handles, not a failure, so the two are
+    // told apart by asking whether HEAD resolves rather than by reading git's
+    // message, which is translated. Anything else travels with the map: unread
+    // history and empty history both state nothing, and only one is an answer.
+    if ((await headState(root)) !== "no-commits") error = String(err && err.message ? err.message : err);
+  }
+  const { map } = reader;
+  map.shallow = shallow;
+  if (error !== undefined) map.error = error;
+  return map;
+}
+
+/** The map one walk builds, and the reader that builds it a field at a time. */
+function authorsReader() {
   const map = new Map();
   const renamedTo = new Map();
 
@@ -107,23 +132,7 @@ export async function authorsByFile(root) {
     }
   };
 
-  // Asked before the log rather than after it: every return below carries the
-  // answer, including the one for a repository with nothing committed.
-  map.shallow = await shallowHistory(root);
-
-  try {
-    await logStream(root, onField);
-  } catch (err) {
-    // A repository with no commits yields no authors, and `git log` fails on
-    // it. That is a gap the author gate handles, not a failure, so the two are
-    // told apart by asking whether HEAD resolves rather than by reading git's
-    // message, which is translated. Anything else travels with the map: unread
-    // history and empty history both state nothing, and only one is an answer.
-    if ((await headState(root)) === "no-commits") return map;
-    map.error = String(err && err.message ? err.message : err);
-  }
-
-  return map;
+  return { map, onField };
 }
 
 /**
@@ -204,33 +213,36 @@ async function isPartialClone(root) {
 }
 
 /**
- * Feed each NUL-delimited field of the log to `onField`.
+ * Feed each NUL-delimited field of the log to the reader `open` answers with.
  *
  * The rename-chain state machine above stays here, because it is this pass's
  * own reading of what the fields mean and forcing it through a shared parser
  * would cost more clarity than the sharing buys. What crosses the seam is the
  * field split alone.
  */
-async function logStream(root, onField) {
+async function logStream(root, open, history) {
   const partial = await isPartialClone(root);
-  return gitStreamed(
+  return historyFields(
     root,
-    // Nothing follows `--`, which is the rule for every git call here: no
-    // argument after it can be read as an option. `%aE` is the address after
-    // the repository's .mailmap, so a person the repository has already said
-    // is one person under two addresses is counted once.
-    // `log.showRoot=false` prints no diff for a root commit, so every file the
-    // first commit added would carry no author: forced back on, as git ships it.
-    ["-c", "log.showRoot=true", "log", partial ? "-M100%" : "-M", "--no-merges", "--name-status", "-z", `--format=${SEP}%aE`, "--"],
-    onField,
     {
-      // `--format` leaves the final record unterminated, so a remainder at exit
-      // is the last commit's author rather than a truncated one.
-      terminated: false,
+      kind: "authors",
+      renames: true,
+      // `log.showRoot=false` prints no diff for a root commit, so every file the
+      // first commit added would carry no author: forced back on, as git ships it.
+      config: ["-c", "log.showRoot=true"],
+      tip: [],
+      walk: ["--no-merges"],
+      // `%aE`, which the walk asks for, is the address after the repository's
+      // .mailmap, so a person the repository has already said is one person
+      // under two addresses is counted once.
+      diff: [partial ? "-M100%" : "-M", "--name-status", "-z"],
+      cap: [],
       // Belt as well as braces on a partial clone: nothing in this walk may
       // reach the network, so a missing object fails here instead of hanging.
       env: partial ? { ...process.env, GIT_NO_LAZY_FETCH: "1" } : process.env,
-    }
+    },
+    open,
+    { history }
   );
 }
 

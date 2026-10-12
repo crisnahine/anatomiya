@@ -3634,8 +3634,8 @@ test("nothing is removed until every file has been renamed into place", async (t
 const gone = () => 2 ** 22 + 7;
 const stagedName = (name, pid, hex = "0123456789abcdef") => stagedPath(name, pid, hex);
 const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
-// The names a scan, a refresh and a pin stage in the store.
-const STORE_FILES = ["facts.json", "layout.json", "refresh.json", "baseline.json", "refresh.lock"];
+// The names a scan, a refresh, a pin and a history walk stage in the store.
+const STORE_FILES = ["facts.json", "layout.json", "refresh.json", "baseline.json", "refresh.lock", "history-authors.gz", "history-cochange.gz"];
 
 test("a temporary file an earlier scan left is removed from every directory this scan writes, and counted", (t) => {
   const dir = workspace(t);

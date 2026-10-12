@@ -4,6 +4,7 @@ import { PIN_PATH } from "./baseline.mjs";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
 import { claimsIn } from "./cochange.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBackRecord, writePair } from "./facts.mjs";
+import { HISTORY_FILES } from "./history.mjs";
 import { leftTokens, workerAge } from "./lock.mjs";
 import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
@@ -424,8 +425,8 @@ function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritabl
 // The files of ours the record on disk names in one directory, sorted.
 const recorded = (previous, target) => [...(knownNames(previous, target) ?? [])].sort();
 
-// The files a scan, a refresh, a pin and a lock create stage in the store, by name.
-const STORE_STAGED = [FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK].map((path) => basename(path));
+// The files a scan, a refresh, a pin, a lock create and a history walk stage in the store, by name.
+const STORE_STAGED = [...[FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK].map((path) => basename(path)), ...Object.values(HISTORY_FILES)];
 
 // Where a build before the lock tokens moved a dead refresh lock aside to break it.
 const LOCK_ASIDE = /^refresh\.lock\.stale-(\d+)-[0-9a-f]{16}$/;
