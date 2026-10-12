@@ -6,10 +6,10 @@
  * age (A95).
  *
  * A judge answers `null` where the lock is gone, `{ live: true }`, which may
- * name its `generation` too, or `{ live: false, generation, identity }`: `generation` names the lock's token,
- * and the lock is removed only while the judge, asked again under that token,
- * still answers it dead with the same `identity` (the generation where it gives
- * none).
+ * name its `generation` too, or `{ live: false, generation, identity }`:
+ * `generation` names the lock's token, and the lock is removed only while the
+ * judge, asked again under that token, still answers it dead with the same
+ * `identity` (the generation where it gives none).
  */
 import { createHash } from "node:crypto";
 import { closeSync, linkSync, lstatSync, opendirSync, openSync, unlinkSync, writeSync } from "node:fs";

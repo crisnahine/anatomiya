@@ -233,8 +233,8 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // (`test` nested inside `suite`) and this client's whole Cypress suite.
   if (facets?.empty === true) return false;
   // The name answers first, read as a reader holding the parse reads it. A
-  // language with a test name of its own answers by it and by nothing written
-  // for another: no dotted form, no mirror, no `__tests__`.
+  // language with a test name of its own answers by it or by the mirror, and
+  // by nothing written for another: no dotted form, no `__tests__`.
   const family = familyOf(lang);
   const named = namesATestFile(rel, family, { read: true });
   if (named || FAMILY_TEST_NAMES[family]) return named || mirrored?.has(rel) === true;

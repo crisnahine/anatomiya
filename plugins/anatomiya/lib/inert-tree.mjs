@@ -38,6 +38,9 @@ function rulesOf(lang) {
     comment: new Set(s.comment),
     modifier: new Set(s.modifier ?? []),
     targetChain: new Set(s.targetChain ?? []),
+    typeExpr: new Set(s.typeExpr ?? []),
+    counted: new Set(s.counted ?? []),
+    countedPart: new Set(s.countedPart ?? []),
     annotation: s.annotation,
     interpolation: s.interpolation ?? [],
     bare: s.bareInterpolation ?? [],
@@ -69,27 +72,30 @@ function isLiteral(node, r) {
 
 const annotated = (node, r) => r.annotation.length > 0 && node.descendantsOfType(r.annotation).length > 0;
 
-/** Whether every named node of a subtree is one of `types`. */
-function onlyOf(node, types) {
-  for (const todo = [node]; todo.length > 0; ) {
-    const n = todo.pop();
-    if (!types.has(n.type)) return false;
-    todo.push(...named(n));
-  }
-  return true;
+/** Whether a subtree holds literals and nodes of `types`, and nothing else. */
+function plain(node, types, r) {
+  if (!types.has(node.type)) return isLiteral(node, r);
+  return named(node).every((n) => r.comment.has(n.type) || plain(n, types, r));
 }
 
 /**
- * A name bound to a literal, with no annotation on it. A binding with no
- * value asks, and so does one whose target is more than a name or an attribute
- * chain, or that carries a block to run when it does not match.
+ * A name bound to a literal, with no annotation on it, or a constant that
+ * repeats the one above it or counts off its place in a group. Any other
+ * binding with no value asks, and so does one whose target is more than
+ * names, attributes and subscripts of those or of literals, whose type is more
+ * than a type expression where its grammar reads one as an expression, or
+ * that carries a block to run when it does not match.
  */
 function inertBinding(node, r) {
   if (annotated(node, r)) return false;
   if (r.s.alternative && node.childForFieldName(r.s.alternative) !== null) return false;
   const target = r.s.target ? node.childForFieldName(r.s.target) : null;
-  if (target !== null && !onlyOf(target, r.targetChain)) return false;
-  const value = (r.s.value ? node.childForFieldName(r.s.value) : null) ?? node.lastNamedChild;
+  if (target !== null && !plain(target, r.targetChain, r)) return false;
+  const type = r.s.bindingType ? node.childForFieldName(r.s.bindingType) : null;
+  if (type !== null && !plain(type, r.typeExpr, r)) return false;
+  const own = r.s.value ? node.childForFieldName(r.s.value) : null;
+  if (r.counted.has(node.type)) return own === null || plain(own, r.countedPart, r);
+  const value = own ?? node.lastNamedChild;
   return value !== null && isLiteral(value, r);
 }
 
@@ -135,7 +141,7 @@ export async function treeInertLines(source, lang, deadline, { grammars } = {}) 
   try {
     const parsed = await parseForLines(source, lang, { cancel: () => performance.now() > deadline, ...(grammars ? { grammars } : {}) });
     if (parsed === null) return null;
-    return parsed.tree ? walked(parsed.tree, lines, rulesFor(lang)) : unread();
+    return parsed.tree ? walked(parsed.tree, lines, lang) : unread();
   } catch {
     // A trap or a heap at its cap, in the parse or the walk: nothing here can say what the file
     // holds, and a throw past here reaches the hook's boundary, which answers nothing for the stop.
@@ -144,13 +150,14 @@ export async function treeInertLines(source, lang, deadline, { grammars } = {}) 
 }
 
 /** The line rule over a parsed tree, which it deletes. */
-function walked(tree, lines, r) {
+function walked(tree, lines, lang) {
   const asks = new Array(lines.length).fill(false);
   const mark = ([from, to]) => {
     for (let row = from; row <= to; row++) asks[row] = true;
   };
   let cursor = null;
   try {
+    const r = rulesFor(lang);
     cursor = tree.walk();
     // Each open node, and whether a named node was seen under it: a named node with none is a leaf.
     const open = [];

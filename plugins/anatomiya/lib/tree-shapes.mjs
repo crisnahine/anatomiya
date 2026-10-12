@@ -30,9 +30,12 @@ export const SHAPES = {
     // What the reuse check reads as a name bound to a literal, which asks nothing.
     binding: ["assignment"],
     value: "right",
-    // An assignment's target holds an expression, so it must be a name or an attribute chain.
+    // An assignment's target holds an expression, so it must be names, attributes and subscripts, or a literal inside one.
     target: "left",
-    targetChain: ["identifier", "attribute"],
+    targetChain: ["identifier", "attribute", "subscript"],
+    // An annotation is an expression too: these are the nodes of one that only names types.
+    bindingType: "type",
+    typeExpr: ["type", "identifier", "attribute", "subscript", "generic_type", "type_parameter", "binary_operator", "list", "ellipsis"],
     literal: ["integer", "float", "true", "false", "none", "string", "concatenated_string"],
     interpolation: ["interpolation"],
     unary: ["unary_operator"],
@@ -68,7 +71,7 @@ export const SHAPES = {
     binding: ["const_element", "assignment_expression", "property_element"],
     value: "default_value",
     target: "left",
-    targetChain: ["variable_name", "name", "member_access_expression"],
+    targetChain: ["variable_name", "name", "member_access_expression", "subscript_expression", "scoped_property_access_expression", "relative_scope"],
     literal: ["integer", "float", "boolean", "null", "string", "encapsed_string", "nowdoc"],
     // A double-quoted string interpolates any variable it names.
     interpolation: ["variable_name"],
@@ -100,6 +103,9 @@ export const SHAPES = {
     // A composite literal's type says what it builds, and holds no value.
     collectionType: "type",
     declaration: ["const_declaration", "var_declaration", "var_spec_list"],
+    // A constant in a group repeats the one above it or counts off `iota`: it has no value, or one of these and literals.
+    counted: ["const_spec"],
+    countedPart: ["iota", "expression_list", "binary_expression", "unary_expression", "parenthesized_expression"],
   },
   java: {
     fn: ["method_declaration"],

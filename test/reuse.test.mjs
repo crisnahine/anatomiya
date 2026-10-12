@@ -8,10 +8,11 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
-import { askedMarks, askedMarksIn, continuedByReuse, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason } from "../plugins/anatomiya/lib/reuse.mjs";
+import { askedMarksIn, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
 import { REUSE_PARSE_MS } from "../plugins/anatomiya/lib/inert.mjs";
+import { transcriptTail } from "../plugins/anatomiya/lib/transcript.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { corpusDrop } from "../plugins/anatomiya/lib/corpus.mjs";
@@ -157,6 +158,23 @@ test("a tree-sitter file reached after the stop's parse budget is asked about wh
 
   assert.equal(await pendingChange(dir), null, "read in time, a comment asks nothing");
   assert.deepEqual(hunksOf(await pendingChange(dir, { parsing: { deadline: performance.now() - 1 } })), [["svc/note.py", [{ from: 1, to: 1, created: true }]]]);
+});
+
+test("a tree-sitter file whose grammar will not load asks nothing", async (t) => {
+  // Nothing read it, so nothing says it holds a function. The failed load is kept for the process, and no other test here reads Kotlin.
+  const { dir, write } = repo(t);
+  write("app/Total.kt", "fun total(xs: List<Int>): Int {\n    return xs.sum()\n}\n");
+
+  const change = await stubbedAsync(
+    "openSync",
+    (real, path, ...rest) => {
+      if (String(path).endsWith("kotlin.wasm")) throw Object.assign(new Error("ENOENT: no such file or directory, open"), { code: "ENOENT" });
+      return real(path, ...rest);
+    },
+    () => pendingChange(dir)
+  );
+
+  assert.equal(change, null);
 });
 
 test("the parse budget starts at the first tree-sitter file and is shared by every checkout of the stop", async (t) => {
@@ -634,19 +652,17 @@ test("the files a transcript already asked about or recorded are read back by th
     recorded(`anatomiya checked 1 changed file for existing functions (${REUSE_MARK} cccccccccccc)`),
   ]);
 
-  assert.deepEqual([...askedMarks(path)].sort(), ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"]);
+  assert.deepEqual([...askedMarksIn(readFileSync(path, "utf8"))].sort(), ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"]);
 });
 
-test("the marks and the last block read off a transcript's text are what its path readers read", (t) => {
+test("a transcript's text names the marks it holds and whether its last block was this hook's", (t) => {
   const path = transcript(t, [
     blocked(`Before you finish, give one subagent this change's diff... (${REUSE_MARK} aaaaaaaaaaaa)`),
     recorded(`anatomiya checked 1 changed file for existing functions (${REUSE_MARK} cccccccccccc)`),
   ]);
   const text = readFileSync(path, "utf8");
 
-  assert.deepEqual([...askedMarksIn(text)], [...askedMarks(path)]);
   assert.deepEqual([...askedMarksIn(text)].sort(), ["aaaaaaaaaaaa", "cccccccccccc"]);
-  assert.equal(continuedByReuseIn(text), continuedByReuse(path));
   assert.equal(continuedByReuseIn(text), true);
   assert.equal(continuedByReuseIn(`${text}${JSON.stringify(blocked("another hook's reason"))}\n`), false, "another hook blocked last");
   assert.equal(askedMarksIn(null).size, 0);
@@ -659,7 +675,7 @@ test("a transcript that cannot be read has covered nothing", (t) => {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   for (const path of [join(dir, "missing.jsonl"), dir, undefined, 42, ""]) {
-    assert.equal(askedMarks(path).size, 0, String(path));
+    assert.equal(askedMarksIn(transcriptTail(path, TRANSCRIPT_MOST)?.text ?? null).size, 0, String(path));
   }
 });
 
@@ -670,15 +686,15 @@ test("a named pipe at the transcript's path answers nothing rather than blocking
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const fifo = join(dir, "session.jsonl");
   execFileSync("mkfifo", [fifo]);
-  const module = new URL("../plugins/anatomiya/lib/reuse.mjs", import.meta.url).href;
+  const module = new URL("../plugins/anatomiya/lib/transcript.mjs", import.meta.url).href;
 
-  const run = spawnSync(process.execPath, ["--input-type=module", "-e", `import { askedMarks } from ${JSON.stringify(module)}; process.stdout.write(String(askedMarks(${JSON.stringify(fifo)}).size));`], {
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", `import { transcriptTail } from ${JSON.stringify(module)}; process.stdout.write(String(transcriptTail(${JSON.stringify(fifo)}, ${TRANSCRIPT_MOST})));`], {
     encoding: "utf8",
     timeout: 10_000,
   });
 
   assert.equal(run.signal, null, "it came back on its own");
-  assert.equal(run.stdout, "0");
+  assert.equal(run.stdout, "null");
 });
 
 // --- the hook ----------------------------------------------------------------
@@ -1177,7 +1193,7 @@ test("runReuse reads the transcript twice", async (t) => {
   assert.deepEqual(reads.sort(), ["head", "tail", "tail"]);
 });
 
-test("askedMarks read after the change set sees a mark written meanwhile", async (t) => {
+test("the marks read after the change set include one written meanwhile", async (t) => {
   // The git reads take up to seconds, and an ask another stop wrote while they
   // ran covers this change: asking again would pay a second search for it.
   const { dir, write } = repo(t);

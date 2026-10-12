@@ -17,6 +17,10 @@ USAGE = (
 )
 LIMITS = {"low": -1, "flags": [True, None], "pair": (2.5,), "set": {False}}
 GREETING = f"{USAGE}"
+LIMITS["high"] = 2
+RATES: Dict[str, a.Rate | None] = {}
+HOOKS: Callable[[int], tuple[int, ...]] = None
+FIRST: a.Rates[0] = None
 
 
 class Order(Record):
@@ -108,6 +112,7 @@ const NOTE = <<<'TEXT'
 plain
 TEXT;
 $greeting = "hello $name";
+$limits['high'] = 2;
 
 function format_total(int $cents): string
 {
@@ -147,6 +152,12 @@ import (
 const usage = \`
 usage: totals FILE
 \`
+
+const (
+	low = iota
+	mid
+	high = -(1 << iota)
+)
 
 var limits = map[string]float64{"low": -1, "high": 2.5}
 

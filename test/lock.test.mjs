@@ -40,7 +40,7 @@ test("an EPERM create is tried again", (t) => {
     const made = stubbed("openSync", (real, p, flags, ...rest) => {
       if (p === lock && flags === "wx" && ++tries <= 2) throw refused("EPERM", p);
       return real(p, flags, ...rest);
-    }, () => stubbed("linkSync", (real, from, to) => {
+    }, () => stubbed("linkSync", (_real, _from, to) => {
       // No hard links here, so the content goes through the exclusive create too.
       throw refused("EPERM", to);
     }, () => createdAlone(lock, content)));
@@ -55,7 +55,7 @@ test("a link EPERM falls through to the exclusive create without waiting", (t) =
   const dir = workspace(t);
   const lock = join(dir, "lock");
   let links = 0;
-  const made = stubbed("linkSync", (real, from, to) => {
+  const made = stubbed("linkSync", (_real, _from, to) => {
     links++;
     throw refused("EPERM", to);
   }, () => createdAlone(lock, "held"));

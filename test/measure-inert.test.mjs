@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Language } from "web-tree-sitter";
 
-import { CONTAINERS, measure, ORACLE, oracleHits, tally } from "../scripts/measure-inert.mjs";
+import { CONTAINERS, COUNTED, measure, ORACLE, oracleHits, tally } from "../scripts/measure-inert.mjs";
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 
@@ -63,7 +63,7 @@ test("the oracle names a function, a lambda, a call and a binding to a name that
   }
 });
 
-test("the oracle names a call whose arguments were added, and the shapes the review found", async () => {
+test("the oracle names a call whose arguments were added, a call in a target, a property hook and a let-else", async () => {
   const call = await parseForLines("x = run(\n    1,\n)\n", "python", { cancel: () => false });
   try {
     assert.deepEqual(oracleHits(call.tree, "python", [[2, 2]]).map((h) => h.type), ["call"]);
@@ -110,6 +110,33 @@ test("a closing bracket left as the only added line is no hit, and a call added 
   }
 });
 
+test("the oracle passes a Go constant with no value or counted off iota, and names one whose value holds another name", async () => {
+  const source = "package m\n\nconst (\n\tA = iota\n\tB\n\tC Color = (1 << iota) - 1\n\tD = other\n\tE = iota + pkg.Step\n\tF = len(x)\n)\n";
+  const parsed = await parseForLines(source, "go", { cancel: () => false });
+  try {
+    assert.deepEqual(oracleHits(parsed.tree, "go", [[4, 6]]), []);
+    const hits = oracleHits(parsed.tree, "go", [[7, 9]]).map((h) => [h.line, h.type]).sort();
+    assert.deepEqual(hits, [[7, "binding to identifier"], [8, "binding to field_identifier"], [9, "binding to identifier"], [9, "call_expression"]]);
+  } finally {
+    parsed.tree.delete();
+  }
+});
+
+test("a bracket line that also ends a string spread over lines is charged to the call around it", async () => {
+  for (const [lang, source, line, type] of [
+    ["rust", 'fn f() {\n    let x = run(r#"\na\nz"#);\n}\n', 4, "call_expression"],
+    ["csharp", 'class A {\n    void F() {\n        var x = Run(@"\na\n");\n    }\n}\n', 5, "invocation_expression"],
+  ]) {
+    const parsed = await parseForLines(source, lang, { cancel: () => false });
+    try {
+      assert.ok(oracleHits(parsed.tree, lang, [[line, line]]).some((h) => h.type === type), `${lang}: ${type}`);
+      assert.deepEqual(oracleHits(parsed.tree, lang, [[line + 1, line + 1]]), [], `${lang}: the brace alone`);
+    } finally {
+      parsed.tree.delete();
+    }
+  }
+});
+
 test("a constant added to a class body or a lambda is not taken for the class or the call", async () => {
   const cases = [
     ["python", "class A:\n    X = 1\n    Y = 2\n", [[3, 3]]],
@@ -136,7 +163,8 @@ test("a comment or a docstring added inside a definition is not taken for the de
 });
 
 test("every node type the oracle names is one its grammar knows", async () => {
-  for (const [lang, types] of Object.entries({ ...ORACLE, ...Object.fromEntries(Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c]])) })) {
+  const counted = (lang) => Object.entries(COUNTED[lang] ?? {}).flat();
+  for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l)]])) {
     const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
     assert.deepEqual(types.filter((type) => language.idForNodeType(type, true) === null), [], lang);
   }
