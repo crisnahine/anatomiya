@@ -266,7 +266,7 @@ lock is taken, what a transcript record says or when the echo delivers goes in t
   and its reading, `writeTemp` and `atomic`, the 64 MiB bound on a read, `putBack`, and
   `replaceAll`, which replaces a set of files and puts every one back when one fails. It imports
   only the path encoder, so the record, the map, the pin and the refresh state write through it
-  without importing one another (A115)
+  without importing one another to write (A115)
 - `plugins/anatomiya/lib/lock.mjs` the one lock the echo and the refresh worker take: an exclusive
   create, and a dead lock broken through a lock token. What makes a lock dead is a judge the caller
   passes, `mtimeAge` or `ownerAge` (A117)

@@ -306,17 +306,18 @@ removed, and neither is a file under any other name, keyed or not. So the most a
 removed is a file it shipped under this tool's own name carrying this tool's own key, or a regular
 file it shipped under such a name plus the suffix a staged file carries, `.tmp-<pid>-<16 hex>`:
 that one is removed with no key asked, where no process of that id is running, by a scan that
-writes or removes in the directory. `.claude/anatomiya` is swept the same way for three names: a regular
-file there named `facts.json`, `layout.json` or `refresh.json` plus that suffix, whose
-stager is not running, is removed by a scan that writes, and the summary counts them (`3 temporary
-files an earlier scan left in .claude/anatomiya were removed`). `baseline.json` and
-`refresh.lock` plus that suffix are swept the same way, and so is what a killed breaker of the
-refresh lock left: a lock token, `refresh.lock.<16 hex>`, of a generation the lock does not name, a
-token's own token, `refresh.lock.<16 hex>.<digits>`, of the dead lock it names once that is older
-than 62 seconds, and a `refresh.lock.stale-<pid>-<16 hex>` an older build moved aside, where no
-process of that id is running. A lock token of the generation the lock names is never removed, nor
-a token's own token while the lock is live, nor a link, a directory or a fifo at any of these
-names, nor a file under any other name. A dry run removes none and says how many a scan would. No temporary file is opened before it
+writes or removes in the directory. `.claude/anatomiya` is swept the same way for five names: a regular
+file there named `facts.json`, `layout.json`, `refresh.json`, `baseline.json` or `refresh.lock`
+plus that suffix, whose stager is not running, is removed by a scan that writes, and the summary
+counts them (`3 temporary
+files an earlier scan left in .claude/anatomiya were removed`). The same sweep takes what a killed
+breaker of the refresh lock left: a lock token, `refresh.lock.<16 hex>`, or a token's own token,
+`refresh.lock.<16 hex>.<digits>`, of a generation the lock does not name, which is all of them
+where the lock is gone, a token's own token of the dead generation the lock names whose own mtime
+is more than 62 seconds from the clock, and a `refresh.lock.stale-<pid>-<16 hex>` an older build
+moved aside, where no process of that id is running. A lock token of the generation the lock names
+is never removed, nor a token's own token of the generation a live lock names, nor a link, a
+directory or a fifo at any of these names, nor a file under any other name. A dry run removes none and says how many a scan would. No temporary file is opened before it
 is removed. One whose removal fails, whatever the removal answers, is left where it is and stops
 nothing: the scan writes the map and counts it (`1 temporary file an earlier scan left in
 .claude/anatomiya could not be removed, so it was left as it is`, `stagedLeft` and
@@ -439,7 +440,7 @@ clock than that: the right to remove a dead one goes to the call that creates it
 it is still the one it found dead, then removes that lock token. Every call then tries the one
 create of the lock, and those that lose it deliver nothing. A lock token last written more than 62
 seconds ago was left by a call killed while it broke the lock, and is broken the same way under a
-token of its own, `<batch claim>.lock.<mtime in ms>.<the token's mtime in ms>`, one level down and
+lock token of its own, `<batch claim>.lock.<mtime in ms>.<the token's mtime in ms>`, one level down and
 no further. A lock token the system refuses to
 remove is left for the sweep, and a dead lock it refuses to remove makes the call answer alone. An
 exclusive create Windows refuses with EPERM, its answer for a name another process is still
