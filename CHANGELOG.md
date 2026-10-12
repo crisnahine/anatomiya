@@ -260,6 +260,10 @@ by this version, with times and build digests masked
 - A growth side too short for Windows' 15.6 ms CPU clock to read is timed again, scaled to as long
   as it should have run. A stall while the sides were sized left both under one step, and the ratio
   read as no number at all.
+- The test that parses one large file 500 times reads the parser's heap and the JavaScript heap
+  after a collection, where it read resident size. On a Linux runner resident size grew 83 MB from
+  the first hundred parses to the last with nothing held, and a leak that grew the parser's heap
+  124 MB moved it 12 MB.
 
 ## [0.14.0] - 2026-10-11
 
