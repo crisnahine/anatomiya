@@ -288,11 +288,12 @@ export const underTestTree = (dir, family = null) =>
  * A directory named like a test is no test, `a.test.d/x.js` nor anything under
  * `__tests__`, which is an address and not a name.
  *
- * `read` is the evidence the caller holds. The Ruby form is the one a producer
- * wears in earnest, `software_spec.rb` is Homebrew's `SoftwareSpec` class, so a
- * reader that parsed the file and found no case asks a test tree to corroborate
- * it (H35). A reader holding only the path keeps the name alone: the tree rule
- * there would be wrong for 43 of the 51 corpus paths it moves, canvas-lms's 39
+ * `read` says the caller's own reading of the file has been asked already and
+ * did not call it a test, whether or not it parsed. The Ruby form is the one a
+ * producer wears in earnest, `software_spec.rb` is Homebrew's `SoftwareSpec`
+ * class, so such a caller asks a test tree to corroborate it (H35). A caller
+ * holding only the path keeps the name alone: the tree rule there would be
+ * wrong for 43 of the 51 corpus paths it moves, canvas-lms's 39
  * `gems/plugins/<plugin>/spec_canvas` specs among them, each of which its parse
  * reads as a test before its name is asked.
  *

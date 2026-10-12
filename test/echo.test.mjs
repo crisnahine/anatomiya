@@ -124,10 +124,9 @@ function mapped(t) {
   return dir;
 }
 
-
 const BIN = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
 
-/** How many of `n` echo processes deliver when their payloads arrive together. */
+/** How many of `n` echo processes deliver when their payloads arrive together; an undefined `data` leaves the variable unset. */
 async function batch(dir, data, path, n, nodeArgs = []) {
   const runs = [];
   for (let i = 0; i < n; i++) {
@@ -160,6 +159,19 @@ test("echo processes started together deliver one copy per batch, with no batch 
       }
     }
   }
+});
+
+test("the echo hook prints the map on every call where its data directory is relative or unset", async (t) => {
+  const dir = mapped(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const relative = `anatomiya-relative-${process.pid}`;
+  t.after(() => rmSync(relative, { recursive: true, force: true }));
+  const twice = async (data) => [await batch(dir, data, path, 1), await batch(dir, data, path, 1)];
+
+  assert.deepEqual(await twice(dataDir(t)), [1, 0], "an absolute one keeps the second call silent");
+  assert.deepEqual(await twice(relative), [1, 1], "relative");
+  assert.equal(existsSync(relative), false, "a relative name is not resolved against the cwd");
+  assert.deepEqual(await twice(undefined), [1, 1], "unset");
 });
 
 test("a lock held by another call keeps this one silent, and a lock a minute old or a minute ahead is broken", (t) => {

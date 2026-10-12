@@ -169,8 +169,9 @@ test("a declaration with modifiers and a type around a literal binding asks noth
   assert.deepEqual(await asking("php", php), [2]);
 });
 
-test("a failure while the file is read asks about every non-blank line, and the stop still answers", async () => {
-  // A trap reaching the hook's boundary answers {} for the whole stop, its JavaScript and Ruby files included.
+test("a throw out of the parse asks about every non-blank line of that file", async () => {
+  // Thrown past here it would reach the hook's boundary, which answers {} for the whole stop. The walk's
+  // own throw is pinned in the adapter's tests.
   const deadline = { valueOf() { throw new RangeError("trap"); } };
   assert.deepEqual(await asking("python", "# note\n\nX = 1\n", { deadline }), [1, 3]);
 });

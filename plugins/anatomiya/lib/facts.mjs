@@ -217,15 +217,16 @@ export function schemaProblem(parsed) {
 }
 
 /**
- * How much of a record this tool wrote any reader takes.
+ * The most of a record any command reads. One past it is never parsed: a
+ * check says so and enforces nothing, and a scan replaces it unread.
  *
  * Not `HEAD_BYTES`, which sizes a rule file: the record is the whole count of a
  * repository, measured at 10,217,406 bytes on microsoft/vscode. A megabyte
  * would have gone silent on exactly the repositories where a directory nobody
- * read is easiest to miss. The cap is
- * there for the shape a rule file cap is there for, a path holding something
- * nobody wrote, and only such a file ever pays it. It is the store's one bound,
- * so a scan reads whole to put a file back no more than this.
+ * read is easiest to miss. The cap is there for the shape a rule file cap is
+ * there for, a path holding something nobody wrote, and only such a file ever
+ * pays it. Equal to the store's `READ_MOST`, so the bytes a scan reads to put
+ * a record back are bytes a command reads of it.
  */
 const RECORD_MOST = READ_MOST;
 
@@ -356,7 +357,8 @@ export function writeFacts(root, result) {
   } catch (err) {
     const now = recordBytes(record);
     // Only where the failed write replaced what was there: still the same bytes
-    // leaves nothing to put back, and `putBackRecord` leaves a record it could not read.
+    // leaves nothing to put back, and `putBackRecord` leaves a record it could
+    // not read.
     if (previous === null ? now !== null : !(now && previous?.equals(now))) {
       try {
         putBackRecord(record, previous, was);

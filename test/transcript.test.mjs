@@ -15,7 +15,7 @@ import {
   turnStartIn,
   windowBytes,
 } from "../plugins/anatomiya/lib/transcript.mjs";
-import { sessionStart, toolCalls, turnStart } from "../plugins/anatomiya/lib/reuse.mjs";
+import { sessionStart } from "../plugins/anatomiya/lib/reuse.mjs";
 
 const MINUTE = 60 * 1000;
 
@@ -29,7 +29,7 @@ function session(t, at = Date.parse("2026-10-11T04:00:00.000Z")) {
     instructions("# rules"),
     snapshot(64),
     ...toolCall("fg", at + 1000, at + 2000),
-    ...toolCall("bg", at + 3000, at + 3200, { background: true }),
+    ...toolCall("bg", at + 3000, at + 3200),
     notification("bg", at + 9000, "queue"),
     notification("bg", at + 9100, "attachment"),
     notification("bg", at + 9200, "user"),
@@ -39,15 +39,12 @@ function session(t, at = Date.parse("2026-10-11T04:00:00.000Z")) {
   ]);
 }
 
-test("each record reader over a transcript's text answers what its path reader answers over the same bytes", (t) => {
+test("the record readers over a transcript's text name its start, its last prompt and each call's span", (t) => {
   const path = session(t);
   const text = readFileSync(path, "utf8");
   const at = Date.parse("2026-10-11T04:00:00.000Z");
 
-  assert.equal(sessionStartIn(text), sessionStart(path));
-  assert.equal(turnStartIn(text), turnStart(path));
-  assert.deepEqual(toolCallsIn(text), toolCalls(path));
-
+  assert.equal(sessionStart(path), at, "the path reader reads the same head");
   assert.equal(sessionStartIn(text), at, "the first record carrying a timestamp");
   assert.equal(turnStartIn(text), at + MINUTE, "the last prompt, past a block reason and a result");
   assert.deepEqual(toolCallsIn(text), [

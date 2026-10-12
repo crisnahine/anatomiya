@@ -30,7 +30,7 @@ export const stagedPath = (path, pid, hex) => `${path}.tmp-${pid}-${hex}`;
 // The one reading of what `stagedPath` adds.
 const STAGED = /\.tmp-(\d+)-[0-9a-f]{16}$/;
 
-// The stager's process id where the name is one `owns` answers for with that added, or null.
+/** The stager's process id where the name is one `owns` answers for with what `stagedPath` adds, or null. */
 export function stager(name, owns) {
   const added = STAGED.exec(name);
   return added !== null && owns(name.slice(0, added.index)) ? Number(added[1]) : null;
@@ -164,8 +164,9 @@ export function recordBytes(path) {
 }
 
 /**
- * `previous`, from `previousBytes`, back at `path`: removed where nothing was,
- * left where it could not be read, and otherwise replaced whole.
+ * `previous`, as `previousBytes` or `recordBytes` read it, back at `path`:
+ * removed where nothing was or a record was past the bound, left where it
+ * could not be read, and otherwise replaced whole.
  */
 export function putBack(path, previous) {
   if (previous === undefined) return;
@@ -204,7 +205,8 @@ export function movedAway(dir, did) {
  * `pair.left` and stops nothing. One in `pair.records` past the bound is
  * replaced without being read and taken back out on a rollback. The record at
  * `pair.record` is put back by `pair.restore(previous)`, which writes its
- * layout file again; every other path by `putBack`.
+ * layout file again only where one answered for it; every other path by
+ * `putBack`.
  *
  * A rename in a directory the temporary file was just created in still fails:
  * Windows refuses one over a file another process holds open. `said` names a
@@ -213,9 +215,9 @@ export function movedAway(dir, did) {
  * Where `pair.spared` answers for the path with a target, that failure stops
  * the target's directory alone: `pair.settle` writes the record again to name
  * what that directory held, then what was replaced there is put back and
- * nothing more is done there. A
- * permission in a directory another tool owns may not stop Claude Code's map.
- * Answers the targets stopped that way, each with what stopped it.
+ * nothing more is done there. A permission in a directory another tool owns
+ * may not stop Claude Code's map. Answers the targets stopped that way, each
+ * with what stopped it.
  */
 export function replaceAll(staged, removals, pair, stillOwn, said) {
   // Read before the first rename, so the window between the facts and the last

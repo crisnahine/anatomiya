@@ -18,27 +18,20 @@ function workspace(t) {
   return dir;
 }
 
-test("the replace never writes through a link planted where its temporary file goes", () => {
+test("the replace never writes through a link planted where its temporary file goes", (t) => {
   // The directories are resolved (F2), and the temporary name beside the
   // destination was not: it was `<path>.tmp-<pid>`, predictable, and opened
   // with a plain write that follows a link. A repository shipping that name as
   // a tracked symlink had the scan write the map's bytes wherever it pointed.
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  const outside = mkdtempSync(join(tmpdir(), "anatomiya-atomic-outside-"));
-  try {
-    const victim = join(outside, "victim.txt");
-    writeFileSync(victim, "untouched\n");
-    const target = join(dir, "facts.json");
-    symlinkSync(victim, `${target}.tmp-${process.pid}`);
+  const victim = join(workspace(t), "victim.txt");
+  writeFileSync(victim, "untouched\n");
+  const target = join(workspace(t), "facts.json");
+  symlinkSync(victim, `${target}.tmp-${process.pid}`);
 
-    atomic(target, "{}\n");
+  atomic(target, "{}\n");
 
-    assert.equal(readFileSync(victim, "utf8"), "untouched\n");
-    assert.equal(readFileSync(target, "utf8"), "{}\n");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  }
+  assert.equal(readFileSync(victim, "utf8"), "untouched\n");
+  assert.equal(readFileSync(target, "utf8"), "{}\n");
 });
 
 test("a link planted at the exact temporary name is refused, not written through", async (t) => {
@@ -54,15 +47,9 @@ test("a link planted at the exact temporary name is refused, not written through
     crypto.randomBytes = real;
     syncBuiltinESMExports();
   });
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  const outside = mkdtempSync(join(tmpdir(), "anatomiya-atomic-outside-"));
-  t.after(() => {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  });
-  const victim = join(outside, "victim.txt");
+  const victim = join(workspace(t), "victim.txt");
   writeFileSync(victim, "untouched\n");
-  const target = join(dir, "facts.json");
+  const target = join(workspace(t), "facts.json");
   symlinkSync(victim, `${target}.tmp-${process.pid}-${"ab".repeat(8)}`);
 
   assert.throws(() => atomic(target, "{}\n"), /EEXIST/);
@@ -86,8 +73,7 @@ test("a write that fails part way leaves no temporary file behind", async (t) =>
     fs.writeFileSync = real;
     syncBuiltinESMExports();
   });
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = workspace(t);
 
   assert.throws(() => atomic(join(dir, "facts.json"), "{}\n"), /ENOSPC/);
   assert.deepEqual(readdirSync(dir), []);

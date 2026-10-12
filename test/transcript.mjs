@@ -49,16 +49,11 @@ export const prompted = (at = new Date(), content = "go") => ({ type: "user", ti
 
 /**
  * One tool call: the call stamped when it streams, its result when it returns.
- * A call run in the background returns at once, naming the task it started.
+ * A call run in the background returns at once, and a `notification` ends it.
  */
-export const toolCall = (id, from, to, { name = "Bash", background = false } = {}) => [
+export const toolCall = (id, from, to, { name = "Bash" } = {}) => [
   { type: "assistant", timestamp: new Date(from).toISOString(), message: { role: "assistant", content: [{ type: "tool_use", id, name, input: {} }] } },
-  {
-    type: "user",
-    timestamp: new Date(to).toISOString(),
-    message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "done" }] },
-    ...(background ? { toolUseResult: { backgroundTaskId: `task-${id}` } } : {}),
-  },
+  { type: "user", timestamp: new Date(to).toISOString(), message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "done" }] } },
 ];
 
 /**

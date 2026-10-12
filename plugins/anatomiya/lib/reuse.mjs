@@ -22,7 +22,7 @@ import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
-import { sessionStartIn, toolCallsIn, turnStartIn } from "./transcript.mjs";
+import { sessionStartIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -292,23 +292,18 @@ export function sessionStart(transcriptPath) {
   return entry.kind === "file" ? sessionStartIn(entry.head) : null;
 }
 
-/** When this turn's prompt arrived, off the transcript's tail (`turnStartIn`). */
-export const turnStart = (transcriptPath) => turnStartIn(readTail(transcriptPath, TRANSCRIPT_MOST));
-
 /**
  * Whether a moment falls inside one of the session's calls, widened a second
  * each side: some filesystems and the reflog keep whole seconds.
  */
 const inCall = (calls, ms) => calls.some((c) => c.from - 1000 <= ms && ms <= c.to + 1000);
 
-/** This session's tool calls, off the transcript's tail (`toolCallsIn`). */
-export const toolCalls = (transcriptPath) => toolCallsIn(readTail(transcriptPath, TRANSCRIPT_MOST));
-
 /**
  * The marks a transcript's tail already holds, from an ask or a record.
  *
- * A transcript that cannot be read holds none: the worst that costs is one more
- * search, where a mark read that was never there would skip a file nobody checked.
+ * Anything but text, which is what an unreadable transcript's tail is, holds
+ * none: the worst that costs is one more search, where a mark read that was
+ * never there would skip a file nobody checked.
  */
 export function askedMarksIn(tail) {
   const marks = new Set();
@@ -318,9 +313,6 @@ export function askedMarksIn(tail) {
   }
   return marks;
 }
-
-/** The marks this session's transcript already holds (`askedMarksIn`). */
-export const askedMarks = (transcriptPath) => askedMarksIn(readTail(transcriptPath, TRANSCRIPT_MOST));
 
 /**
  * Whether the last block a transcript's tail holds at a stop was this hook's own.
@@ -334,6 +326,3 @@ export function continuedByReuseIn(tail) {
   const last = tail.lastIndexOf("Stop hook feedback:");
   return last !== -1 && tail.indexOf(REASON_OPENING, last) !== -1;
 }
-
-/** Whether the last block this session saw at a stop was this hook's own (`continuedByReuseIn`). */
-export const continuedByReuse = (transcriptPath) => continuedByReuseIn(readTail(transcriptPath, TRANSCRIPT_MOST));

@@ -6,13 +6,14 @@
  * hunks `diff -U0` gives a file and the rule's answer on the file as that
  * commit left it.
  *
- * The oracle re-parses every file the rule left out and names any node that
- * starts on an added line and defines, builds or computes something: a
- * function, a class, a lambda, a call, an object creation, an interpolation, a
- * conditional, or a binding whose value holds anything but literals. It is a
- * flat scan over node types, written apart from the rule's own walk, so the
- * rule cannot pass by agreeing with itself. Read-only: git is asked, nothing
- * is checked out.
+ * The oracle re-parses every file the rule left out and names what an added
+ * line may define, build or compute: a function, a class, a lambda, a call, an
+ * object creation, an interpolation or a conditional holding a token on an
+ * added line, and a binding that starts on one whose value holds anything but
+ * literals. It charges each token to the nodes above it, up to the statement
+ * or member it belongs to, and is written apart from the rule's own walk, so
+ * the rule cannot pass by agreeing with itself. Read-only: git is asked,
+ * nothing is checked out.
  *
  * usage: node scripts/measure-inert.mjs [--commits N] [--samples N] <repository> [<repository> ...]
  */
@@ -57,8 +58,11 @@ const defining = (lang) => {
   return [...s.fn, ...s.cls, ...(s.wrap ?? []), ...(s.scope ?? []), ...s.annotation];
 };
 
-// A closing bracket, or the separator that follows one.
+// A closing bracket or a separator: a line of these alone opens nothing.
 const CLOSING = /^[)\]};,]$/;
+
+// The binding that may repeat the one above it or count off its place in a group, and the counter's node.
+export const COUNTED = { go: { const_spec: "iota" } };
 
 // What a literal value may hold below its own node: the parts of a string, a
 // number's sign, the members of a collection.
@@ -68,15 +72,21 @@ const LITERAL_PARTS = /^(?:string_(?:start|end|content|fragment|literal_content)
  * Every node that may add something callable and holds a token on an added
  * line, as `{ line, type, text }`: a definition, a call, a lambda, a
  * conditional or an interpolation between the token and the statement or
- * member it belongs to, so a call's added argument or closing bracket counts
- * and a constant added inside a class body does not count for the class. A
- * token inside a comment or a string's text is no token here, and an
- * interpolation counts on any added line it spans. An added line holding only
- * closing brackets is not charged: A91's rule calls a closing bracket inert
- * for every engine, since such a line starts no definition and no call, and
- * it is what a removed argument or a removed body leaves behind. A binding counts where it
- * starts on an added line and its value holds a named node of a type no
- * literal list names, or it carries a block to run when it does not match.
+ * member it belongs to, so a call's added argument counts and a constant
+ * added inside a class body does not count for the class. A token inside a
+ * comment or a string's text is no token here, and an interpolation counts on
+ * any added line it spans.
+ *
+ * An added line holding only closing brackets and separators is not charged:
+ * A91's rule calls a closing bracket inert for every engine, since such a line
+ * starts no definition and no call, and it is what a removed argument or a
+ * removed body leaves behind. A bracket beside anything else is charged, the
+ * last line of a string spread over lines included.
+ *
+ * A binding counts where it starts on an added line and its value holds a
+ * named node of a type no literal list names, or it carries a block to run
+ * when it does not match. A `COUNTED` binding with no value is no hit, and one
+ * with a value is read by its leaves: each a literal or the counter.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];
@@ -88,7 +98,7 @@ export function oracleHits(tree, lang, added) {
   const charged = new Map();
   const quiet = new Set([...s.comment, ...s.literal]);
   const tokens = [];
-  // The added rows that hold anything but closing brackets and the separators after them.
+  // The added rows that hold anything but closing brackets and separators.
   const opening = new Set();
   for (const todo = [[tree.rootNode, false]]; todo.length > 0; ) {
     const [node, inside] = todo.pop();
@@ -96,10 +106,14 @@ export function oracleHits(tree, lang, added) {
       for (const child of node.children) if (child) todo.push([child, inside || quiet.has(node.type)]);
       continue;
     }
-    if (s.comment.includes(node.type) || !onAddedRow(node.startPosition.row)) continue;
-    if (node.isNamed || !CLOSING.test(node.type)) opening.add(node.startPosition.row);
+    if (s.comment.includes(node.type)) continue;
+    if (node.isNamed || !CLOSING.test(node.type)) {
+      // A string spread over lines is on every row its text reaches, so none where it ends at a line's start.
+      const last = node.endPosition.column === 0 ? node.endPosition.row - 1 : node.endPosition.row;
+      for (let row = node.startPosition.row; row <= Math.max(last, node.startPosition.row); row++) if (onAddedRow(row)) opening.add(row);
+    }
     // A token inside a string's text is no token here.
-    if (!inside) tokens.push(node);
+    if (!inside && onAddedRow(node.startPosition.row)) tokens.push(node);
   }
   for (const node of tokens) {
     // A line of closing brackets alone starts no definition and no call (A91).
@@ -122,6 +136,15 @@ export function oracleHits(tree, lang, added) {
     }
     return null;
   };
+  // Read apart from `firstOdd`, by the leaves alone: whatever joins them, a name among them is a hit.
+  const oddLeaf = (top, counter) => {
+    for (const todo = [top]; todo.length > 0; ) {
+      const n = todo.pop();
+      if (n.namedChildCount === 0 && n.type !== counter && !plain(n)) return n;
+      for (const child of n.namedChildren) if (child) todo.push(child);
+    }
+    return null;
+  };
   const insideString = (node) => {
     for (let up = node.parent; up !== null; up = up.parent) if (s.literal.includes(up.type)) return true;
     return false;
@@ -136,8 +159,10 @@ export function oracleHits(tree, lang, added) {
     else if (s.bareInterpolation?.includes(node.type) && node.text === "$" && spansAdded(node)) hit(node, "bare interpolation");
     else if (onAddedRow(node.startPosition.row)) {
       if (s.binding.includes(node.type)) {
-        const value = (s.value ? node.childForFieldName(s.value) : null) ?? node.lastNamedChild;
-        const odd = value === null ? null : firstOdd(value);
+        const own = s.value ? node.childForFieldName(s.value) : null;
+        const counter = COUNTED[lang]?.[node.type];
+        const value = own ?? (counter ? null : node.lastNamedChild);
+        const odd = value === null ? null : counter ? oddLeaf(value, counter) : firstOdd(value);
         if (odd !== null) hit(node, `binding to ${odd.type}`);
         else if (s.alternative && node.childForFieldName(s.alternative) !== null) hit(node, "binding with an alternative");
       }
