@@ -833,8 +833,9 @@ async function runRepo(name, source, scratchDir, targets) {
 
     // And a producer of a stated co-change claim, on a branch that touches no companion.
     const shipped = cochangePlan(mapped);
-    row.cochange = cochangeCell(shipped);
-    if (shipped) {
+    if (!shipped) row.cochange = cochangeCell(null);
+    else {
+      // A clash leaves the cell unset, as it does the probe's: the probe never ran.
       const probed = probeOn("e2e/cochange", shipped.path, shipped.body, "co-change probe");
       if (probed.clash) return { row, problems, head, summary };
       row.cochange = cochangeCell(shipped, probed.report);

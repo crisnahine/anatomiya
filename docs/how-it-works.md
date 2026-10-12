@@ -1211,21 +1211,21 @@ the others read that offset as a delivery made there and stay silent. A batch cl
 while its offset is inside the window, judged against the transcript as it is when the batch claim
 is read. A call that finds the lock taken stays silent. A lock whose mtime is more than 7 seconds
 from the clock, either way, was left by a call that died holding it: the hook's 5 second timeout,
-plus the 2 seconds FAT rounds an mtime to. No call moves or removes a lock that may be
-live: the call that creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while
-it is still the one found dead, and every call then goes to the one create of the lock, where the
-losers stay silent. A lock token the system refuses to remove is left for the sweep, and a dead lock
-it refuses to remove makes the call answer alone. An exclusive create Windows refuses with EPERM,
-its answer for a name another process is still deleting, is tried again seven times, after waits
+plus the 2 seconds FAT rounds an mtime to. No call moves or removes a lock that may be live: the
+call that creates the lock token `<lock>.<its mtime in ms>` removes that lock, only while it is
+still the one found dead, and every call then goes to the one create of the lock, where the losers
+stay silent. A lock token the system refuses to remove is left for the sweep, and a dead lock it
+refuses to remove makes the call answer alone. An exclusive create Windows refuses with EPERM, its
+answer for a name another process is still deleting, is tried again seven times, after waits
 doubling from 1 ms to 64 ms, before the call answers alone. Batch claims, locks and lock tokens
 older than a day are swept, at most 4,096 names read. Started 3 and 8 at once, 20 rounds each, with
 no batch claim and with a stale one, the echo delivered once in every round, and 50 rounds each over
 a dead lock delivered once and left no lock or lock token. Without that directory, or where it
 cannot be written, the worst case is one copy per call. Inside a mapped checkout the prompt has
-already delivered the map before the first batch, and the batch adds none.
-`scripts/measure-echo.mjs` replays the rule over a transcript store: on 4,328 local transcripts on
-2026-10-11 it kept 9,267 of 46,370 deliveries. The hook reads back at most 1 MiB and parses each
-line of it. The measurements behind the rule are in
+already delivered the map before the first batch, so that batch adds none; a batch that later finds
+the window run out delivers as above. `scripts/measure-echo.mjs` replays the rule over a transcript
+store: on 4,328 local transcripts on 2026-10-11 it kept 9,267 of 46,370 deliveries. The hook reads
+back at most 1 MiB and parses each line of it. The measurements behind the rule are in
 `docs/research/what-a-repeated-hook-context-costs.md` and
 `docs/research/what-a-2-1-296-transcript-holds.md`. There is still no flag for it: nothing a scan
 takes tunes a hook.
