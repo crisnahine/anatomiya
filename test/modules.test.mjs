@@ -227,12 +227,12 @@ test("a parser is loaded by the body that parses with it, and by no other module
   // Statically imported anywhere, a runtime that is not installed is a module
   // that will not load: the worker would not start, and no file could say why.
   const loads = (file) => /import\(\s*["']web-tree-sitter["']\s*\)|from\s*["']web-tree-sitter["']/.test(readFileSync(join(LIB, file), "utf8"));
-  assert.deepEqual(readdirSync(LIB).filter((f) => f.endsWith(".mjs") && loads(f)), ["tree-sitter-file.mjs"]);
-  assert.doesNotMatch(readFileSync(join(LIB, "tree-sitter-file.mjs"), "utf8"), /from\s*["']web-tree-sitter["']/);
+  assert.deepEqual(readdirSync(LIB).filter((f) => f.endsWith(".mjs") && loads(f)), ["tree-sitter-runtime.mjs"]);
+  assert.doesNotMatch(readFileSync(join(LIB, "tree-sitter-runtime.mjs"), "utf8"), /from\s*["']web-tree-sitter["']/);
 });
 
 // What only a tree-sitter read needs: the engine's body, its rows, its walk and the tables behind them.
-const TREE_SITTER_ONLY = ["csharp-directives.mjs", "dimensions-tree.mjs", "tree-facets.mjs", "tree-shapes.mjs", "tree-sitter-file.mjs", "tree-walk.mjs"];
+const TREE_SITTER_ONLY = ["csharp-directives.mjs", "dimensions-tree.mjs", "inert-tree.mjs", "tree-facets.mjs", "tree-shapes.mjs", "tree-sitter-file.mjs", "tree-sitter-runtime.mjs", "tree-walk.mjs"];
 
 test("a Ruby shard thread loads the prism rows and no other engine's", () => {
   // The thread's heap hold is sized over what its own modules hold (`heldHeap`),
