@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ENGINE, ENGINE_VERSION, RETRY_BUDGET_MS, ensureRuntime, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { ENGINE, ENGINE_VERSION, RETRY_BUDGET_MS, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { ensureRuntime } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { GUARDS, createPool } from "../plugins/anatomiya/lib/pool.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
@@ -20,6 +21,7 @@ import { BROKEN } from "./tree-broken.mjs";
 
 const HOSTED = LANGUAGES.filter((l) => l.engine === "tree-sitter");
 const BODY = join(ANATOMIYA, "lib", "tree-sitter-file.mjs");
+const RUNTIME = join(ANATOMIYA, "lib", "tree-sitter-runtime.mjs");
 const WORKER = join(ANATOMIYA, "lib", "tree-sitter-worker.mjs");
 const GRAMMARS = join(ANATOMIYA, "grammars");
 
@@ -490,7 +492,8 @@ test("a fifo at a grammar's name or at the manifest's is answered without being 
   const script = join(dir, "ask.mjs");
   writeFileSync(
     script,
-    `import { ensureRuntime, parseTreeFile, probeGrammars } from ${JSON.stringify(pathToFileURL(BODY).href)};
+    `import { parseTreeFile, probeGrammars } from ${JSON.stringify(pathToFileURL(BODY).href)};
+import { ensureRuntime } from ${JSON.stringify(pathToFileURL(RUNTIME).href)};
 console.log = () => {};
 const [dir, listed] = process.argv.slice(2);
 await ensureRuntime();

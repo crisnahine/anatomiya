@@ -118,7 +118,9 @@ export async function runReuse(cwd, payload) {
   const calls = toolCallsIn(before);
   // Let go before the git reads, so two 64 MiB tails are never held at once.
   before = null;
-  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls })));
+  // One parse budget for the whole stop, however many checkouts it reads.
+  const parsing = { deadline: null };
+  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls, parsing })));
   const change = checkouts.flatMap((c, i) => (changes[i] ?? []).map((file) => ({ ...file, path: c.prefix + file.path })));
   if (change.length === 0) return {};
   // Read again past the git reads, which take seconds: an ask or a record

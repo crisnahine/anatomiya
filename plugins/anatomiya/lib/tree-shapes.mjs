@@ -27,6 +27,13 @@ export const SHAPES = {
     returnType: "return_type",
     bases: "superclasses",
     renamed: "alias",
+    // What the reuse check reads as a name bound to a literal, which asks nothing.
+    binding: ["assignment"],
+    value: "right",
+    literal: ["integer", "float", "true", "false", "none", "string", "concatenated_string"],
+    interpolation: ["interpolation"],
+    unary: ["unary_operator"],
+    collection: ["list", "tuple", "dictionary", "pair", "set"],
   },
   php: {
     fn: ["function_definition", "method_declaration"],
@@ -55,6 +62,15 @@ export const SHAPES = {
     callee: "function",
     caught: "name",
     renamed: "alias",
+    binding: ["const_element", "assignment_expression", "property_element"],
+    value: "default_value",
+    literal: ["integer", "float", "boolean", "null", "string", "encapsed_string", "nowdoc"],
+    // A double-quoted string interpolates any variable it names.
+    interpolation: ["variable_name"],
+    unary: ["unary_op_expression"],
+    collection: ["array_creation_expression", "array_element_initializer"],
+    // What holds bindings beside the modifiers and the type they share.
+    declaration: ["const_declaration", "property_declaration"],
   },
   go: {
     fn: ["function_declaration", "method_declaration"],
@@ -68,6 +84,14 @@ export const SHAPES = {
     tokensOf: [],
     name: "name",
     receiver: "receiver",
+    binding: ["const_spec", "var_spec"],
+    value: "value",
+    literal: ["int_literal", "float_literal", "imaginary_literal", "rune_literal", "interpreted_string_literal", "raw_string_literal", "true", "false", "nil"],
+    unary: ["unary_expression"],
+    collection: ["expression_list", "composite_literal", "literal_value", "literal_element", "keyed_element"],
+    // A composite literal's type says what it builds, and holds no value.
+    collectionType: "type",
+    declaration: ["const_declaration", "var_declaration", "var_spec_list"],
   },
   java: {
     fn: ["method_declaration"],
@@ -96,6 +120,26 @@ export const SHAPES = {
     member: "field",
     // The name of an annotation's argument.
     key: "key",
+    binding: ["variable_declarator"],
+    value: "value",
+    literal: [
+      "decimal_integer_literal",
+      "hex_integer_literal",
+      "octal_integer_literal",
+      "binary_integer_literal",
+      "decimal_floating_point_literal",
+      "hex_floating_point_literal",
+      "true",
+      "false",
+      "character_literal",
+      "string_literal",
+      "null_literal",
+    ],
+    // A string template's `\{...}` sits inside its string literal.
+    interpolation: ["string_interpolation"],
+    unary: ["unary_expression"],
+    collection: ["array_initializer"],
+    declaration: ["field_declaration", "local_variable_declaration", "constant_declaration"],
   },
   csharp: {
     fn: ["method_declaration", "local_function_statement"],
@@ -115,6 +159,12 @@ export const SHAPES = {
     tokensOf: [],
     name: "name",
     usingAlias: "name",
+    // A declarator's value has no field: it is its last named child.
+    binding: ["variable_declarator"],
+    literal: ["integer_literal", "real_literal", "boolean_literal", "character_literal", "string_literal", "verbatim_string_literal", "raw_string_literal", "null_literal"],
+    unary: ["prefix_unary_expression"],
+    collection: ["initializer_expression"],
+    declaration: ["field_declaration", "local_declaration_statement", "variable_declaration"],
   },
   rust: {
     fn: ["function_item"],
@@ -133,6 +183,11 @@ export const SHAPES = {
     name: "name",
     implFor: "type",
     renamed: "alias",
+    binding: ["const_item", "static_item", "let_declaration"],
+    value: "value",
+    literal: ["integer_literal", "float_literal", "boolean_literal", "char_literal", "string_literal", "raw_string_literal"],
+    unary: ["unary_expression"],
+    collection: ["array_expression", "tuple_expression"],
   },
   kotlin: {
     fn: ["function_declaration"],
@@ -148,5 +203,16 @@ export const SHAPES = {
     tokensOf: ["import"],
     renames: { token: "as" },
     name: "name",
+    // A property's value has no field: it is its last named child.
+    binding: ["property_declaration"],
+    literal: ["number_literal", "character_literal", "string_literal", "multiline_string_literal"],
+    // This grammar has no boolean or null literal: `true`, `false` and `null` are identifiers with that text.
+    word: ["identifier"],
+    interpolation: ["interpolation"],
+    // It also reads `$name` in a one-line string as a content node holding the lone `$`.
+    bareInterpolation: ["string_content"],
+    unary: ["unary_expression"],
+    // `listOf(...)` is a call, so nothing here is a collection literal.
+    collection: [],
   },
 };

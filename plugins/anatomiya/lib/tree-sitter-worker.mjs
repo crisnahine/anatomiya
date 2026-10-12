@@ -9,7 +9,8 @@
  */
 import { readFileSync } from "node:fs";
 
-import { ENGINE, ENGINE_VERSION, ensureRuntime, failure, parseTreeFile } from "./tree-sitter-file.mjs";
+import { ENGINE, ENGINE_VERSION, failure, parseTreeFile } from "./tree-sitter-file.mjs";
+import { ensureRuntime } from "./tree-sitter-runtime.mjs";
 
 process.on("message", async ({ rel, path = rel, abs, lang, withProgram = false, placed = false }) => {
   let payload;

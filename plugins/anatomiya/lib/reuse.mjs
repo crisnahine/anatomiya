@@ -16,6 +16,7 @@ import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
 import { gitBuffered, operationUnfinished } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
+import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
 import { embeddedIn, engineOf, language } from "./langs.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
@@ -61,156 +62,7 @@ const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 // Only the file right under the directory: measured on the corpus, code nested
 // deeper under a `migrations` segment (angular's schematics, prisma's
 // `core/migrations`, openproject's `db/migrate/tables`) is ordinary library code.
-const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
-
-// The only lines a hunk may hold and still ask nothing, per engine: a comment,
-// an import, a name bound to a literal or a member of one, and a closing
-// bracket. Anything else may define something callable, so it asks.
-const V = "\0";
-const KEY = { oxc: String.raw`(?:[A-Za-z_$][\w$]*|\0|\[\0\])\s*:\s*`, prism: String.raw`(?:[A-Za-z_]\w*[?!]?:\s*|\0:?\s*=>\s*|\0:\s*)` };
-const LITERAL = {
-  oxc: /(?<![\w$.])-?(?:0[xXbBoO][\da-fA-F_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?)n?(?![\w$])|(?<![\w$.])(?:true|false|null|undefined)(?![\w$])/g,
-  prism:
-    /%[wi](?:\[[^\]]*\]|\([^)]*\))|(?<![\w:]):[A-Za-z_]\w*[?!=]?|(?<![\w.])-?(?:0[xXbBoO][\da-fA-F_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?)(?![\w])|(?<![\w.:])(?:true|false|nil)(?![\w?!])/g,
-};
-const STRING = {
-  oxc: { '"': /"(?:[^"\\]|\\.)*"/y, "'": /'(?:[^'\\]|\\.)*'/y, "`": /`(?:[^`\\$]|\\.)*`/y },
-  prism: { '"': /"(?:[^"\\#]|\\.)*"/y, "'": /'(?:[^'\\]|\\.)*'/y },
-};
-const NAME = { oxc: String.raw`(?:export\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*(?:\s*:\s*[\w$.<>[\]|&, ]+?)?`, prism: String.raw`[A-Za-z_]\w*` };
-const INERT = {
-  oxc: {
-    bind: new RegExp(String.raw`^${NAME.oxc}\s*=\s*(?:\0(?:\s+as\s+const)?\s*;?|([[{]))$`),
-    other: new RegExp(
-      String.raw`^(?:import\s+(?:type\s+)?(?:[\w$\s,{}*\0]+?\s+from\s+)?\0|export\s+(?:type\s+)?[\w$\s,{}*]+?\s+from\s+\0|(?:(?:const|let|var)\s+(?:[\w$]+|\{[\w$\s,:]*\})\s*=\s*)?require\(\0\)(?:\.[\w$]+)?|\0|[\]})]+(?:\s*as\s+const)?\s*[,;]?)\s*;?$`
-    ),
-    block: /^(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{$/,
-    blockEnd: /^\}\s*from\s+\0\s*;?$/,
-  },
-  prism: {
-    bind: new RegExp(String.raw`^${NAME.prism}\s*=\s*(?:\0(?:\.freeze)?|([[{]))$`),
-    other: /^(?:require(?:_relative)?(?:\s+\0|\s*\(\s*\0\s*\))|(?:end|[\]})]+)(?:\.freeze)?,?)$/,
-  },
-};
-for (const [engine, rule] of Object.entries(INERT)) {
-  const member = String.raw`(?:${KEY[engine]})?\0`;
-  const list = String.raw`\s*(?:${member}\s*,\s*)*(?:${member}\s*,?\s*)?`;
-  rule.collection = new RegExp(String.raw`\[${list}\]|\{${list}\}`, "g");
-  rule.member = new RegExp(String.raw`^(?:[\]}]+\s*,\s*)?(?:${KEY[engine]})?(?:\0|[[{])\s*,?$`);
-}
-
-// A name inside a braced import or re-export, or a blank line between them.
-const BLOCK_NAME = /^$|^(?:type\s+)?[\w$]+(?:\s+as\s+[\w$]+)?\s*,?$/;
-
-// Past this a line asks unread, which bounds what each search costs.
-const LINE_READ = 400;
-
-/**
- * A line with its strings, numbers and literal collections each read as one
- * value and its comment dropped, or what it leaves open: a block comment, a
- * string or a heredoc that runs on to a later line.
- */
-function reduce(engine, line) {
-  const strings = STRING[engine];
-  let out = "";
-  let open = null;
-  for (let i = 0; i < line.length; ) {
-    const c = line[i];
-    if ((engine === "prism" && c === "#") || (engine === "oxc" && c === "/" && line[i + 1] === "/")) break;
-    if (engine === "oxc" && c === "/" && line[i + 1] === "*") {
-      const end = line.indexOf("*/", i + 2);
-      if (end === -1) {
-        open = "*/";
-        break;
-      }
-      i = end + 2;
-      out += " ";
-      continue;
-    }
-    if (c in strings) {
-      const re = strings[c];
-      re.lastIndex = i;
-      if (!re.test(line)) {
-        // Odd quotes leave a string running on; a closed one this does not read is no literal.
-        const odd = line.slice(i).split(c).length % 2 === 0;
-        return { code: null, open: odd && (engine === "prism" || c === "`") ? c : null };
-      }
-      out += V;
-      i = re.lastIndex;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  let code = out.replace(LITERAL[engine], V).trim();
-  const { collection } = INERT[engine];
-  for (let before = ""; before !== code; ) [before, code] = [code, code.replace(collection, V)];
-  return { code, open };
-}
-
-/** Which of a file's lines provably define nothing callable, blank ones included. */
-function inertLines(engine, lines) {
-  const rule = INERT[engine];
-  const inert = lines.map((line) => line.trim() === "");
-  let open = null;
-  let depth = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (open !== null) {
-      // Inside a comment is inert; inside a string or a heredoc is not a literal this reads.
-      const comment = open === "*/" || open === "=end";
-      const closed = open === "=end" ? line.startsWith("=end") : open.startsWith("<<") ? line.trim() === open.slice(2) : line.includes(open);
-      if (comment) inert[i] = !closed || line.slice(line.indexOf(open) + open.length).trim() === "";
-      if (closed) open = null;
-      continue;
-    }
-    if (inert[i]) continue;
-    if (line.length > LINE_READ) {
-      depth = 0;
-      continue;
-    }
-    if (engine === "prism") {
-      if (line.startsWith("=begin")) {
-        [inert[i], open] = [true, "=end"];
-        continue;
-      }
-      const heredoc = /<<[~-]?(["'`]?)([A-Za-z_]\w*)\1/.exec(line);
-      if (heredoc !== null) {
-        [open, depth] = [`<<${heredoc[2]}`, 0];
-        continue;
-      }
-    }
-    const { code, open: left } = reduce(engine, line);
-    open = left;
-    if (code === null) {
-      depth = 0;
-      continue;
-    }
-    if (code === "") inert[i] = true;
-    else if (depth > 0 && rule.member.test(code)) {
-      inert[i] = true;
-      depth += code.split(/[[{]/).length - code.split(/[\]}]/).length;
-    } else if (rule.other.test(code)) {
-      inert[i] = true;
-      depth = Math.max(0, depth - (code.split(/[\]}]/).length - 1));
-    } else {
-      const bound = rule.bind.exec(code);
-      depth = bound?.[1] ? 1 : 0;
-      inert[i] = bound !== null;
-      if (bound === null && rule.block?.test(code)) {
-        // A braced import or re-export spread over lines, read up to its `from`.
-        let j = i + 1;
-        const names = (k) => reduce(engine, lines[k]).code;
-        while (j < lines.length && lines[j].length <= LINE_READ && BLOCK_NAME.test(names(j) ?? "-")) j++;
-        if (j < lines.length && rule.blockEnd.test(names(j) ?? "")) {
-          for (let k = i; k <= j; k++) inert[k] = true;
-          i = j;
-        }
-      }
-    }
-  }
-  return inert;
-}
+export const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
 
 /**
  * The script a component file holds: the lines its blocks cover, and which of
@@ -219,7 +71,7 @@ function inertLines(engine, lines) {
  * Each block is read with the file blanked around it, since markup that opens
  * a comment would carry it into the script below.
  */
-function componentScript(engine, source, kind) {
+async function componentScript(engine, lang, source, kind) {
   const { blocks, unterminated } = scriptBlocks(source, kind);
   const lineAt = (offset) => source.slice(0, offset).split("\n").length;
   const spans = (unterminated ? [] : blocks).flatMap((b) => {
@@ -227,7 +79,7 @@ function componentScript(engine, source, kind) {
     if (body.trim() === "") return [];
     return [{ from: lineAt(b.end - body.trimStart().length), to: lineAt(b.start + body.trimEnd().length) }];
   });
-  const views = blocks.map((b) => inertLines(engine, blankOutside(source, b.start, b.end).split("\n")));
+  const views = await Promise.all(blocks.map((b) => inertLinesOf({ engine, lang, source: blankOutside(source, b.start, b.end) })));
   return { spans, inert: views[0]?.map((_, i) => views.every((view) => view[i])) ?? [] };
 }
 
@@ -280,12 +132,15 @@ export function reuseRecord(files) {
  * out, and so is a hunk whose every added line provably defines nothing
  * callable.
  *
+ * `parsing` holds the deadline the stop's tree-sitter parses share, set at the
+ * first such file: the hook reads every checkout of a stop against one budget.
+ *
  * `turnStart` adds what this turn committed: a turn told to write and commit
  * leaves the tree clean, and read against HEAD alone its work was never asked
  * about. The commits are found in the reflog rather than in state this writes,
  * since a marker file would be one more change `git status` reports (A91).
  */
-export async function pendingChange(root, { since = null, turnStart = null, calls = null } = {}) {
+export async function pendingChange(root, { since = null, turnStart = null, calls = null, parsing = { deadline: null } } = {}) {
   // git names every path from the top of the checkout, which is where a scan
   // writes its record. A record further down came with a copy of another
   // project, and joined against it git's paths name files nobody changed.
@@ -318,11 +173,10 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
     if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
-    // An engine with no line rule cannot tell a function from a comment, so its files ask nothing.
-    // The absence is deliberate until a language has a rule of its own.
+    // An engine with no rule cannot tell a function from a comment, so its files ask nothing.
     const lang = language(path);
     const engine = engineOf(lang);
-    if (!(engine in INERT)) continue;
+    if (!INERT_ENGINES.includes(engine)) continue;
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
@@ -333,9 +187,12 @@ export async function pendingChange(root, { since = null, turnStart = null, call
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
     const kind = embeddedIn(lang);
-    const script = kind === null ? null : componentScript(engine, entry.head, kind);
+    const script = kind === null ? null : await componentScript(engine, lang, entry.head, kind);
     const hunks = script === null ? added : clipped(added, script.spans);
-    const inert = script === null ? inertLines(engine, entry.head.split("\n")) : script.inert;
+    if (engine === "tree-sitter") parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
+    const inert = script === null ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline }) : script.inert;
+    // A missing runtime or grammar reads nothing, and a file nothing read asks nothing, as before any rule.
+    if (inert === null) continue;
     const defining = hunks.filter((h) => !inert.slice(h.from - 1, h.to).every(Boolean));
     if (defining.length === 0) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.

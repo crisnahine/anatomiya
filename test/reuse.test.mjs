@@ -11,6 +11,7 @@ import { snapshot, transcript } from "./transcript.mjs";
 import { askedMarks, askedMarksIn, continuedByReuse, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
+import { REUSE_PARSE_MS } from "../plugins/anatomiya/lib/inert.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { corpusDrop } from "../plugins/anatomiya/lib/corpus.mjs";
@@ -133,20 +134,45 @@ test("an edited source file names only the lines it added", async (t) => {
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 2, to: 3, created: false }]]]);
 });
 
-test("a file of a language with no line rule of its own is not asked about", async (t) => {
+test("a tree-sitter file is asked about the hunks that may define something, and only those", async (t) => {
   const { dir, git, write } = repo(t);
   write("svc/total.py", "def total(xs):\n    return sum(xs)\n");
   git("add", "-A");
   git("commit", "-qm", "python");
-  // An edit and a new file, each adding a function: nothing here can tell that from a comment yet.
+  // The import hunk defines nothing and is left out; the function's hunk and the new file's are asked about.
   write("svc/total.py", "import os\n\n\ndef total(xs):\n    return sum(xs)\n\n\ndef mean(xs):\n    return total(xs) / len(xs)\n");
   write("cmd/main.go", "package main\n\nfunc main() {}\n");
+  write("cmd/doc.go", "// Package cmd runs the service.\npackage cmd\n");
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [
+    ["cmd/main.go", [{ from: 1, to: 3, created: true }]],
+    ["svc/total.py", [{ from: 6, to: 9, created: false }]],
+  ]);
+});
+
+test("a tree-sitter file reached after the stop's parse budget is asked about whole", async (t) => {
+  // Unread is not evidence: a comment the parse never reached asks.
+  const { dir, write } = repo(t);
+  write("svc/note.py", "# A note.\n");
+
+  assert.equal(await pendingChange(dir), null, "read in time, a comment asks nothing");
+  assert.deepEqual(hunksOf(await pendingChange(dir, { parsing: { deadline: performance.now() - 1 } })), [["svc/note.py", [{ from: 1, to: 1, created: true }]]]);
+});
+
+test("the parse budget starts at the first tree-sitter file and is shared by every checkout of the stop", async (t) => {
+  const { dir, write } = repo(t);
   write("src/b.ts", NEW_B);
+  const parsing = { deadline: null };
+  await pendingChange(dir, { parsing });
+  assert.equal(parsing.deadline, null, "a stop with no tree-sitter file starts no clock");
 
-  assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/b.ts", [{ from: 1, to: 3, created: true }]]]);
-
-  rmSync(join(dir, "src/b.ts"));
-  assert.equal(await pendingChange(dir), null, "with the TypeScript file gone the turn asks nothing");
+  write("svc/note.py", "# A note.\n");
+  const before = performance.now();
+  await pendingChange(dir, { parsing });
+  assert.ok(parsing.deadline >= before + REUSE_PARSE_MS && parsing.deadline <= performance.now() + REUSE_PARSE_MS, String(parsing.deadline));
+  const started = parsing.deadline;
+  await pendingChange(dir, { parsing });
+  assert.equal(parsing.deadline, started, "a later file reads against the same deadline");
 });
 
 test("a change that adds no source line has nothing to check", async (t) => {
@@ -1214,11 +1240,12 @@ test("the hook is silent wherever it has nothing to ask", async (t) => {
 });
 
 test("the git reads fit inside the time the hook asks Claude Code for", () => {
-  // A hook killed at its timeout answers nothing at all. The payload wait and
-  // both git reads have to end first, with a second to spare for the rest.
+  // A hook killed at its timeout answers nothing at all. The payload wait, both
+  // git reads and the stop's tree-sitter parses have to end first, with a
+  // second to spare for the rest.
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks.Stop[0].hooks[0].timeout;
 
-  assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} against ${declared}s`);
+  assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + REUSE_PARSE_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} + ${REUSE_PARSE_MS} against ${declared}s`);
 });
 
 test("a deletion in the tree adds no git read to the two the budget allows", { ...needsShebang, ...needsPathControl }, async (t) => {
