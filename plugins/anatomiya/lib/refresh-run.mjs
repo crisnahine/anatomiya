@@ -9,7 +9,8 @@ import { basename, join } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
-import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
+import { readFacts, readRecord } from "./facts.mjs";
+import { atomic, writeTemp } from "./store.mjs";
 import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";

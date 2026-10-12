@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -9,7 +9,7 @@ import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, factsJson, schemaProblem, writeFacts, readFacts, readLayout, readRecord, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { factsJson, schemaProblem, writeFacts, readFacts, readLayout, readRecord, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { knownNames } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 
@@ -764,81 +764,6 @@ test("a record is measured by its bytes on disk, not by its decoded length", (t)
   assert.equal(facts, null);
   assert.match(unreadable ?? "", /does not parse as JSON/);
   assert.doesNotMatch(unreadable, /MB/);
-});
-
-test("the replace never writes through a link planted where its temporary file goes", () => {
-  // The directories are resolved (F2), and the temporary name beside the
-  // destination was not: it was `<path>.tmp-<pid>`, predictable, and opened
-  // with a plain write that follows a link. A repository shipping that name as
-  // a tracked symlink had the scan write the map's bytes wherever it pointed.
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  const outside = mkdtempSync(join(tmpdir(), "anatomiya-atomic-outside-"));
-  try {
-    const victim = join(outside, "victim.txt");
-    writeFileSync(victim, "untouched\n");
-    const target = join(dir, "facts.json");
-    symlinkSync(victim, `${target}.tmp-${process.pid}`);
-
-    atomic(target, "{}\n");
-
-    assert.equal(readFileSync(victim, "utf8"), "untouched\n");
-    assert.equal(readFileSync(target, "utf8"), "{}\n");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  }
-});
-
-test("a link planted at the exact temporary name is refused, not written through", async (t) => {
-  // The name is unpredictable, which the test above leans on; this one takes
-  // the prediction away and leaves `wx` alone to stand between the write and
-  // the link.
-  const crypto = (await import("node:crypto")).default;
-  const { syncBuiltinESMExports } = await import("node:module");
-  const real = crypto.randomBytes;
-  crypto.randomBytes = (n) => Buffer.alloc(n, 0xab);
-  syncBuiltinESMExports();
-  t.after(() => {
-    crypto.randomBytes = real;
-    syncBuiltinESMExports();
-  });
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  const outside = mkdtempSync(join(tmpdir(), "anatomiya-atomic-outside-"));
-  t.after(() => {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  });
-  const victim = join(outside, "victim.txt");
-  writeFileSync(victim, "untouched\n");
-  const target = join(dir, "facts.json");
-  symlinkSync(victim, `${target}.tmp-${process.pid}-${"ab".repeat(8)}`);
-
-  assert.throws(() => atomic(target, "{}\n"), /EEXIST/);
-  assert.equal(readFileSync(victim, "utf8"), "untouched\n");
-  // And the entry it refused is left where it was: it is not this call's to remove.
-  assert.ok(lstatSync(`${target}.tmp-${process.pid}-${"ab".repeat(8)}`).isSymbolicLink());
-});
-
-test("a write that fails part way leaves no temporary file behind", async (t) => {
-  // ENOSPC arrives after the temporary file exists, and the write sat outside
-  // the cleanup, so a full disk left `facts.json.tmp-*` beside the map.
-  const fs = (await import("node:fs")).default;
-  const { syncBuiltinESMExports } = await import("node:module");
-  const real = fs.writeFileSync;
-  fs.writeFileSync = (file, body, ...rest) => {
-    real(file, String(body).slice(0, 1), ...rest);
-    throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
-  };
-  syncBuiltinESMExports();
-  t.after(() => {
-    fs.writeFileSync = real;
-    syncBuiltinESMExports();
-  });
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-
-  assert.throws(() => atomic(join(dir, "facts.json"), "{}\n"), /ENOSPC/);
-  assert.deepEqual(readdirSync(dir), []);
 });
 
 test("the layout is written beside the record, and reads back as the record's own", (t) => {
