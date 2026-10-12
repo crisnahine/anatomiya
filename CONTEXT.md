@@ -104,8 +104,8 @@ _Avoid_: refill, reclaim, unfold
 **Pinned ceiling**:
 The area ceiling a pin records where its give-back raised the ceiling past the plain one. A scan
 under that pin folds to it and gives nothing back, so the partition holds still until the pin moves;
-a pin that records none folds at the plain ceiling. One above twice the plain ceiling for the pin's
-own corpus makes the pin unreadable.
+a pin that records none folds at the plain ceiling. A pin that records one above twice the plain
+ceiling for its own corpus is refused.
 _Avoid_: saved ceiling, frozen ceiling, area limit
 
 **Engine**:
@@ -481,21 +481,15 @@ the path in hand, and no area file carries it.
 _Avoid_: warning, hint, directive, message
 
 **Batch claim**:
-The file the first call of a parallel batch to deliver the map leaves under
-`${CLAUDE_PLUGIN_DATA}/echo/`, one per transcript and map, naming the transcript offset it read to.
-The batch's other calls read it as a delivery made at that offset, since none of their records is in
-the transcript yet. It is decided under a lock beside it, a file made with an exclusive create and
-broken only once its mtime is more than 7 s from the clock either way, the echo's 5 s hook timeout
-plus the 2 s a FAT mtime can be off by, and both are swept after a day. Where the plugin
-names no data directory there is none, and each call answers alone.
+What one call of a parallel batch leaves, per transcript and map, so that only it delivers the map:
+how far into the transcript it had read, which the batch's other calls take as a delivery made
+there, since none of their records is in the transcript yet. Where the plugin has no data directory
+there is none, and each call answers alone.
 _Avoid_: claim (alone: that is a dimension's sentence), marker, token
 
 **Lock token**:
-The file named by the mtime of a dead lock beside a **batch claim**, `<lock>.<mtime in ms>`, whose
-exclusive create gives one call the right to remove that lock's generation: the lock file it found
-dead, told apart from a later lock at the same name by its inode and its mtime. That call removes the
-lock only while it is still that generation, then removes the lock token; every call then tries the
-one create of the lock, and those that lose it stay silent.
+What gives one call the right to break a dead lock beside a **batch claim**, for one generation of
+that lock: the lock file found dead, told apart from a later lock at the same name.
 _Avoid_: token (alone), lock (alone: that is the file it breaks)
 
 **Facts**:

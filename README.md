@@ -469,10 +469,10 @@ which prints one annotation per finding.
 so this branch is the first; for a co-change claim, that every one of the last changes that added
 such a file also made the other change. Severity caps at FIX whenever the map is stale, the
 predicate is partial, there was no merge base, or the area file never delivered the claim to that
-file in full, and a co-change finding also where the history was read from a base branch rather
-than a pin, where no one area file carries the claim, or where the branch touches more than 40
-files. A clean run under a cap is a weaker signal rather than a clean bill. Each finding says which
-cap applied.
+file in full, and a co-change finding also where the history was read from a base branch or HEAD
+rather than a pin, where no one area file carries the claim, or where the branch touches more than
+40 files. A clean run under a cap is a weaker signal rather than a clean bill. Each finding says
+which cap applied.
 
 ## Other tools
 

@@ -447,7 +447,7 @@ test("the echo delivers a map that differs from the one the window holds", needs
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
-test("the echo holds a delivery 150 KiB back and delivers again past 192 KiB", needsRuby, async (t) => {
+test("the echo stays silent over a delivery 150 KiB back and delivers again past 192 KiB", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const after = (bytes) => transcript(t, [delivered(first), filler(bytes)]);
@@ -558,7 +558,7 @@ test("echo processes started together deliver one copy per batch, with no batch 
   }
 });
 
-test("a lock held by another call holds this one, and a lock a minute old or a minute ahead is broken", needsRuby, async (t) => {
+test("a lock held by another call keeps this one silent, and a lock a minute old or a minute ahead is broken", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -591,7 +591,7 @@ test("a lock held by another call holds this one, and a lock a minute old or a m
   assert.match(held(-60_000).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock a minute old");
   assert.equal(existsSync(lock), false, "released after the delivery");
   assert.deepEqual(readdirSync(join(data, "echo")), [name], "nothing left of the lock it broke");
-  assert.deepEqual(lockEnds(echo), {}, "the batch claim it wrote holds");
+  assert.deepEqual(lockEnds(echo), {}, "the batch claim it wrote keeps the next call silent");
 
   assert.match(held(60_000).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock a minute ahead");
   assert.match(held(-7100).hookSpecificOutput?.additionalContext ?? "", /<repository-map /, "a lock 7.1 s old, past the slack");
@@ -671,7 +671,7 @@ test("three and eight calls that find a dead lock deliver one copy per batch and
   }
 });
 
-test("a dead lock replaced by a live one before it is broken holds the call, and the live one stays", needsRuby, async (t) => {
+test("a dead lock replaced by a live one before it is broken keeps the call silent, and the live one stays", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -768,7 +768,7 @@ function removalRefused(refuses, call) {
   return stubbed("rmSync", busy, () => stubbed("unlinkSync", busy, call));
 }
 
-test("a lock token that cannot be removed leaves the call to the lock's one create, so it holds where another call took the lock", needsRuby, async (t) => {
+test("a lock token that cannot be removed leaves the call to the lock's one create, so it stays silent where another call took the lock", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -813,7 +813,7 @@ test("a lock create refused while another process deletes the name is tried agai
   const [name] = readdirSync(join(data, "echo"));
   const lock = join(data, "echo", `${name}.lock`);
 
-  assert.deepEqual(createRefused((p) => p === lock, 2, call), {}, "held by the batch claim the first call wrote");
+  assert.deepEqual(createRefused((p) => p === lock, 2, call), {}, "kept silent by the batch claim the first call wrote");
   assert.deepEqual(readdirSync(join(data, "echo")), [name]);
 });
 
@@ -904,7 +904,7 @@ test("a lock create refused for any reason but a deletion is not tried again", n
   assert.equal(tries, 1);
 });
 
-test("a call that broke a dead lock and finds a live one in its place holds", needsRuby, async (t) => {
+test("a call that broke a dead lock and finds a live one in its place stays silent", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -996,7 +996,7 @@ test("a batch claim write that fails partway leaves the batch claim it replaces 
   assert.equal(readFileSync(claim, "utf8"), before);
 });
 
-test("a batch claim from later in the same transcript holds a sibling that read an earlier, shorter snapshot", needsRuby, async (t) => {
+test("a batch claim from later in the same transcript keeps a sibling silent that read an earlier, shorter snapshot", needsRuby, async (t) => {
   const dir = await railsish(t);
   const data = pluginData(t);
   const path = transcript(t, [filler(300 * 1024)]);
@@ -1040,7 +1040,7 @@ test("a window's first batch delivers once, before anything is in its transcript
   assert.deepEqual(call(), {});
 });
 
-test("a batch claim after a compaction holds nothing", needsRuby, async (t) => {
+test("a batch claim after a compaction keeps nothing silent", needsRuby, async (t) => {
   const dir = await railsish(t);
   pluginData(t);
   const path = transcript(t, [filler(10)]);
@@ -1181,7 +1181,7 @@ test("a subagent's window is found whatever case the session transcript's extens
   assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "b1c2" }), {});
 });
 
-test("the echo holds a delivery made after a compaction, and reads a null agent_id as the main thread", needsRuby, async (t) => {
+test("the echo stays silent over a delivery made after a compaction, and reads a null agent_id as the main thread", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [compact(), delivered(first)]);
