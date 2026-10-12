@@ -180,6 +180,40 @@ test("the oracle names a node in a binding's type, pattern or modifiers that is 
   }
 });
 
+test("the oracle names a sign on a literal that Kotlin or C# may bind to a user's operator, and passes a pair the language defines", async () => {
+  const kotlin = ['val a = +"a"', "val b = !1", "val c = -'a'", "val d = -1u", "val e = -1", "val f = !true", "val g = -1.5e-3f", ""].join("\n");
+  assert.deepEqual(await named("kotlin", kotlin, [[1, 7]]), [1, 2, 3, 4].map((line) => [line, "binding to unary_expression"]));
+  const csharp = ["class A {", '    string a = -"a";', "    bool b = !1;", "    long c = -1ul;", "    int d = ~1.5;", "    int e = -1;", "    int f = ~0;", "    int g = -'a';", "    bool h = !true;", "}", ""].join("\n");
+  assert.deepEqual(await named("csharp", csharp, [[2, 9]]), [2, 3, 4, 5].map((line) => [line, "binding to prefix_unary_expression"]));
+  // No user code stands behind an operator on a built-in type in the other five.
+  assert.deepEqual(await named("python", 'A = -"a"\n', [[1, 1]]), []);
+});
+
+test("the oracle passes a string made of its own text and a struct type made of names, and names what either holds past that", async () => {
+  for (const [lang, source, plain, odd, hit] of [
+    // Each: the lines made of text and names, the lines past them, and what the oracle names there.
+    ["csharp", "class A {\n    char a = 'x';\n    char b = F('x');\n}\n", [2, 2], [3, 3], "invocation_expression"],
+    ["python", 'A = f"{{}}"\nB = f"{{{x}}}"\n', [1, 1], [2, 2], "string holding interpolation"],
+    ["php", "<?php\nconst A = <<<'T'\nplain\nT;\n$b = <<<T\n{$x}\nT;\n", [1, 4], [5, 7], "binding to heredoc"],
+    ["go", "package m\n\nvar i = struct{ a int }{}\nvar w = struct{ a [f()]int }{}\n", [1, 3], [4, 4], "binding to call_expression"],
+    ["kotlin", "val r = 2.5\nval s = f(2.5)\n", [1, 1], [2, 2], "call_expression"],
+  ]) {
+    assert.deepEqual(await named(lang, source, [plain]), [], `${lang}: lines ${plain.join(" to ")}`);
+    assert.ok((await named(lang, source, [odd])).some((h) => h[1] === hit), `${lang}: ${hit}`);
+  }
+});
+
+test("the oracle reads | as joining types inside a Python annotation, and as an operator in a target", async () => {
+  const source = "a[b | c] = 1\nx[b | c]: int = 1\nx: a | b = 1\nx: list[a | b] = []\n";
+  assert.deepEqual(await named("python", source, [[1, 4]]), [[1, "binding holding binary_operator"], [2, "binding holding binary_operator"]]);
+});
+
+test("a C# directive that closes a conditional is no hit, and the one that opens it is", async () => {
+  const source = "class A {\n#if X\n    int a = 1;\n#endif\n#endregion\n}\n";
+  assert.deepEqual(await named("csharp", source, [[4, 5]]), []);
+  assert.deepEqual(await named("csharp", source, [[2, 2]]), [[2, "preproc_if"]]);
+});
+
 test("the oracle names an accessor opened on an added line, and an assignment that is an argument by its call", async () => {
   const kotlin = "class A {\n    val d: Int = 1\n        get() {\n            return h()\n        }\n    val e: Int = 1\n}\n";
   assert.deepEqual(await named("kotlin", kotlin, [[3, 3]]), [[3, "getter"]]);
@@ -210,6 +244,8 @@ test("a constant added to a class body or a lambda, or an import added inside a 
   const cases = [
     ["python", "class A:\n    X = 1\n    Y = 2\n", [[3, 3]]],
     ["kotlin", "fun f() {\n    run {\n        val x = 1\n    }\n}\n", [[3, 3]]],
+    ["php", "<?php\nenum En: string {\n    const X = 1;\n}\n", [[3, 3]]],
+    ["java", "@interface An {\n    int E = 1;\n}\n", [[2, 2]]],
     // A conditional around a whole file holds its lines as a body does.
     ["csharp", "#if HAVE_ASYNC\nusing System;\nusing System.Linq;\n#endif\n", [[3, 3]]],
   ];
@@ -235,7 +271,7 @@ test("a comment or a docstring added inside a definition is not taken for the de
 
 test("every node type the oracle names is one its grammar knows", async () => {
   const counted = (lang) => Object.entries(COUNTED[lang] ?? {}).flat();
-  for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l), ...(ACCESS[l] ?? []), ...(UNION[l] ? [UNION[l]] : [])]])) {
+  for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l), ...(ACCESS[l] ?? []), ...Object.values(UNION[l] ?? {})]])) {
     const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
     assert.deepEqual(types.filter((type) => language.idForNodeType(type, true) === null), [], lang);
   }
