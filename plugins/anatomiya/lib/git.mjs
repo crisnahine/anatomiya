@@ -17,7 +17,7 @@
  * caller may read output without.
  *
  * `blobReader` is the one child that outlives a call. It answers every blob
- * read at a commit, and hands a read it cannot answer to `gitBuffered`.
+ * read at a commit, and hands a read it cannot answer to `showBlob`.
  */
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -846,29 +846,72 @@ export async function showBlob(root, sha, path, { timeout, env, lazyFetch = fals
 
 const BATCH = ["cat-file", "--batch", "-Z"];
 
-// How long a closed reader's child gets to exit on its own before it is killed.
+// How long a closed reader's child gets to exit on its own before it is
+// killed, and how long a killed one is waited on.
 const CLOSE_GRACE_MS = 1000;
+
+// A header is the request and one word, or an object id, a type and a size:
+// 64 hex digits, `commit` and twenty digits of size fit in this beside a request.
+const HEADER_SLACK = 128;
+
+/** Whether `proc` has exited, waiting up to `ms` for it. */
+function exited(proc, ms) {
+  return new Promise((done) => {
+    if (proc.exitCode !== null || proc.signalCode !== null) return done(true);
+    const left = () => {
+      clearTimeout(timer);
+      done(true);
+    };
+    // One more turn of the loop before giving up, so an exit that arrived
+    // while this process was held up is read first.
+    const timer = setTimeout(() => {
+      setImmediate(() => {
+        proc.off("exit", left);
+        done(false);
+      });
+    }, ms);
+    proc.once("exit", left);
+  });
+}
 
 /**
  * Every blob read at one commit through one `git cat-file --batch -Z` child,
- * each answered as `showBlob` answers it.
+ * each answered as `showBlob` answers it. A read never rejects.
  *
  * One process per blob was 297 of the 310 git processes a check of 246 changed
  * files started. One child answers them all, one request in flight at a time.
  * `-Z` is git 2.42's, so a git that refuses it is a path users take: a child
  * that will not start, exits, breaks the framing or outlasts `timeout` on one
  * request hands that read and every later one to `showBlob`, and an answer
- * already given stands.
+ * already given stands. A stalled git costs the read in flight `timeout`
+ * twice, once here and once in `showBlob`.
+ *
+ * The child never fetches. With `lazyFetch`, a request it answers `missing`
+ * goes to `showBlob` alone and the child stays: the blobs a blobless clone
+ * does not hold are then fetched as many at a time as the caller reads, where
+ * one child would fetch them in turn (60 blobs from a local promisor: 0.8 s
+ * side by side, 2.5 s in turn).
  *
  * Never `--buffer`: git flushes each reply without it, which is what lets one
  * be read before the next request is written.
+ *
+ * `close()` ends the child's stdin and gives it `closeGrace` to leave before
+ * it is killed.
  */
-export function blobReader(root, sha, { timeout = GIT.timeoutMs, env = process.env, lazyFetch = false } = {}) {
-  const perCall = (path) => showBlob(root, sha, path, { timeout, env, lazyFetch });
+export function blobReader(
+  root,
+  sha,
+  { timeout = GIT.timeoutMs, env = process.env, lazyFetch = false, closeGrace = CLOSE_GRACE_MS } = {}
+) {
+  // `showBlob` throws where Node refuses the environment before the config is
+  // read; absent is what it answers under the same one once it has been.
+  const perCall = (path) =>
+    showBlob(root, sha, path, { timeout, env, lazyFetch }).catch(() => ({ ok: false, reason: "absent" }));
   let fallen = !isSha(sha) || refuse(BATCH) !== null;
   let child = null;
   let pending = null;
   let last = Promise.resolve();
+  const killed = new Set();
 
   const settle = (answer) => {
     const { timer, resolve: done } = pending;
@@ -878,8 +921,13 @@ export function blobReader(root, sha, { timeout = GIT.timeoutMs, env = process.e
   };
 
   const kill = () => {
-    child?.kill("SIGKILL");
+    const proc = child;
     child = null;
+    // A child that never started has no pid, and Node sends the signal for one
+    // to pid 0, which is this process's whole group.
+    if (!proc?.pid || !proc.kill("SIGKILL")) return;
+    killed.add(proc);
+    proc.once("exit", () => killed.delete(proc));
   };
 
   const fall = () => {
@@ -898,16 +946,23 @@ export function blobReader(root, sha, { timeout = GIT.timeoutMs, env = process.e
   const feed = (chunk) => {
     // Bytes nobody asked for: whose reply they belong to cannot be known.
     if (!pending) return fall();
-    const buf = pending.got.length ? Buffer.concat([pending.got, chunk]) : chunk;
-    pending.got = buf;
+    let body = chunk;
     if (pending.size === null) {
-      const end = buf.indexOf(0);
-      if (end === -1) return;
-      const header = buf.subarray(0, end);
+      const head = pending.head ? Buffer.concat([pending.head, chunk]) : chunk;
+      const end = head.indexOf(0);
+      if (end === -1) {
+        // More than any header holds and no end to it: not a reply.
+        if (head.length > pending.echo.length + HEADER_SLACK) return fall();
+        pending.head = head;
+        return;
+      }
+      const header = head.subarray(0, end);
       // `<request> missing`, and `ambiguous`, `excluded` and `submodule` the
       // same way: matched against the bytes sent, since a path can hold a space.
       if (header.subarray(0, pending.echo.length).equals(pending.echo)) {
-        return buf.length === end + 1 ? settle({ ok: false, reason: "absent" }) : fall();
+        if (head.length !== end + 1) return fall();
+        // Where the caller asked for a fetch, the per-call reader makes it.
+        return settle(lazyFetch ? null : { ok: false, reason: "absent" });
       }
       const reply = /^[0-9a-f]+ ([a-z]+) (\d+)$/.exec(header.toString("latin1"));
       if (!reply) return fall();
@@ -915,17 +970,21 @@ export function blobReader(root, sha, { timeout = GIT.timeoutMs, env = process.e
       if (reply[1] !== "blob") return refused("absent");
       if (Number(reply[2]) > MAX_FILE_BYTES) return refused("over size cap");
       pending.size = Number(reply[2]);
-      pending.from = end + 1;
+      body = head.subarray(end + 1);
     }
     // Exactly the size the header gave, then one NUL: a body can hold both.
-    const stop = pending.from + pending.size;
-    if (buf.length <= stop) return;
-    if (buf.length > stop + 1 || buf[stop] !== 0) return fall();
-    settle({ ok: true, content: Buffer.from(buf.subarray(pending.from, stop)) });
+    // Joined once, since a join per chunk copies the reply so far each time.
+    pending.parts.push(body);
+    pending.held += body.length;
+    if (pending.held <= pending.size) return;
+    if (pending.held > pending.size + 1) return fall();
+    const whole = Buffer.concat(pending.parts);
+    if (whole[pending.size] !== 0) return fall();
+    settle({ ok: true, content: whole.subarray(0, pending.size) });
   };
 
   const start = async () => {
-    const call = await prepared(root, BATCH, env, { lazyFetch, timeout });
+    const call = await prepared(root, BATCH, env, { lazyFetch: false, timeout });
     // Closed while the repository's config was being read, or it could not be read.
     if (fallen || call.unread) return fall();
     const mine = spawn("git", call.args, { cwd: root, stdio: ["pipe", "pipe", "ignore"], env: call.env });
@@ -935,29 +994,41 @@ export function blobReader(root, sha, { timeout = GIT.timeoutMs, env = process.e
     // A git older than 2.42 prints its usage and exits here, before any reply.
     mine.on("close", live(fall));
     mine.stdout.on("data", live(feed));
-    // A write that races the child's death is an EPIPE here, and `close` reports the death.
-    mine.stdin.on("error", () => {});
+    mine.stdout.on("error", live(fall));
+    // A request written to a child that has closed its end is an EPIPE here.
+    mine.stdin.on("error", live(fall));
     // A reader nobody closed must not hold the process open. The clock on the
     // request in flight is what keeps it running while an answer is owed.
     mine.unref();
     mine.stdout.unref();
   };
 
+  // Never rejects: each read waits on the one before it, so a rejection here
+  // would be every later read's.
   const ask = async (request) => {
-    if (!child) await start();
-    if (fallen) return null;
-    return new Promise((done) => {
-      pending = {
-        resolve: done,
-        echo: Buffer.from(`${request} `),
-        got: Buffer.alloc(0),
-        size: null,
-        from: 0,
-        // From the moment it is the oldest request unanswered, which is the moment it is written.
-        timer: setTimeout(fall, timeout),
-      };
-      child.stdin.write(`${request}\0`);
-    });
+    try {
+      if (!child) await start();
+      if (fallen) return null;
+      return await new Promise((done) => {
+        pending = {
+          resolve: done,
+          echo: Buffer.from(`${request} `),
+          head: null,
+          size: null,
+          parts: [],
+          held: 0,
+          // From the moment it is the oldest request unanswered, which is the
+          // moment it is written.
+          timer: setTimeout(fall, timeout),
+        };
+        child.stdin.write(`${request}\0`);
+      });
+    } catch {
+      // With no descriptor left spawn hands back a child with no pipes, and an
+      // option it refuses is thrown from it.
+      fall();
+      return null;
+    }
   };
 
   return {
@@ -969,22 +1040,18 @@ export function blobReader(root, sha, { timeout = GIT.timeoutMs, env = process.e
       last = answer;
       return answer.then((blob) => blob ?? perCall(path));
     },
-    close() {
+    // Resolves when no child of this reader is left, or each was waited on as
+    // long as one is.
+    async close() {
       fallen = true;
       const closing = child;
-      if (!closing) return Promise.resolve();
-      return new Promise((done) => {
-        // Stdin closing makes git answer what it holds and exit; a child that will not is killed.
-        const timer = setTimeout(() => {
-          fall();
-          done();
-        }, CLOSE_GRACE_MS);
-        closing.once("exit", () => {
-          clearTimeout(timer);
-          done();
-        });
+      if (closing?.pid) {
+        // Stdin closing makes git answer what it holds and exit.
         closing.stdin.end();
-      });
+        await exited(closing, closeGrace);
+      }
+      fall();
+      await Promise.all([...killed].map((proc) => exited(proc, CLOSE_GRACE_MS)));
     },
   };
 }

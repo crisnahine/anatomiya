@@ -25,8 +25,8 @@ import { language } from "./langs.mjs";
 import { byCode } from "./paths.mjs";
 
 // How many reads are asked for at once. One child answers them in turn; the
-// bound is on what runs side by side once that child has handed over to the
-// per-call reader.
+// bound is on what runs side by side in the per-call reader: every read once
+// that child has handed over, and each fetch of a blob the clone does not hold.
 const READERS = 8;
 
 export async function readAtRevision(root, sha, files, { withSource = false, timeout, lazyFetch = false } = {}) {
