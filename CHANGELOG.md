@@ -31,7 +31,8 @@ by this version, with times and build digests masked
 (`docs/measurements/2026-10-11-what-changes-in-an-existing-map.md`).
 
 - The record. `facts.json` and `layout.json` differ in all 60: they carry the co-change record,
-  `layout.cochange`, empty where nothing was mined.
+  `layout.cochange`, empty where nothing was mined, and in the 40 that parse JavaScript `facts.json`
+  names `oxc-parser` 0.153.0.
 - The overview differs in 20 of 60. Area files: 7,388 identical, 784 changed, 4 added and none
   removed.
 - The hooks claim's unstated line drops the claim's own full stop before its colon: `React's hooks
@@ -170,6 +171,10 @@ by this version, with times and build digests masked
 - `npm run check:docs` holds a bare `.mjs` name in a `DECISIONS.md` done cell to the files the tree
   holds, so a renamed module named bare fails it, and reads a count written as a word, from
   zero to ninety-nine, `twenty-three` whole, as it reads digits.
+- `oxc-parser` 0.153.0 and `flow-remove-types` 2.334.0. Each of the 60 measured repositories was
+  scanned by this version under 0.151.0 and under 0.153.0: every overview and area file is the same,
+  and the records differ only in the parser version they name, the stamp and the checker's build
+  digest (`docs/measurements/2026-10-12-parser-0-153.md`).
 - Two questions were measured and not built. A type-checker program per package `tsconfig.json`
   lifts no measured repository past the 0.80 floor: Ghost goes from 54.9% to 63.3% at 2.49 times
   the time, react from 60.2% to 62.4%, prisma and eslint not at all, since most of each population
