@@ -23,8 +23,10 @@ vscode's `üm laut汉语`. The rest of the wider sets are ordinary paths: Next.j
 
 ## What the maps print
 
-The scan prints a directory name on 8,217 lines across the 60 maps (root lines, area headings,
-area listings). How many each set would quote:
+The scan prints a directory name on 8,217 lines across 59 of the 60 maps (root lines, area
+headings, area listings). The count missed cal.diy, whose `.claude/rules` is a link to
+`agents/rules`; none of the 259 names its map prints falls in any set below. How many each set
+would quote:
 
 | Set | lines quoted | repositories |
 |---|---|---|
@@ -36,6 +38,7 @@ None of the 102 names with a space reaches a map: each sits under a fixture tree
 
 ## Identity
 
-Base and branch wrote 8,231 files each (7,979 overview and area files, 200,276 lines). With
-`scannedAt`, `at`, `stamp`, `mtimeMs`, `measuredAt` and `measuredUnder` masked, every file is
-byte-identical in all 60 repositories.
+Base and branch wrote the same 8,232 overview and area files (208,901 lines). With `scannedAt`,
+`at`, `stamp`, `mtimeMs`, `measuredAt` and `measuredUnder` masked, every file is byte-identical in
+all 60 repositories. cal.diy's 253 were compared in a run of their own, since the first run's copy
+did not follow its linked `.claude/rules`.

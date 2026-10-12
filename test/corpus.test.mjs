@@ -1133,6 +1133,7 @@ test("an area given back that counts nothing gives its own place back too", () =
 /**
  * discover run in a worker, so a give-back that never settles fails at the
  * deadline: a test's own timeout cannot interrupt a synchronous loop.
+ * `countsNothing` crosses as its source, so it may name nothing outside itself.
  */
 async function discoverWithin(files, { countsNothing, ...options }, ms = 10_000) {
   const lib = new URL("../plugins/anatomiya/lib/areas.mjs", import.meta.url).href;
