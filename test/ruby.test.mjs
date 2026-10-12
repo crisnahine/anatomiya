@@ -2257,6 +2257,10 @@ test("the smallest hold is at least twice what a shard thread uses before it rea
   );
 });
 
+// What the heap tests below wait through: a dense megabyte took a loaded runner past the
+// 15 s of silence a parse child is allowed, and a hold that held then read as a stall.
+const PATIENT = { idleMs: 120_000, wallBaseMs: 600_000 };
+
 test("a tree too large for a shard's held heap is read again on a full one, and the first child is stopped and reaped", { ...needsRuby, ...needsShebang }, async () => {
   // 253 KB of calls nested without parentheses, under the size where the hold
   // grows to cover the densest shapes. Measured, it runs out of a 40 MB hold
@@ -2280,7 +2284,7 @@ test("a tree too large for a shard's held heap is read again on a full one, and 
     { mode: 0o755 }
   );
   const big = write("heap_heavy", ("p ".repeat(300) + "a\n").repeat(430));
-  const out = await parseRuby([big], { ruby, dimensions: RUBY_DIMENSIONS });
+  const out = await parseRuby([big], { ruby, dimensions: RUBY_DIMENSIONS, guards: PATIENT });
 
   assert.equal(out.results[0].ok, true, out.results[0].error);
   assert.equal(out.results[0].attempts, 1);
@@ -2311,7 +2315,7 @@ test("a held heap that runs out keeps the records already answered and reads aga
   );
   const small = [write("held_small_a", "a = 1\n"), write("held_small_b", "b = 2\n")];
   const big = write("held_dense", ("p ".repeat(300) + "a\n").repeat(430));
-  const out = await parseRuby([...small, big], { ruby, dimensions: RUBY_DIMENSIONS, shards: 1 });
+  const out = await parseRuby([...small, big], { ruby, dimensions: RUBY_DIMENSIONS, shards: 1, guards: PATIENT });
 
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["held_small_a.rb", true, 1], ["held_small_b.rb", true, 1], ["held_dense.rb", true, 1]]);
   assert.equal(out.error, null);
@@ -2340,7 +2344,7 @@ test("the densest trees measured under the size cap are read by one child per sh
   const hashes = write("dense_hashes", ("x=" + "{a:".repeat(200) + "1" + "}".repeat(200) + "\n").repeat(1_240));
   for (const f of [calls, hashes]) assert.ok(statSync(f.abs).size > 950 * 1024 && statSync(f.abs).size < 1024 * 1024, "inside the size cap");
 
-  const out = await parseRuby([calls, hashes], { ruby, dimensions: RUBY_DIMENSIONS, shards: 2 });
+  const out = await parseRuby([calls, hashes], { ruby, dimensions: RUBY_DIMENSIONS, shards: 2, guards: PATIENT });
 
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["dense_calls.rb", true, 1], ["dense_hashes.rb", true, 1]]);
   assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2, "one child per shard, none read again");
@@ -2439,14 +2443,20 @@ process.stdout.write(JSON.stringify(out.results.map((r) => [r.rel, Boolean(r.cra
   }
 });
 
-/** A program of `depth` nested blocks, in the shape prism answers `a {` with. */
-function nestedBlocks(depth) {
-  let body;
-  for (let line = depth; line >= 1; line--) {
-    const block = { t: "block", line, ...(body ? { body: { t: "statements", line: line + 1, body: [body] } } : {}) };
-    body = { t: "call", line, name: "a", block };
+/**
+ * The JSON of a program of `depth` nested blocks, in the shape prism answers `a {` with.
+ * Written as text: `JSON.stringify` recurses, and on arm64 Linux this thread's stack holds
+ * about 3,600 levels of it, fewer than the test below needs.
+ */
+function nestedBlocksJson(depth) {
+  let open = "";
+  let close = "";
+  for (let line = 1; line <= depth; line++) {
+    const inner = line < depth;
+    open += `{"t":"call","line":${line},"name":"a","block":{"t":"block","line":${line}${inner ? `,"body":{"t":"statements","line":${line + 1},"body":[` : ""}`;
+    close = `${inner ? "]}" : ""}}}${close}`;
   }
-  return { t: "program", line: 1, statements: { t: "statements", line: 1, body: [body] } };
+  return `{"t":"program","line":1,"statements":{"t":"statements","line":1,"body":[${open}${close}]}}`;
 }
 
 test("a check's tree nested deeper than a message decodes crosses to the parent whole", needsShebang, async () => {
@@ -2454,13 +2464,18 @@ test("a check's tree nested deeper than a message decodes crosses to the parent 
   // structured-clone message, whatever depth this runner's prism could parse.
   const home = mkdtempSync(join(dir, "deep-"));
   const lines = join(home, "lines");
-  const program = nestedBlocks(1_000);
-  writeFileSync(lines, JSON.stringify({ rel: "a.rb", ok: true, ast: program, errors: 0, length: 1 }) + "\n");
+  writeFileSync(lines, `{"rel":"a.rb","ok":true,"ast":${nestedBlocksJson(1_000)},"errors":0,"length":1}\n`);
   const ruby = stubRuby("deep", ["cat >/dev/null", READY, `cat '${lines}'`]);
   const out = await parseRuby([pair[0]], { ruby, dimensions: [] });
 
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.error ?? null, Boolean(r.crashed)]), [["a.rb", true, null, false]]);
-  assert.equal(JSON.stringify(out.results[0].program), JSON.stringify(program), "every level arrived");
+  // Walked for the reason the tree is written as text.
+  let depth = 0;
+  for (let call = out.results[0].program.statements.body[0]; call; call = call.block.body?.body[0]) {
+    depth++;
+    assert.deepEqual([call.t, call.line, call.name, call.block.t, call.block.line], ["call", depth, "a", "block", depth]);
+  }
+  assert.equal(depth, 1_000, "every level arrived");
 });
 
 test("a check reads a tree 700 blocks deep with the real prism", needsRuby, async (t) => {
