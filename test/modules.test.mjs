@@ -653,6 +653,7 @@ const ECHO_LOADS = [
   "hook-verbs.mjs",
   "hook.mjs",
   "langs.mjs",
+  "lock.mjs",
   "readiness.mjs",
   "rules.mjs",
   "store.mjs",
