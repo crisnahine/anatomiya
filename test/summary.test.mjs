@@ -211,6 +211,18 @@ test("unread history is reported with the reason it could not be read", () => {
   );
 });
 
+test("a co-change walk git refused, or one that stopped at its cap, says why nothing ships together", () => {
+  const walked = (cochange) => result({ layout: { roots: [], tests: [], more: { roots: 0, files: 0, floor: null }, principles: [], truncated: false, cochange } });
+  const refused = scanSummary(walked({ error: "fatal: unrecognized argument: --diff-merges=first-parent", truncated: false, claims: [] }), plan());
+  assert.ok(
+    scanLines(refused).includes("what ships together could not be read, so no co-change claim was stated: fatal: unrecognized argument: --diff-merges=first-parent"),
+    scanLines(refused).join("\n")
+  );
+  const capped = scanSummary(walked({ error: null, truncated: true, claims: [] }), plan());
+  assert.ok(scanLines(capped).includes("what ships together stopped at the most pairs it counts, so no co-change claim was stated"));
+  assert.ok(!scanLines(scanSummary(result(), plan())).some((l) => l.includes("ships together")), "a walk that ran says nothing");
+});
+
 test("the terminal says the history was a window, how big it was, and what it cost", () => {
   // The overview carries the claim alone, because it owes byte-stability and
   // both numbers move. This is the surface that may print them.

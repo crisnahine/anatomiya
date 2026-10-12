@@ -2272,13 +2272,14 @@ and the notice and `check` still speak for it. The area file prints it after the
 
 ```
 a .rb file added to "lib/rubocop/cop/style" ships with an edit to "config/default.yml"
-  100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here arrived that way
+  100 of the last 100 changes that added one, 22 authors; 266 of 299 such files here came in a change it counted
 ```
 
 A claim an area file carries counts as stated, in the scan's claims line and in the overview's `N
 stated`; one no area file carries counts in neither. A shallow clone, such as a CI checkout at depth
 one, reads too few changes to state anything, and a git older than 2.31 refuses `--diff-merges`, so
-the walk states nothing there either.
+the walk states nothing there either. Where git refused the walk, or the walk stopped at the most
+pairs it counts, the scan's summary says so in one line.
 
 Measured with the build's own walk and gates on 44 repositories, mined on the older four fifths of
 each one's changes and held out on the newest fifth: 24 claims in 11 repositories, and 1,563 of the

@@ -111,6 +111,9 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // counts and then named a gate no slot was on.
     historyTruncated: result.authors.error ? null : truncatedHistoryLine(result.authors.shallow, authorGated),
     authorGated,
+    // The record is the only other place a co-change walk that failed says so; absent where it ran.
+    ...(result.layout?.cochange?.error ? { cochangeError: result.layout.cochange.error } : {}),
+    ...(result.layout?.cochange?.truncated === true ? { cochangeTruncated: true } : {}),
     rules: {
       foreign: plan.foreign,
       unknown: plan.unknown,
@@ -272,6 +275,9 @@ export function scanLines(s) {
   if (s.historyError)
     lines.push(`history could not be read, so every claim fails the author gate: ${encode(firstLine(s.historyError))}`);
   if (s.historyTruncated) lines.push(s.historyTruncated);
+  if (s.cochangeError)
+    lines.push(`what ships together could not be read, so no co-change claim was stated: ${encode(firstLine(s.cochangeError))}`);
+  else if (s.cochangeTruncated) lines.push("what ships together stopped at the most pairs it counts, so no co-change claim was stated");
   // Named, not counted. The count was a number the reader then had to go and
   // resolve with `ls`, and the whole point of the line is that these files
   // reach the agent on every turn.
@@ -365,6 +371,7 @@ function encodeScan(s) {
     ...s,
     root: locator(s.root),
     historyError: s.historyError == null ? null : encode(s.historyError),
+    ...(s.cochangeError == null ? {} : { cochangeError: encode(s.cochangeError) }),
     rules: {
       ...s.rules,
       foreign: s.rules.foreign.map(locator),
