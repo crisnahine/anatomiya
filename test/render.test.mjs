@@ -735,7 +735,7 @@ test("a file with no area and a file whose area counted nothing are different fa
   // area is dropped when no dimension found a site in it. Both causes shared
   // one sentence, and it was only ever true of the first: six .js files holding
   // JSX in one directory were reported as "too few per directory" at a floor of
-  // three, and a synthetic Rails repo said it of two 40-file spec directories.
+  // three, and a synthetic Rails repo said it of two 40-file test trees.
   const out = renderOverview(result(), { uncovered: 30, orphaned: 12 });
 
   assert.match(out, /^- 12 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m);

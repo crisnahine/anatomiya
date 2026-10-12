@@ -7,6 +7,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-10-12
+
+No change to what the plugin does. The documents gate now holds the words the glossary displaces, and
+the release checklist gains a real session, `main`'s own CI and two scripts.
+
+### Changed
+
+- `check:docs` holds every `_Avoid_` entry of two or more words, or hyphenated, that carries no note
+  in parentheses, plural or not, in the documents and in the comments, test names and claims of
+  every source file. 18 entries with another sense here now carry a note naming the sense they
+  displace, and two slips were rewritten: `install directory` for the plugin root and `spec
+  directory` for a test tree.
+- `docs/releasing.md` asks for a real session with the plugin from the checkout before the tag, and
+  for `main`'s own CI on the merge commit. `node scripts/line-endings.mjs` runs the line-ending pass,
+  and `node scripts/measure-cochange.mjs` the co-change measurement the documents cite.
+
 ## [0.15.0] - 2026-10-12
 
 A scan reads the default branch's history and states what ships together: a change that adds a new
@@ -4451,7 +4467,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/crisnahine/anatomiya/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/crisnahine/anatomiya/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/crisnahine/anatomiya/compare/v0.13.4...v0.14.0
 [0.13.4]: https://github.com/crisnahine/anatomiya/compare/v0.13.3...v0.13.4

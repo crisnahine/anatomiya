@@ -582,7 +582,7 @@ test("a package answers the same whichever root above it is evaluated", () => {
 
 test("a spec in a sibling namespace does not answer this one's file", () => {
   // rails-api: app/services/payments/reports/generate.rb has no spec.
-  // Counted against the area's own tail, `reports`, every spec directory
+  // Counted against the area's own tail, `reports`, every directory of specs
   // ending in `/reports` answered it, and the shipping spec was credited to
   // Stripe. The kinds line then said 15 where the pairing claim said 13.
   const stripe = [
