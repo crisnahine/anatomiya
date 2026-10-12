@@ -386,13 +386,15 @@ function repositoryCommands(root, env, timeout) {
   const key = `${resolve(root)}\0${configSources(env)}`;
   const known = repositoryCache.get(key);
   if (known) return known;
-  const asked = run("git", ["config", "--show-scope", "--null", "--get-regexp", REPOSITORY_COMMANDS], {
+  // Started inside the chain: Node throws from the call itself over an
+  // environment it refuses, and that is one more way the config went unread.
+  const asked = Promise.resolve().then(() => run("git", ["config", "--show-scope", "--null", "--get-regexp", REPOSITORY_COMMANDS], {
     cwd: root,
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
     timeout,
     env: gitEnv(env),
-  }).then(
+  })).then(
     ({ stdout }) => replacementsFor(parseScopedConfig(stdout), env),
     // Exit 1 is no key matched. Anything else is kept as what went wrong, so
     // the call it stopped can say so.
@@ -900,24 +902,22 @@ function exited(proc, ms) {
  * The child never fetches. With `lazyFetch`, a request it answers `missing`
  * goes to `showBlob` alone and the child stays: the blobs a blobless clone
  * does not hold are then fetched as many at a time as the caller reads, where
- * one child would fetch them in turn (60 blobs from a local promisor: 0.8 s
- * side by side, 2.5 s in turn).
+ * one child would fetch them in turn (a check's read of 60 blobs a clone does
+ * not hold, from a local promisor: 1.1 s side by side, 4.3 s in turn).
  *
  * Never `--buffer`: git flushes each reply without it, which is what lets one
  * be read before the next request is written.
  *
- * `close()` ends the child's stdin and gives it `closeGrace` to leave before
- * it is killed.
+ * `close()` ends the child's stdin and gives it `closeGrace` (one second
+ * unless given) to leave before it is killed, then waits as long again for
+ * each child this reader killed to be reaped.
  */
 export function blobReader(
   root,
   sha,
   { timeout = GIT.timeoutMs, env = process.env, lazyFetch = false, closeGrace = CLOSE_GRACE_MS } = {}
 ) {
-  // `showBlob` throws where Node refuses the environment before the config is
-  // read; absent is what it answers under the same one once it has been.
-  const perCall = (path) =>
-    showBlob(root, sha, path, { timeout, env, lazyFetch }).catch(() => ({ ok: false, reason: "absent" }));
+  const perCall = (path) => showBlob(root, sha, path, { timeout, env, lazyFetch });
   let fallen = !isSha(sha) || refuse(BATCH) !== null;
   let child = null;
   let pending = null;
@@ -1051,8 +1051,8 @@ export function blobReader(
       last = answer;
       return answer.then((blob) => blob ?? perCall(path));
     },
-    // Resolves when no child of this reader is left, or each was waited on as
-    // long as one is.
+    // Resolves when no child of this reader is left, or when each one it
+    // killed has had `closeGrace` to be reaped.
     async close() {
       fallen = true;
       const closing = child;
@@ -1062,7 +1062,7 @@ export function blobReader(
         await exited(closing, closeGrace);
       }
       fall();
-      await Promise.all([...killed].map((proc) => exited(proc, CLOSE_GRACE_MS)));
+      await Promise.all([...killed].map((proc) => exited(proc, closeGrace)));
     },
   };
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import { needsBatchZ, needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
 import fs, { chmodSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -5801,13 +5801,6 @@ test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, asyn
   const listing = calls.filter((c) => c.startsWith("ls-tree -r"));
   assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
 });
-
-// `cat-file -Z` came with git 2.42. An older git hands every read to the
-// per-call reader, so a case that counts on the one child answering cannot be
-// set up there.
-const [gitMajor, gitMinor] = /(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"]).toString()).slice(1).map(Number);
-const needsBatchZ =
-  gitMajor > 2 || (gitMajor === 2 && gitMinor >= 42) ? {} : { skip: "this git is older than 2.42, so no child answers a read" };
 
 test("check spawns two cat-file children for a base and a head", { ...needsShebang, ...needsBatchZ }, async (t) => {
   const rels = ["src/f1.ts", "src/f2.ts", "src/f3.ts"];

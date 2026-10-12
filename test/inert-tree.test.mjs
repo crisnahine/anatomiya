@@ -174,7 +174,7 @@ test("a Go constant with no value or counted off iota asks nothing, and one hold
   assert.deepEqual(await asking("go", "package m\n\nconst (\n\tA = iota\n\tB\n\tC Color = 1 << iota\n)\n"), []);
 });
 
-test("a PHP string that interpolates through ${...} is no literal, in a target or in a value", async () => {
+test("a PHP string that interpolates through ${...} is no literal in a value, and a write through a subscript or a property asks whatever its string holds", async () => {
   const source = ['<?php', '$a["${foo()}"] = 1;', 'self::$x["${foo()}"] = 1;', '$a->{"${foo()}"} = 1;', '$a["{${foo()}}"] = 1;', '$x = "${foo()}";', '$x = "{${foo()}}";', '$x = "plain\\n";', '$a["k"] = 1;', ""].join("\n");
   assert.deepEqual(await asking("php", source), [2, 3, 4, 5, 6, 7, 9]);
 });
@@ -251,8 +251,8 @@ test("a line that holds a keyword or an opening bracket and no name asks, since 
 });
 
 test("a PHP assignment that is an argument asks, where one that is a statement of its own asks nothing", async () => {
-  const source = ["<?php", "foo(", "    $a = 1", ");", "$o->run(", "    [$b, $c] = [1, 2],", ");", "$a = 1;", "[$b, $c] = [1, 2];", "if ($b = 1) {", "}", ""].join("\n");
-  assert.deepEqual(await asking("php", source, [10, 11]), [2, 3, 5, 6, 10, 11]);
+  const source = ["<?php", "foo(", "    $a = 1", ");", "$o->run(", "    [$b, $c] = [1, 2],", ");", "$a = 1;", "[$b, $c] = [1, 2];", "if ($b = 1) {", "}", "foo(", "    $a['k'] = 1", ");", ""].join("\n");
+  assert.deepEqual(await asking("php", source, [10, 11]), [2, 3, 5, 6, 10, 11, 12, 13]);
 });
 
 test("a Python annotation joined by anything but | asks", async () => {
@@ -349,7 +349,6 @@ test("a C# const of a named type reads as inert: no user conversion is a constan
 
 test("a sign outside a value asks where it stands before a name, which may define the operator, and asks nothing before a literal", async () => {
   assert.deepEqual(await asking("python", 'x: -b = 1\nx: ~b = 1\nx: t[-b.c] = 1\nx: -1 = 1\nx: t[-"k"] = 1\na[-1] = 1\n'), [1, 2, 3, 6]);
-  assert.deepEqual(await asking("php", "<?php\n$a[-$b] = 1;\n$a[-1] = 1;\n"), [2, 3]);
   assert.deepEqual(await asking("go", "package m\n\nvar x [-n]int = [1]int{0}\nvar y [+3]int = [3]int{0}\n"), [3]);
 });
 

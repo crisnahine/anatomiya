@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { needsShebang } from "./platform.mjs";
+import { needsBatchZ, needsShebang } from "./platform.mjs";
 import { readAtRevision } from "../plugins/anatomiya/lib/revision.mjs";
 import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
 
@@ -33,13 +33,6 @@ function repo(t, build) {
     return git("rev-parse", "HEAD").trim();
   }
 }
-
-// `cat-file -Z` came with git 2.42. An older git hands every read to the
-// per-call reader, so a case that counts on the one child answering cannot be
-// set up there.
-const [gitMajor, gitMinor] = /(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"]).toString()).slice(1).map(Number);
-const needsBatchZ =
-  gitMajor > 2 || (gitMajor === 2 && gitMinor >= 42) ? {} : { skip: "this git is older than 2.42, so no child answers a read" };
 
 const FIRST = "export const n = 1\n";
 const SECOND = "export const n = 2\n";

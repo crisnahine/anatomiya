@@ -6,6 +6,8 @@ import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPool, defaultPoolSize, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
 import { pathToFileURL } from "node:url";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 
 function file(dir, name, body) {
   const abs = join(dir, name);
@@ -679,4 +681,36 @@ test("the default pool is sized off the cores this process may use, not the host
   assert.equal(defaultPoolSize(), 1);
   cores.mock.mockImplementation(() => 32);
   assert.equal(defaultPoolSize(), 8);
+});
+
+test("a pool closed in the tick its workers failed to start signals nothing and answers", { ...needsShebang, timeout: 60_000 }, async () => {
+  const lib = new URL("../plugins/anatomiya/lib/pool.mjs", import.meta.url).href;
+  const script = `
+    import { closeSync, openSync } from "node:fs";
+    import { createPool } from ${JSON.stringify(lib)};
+    const held = [];
+    try {
+      for (;;) held.push(openSync("/dev/null", "r"));
+    } catch {
+      // Every descriptor this process may hold is open.
+    }
+    const pool = createPool({ size: 2 });
+    const closing = pool.close();
+    for (const fd of held) closeSync(fd);
+    await closing;
+    process.stdout.write("closed");
+  `;
+
+  // The limit is lowered for this one process, and it runs in a process group
+  // of its own: the kill under test is a kill of the sender's group where the
+  // guard is gone.
+  const starved = spawn("sh", ["-c", 'ulimit -n 64 && exec "$0" --input-type=module -e "$1"', process.execPath, script], {
+    detached: true,
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let stdout = "";
+  starved.stdout.on("data", (chunk) => (stdout += chunk));
+  const [code, signal] = await once(starved, "close");
+
+  assert.deepEqual({ code, signal, stdout }, { code: 0, signal: null, stdout: "closed" });
 });

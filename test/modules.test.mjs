@@ -679,6 +679,10 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
     assert.deepEqual(oxc, [], `${verb} loads oxc`);
   }
   assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
+  // The other arms by count, before any lazy import and with each followed (A100).
+  const sizes = (opts) => Object.fromEntries(["echo", "notice", "reuse", "refresh"].map((verb) => [verb, armReach(verb, opts).size]));
+  assert.deepEqual(sizes(), { echo: 16, notice: 16, reuse: 16, refresh: 31 });
+  assert.deepEqual(sizes({ lazy: true }), { echo: 37, notice: 37, reuse: 37, refresh: 31 });
   assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
   assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
 });
