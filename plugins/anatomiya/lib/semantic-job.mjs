@@ -13,19 +13,28 @@
  */
 import { loadTypeScript } from "./semantic.mjs";
 import { readConfig, confinedCompilerHost } from "./tsconfig.mjs";
-import { SEMANTIC_DIMENSIONS } from "./dimensions-semantic.mjs";
+import { SEMANTIC_DIMENSIONS, siteStubs } from "./dimensions-semantic.mjs";
 import { crossing } from "./walk.mjs";
 
 /**
  * Run one job and report through `send`: `{ error }` and nothing after it,
- * or `{ built, config }`, then `{ rel, hits, resolution }` per file the
- * program holds, then `{ done }`. The rate is summed by the reader, which is
- * the side that knows which files a claim is counted over.
+ * or `{ built, config }`, then two passes over the files the program holds
+ * and `{ done }`. The first pass answers `{ rel, hits: {}, resolution, sites }`
+ * per file, `sites` being the stubs `siteStubs` reads off the tree, and ends
+ * with `{ sited }`: the rate and where each row has a site are all a reader
+ * needs to know the tier is degraded. The second walks the rows and answers
+ * `{ rel, hits, resolution }` again, with what the checker counted. Under a
+ * refused config there is one pass, its `hits` the stubs. The rate is summed by
+ * the reader, which is the side that knows which files a claim is counted over.
+ *
+ * `stopped` is asked before each file of the second pass: a reader that took
+ * the tier for degraded keeps none of its rows, so once it answers true the
+ * job says `{ done }` with the rest unwalked.
  *
  * Every failure is one message on the channel rather than a dead one: the
  * parent reads a channel that closes with nothing said as a crash.
  */
-export async function runJob(job, send, { load = loadTypeScript } = {}) {
+export async function runJob(job, send, { load = loadTypeScript, stopped = () => false } = {}) {
   try {
     const loaded = await load();
     if (!loaded) return send({ error: "typescript is not installed" });
@@ -47,22 +56,40 @@ export async function runJob(job, send, { load = loadTypeScript } = {}) {
 
     send({ built: true, config: { status: config.status, reason: config.reason } });
 
+    // A refused config degrades the tier whatever resolves, and a degraded
+    // tier keeps no type-checked row: where a row has a site is all the scan
+    // reads, so the stubs are the answer and the checker is not asked.
+    const refused = config.status === "degraded";
+    const held = [];
     for (const file of job.files) {
       const source = program.getSourceFile(file.abs);
       if (!source) continue;
-      const hits = {};
-      for (const dim of SEMANTIC_DIMENSIONS) {
-        const out = [];
-        try {
-          dim.run({ ts, checker, source }, (h) => out.push(crossing(h)));
-        } catch {
-          // A dimension that threw drops its own key for this file and leaves
-          // the rest standing, the same rule the syntactic worker follows.
-          continue;
+      const resolution = measureResolution(ts, program, checker, [file]);
+      const sites = siteStubs(ts, source);
+      send(refused ? { rel: file.rel, hits: sites, resolution } : { rel: file.rel, hits: {}, resolution, sites });
+      held.push({ file, source, resolution });
+    }
+
+    if (!refused) {
+      send({ sited: true });
+      for (const { file, source, resolution } of held) {
+        // A stop comes down the channel, which is read on a turn of the loop.
+        await new Promise(setImmediate);
+        if (stopped()) break;
+        const hits = {};
+        for (const dim of SEMANTIC_DIMENSIONS) {
+          const out = [];
+          try {
+            dim.run({ ts, checker, source }, (h) => out.push(crossing(h)));
+          } catch {
+            // A dimension that threw drops its own key for this file and leaves
+            // the rest standing, the same rule the syntactic worker follows.
+            continue;
+          }
+          if (out.length) hits[dim.key] = out;
         }
-        if (out.length) hits[dim.key] = out;
+        send({ rel: file.rel, hits, resolution });
       }
-      send({ rel: file.rel, hits, resolution: measureResolution(ts, program, checker, [file]) });
     }
 
     send({ done: true });

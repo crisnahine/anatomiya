@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, mkdirSync, symlinkSync, utimesSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { fork } from "node:child_process";
 import { repo } from "./ts-repo.mjs";
 import { needsPosixPermissions, needsSymlinks } from "./platform.mjs";
 import { scratch } from "./git-worktrees.mjs";
@@ -119,7 +120,8 @@ test("the tier answers a real file and reports a resolution rate", needsTs, asyn
     assert.equal(r.error, null);
     assert.equal(r.status, "ok");
     assert.ok(r.typedResolutionRate === null || r.typedResolutionRate > 0.5);
-    assert.ok(r.records.has("a.ts"));
+    // Nobody asked it to stop, so the answer kept is the walk's and not the stub before it.
+    assert.deepEqual(r.records.get("a.ts").hits, { law_of_demeter: [{ conforming: false, where: "go" }] });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -358,7 +360,7 @@ function stallingWorker(t, name, says) {
   const worker = join(dir, `${name}.mjs`);
   writeFileSync(
     worker,
-    ["process.send({ ready: true });", "process.on('message', () => {", says, "});", "setTimeout(() => {}, 60_000);"].join("\n")
+    ["process.send({ ready: true });", "process.on('message', (msg) => {", says, "});", "setTimeout(() => {}, 60_000);"].join("\n")
   );
   return { dir, worker };
 }
@@ -425,6 +427,152 @@ test("a checker that built its program and then stalled is killed by the shorter
 
   assert.equal(r.status, "degraded");
   assert.match(String(r.error ?? ""), /went quiet/);
+});
+
+/**
+ * A worker that answers one file's sites, low on resolution, says `sited`, and
+ * then does what it is told to with a stop and with the rows it has left.
+ */
+function sitedWorker(t, name, { onStop = "", then = "" }) {
+  return stallingWorker(
+    t,
+    name,
+    [
+      "  if (msg.stop) {",
+      onStop,
+      "    return;",
+      "  }",
+      "  process.send({ built: true, config: { status: 'ok', reason: null } });",
+      "  process.send({ rel: 'a.ts', hits: {}, resolution: { resolved: 1, total: 10 }, sites: { law_of_demeter: [{ conforming: true, where: null }] } });",
+      "  process.send({ sited: true });",
+      then,
+    ].join("\n")
+  ).worker;
+}
+
+const WALKED = "process.send({ rel: 'a.ts', hits: { law_of_demeter: [{ conforming: false, where: 'go' }] }, resolution: { resolved: 1, total: 10 } });";
+const STUBBED = [["a.ts", { hits: { law_of_demeter: [{ conforming: true, where: null }] }, resolution: { resolved: 1, total: 10 } }]];
+const REAL = [["a.ts", { hits: { law_of_demeter: [{ conforming: false, where: "go" }] }, resolution: { resolved: 1, total: 10 } }]];
+const aFile = [{ rel: "a.ts", abs: "/nowhere/a.ts", lang: "js" }];
+
+test("a degraded rate stops the dimension walk", { timeout: 15_000 }, async (t) => {
+  // The worker says done only when told to stop, so an answer at all is the stop arriving.
+  const worker = sitedWorker(t, "stops", { onStop: "    process.send({ done: true });" });
+  const seen = [];
+
+  const r = await runSemantic(tmpdir(), aFile, {
+    workerPath: worker,
+    stopWhen: (sited) => {
+      seen.push({ config: sited.config, records: [...sited.records] });
+      return true;
+    },
+  });
+
+  assert.deepEqual(seen, [{ config: { status: "ok", reason: null }, records: STUBBED }]);
+  assert.deepEqual({ status: r.status, reason: r.reason, rate: r.typedResolutionRate, error: r.error }, { status: "degraded", reason: "low-resolution", rate: 0.1, error: null });
+  assert.deepEqual([...r.records], STUBBED);
+});
+
+test("an ok rate waits for the real hits", { timeout: 15_000 }, async (t) => {
+  const worker = sitedWorker(t, "waits", { onStop: "    process.exit(3);", then: `  setTimeout(() => { ${WALKED} process.send({ done: true }); }, 100);` });
+
+  const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen: async () => false });
+
+  assert.equal(r.error, null);
+  assert.deepEqual([...r.records], REAL);
+});
+
+test("the job is never silent past idleMs while the parent decides", { timeout: 15_000 }, async (t) => {
+  // Six answers 100 ms apart under a 400 ms clock, and a reader that takes
+  // longer than the clock to decide: the walk it has not stopped keeps the
+  // clock fed, and its answer is the one kept when the reader says no.
+  const worker = sitedWorker(t, "deciding", {
+    then: `  let n = 0;\n  const tick = setInterval(() => { ${WALKED} if (++n === 6) { clearInterval(tick); process.send({ done: true }); } }, 100);`,
+  });
+
+  const r = await runSemantic(tmpdir(), aFile, {
+    workerPath: worker,
+    guards: { buildMs: 60_000, idleMs: 400 },
+    stopWhen: () => new Promise((resolve) => setTimeout(() => resolve(false), 500)),
+  });
+
+  assert.equal(r.error, null);
+  assert.deepEqual([...r.records], REAL);
+});
+
+test("a checker that finished before the reader decided keeps the hits it walked", { timeout: 15_000 }, async (t) => {
+  const worker = sitedWorker(t, "finished", { onStop: "    process.exit(3);", then: `  ${WALKED}\n  process.send({ done: true });` });
+  let decided;
+  const late = new Promise((resolve) => { decided = resolve; });
+
+  const r = await runSemantic(tmpdir(), aFile, {
+    workerPath: worker,
+    stopWhen: () => new Promise((resolve) => setTimeout(() => { resolve(true); decided(); }, 300)),
+  });
+  await late;
+
+  assert.equal(r.error, null);
+  assert.deepEqual([...r.records], REAL);
+});
+
+for (const [how, onStop, guards] of [
+  ["dies", "    process.exit(137);", {}],
+  ["never answers", "", { buildMs: 60_000, idleMs: 300 }],
+  ["answers twice", "    process.send({ done: true });\n    process.send({ done: true });", {}],
+]) {
+  test(`a checker that ${how} once told to stop leaves the degraded verdict it was stopped for`, { timeout: 15_000 }, async (t) => {
+    const worker = sitedWorker(t, "stopped-then", { onStop });
+
+    const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, guards, stopWhen: () => true });
+
+    assert.deepEqual({ status: r.status, reason: r.reason, rate: r.typedResolutionRate, error: r.error }, { status: "degraded", reason: "low-resolution", rate: 0.1, error: null });
+    assert.deepEqual([...r.records], STUBBED);
+  });
+}
+
+test("the worker takes a stop as a stop, however many come and whenever", { ...needsTs, timeout: 30_000 }, async () => {
+  // Told twice before the job and once after its answer: nothing but the job is run as one.
+  const dir = repo({ "tsconfig.json": `{"compilerOptions":{"strict":true}}`, "a.ts": `export const x = " a ".trim().toLowerCase();` });
+  const child = fork(fileURLToPath(new URL("../plugins/anatomiya/lib/semantic-worker.mjs", import.meta.url)), { stdio: "ignore" });
+  try {
+    const said = [];
+    await new Promise((resolve, reject) => {
+      child.on("exit", () => reject(new Error(`the worker exited after ${JSON.stringify(said)}`)));
+      child.on("message", (msg) => {
+        said.push(msg);
+        if (msg.ready) {
+          child.send({ stop: true });
+          child.send({ stop: true });
+          child.send({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] });
+        }
+        if (msg.done) child.send({ stop: true }, () => setTimeout(resolve, 200));
+      });
+    });
+    assert.deepEqual(said.map((m) => Object.keys(m)[0]), ["ready", "built", "rel", "sited", "done"]);
+  } finally {
+    child.removeAllListeners("exit");
+    child.kill("SIGKILL");
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a reader that cannot decide stops nothing", { timeout: 15_000 }, async (t) => {
+  const worker = sitedWorker(t, "undecided", { onStop: "    process.exit(3);", then: `  setTimeout(() => { ${WALKED} process.send({ done: true }); }, 100);` });
+
+  const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen: () => { throw new Error("no areas yet"); } });
+
+  assert.equal(r.error, null);
+  assert.deepEqual([...r.records], REAL);
+});
+
+test("a checker that never says its sites are answered is never asked about stopping", { timeout: 15_000 }, async (t) => {
+  const { worker } = stallingWorker(t, "unsited", `  process.send({ built: true, config: { status: 'ok', reason: null } });\n  ${WALKED}\n  process.send({ done: true });`);
+  let asked = 0;
+
+  const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen: () => ++asked });
+
+  assert.equal(asked, 0);
+  assert.deepEqual([...r.records], REAL);
 });
 
 test("a checker that cannot start degrades the tier instead of crashing the scan", async (t) => {

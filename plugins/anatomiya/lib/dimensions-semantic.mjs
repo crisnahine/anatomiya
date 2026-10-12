@@ -12,31 +12,54 @@ export const SEMANTIC_DIMENSIONS = [
     },
     tier: "semantic",
     langs: ["js", "jsx"],
+    sited: (ts, source) => eachChain(ts, source, () => true) === true,
     run({ ts, checker, source }, add) {
-      const seen = new Set();
-
-      const visit = (node) => {
-        if (ts.isCallExpression(node) && !seen.has(node)) {
-          const receivers = chainReceivers(ts, node);
-          if (receivers.length >= 2) {
-            // Outermost wins: every node inside this chain is marked so the
-            // walk below does not count the same chain again from halfway up.
-            markChain(ts, node, seen);
-            const types = new Set(
-              receivers
-                .map((r) => widened(ts, checker, r))
-                .filter((name) => name !== null)
-            );
-            add({ conforming: types.size <= 1, where: enclosingName(ts, node) });
-          }
-        }
-        ts.forEachChild(node, visit);
-      };
-
-      visit(source);
+      eachChain(ts, source, (node, receivers) => {
+        const types = new Set(
+          receivers
+            .map((r) => widened(ts, checker, r))
+            .filter((name) => name !== null)
+        );
+        add({ conforming: types.size <= 1, where: enclosingName(ts, node) });
+      });
     },
   },
 ];
+
+/**
+ * What each row would be credited in a file by a checker nobody believes: one
+ * conforming site where the row has any, read off the tree alone. A degraded
+ * tier drops every type-checked row, so all a fold asks of these hits is
+ * whether a file holds a site, and that needs no type.
+ */
+export function siteStubs(ts, source) {
+  const hits = {};
+  for (const dim of SEMANTIC_DIMENSIONS) {
+    if (dim.sited(ts, source)) hits[dim.key] = [{ conforming: true, where: null }];
+  }
+  return hits;
+}
+
+/**
+ * Every member-call chain of depth two or more, outermost first, handed to
+ * `found` with its receivers. A truthy answer ends the walk and is returned.
+ */
+function eachChain(ts, source, found) {
+  const seen = new Set();
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && !seen.has(node)) {
+      const receivers = chainReceivers(ts, node);
+      if (receivers.length >= 2) {
+        // Outermost wins: every node inside this chain is marked so the
+        // walk below does not count the same chain again from halfway up.
+        markChain(ts, node, seen);
+        if (found(node, receivers)) return true;
+      }
+    }
+    return ts.forEachChild(node, visit);
+  };
+  return visit(source);
+}
 
 /**
  * The expression inside its wrappers.
