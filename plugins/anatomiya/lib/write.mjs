@@ -2,7 +2,8 @@ import { lstatSync, mkdirSync, renameSync, rmdirSync, unlinkSync } from "node:fs
 import { basename, dirname, join } from "node:path";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
 import { claimsIn } from "./cochange.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, recordBytes, tooLargeSentence, tooLargeToPutBack, writePair, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBack, recordBytes, writePair } from "./facts.mjs";
+import { previousBytes, stagedInStore, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import {
   REFRESH_STATE,
@@ -23,7 +24,6 @@ import {
   resolveTargetDir,
   spelledOtherwise,
   stagedBy,
-  stagedInStore,
   targetStatus,
   turningOff,
 } from "./rules.mjs";

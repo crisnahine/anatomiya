@@ -8,10 +8,11 @@ import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
-import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, stagedPath, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
-import { writeFacts, writeTemp, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
+import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
+import { stagedPath } from "../plugins/anatomiya/lib/store.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 import { runDoctor } from "../plugins/anatomiya/lib/commands.mjs";
 
@@ -3634,32 +3635,6 @@ const stagedName = (name, pid, hex = "0123456789abcdef") => stagedPath(name, pid
 const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
 // The names a scan or a refresh stages in the store.
 const STORE_FILES = ["facts.json", "layout.json", "refresh.json"];
-
-test("the name a staged file is given is the name a later scan knows as one", (t) => {
-  const dir = workspace(t);
-  for (const target of EVERY_TARGET) {
-    for (const name of [overviewName(target), areaName(target, "0badf00d")]) {
-      const tmp = writeTemp(join(dir, name), "x");
-      assert.equal(stagedBy(tmp.slice(dir.length + 1), target), process.pid, tmp);
-    }
-    assert.equal(stagedPath("a", 7, "0123456789abcdef"), "a.tmp-7-0123456789abcdef");
-    // Under another target's extension, a name no scan gives a file, no prefix, and a suffix cut short or run long.
-    const other = EVERY_TARGET.find((o) => o !== target && !overviewName(o).endsWith(target.ext));
-    for (const name of [
-      ...(other ? [stagedName(overviewName(other), 1)] : []),
-      stagedName(`anatomiya-my-notes${target.ext}`, 1),
-      stagedName(`area-0badf00d${target.ext}`, 1),
-      stagedName(overviewName(target), 1, "0123456789abcde"),
-      stagedName(overviewName(target), 1, "0123456789abcdef0"),
-      stagedName(overviewName(target), 1, "0123456789ABCDEF"),
-      stagedName(overviewName(target), "x"),
-      `${stagedName(overviewName(target), 1)}.bak`,
-      overviewName(target),
-    ]) {
-      assert.equal(stagedBy(name, target), null, `${target.id}: ${name}`);
-    }
-  }
-});
 
 test("a temporary file an earlier scan left is removed from every directory this scan writes, and counted", (t) => {
   const dir = workspace(t);

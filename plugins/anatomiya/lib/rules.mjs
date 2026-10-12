@@ -19,6 +19,7 @@ import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readS
 import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 
 import { GENERATOR, PREFIX, TARGETS, areaName, isClaude, overviewName } from "./targets.mjs";
+import { stager } from "./store.mjs";
 
 /**
  * A path resolved through every link and alias the OS keeps, or null where it
@@ -146,46 +147,12 @@ export function isMapName(name, target = TARGETS.claude) {
 const AREA_STEM = new RegExp(`^${PREFIX}area-[0-9a-f]{8}$`);
 
 /**
- * Where a file is staged before it is renamed to `path`: beside it, under the
- * stager's process id and sixteen hex digits nobody can predict.
- */
-export const stagedPath = (path, pid, hex) => `${path}.tmp-${pid}-${hex}`;
-
-// The one reading of what `stagedPath` adds.
-const STAGED = /\.tmp-(\d+)-[0-9a-f]{16}$/;
-
-// The stager's process id where the name is one `owns` answers for with that added, or null.
-function stager(name, owns) {
-  const added = STAGED.exec(name);
-  return added !== null && owns(name.slice(0, added.index)) ? Number(added[1]) : null;
-}
-
-/**
  * The process that staged a temporary file of the map's, read off the file's
  * name, or null for any other name: a name a scan gives a file in this
  * directory, then what the stager adds to it.
  */
 export function stagedBy(name, target = TARGETS.claude) {
   return stager(name, (staged) => isMapName(staged, target));
-}
-
-/**
- * The temporary files a stopped writer left in the store, each with the process
- * that staged it: a regular file whose whole name is one of `names` and what
- * the stager adds. Never a link, a directory or a fifo, and never another name,
- * since the directory comes with the repository.
- */
-export function stagedInStore(dir, names) {
-  let entries;
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  return entries
-    .sort()
-    .map((name) => ({ name, pid: stager(name, (staged) => names.includes(staged)) }))
-    .filter(({ name, pid }) => pid !== null && isPlainFile(join(dir, name)));
 }
 
 /** What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`. */
