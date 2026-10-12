@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { PROSE_NAMES, READS, avoidedWords, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, avoidedWords, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { DECISIONS_DIR } from "../scripts/decisions.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
@@ -322,10 +323,10 @@ test("the count of grammars is read against the languages the registry routes to
 });
 
 test("the count of declarations the build contract states is read against the registry", (t) => {
-  const { status, output } = miscount(t, "DECISIONS.md", "The registry holds twelve declarations", "The registry holds thirteen declarations");
+  const { status, output } = miscount(t, `${DECISIONS_DIR}/B21.md`, "The registry holds twelve declarations", "The registry holds thirteen declarations");
 
   assert.equal(status, 1);
-  assert.ok(output.includes(`DECISIONS.md: says "The registry holds thirteen declarations", the registry holds 12`), output);
+  assert.ok(output.includes(`${DECISIONS_DIR}/B21.md: says "The registry holds thirteen declarations", the registry holds 12`), output);
 });
 
 test("the readiness table has a row for every line doctor prints, and for nothing else", (t) => {
@@ -497,9 +498,11 @@ test("a bare count of engines is read in the README, the walkthrough and the rel
 
 test("the build contract's engines are a pair a row compares, not a count", (t) => {
   // A row says "spans two engines" of any two, so the gate reads no bare count there and keeps "parser engines".
-  const { output } = miscount(t, "DECISIONS.md", "No row spans two engines", "No row spans four engines");
+  const { status, output } = miscount(t, `${DECISIONS_DIR}/B49.md`, "No row spans two engines", "No row spans four engines, of the five parser engines");
 
-  assert.ok(!output.includes('DECISIONS.md: says "four engines"'), output);
+  assert.equal(status, 1, "the row file went unread");
+  assert.ok(output.includes(`${DECISIONS_DIR}/B49.md: says "five parser engines", the registry declares 3`), output);
+  assert.ok(!output.includes('says "four engines"'), output);
 });
 
 test("a hyphenated count word is read whole, so its last word is never the count", (t) => {
@@ -980,10 +983,10 @@ test("a tracked copy with nothing wrong still passes, so the sweep is not failin
 });
 
 const ROWS = [
-  "| B1 | one | why | **done** `scripts/check-docs.mjs`, pinned by `scripts/gone.mjs` |",
-  "| B2 | two, as B1 has it (B9, H3) | `scripts/never.mjs` was measured, and `B7` is a key | pending |",
-  "| B3 | three | a Rails app keeps `test/models/user_test.rb` | **done** `test/models/user_test.rb` `lib/hook.mjs` |",
-].join("\n");
+  { id: "B1", decision: "one", why: "why", status: "**done** `scripts/check-docs.mjs`, pinned by `scripts/gone.mjs`" },
+  { id: "B2", decision: "two, as B1 has it (B9, H3)", why: "`scripts/never.mjs` was measured, and `B7` is a key", status: "pending" },
+  { id: "B3", decision: "three", why: "a Rails app keeps `test/models/user_test.rb`", status: "**done** `test/models/user_test.rb` `lib/hook.mjs`" },
+];
 
 test("a file a decision row names as done and the tree does not hold is named with its row", () => {
   // A row's status cell is the one place that says where a decision lives, and
@@ -997,11 +1000,13 @@ test("a path outside the status cell, or in a directory this tree does not hold,
   const tracked = new Set(["scripts/check-docs.mjs", "test/fixtures/a.json"]);
 
   assert.deepEqual(doneFilesGone(ROWS, tracked).map((g) => g.spelled), ["scripts/gone.mjs"]);
+  const whyNamesIt = [{ id: "B5", decision: "five", why: "`scripts/removed.mjs` was the slow path", status: "**done** `scripts/check-docs.mjs`" }];
+  assert.deepEqual(doneFilesGone(whyNamesIt, tracked), [], "a Why names what was measured, and only the Status says where the decision lives");
   assert.deepEqual(doneFilesGone(ROWS, new Set()), [], "and a tree git cannot list answers nothing");
 });
 
 test("a bare file name a decision row names as done is held to the names this tree holds", () => {
-  const rows = "| B4 | four | why | **done** `check-docs.mjs`, `gone.mjs`, `defaults.mjs`, `tsconfig.json` |";
+  const rows = [{ id: "B4", decision: "four", why: "why", status: "**done** `check-docs.mjs`, `gone.mjs`, `defaults.mjs`, `tsconfig.json`" }];
   const tracked = new Set(["scripts/check-docs.mjs"]);
 
   assert.deepEqual(doneFilesGone(rows, tracked), [{ row: "B4", spelled: "gone.mjs" }], "an example name in prose is passed, and only .mjs names are read");
@@ -1014,32 +1019,125 @@ test("a row citing a number no row has is named, and a key in a code span is not
 
 test("a decision row naming a file that is gone fails the check", needsCheckout, (t) => {
   const dir = repoCopy(t);
-  edit(join(dir, "DECISIONS.md"), (text) => text.replace("**done** `scan.mjs` (`corpus.scriptOnly`)", "**done** `scripts/scan-gone.mjs` (`corpus.scriptOnly`)"));
+  edit(join(dir, DECISIONS_DIR, "B55.md"), (text) => text.replace("**done** `scan.mjs` (`corpus.scriptOnly`)", "**done** `scripts/scan-gone.mjs` (`corpus.scriptOnly`)"));
 
   const { status, output } = check(dir);
 
   assert.equal(status, 1, output);
-  assert.match(output, /DECISIONS\.md: row B55 names `scripts\/scan-gone\.mjs` as done, and no such file is here/);
+  assert.ok(output.includes(`${DECISIONS_DIR}/B55.md: names \`scripts/scan-gone.mjs\` as done, and no such file is here`), output);
 });
 
 test("a decision row naming a bare file name that is gone fails the check", needsCheckout, (t) => {
   const dir = repoCopy(t);
-  edit(join(dir, "DECISIONS.md"), (text) => text.replace("**done** `scan.mjs` (`corpus.scriptOnly`)", "**done** `scan-gone.mjs` (`corpus.scriptOnly`)"));
+  edit(join(dir, DECISIONS_DIR, "B55.md"), (text) => text.replace("**done** `scan.mjs` (`corpus.scriptOnly`)", "**done** `scan-gone.mjs` (`corpus.scriptOnly`)"));
 
   const { status, output } = check(dir);
 
   assert.equal(status, 1, output);
-  assert.match(output, /DECISIONS\.md: row B55 names `scan-gone\.mjs` as done, and no such file is here/);
+  assert.ok(output.includes(`${DECISIONS_DIR}/B55.md: names \`scan-gone.mjs\` as done, and no such file is here`), output);
 });
 
 test("a decision row citing a row that does not exist fails the check", (t) => {
   const dir = repoCopy(t);
-  edit(join(dir, "DECISIONS.md"), (text) => text.replace("a recovered tree is not the file (B15)", "a recovered tree is not the file (B99)"));
+  edit(join(dir, DECISIONS_DIR, "B53.md"), (text) => text.replace("a recovered tree is not the file (B15)", "a recovered tree is not the file (B99)"));
 
   const { status, output } = check(dir);
 
   assert.equal(status, 1, output);
-  assert.match(output, /DECISIONS\.md: row B53 cites B99, and no row has that number/);
+  assert.ok(output.includes(`${DECISIONS_DIR}/B53.md: cites B99, and no row has that number`), output);
+});
+
+const INDEX = [
+  "## B. Engine",
+  "",
+  "| # | Decision | Status | File |",
+  "|---|---|---|---|",
+  "| B1 | One `a \\| b` site. | done | [B1](docs/decisions/B1.md) |",
+  "| B2 | Two. | partial | [B2](docs/decisions/B2.md) |",
+].join("\n");
+const rowFile = ({ id, section = "B. Engine", decision, status }) => `# ${id}\n\nSection: ${section}\n\n## Decision\n\n${decision}\n\n## Why\n\nBecause.\n\n## Status\n\n${status}\n`;
+const FILES = { B1: { id: "B1", decision: "One `a | b` site.", status: "**done** `walk.mjs`" }, B2: { id: "B2", decision: "Two.", status: "partial: half of it" } };
+const files = (over = {}) => new Map(Object.entries({ ...FILES, ...over }).filter(([, row]) => row).map(([name, row]) => [name, typeof row === "string" ? row : rowFile(row)]));
+
+test("an index and the row files that say the same have no problem", () => {
+  assert.deepEqual(recordProblems(INDEX, files()), []);
+});
+
+test("an index row with no file, and a row file with no index row, are each named", () => {
+  assert.deepEqual(recordProblems(INDEX, files({ B2: null })), [{ where: "DECISIONS.md", detail: "row B2 on line 6 has no file docs/decisions/B2.md" }]);
+  assert.deepEqual(recordProblems(INDEX, files({ B7: { id: "B7", decision: "Seven.", status: "**done**" } })), [
+    { where: "docs/decisions/B7.md", detail: "no row of DECISIONS.md has this number" },
+  ]);
+});
+
+test("a row file that says another section, decision or status than its index row is named with both", () => {
+  const said = (over) => recordProblems(INDEX, files({ B2: { ...FILES.B2, ...over } }));
+
+  assert.deepEqual(said({ section: "C. The counted-claim model" }), [
+    { where: "docs/decisions/B2.md", detail: 'says "Section: C. The counted-claim model", and DECISIONS.md holds row B2 under "B. Engine"' },
+  ]);
+  assert.deepEqual(said({ decision: "Two, or three." }), [
+    { where: "docs/decisions/B2.md", detail: "its Decision is not the Decision cell DECISIONS.md holds for row B2 on line 6: the two are one text, a `|` written `\\|` in the index" },
+  ]);
+  assert.deepEqual(said({ status: "**done** all of it" }), [
+    { where: "docs/decisions/B2.md", detail: 'its Status opens "done", and DECISIONS.md says "partial" for row B2 on line 6' },
+  ]);
+});
+
+test("a file under another row's name, a file that is no row file, and a row linking elsewhere are named", () => {
+  assert.deepEqual(recordProblems(INDEX, files({ B2: { ...FILES.B2, id: "B3" } })), [
+    { where: "docs/decisions/B2.md", detail: "is headed # B3, and a row file is named by its number" },
+  ]);
+  assert.deepEqual(recordProblems(INDEX, files({ B2: "Two.\n" })), [
+    { where: "docs/decisions/B2.md", detail: "is not a row file: `# B2`, a `Section:` line, then `## Decision`, `## Why` and `## Status` in that order" },
+  ]);
+  assert.deepEqual(recordProblems(INDEX.replace("[B2](docs/decisions/B2.md)", "[B2](docs/decisions/B1.md)"), files()), [
+    { where: "DECISIONS.md", detail: "row B2 on line 6 does not link to its file: its last cell is `[B2](docs/decisions/B2.md)`" },
+  ]);
+});
+
+test("an index of no rows, and a directory of no row files, are each a fault said aloud and never a pass", () => {
+  assert.deepEqual(recordProblems("## B. Engine\n", new Map()), [
+    { where: "DECISIONS.md", detail: "holds no row, so no decision was read" },
+    { where: "docs/decisions", detail: "holds no row file, so no decision was read" },
+  ]);
+  assert.equal(recordProblems(INDEX, new Map())[0].detail, "holds no row file, so no decision was read");
+});
+
+test("an index row and its file disagreeing fails the check", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "DECISIONS.md"), (text) => text.replace("| C1 | ", "| C1 | Never: "));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/decisions\/C1\.md: its Decision is not the Decision cell DECISIONS\.md holds for row C1 on line \d+/);
+});
+
+test("a row file with no index row fails the check", (t) => {
+  const dir = repoCopy(t);
+  writeFileSync(join(dir, DECISIONS_DIR, "C999.md"), rowFile({ id: "C999", section: "C. The counted-claim model", decision: "Nothing.", status: "**done**" }));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.ok(output.includes(`${DECISIONS_DIR}/C999.md: no row of DECISIONS.md has this number`), output);
+});
+
+test("a decisions directory holding no file fails the check, and says no decision was read", (t) => {
+  const dir = repoCopy(t);
+  for (const f of readdirSync(join(dir, DECISIONS_DIR))) rmSync(join(dir, DECISIONS_DIR, f));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.ok(output.includes(`::error::${DECISIONS_DIR}: holds no row file, so no decision was read`), output);
+  assert.doesNotMatch(output, /docs match the code|ENOENT/);
+});
+
+test("the decisions directory is one of the paths the gate answers for by name", () => {
+  // The list drives the case that removes each path in turn, so a directory left off it is one whose absence throws.
+  assert.ok(READS.includes(DECISIONS_DIR));
 });
 
 // A tracked file removed from the working tree and not yet staged is still in

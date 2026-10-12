@@ -99,7 +99,7 @@ upstreams and are not meant to move together.
 - [ ] `commands/*.md` match the CLI. The agent reads these, not `--help`.
 - [ ] `SECURITY.md` names the current dependency set and says nothing about a tier that now ships.
 - [ ] `DECISIONS.md` has no `todo` row that this release actually closed, and every `**done**` note
-      names the symbols that exist today.
+      in a row's file under `docs/decisions/` names the symbols that exist today.
 - [ ] Merge to `main` and pull it.
 - [ ] `main`'s own CI on the merge commit is green. The tree the pull request tested can still fail
       there: 0.15.0's merge commit failed a memory test the pull request had passed twice.

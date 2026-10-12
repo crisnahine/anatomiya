@@ -22,6 +22,7 @@ import { dirname, join } from "node:path";
 
 import { parseSync } from "oxc-parser";
 
+import { DECISIONS_DIR, escaped, indexRows, readRowFile, rowFiles, shortStatus } from "./decisions.mjs";
 import { invokedAs } from "./entry.mjs";
 import { REL } from "./plugins.mjs";
 import { RELEASES, notesFor, tagFor } from "./release.mjs";
@@ -442,7 +443,6 @@ export function pathsThatMoved(text, docRel, tracked) {
   return [...moved.values()];
 }
 
-const DECISION_ROW = /^\| ([A-H]\d+) \|/;
 const OWN_CODE = /^(?:plugins|scripts|test)\//;
 const dirOf = (rel) => rel.slice(0, rel.lastIndexOf("/"));
 
@@ -460,7 +460,7 @@ const DONE_EXAMPLES = new Set([
 ]);
 
 /**
- * Files a decision row's status cell names as done that this tree does not hold.
+ * Files a decision row's Status names as done that this tree does not hold.
  *
  * `pathsThatMoved` answers only for a path found somewhere else, so a file
  * renamed or deleted outright left its row pointing at nothing. The tree is the
@@ -468,18 +468,17 @@ const DONE_EXAMPLES = new Set([
  * repository's (`test/models/user_test.rb`), and one whose directory does is ours.
  * A bare `.mjs` name is held to the file names the tree holds at any depth.
  */
-export function doneFilesGone(text, tracked) {
+export function doneFilesGone(rows, tracked) {
   const dirs = new Set([...tracked].map(dirOf));
   const names = new Set([...tracked].map((rel) => rel.slice(rel.lastIndexOf("/") + 1)));
   const gone = [];
-  for (const line of text.split(/\r?\n/)) {
-    const row = DECISION_ROW.exec(line)?.[1];
-    const done = line.indexOf("**done**");
-    if (!row || done < 0 || DONE_UNHELD.has(row)) continue;
-    for (const [, spelled] of line.slice(done).matchAll(DOC_PATH)) {
+  for (const { id: row, status } of rows) {
+    const done = status.indexOf("**done**");
+    if (done < 0 || DONE_UNHELD.has(row)) continue;
+    for (const [, spelled] of status.slice(done).matchAll(DOC_PATH)) {
       if (OWN_CODE.test(spelled) && !tracked.has(spelled) && dirs.has(dirOf(spelled))) gone.push({ row, spelled });
     }
-    for (const [, spelled] of line.slice(done).matchAll(DONE_BARE)) {
+    for (const [, spelled] of status.slice(done).matchAll(DONE_BARE)) {
       if (names.size > 0 && !names.has(spelled) && !DONE_EXAMPLES.has(spelled)) gone.push({ row, spelled });
     }
   }
@@ -487,15 +486,60 @@ export function doneFilesGone(text, tracked) {
 }
 
 /** Row numbers a decision row cites that no row carries. A code span is skipped: `B7` there is a key, not a row. */
-export function rowsCitedMissing(text) {
-  const rows = text.split(/\r?\n/).filter((line) => DECISION_ROW.test(line));
-  const ids = new Set(rows.map((line) => DECISION_ROW.exec(line)[1]));
-  return rows.flatMap((line) =>
-    [...line.replace(/`[^`]*`/g, "").matchAll(/\b[A-H]\d+\b/g)]
+export function rowsCitedMissing(rows) {
+  const ids = new Set(rows.map((row) => row.id));
+  return rows.flatMap((row) =>
+    [...[row.decision, row.why, row.status].join(" ").replace(/`[^`]*`/g, "").matchAll(/\b[A-H]\d+\b/g)]
       .filter(([cited]) => !ids.has(cited))
-      .map(([cited]) => ({ row: DECISION_ROW.exec(line)[1], cited }))
+      .map(([cited]) => ({ row: row.id, cited }))
   );
 }
+
+/**
+ * Where the index and the row files say different things about the record.
+ *
+ * A row is written in two places, and every rule that reads what a row says
+ * reads its file, so an index left behind is a table of contents for some other
+ * record with every gate passing. `files` is row number to file text. An index
+ * or a directory holding nothing is a fault too: with no row, each rule below
+ * this one reads nothing and reports that as agreement.
+ */
+export function recordProblems(index, files) {
+  const problems = [];
+  const say = (where, detail) => problems.push({ where, detail });
+  const rows = indexRows(index);
+  if (rows.length === 0) say("DECISIONS.md", "holds no row, so no decision was read");
+  if (files.size === 0) {
+    say(DECISIONS_DIR, "holds no row file, so no decision was read");
+    return problems;
+  }
+  for (const row of rows) {
+    const rel = `${DECISIONS_DIR}/${row.id}.md`;
+    const at = `row ${row.id} on line ${row.line}`;
+    if (row.file !== rel) say("DECISIONS.md", `${at} does not link to its file: its last cell is \`[${row.id}](${rel})\``);
+    if (!files.has(row.id)) {
+      say("DECISIONS.md", `${at} has no file ${rel}`);
+      continue;
+    }
+    const file = readRowFile(files.get(row.id));
+    if (!file) {
+      say(rel, `is not a row file: \`# ${row.id}\`, a \`Section:\` line, then \`## Decision\`, \`## Why\` and \`## Status\` in that order`);
+      continue;
+    }
+    if (file.id !== row.id) say(rel, `is headed # ${file.id}, and a row file is named by its number`);
+    if (file.section !== row.section) say(rel, `says "Section: ${file.section}", and DECISIONS.md holds row ${row.id} under "${row.section}"`);
+    if (escaped(file.decision) !== row.decision) say(rel, `its Decision is not the Decision cell DECISIONS.md holds for ${at}: the two are one text, a \`|\` written \`\\|\` in the index`);
+    if (shortStatus(file.status) !== row.status) say(rel, `its Status opens "${shortStatus(file.status)}", and DECISIONS.md says "${row.status}" for ${at}`);
+  }
+  const indexed = new Set(rows.map((row) => row.id));
+  for (const name of files.keys()) {
+    if (!indexed.has(name)) say(`${DECISIONS_DIR}/${name}.md`, "no row of DECISIONS.md has this number");
+  }
+  return problems;
+}
+
+/** Whether a document is the decision record: its index, or one of its row files. */
+const inRecord = (rel) => rel === "DECISIONS.md" || rel.startsWith(`${DECISIONS_DIR}/`);
 
 // A document that records a past state names the paths that state had, and
 // today's path in it would be a claim the measurement never made.
@@ -554,6 +598,7 @@ export const READS = [
   "CONTRIBUTING.md",
   "CHANGELOG.md",
   "DECISIONS.md",
+  DECISIONS_DIR,
   "CONTEXT.md",
   "SECURITY.md",
   "package.json",
@@ -683,7 +728,8 @@ export function checkDocs() {
   // table held 55 rows, the README said 55 and CONTRIBUTING said 54. It is the
   // one number in the docs that moves on every substantive change, so all three
   // are read against the table rather than against one another.
-  const rows = [...read("DECISIONS.md").matchAll(/^\| [A-H]\d+ \|/gm)].length;
+  const indexed = indexRows(read("DECISIONS.md"));
+  const rows = indexed.length;
   for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
     for (const m of read(rel).matchAll(new RegExp(`(${N})\\s+numbered (?:decisions|rows)`, "g"))) {
       claim(rel, counted(m[1]) === rows, `says "${m[1]} numbered", DECISIONS.md holds ${rows} rows`);
@@ -694,26 +740,23 @@ export function checkDocs() {
   // silently: an unescaped `|` inside a code span splits the cell it sits in, and
   // the Status column falls off the end. Three rows had it at once, one of them a
   // whole `**done**` list. The escape is `\|`, which the file already uses.
-  for (const [i, line] of read("DECISIONS.md").split(/\r?\n/).entries()) {
-    if (!/^\| [A-H]\d+ \|/.test(line)) continue;
-    // No fallback: the filter above took only lines starting `| A1 |`, and one of
-    // those holds at least two unescaped pipes.
-    const cells = line.match(/(?<!\\)\|/g).length;
-    claim(
-      "DECISIONS.md",
-      cells === 5,
-      `row ${/^\| ([A-H]\d+) \|/.exec(line)[1]} on line ${i + 1} has ${cells - 1} cells, not 4: escape a \`|\` inside a code span as \`\\|\``
-    );
+  for (const row of indexed) {
+    claim("DECISIONS.md", row.cells === 4, `row ${row.id} on line ${row.line} has ${row.cells} cells, not 4: escape a \`|\` inside a code span as \`\\|\``);
   }
 
   // A row number appearing twice is a row nobody can cite.
-  const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-H]\d+) \|/gm)].map((m) => m[1]);
-  claim("DECISIONS.md", new Set(ids).size === ids.length, "two rows share a number");
+  claim("DECISIONS.md", new Set(indexed.map((row) => row.id)).size === rows, "two rows share a number");
+
+  // The index says a row exists and its file says what the row is, so the two
+  // are held to each other before anything below reads a row.
+  const rowTexts = rowFiles(root);
+  for (const { where, detail } of recordProblems(read("DECISIONS.md"), rowTexts)) claim(where, false, detail);
+  const record = [...rowTexts.values()].flatMap((text) => readRowFile(text) ?? []);
 
   // "(B13)" read as the source of a rule another row holds, and nothing read it.
   // A number that names the wrong row still passes; one that names no row does not.
-  for (const { row, cited } of rowsCitedMissing(read("DECISIONS.md"))) {
-    claim("DECISIONS.md", false, `row ${row} cites ${cited}, and no row has that number`);
+  for (const { row, cited } of rowsCitedMissing(record)) {
+    claim(`${DECISIONS_DIR}/${row}.md`, false, `cites ${cited}, and no row has that number`);
   }
 
   // --- the gate table ---------------------------------------------------------
@@ -950,15 +993,16 @@ export function checkDocs() {
     [`(${N})\\s+node-hosted\\s+engines`, Object.values(ENGINES).filter((e) => e.host === "node").length, (n) => `the registry declares ${n} hosted by node`],
     // Told apart by the document: a build contract row says "spans two engines"
     // of the pair it compares, where every other document counts them.
-    [`(?:(?:the|all)\\s+)?(${N})\\s+engines\\b`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`, "DECISIONS.md"],
+    [`(?:(?:the|all)\\s+)?(${N})\\s+engines\\b`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`, inRecord],
     [`(${N})\\s+(?:vendored\\s+)?grammar(?:s|\\s+files|\\s+packages)\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
     [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
   ];
-  const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
+  const rowDocs = [...rowTexts.keys()].map((name) => `${DECISIONS_DIR}/${name}.md`);
+  const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", ...rowDocs, "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
   for (const rel of stating) {
     const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
     for (const [phrasing, held, source, pairsIn] of COUNTS) {
-      if (rel === pairsIn) continue;
+      if (pairsIn?.(rel)) continue;
       for (const m of text.matchAll(new RegExp(phrasing, "gi"))) {
         claim(rel, counted(m[1]) === held, `says "${m[0]}", ${source(held)}`);
       }
@@ -1036,8 +1080,8 @@ export function checkDocs() {
   for (const { rel, line, word, term } of avoidedWords(glossary.terms, written.map((rel) => [rel, CHANGELOG.test(rel) ? unreleased(read(rel)) : read(rel)]))) {
     claim(`${rel}:${line}`, false, `says "${word}", a word the ${term} entry in CONTEXT.md displaces`);
   }
-  for (const { row, spelled } of doneFilesGone(read("DECISIONS.md"), tracked)) {
-    claim("DECISIONS.md", false, `row ${row} names \`${spelled}\` as done, and no such file is here`);
+  for (const { row, spelled } of doneFilesGone(record, tracked)) {
+    claim(`${DECISIONS_DIR}/${row}.md`, false, `names \`${spelled}\` as done, and no such file is here`);
   }
 
   // --- versions ---------------------------------------------------------------

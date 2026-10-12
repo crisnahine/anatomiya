@@ -11,8 +11,8 @@ attention by default.
 
 The findings in this file were reproduced as working exploits while the tool was designed. They are
 not a checklist copied from somewhere. The decisions they forced are section F of `DECISIONS.md`, and
-the status column there is what the code does today. This file does not claim more than that column
-does. Known gaps are listed near the bottom, with names.
+the Status in each row's file under `docs/decisions/` is what the code does today. This file does not
+claim more than those do. Known gaps are listed near the bottom, with names.
 
 ## What the attacker controls
 
@@ -638,7 +638,7 @@ Say the quiet part plainly.
 
 ## Known gaps in what is described above
 
-These are real and they are tracked in `DECISIONS.md`.
+These are real and they are tracked in `DECISIONS.md` and the row files it links to.
 
 - **F5 is partial.** Every git call now goes through one of the two runners in
   `plugins/anatomiya/lib/git.mjs`, buffered and streamed, and both carry the timeout and a byte bound. The `--`
