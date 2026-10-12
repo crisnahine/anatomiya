@@ -486,7 +486,7 @@ The file the first call of a parallel batch to deliver the map leaves under
 The batch's other calls read it as a delivery made at that offset, since none of their records is in
 the transcript yet. It is decided under a lock beside it, a file made with an exclusive create and
 broken only once its mtime is more than 7 s from the clock either way, the echo's 5 s hook timeout
-plus the 2 s a FAT or exFAT mtime can be off by, and both are swept after a day. Where the plugin
+plus the 2 s a FAT mtime can be off by, and both are swept after a day. Where the plugin
 names no data directory there is none, and each call answers alone.
 _Avoid_: claim (alone: that is a dimension's sentence), marker, token
 

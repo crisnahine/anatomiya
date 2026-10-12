@@ -685,7 +685,7 @@ function batchClaimPath(data, transcript, digest) {
 /** A hook is killed at its 5 s timeout (hooks.json), so this is the longest a live call holds the lock. */
 export const LOCK_HELD_MOST_MS = 5000;
 
-// FAT and exFAT keep a file's mtime to 2 s, so a live lock can read that much older or newer than it is.
+// FAT keeps a file's mtime to 2 s, so a live lock can read that much older or newer than it is.
 const LOCK_MTIME_SLACK_MS = 2000;
 
 /**
