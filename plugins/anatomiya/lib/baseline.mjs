@@ -690,7 +690,7 @@ async function countAtPin(root, state, areas, populations, { headParsed = null, 
         // closes it, because the baseline is then missing sites today can see.
         // Only when the blob itself came back and the parser answered on it.
         // A blob nobody fetched was not read and rejected, it was never read:
-        // `showBlob` refuses a file over the same cap the parser skips at, so
+        // The blob read refuses a file over the same cap the parser skips at, so
         // an oversize pinned file is missing here and skipped at HEAD, and
         // reading that pair as a blind spot let the area state a directive with
         // one file counted at neither revision and nothing saying so.
