@@ -144,6 +144,35 @@ test("a changed .mailmap refuses the store", async (t) => {
   assert.deepEqual((await authorsWith(dir)).said, { stored: 5, walked: 0, wrote: false }, "and the store written under the new one is read");
 });
 
+test("a .mailmap that changed while the walk ran writes no store, and the store that was there stays", async (t) => {
+  const dir = repo(t, storied);
+  const mailmap = join(dir, ".mailmap");
+  const committed = readFileSync(mailmap);
+  // The walk has answered and the write has not run: where a change during the walk leaves a scan.
+  const walkedThen = async (change) => {
+    const history = {};
+    await authorsByFile(dir, { history });
+    change();
+    await saveHistory(dir, history);
+    return history.authors;
+  };
+
+  const first = await walkedThen(() => writeFileSync(mailmap, "One <one@t.test> <two@t.test>\n"));
+  assert.deepEqual(first, { stored: 0, walked: 5, wrote: false });
+  assert.equal(existsSync(storeOf(dir, "authors")), false);
+  // Undone: the stamp is the walk's again, and nothing was sealed under it.
+  writeFileSync(mailmap, committed);
+  assert.deepEqual((await authorsWith(dir)).said, { stored: 0, walked: 5, wrote: true }, "the next scan walks whole");
+
+  const kept = readFileSync(storeOf(dir, "authors"));
+  const { write, commit } = tools(dir);
+  write("src/late.ts");
+  commit("late");
+  const second = await walkedThen(() => writeFileSync(mailmap, "One <one@t.test> <two@t.test>\n"));
+  assert.deepEqual(second, { stored: 5, walked: 1, wrote: false });
+  assert.deepEqual(readFileSync(storeOf(dir, "authors")), kept);
+});
+
 /**
  * Each thing a commit's record depends on besides the commit: `before` sets the
  * repository up, the store is taken, `change` moves the one thing, and the
