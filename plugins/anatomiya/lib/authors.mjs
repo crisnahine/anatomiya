@@ -1,4 +1,4 @@
-import { Unasked, answered, gitBuffered } from "./git.mjs";
+import { Unasked, answered, failureOf, gitBuffered } from "./git.mjs";
 import { SEP, historyFields } from "./history.mjs";
 
 /**
@@ -211,7 +211,7 @@ async function shallowHistory(root) {
 async function isPartialClone(root) {
   const asked = await gitBuffered(root, ["config", "--null", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.promisor)$"]);
   // Exit code 1 is git saying neither key is set.
-  if (!asked.ok && asked.code !== 1) throw new Error(`git could not say whether this clone is partial: ${asked.error.trim()}`);
+  if (!asked.ok && asked.code !== 1) throw new Error(`git could not say whether this clone is partial: ${failureOf(asked)}`);
   let extension;
   let flagged = false;
   // A key and its value a line apart, and a key with no value alone.
