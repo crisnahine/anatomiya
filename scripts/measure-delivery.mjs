@@ -21,7 +21,7 @@ import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 
 import { checkOutput, invokedAs, readArgv } from "./entry.mjs";
-import { isCompaction } from "../plugins/anatomiya/lib/transcript.mjs";
+import { isCompaction, mayBeCompaction } from "../plugins/anatomiya/lib/transcript.mjs";
 
 // What Claude Code calls the channel. A rule file and a nested CLAUDE.md arrive
 // through the same one, which is why this counts both and splits them by whether
@@ -30,7 +30,7 @@ const DELIVERY = "nested_memory";
 
 // A line that cannot hold one of the two events is never parsed: the store runs
 // to gigabytes and most of it is tool output.
-const CANDIDATE = [DELIVERY, "compact_boundary", '"isCompactSummary":true'];
+const isCandidate = (line) => line.includes(DELIVERY) || mayBeCompaction(line);
 
 /**
  * The event a transcript entry is, or null when it is neither.
@@ -144,11 +144,12 @@ export function transcripts(dir) {
   return out;
 }
 
-async function eventsIn(file, match) {
+/** The events of the transcript at `file`, in its order; a delivery only where its path holds `match`. */
+export async function eventsIn(file, match) {
   const reader = createInterface({ input: createReadStream(file), crlfDelay: Infinity });
   const out = [];
   for await (const line of reader) {
-    if (!CANDIDATE.some((needle) => line.includes(needle))) continue;
+    if (!isCandidate(line)) continue;
     let entry = null;
     try {
       entry = JSON.parse(line);

@@ -7,6 +7,7 @@ import {
   echoEvent,
   isCompactBoundary,
   isCompaction,
+  mayBeCompaction,
   parsed,
   readByModel,
   sessionStartIn,
@@ -73,18 +74,28 @@ test("a transcript's tail carries the offset it ends at and its lines", (t) => {
   assert.equal(transcriptTail(`${path}.missing`, 20), null);
 });
 
-test("a compaction is either shape to the delivery measurement, and only the system record to the echo", () => {
-  const boundary = compact();
-  const summary = { type: "user", isCompactSummary: true, message: { content: "summary" } };
+// Every record the delivery measurement counts as a compaction. A shape `isCompaction` learns is added here.
+const COMPACTIONS = {
+  boundary: compact(),
+  summary: { type: "user", isCompactSummary: true, message: { content: "summary" } },
+  "a boundary under another record type": { type: "user", subtype: "compact_boundary" },
+};
 
-  assert.equal(isCompaction(boundary), true);
-  assert.equal(isCompaction(summary), true);
+test("a compaction is either shape to the delivery measurement, and only the system record to the echo", () => {
+  const { boundary, summary } = COMPACTIONS;
+
+  for (const [shape, record] of Object.entries(COMPACTIONS)) assert.equal(isCompaction(record), true, shape);
   assert.equal(isCompactBoundary(boundary), true);
   assert.equal(isCompactBoundary(summary), false);
-  assert.equal(isCompactBoundary({ type: "user", subtype: "compact_boundary" }), false, "the echo checks the record type");
-  assert.equal(isCompaction({ type: "user", subtype: "compact_boundary" }), true, "the measurement does not");
+  assert.equal(isCompactBoundary(COMPACTIONS["a boundary under another record type"]), false, "the echo checks the record type");
   assert.equal(isCompaction(null), false);
   assert.equal(isCompactBoundary(null), false);
+});
+
+test("every record counted as a compaction is on a line the measurement's filter lets through", () => {
+  // The filter runs before the parse, so a compaction it drops is never counted.
+  for (const [shape, record] of Object.entries(COMPACTIONS)) assert.equal(mayBeCompaction(JSON.stringify(record)), true, shape);
+  assert.equal(mayBeCompaction(JSON.stringify(filler(64))), false, "and tool output is not parsed for one");
 });
 
 test("the window counts what the model reads and nothing the build keeps for itself", () => {

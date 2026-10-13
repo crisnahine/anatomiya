@@ -36,6 +36,13 @@ export const isCompactBoundary = (entry) => entry?.type === "system" && entry.su
 export const isCompaction = (entry) => entry?.isCompactSummary === true || entry?.subtype === "compact_boundary";
 
 /**
+ * Whether a line can hold a record `isCompaction` accepts, asked before the
+ * line is parsed. A shape added there is added here, or a reader that filters
+ * first never counts it.
+ */
+export const mayBeCompaction = (line) => line.includes("compact_boundary") || line.includes('"isCompactSummary":true');
+
+/**
  * What one record says about the echo: "compact" for a compaction boundary,
  * the texts of a hook's `additionalContext` for a delivery, or null.
  */
