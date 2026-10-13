@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-10-13
+
 The end-of-turn reuse check asks about seven more languages, `check` reads a revision's files
 through one git process where it started one per file, and a scan keeps what it read of the history
 so the next scan reads only the new commits. A dead refresh lock is broken through a lock token,
@@ -4691,7 +4693,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/crisnahine/anatomiya/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/crisnahine/anatomiya/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/crisnahine/anatomiya/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/crisnahine/anatomiya/compare/v0.13.4...v0.14.0
