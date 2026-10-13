@@ -183,9 +183,9 @@ test("a blobless clone answers without reaching for the network", async (t) => {
   });
   const parent = mkdtempSync(join(tmpdir(), "anatomiya-partial-"));
   const clone = join(parent, "clone");
-  t.after(() => {
-    rmSync(parent, { recursive: true, force: true });
-    rmSync(origin, { recursive: true, force: true });
+  t.after(async () => {
+    await removeTree(parent);
+    await removeTree(origin);
   });
   execFileSync("git", ["clone", "-q", "--filter=blob:none", `file://${origin}`, clone], { stdio: "pipe" });
   rmSync(origin, { recursive: true, force: true });
@@ -212,9 +212,9 @@ test("a blobless clone whose remote is not called origin still answers offline",
   });
   const parent = mkdtempSync(join(tmpdir(), "anatomiya-partial-"));
   const clone = join(parent, "clone");
-  t.after(() => {
-    rmSync(parent, { recursive: true, force: true });
-    rmSync(origin, { recursive: true, force: true });
+  t.after(async () => {
+    await removeTree(parent);
+    await removeTree(origin);
   });
   execFileSync("git", ["clone", "-q", "-o", "upstream", "--filter=blob:none", `file://${origin}`, clone], {
     stdio: "pipe",

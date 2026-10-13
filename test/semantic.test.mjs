@@ -289,7 +289,7 @@ test("a node_modules this cannot read is no install, not a crash", needsPosixPer
   chmodSync(deps, 0o000);
   t.after(() => {
     chmodSync(deps, 0o755);
-    rmSync(dir, { recursive: true, force: true });
+    return removeTree(dir);
   });
 
   assert.equal(await checkerBlocked(dir, { checkedRels: ["src/a.ts"] }), "no-dependencies");

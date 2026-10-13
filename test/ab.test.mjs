@@ -1,7 +1,7 @@
 // test/ab.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -833,7 +833,7 @@ test("an arm whose settings cannot be removed fails the run instead of leaking a
   // repository being measured.
   const { dropSettings } = await import("../scripts/ab/arms.mjs");
   const arm = mkdtempSync(join(tmpdir(), "anatomiya-ro-"));
-  t.after(() => { chmodSync(join(arm, ".claude"), 0o755); rmSync(arm, { recursive: true, force: true }); });
+  t.after(() => { chmodSync(join(arm, ".claude"), 0o755); return removeTree(arm); });
   mkdirSync(join(arm, ".claude"));
   writeFileSync(join(arm, ".claude", "settings.json"), "{}");
   chmodSync(join(arm, ".claude"), 0o555);
@@ -1128,7 +1128,7 @@ test("the harness completes a run from an empty state and writes the document", 
   const repo = measurable(t);
   const stub = stubClaude(t, measuring);
   const out = join(mkdtempSync(join(tmpdir(), "anatomiya-ab-out-")), "result.md");
-  t.after(() => rmSync(dirname(out), { recursive: true, force: true }));
+  t.after(() => removeTree(dirname(out)));
   const config = mkdtempSync(join(tmpdir(), "anatomiya-ab-config-"));
   t.after(() => removeTree(config));
   // An engine in the operator's own settings is no reason to refuse: a trial

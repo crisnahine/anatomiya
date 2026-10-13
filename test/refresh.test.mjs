@@ -76,9 +76,9 @@ async function scanned(t) {
 async function cloned(t, before = () => {}) {
   const origin = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-origin-")));
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-clone-")));
-  t.after(() => {
-    rmSync(origin, { recursive: true, force: true });
-    rmSync(dir, { recursive: true, force: true });
+  t.after(async () => {
+    await removeTree(origin);
+    await removeTree(dir);
   });
   init(origin);
   source(origin, "src", 8);
@@ -155,7 +155,7 @@ test("a linked worktree with no map of its own is not refreshed through its main
   // run for it would write a map of the worktree's own, which nobody asked for.
   const dir = await scanned(t);
   const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
-  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(wt, "..")));
   git(dir, "worktree", "add", "-q", wt);
   const { started, start } = recorder();
 
@@ -166,7 +166,7 @@ test("a linked worktree with no map of its own is not refreshed through its main
 test("a linked worktree with a map of its own watches its own HEAD", async (t) => {
   const dir = await scanned(t);
   const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
-  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(wt, "..")));
   git(dir, "worktree", "add", "-q", wt);
   await runScan(wt);
   const { started, start } = recorder();
@@ -2135,7 +2135,7 @@ test("a linked worktree on reftable also watches its own table list, where its d
   const { watchTargets } = await import("../plugins/anatomiya/lib/refresh.mjs");
   const dir = await scanned(t);
   const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
-  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(wt, "..")));
   git(dir, "worktree", "add", "-q", "--detach", wt);
   await runScan(wt);
   const own = join(dir, ".git", "worktrees", "wt");
@@ -2690,9 +2690,9 @@ test("a reftable clone pins its tip, follows a teammate's fetch, and holds its o
   // and read as a commit made here it held the pin on every reftable clone.
   const origin = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-rt-origin-")));
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-rt-clone-")));
-  t.after(() => {
-    rmSync(origin, { recursive: true, force: true });
-    rmSync(dir, { recursive: true, force: true });
+  t.after(async () => {
+    await removeTree(origin);
+    await removeTree(dir);
   });
   init(origin);
   git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
@@ -3003,7 +3003,7 @@ test("a commit is held where git could not be asked who this clone commits as", 
 /** A `case` arm that ends git on the `nth` call matching `pattern`, and on no other. */
 function unaskedOn(t, pattern, nth) {
   const count = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-count-"))), "n");
-  t.after(() => rmSync(join(count, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(count, "..")));
   return `case " $* " in ${pattern}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -eq ${nth} ] && kill -TERM $$;; esac`;
 }
 

@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { repo } from "./ts-repo.mjs";

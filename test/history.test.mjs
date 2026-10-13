@@ -340,7 +340,7 @@ const ATTRIBUTES = [
       t.after(() => {
         if (was === undefined) delete process.env.XDG_CONFIG_HOME;
         else process.env.XDG_CONFIG_HOME = was;
-        rmSync(home, { recursive: true, force: true });
+        return removeTree(home);
       });
     },
     change: () => {

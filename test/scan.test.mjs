@@ -1449,7 +1449,7 @@ test("root code below the area floor keeps its rate beside Ruby areas, with or w
   const path = process.env.PATH;
   t.after(() => {
     process.env.PATH = path;
-    rmSync(bin, { recursive: true, force: true });
+    return removeTree(bin);
   });
   symlinkSync(execFileSync("sh", ["-c", "command -v git"]).toString().trim(), join(bin, "git"));
   process.env.PATH = bin;
