@@ -4072,6 +4072,46 @@ test("a fifo at a temporary file's name in the store is never removed", needsPos
   nonFileAtAStoreName(t, (path) => execFileSync("mkfifo", [path]));
 });
 
+// A scanned workspace with `make` run on the refresh lock's name, and the plan of a dry run and of a scan after it.
+function plansOverLockName(t, make) {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  const lock = join(dir, STORE, "refresh.lock");
+  make(lock);
+  return { lock, plans: [writeMap(result(dir, [a]), { dryRun: true }), writeMap(result(dir, [a]))] };
+}
+
+test("a directory holding a file at the refresh lock's name is carried by the plan and left whole", (t) => {
+  // No refresh takes the lock while it is there, and nothing but the scan is run by a person.
+  const { lock, plans } = plansOverLockName(t, (path) => {
+    mkdirSync(path);
+    writeFileSync(join(path, "kept"), "theirs");
+  });
+
+  for (const plan of plans) assert.equal(plan.lockBlocked, ".claude/anatomiya/refresh.lock");
+  assert.equal(readFileSync(join(lock, "kept"), "utf8"), "theirs", "the scan removes nothing there");
+});
+
+test("an empty directory and a lock file at the refresh lock's name are a refresh's to remove, so the plan says nothing", (t) => {
+  for (const make of [(path) => mkdirSync(path), (path) => writeFileSync(path, "{}")]) {
+    const { lock, plans } = plansOverLockName(t, make);
+    for (const plan of plans) assert.equal("lockBlocked" in plan, false);
+    assert.equal(existsSync(lock), true, "and the scan leaves it there");
+  }
+  assert.equal("lockBlocked" in writeMap(result(workspace(t), [area("src/services")])), false, "nor where the name is free");
+});
+
+test("a link at the refresh lock's name is not followed to the directory it leads to", needsSymlinks, (t) => {
+  // A refresh unlinks the link itself, so what it leads to holds nothing up.
+  const outside = elsewhere(t);
+  writeFileSync(join(outside, "kept"), "theirs");
+  const { plans } = plansOverLockName(t, (path) => symlinkSync(outside, path));
+
+  for (const plan of plans) assert.equal("lockBlocked" in plan, false);
+  assert.equal(readFileSync(join(outside, "kept"), "utf8"), "theirs");
+});
+
 test("a target directory that cannot be written is refused by name before a dry run answers", needsPosixPermissions, (t) => {
   const dir = workspace(t);
   mkdirSync(join(dir, ".cursor", "rules"), { recursive: true });

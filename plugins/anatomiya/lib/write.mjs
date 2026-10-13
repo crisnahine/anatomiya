@@ -21,6 +21,7 @@ import {
   isMapName,
   knownNames,
   leafReplaceable,
+  namesIn,
   outsideClaude,
   pendingNames,
   resolveInside,
@@ -141,6 +142,8 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     staged: claude.staged,
     // And the ones a scan, a refresh, a pin or a lock left in the store, where the record is megabytes on a large repository.
     storeStaged: blind ? [] : leftInStore(storeDir),
+    // Only where it is: a refresh never says so to a person, and a scan is what one runs over a stale map.
+    ...(lockNameBlocked(storeDir) ? { lockBlocked: REFRESH_LOCK } : {}),
     // The record and layout file past the bound this replaces without reading, only where there is one.
     ...(oversized.length > 0 && !blind ? { oversized } : {}),
     foreign: claude.foreign,
@@ -448,6 +451,19 @@ function leftInStore(dir) {
     return aside !== null && !processAlive(Number(aside[1])) && isFileAt(join(dir, name));
   });
   return [...staged, ...leftTokens(join(dir, basename(REFRESH_LOCK)), workerAge), ...asides].sort();
+}
+
+/**
+ * Whether a directory holding entries is at the refresh lock's name. A refresh removes an empty directory,
+ * a link and a special file there, so this is the one entry that turns every refresh away until it is gone.
+ */
+function lockNameBlocked(dir) {
+  const at = join(dir, basename(REFRESH_LOCK));
+  try {
+    return lstatSync(at).isDirectory() && namesIn(at, 1).length > 0;
+  } catch {
+    return false;
+  }
 }
 
 // Nobody read it, or the caller said to leave it alone: neither is written, cleared or turned off.
