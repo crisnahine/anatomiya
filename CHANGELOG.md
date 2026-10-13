@@ -166,7 +166,7 @@ no git version is needed that 0.15.1 did not need.
   differ from <sha>`, `for <path> at <sha>`, `whether this clone is shallow`, `which refs hold the
   name <base>`, `which parents HEAD's commit records` or `for the oldest commit this clone holds`.
   A scan, a pin and a check stop the same way where the index's `.gitattributes` could not be asked
-  about, and the reuse check asks nothing about that checkout.
+  about, and the reuse check asks nothing about a checkout where it could not.
   A name git refuses with exit code 128 and no text, such as `HEAD@{9999}`, is a name that is not
   there: `check --base 'HEAD@{9999}'` says the base resolves to no commit.
 - Grammars asked for at once from a cold runtime could fail to load. A stop that read two
@@ -229,10 +229,13 @@ no git version is needed that 0.15.1 did not need.
   reach it.
 - A git read past its clock, or one its caller stopped, did not end where git sits behind a
   launcher, as Git for Windows installs it: the signal ended the launcher alone and the read
-  waited on the git behind it, read in the launcher's source and measured with a stand-in, on no
-  Windows machine beyond CI's two legs. The streamed reader and the batch reader shut the child's
-  pipes with the signal, so the read settles when the launcher has gone and a git still writing
-  stops at its next write. A read its clock ended is no answer whatever code git left.
+  waited on the git behind it, read in the launcher's source and measured with a stand-in on
+  macOS; on Windows only the batch reader's held directory was seen, on CI's two legs. The
+  streamed reader shuts the child's stdout and stderr with the signal and the batch reader its
+  stdout, so the read settles when the launcher has gone and a git still writing stops at its
+  next write. A read its clock ended is no answer whatever code git left, streamed or buffered:
+  the pipes are shut at the clock, and a git that exited 0 in that moment was read as a whole
+  answer with one record of three.
 - The summary says `1 temporary file an earlier run left in .claude/anatomiya was removed`, where
   it said "an earlier scan left": a refresh, a pin and a lock create leave them too.
 
