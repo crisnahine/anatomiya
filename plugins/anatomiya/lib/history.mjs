@@ -12,8 +12,8 @@
  * commits among older ones, and a reader that follows renames answers
  * differently for another order.
  *
- * The store is a cache and never an answer of its own. Anything about it that
- * cannot be checked is the full walk.
+ * A history store is a copy of what git printed and never an answer of its
+ * own. Anything about it that cannot be checked is the full walk.
  */
 import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync } from "node:fs";
@@ -32,7 +32,7 @@ import { atomic, recordBytes } from "./store.mjs";
 // from one by where it sits.
 export const SEP = "\x1e";
 
-/** The store's file per walk, in the store directory. */
+/** Each walk's history store, by its file name in the store. */
 export const HISTORY_FILES = { authors: "history-authors.gz", cochange: "history-cochange.gz" };
 
 export const HISTORY = {
@@ -48,7 +48,7 @@ export const HISTORY = {
 const LAYOUT = 1;
 
 // Two lines before the records: the stamp, then the records' own digest, each 64 hex digits.
-const HEAD_BYTES = 130;
+const SEAL_BYTES = 130;
 
 // Measured on discourse's 32.7 MB of records: level 1 packs in 235 ms to 6.1 MB, level 6 in 792 ms
 // to 5.1 MB, and the write is paid on every scan that met a new commit.
@@ -124,7 +124,7 @@ export async function historyFields(root, walk, open, { history = null, signal =
           const [from, , end] = store.at.get(sha);
           return store.body.subarray(from, end);
         });
-        if (records.reduce((sum, record) => sum + record.length, HEAD_BYTES) <= HISTORY.mostBytes) leave(records);
+        if (records.reduce((sum, record) => sum + record.length, SEAL_BYTES) <= HISTORY.mostBytes) leave(records);
       }
       return;
     }
@@ -209,10 +209,10 @@ async function openStore(root, walk, history) {
   }
   const head = Buffer.from(`${stamp}\n`);
   // A slice past the end throws, and a store cut short is no store.
-  if (text.length < HEAD_BYTES || !text.subarray(0, head.length).equals(head)) return none;
+  if (text.length < SEAL_BYTES || !text.subarray(0, head.length).equals(head)) return none;
   // The records' own digest on the second line, so an edit that keeps every length is still seen.
-  const body = text.subarray(HEAD_BYTES);
-  if (text.latin1Slice(head.length, HEAD_BYTES) !== `${digest(body)}\n`) return none;
+  const body = text.subarray(SEAL_BYTES);
+  if (text.latin1Slice(head.length, SEAL_BYTES) !== `${digest(body)}\n`) return none;
   return { stamp, body, at: indexOf(body) };
 }
 
@@ -507,7 +507,7 @@ function keeper() {
   let chunks = [];
   let parts = [];
   let held = 0;
-  let bytes = HEAD_BYTES;
+  let bytes = SEAL_BYTES;
   let twice = false;
   const flush = () => {
     const chunk = Buffer.from(parts.join(""));

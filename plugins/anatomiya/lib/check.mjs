@@ -1468,9 +1468,11 @@ function isException(dim, side, file) {
 }
 
 /**
- * Staleness caps severity at FIX. It is never a gate: a check that refuses to
- * run at pull-request time is the blocking hook this design rejects, arriving
- * at the moment it costs most.
+ * Staleness caps severity at FIX. A stale map never stops the check: one that
+ * refuses to run at pull-request time is the blocking hook this design
+ * rejects, arriving at the moment it costs most. It throws only where git
+ * could not be asked about the pinned commit or the base, which is no reading
+ * of the map at all.
  */
 async function staleness(root, facts, base, unreadable = null) {
   if (unreadable) return { reason: "the map on disk could not be read" };

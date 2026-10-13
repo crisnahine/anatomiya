@@ -52,8 +52,8 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
 
   const plan = writeMap(result, { dryRun, targets, leaveAlone });
   // After the map, into the directory it made, and never on a dry run, which
-  // drops what its walks read: the history stores are a cache beside the
-  // record, in no plan and no summary.
+  // drops what its walks read: the history stores are copies of what git
+  // printed, kept beside the record, in no plan and no summary.
   await saveHistory(result.root, history, { write: !dryRun });
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
   // settings, where `${CLAUDE_PLUGIN_ROOT}` is never substituted and Claude Code

@@ -530,7 +530,7 @@ export class Unasked extends Error {}
 /**
  * `r` where git ran, whatever it answered. A call with no exit code (a clock, a
  * signal, a start that failed, a refused argument, a configuration nobody could
- * read) was never an answer to `question`, and decides nothing (C33).
+ * read) was never an answer to `question`, and decides nothing (F29).
  */
 export function answered(r, question) {
   if (r.code === null) throw new Unasked(`git could not be asked ${question}: ${failureOf(r)}`);
@@ -604,7 +604,7 @@ export function gitStreamed(
     }
     // This clock and not spawn's own, which nothing stops for a child that
     // never started and which then holds the process open for the whole of
-    // `timeout`. Unreferenced, so a clear that is missed holds nothing open either.
+    // `timeout`. Unreferenced, so a clear that is missed holds nothing open either (B77).
     const clock = timeout > 0 ? setTimeout(() => signalChild(child, "SIGTERM"), timeout) : null;
     clock?.unref();
     // A git that exits before it has read `input` closes the pipe, and its exit code is what says so.
@@ -633,7 +633,7 @@ export function gitStreamed(
     };
 
     // Before any pipe is read: with no descriptor left, spawn hands back a
-    // child that has none and queues this error.
+    // child that has none and queues this error (B77).
     child.on("error", (err) => fail(new Error(`git ${sub} failed: ${err.message}`)));
 
     // Capped, because stderr grows with the repository the same way stdout

@@ -51,7 +51,7 @@ test("a temp directory too long for a socket fails the run rather than thinning 
 });
 
 // The version is asked at import, by every test file that takes a guard from
-// the module: a raw spawn error there named neither git nor the case it cost.
+// the module: a raw spawn error there names neither git nor the case it costs.
 test("a run with no git, or one whose version cannot be read, says which guard that cost and why", { ...needsShebang, ...needsPathControl, ...NESTED }, () => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-platform-git-"));
   const nested = (bin) =>

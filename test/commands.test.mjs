@@ -1306,8 +1306,6 @@ test("setup is the only command that runs npm, so a scan, a check and a pin inst
   assert.deepEqual(decls.filter((d) => d.exported && reaches(d)).flatMap((d) => d.names), ["runSetup"]);
 });
 
-/* --- a git that could not be asked stops the command, and nothing is written --- */
-
 test("a scan stops where git could not be asked whether the pinned commit is still there, and writes nothing", needsGitStub, async (t) => {
   const dir = repo(t);
   await runPin(dir);
@@ -1363,7 +1361,7 @@ test("a check stops where git could not be asked for the merge base, and keeps i
 });
 
 test("a check stops where git could not be asked whether a base that looks like a commit id names a ref", needsGitStub, async (t) => {
-  // Unasked read as "names no ref", so HEAD's own id, or a branch named in hex at HEAD, passed as a commit id.
+  // Read as "names no ref", an unasked name lets HEAD's own id, or a branch named in hex at HEAD, through as a commit id.
   const dir = repo(t);
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
   writeFileSync(join(dir, "src", "f0.ts"), "export const edited = 1\n");
@@ -1405,7 +1403,7 @@ test("a check stops where git could not be asked about its base or about the pin
   await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
   calls.restore();
 
-  // Read as a repository with no commit, a base that names nothing was let through at exit 0.
+  // Read as a repository with no commit, an unasked HEAD lets a base that names nothing through at exit 0.
   gitAhead(t, unasked("*' rev-parse --verify --quiet HEAD^{commit} '*"));
   await assert.rejects(() => runCheck(dir, { baseRef: "no-such-branch" }), /^Error: git could not be asked which commit HEAD names: /);
 });

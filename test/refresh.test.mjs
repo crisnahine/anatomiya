@@ -14,7 +14,7 @@ import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
 import { acquire, noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
-import { gitBuffered } from "../plugins/anatomiya/lib/git.mjs";
+import { gitBuffered, Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
@@ -2769,8 +2769,6 @@ test("a refresh that moves a pin taken at the plain ceiling gives the places bac
   assert.ok(back.areas.every((a) => a.baseline.status === "ok"));
 });
 
-/* --- a git that could not be asked ends the worker, and decides nothing --- */
-
 /** Every file under the checkout's `.claude`, by path, with its bytes: the pin, the map and what the worker records. */
 function claudeBytes(dir) {
   return Object.fromEntries(
@@ -2900,6 +2898,22 @@ test("a question that could not be asked after the stamp is read is a failed ref
   assert.equal(state.ok, false);
   assert.match(state.error, /^git could not be asked whether this repository folds case: git was ended by SIGTERM/);
   assert.equal((await refreshRepository(dir)).reason, "failed-before", "and that stamp waits out the retry clock");
+});
+
+test("the word a second worker left is taken when the worker holding the lock throws", needsGitStub, async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const word = join(dir, ".claude", "anatomiya", "refresh.again");
+  // Left once the lock is held: by then the worker is past every read before it.
+  let left = false;
+  const leaving = async () => {
+    if (!left) writeFileSync(word, "");
+    left = true;
+    throw new Unasked("git could not be asked anything");
+  };
+
+  await assert.rejects(() => refreshRepository(dir, { pin: leaving }), /^Error: git could not be asked anything/);
+
+  assert.equal(existsSync(word), false, "left there, it costs the next worker a pass nobody asked for");
 });
 
 test("the detached worker ends with exit 1 where git could not be asked, and leaves its checkout as it found it", needsGitStub, async (t) => {

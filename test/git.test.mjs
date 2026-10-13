@@ -1275,8 +1275,6 @@ test("a read no git could be started for is asked again, never kept as the answe
   assert.equal(await commitAt(dir, second), second);
 });
 
-/* --- a git that could not be asked is no answer --- */
-
 test("a commit is there, is not there, or git could not be asked, and only the first two are answers", needsGitStub, async (t) => {
   // Measured on git 2.39.5 and 2.54: `rev-parse --verify --quiet` exits 1 for
   // a commit that is not there and 128 for a directory git cannot open, where
