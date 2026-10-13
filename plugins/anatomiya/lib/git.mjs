@@ -995,14 +995,19 @@ export function blobReader(
         return;
       }
       const header = head.subarray(0, end);
-      // `<request> missing`, and `ambiguous`, `excluded` and `submodule` the
-      // same way: matched against the bytes sent, since a path can hold a space.
+      // `<request> missing`, and `ambiguous` and `excluded` the same way:
+      // matched against the bytes sent, since a path can hold a space.
       if (header.subarray(0, pending.echo.length).equals(pending.echo)) {
         if (head.length !== end + 1) return fall();
         // Where the caller asked for a fetch, the per-call reader makes it.
         return settle(lazyFetch ? null : { ok: false, reason: "absent" });
       }
-      const reply = /^[0-9a-f]+ ([a-z]+) (\d+)$/.exec(header.toString("latin1"));
+      const said = header.toString("latin1");
+      // A gitlink answers `<object id> submodule`, with no request and no size.
+      if (/^[0-9a-f]+ submodule$/.test(said)) {
+        return head.length === end + 1 ? settle({ ok: false, reason: "absent" }) : fall();
+      }
+      const reply = /^[0-9a-f]+ ([a-z]+) (\d+)$/.exec(said);
       if (!reply) return fall();
       // A directory answers with its tree, where `cat-file blob` errors.
       if (reply[1] !== "blob") return refused("absent");

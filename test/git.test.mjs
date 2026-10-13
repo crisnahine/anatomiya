@@ -1643,6 +1643,21 @@ test("bytes that arrive with no request waiting end the child", { ...needsSheban
   assert.equal(shim.perCall(), 1, "and the next read did not wait on it");
 });
 
+test("a gitlink is absent, and the reads after it are still answered by the one child", { ...needsShebang, ...needsBatchZ }, async (t) => {
+  const { dir, git } = repo(t);
+  git("update-index", "--add", "--cacheinfo", `160000,${GITLINK},sub`);
+  git("commit", "-qm", "gitlink");
+  const sha = git("rev-parse", "HEAD").toString().trim();
+  const shim = gitShim(t);
+  const reader = blobReader(dir, sha, { env: shim.env });
+  t.after(() => reader.close());
+
+  const answers = await Promise.all(["a.ts", "sub", "a.ts", "gone.ts"].map((rel) => reader.read(rel)));
+
+  assert.deepEqual(answers.map(answerOf), [A_TS, ABSENT, A_TS, ABSENT]);
+  assert.deepEqual(shim.calls(), ["cat-file --batch -Z"]);
+});
+
 function withBigBlob(t) {
   const { dir, git } = repo(t);
   writeFileSync(join(dir, "big.ts"), Buffer.alloc(MAX_FILE_BYTES + 1, "x"));
