@@ -167,6 +167,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | B74 | The tree rule of the reuse check (B68) asks wherever it cannot prove that nothing runs, and six kinds of line ask by choice: a binding that holds anything but names, types and literals outside its value, a string holding more than its own text, a sign the language does not define for the literal after it, a C# literal declared as a named type, a write through a member or a subscript in Python and PHP, and any token that is not a closer | done | [B74](docs/decisions/B74.md) |
 | B75 | The reuse check's tree rule (B68) is measured by `scripts/measure-inert.mjs` against an oracle written apart from the rule's walk, which names what an added line of a left-out hunk may define, build or compute. The oracle tells a name, a type, a string's parts, a sign, a predefined type and a target by how the grammars spell them and by a node's own text, and every case of the rule's test is put to it line by line | done | [B75](docs/decisions/B75.md) |
 | B76 | No kill in the library is sent to a child that has no pid | done | [B76](docs/decisions/B76.md) |
+| B77 | A child is listened to before its pipes are read, and the streamed read keeps its own clock | done | [B77](docs/decisions/B77.md) |
 
 ## C. The counted-claim model
 
@@ -258,7 +259,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 |---|---|---|---|
 | E1 | Store the baseline **file list** per area at pin time; compute baseline over that list, not the current glob | done | [E1](docs/decisions/E1.md) |
 | E2 | Baseline conformance from the blob at `<sha>:<path>`, never the working tree | done | [E2](docs/decisions/E2.md) |
-| E3 | Unreachable baseline sha: verify with `git cat-file -e`, then drop to counts-only until a human re-pins. Never fall back to stored counts | done | [E3](docs/decisions/E3.md) |
+| E3 | Unreachable baseline sha: verify with `git rev-parse --verify --quiet`, then drop to counts-only until a human re-pins. Never fall back to stored counts | done | [E3](docs/decisions/E3.md) |
 | E4 | An area whose candidates all postdate the baseline emits no directive | done | [E4](docs/decisions/E4.md) |
 | E5 | Re-pin is a separate command that prints the population delta it is about to accept. The plugin never suggests it. E11 narrows it for commits already on the remote default branch | done | [E5](docs/decisions/E5.md) |
 | E6 | Drift is files changed in mapped areas from the commit the pin and the base ref share, to the base ref, and whose bytes there differ from the pin's, never `..HEAD` | done | [E6](docs/decisions/E6.md) |
@@ -301,6 +302,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | F26 | A timing test asserts how the work grows, never a wall-clock budget | done | [F26](docs/decisions/F26.md) |
 | F27 | The co-change walk is bounded: `--max-count=20000` streamed through the git runner's clock and field cap; a change stops being stored at its 41st added or modified file or its 10,001st distinct deleted file name; pairs are counted only for a class with 35 candidates and a companion touched 32 times, at most 100,000 pair keys, past which the count stops and states nothing, and the scan's summary says so; the record keeps at most 100 stated claims and 100 near misses, and every reader reads at most 100 stated of the first 200; `GIT_NO_LAZY_FETCH` with nothing that needs a blob; and a git that refuses `--diff-merges` states nothing, and the summary says so too. A failed scan stops the walk's git | done | [F27](docs/decisions/F27.md) |
 | F28 | A JavaScript site's place is the nearest named owner around it: `Class.method` for a member of a named class, a class expression bound to a name taking that name, `name.method` for a method of an object literal bound to `name` (through nested literals, conditionals, `\|\|`, `&&` and `??`, call and `new` arguments, `await`, `as`, `satisfies` and parentheses), and for an unnamed function the place of the nearest named declaration around it. Only a class's own members carry its name: a named function declared inside a method or a static block is its own name, and so is a method of an object literal a field holds, since only a variable binds a literal | done | [F28](docs/decisions/F28.md) |
+| F29 | A git that could not be asked is no answer: a call that ended with no exit code decides nothing, and where reading it as "no" would let the tool write, move a pin or state something about the repository, the scan, the pin or the check stops with the question and git's text | done | [F29](docs/decisions/F29.md) |
 
 ## G. Scope
 

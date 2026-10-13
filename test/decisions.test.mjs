@@ -32,7 +32,7 @@ const B2_READ = {
   status: "**done** `walk.mjs` (`a`). Guarded by `walk.test.mjs`.",
 };
 
-test("a row file reads to its number, its section and its three cells, each on one line", () => {
+test("a row file reads to its id, its section and the text under its three headings, each on one line", () => {
   assert.deepEqual(readRowFile(B2), B2_READ);
 });
 
@@ -75,7 +75,7 @@ test("a file holding one of the three headings twice is no row file", () => {
   assert.equal(readRowFile(B2.replace("## Decision", "## Decision\n\n## Decision")), null);
 });
 
-test("a file with two Section lines, or headed by no row number, is no row file", () => {
+test("a file with two Section lines, or headed by no row id, is no row file", () => {
   assert.equal(readRowFile(B2.replace("Section: B. Engine", "Section: B. Engine\nSection: B. Engine")), null);
   assert.equal(readRowFile(B2.replace("# B2", "# Engine")), null);
 });
@@ -126,7 +126,7 @@ const TABLE = [
   "",
 ].join("\n");
 
-test("an index row reads to its number, the section it sits under, its decision as written, its short status and its file", () => {
+test("an index row reads to its id, the section it sits under, its decision as written, its short status and its file", () => {
   const read = [
     { id: "B1", section: "B. Engine", decision: "One.", status: "partial", file: "docs/decisions/B1.md", cells: 4, line: 7 },
     { id: "B2", section: "B. Engine", decision: "An `a \\|\\| b` chain is one site.", status: "done", file: "docs/decisions/B2.md", cells: 4, line: 9 },

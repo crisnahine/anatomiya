@@ -567,7 +567,7 @@ export function startFor(worker, { id, spawn: [command, args, options] }) {
     return null;
   }
   // Before any pipe is read: with no descriptor left, spawn hands back a child
-  // that has none and queues its error.
+  // that has none and queues its error (B77).
   child.on("error", (err) => send({ error: { message: String(err?.message ?? err), code: err?.code } }));
   child.on("close", (code, signal) => send({ close: [code, signal] }));
   let unread = 0;

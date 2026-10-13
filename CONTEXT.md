@@ -368,12 +368,22 @@ _Avoid_: snapshot, lockfile, baseline
 **Hold**:
 A pin that has stopped following the remote default branch while the checkout sits on its tip, because
 a commit on the way was made in this clone or carries its committer identity, the tip was not brought
-by a fetch, or git could not say.
+by a fetch, or git could not say how the tip was brought or whether a commit on the way was made
+here. A pinned commit, or an order of two pins, that git **could not be asked** about is no hold:
+the refresh ends and nothing is recorded.
 Said to the person in the terminal and never to the agent, and ended by a pin taken by hand or by a
 refresh that finds nothing holding it any more. The word is also said of an area: an area holding a
 file of a language no parser answered for is held, its file neither rewritten nor removed, until a
 scan can read that language.
 _Avoid_: block, freeze, lock
+
+**Could not be asked**:
+Said of a question put to git that git never answered: the call ended with no exit code, by a
+clock, a signal or a start that failed, or, where the answer is a yes or a no, with an exit code
+that is neither. It is no answer and is never read as a no. A scan, a pin and a check stop on one
+and print the question, and a refresh ends and asks again later. A git that ran and said no has
+answered.
+_Avoid_: failed (alone: a git that ran and refused has answered), unread (for a git call: that is a grammar's file), unanswerable
 
 **Population**:
 One area's slice of the pin: the files it held at the pinned commit, followed through renames to the names
@@ -501,11 +511,11 @@ not in it.
 _Avoid_: cache, data directory (that is the plugin's own, outside the repository)
 
 **History store**:
-What one history walk read of each commit, kept in the **store** so the next scan asks git only for
+What one history walk read of each commit, kept in the **store** so the next scan reads from git only
 the commits it has not seen. There are two, one for the walk that counts **authors** and one for
 the walk behind the **co-change claims**. It is a copy of what git printed, and one that cannot be
 checked is not used.
-_Avoid_: history cache, commit cache, log cache
+_Avoid_: history cache, commit cache, log cache, store (alone, before the passage has named a history store: the **store** is the directory)
 
 **Facts**:
 The machine record of every slot, gated or not, including which side was stated. The map is derivable from

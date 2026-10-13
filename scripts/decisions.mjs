@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { invokedAs } from "./entry.mjs";
 import { ROOT } from "./plugins.mjs";
 
-/** Where the row files live, one per row, named by the row's number. */
+/** Where the row files live, one per row, named by the row's id. */
 export const DECISIONS_DIR = "docs/decisions";
 
 /** A row's line, in the index and in the one table alike, and the header line that tells the two apart. */
@@ -26,7 +26,7 @@ const TABLE_HEAD = "| # | Decision | Why | Status |";
 const cellsOf = (line) => line.split(/(?<!\\)\|/).slice(1, -1);
 
 /**
- * Every row the index holds, in order: its number, the section heading above
+ * Every row the index holds, in order: its id, the section heading above
  * it, its Decision cell as written (escapes and all), its short status, the
  * file its last cell links to, how many cells it has, and its line.
  */
@@ -57,17 +57,17 @@ export function shortStatus(status) {
 const HEADINGS = ["## Decision", "## Why", "## Status"];
 
 /**
- * A row file's number, section and three cells, or null where the text is not one.
+ * A row file's id, its section and the text under its three headings, or null where the text is not one.
  *
- * Each cell comes back on one line, as a table holds it: the Why and the Status
+ * Each heading's text comes back on one line, as a table's cell holds it: the Why and the Status
  * are written a sentence per line so a search answers with a sentence, and a
  * line break inside a paragraph is a space to Markdown as well.
  *
  * A byte order mark and the whitespace at a line's end are dropped, and so is
- * the whitespace a cell's line opens with, since a fault in a character nobody
+ * the whitespace a line under a heading opens with, since a fault in a character nobody
  * can see is a report nobody can act on. A line ends at a CR, an LF or the
  * pair. A heading written twice is refused: the second would read as the text
- * of a cell.
+ * under the first.
  */
 export function readRowFile(text) {
   const lines = text.replace(/^\uFEFF/, "").split(/\r\n?|\n/).map((line) => line.trimEnd());
@@ -91,7 +91,7 @@ const cell = (text) => (text === "" ? " " : ` ${escaped(text)} `);
 
 /**
  * The record as one table, a whole row on each line: the index line for line,
- * with each row's cells read from its file. `files` is row number to file
+ * with each row's cells read from its file. `files` is row id to file
  * text. Throws on a row whose file is missing or is not a row file, since a
  * table with a hole in it is not the record.
  */
@@ -110,7 +110,7 @@ export function rebuild(index, files) {
     .join("\n");
 }
 
-/** The row files under a checkout, row number to text. */
+/** The row files under a checkout, row id to text. */
 export function rowFiles(root) {
   const dir = join(root, DECISIONS_DIR);
   return new Map(readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => [f.slice(0, -3), readFileSync(join(dir, f), "utf8")]));

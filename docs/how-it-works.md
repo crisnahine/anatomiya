@@ -350,9 +350,9 @@ A kill is sent only to a child that started (B76). A child whose `spawn` or `for
 handle and no pid until Node's next tick, and a kill of it in that window goes to pid 0, the
 caller's whole process group: measured on Node 22.22.3 with no file descriptor left, and with a
 binary or a working directory that is not there, the process that sent the signal died of it. So
-`guardedChild` sends its kills only to a child with a pid, a pool closed in the tick its workers
-were forked answers without waiting on a worker that never started, and the Ruby bridge and the
-git readers hold their kills to the same test.
+every signal this tool sends a child goes through one function, `signalChild`, which sends nothing
+to a child with no pid; a pool closed in the tick its workers were forked answers without waiting
+on a worker that never started; and a test fails on any other `.kill(` in the library.
 
 A tree-sitter parse the wall clock kills is not retried, because the slow case measured is the
 grammar and not the machine. The Kotlin grammar is quadratic in one shape of `<` comparison, a name
@@ -865,7 +865,8 @@ name of the gate that stopped it.
 Gates are evaluated in that order and the **first** failure is the one recorded and printed. So
 `no convention. 0 of 133 sites (ratio)` means ratio failed first, not that ratio was the only
 failure. Where git could not be read at all, the author gate is recorded as `history-unread` rather
-than as a team of zero. Where git answered but held only part of the history, the counts stand as a
+than as a team of zero. A clone git could not be asked the depth of is history that could not be
+read too: read as whole, a window would state claims the full clone does not (F29). Where git answered but held only part of the history, the counts stand as a
 floor rather than as the team, and the overview and the terminal both say so. How much of the
 history there is goes on the terminal alone, since the overview owes byte-stability and a
 fixed-depth boundary moves under it.
@@ -936,7 +937,9 @@ under another stamp is not used:
 The attribute parts are the authors walk's alone because an attribute says whether a file is text,
 and only a walk that pairs renames by content reads one: a `-diff` attribute on a renamed file
 turned its `D` and `A` rows into one `R` row on git 2.54. A part that cannot be read is no stamp
-for the walk that needs it, and that walk reads the log whole and keeps nothing. Two sources of
+for the walk that needs it, and that walk reads the log whole and keeps nothing. A `.mailmap` at
+the root or a `.gitattributes` in the working tree that is a link is such a part, since git follows
+no link at those names. Two sources of
 attributes are not in the stamp, and a store taken under either keeps its rename pairing until
 something else moves the stamp: a `.gitattributes` below the root that git does not track, which
 only a walk of the tree would find, and the system-wide file on a git older than 2.42, which cannot
@@ -946,8 +949,9 @@ A store is read only as a regular file git does not track, inside the repository
 at most 64 MiB packed and 256 MiB inflated, whose stamp and digest match and which is records end
 to end, one per commit. A replay stands only where the store and the read of the missing commits
 account for every commit of the order exactly once. Anything else is the full walk and never an
-error. A store is written after the map, only where the walk read a commit it did not hold, and a
-write that fails leaves none. A dry run reads the stores, writes neither and drops what its walks
+error. A store is written after the map, only where the walk read a commit it did not hold and
+the stamp, taken again before the write, is still the one its records were read under. A write
+that fails, and a stamp that moved while the walk ran, leave the store as it was. A dry run reads the stores, writes neither and drops what its walks
 read. What a store cannot see: where the commits are intact and a tree or a blob was lost after it
 was taken, the plain walk would say the history could not be read, and the replay answers from the
 store.
@@ -1016,11 +1020,20 @@ Five conditions stop a directive before any gate is consulted:
 
 | Condition | Meaning |
 |---|---|
-| `unreachable` | the pinned commit is gone from this clone, usually a squash-merge. Every claim drops to counts, and stored counts are never fallen back on |
+| `unreachable` | git says the pinned commit is gone from this clone, usually a squash-merge. Every claim drops to counts, and stored counts are never fallen back on |
 | `population-change` | a pinned file is no longer in this area, or would not come back or parse. Suppressed until a human re-pins |
 | `postdates-baseline` | nothing in this area, or nothing this dimension counts, existed at the pin. Greenfield directories are where agents write most, and there the baseline would be the agent's own output at 100% |
 | `semantic-unbaselined` | a type-checked claim on a pinned repository whose area holds a checked file changed or renamed since the pin, or no pinned site at all. The checker reads the working tree and never the pinned blobs, so only unchanged files can lend the baseline type-checked sites, and the counts print without a directive. Not the same as a greenfield directory, which is why it has its own name |
 | `corpus-truncated` | the scan hit a cap and answered for a subset of the repository |
+
+A question git could not be asked is none of these. A git call that ended with no exit code, by its
+clock, a signal or a start that failed, answered nothing, so the scan stops there, writes nothing
+and prints the question with what ended git at exit 1: `anatomiya: git could not be asked whether
+commit <sha> is still in this repository: git was ended by SIGTERM after 120000 ms`. It stops the
+same way on `which commit <ref> names`, `for the merge base of <a> and <b>` and `whether this
+repository folds case`, and so do `pin` and `check`. Read as git saying no, each of those said
+something git never did: a map dropped to counts over a commit that was still there, or drift
+measured to a ref's tip (F29).
 
 A rename map from `git diff --find-renames` is carried into the lookup, so a renamed directory finds
 its own baseline instead of reading as greenfield.
@@ -1124,8 +1137,12 @@ literal spread over lines counts as part of it: a comment, an import, an `export
 `require`, a name bound to a literal (a number, a string with no interpolation, `true`, `false`,
 `null`, `undefined`, `nil`, a symbol, or an array or object holding only those), a member of such a
 literal, and a closing `}`, `]`, `)` or `end`. Every other line asks, so a shape nobody listed
-still asks, and a line longer than 400 characters asks unread. On the last 200 commits of ten
-corpus repositories it skipped 756 of 9,223 changed files, and a parser found no function, class,
+still asks, and a line longer than 400 characters asks unread. A block comment that is not
+closed on its line opens only at the line's start or behind one `{`, as JSX writes it, since after
+code a `/*` may be a regex; a line comment that holds `*/` asks, and so does a Ruby comment that
+holds `#{`, which inside a regex or a percent literal spread over lines is an interpolation. On the
+last 200 commits of ten corpus repositories the rule, before those comment rules, skipped 756 of
+9,223 changed files, and a parser found no function, class,
 call, `new`, template or binding to anything but a literal starting on an added line of any of
 them (A91). An import that renames a function defined elsewhere is not asked about, and a `type`
 or `interface` is, at the cost of one search.
@@ -1145,19 +1162,25 @@ own text, a sign Kotlin or C# does not define for the literal after it (`-1u`), 
 declared as a named type (`Money a = 5;`, which may run an `implicit operator`), a write through an
 attribute or a subscript in Python and PHP (`self.x = 0`, `$a['k'] = 1;`, which may run a setter),
 and any token that is not a closer, since `get`, `func` and a lambda's `{` open a callable with no
-name on their line.
+name on their line. Three more ask because they hold what the tree does not show as code: every
+row of a string spread over lines that is not bound to a name, a Go comment directly above
+`import "C"`, which cgo compiles, and PHP markup that holds a `<script`.
 
-The tree-sitter parses of one stop share one second, started at the first such file and shared by
-every checkout the stop reads. A file reached after it, one whose parse runs past it and is
-cancelled, one the grammar rejects and one the runtime fails on are asked about whole. A file whose
-grammar or runtime is missing is not asked about. The largest parse and walk measured took 179 ms
-on a quiet machine and 619 ms at a load average above 70. Over the last 200 commits of 21
-repositories of the seven languages the rule asks about 26,542 of 34,075 added hunks and leaves
-out 7,533, and an oracle written apart from the rule, which re-parses every file holding a left-out
+The tree-sitter files of one stop share one second, started at the first such file and shared by
+every checkout the stop reads: the first load of the runtime and of each grammar, every parse and
+every walk of a parsed tree. A file reached after it, one whose parse or walk runs past it, one the
+grammar rejects and one the runtime fails on are asked about whole. A load cannot be stopped part
+way, so it alone can outlast the second (B73). A file whose grammar or runtime is missing is not
+asked about. Over the last 200 commits of 21 repositories of the seven languages the slowest file's
+parse and walk took 179 ms on a quiet machine and 619 ms at a load average above 70; the three
+largest files per language of the language corpus, the largest 451 KiB, took 59 to 1,556 ms at the
+median at a load average of 35 to 38, so on a machine that loaded the largest files ask unread.
+Over those commits the rule asks about 26,545 of 34,075 added hunks and leaves out 7,530, and an oracle written apart from the rule, which re-parses every file holding a left-out
 hunk, named nothing callable, built or computed in any of them (`scripts/measure-inert.mjs`, B75).
-What that costs is false asks, one search each: 18 of the 21 writes through an attribute or a
-subscript in those hunks reach no setter, 12 hunks hold an `else`, an `except:` or an opening
-bracket alone, and 2 hold C# enum members.
+What that costs is false asks, one search each: 21 hunks ask only because of a write through an
+attribute or a subscript, and 18 of those reach no setter, 12 hunks hold an `else`, an `except:` or
+an opening bracket alone, 2 hold C# enum members, and 1 holds a comment between the parts of a
+Python string.
 
 The reason ends by telling a session with no
 subagent tool to run the search itself. The Stop payload carries no tool list, and without that sentence a headless run
@@ -1293,7 +1316,7 @@ refresh), and none of them reaches the scan, the parser, the walker, the reducer
 Every hook process used to load 65 modules; at the split the echo loaded 13, the notice 13 until it
 read its rules and 26 after, the end-of-turn check 22 and the refresh 28, and the echo went from
 65ms to 39ms against 26ms for bare node, timed when it loaded 12 (A100). The echo's list is written
-out in `test/modules.test.mjs`, 16 modules of the library today, and the end-of-turn check loads
+out in `test/modules.test.mjs`, 16 modules of the library, a count the test pins, and the end-of-turn check loads
 its tree adapter only on a stop that changed a file of the seven tree-sitter languages. A module that will not
 load throws inside the same boundary as everything else, so the hook still answers `{}`.
 
@@ -1669,7 +1692,7 @@ the scan nothing and a scan that fails later does not put it back. A leftover wh
 on any code, stops nothing (`pair.left` in `replaceAll`): it stays, the scan writes, and the plan
 comes back with it moved from what was removed to what was left: `stagedLeft` for `.claude/rules`
 and `storeStagedLeft` for `.claude/anatomiya`, each a summary line (`1 temporary file an earlier
-scan left in .claude/anatomiya could not be removed, so it was left as it is`), and in a Cursor or
+run left in .claude/anatomiya could not be removed, so it was left as it is`), and in a Cursor or
 Copilot directory one more of the entries `foreign` counts.
 
 A failure at any rename or removal puts back every file already replaced, in every directory, takes
@@ -1737,7 +1760,9 @@ written, the remedy being
 what the text line tells a person to do, and `unwritable` where its directory could not be written.
 `stagedRemoved` counts the temporary files an earlier run left in `.claude/rules` that this one
 removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. `stagedLeft` and
-`storeStagedLeft` count the ones it could not remove. Each is absent at none.
+`storeStagedLeft` count the ones it could not remove. Each is absent at none. `lockBlocked` holds
+`.claude/anatomiya/refresh.lock` where a directory holding entries is at that name, and is absent
+otherwise.
 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
@@ -1812,7 +1837,12 @@ Moving a dead lock aside let two workers hold the lock in 1 of 200 rounds at
 its mtime is more than 62 seconds from the clock. One case is left: a worker killed while it holds a token's own token
 leaves a dead lock no worker breaks, every refresh of that checkout then leaves `refresh.again` and
 scans nothing, and the map there stays as it was until a scan run by hand sweeps the token's own token
-(A118). Neither `doctor`, the summary nor the delivered map says the refresh is stuck meanwhile. It stamps what a scan depends on (HEAD, the index as
+(A118). Neither `doctor`, the summary nor the delivered map says the refresh is stuck meanwhile. An
+entry at the lock's name that is no lock is told apart: the worker removes an empty directory there
+and takes the lock, and a directory holding entries, which it never empties, ends it with the reason
+`lock-blocked`. Nobody reads a worker's reason, so a scan run by hand says it in its summary:
+`".claude/anatomiya/refresh.lock" is a directory holding entries, so the map is not refreshed in the
+background in this checkout while it stays: remove it`. It stamps what a scan depends on (HEAD, the index as
 `ls-files -s`, the pin's bytes, the plugin version, whether the repository holds packages and where
 `typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
 map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
@@ -1824,7 +1854,11 @@ a Cursor or Copilot copy of the map, the rescan leaves that directory alone and 
 nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
 by hand rewrites it. A copy git could not be asked about is left alone too. A scan that throws writes nothing, so the
 previous map stays; the same stamp is tried again only after half an hour, and the echo says the
-refresh failed until a refresh or a scan run by hand succeeds. A rescan that wrote the `.claude/rules`
+refresh failed until a refresh or a scan run by hand succeeds. A refresh that could not ask git a
+question before its stamp is read (whether the map is committed, HEAD, the remote's tip, whether the
+pinned commit is still here, whether the pin is the newer one) ends before the rescan with nothing
+recorded and nothing said, and is tried again the next time the checkout moves or a session starts
+(F29). A rescan that wrote the `.claude/rules`
 map and left a Cursor or Copilot directory stopped at a locked file is no failure and the echo says
 nothing of it: `refresh.json` keeps `ok: true` and names the directory under `stopped`
 (`stoppedIn`), and the same stamp is due again on that half hour for as long as the key is there
@@ -1881,10 +1915,12 @@ so a commit whose committer is this clone's own identity is made here as well: p
 between it and the tip, and on a first pin only from the moment the clone was made (the mtime of
 `.git/description`, or the oldest reflog entry where that file is gone), since a commit the same
 person pushed from another machine before the clone existed was made somewhere else, and read over
-the whole line it held every first pin for good. A walk git cannot answer holds the pin as unread;
+the whole line it held every first pin for good. A walk git cannot answer holds the pin as unread,
+and so do a committer identity and a move of the remote's branch that git could not be asked about;
 with no committer identity at all only the reflog is asked, since git makes no commit without one. A
 pinned commit git no longer holds, its branch merged, deleted and collected, bounds nothing, and the
-line is read as for a first pin. A branch merged on the remote with a merge commit sits behind the
+line is read as for a first pin. A pinned commit git could not be asked about ends the worker with
+nothing recorded (F29). A branch merged on the remote with a merge commit sits behind the
 second parent and is pinned, the merge being its review.
 
 And the pin is taken at the commit that was judged, or not at all: HEAD and the tree are asked
@@ -2391,7 +2427,8 @@ change a claim is counted over and the change `check` holds to it are the same t
 replays the changes its history store holds and asks git for the rest (section 5, D15). It covers
 the newest 20,000 first-parent changes up to its tip, where the tip is the pin where it loads and is
 reachable, else HEAD's fork point with the first base ref that resolves, else HEAD, and the record
-names which. A change past 40 added or modified files, or past 10,000 distinct deleted file names,
+names which. A tip git could not be asked for is a walk that failed: the record carries the error,
+the summary prints it, and no co-change claim is stated (F29). A change past 40 added or modified files, or past 10,000 distinct deleted file names,
 is bulk (a vendored import, a rename sweep) and is not counted. Renames are off, so a move is a
 deletion and an addition, and a moved file is not a new one. The map this tool writes is no part of
 a change.
@@ -2577,11 +2614,13 @@ with a moved file was charged to whoever moved it. A branch past even that is sa
 
 What the branch changed, the committed diff from the fork point, the work still pending in the tree,
 the renames and the lines each file gained, is read by one module, `changeset.mjs`, and the
-end-of-turn hook reads the same one, so that hook loads no parser and no dimension (E15). The check
+end-of-turn hook reads the same one, so that hook loads no walker and no dimension, and a parser only on a stop that
+changed a file of the seven tree-sitter languages (E15, B73). The check
 resolves HEAD once and hands its sha to every read after it, runs the reads that need no other's
 answer side by side, and asks git once per process about a commit named by its full sha. A ref name
 is never remembered, since a commit can land between two calls in one process, and neither is a
-failed answer. A two-file branch of this repository went from 25 git calls to 20, and its check
+failed answer. A base git could not be asked about stops the check at exit 1 with the question and
+no report: HEAD, what a base names, which ref a typed `--base` names, and the merge base (F29). A two-file branch of this repository went from 25 git calls to 20, and its check
 from 422ms to 285ms (E14).
 
 One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether

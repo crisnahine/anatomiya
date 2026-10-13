@@ -485,7 +485,7 @@ export function doneFilesGone(rows, tracked) {
   return gone;
 }
 
-/** Row numbers a decision row cites that no row carries. A code span is skipped: `B7` there is a key, not a row. */
+/** Row ids a decision row cites that no row carries. A code span is skipped: `B7` there is a key, not a row. */
 export function rowsCitedMissing(rows) {
   const ids = new Set(rows.map((row) => row.id));
   return rows.flatMap((row) =>
@@ -495,13 +495,38 @@ export function rowsCitedMissing(rows) {
   );
 }
 
+const citesRows = (rel) => rel.endsWith(".mjs") && [`${REL.anatomiya}/lib/`, `${REL.anatomiya}/bin/`, "scripts/"].some((dir) => rel.startsWith(dir));
+
+/**
+ * Row ids the comments of the shipped code and the scripts cite that no row carries, by file.
+ *
+ * Every comment is read and nothing else: a comment is where CONTRIBUTING puts a citation, and a
+ * string is a message or a fixture. An id outside parentheses counts, since a comment also writes
+ * "as H12 has it". A code span is skipped as in a row, and so is a code point (`U+E0100`).
+ */
+export function rowsCitedInCode(ids, files) {
+  const missing = [];
+  for (const [rel, source] of files) {
+    if (!citesRows(rel)) continue;
+    let comments = [source];
+    try {
+      const parsed = parseSync(rel, source);
+      // A file oxc could not read is read whole, as `spokenIn` reads it.
+      if (parsed.errors.length === 0) comments = parsed.comments.map((c) => source.slice(c.start, c.end));
+    } catch {}
+    const cited = new Set(comments.flatMap((text) => [...text.replace(/`[^`]*`/g, "").matchAll(/(?<![+\w])[A-H]\d+\b/g)].map(([id]) => id)));
+    for (const id of cited) if (!ids.has(id)) missing.push({ rel, cited: id });
+  }
+  return missing;
+}
+
 /**
  * Where the index and the row files say different things about the record.
  *
  * A row is written in two places, and every rule that reads what a row says
  * reads its file, so an index left behind is a table of contents for some other
  * record with every gate passing. `rows` is the index as `indexRows` reads it,
- * and `files` is row number to the file as `readRowFile` reads it. An index or
+ * and `files` is row id to the file as `readRowFile` reads it. An index or
  * a directory holding nothing is a fault too: with no row, each rule below this
  * one reads nothing and reports that as agreement.
  */
@@ -526,7 +551,7 @@ export function recordProblems(rows, files) {
       say(rel, `is not a row file: \`# ${row.id}\`, a \`Section:\` line, then \`## Decision\`, \`## Why\` and \`## Status\` in that order, each once`);
       continue;
     }
-    if (file.id !== row.id) say(rel, `is headed # ${file.id}, and a row file is named by its number`);
+    if (file.id !== row.id) say(rel, `is headed # ${file.id}, and a row file is named by its id`);
     if (file.section !== row.section) say(rel, `says "Section: ${file.section}", and DECISIONS.md holds row ${row.id} under "${row.section}"`);
     if (file.decision === "") say(rel, "has nothing under `## Decision`");
     else if (escaped(file.decision) !== row.decision) say(rel, `its Decision is not the Decision cell DECISIONS.md holds for ${at}: the two are one text, a \`|\` written \`\\|\` in the index`);
@@ -536,7 +561,7 @@ export function recordProblems(rows, files) {
   }
   const indexed = new Set(rows.map((row) => row.id));
   for (const name of files.keys()) {
-    if (!indexed.has(name)) say(`${DECISIONS_DIR}/${name}.md`, "no row of DECISIONS.md has this number");
+    if (!indexed.has(name)) say(`${DECISIONS_DIR}/${name}.md`, "no row of DECISIONS.md has this id");
   }
   return problems;
 }
@@ -747,8 +772,8 @@ export function checkDocs() {
     claim("DECISIONS.md", row.cells === 4, `row ${row.id} on line ${row.line} has ${row.cells} cells, not 4: escape a \`|\` inside a code span as \`\\|\``);
   }
 
-  // A row number appearing twice is a row nobody can cite.
-  claim("DECISIONS.md", new Set(indexed.map((row) => row.id)).size === rows, "two rows share a number");
+  // A row id appearing twice is a row nobody can cite.
+  claim("DECISIONS.md", new Set(indexed.map((row) => row.id)).size === rows, "two rows share an id");
 
   // The index says a row exists and its file says what the row is, so the two
   // are held to each other before anything below reads a row.
@@ -757,9 +782,9 @@ export function checkDocs() {
   const record = [...rowsRead.values()].filter(Boolean);
 
   // "(B13)" read as the source of a rule another row holds, and nothing read it.
-  // A number that names the wrong row still passes; one that names no row does not.
+  // An id that names the wrong row still passes; one that names no row does not.
   for (const { row, cited } of rowsCitedMissing(record)) {
-    claim(`${DECISIONS_DIR}/${row}.md`, false, `cites ${cited}, and no row has that number`);
+    claim(`${DECISIONS_DIR}/${row}.md`, false, `cites ${cited}, and no row has that id`);
   }
 
   // --- the gate table ---------------------------------------------------------
@@ -1085,6 +1110,11 @@ export function checkDocs() {
   }
   for (const { row, spelled } of doneFilesGone(record, tracked)) {
     claim(`${DECISIONS_DIR}/${row}.md`, false, `names \`${spelled}\` as done, and no such file is here`);
+  }
+  // A comment cited two rows before either was written, and every check passed.
+  const rowIds = new Set(record.map((row) => row.id));
+  for (const { rel, cited } of rowsCitedInCode(rowIds, [...tracked].filter(citesRows).map((rel) => [rel, read(rel)]))) {
+    claim(rel, false, `a comment cites ${cited}, and no row has that id`);
   }
 
   // --- versions ---------------------------------------------------------------
