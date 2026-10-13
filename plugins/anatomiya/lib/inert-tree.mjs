@@ -11,11 +11,9 @@
  * The tree is walked with a cursor and deleted before this returns: a wasm tree
  * is never collected, and a copy of a large one costs more than its parse.
  */
+import { LINE_READ } from "./limits.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
 import { parseForLines } from "./tree-sitter-runtime.mjs";
-
-// Past this a line asks unread, as it does in the line rules.
-const LINE_READ = 400;
 
 // The words this grammar spells as identifiers where others have literal nodes.
 const WORDS = new Set(["true", "false", "null"]);

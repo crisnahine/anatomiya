@@ -33,6 +33,9 @@
  */
 export const MAX_FILE_BYTES = 1024 * 1024;
 
+/** Past this a line of the reuse check's rules asks unread, which bounds what each search costs. */
+export const LINE_READ = 400;
+
 /**
  * Whether the raw parser transfer may be asked for on this platform.
  *
