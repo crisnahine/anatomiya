@@ -303,11 +303,11 @@ async function readBesides(root, env) {
   // (`compat/mingw.c`). Where those name another directory than Node's, a file git reads there is not watched.
   const home = env.HOME ?? (process.platform === "win32" ? homedir() : undefined);
   // A file a key names, where git would look for it: null where the key is not set, false where the
-  // spelling (`~user`, `:(optional)`, `~` with no HOME) is git's to expand, so the file is not one this can watch.
+  // spelling (`~user`, `:(optional)`, `%(prefix)`, `~` with no HOME) is git's to expand, so the file is not one this can watch.
   const named = (key) => {
     const value = valueOf(key);
     if (value === undefined) return null;
-    if (/^(?:~[^/]|:\()/.test(value) || (home === undefined && /^~(?:\/|$)/.test(value))) return false;
+    if (/^(?:~[^/]|:\(|%\()/.test(value) || (home === undefined && /^~(?:\/|$)/.test(value))) return false;
     return resolve(root, value.replace(/^~(?=\/|$)/, () => home));
   };
   const files = [
