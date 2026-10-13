@@ -1297,6 +1297,13 @@ test("a commit is there, is not there, or git could not be asked, and only the f
   assert.equal(await shaReachable(dir, second), true, "asked again, and answered");
 });
 
+test("a merge base git refuses for two commits it holds is no \"none\", and one for a name that is no commit still is", needsGitStub, async (t) => {
+  const { dir, first, second } = twoCommits(t);
+  assert.deepEqual(await mergeBase(dir, first, "no-such-ref"), { found: false, failed: true, sha: null });
+  gitAhead(t, `case " $* " in *' merge-base '*) echo 'fatal: refused' >&2; exit 128;; esac`);
+  await assert.rejects(() => mergeBase(dir, first, second), (err) => err instanceof Unasked && /for the merge base of .*refused/.test(err.message));
+});
+
 test("a name git refuses without a word names no commit: a reflog entry past the log's end", async (t) => {
   // `rev-parse --verify --quiet` exits 128 for it and prints nothing, where a directory it cannot open says why.
   const { dir } = twoCommits(t);
