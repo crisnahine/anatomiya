@@ -583,6 +583,15 @@ export function startFor(worker, { id, spawn: [command, args, options] }) {
   };
   child.input = (text) => child.stdin?.end(text);
   child.stderr?.on("data", (bytes) => send({ stderr: bytes }));
+  // A pipe that fails says so on the stream, and with nobody listening that
+  // ends the scan. The batch cannot be read past it, so it fails as a child
+  // that errored does, and the child goes.
+  for (const pipe of [child.stdout, child.stderr]) {
+    pipe?.on("error", (err) => {
+      send({ error: { message: String(err?.message ?? err), code: err?.code } });
+      signalChild(child);
+    });
+  }
   child.stdin?.on("error", () => {
     /* the child died first; its exit is what reports the failure */
   });
@@ -633,6 +642,8 @@ function gathered() {
  * and `spawner` starts the child on the parent.
  */
 export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult, spawner }) {
+  // The pipes below are read unguarded, which holds only for the stand-in a thread makes.
+  if (typeof spawner !== "function") throw new TypeError("parseBatch needs a spawner");
   const out = blank();
   const seen = new Set();
   const unanswered = () => files.filter((f) => !seen.has(f.rel));
@@ -651,7 +662,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
           env: rubyEnv(),
           stdio: ["pipe", "pipe", "pipe"],
           stderrBytes: guards.stderrBytes,
-          ...(spawner ? { spawner } : {}),
+          spawner,
           // The whole run's ceiling: a child answering one file every fourteen
           // seconds keeps the idle clock happy and never ends.
           wallMs: guards.wallBaseMs + guards.wallPerFileMs * batch.length,

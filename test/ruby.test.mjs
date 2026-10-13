@@ -8,7 +8,7 @@ import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
-import { choosePrism, heldHeap, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize, startFor } from "../plugins/anatomiya/lib/ruby.mjs";
+import { choosePrism, heldHeap, listPrism, parseBatch, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize, startFor } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
@@ -2567,4 +2567,23 @@ test("a child whose command is not there tells its thread, and then closes", asy
   await closed;
 
   assert.deepEqual(posted.map((msg) => [msg.id, msg.error?.code ?? "close"]), [[3, "ENOENT"], [3, "close"]]);
+});
+
+test("a child's pipe that fails tells its thread, and the failure ends no process", async () => {
+  for (const pipe of ["stdout", "stderr"]) {
+    const posted = [];
+    const closed = new Promise((resolve) => {
+      const worker = { postMessage: (msg) => (posted.push(msg), msg.close && resolve()) };
+      const child = startFor(worker, { id: 4, spawn: [process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: ["pipe", "pipe", "pipe"] }] });
+      child[pipe].destroy(new Error("read EIO"));
+    });
+    await closed;
+
+    assert.deepEqual(posted.map((msg) => [msg.id, msg.error?.message ?? "close"]), [[4, "read EIO"], [4, "close"]], pipe);
+    assert.equal(posted[1].close[1], "SIGKILL", "a child nobody can read is ended");
+  }
+});
+
+test("a batch with nothing to start its child on the parent is refused", async () => {
+  await assert.rejects(parseBatch(pair, { ruby: "ruby", guards: RUBY_GUARDS, rubyScript: "", load: [], dimensions: [], onResult: () => {} }), /parseBatch needs a spawner/);
 });
