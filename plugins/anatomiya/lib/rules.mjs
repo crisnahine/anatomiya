@@ -15,10 +15,11 @@
  * is a filename anyone can type; the frontmatter alone is a file an older build
  * wrote and this one knows nothing about.
  */
-import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { accessSync, closeSync, constants, fstatSync, lstatSync, opendirSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 
 import { GENERATOR, PREFIX, TARGETS, areaName, isClaude, overviewName } from "./targets.mjs";
+import { isFileAt, stager } from "./store.mjs";
 
 /**
  * A path resolved through every link and alias the OS keeps, or null where it
@@ -48,6 +49,8 @@ export const RULES_DIR = TARGETS.claude.dir;
 export const STORE_DIR = ".claude/anatomiya";
 /** What the refresh worker last did, relative to the repository root. */
 export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
+/** The lock one refresh worker at a time holds, relative to the repository root. */
+export const REFRESH_LOCK = `${STORE_DIR}/refresh.lock`;
 // The one write outside the two above (A25). Here rather than beside the hook
 // that writes it, because this module is where every path a scan touches is
 // spelled, and the exclude line below has to be the same string.
@@ -146,46 +149,12 @@ export function isMapName(name, target = TARGETS.claude) {
 const AREA_STEM = new RegExp(`^${PREFIX}area-[0-9a-f]{8}$`);
 
 /**
- * Where a file is staged before it is renamed to `path`: beside it, under the
- * stager's process id and sixteen hex digits nobody can predict.
- */
-export const stagedPath = (path, pid, hex) => `${path}.tmp-${pid}-${hex}`;
-
-// The one reading of what `stagedPath` adds.
-const STAGED = /\.tmp-(\d+)-[0-9a-f]{16}$/;
-
-// The stager's process id where the name is one `owns` answers for with that added, or null.
-function stager(name, owns) {
-  const added = STAGED.exec(name);
-  return added !== null && owns(name.slice(0, added.index)) ? Number(added[1]) : null;
-}
-
-/**
  * The process that staged a temporary file of the map's, read off the file's
  * name, or null for any other name: a name a scan gives a file in this
  * directory, then what the stager adds to it.
  */
 export function stagedBy(name, target = TARGETS.claude) {
   return stager(name, (staged) => isMapName(staged, target));
-}
-
-/**
- * The temporary files a stopped writer left in the store, each with the process
- * that staged it: a regular file whose whole name is one of `names` and what
- * the stager adds. Never a link, a directory or a fifo, and never another name,
- * since the directory comes with the repository.
- */
-export function stagedInStore(dir, names) {
-  let entries;
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  return entries
-    .sort()
-    .map((name) => ({ name, pid: stager(name, (staged) => names.includes(staged)) }))
-    .filter(({ name, pid }) => pid !== null && isPlainFile(join(dir, name)));
 }
 
 /** What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`. */
@@ -327,7 +296,7 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
   out.listed = true;
   out.entries = names;
   // Asked of the entry itself: a link, a directory or a fifo under such a name is somebody's.
-  out.staged = names.filter((n) => stagedBy(n, target) !== null && isPlainFile(join(dir, n))).sort();
+  out.staged = names.filter((n) => stagedBy(n, target) !== null && isFileAt(join(dir, n))).sort();
 
   const read = (n) => n.endsWith(target.ext) && (isClaude(target) || n.startsWith(PREFIX));
   const listed = new Set(names);
@@ -654,14 +623,6 @@ export function leafReplaceable(path) {
   }
 }
 
-function isPlainFile(path) {
-  try {
-    return lstatSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Whether the path is a symbolic link, false where even lstat is refused: a
  * directory this may not enter answers EACCES here as well as to realpath.
@@ -677,6 +638,22 @@ export function isLink(path) {
 function contains(base, target) {
   const rel = relative(base, target);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+/** The first `most` names a directory lists, in the order it lists them, or none where it will not list: one that comes with the repository is never read whole. */
+export function namesIn(dir, most) {
+  const names = [];
+  try {
+    const listing = opendirSync(dir);
+    try {
+      for (let entry; names.length < most && (entry = listing.readSync()) !== null; ) names.push(entry.name);
+    } finally {
+      listing.closeSync();
+    }
+  } catch {
+    return [];
+  }
+  return names;
 }
 
 /**

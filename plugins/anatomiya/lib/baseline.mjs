@@ -1,5 +1,5 @@
 import {
-  changedSinceWorktree, diffRange, filesAt, isSha, mergeBase, resolveBaseRef, shaReachable,
+  Unasked, changedSinceWorktree, diffRange, filesAt, isSha, mergeBase, resolveBaseRef, shaReachable,
 } from "./git.mjs";
 import { existsSync, mkdirSync } from "node:fs";
 import { basename, join, dirname } from "node:path";
@@ -11,7 +11,8 @@ import { readAtRevision } from "./revision.mjs";
 import { plural } from "./render-layout.mjs";
 import { encodePath, quotePath, sanitisePath } from "./encode.mjs";
 import { applyPairings } from "./pairing.mjs";
-import { atomic, readRecord } from "./facts.mjs";
+import { readRecord } from "./facts.mjs";
+import { atomic } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import { blockedOnTheWay, leafReplaceable, outsideClaude, readHead, resolveInside } from "./rules.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
@@ -379,6 +380,11 @@ function areaBlock(state, population, baseline) {
  *
  * `head` is HEAD's sha where the caller has already resolved it, so every
  * range here ends at the commit that caller is reading.
+ *
+ * It throws where git could not be asked whether the pinned commit is still
+ * here, what a base ref names, for a merge base, for a range or for what the
+ * fork held: none of them is a pin past reach, a rename that did not happen
+ * or a path the base added (F29).
  */
 export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {}) {
   // Read here unless handed in. A pin on disk that will not load drops to
@@ -454,8 +460,9 @@ export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {})
  * branch having removed anything. Read as missing, each one closed its whole
  * area as a population change on a branch that deleted nothing. A path the
  * branch did hold at the fork and no longer holds is still missing. Empty when
- * the pin is in HEAD's history, and when git will not say, which is the
- * direction that suppresses rather than states.
+ * the pin is in HEAD's history, and when git ran and named no commit the two
+ * share. A fork git could not be asked for, or for what it held, is no answer,
+ * and stops the read (F29).
  */
 async function laterOnBase(root, pin, head) {
   const fork = await mergeBase(root, pin.sha, head);
@@ -469,6 +476,7 @@ async function laterOnBase(root, pin, head) {
 
 /** The paths the base moved since the pin and the shared commit both, or null. */
 async function driftRange(root, pinSha, baseSha) {
+  // It throws where git could not be asked: read from the pin in its place, the range is the symmetric one and takes the branch's own commits for the base's (F29).
   const shared = await mergeBase(root, pinSha, baseSha);
   const since = await diffRange(root, shared.found ? shared.sha : pinSha, baseSha);
   if (!since || !shared.found) return since;
@@ -645,6 +653,9 @@ async function countAtPin(root, state, areas, populations, { headParsed = null, 
       // A blob that will not come back is a population problem rather than a
       // parse problem, so `missing` suppresses the way a population change does.
       blobs = await readAtRevision(root, state.sha, stale);
+      // A blob git could not be asked for is not one the pin lacks, and closes no area (F29).
+      const unasked = blobs.missing.find((m) => m.reason === "unasked");
+      if (unasked) throw new Unasked(unasked.error);
       const reparsed = await parse(blobs.files);
       for (const [rel, r] of reparsed.records) parsed.set(rel, r);
       // The baseline is a second corpus read, and F7 is about corpus reads
@@ -689,7 +700,7 @@ async function countAtPin(root, state, areas, populations, { headParsed = null, 
         // closes it, because the baseline is then missing sites today can see.
         // Only when the blob itself came back and the parser answered on it.
         // A blob nobody fetched was not read and rejected, it was never read:
-        // `showBlob` refuses a file over the same cap the parser skips at, so
+        // the blob read refuses a file over the same cap the parser skips at, so
         // an oversize pinned file is missing here and skipped at HEAD, and
         // reading that pair as a blind spot let the area state a directive with
         // one file counted at neither revision and nothing saying so.

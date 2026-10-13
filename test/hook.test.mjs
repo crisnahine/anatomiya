@@ -6,13 +6,15 @@ import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
-import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { aboutDir, echoContext, echoEvent, fieldsIn, LOCK_HELD_MOST_MS, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { needsPosixSpecialFiles, needsUnreadableDirs, removeTree } from "./platform.mjs";
+import { aboutDir, echoContext, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { delivered, transcript } from "./transcript.mjs";
+import { echoEvent } from "../plugins/anatomiya/lib/transcript.mjs";
+import { LOCK_HELD_MOST_MS } from "../plugins/anatomiya/lib/echo.mjs";
 import { addWorktree, initWithCommit, scratch } from "./git-worktrees.mjs";
 
 /** The three entries 0.2.4 through 0.2.6 wrote into a scanned repository. */
@@ -27,7 +29,7 @@ const OLD_SETTINGS = {
 /** A repository with a map already written, the state a scan leaves behind. */
 function mapped(t, body = "---\ngenerator: anatomiya\n---\n\n# Repository map\n\n- lib: 3 .mjs\n") {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-hook-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude", "rules"), { recursive: true });
   writeFileSync(join(dir, ".claude", "rules", "anatomiya-overview.md"), body);
   return dir;
@@ -40,7 +42,7 @@ const settings = (dir) => JSON.parse(readFileSync(join(dir, SETTINGS_PATH), "utf
 /** A repository with a record of its counts, the other half of what a scan leaves. */
 function recorded(t, layout = { tests: [], roots: [] }, record = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-layout-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), JSON.stringify({ schema: FACTS_SCHEMA, areas: [], layout, ...record }));
   return dir;
@@ -198,7 +200,7 @@ test("a file the payload spells through a link is the same file the root was res
   // exists to say something before a write, said nothing at all.
   const real = recorded(t);
   const holder = mkdtempSync(join(tmpdir(), "anatomiya-link-"));
-  t.after(() => rmSync(holder, { recursive: true, force: true }));
+  t.after(() => removeTree(holder));
   const link = join(holder, "repo");
   symlinkSync(real, link, "dir");
 
@@ -374,7 +376,7 @@ test("the echoed map is stamped with the moment it was read", (t) => {
 test("the checkout path in the stamp cannot break a line or reorder what the stamp says", (t) => {
   // A directory is named by whoever made it, and the stamp is read as context.
   const base = mkdtempSync(join(tmpdir(), "anatomiya-hook-"));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
+  t.after(() => removeTree(base));
   // Windows refuses a newline or a colon in a name, so there only the bidi
   // override is planted.
   const windows = process.platform === "win32";
@@ -635,7 +637,7 @@ test("a working directory reached through a link is read where it really is", (t
   // reasoning F2 already applies to the settings write one function down.
   const dir = mapped(t);
   const real = mkdtempSync(join(tmpdir(), "anatomiya-real-"));
-  t.after(() => rmSync(real, { recursive: true, force: true }));
+  t.after(() => removeTree(real));
   mkdirSync(join(real, ".git"));
   mkdirSync(join(real, "src"));
   symlinkSync(join(real, "src"), join(dir, "link"));
@@ -685,7 +687,7 @@ test("the walk up stops at the filesystem root rather than running off it", (t) 
   // A path with no map above it anywhere answers null, and does so without
   // walking forever or throwing at the top.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-hook-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "a", "b", "c"), { recursive: true });
 
   assert.equal(echoContext(join(dir, "a", "b", "c"), {}), null);
@@ -1019,7 +1021,7 @@ test("the same command in a repository with no map answers an empty object", (t)
   // A plugin hook runs in every session, so this is the answer most of the time
   // and it has to cost nothing and disturb nothing.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-nomap-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
   const root = ANATOMIYA.replace(/\/$/, "");
   const command = declared.hooks.PostToolUse[0].hooks[0].command.replace("${CLAUDE_PLUGIN_ROOT}", root);
@@ -1176,7 +1178,7 @@ test("a settings path that leaves the repository is refused, and the file it poi
   // here would land in a file the repository does not own.
   const dir = mapped(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-victim-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const victim = join(outside, "important.json");
   const body = JSON.stringify(OLD_SETTINGS);
   writeFileSync(victim, body);
@@ -1191,7 +1193,7 @@ test("a settings path that leaves the repository is refused, and the file it poi
 test("a .claude directory that is a link out of the repository is refused too", (t) => {
   const dir = mapped(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-victim-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   writeFileSync(join(outside, "settings.local.json"), JSON.stringify(OLD_SETTINGS));
 
   rmSync(join(dir, ".claude"), { recursive: true, force: true });
@@ -1450,7 +1452,7 @@ test("a settings path that is not a file is refused rather than opened and waite
   // handle before a byte is read, which is the rule the docstring above states
   // and this one read did not follow.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-settings-fifo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude"), { recursive: true });
   execFileSync("mkfifo", [join(dir, SETTINGS_PATH)]);
 
@@ -1472,7 +1474,7 @@ test("a settings file larger than the cap is refused, not read whole", (t) => {
   // The read had no bound at all, so whatever sits at that path is the cost of
   // every scan. Everything else this module reads goes through one cap.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-settings-big-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude"), { recursive: true });
   writeFileSync(join(dir, SETTINGS_PATH), `{"pad":"${"x".repeat(2 * 1024 * 1024)}"}`);
 
@@ -1682,7 +1684,7 @@ test("a backslash in a POSIX filename is part of the name, not a separator", { s
 test("an overview reached through a tracked link to another checkout is not this repository's map", { skip: process.platform === "win32" }, (t) => {
   const other = mapped(t);
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-hook-linked-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude"));
   symlinkSync(join(other, ".claude", "rules"), join(dir, ".claude", "rules"));
 

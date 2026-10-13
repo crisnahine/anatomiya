@@ -17,7 +17,8 @@
 import { GATES, wilsonLower } from "./gates.mjs";
 import { isPerson } from "./authors.mjs";
 import { CHANGE_MOST, CLAIMS_MOST, classesOf, classParts, companionKey, keyCompanion } from "./cochange.mjs";
-import { commitAt, filesAt, gitStreamed, isSha, resolveBaseRef } from "./git.mjs";
+import { commitAt, filesAt, isSha, resolveBaseRef } from "./git.mjs";
+import { SEP, historyFields } from "./history.mjs";
 import { ownOutput } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
 import { byCode, dirOf } from "./paths.mjs";
@@ -45,8 +46,6 @@ export const COCHANGE = {
   goneMost: 10_000,
 };
 
-const SEP = "\x1e";
-
 const getOrSet = (map, key, make) => {
   if (!map.has(key)) map.set(key, make());
   return map.get(key);
@@ -55,7 +54,8 @@ const getOrSet = (map, key, make) => {
 /**
  * Where the walk stops: the pin where it loads and is reachable, else HEAD's
  * fork point with the first base ref that resolves, else HEAD, or null with no
- * commit. A branch cannot make its own claim in the first two.
+ * commit. A branch cannot make its own claim in the first two. It throws where
+ * git could not be asked what a ref names.
  */
 export async function cochangeTip(root, state) {
   if (state?.status === "ok" && isSha(state.sha)) return { tip: state.sha, from: "pin" };
@@ -134,28 +134,41 @@ export function changeReader(onChange, own = () => false) {
  * clock and field cap. `--no-renames` and `--name-status` read trees only, so a
  * blobless clone answers offline and a treeless one fails rather than fetching.
  * A git older than 2.31 refuses `--diff-merges`, which is an error and states nothing.
+ * `history` is one scan's: with it the changes a history store already holds are
+ * replayed and only the rest are asked of git (`history.mjs`).
  */
-export async function walkCochange(root, tip, { signal } = {}) {
-  const changes = [];
-  let read = 0;
-  let bulk = 0;
-  const reader = changeReader((c) => {
-    read++;
-    if (c.bulk) bulk++;
-    else if (c.touched.length > 0) changes.push(c);
-  }, ownOutput(root).asWritten);
-  if (!isSha(tip)) return { changes, read, bulk, error: "no commit to walk from" };
+export async function walkCochange(root, tip, { signal, history = null } = {}) {
+  if (!isSha(tip)) return { changes: [], read: 0, bulk: 0, error: "no commit to walk from" };
+  const own = ownOutput(root).asWritten;
+  let changes, read, bulk, reader;
+  // A read given up part way starts over, and the counts with it.
+  const open = () => {
+    changes = [];
+    read = 0;
+    bulk = 0;
+    reader = changeReader((c) => {
+      read++;
+      if (c.bulk) bulk++;
+      else if (c.touched.length > 0) changes.push(c);
+    }, own);
+    return reader;
+  };
   try {
-    await gitStreamed(
+    await historyFields(
       root,
-      [
+      {
+        kind: "cochange",
+        renames: false,
         // A root commit's diff is every file the repository started with, which is no habit.
-        "-c", "log.showRoot=false",
-        "log", tip, "--first-parent", "--diff-merges=first-parent", "--no-renames", "--name-status", "-z",
-        `--format=${SEP}%aE`, `--max-count=${COCHANGE.depth}`, "--",
-      ],
-      reader,
-      { terminated: false, signal }
+        config: ["-c", "log.showRoot=false"],
+        tip: [tip],
+        walk: ["--first-parent"],
+        diff: ["--diff-merges=first-parent", "--no-renames", "--name-status", "-z"],
+        cap: [`--max-count=${COCHANGE.depth}`],
+        env: process.env,
+      },
+      open,
+      { signal, history }
     );
     reader.end();
   } catch (err) {
@@ -164,11 +177,21 @@ export async function walkCochange(root, tip, { signal } = {}) {
   return { changes, read, bulk, error: null };
 }
 
-/** The walk and the tip's tree, started together once the pin is known; `signal` stops both. */
-export async function startCochange(root, state, { signal } = {}) {
-  const at = await cochangeTip(root, state);
-  if (at === null) return { tip: null, from: null, walk: { changes: [], read: 0, bulk: 0, error: null }, tree: null };
-  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal }), filesAt(root, at.tip, { signal })]);
+/**
+ * The walk and the tip's tree, started together once the pin is known; `signal` stops both.
+ * A tip git could not be asked for is a walk that failed, and never a repository with no commit.
+ */
+export async function startCochange(root, state, { signal, history = null } = {}) {
+  const none = (error) => ({ tip: null, from: null, walk: { changes: [], read: 0, bulk: 0, error }, tree: null });
+  let at;
+  try {
+    at = await cochangeTip(root, state);
+  } catch (err) {
+    return none(String(err && err.message ? err.message : err));
+  }
+  if (at === null) return none(null);
+  // A tree git could not be asked for is null like one it refused: the record then says the tree could not be read.
+  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal, history }), filesAt(root, at.tip, { signal }).catch(() => null)]);
   return { ...at, walk, tree };
 }
 

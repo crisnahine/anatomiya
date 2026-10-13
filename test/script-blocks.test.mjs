@@ -2,13 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { assertScanners, scriptBlocks, blankOutside } from "../plugins/anatomiya/lib/script-blocks.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
+import { removeTree } from "./platform.mjs";
 
 // What the scanner kept, with each range read back out of the source.
 const read = (source, kind) => {
@@ -448,7 +449,7 @@ test("a block is its body's two offsets and its language, and nothing else of th
 test("the module refuses to load where the registry names an extractor it has no scanner for", (t) => {
   // The real table against a registry that declares one more, in a copy: the call that holds the two together runs at import.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-scanners-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   for (const file of ["script-blocks.mjs", "blank.mjs"]) cpSync(join(ANATOMIYA, "lib", file), join(dir, file));
   const registry = readFileSync(join(ANATOMIYA, "lib", "langs.mjs"), "utf8");
   const declared = 'Object.freeze(["vue", "svelte"])';

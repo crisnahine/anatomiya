@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 
-import { needsPosixPermissions, needsSymlinks } from "./platform.mjs";
+import { needsPosixPermissions, needsSymlinks, removeTree } from "./platform.mjs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
  */
 function marketplace(t, { second = {}, hooks = true, commands = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-validate-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   // The shape this marketplace has: no plugin at the root, one directory per
   // plugin under `plugins/`, and the root carrying the marketplace manifest and
@@ -700,7 +700,7 @@ test("a source that is an absolute path is refused, since it resolves on one mac
 test("a plugin directory that is a symlink out of the repository is refused", needsSymlinks, (t) => {
   const dir = marketplace(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   mkdirSync(join(outside, ".claude-plugin"), { recursive: true });
   writeFileSync(join(outside, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "second", version: "0.1.0", description: "d" }));
   rmSync(join(dir, "plugins", "second"), { recursive: true, force: true });
@@ -822,7 +822,7 @@ test("the check runs when it is reached through a symlinked path", needsSymlinks
   // A validator that silently passes is worse than one that fails: this is CI's
   // only manifest gate, and the same equality made both plugin hooks no-ops.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-linked-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   symlinkSync(ROOT, join(dir, "repo"));
 
   const run = spawnSync(process.execPath, [join(dir, "repo", "scripts", "validate.mjs")], { encoding: "utf8" });
@@ -994,7 +994,7 @@ test("a link out of the repository is refused wherever a manifest or a hook reac
   // directory, the files its hooks run and the paths its manifest names were
   // not, and each passed while pointing at a file the repository does not hold.
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   writeFileSync(join(outside, "run.mjs"), "");
   mkdirSync(join(outside, "cmds"));
   mkdirSync(join(outside, "manifests"));

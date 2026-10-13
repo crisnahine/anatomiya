@@ -1,11 +1,12 @@
 /**
- * The checker's job, in process: one program over the whole corpus, and
- * per-file hits and resolution handed to `send` as they come.
+ * The checker's job, in process: one program over the whole corpus, each
+ * file's resolution and sites handed to `send` as they come, and then each
+ * file's hits.
  *
  * Whole-program is the shape of the tool rather than a choice: narrowing the
  * file set was measured saving 3% of the time and driving unresolved types from
  * 3.1% to 36.2%, which is the number the whole tier exists to keep high. So one
- * program, one pass, and no tree in the channel.
+ * program, every file it holds, and no tree in the channel.
  *
  * Here rather than in the worker so the function the whole degraded verdict
  * rests on can be reached without forking a real typescript program. The
@@ -13,14 +14,19 @@
  */
 import { loadTypeScript } from "./semantic.mjs";
 import { readConfig, confinedCompilerHost } from "./tsconfig.mjs";
-import { SEMANTIC_DIMENSIONS } from "./dimensions-semantic.mjs";
+import { SEMANTIC_DIMENSIONS, siteStubs } from "./dimensions-semantic.mjs";
 import { crossing } from "./walk.mjs";
 
 /**
  * Run one job and report through `send`: `{ error }` and nothing after it,
- * or `{ built, config }`, then `{ rel, hits, resolution }` per file the
- * program holds, then `{ done }`. The rate is summed by the reader, which is
- * the side that knows which files a claim is counted over.
+ * or `{ built, config }`, then two passes over the files the program holds
+ * and `{ done }`. The first pass answers `{ rel, hits: {}, resolution, sites }`
+ * per file, `sites` being the stubs `siteStubs` reads off the tree, and ends
+ * with `{ sited }`: the rate and where each row has a site are all a reader
+ * needs to know the tier is degraded. The second walks the rows and answers
+ * `{ rel, hits, resolution }` again, with what the checker counted. Under a
+ * refused config there is one pass, its `hits` the stubs. The rate is summed by
+ * the reader, which is the side that knows which files a claim is counted over.
  *
  * Every failure is one message on the channel rather than a dead one: the
  * parent reads a channel that closes with nothing said as a crash.
@@ -47,22 +53,37 @@ export async function runJob(job, send, { load = loadTypeScript } = {}) {
 
     send({ built: true, config: { status: config.status, reason: config.reason } });
 
+    // A refused config degrades the tier whatever resolves, and a degraded
+    // tier keeps no type-checked row: where a row has a site is all the scan
+    // reads, so the stubs are the answer and the checker is not asked.
+    const refused = config.status === "degraded";
+    const answered = [];
     for (const file of job.files) {
       const source = program.getSourceFile(file.abs);
       if (!source) continue;
-      const hits = {};
-      for (const dim of SEMANTIC_DIMENSIONS) {
-        const out = [];
-        try {
-          dim.run({ ts, checker, source }, (h) => out.push(crossing(h)));
-        } catch {
-          // A dimension that threw drops its own key for this file and leaves
-          // the rest standing, the same rule the syntactic worker follows.
-          continue;
+      const resolution = measureResolution(ts, program, checker, [file]);
+      const sites = siteStubs(ts, source);
+      send(refused ? { rel: file.rel, hits: sites, resolution } : { rel: file.rel, hits: {}, resolution, sites });
+      answered.push({ file, source, resolution });
+    }
+
+    if (!refused) {
+      send({ sited: true });
+      for (const { file, source, resolution } of answered) {
+        const hits = {};
+        for (const dim of SEMANTIC_DIMENSIONS) {
+          const out = [];
+          try {
+            dim.run({ ts, checker, source }, (h) => out.push(crossing(h)));
+          } catch {
+            // A dimension that threw drops its own key for this file and leaves
+            // the rest standing, the same rule the syntactic worker follows.
+            continue;
+          }
+          if (out.length) hits[dim.key] = out;
         }
-        if (out.length) hits[dim.key] = out;
+        send({ rel: file.rel, hits, resolution });
       }
-      send({ rel: file.rel, hits, resolution: measureResolution(ts, program, checker, [file]) });
     }
 
     send({ done: true });

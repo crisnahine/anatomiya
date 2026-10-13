@@ -18,6 +18,7 @@ import {
   PACKAGE_SHELL,
   coveredStem,
   namesATest,
+  namesATestFile,
   isTestTree,
   pairedWith,
 } from "../plugins/anatomiya/lib/test-shape.mjs";
@@ -335,4 +336,17 @@ test("a name that is all extension has itself for a stem, and names no test", ()
   }
   assert.equal(coveredStem(stemOf("tests/.py"), "python"), null);
   assert.equal(stemOf("tests/.py"), ".py");
+});
+
+test("a Ruby spec outside a test tree is a test by its name until its parse was asked", () => {
+  assert.equal(namesATestFile("Library/Homebrew/software_spec.rb", "ruby"), true);
+  assert.equal(namesATestFile("Library/Homebrew/software_spec.rb", "ruby", { parseAsked: true }), false);
+  assert.equal(namesATestFile("gems/x/spec_canvas/a_spec.rb", "ruby"), true);
+  assert.equal(namesATestFile("spec/models/user_spec.rb", "ruby"), true);
+  assert.equal(namesATestFile("spec/models/user_spec.rb", "ruby", { parseAsked: true }), true);
+});
+
+test("a directory named like a test is no test", () => {
+  assert.equal(namesATestFile("a.test.d/x.js", "js"), false);
+  assert.equal(namesATestFile("src/__tests__/helper.js", "js"), false);
 });

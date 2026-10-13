@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ENGINE, ENGINE_VERSION, RETRY_BUDGET_MS, ensureRuntime, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { ENGINE, ENGINE_VERSION, RETRY_BUDGET_MS, failure, parseTreeFile, probeGrammars } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { ensureRuntime } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { GUARDS, createPool } from "../plugins/anatomiya/lib/pool.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
@@ -14,18 +15,19 @@ import { TREE_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-tree.mjs";
 import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { ANATOMIYA, ROOT } from "../scripts/plugins.mjs";
-import { needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
 import { BROKEN } from "./tree-broken.mjs";
 
 const HOSTED = LANGUAGES.filter((l) => l.engine === "tree-sitter");
 const BODY = join(ANATOMIYA, "lib", "tree-sitter-file.mjs");
+const RUNTIME = join(ANATOMIYA, "lib", "tree-sitter-runtime.mjs");
 const WORKER = join(ANATOMIYA, "lib", "tree-sitter-worker.mjs");
 const GRAMMARS = join(ANATOMIYA, "grammars");
 
 function scratch(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
@@ -85,6 +87,26 @@ for (const decl of HOSTED) {
     assert.deepEqual(JSON.parse(JSON.stringify(r.program)), r.program, "nothing in it is lost over IPC");
   });
 }
+
+test("grammars asked for at once from a cold runtime all load: a stop that reads two checkouts starts them together", () => {
+  // In a process of its own, since the runtime loads once per process and this one's is warm.
+  const script = `
+    const { parserFor, GRAMMARS } = await import(${JSON.stringify(pathToFileURL(RUNTIME).href)});
+    const { grammarFor } = await import(${JSON.stringify(pathToFileURL(join(ANATOMIYA, "lib", "langs.mjs")).href)});
+    const asks = [["python", "a.py", "x = 1\\n"], ["go", "a.go", "package a\\n"], ["python", "b.py", "y = 2\\n"]];
+    const out = await Promise.allSettled(asks.map(async ([lang, rel, source]) => {
+      const parser = await parserFor(grammarFor(lang, rel), GRAMMARS, lang);
+      const tree = parser.parse(source);
+      const read = tree.rootNode.hasError ? "rejected" : "parsed";
+      tree.delete();
+      return lang + " " + read;
+    }));
+    console.log(JSON.stringify(out.map((o) => (o.status === "fulfilled" ? o.value : "threw " + o.reason?.message))));
+  `;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60_000 });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout), ["python parsed", "go parsed", "python parsed"]);
+});
 
 test("a broken file counts every ERROR and MISSING node it holds", async () => {
   const two = await parseTreeFile("class A { int x = 1 }\nclass B { int y = 2 }\n", "src/A.java", "java");
@@ -490,7 +512,8 @@ test("a fifo at a grammar's name or at the manifest's is answered without being 
   const script = join(dir, "ask.mjs");
   writeFileSync(
     script,
-    `import { ensureRuntime, parseTreeFile, probeGrammars } from ${JSON.stringify(pathToFileURL(BODY).href)};
+    `import { parseTreeFile, probeGrammars } from ${JSON.stringify(pathToFileURL(BODY).href)};
+import { ensureRuntime } from ${JSON.stringify(pathToFileURL(RUNTIME).href)};
 console.log = () => {};
 const [dir, listed] = process.argv.slice(2);
 await ensureRuntime();
@@ -677,9 +700,13 @@ test("a tree too deep for the channel is answered as a crash, as the JavaScript 
   }
 });
 
-// About 160 s on a loaded laptop. Bounded well inside the CI job's own 30 minutes, so a slow runner
+// About 160 s on a loaded laptop. Bounded well inside the CI job's own 45 minutes, so a slow runner
 // reports this test and not a cancelled job.
-test("five hundred large parses leave the child's memory where it started", { timeout: 12 * 60_000 }, async (t) => {
+//
+// Not under the coverage collector: it keeps its records on the heaps this reads, and the child it
+// instruments runs past the bound on a slow runner. Every leg of the suite itself takes the reading.
+const UNCOLLECTED = process.env.NODE_V8_COVERAGE ? { skip: "a memory reading under the coverage collector is no reading of the parser" } : {};
+test("five hundred large parses leave the child's memory where it started", { timeout: 12 * 60_000, ...UNCOLLECTED }, async (t) => {
   const dir = scratch(t, "anatomiya-ts-memory-");
   const unit = SAMPLES.python.replace("from __future__ import annotations\n", "");
   const big = file(dir, "big.py", unit.repeat(Math.floor(990_000 / unit.length)), "python");
@@ -706,7 +733,8 @@ test("five hundred large parses leave the child's memory where it started", { ti
 import { readFileSync } from "node:fs";
 import { parseTreeFile } from ${JSON.stringify(pathToFileURL(BODY).href)};
 process.on("message", async ({ rel, abs, lang }) => {
-  const r = await parseTreeFile(readFileSync(abs, "utf8"), rel, lang);
+  // A clock that stands still: the retry this test measures is weighed on one, and a slow machine must still get it.
+  const r = await parseTreeFile(readFileSync(abs, "utf8"), rel, lang, { now: () => 0 });
   globalThis.gc();
   const { rss, external, heapUsed } = process.memoryUsage();
   process.send({ rel, ok: r.ok, error: r.error, oneBranch: r.oneBranch === true, rss, external, heapUsed });

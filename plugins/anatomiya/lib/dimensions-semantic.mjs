@@ -1,4 +1,4 @@
-export const SEMANTIC_DIMENSIONS = [
+export const SEMANTIC_DIMENSIONS = assertSited([
   {
     key: "law_of_demeter",
     claim: "a call chain stays inside one type",
@@ -12,31 +12,72 @@ export const SEMANTIC_DIMENSIONS = [
     },
     tier: "semantic",
     langs: ["js", "jsx"],
+    sited: (ts, source) => eachChain(ts, source, () => true) === true,
     run({ ts, checker, source }, add) {
-      const seen = new Set();
-
-      const visit = (node) => {
-        if (ts.isCallExpression(node) && !seen.has(node)) {
-          const receivers = chainReceivers(ts, node);
-          if (receivers.length >= 2) {
-            // Outermost wins: every node inside this chain is marked so the
-            // walk below does not count the same chain again from halfway up.
-            markChain(ts, node, seen);
-            const types = new Set(
-              receivers
-                .map((r) => widened(ts, checker, r))
-                .filter((name) => name !== null)
-            );
-            add({ conforming: types.size <= 1, where: enclosingName(ts, node) });
-          }
-        }
-        ts.forEachChild(node, visit);
-      };
-
-      visit(source);
+      eachChain(ts, source, (node, receivers) => {
+        const types = new Set(
+          receivers
+            .map((r) => widened(ts, checker, r))
+            .filter((name) => name !== null)
+        );
+        add({ conforming: types.size <= 1, where: enclosingName(ts, node) });
+      });
     },
   },
-];
+]);
+
+/**
+ * A type-checked row says where it has a site with no checker, or it does not
+ * ship: `siteStubs` asks every row on every file, and a row with no answer
+ * would leave no stub anywhere and say nothing. Checked at load, as a row's predicate is.
+ */
+function assertSited(rows) {
+  for (const d of rows) {
+    if (typeof d.sited !== "function") {
+      throw new Error(`type-checked dimension ${d.key} declares no sited(ts, source): say whether a file holds a site of it, read off the tree alone`);
+    }
+  }
+  return rows;
+}
+
+/**
+ * What each row would be credited in a file by a checker nobody believes: one
+ * conforming site where the row has any, read off the tree alone. A degraded
+ * tier drops every type-checked row, so all a fold asks of these hits is
+ * whether a file holds a site, and that needs no type.
+ */
+export function siteStubs(ts, source) {
+  const hits = {};
+  for (const dim of SEMANTIC_DIMENSIONS) {
+    try {
+      if (dim.sited(ts, source)) hits[dim.key] = [{ conforming: true, where: null }];
+    } catch {
+      // A row that threw has no stub in this file, as its walk has no hit there: one file's throw is not the tier's.
+    }
+  }
+  return hits;
+}
+
+/**
+ * Every member-call chain of depth two or more, outermost first, handed to
+ * `found` with its receivers. A truthy answer ends the walk and is returned.
+ */
+function eachChain(ts, source, found) {
+  const seen = new Set();
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && !seen.has(node)) {
+      const receivers = chainReceivers(ts, node);
+      if (receivers.length >= 2) {
+        // Outermost wins: every node inside this chain is marked so the
+        // walk below does not count the same chain again from halfway up.
+        markChain(ts, node, seen);
+        if (found(node, receivers)) return true;
+      }
+    }
+    return ts.forEachChild(node, visit);
+  };
+  return visit(source);
+}
 
 /**
  * The expression inside its wrappers.

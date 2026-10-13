@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPathControl, needsPosixPaths, needsShebang, needsTmpdirVariable } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsShebang, needsTmpdirVariable, removeTree } from "./platform.mjs";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPool, defaultPoolSize, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
 import { pathToFileURL } from "node:url";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 
 function file(dir, name, body) {
   const abs = join(dir, name);
@@ -88,7 +90,7 @@ test("a parse the wall clock killed is retried alone, after the queue drains", a
   // queue, six near-cap files killed in one burst were retried side by side
   // under load and all six were charged as crashed.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-retry-alone-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const log = join(dir, "log");
   const preload = join(dir, "preload.mjs");
   // The first attempt at a `hang` file never returns, so the clock kills it;
@@ -154,7 +156,7 @@ test("a pool told not to retry charges each parse the clock killed once, beside 
   // Where the time is the parser's own on that file, a second attempt alone
   // takes as long as the first, and retries run in series.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-no-retry-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const log = join(dir, "log");
   const worker = join(dir, "slow-worker.mjs");
   writeFileSync(
@@ -371,7 +373,7 @@ test("a flag on the parent that a worker cannot take does not break the pool", a
   // every worker died before it answered and the whole scan reported
   // "parser worker will not start" with the real reason nowhere in sight.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-execargv-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "a.ts"), "export const x = 1\n");
 
   const was = process.execArgv;
@@ -394,7 +396,7 @@ test("a worker that dies before answering reports what it printed", async (t) =>
   // place the real cause is written was discarded and every failure read the
   // same. `execArgv` is an option so the condition is reachable from a test.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-stderr-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "a.ts"), "export const x = 1\n");
 
   const pool = createPool({ size: 1, execArgv: ["--nonsense-flag-that-does-not-exist"] });
@@ -416,7 +418,7 @@ test("a worker that starts and never says ready is killed on a clock, and the po
   // `execArgv`: a preload whose top-level await never settles, with a timer
   // holding the process open, is a worker that started and never answers.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-noready-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "a.ts"), "export const x = 1\n");
   const stall = "data:text/javascript,setInterval(()=>{},1e6);await new Promise(()=>{})";
 
@@ -435,7 +437,7 @@ test("a worker that starts and never says ready is killed on a clock, and the po
 
 test("a pool given another worker module forks that one and reports its engine", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-stub-worker-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const worker = join(dir, "stub-worker.mjs");
   writeFileSync(
     worker,
@@ -466,7 +468,7 @@ process.send({ ready: true, engine: "stub", version: "1" });
 // Bounded, because a worker that is not replaced answers nothing and the files behind it wait for ever.
 test("a worker that says it cannot go on finishes its file and is replaced before it is handed another", { timeout: 60_000 }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-retire-worker-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const worker = join(dir, "retiring-worker.mjs");
   // After its trap this stub answers nothing, as a parser whose heap is gone would answer nothing true.
   writeFileSync(
@@ -505,7 +507,7 @@ test("a guard the pool does not carry is refused under the engine the pool was g
 
 test("a worker module that does not exist fails the pool as a worker that will not start", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-no-worker-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const files = ["a.ts", "b.ts", "c.ts"].map((name) => file(dir, name, "export const x = 1\n"));
 
   const pool = createPool({ size: 2, worker: join(dir, "gone-worker.mjs"), engine: "stub" });
@@ -540,7 +542,7 @@ test("a worker that cannot be forked fails the pool with its reason, not an unha
   // the same event with a different code; a missing cwd is the one a test
   // can reach.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-nofork-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "a.ts"), "export const x = 1\n");
 
   const was = process.env.TMPDIR;
@@ -653,7 +655,7 @@ test("a ps in the directory the scan runs from is never the one the guard runs",
   // directory: measured, a `ps` committed to the scanned repository ran as the
   // user, handed the workers' pids, while the guard polled.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-planted-ps-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "ps"), `#!/bin/sh\necho ran > ${JSON.stringify(join(dir, "RAN"))}\n`, { mode: 0o755 });
   const path = process.env.PATH;
   const cwd = process.cwd();
@@ -679,4 +681,36 @@ test("the default pool is sized off the cores this process may use, not the host
   assert.equal(defaultPoolSize(), 1);
   cores.mock.mockImplementation(() => 32);
   assert.equal(defaultPoolSize(), 8);
+});
+
+test("a pool closed in the tick its workers failed to start signals nothing and answers", { ...needsShebang, timeout: 60_000 }, async () => {
+  const lib = new URL("../plugins/anatomiya/lib/pool.mjs", import.meta.url).href;
+  const script = `
+    import { closeSync, openSync } from "node:fs";
+    import { createPool } from ${JSON.stringify(lib)};
+    const held = [];
+    try {
+      for (;;) held.push(openSync("/dev/null", "r"));
+    } catch {
+      // Every descriptor this process may hold is open.
+    }
+    const pool = createPool({ size: 2 });
+    const closing = pool.close();
+    for (const fd of held) closeSync(fd);
+    await closing;
+    process.stdout.write("closed");
+  `;
+
+  // The limit is lowered for this one process, and it runs in a process group
+  // of its own: the kill under test is a kill of the sender's group where the
+  // guard is gone.
+  const starved = spawn("sh", ["-c", 'ulimit -n 64 && exec "$0" --input-type=module -e "$1"', process.execPath, script], {
+    detached: true,
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let stdout = "";
+  starved.stdout.on("data", (chunk) => (stdout += chunk));
+  const [code, signal] = await once(starved, "close");
+
+  assert.deepEqual({ code, signal, stdout }, { code: 0, signal: null, stdout: "closed" });
 });

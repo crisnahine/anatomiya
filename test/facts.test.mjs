@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { execFileSync, spawnSync } from "node:child_process";
-import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
+import { needsPosixPermissions, needsPosixSpecialFiles, removeTree } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, factsJson, schemaProblem, writeFacts, readFacts, readLayout, readRecord, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { factsJson, schemaProblem, writeFacts, readFacts, readLayout, readRecord, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { knownNames } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 
@@ -22,7 +22,7 @@ import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
  */
 function root(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-facts-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
@@ -409,7 +409,7 @@ test("a stored dimension carries the tier the check filters on", async (t) => {
   // planted `tier` into facts.json by hand, which is a shape the writer cannot
   // produce, so it passed while the product was broken.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-tierfield-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < 14; i++) {
@@ -688,7 +688,7 @@ test("a record path holding a fifo reads as no record, rather than waiting on it
   // scan and every check. Driven in a child with a bound, because a hung read
   // holds this process too.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-fifo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   execFileSync("mkfifo", [join(dir, FACTS_PATH)]);
 
@@ -705,7 +705,7 @@ test("a record past the size cap is named as unread, not taken for a repository 
   // Nothing this tool writes comes near the cap, so a file past it is one it
   // did not write, and the check says so rather than reading it as no map.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(64 * 1024 * 1024 + 1, 0x20));
 
@@ -731,7 +731,7 @@ test("a record of exactly the size cap is read, and one byte more is not", (t) =
 test("a record past the size cap is told by its size before a byte of it is read", (t) => {
   // Every hook reads a record, so one committed past the cap cost each tool call a 64 MiB read.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), "");
   truncateSync(join(dir, FACTS_PATH), 600 * 1024 * 1024);
@@ -756,7 +756,7 @@ test("a record is measured by its bytes on disk, not by its decoded length", (t)
   // A byte that is not UTF-8 decodes to three, and 22 MB of them read as a
   // record past the 64 MiB cap in a sentence that named a size nobody measured.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-odd-record-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(22 * 1024 * 1024, 0xff));
 
@@ -764,81 +764,6 @@ test("a record is measured by its bytes on disk, not by its decoded length", (t)
   assert.equal(facts, null);
   assert.match(unreadable ?? "", /does not parse as JSON/);
   assert.doesNotMatch(unreadable, /MB/);
-});
-
-test("the replace never writes through a link planted where its temporary file goes", () => {
-  // The directories are resolved (F2), and the temporary name beside the
-  // destination was not: it was `<path>.tmp-<pid>`, predictable, and opened
-  // with a plain write that follows a link. A repository shipping that name as
-  // a tracked symlink had the scan write the map's bytes wherever it pointed.
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  const outside = mkdtempSync(join(tmpdir(), "anatomiya-atomic-outside-"));
-  try {
-    const victim = join(outside, "victim.txt");
-    writeFileSync(victim, "untouched\n");
-    const target = join(dir, "facts.json");
-    symlinkSync(victim, `${target}.tmp-${process.pid}`);
-
-    atomic(target, "{}\n");
-
-    assert.equal(readFileSync(victim, "utf8"), "untouched\n");
-    assert.equal(readFileSync(target, "utf8"), "{}\n");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  }
-});
-
-test("a link planted at the exact temporary name is refused, not written through", async (t) => {
-  // The name is unpredictable, which the test above leans on; this one takes
-  // the prediction away and leaves `wx` alone to stand between the write and
-  // the link.
-  const crypto = (await import("node:crypto")).default;
-  const { syncBuiltinESMExports } = await import("node:module");
-  const real = crypto.randomBytes;
-  crypto.randomBytes = (n) => Buffer.alloc(n, 0xab);
-  syncBuiltinESMExports();
-  t.after(() => {
-    crypto.randomBytes = real;
-    syncBuiltinESMExports();
-  });
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  const outside = mkdtempSync(join(tmpdir(), "anatomiya-atomic-outside-"));
-  t.after(() => {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  });
-  const victim = join(outside, "victim.txt");
-  writeFileSync(victim, "untouched\n");
-  const target = join(dir, "facts.json");
-  symlinkSync(victim, `${target}.tmp-${process.pid}-${"ab".repeat(8)}`);
-
-  assert.throws(() => atomic(target, "{}\n"), /EEXIST/);
-  assert.equal(readFileSync(victim, "utf8"), "untouched\n");
-  // And the entry it refused is left where it was: it is not this call's to remove.
-  assert.ok(lstatSync(`${target}.tmp-${process.pid}-${"ab".repeat(8)}`).isSymbolicLink());
-});
-
-test("a write that fails part way leaves no temporary file behind", async (t) => {
-  // ENOSPC arrives after the temporary file exists, and the write sat outside
-  // the cleanup, so a full disk left `facts.json.tmp-*` beside the map.
-  const fs = (await import("node:fs")).default;
-  const { syncBuiltinESMExports } = await import("node:module");
-  const real = fs.writeFileSync;
-  fs.writeFileSync = (file, body, ...rest) => {
-    real(file, String(body).slice(0, 1), ...rest);
-    throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
-  };
-  syncBuiltinESMExports();
-  t.after(() => {
-    fs.writeFileSync = real;
-    syncBuiltinESMExports();
-  });
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-
-  assert.throws(() => atomic(join(dir, "facts.json"), "{}\n"), /ENOSPC/);
-  assert.deepEqual(readdirSync(dir), []);
 });
 
 test("the layout is written beside the record, and reads back as the record's own", (t) => {

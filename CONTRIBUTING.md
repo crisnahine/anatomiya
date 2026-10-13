@@ -1,8 +1,10 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 319 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 335 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
-have about why something is shaped the way it is are answered there in one line.
+have about why something is shaped the way it is are answered there. The file is the index: one short
+line per row, with the decision, a one-word status and a link. The measurement behind a row and what
+the code does about it today are in the row's own file, `docs/decisions/<id>.md`.
 
 ## Setup and tests
 
@@ -102,24 +104,85 @@ Do write the thing that stops the next person undoing the work:
 This is the rule that keeps the repository from drifting back into guesses.
 
 If you write code whose shape is not obvious from reading it, there must be a row in `DECISIONS.md`
-that says why, and the code comment should be a short version of that row rather than a pointer to
-it. A comment may end with the row's id in parentheses, `(F17)`, and the shipped code is full of
-them: an id
+whose file says why, and the code comment should be a short version of that row rather than a
+pointer to it. A comment may end with the row's id in parentheses, `(F17)`, and the shipped code is
+full of them: an id
 here names this repository's own register rather than a ticket, and the row it points at is one file
-away. A ticket number, a PR number or a link to a conversation is none of that, and stays out.
+away, at `docs/decisions/<id>.md`. A ticket number, a PR number or a link to a conversation is none
+of that, and stays out. `npm run check:docs` reads every comment of a `.mjs` file under
+`plugins/anatomiya/lib`, `plugins/anatomiya/bin` and `scripts` and fails on an id no row carries,
+naming the file and the id, so the row is written in the change that cites it.
 
-If there is no row yet, add one. A row needs three things:
+If there is no row yet, add one. A row is written in two places, and `npm run check:docs` fails when
+they disagree.
 
-| # | Decision | Why | Status |
-|---|---|---|---|
+The first is its own file, named by its id. This is `docs/decisions/E4.md`, whole:
 
-The `Why` column is where the work is. "It seemed cleaner" is not a why. A measurement, a probe that
+```
+# E4
+
+Section: E. Baseline and drift
+
+## Decision
+
+An area whose candidates all postdate the baseline emits no directive
+
+## Why
+
+Greenfield directories are where agents write most
+
+## Status
+
+**done** `reduce.mjs` (`blockedFor`, ordered ahead of the gates by `verdictFor`), `baseline.mjs` (`areaBlock`)
+```
+
+The second is one line in `DECISIONS.md`, in the table of the section the file names:
+
+```
+| E4 | An area whose candidates all postdate the baseline emits no directive | done | [E4](docs/decisions/E4.md) |
+```
+
+To add a row:
+
+1. Take the section's letter and the next number after its last row. An id is never reused, and a
+   row is never renumbered, because the code cites rows by id.
+2. Write `docs/decisions/<id>.md` in the shape above: `# <id>`, a `Section:` line that repeats the
+   section's heading in `DECISIONS.md` without the `## `, then `## Decision`, `## Why` and
+   `## Status` in that order. Write the Why and the Status one sentence per line, so a search of the
+   directory answers with a sentence. A line may be long. `## Why` may have nothing under it, and
+   the other two may not. Each heading is written once.
+3. Add the row's line at the end of that section's table in `DECISIONS.md`: the id, the Decision,
+   the short status, and a link to the file.
+4. Raise the count of numbered rows by one in the three places that state it: the first paragraph
+   of this file, `README.md` and `docs/why.md`. The gate holds each to the number of rows.
+
+To change a row, edit its file. The line in `DECISIONS.md` moves only when the Decision or the short
+status did.
+
+Three things have to agree between the two, and the gate names the file and the row when one does
+not:
+
+- The Decision is one text. In the row file a `|` is written bare, and in the index it is written
+  `\|`, since the index is a table.
+- The short status is one of three words: `done` where the file's Status opens with `**done**`,
+  `partial` where it opens with `partial`, and `todo` where it opens with `todo`. A Status that
+  opens with none of the three fails the gate.
+- The section is the one the row's line sits under.
+
+Every row has a file and every file has a row. `node scripts/decisions.mjs` prints the record as one
+table with a whole row on each line, for reading a section from top to bottom.
+
+Nothing checks where the line breaks fall in a Why or a Status. The reader joins the lines under a
+heading with a space, drops the blank ones and the whitespace at a line's end, so moving a break
+never changes a row's text. One sentence per line is for the search, and it is yours to keep.
+
+The Why is where the work is. "It seemed cleaner" is not a why. A measurement, a probe that
 overturned an assumption, or a concrete failure you reproduced is a why. Numbers beat adjectives:
 "271x faster, 0.84s against 103s" is a why; "much faster" is not.
 
-The `Status` column says what the code does today, not what it should do. `todo`, `partial` with the
-file name, or `**done**` with the file name. Moving a row from `todo` to `done` is part of the change
-that does it.
+The Status says what the code does today, not what it should do. It opens with `todo`, with
+`partial` and the file name, or with `**done**` and the file name. Moving a row from `todo` to
+`done` is part of the change that does it, in the row's file and in its line of the index.
 
 Changing an existing row means saying what new evidence overturned the old one. Rows are not opinions
 and they do not get edited because a new implementation would be tidier.
@@ -190,13 +253,59 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-tree.mjs` the rows asked of Python, PHP, Go, Java, C#, Rust and Kotlin, in
   `TREE_DIMENSIONS`, walking a plain copy of a tree-sitter tree through `walkTree`
 - `plugins/anatomiya/lib/tree-shapes.mjs` what each grammar calls a function, a class, a comment, a handler and an
-  import. The only file that spells a grammar's node type or field name
+  import. One of the two files that spell a grammar's node type or field name: the other is the
+  oracle in `scripts/measure-inert.mjs`, which reads the grammars apart from the rule it measures
+  (B75), and a test holds each of the two to the grammars the plugin ships
 - `plugins/anatomiya/lib/tree-facets.mjs` whether a file of those seven declares a test case, and for which runner
 - `plugins/anatomiya/lib/pairing.mjs` file-to-file obligations and the `PAIRINGS` list. These are the one class the
   parse worker never runs, because it runs a program and an obligation has no program to run
   against. `reduceArea` composes both
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
+
+Eight modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+lock is taken, what a transcript record says, when the echo delivers, which added lines the reuse check asks
+about or how a history walk is fed goes in the one that owns it:
+
+- `plugins/anatomiya/lib/store.mjs` how a file this tool writes reaches the disk: the staged name
+  and its reading, `writeTemp` and `atomic`, the 64 MiB bound on a read, `putBack`, and
+  `replaceAll`, which replaces a set of files and puts every one back when one fails, and
+  `isFileAt`, the one test of a regular file at a path. It imports
+  only the path encoder, so the pin and the refresh state are written through it without importing
+  the record's module to write (A115)
+- `plugins/anatomiya/lib/lock.mjs` the one lock the echo and the refresh worker take: an exclusive
+  create, and a dead lock broken through a lock token. What makes a lock dead is a judge the caller
+  passes, `mtimeAge` or `ownerAge`. An entry at a lock's name that is no lock is its to tell apart:
+  an empty directory is removed, and anything else that will not go is thrown with `blocked` (A117)
+- `plugins/anatomiya/lib/transcript.mjs` what Claude Code's transcript records say, by functions
+  that take text, so a hook reads the transcript once for several answers, and the one table of
+  what makes a record a compaction (A116)
+- `plugins/anatomiya/lib/echo.mjs` whether the echo delivers on a call: `echoDue` over a digest, a
+  transcript and the plugin's data directory, and `heldIn`, the walk of the window that
+  `scripts/measure-echo.mjs` replays through (A119, A92)
+- `plugins/anatomiya/lib/inert.mjs` which of a file's lines define nothing callable, the one question
+  the end-of-turn reuse check asks: `inertLinesOf`, the line rules of oxc and prism, and
+  `REUSE_PARSE_MS`, the second every file of one stop shares: the line rules' reads, and the
+  tree-sitter loads, parses and walks
+  (A91, B73)
+- `plugins/anatomiya/lib/inert-tree.mjs` the same answer for the seven tree-sitter languages, read
+  off the file's tree with the kinds `tree-shapes.mjs` lists, in a walk that reads the stop's clock.
+  Loaded on the first such file a stop reaches (B68, B74)
+- `plugins/anatomiya/lib/tree-sitter-runtime.mjs` the tree-sitter runtime and one parser per grammar,
+  loaded once per process for the scan's worker and for the reuse check. It imports no walker and no
+  dimension, which is what lets the Stop hook parse (B73)
+- `plugins/anatomiya/lib/history.mjs` the two history walks' feed: `historyFields`, which replays a
+  history store's commits and asks git for the rest, the stamp a history store is used under, and
+  `saveHistory`, which takes that stamp again before it writes (D15)
+
+To change which lines the reuse check asks about in one of the seven languages, write the case in
+`test/inert-tree.test.mjs` through its `asking` helper, which puts every line of the case to the
+oracle of `scripts/measure-inert.mjs` as well: a line the rule leaves out and the oracle names fails,
+and so does a line that asks and the oracle does not name, unless the case lists it as unproven. A
+kind added to `tree-shapes.mjs` needs a sample holding it in `test/tree-samples.mjs`. Then run
+`node scripts/measure-inert.mjs --commits 200 <repository> ...` over the 21 repositories of the seven
+languages from a frozen copy of the tree: the oracle's count must stay at zero, and a hunk that
+moved from asked to left out is read before the change is kept (B75).
 
 The shape:
 
@@ -226,6 +335,11 @@ A row is a visitor of the one walk its engine takes over each file (B49): `walk`
 visitor row its `run` with `fromVisitor` on its engine's walk, so the check and the tests can still
 ask one row at a time. Work that needs the whole file goes in an optional `done()` after the walk. A
 row that never walks, because it reads `program.body` alone, declares `run` instead.
+
+A type-checked row, one of `SEMANTIC_DIMENSIONS` in `dimensions-semantic.mjs`, also declares
+`sited(ts, source)`, which says off the tree alone, with no type, whether the file holds a site of
+the row. The checker's job asks it of every file before it walks a row (B72), and a row that
+declares none is refused when the module loads, by name.
 
 A file-to-file obligation is the same three numbers with the site defined differently: the site is
 the file, so `candidates` equals `applicability` and `conforming` counts the producers whose companion
@@ -430,7 +544,7 @@ A language new to the engine is these sites, in order:
 8. the sentences `npm run check:docs` holds to the registry: `SECURITY.md` names the grammar's
    `package@version`, every sentence that counts the grammars, in words or digits (`seven grammars`,
    `7 grammar files`), counts one more,
-   and so does the count of declarations in DECISIONS B21 (`The registry holds twelve
+   and so does the count of declarations in `docs/decisions/B21.md` (`The registry holds twelve
    declarations`)
 9. by hand, every place that lists the languages by name. No gate reads these, so a list left at
    seven names passes:
@@ -439,7 +553,7 @@ A language new to the engine is these sites, in order:
      the paragraph, its table and the share each language's grammar leaves unread
    - `CONTEXT.md`: Engine and Family
    - `SECURITY.md`: the names beside the grammar packages
-   - `DECISIONS.md`: B60, which names the seven
+   - `docs/decisions/B60.md`, which names the seven
    - this file: `The other seven dev dependencies`, the line for `dimensions-tree.mjs`, and the
      sentence above on which grammars sit at which ABI
    - `plugins/anatomiya/README.md`, and `doctor.md`, `scan.md` and `setup.md` under
@@ -455,7 +569,7 @@ A language new to the engine is these sites, in order:
 
 `test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids and fail until the
 new one is in it. Before anything ships, measure how much of three real repositories the grammar
-leaves unread, and write the rate into DECISIONS beside B63's.
+leaves unread, and write the rate into `docs/decisions/B63.md` beside the others.
 
 A component language, a third beside `.vue` and `.svelte` such as `.astro`, is no grammar of this
 engine. Its script blocks are read on the `oxc` engine (B52), and it is these sites, in order:
@@ -550,7 +664,7 @@ So before a dimension is accepted:
    between the highest and lowest ratio must be at least 0.15. If every repository sits at or near
    1.0, the dimension is a language default and it does not ship, however sensible the claim sounds.
    The 0.15 is a working threshold set to make the test bite, not a measured constant; if you think
-   it is wrong, argue it with numbers and move it in `DECISIONS.md`.
+   it is wrong, argue it with numbers and move it in the decision row that holds it.
 4. **Sanity check the applicability predicate.** A wrongly narrow predicate gives ratio 1.0 over a
    small candidate set and reads as a strong convention. Compare `applicability` against the area's
    file count and be suspicious of anything under a quarter.
@@ -558,8 +672,8 @@ So before a dimension is accepted:
    restating it is noise. The map is for what the linter does not enforce.
 
 A claim that reads well and scores 1.0 everywhere is the failure mode this bar exists to catch. Kill
-it early. Rejecting a dimension is a good outcome and worth a row in `DECISIONS.md` explaining what
-the measurement showed, so nobody proposes it again.
+it early. Rejecting a dimension is a good outcome and worth a row in `DECISIONS.md`, its file
+explaining what the measurement showed, so nobody proposes it again.
 
 ## Pull requests
 

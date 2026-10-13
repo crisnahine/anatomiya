@@ -7,13 +7,13 @@
  * older record was copied into two modules, and the reader never looked at the
  * version at all.
  */
-import { randomBytes } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { outsideClaude, readHead, resolveInside, stagedPath } from "./rules.mjs";
+import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
 import { wilsonLower } from "./gates.mjs";
 import { encodePath } from "./encode.mjs";
+import { READ_MOST, putBack, recordBytes, writeTemp } from "./store.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
 
@@ -217,16 +217,18 @@ export function schemaProblem(parsed) {
 }
 
 /**
- * How much of a record this tool wrote any reader takes.
+ * The most of a record any command reads. One past it is never parsed: a
+ * check says so and enforces nothing, and a scan replaces it unread.
  *
  * Not `HEAD_BYTES`, which sizes a rule file: the record is the whole count of a
  * repository, measured at 10,217,406 bytes on microsoft/vscode. A megabyte
  * would have gone silent on exactly the repositories where a directory nobody
- * read is easiest to miss. The cap is
- * there for the shape a rule file cap is there for, a path holding something
- * nobody wrote, and only such a file ever pays it.
+ * read is easiest to miss. The cap is there for the shape a rule file cap is
+ * there for, a path holding something nobody wrote, and only such a file ever
+ * pays it. Equal to `READ_MOST` in `store.mjs`, so the bytes a scan reads to put
+ * a record back are bytes a command reads of it.
  */
-const RECORD_MOST = 64 * 1024 * 1024;
+const RECORD_MOST = READ_MOST;
 
 /**
  * A JSON record this tool wrote, parsed, or `record: null` for anything else at
@@ -331,60 +333,6 @@ function withOlderFields(parsed) {
 }
 
 /**
- * Write to a temp path in the same directory, then rename, so a crash never
- * leaves half a file.
- *
- * Here because this module owns the store, and exported because the rendered map
- * and the pin are replaced under the same rule.
- *
- * The directory is the caller's to make. Doing it here cost one recursive
- * `mkdir` syscall per file on a caller writing a hundred of them into a
- * directory it had already created.
- */
-export function atomic(path, body) {
-  const tmp = writeTemp(path, body);
-  try {
-    // Replaces the destination entry itself, never what a link there names.
-    renameSync(tmp, path);
-  } catch (err) {
-    try {
-      unlinkSync(tmp);
-    } catch {}
-    throw err;
-  }
-}
-
-/** `body` in a new file beside `path`, whole, and that file's path. */
-export function writeTemp(path, body) {
-  // Unpredictable, and created exclusively: `wx` is O_CREAT|O_EXCL, which
-  // refuses any entry already there, a planted link included, and never follows
-  // one. The name was `<path>.tmp-<pid>`, opened with a plain write, so a
-  // repository shipping that name as a tracked symlink had the map's bytes
-  // written wherever it pointed. The directories were resolved (F2); this
-  // leaf was not.
-  const tmp = stagedPath(path, process.pid, randomBytes(8).toString("hex"));
-  // Created on its own, and written inside the cleanup: a write that fails part
-  // way, on a full disk, has already made the temp file, and ENOSPC out of a
-  // single `writeFileSync` before the `try` left it beside the map. A create
-  // that fails made nothing, so there is nothing of this call's to remove, and
-  // an entry already at that name is somebody else's.
-  const fd = openSync(tmp, "wx");
-  try {
-    try {
-      writeFileSync(fd, body);
-    } finally {
-      closeSync(fd);
-    }
-  } catch (err) {
-    try {
-      unlinkSync(tmp);
-    } catch {}
-    throw err;
-  }
-  return tmp;
-}
-
-/**
  * The record, and the one definition of what a dimension looks like on disk.
  *
  * A schema bump is this module and its round trip, rather than an edit in every
@@ -409,10 +357,11 @@ export function writeFacts(root, result) {
   } catch (err) {
     const now = recordBytes(record);
     // Only where the failed write replaced what was there: still the same bytes
-    // leaves nothing to put back, and `putBack` leaves a record it could not read.
+    // leaves nothing to put back, and `putBackRecord` leaves a record it could
+    // not read.
     if (previous === null ? now !== null : !(now && previous?.equals(now))) {
       try {
-        putBack(record, previous, was);
+        putBackRecord(record, previous, was);
       } catch {}
     }
     throw err;
@@ -420,72 +369,18 @@ export function writeFacts(root, result) {
 }
 
 /**
- * `previous`, from `previousBytes`, back at `path`: removed where nothing was,
- * left where it could not be read, and where `was` is the layout file that
- * answered for it, the pair written again so the restored record has one.
+ * The record's `previous` bytes back at `path`, as `putBack` in `store.mjs` puts
+ * any file back, except that where `was` is the layout file that answered for
+ * it, the pair is written again so the restored record has one.
  */
-export function putBack(path, previous, was) {
-  if (previous === undefined) return;
-  if (previous === null) unlinkSync(path);
-  else if (was !== null) writePair(dirname(path), previous, was.layout, was.schema);
-  else atomic(path, previous);
+export function putBackRecord(path, previous, was) {
+  if (previous === undefined || previous === null || was === null) putBack(path, previous);
+  else writePair(dirname(path), previous, was.layout, was.schema);
 }
-
-// A scan reads whole to put back no more than any command reads of a record: 64 MiB, over six times
-// the largest file a scan of the corpus writes (9.7 MiB, vscode's facts.json).
-const PUT_BACK_MOST = RECORD_MOST;
-
-/**
- * The size of a regular file at `path` past `PUT_BACK_MOST`, or null: what a
- * scan asks before it plans to replace or remove the file.
- */
-export function tooLargeToPutBack(path) {
-  try {
-    const entry = lstatSync(path);
-    return entry.isFile() && entry.size > PUT_BACK_MOST ? entry.size : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The refusal's first half for such a file, named by the repository's spelling of it. */
-export const tooLargeSentence = (at, size) => `${encodePath(at)} is ${size} bytes, past the ${PUT_BACK_MOST / 2 ** 20} MiB a scan reads to put a file back`;
 
 /** The line a scan gives a record past the bound, which it replaces without reading. */
 export const oversizedSentence = ({ at, size }, dryRun) =>
   `${encodePath(at)} ${dryRun ? "is" : "was"} ${size} bytes, past the ${RECORD_MOST / 2 ** 20} MiB any command reads of a record, so it ${dryRun ? "would be" : "was"} replaced without being read`;
-
-/** `previousBytes` of a record, `null` past the bound: no command reads one, so there is nothing in it to keep. */
-export function recordBytes(path) {
-  try {
-    return previousBytes(path);
-  } catch (err) {
-    if (err.tooLarge === undefined) throw err;
-    return null;
-  }
-}
-
-/**
- * A regular file's bytes, `null` where nothing is, `undefined` where they cannot
- * be put back. Past `PUT_BACK_MOST` it throws, with the size on `tooLarge`.
- */
-export function previousBytes(path) {
-  let fd;
-  try {
-    // Opened then typed through the handle, so the file read is the file typed;
-    // O_NOFOLLOW refuses a link the way lstat did.
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) return undefined;
-    if (stat.size > PUT_BACK_MOST) throw Object.assign(new Error(tooLargeSentence(path, stat.size)), { tooLarge: stat.size });
-    return readFileSync(fd);
-  } catch (err) {
-    if (err.tooLarge !== undefined) throw err;
-    return err.code === "ENOENT" ? null : undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
 
 /**
  * The record's bytes and the layout file stamped from them, both written whole

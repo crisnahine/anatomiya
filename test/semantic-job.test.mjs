@@ -17,6 +17,9 @@ async function sent(job, opts) {
   return out;
 }
 
+/** The last answer the job gave for each file, which is the one a reader keeps. */
+const answered = (out) => Object.fromEntries(out.filter((m) => m.rel).map((m) => [m.rel, m.hits]));
+
 const config = `{"compilerOptions":{"strict":true}}`;
 
 test("a checker that is not installed is one message, and the job ends there", async () => {
@@ -26,14 +29,14 @@ test("a checker that is not installed is one message, and the job ends there", a
   ]);
 });
 
-test("the job answers built, one record per file and done, in that order", needsTs, async () => {
+test("the job answers built, each file's sites, each file's hits and done, in that order", needsTs, async () => {
   const dir = repo({
     "tsconfig.json": config,
     "a.ts": `export class B { v() { return 1 } }\nexport class A { b = new B(); go() { return this.b.v() } }`,
   });
   try {
     const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] });
-    assert.deepEqual(out.map((m) => Object.keys(m)[0]), ["built", "rel", "done"]);
+    assert.deepEqual(out.map((m) => Object.keys(m)[0]), ["built", "rel", "sited", "rel", "done"]);
     assert.equal(out[0].config.status, "ok");
     assert.equal(out[1].rel, "a.ts");
     assert.deepEqual(out[1].resolution, { resolved: 2, total: 2 });
@@ -47,7 +50,7 @@ test("a file is answered with the one type-checked row there is", needsTs, async
   const dir = repo({ "tsconfig.json": config, "a.ts": `export const x = " a ".trim().toLowerCase();` });
   try {
     const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] });
-    assert.deepEqual(Object.keys(out[1].hits), ["law_of_demeter"]);
+    assert.deepEqual(Object.keys(answered(out)["a.ts"]), ["law_of_demeter"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -106,10 +109,80 @@ test("a .js file handed to the job is held by the program whatever the tsconfig 
   try {
     const files = [{ rel: "a.ts", abs: join(dir, "a.ts") }, { rel: "b.js", abs: join(dir, "b.js") }];
     const out = await sent({ root: dir, files });
-    assert.deepEqual(out.filter((m) => m.rel).map((m) => m.rel), ["a.ts", "b.js"]);
-    const b = out.find((m) => m.rel === "b.js");
+    assert.deepEqual(Object.keys(answered(out)), ["a.ts", "b.js"]);
+    const b = out.findLast((m) => m.rel === "b.js");
     assert.deepEqual(Object.keys(b.hits), ["law_of_demeter"]);
     assert.deepEqual(b.resolution, { resolved: 2, total: 2 }, "the .js file's accesses are measured too");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** A typescript whose checker throws when a row asks it to print a type, which the resolution walk never does. */
+const throwingOnTypeNames = async () => ({
+  ts: {
+    ...loaded.ts,
+    createProgram(given) {
+      const program = loaded.ts.createProgram(given);
+      const checker = Object.create(program.getTypeChecker(), {
+        typeToString: { value: () => { throw new Error("no name for this type"); } },
+      });
+      return Object.create(program, { getTypeChecker: { value: () => checker } });
+    },
+  },
+});
+
+const chained = `export const x = " a ".trim().toLowerCase();`;
+
+test("a row that throws on a file drops its own key there, and the file is still answered", needsTs, async () => {
+  const dir = repo({ "tsconfig.json": config, "a.ts": chained });
+  try {
+    const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] }, { load: throwingOnTypeNames });
+    assert.deepEqual(answered(out), { "a.ts": {} });
+    assert.deepEqual(out.findLast((m) => m.rel).resolution, { resolved: 2, total: 2 });
+    assert.deepEqual(out.at(-1), { done: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a refused config sends site stubs and no checker hits", needsTs, async () => {
+  // Two types in one chain, which the checker counts against the claim. A
+  // refused config drops every type-checked row, so only where a site is
+  // matters, and the checker is not asked.
+  const dir = repo({
+    "tsconfig.json": "{ this is not json",
+    "a.ts": `class B { v() { return 1 } }\nclass A { b() { return new B() } }\nexport const n = new A().b().v();`,
+    "b.ts": `export const plain = 1;`,
+  });
+  try {
+    const files = [{ rel: "a.ts", abs: join(dir, "a.ts") }, { rel: "b.ts", abs: join(dir, "b.ts") }];
+    const out = await sent({ root: dir, files }, { load: throwingOnTypeNames });
+    assert.equal(out[0].config.status, "degraded");
+    assert.deepEqual(answered(out), { "a.ts": { law_of_demeter: [{ conforming: true, where: null }] }, "b.ts": {} });
+    assert.deepEqual(out.map((m) => Object.keys(m)[0]), ["built", "rel", "rel", "done"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+const twoTypes = `class B { v() { return 1 } }\nclass A { b() { return new B() } }\nexport const n = new A().b().v();`;
+const stub = { law_of_demeter: [{ conforming: true, where: null }] };
+
+test("every file's resolution and sites are answered before any row is walked", needsTs, async () => {
+  const dir = repo({ "tsconfig.json": config, "a.ts": twoTypes, "b.ts": `export const plain = 1;` });
+  try {
+    const files = [{ rel: "a.ts", abs: join(dir, "a.ts") }, { rel: "b.ts", abs: join(dir, "b.ts") }];
+    const out = await sent({ root: dir, files });
+    assert.deepEqual(out.map((m) => Object.keys(m)[0]), ["built", "rel", "rel", "sited", "rel", "rel", "done"]);
+    assert.deepEqual(out.slice(1, 3), [
+      { rel: "a.ts", hits: {}, resolution: { resolved: 2, total: 2 }, sites: stub },
+      { rel: "b.ts", hits: {}, resolution: { resolved: 0, total: 0 }, sites: {} },
+    ]);
+    assert.deepEqual(out.slice(4, 6), [
+      { rel: "a.ts", hits: { law_of_demeter: [{ conforming: false, where: null }] }, resolution: { resolved: 2, total: 2 } },
+      { rel: "b.ts", hits: {}, resolution: { resolved: 0, total: 0 } },
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

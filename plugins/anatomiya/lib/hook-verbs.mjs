@@ -6,6 +6,7 @@
 import { join } from "node:path";
 
 import { aboutDir, childLayouts, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, targetIn, windowOf } from "./hook.mjs";
+import { toolCallsIn, transcriptTail, turnStartIn } from "./transcript.mjs";
 
 /**
  * The directory whose repository answers this call.
@@ -103,7 +104,7 @@ export async function runReuse(cwd, payload) {
   if (checkouts.length === 0) return {};
   // Loaded here: the change it reads comes from the check, which the echo and
   // the notice must not pay for on every tool call.
-  const { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart, toolCalls, turnStart } = await import("./reuse.mjs");
+  const { askedMarksIn, continuedByReuseIn, pendingChange, reuseReason, reuseRecord, sessionStart, TRANSCRIPT_MOST } = await import("./reuse.mjs");
   // Both halves of "once per change, and only this session's work" are read off
   // the transcript: when the session began and which tool calls it made, and
   // what it already asked. One that cannot be read says neither, so nothing is
@@ -112,16 +113,24 @@ export async function runReuse(cwd, payload) {
   // anywhere it could read back.
   const since = sessionStart(payload.transcript_path);
   if (since === null) return {};
-  const turn = turnStart(payload.transcript_path);
-  const calls = toolCalls(payload.transcript_path);
-  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls })));
+  let before = transcriptTail(payload.transcript_path, TRANSCRIPT_MOST)?.text ?? null;
+  const turn = turnStartIn(before);
+  const calls = toolCallsIn(before);
+  // Let go before the git reads, so two 64 MiB tails are never held at once.
+  before = null;
+  // One parse budget for the whole stop, however many checkouts it reads.
+  const parsing = { deadline: null };
+  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls, parsing })));
   const change = checkouts.flatMap((c, i) => (changes[i] ?? []).map((file) => ({ ...file, path: c.prefix + file.path })));
   if (change.length === 0) return {};
-  const asked = askedMarks(payload.transcript_path);
+  // Read again past the git reads, which take seconds: an ask or a record
+  // another stop wrote meanwhile covers this change.
+  const after = transcriptTail(payload.transcript_path, TRANSCRIPT_MOST)?.text ?? null;
+  const asked = askedMarksIn(after);
   const fresh = change.filter((file) => !asked.has(file.mark));
   if (fresh.length === 0) return {};
   if (payload.stop_hook_active === true) {
-    return continuedByReuse(payload.transcript_path) ? { systemMessage: reuseRecord(fresh) } : {};
+    return continuedByReuseIn(after) ? { systemMessage: reuseRecord(fresh) } : {};
   }
   return { decision: "block", reason: reuseReason(fresh) };
 }

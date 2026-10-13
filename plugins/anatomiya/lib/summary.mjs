@@ -128,6 +128,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // And the ones that would not go: a file somebody holds, or made read-only.
     ...(plan.stagedLeft?.length ? { stagedLeft: plan.stagedLeft.length } : {}),
     ...(plan.storeStagedLeft?.length ? { storeStagedLeft: plan.storeStagedLeft.length } : {}),
+    ...(plan.refreshBlocked?.length ? { refreshBlocked: plan.refreshBlocked } : {}),
     ...(plan.oversized?.length ? { oversized: plan.oversized } : {}),
     wrote: plan.write.length,
     // A language read no file of is one of two facts, told apart by whether
@@ -316,11 +317,14 @@ export function scanLines(s) {
     );
   }
   for (const [n, dir] of [[s.stagedRemoved, RULES_DIR], [s.storeStagedRemoved, STORE_DIR]]) {
-    if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} ${s.dryRun ? "would be removed" : n === 1 ? "was removed" : "were removed"}`);
+    if (n) lines.push(`${plural(n, "temporary file")} an earlier run left in ${dir} ${s.dryRun ? "would be removed" : n === 1 ? "was removed" : "were removed"}`);
   }
   for (const [n, dir] of [[s.stagedLeft, RULES_DIR], [s.storeStagedLeft, STORE_DIR]]) {
-    if (n) lines.push(`${plural(n, "temporary file")} an earlier scan left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
+    if (n) lines.push(`${plural(n, "temporary file")} an earlier run left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
   }
+  // The same in a dry run: the scan leaves it either way. Nothing on what removing it brings back: a
+  // repository that commits its map has no refresh with it gone either.
+  for (const path of s.refreshBlocked ?? []) lines.push(`${encodePath(path)} is a directory holding entries, so no refresh of the map can run in this checkout while it stays: remove it to clear this`);
   for (const record of s.oversized ?? []) lines.push(oversizedSentence(record, s.dryRun));
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.

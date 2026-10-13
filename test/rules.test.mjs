@@ -26,7 +26,7 @@ import {
 } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
-import { caseSensitiveDir, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import { caseSensitiveDir, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
 
 const { claude, cursor, copilot } = TARGETS;
 const OWNED = `---\ngenerator: ${GENERATOR}\nalwaysApply: true\n---\n# Repository map\n`;
@@ -35,7 +35,7 @@ const HAND = "---\nalwaysApply: true\n---\n# Team notes\n";
 /** A repository root, resolved, and removed when the test ends. */
 function workspace(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-rules-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 

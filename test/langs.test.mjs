@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -32,6 +32,7 @@ import {
 } from "../plugins/anatomiya/lib/langs.mjs";
 
 import { scriptBlocks } from "../plugins/anatomiya/lib/script-blocks.mjs";
+import { removeTree } from "./platform.mjs";
 
 const TREE_SITTER = ["python", "php", "go", "java", "csharp", "rust", "kotlin"];
 
@@ -376,7 +377,7 @@ test("a registry with no fallback, or with two, is refused by that name where th
 
   // The module's own load, on a copy that declares none: the sentence above, and no TypeError ahead of it.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-langs-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const source = readFileSync(new URL("../plugins/anatomiya/lib/langs.mjs", import.meta.url), "utf8");
   assert.equal(source.split("fallback: true,").length, 2, "one declaration claims the fallback");
   writeFileSync(join(dir, "langs.mjs"), source.replace("fallback: true,", "fallback: false,"));

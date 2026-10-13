@@ -14,9 +14,10 @@
  * The largest file any reader of this tool will take.
  *
  * The JS pool's skip, the Ruby script's skip, and every blob read, which take it
- * through `showBlob`. Two of them disagreeing splits one file's fate by which
- * side is asking: a blob refused at a size the parser accepts reports the whole
- * area as a population change, against a file that parses at HEAD.
+ * through `showBlob` and `blobReader`. Two of them disagreeing splits one
+ * file's fate by which side is asking: a blob refused at a size the parser
+ * accepts reports the whole area as a population change, against a file that
+ * parses at HEAD.
  *
  * A source file above it is generated or minified, and skipping one is reported
  * rather than silently folded into the counts.
@@ -31,6 +32,9 @@
  * after the queue drains, alone, where the count holds still under load.
  */
 export const MAX_FILE_BYTES = 1024 * 1024;
+
+/** Past this a line of the reuse check's rules asks unread, which bounds what each search costs. */
+export const LINE_READ = 400;
 
 /**
  * Whether the raw parser transfer may be asked for on this platform.

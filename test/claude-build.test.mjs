@@ -1,15 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { MIN_BUNDLE, cliPath, settingsFor } from "../scripts/claude-build.mjs";
+import { removeTree } from "./platform.mjs";
 
 /** A home of the case's own, so the machine running this decides nothing. */
 function elsewhere(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-claude-build-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 

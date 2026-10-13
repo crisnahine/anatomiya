@@ -10,7 +10,7 @@
  * Parent-only. It imports `node:child_process`, so nothing the parse worker
  * reaches may import it (F18).
  */
-import { fork, spawn } from "node:child_process";
+import { ChildProcess, fork, spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 
 /**
@@ -84,9 +84,11 @@ export function guardedChild({
     idle = null;
   };
 
+  const end = () => signalChild(child);
+
   const kill = (reason) => {
     killedBy = reason;
-    child.kill("SIGKILL");
+    end();
   };
 
   // The other clock is dropped first, so a caller hears from whichever one
@@ -95,7 +97,7 @@ export function guardedChild({
     settle();
     killedBy = reason;
     onTimeout?.(reason);
-    child.kill("SIGKILL");
+    end();
   };
 
   const touch = (ms = idleMs) => {
@@ -111,6 +113,20 @@ export function guardedChild({
   }
 
   return { child, stderr: () => whole(text), touch, kill, killedBy: () => killedBy, settle };
+}
+
+/**
+ * Send `signal` to `child` where it started, and answer whether it was sent.
+ * Every signal this tool sends a child goes through here.
+ *
+ * A child whose start failed has no pid, and until Node's next tick a kill of
+ * it signals pid 0: the whole process group of whoever asked. What a `spawner`
+ * hands back is no `ChildProcess`: it stands in for a child held elsewhere,
+ * and sends its own.
+ */
+export function signalChild(child, signal = "SIGKILL") {
+  if (!child || (child instanceof ChildProcess && !child.pid)) return false;
+  return child.kill(signal);
 }
 
 /**

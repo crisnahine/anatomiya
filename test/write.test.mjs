@@ -1,32 +1,34 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { caseSensitiveDir, needsBindableSocketPath, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync, truncateSync } from "node:fs";
+import { caseSensitiveDir, needsBindableSocketPath, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync, truncateSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
-import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, stagedPath, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { areaFilename, isOwned, realpathOf, realpathOrNull, stagedBy, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
 import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
-import { writeFacts, writeTemp, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
+import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
+import { stagedPath } from "../plugins/anatomiya/lib/store.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 import { runDoctor } from "../plugins/anatomiya/lib/commands.mjs";
+import { acquire } from "../plugins/anatomiya/lib/refresh-run.mjs";
 
 const RULES = ".claude/rules";
 const STORE = ".claude/anatomiya";
 
 function workspace(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-write-"));
-  t?.after(() => rmSync(dir, { recursive: true, force: true }));
+  t?.after(() => removeTree(dir));
   return dir;
 }
 
 function elsewhere(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
@@ -273,7 +275,7 @@ const roster = (root) => ({
 
 test("a scan writes the layout file beside the record, holding the record's layout", (t) => {
   const dir = workspace();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const layout = roster("src/services");
 
   writeMap({ ...result(dir, [area("src/services")]), layout });
@@ -287,7 +289,7 @@ test("a scan writes the layout file beside the record, holding the record's layo
 test("a replace that fails part way puts the previous layout file back with the record", async (t) => {
   // Staged with the record, so the two always describe the same scan.
   const dir = workspace();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
   const before = snapshot(dir);
   await failNth(t, "renameSync", 3);
@@ -305,7 +307,7 @@ test("a layout file put back keeps the schema it was written under", async (t) =
   // The record put back was written by that scan, so the layout file is restamped
   // under that scan's schema, not this build's.
   const dir = workspace();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
   const layoutPath = join(dir, STORE, "layout.json");
   const older = { ...JSON.parse(readFileSync(layoutPath, "utf8")), schema: FACTS_SCHEMA - 1 };
@@ -322,7 +324,7 @@ test("a record that could not be read before the replace is not written back", n
   // Its bytes are unknown, so there is nothing to put back, and the layout file
   // beside it still answers for the old record and must not be restamped from nothing.
   const dir = workspace();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
   const record = join(dir, STORE, "facts.json");
   const fs = (await import("node:fs")).default;
@@ -1645,7 +1647,7 @@ const BEFORE_PLAN = {
   held: [],
   blind: false,
 };
-// `staged` and `storeStaged` are the temporary files an earlier scan left: none where no scan stopped.
+// `staged` and `storeStaged` are the temporary files an earlier run left: none where no scan stopped.
 const BEFORE_KEYS = ["write", "remove", "staged", "storeStaged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
 const BEFORE_AREA = `---
 generator: anatomiya
@@ -3632,36 +3634,10 @@ test("nothing is removed until every file has been renamed into place", async (t
 const gone = () => 2 ** 22 + 7;
 const stagedName = (name, pid, hex = "0123456789abcdef") => stagedPath(name, pid, hex);
 const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
-// The names a scan or a refresh stages in the store.
-const STORE_FILES = ["facts.json", "layout.json", "refresh.json"];
+// The names a scan, a refresh, a pin and a history walk stage in the store.
+const STORE_FILES = ["facts.json", "layout.json", "refresh.json", "baseline.json", "refresh.lock", "history-authors.gz", "history-cochange.gz"];
 
-test("the name a staged file is given is the name a later scan knows as one", (t) => {
-  const dir = workspace(t);
-  for (const target of EVERY_TARGET) {
-    for (const name of [overviewName(target), areaName(target, "0badf00d")]) {
-      const tmp = writeTemp(join(dir, name), "x");
-      assert.equal(stagedBy(tmp.slice(dir.length + 1), target), process.pid, tmp);
-    }
-    assert.equal(stagedPath("a", 7, "0123456789abcdef"), "a.tmp-7-0123456789abcdef");
-    // Under another target's extension, a name no scan gives a file, no prefix, and a suffix cut short or run long.
-    const other = EVERY_TARGET.find((o) => o !== target && !overviewName(o).endsWith(target.ext));
-    for (const name of [
-      ...(other ? [stagedName(overviewName(other), 1)] : []),
-      stagedName(`anatomiya-my-notes${target.ext}`, 1),
-      stagedName(`area-0badf00d${target.ext}`, 1),
-      stagedName(overviewName(target), 1, "0123456789abcde"),
-      stagedName(overviewName(target), 1, "0123456789abcdef0"),
-      stagedName(overviewName(target), 1, "0123456789ABCDEF"),
-      stagedName(overviewName(target), "x"),
-      `${stagedName(overviewName(target), 1)}.bak`,
-      overviewName(target),
-    ]) {
-      assert.equal(stagedBy(name, target), null, `${target.id}: ${name}`);
-    }
-  }
-});
-
-test("a temporary file an earlier scan left is removed from every directory this scan writes, and counted", (t) => {
+test("a temporary file an earlier run left is removed from every directory this scan writes, and counted", (t) => {
   const dir = workspace(t);
   const a = area("src/services");
   writeMap(result(dir, [a]), { targets: ALL });
@@ -3800,7 +3776,7 @@ test("a fifo at a temporary file's name is never removed", needsPosixSpecialFile
   nonFileAtAStagedName(t, (path) => execFileSync("mkfifo", [path]));
 });
 
-test("a temporary file an earlier scan left is removed without a byte of it being read", async (t) => {
+test("a temporary file an earlier run left is removed without a byte of it being read", async (t) => {
   // Its bytes were read to be put back, and a 1.5 GB sparse file at such a name took a scan to 1,535 MB resident.
   const dir = workspace(t);
   const a = area("src/services");
@@ -3835,7 +3811,7 @@ test("a scan that stops after removing a temporary file does not put that file b
   assert.deepEqual(settled(dir), before, "the map that was there, and neither temporary file");
 });
 
-/** One temporary file an earlier scan left in the store and in each of the three rule directories, all three on. */
+/** One temporary file an earlier run left in the store and in each of the three rule directories, all three on. */
 function leftoverInEach(t) {
   const dir = workspace(t);
   const a = area("src/services");
@@ -3864,7 +3840,7 @@ function leftoverInEach(t) {
   return { dir, left, scanned, assertLeft };
 }
 
-test("a temporary file an earlier scan left that cannot be removed is left where it is and counted, in the store and in every rule directory", async (t) => {
+test("a temporary file an earlier run left that cannot be removed is left where it is and counted, in the store and in every rule directory", async (t) => {
   const lock = await refusing(t);
   const { dir, left, scanned, assertLeft } = leftoverInEach(t);
   // One more in the store, which nothing holds.
@@ -3937,7 +3913,7 @@ test("a temporary file made immutable is left where it is and counted, and the s
   }
 });
 
-test("a temporary file an earlier scan left in the store is removed, and nothing else there is", (t) => {
+test("a temporary file an earlier run left in the store is removed, and nothing else there is", (t) => {
   const dir = workspace(t);
   const a = area("src/services");
   writeMap(result(dir, [a]));
@@ -3945,7 +3921,6 @@ test("a temporary file an earlier scan left in the store is removed, and nothing
   // Another name, a suffix cut short or run on, and one whose stager is this process.
   const kept = [
     stagedName("notes.json", gone()),
-    stagedName("baseline.json", gone()),
     stagedName("facts.json", gone(), "0123456789abcde"),
     `${stagedName("facts.json", gone())}.bak`,
     "facts.json.tmp",
@@ -3972,11 +3947,108 @@ test("a temporary file an earlier scan left in the store is removed, and nothing
   assert.deepEqual(writeMap(result(dir, [a])).storeStaged, []);
 });
 
+// Plants `left` and `kept` in a scanned workspace's store, scans, and says what went and what is still there.
+function sweptFromStore(t, left, kept, before = () => {}) {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  for (const name of [...left, ...kept]) writeFileSync(join(dir, STORE, name), "{}\n");
+  before(dir);
+  const plan = writeMap(result(dir, [a]));
+  const there = (name) => existsSync(join(dir, STORE, name));
+  return { dir, plan, gone: left.filter((name) => !there(name)), stayed: kept.filter(there) };
+}
+
+test("a pin temp a killed pin left is swept", (t) => {
+  const left = [stagedName("baseline.json", gone())];
+  const kept = [stagedName("baseline.json", process.pid, "fedcba9876543210")];
+  const { plan, gone: went, stayed } = sweptFromStore(t, left, kept);
+  assert.deepEqual(plan.storeStaged, left);
+  assert.deepEqual([went, stayed], [left, kept], "a live pin's temp stays");
+});
+
+test("a lock temp a killed create left is swept", (t) => {
+  const left = [stagedName("refresh.lock", gone())];
+  const kept = [stagedName("refresh.lock", process.pid, "fedcba9876543210")];
+  const { plan, gone: went, stayed } = sweptFromStore(t, left, kept);
+  assert.deepEqual(plan.storeStaged, left);
+  assert.deepEqual([went, stayed], [left, kept], "a live create's temp stays");
+});
+
+// A refresh lock's content, held by `pid` since `at`, of generation `nonce`.
+const workerLock = (pid, nonce, at = Date.now()) => JSON.stringify({ pid, at, nonce });
+const DEAD_GENERATION = "0123456789abcdef";
+const LIVE_GENERATION = "aaaaaaaaaaaaaaaa";
+// What a token's own token is named by: an old mtime in ms.
+const OLD_MS = "1700000000000";
+
+test("the lock tokens of the refresh lock of a generation that is gone are swept, and a live generation's stay", (t) => {
+  const left = [
+    `refresh.lock.${DEAD_GENERATION}`,
+    `refresh.lock.${DEAD_GENERATION}.${OLD_MS}`,
+    // Where an older build moved a dead lock aside to break it.
+    `refresh.lock.stale-${gone()}-fedcba9876543210`,
+  ].sort();
+  const kept = [
+    "refresh.lock",
+    `refresh.lock.${LIVE_GENERATION}`,
+    `refresh.lock.${LIVE_GENERATION}.${OLD_MS}`,
+    `refresh.lock.stale-${process.pid}-fedcba9876543210`,
+    "refresh.lock.0123",
+    `refresh.lock.${DEAD_GENERATION}.x`,
+  ];
+  const { plan, gone: went, stayed } = sweptFromStore(t, left, kept, (dir) => {
+    writeFileSync(join(dir, STORE, "refresh.lock"), workerLock(process.pid, LIVE_GENERATION));
+    const old = new Date(Number(OLD_MS));
+    utimesSync(join(dir, STORE, `refresh.lock.${LIVE_GENERATION}.${OLD_MS}`), old, old);
+  });
+  assert.deepEqual(plan.storeStaged, left);
+  assert.deepEqual([went, stayed], [left, kept]);
+});
+
+test("with no refresh lock, every lock token of it is swept", (t) => {
+  const left = [`refresh.lock.${LIVE_GENERATION}`, `refresh.lock.${DEAD_GENERATION}.${OLD_MS}`].sort();
+  const { plan, gone: went } = sweptFromStore(t, left, []);
+  assert.deepEqual([plan.storeStaged, went], [left, left]);
+});
+
+test("a token's own token a breaker killed twice left is swept once past the bound, and the refresh lock can be taken again", (t) => {
+  const lockName = "refresh.lock";
+  const token = `${lockName}.${DEAD_GENERATION}`;
+  const age = (dir, name, ms) => {
+    const at = new Date(Date.now() - ms);
+    utimesSync(join(dir, STORE, name), at, at);
+  };
+  const plantDead = (dir) => writeFileSync(join(dir, STORE, lockName), workerLock(gone(), DEAD_GENERATION, Date.now() - 31 * 60 * 1000));
+
+  // Within the bound its breaker may still be running.
+  const young = `${token}.${OLD_MS}`;
+  const held = sweptFromStore(t, [], [token, young], (dir) => {
+    plantDead(dir);
+    age(dir, token, 5 * 60 * 1000);
+    age(dir, young, 1000);
+  });
+  assert.deepEqual([held.plan.storeStaged, held.stayed], [[], [token, young]]);
+
+  const { dir, plan, gone: went, stayed } = sweptFromStore(t, [young], [token, lockName], (d) => {
+    plantDead(d);
+    age(d, token, 5 * 60 * 1000);
+    age(d, young, 5 * 60 * 1000);
+  });
+  assert.deepEqual([plan.storeStaged, went, stayed], [[young], [young], [token, lockName]], "the dead generation's lock token is left to the protocol");
+  const lock = join(dir, STORE, lockName);
+  const taken = acquire(lock);
+  assert.ok(taken, "the next worker breaks the old lock token and the dead lock");
+  assert.equal(readFileSync(lock, "utf8"), taken.content);
+});
+
 function nonFileAtAStoreName(t, make) {
   const dir = workspace(t);
   const a = area("src/services");
   writeMap(result(dir, [a]));
-  const at = STORE_FILES.map((name) => join(dir, STORE, stagedName(name, gone())));
+  // And at a refresh lock token's name, and at an aside an older build moved a dead lock to.
+  const names = [...STORE_FILES.map((name) => stagedName(name, gone())), `refresh.lock.${DEAD_GENERATION}`, `refresh.lock.stale-${gone()}-fedcba9876543210`];
+  const at = names.map((name) => join(dir, STORE, name));
   for (const path of at) make(path);
   const shapes = () => at.map((path) => lstatSync(path).mode);
   const before = shapes();
@@ -3998,6 +4070,66 @@ test("a link at a temporary file's name in the store is never removed, nor what 
 
 test("a fifo at a temporary file's name in the store is never removed", needsPosixSpecialFiles, (t) => {
   nonFileAtAStoreName(t, (path) => execFileSync("mkfifo", [path]));
+});
+
+// The names in the store a refresh writes or locks under: the lock, a lock token, a token's own token and the state.
+const REFRESH_NAMES = ["refresh.lock", "refresh.lock.0123456789abcdef", "refresh.lock.0123456789abcdef.1760000000000", "refresh.json"];
+
+// A scanned workspace with `make` run on each of `names` in the store, and the plan of a dry run and of a scan after it.
+function plansOverStoreNames(t, names, make) {
+  const dir = workspace(t);
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  const paths = names.map((name) => join(dir, STORE, name));
+  for (const path of paths) make(path);
+  return { paths, plans: [writeMap(result(dir, [a]), { dryRun: true }), writeMap(result(dir, [a]))] };
+}
+
+const holdingAFile = (path) => {
+  mkdirSync(path);
+  writeFileSync(join(path, "kept"), "theirs");
+};
+
+test("a directory holding a file at a name a refresh writes or locks under is carried by the plan and left whole", (t) => {
+  // No refresh runs while it is there, and nothing but the scan is run by a person.
+  for (const name of REFRESH_NAMES) {
+    const { paths, plans } = plansOverStoreNames(t, [name], holdingAFile);
+
+    for (const plan of plans) assert.deepEqual(plan.refreshBlocked, [`.claude/anatomiya/${name}`]);
+    assert.equal(readFileSync(join(paths[0], "kept"), "utf8"), "theirs", "the scan removes nothing there");
+  }
+});
+
+test("every such directory is carried at once: the lock, its lock tokens by name, then the state", (t) => {
+  const { plans } = plansOverStoreNames(t, [...REFRESH_NAMES].reverse(), holdingAFile);
+
+  for (const plan of plans) assert.deepEqual(plan.refreshBlocked, REFRESH_NAMES.map((name) => `.claude/anatomiya/${name}`));
+});
+
+test("a directory holding a file at any other name in the store is none of the plan's", (t) => {
+  // Shaped like a lock token of another lock, a staged file, and a lock token whose generation is not one this tool writes.
+  const { plans } = plansOverStoreNames(t, ["refresh.again", "facts.json.0123456789abcdef", "refresh.lock.tmp-1-0123456789abcdef", "refresh.lock.0123"], holdingAFile);
+
+  for (const plan of plans) assert.equal("refreshBlocked" in plan, false);
+});
+
+test("an empty directory and a file at those names are a refresh's to remove or replace, so the plan says nothing", (t) => {
+  for (const make of [(path) => mkdirSync(path), (path) => writeFileSync(path, "{}")]) {
+    const { paths, plans } = plansOverStoreNames(t, REFRESH_NAMES, make);
+    for (const plan of plans) assert.equal("refreshBlocked" in plan, false);
+    assert.equal(existsSync(paths[0]), true, "and the scan leaves the lock's name as it is");
+  }
+  assert.equal("refreshBlocked" in writeMap(result(workspace(t), [area("src/services")])), false, "nor where the names are free");
+});
+
+test("a link at one of those names is not followed to the directory it leads to", needsSymlinks, (t) => {
+  // A refresh unlinks or replaces the link itself, so what it leads to holds nothing up.
+  const outside = elsewhere(t);
+  writeFileSync(join(outside, "kept"), "theirs");
+  const { plans } = plansOverStoreNames(t, REFRESH_NAMES, (path) => symlinkSync(outside, path));
+
+  for (const plan of plans) assert.equal("refreshBlocked" in plan, false);
+  assert.equal(readFileSync(join(outside, "kept"), "utf8"), "theirs");
 });
 
 test("a target directory that cannot be written is refused by name before a dry run answers", needsPosixPermissions, (t) => {

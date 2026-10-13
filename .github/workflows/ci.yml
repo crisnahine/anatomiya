@@ -28,8 +28,10 @@ jobs:
     name: test (node ${{ matrix.node }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # A test that hangs (a blocking open on a fifo, say) fails here instead of
-    # holding the runner for the six-hour default.
-    timeout-minutes: 30
+    # holding the runner for the six-hour default. The Windows legs take 17 to
+    # 30 minutes by the runner they land on, and one was cancelled at 30 with no
+    # test failed.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:

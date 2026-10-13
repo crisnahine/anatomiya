@@ -1,10 +1,15 @@
-import { lstatSync, mkdirSync, renameSync, rmdirSync, unlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, rmdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { PIN_PATH } from "./baseline.mjs";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
 import { claimsIn } from "./cochange.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, recordBytes, tooLargeSentence, tooLargeToPutBack, writePair, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBackRecord, writePair } from "./facts.mjs";
+import { HISTORY_FILES } from "./history.mjs";
+import { leftTokens, processAlive, refreshBlockers, workerAge } from "./lock.mjs";
+import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, isFileAt, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import {
+  REFRESH_LOCK,
   REFRESH_STATE,
   RULES_DIR,
   STORE_DIR,
@@ -23,7 +28,6 @@ import {
   resolveTargetDir,
   spelledOtherwise,
   stagedBy,
-  stagedInStore,
   targetStatus,
   turningOff,
 } from "./rules.mjs";
@@ -130,13 +134,17 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   // Every other overview is laid out against what Claude Code's directory holds.
   const claudeFiles = overviewFiles(claude, files);
 
+  const refreshBlocked = refreshBlockers(storeDir).map((name) => `${STORE_DIR}/${name}`);
+
   return {
     write: [...bodies.keys()],
     remove: claude.stale,
-    // The temporary files an earlier scan left in Claude Code's directory, removed with the rest.
+    // The temporary files an earlier run left in Claude Code's directory, removed with the rest.
     staged: claude.staged,
-    // And the ones a scan or a refresh left in the store, where the record is megabytes on a large repository.
-    storeStaged: blind ? [] : stagedInStore(storeDir, STORE_STAGED).filter(({ pid }) => !running(pid)).map(({ name }) => name),
+    // And the ones a scan, a refresh, a pin or a lock left in the store, where the record is megabytes on a large repository.
+    storeStaged: blind ? [] : leftInStore(storeDir),
+    // Only where it is: a refresh never says so to a person, and a scan is what one runs over a stale map.
+    ...(refreshBlocked.length > 0 ? { refreshBlocked } : {}),
     // The record and layout file past the bound this replaces without reading, only where there is one.
     ...(oversized.length > 0 && !blind ? { oversized } : {}),
     foreign: claude.foreign,
@@ -302,7 +310,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // and where a target was left out by name, since off is none of this tool's
   // files. One whose stager is still running is a scan about to rename it.
   const cleans = on || explicit || stale.length > 0;
-  const staged = blind || !cleans ? [] : audit.staged.filter((f) => !running(stagedBy(f, target)));
+  const staged = blind || !cleans ? [] : audit.staged.filter((f) => !processAlive(stagedBy(f, target)));
   // Claude Code's two directories were held to this before anything was read.
   if (!isClaude(target) && (names.length > 0 || stale.length > 0 || staged.length > 0)) {
     // Named, the target cannot be written as asked, and the scan says so.
@@ -398,7 +406,7 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
     was: onRecord.was,
     first: laid.first,
     write: [...bodies].map(([name, body]) => ({ name, body })),
-    // A temporary file an earlier scan left is counted with what this one removes.
+    // A temporary file an earlier run left is counted with what this one removes.
     remove: [...laid.stale, ...laid.staged],
     foreign: laid.foreign,
     unknown: laid.unknown,
@@ -421,8 +429,30 @@ function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritabl
 // The files of ours the record on disk names in one directory, sorted.
 const recorded = (previous, target) => [...(knownNames(previous, target) ?? [])].sort();
 
-// The files a scan and a refresh stage in the store, by name.
-const STORE_STAGED = [FACTS_PATH, LAYOUT_PATH, REFRESH_STATE].map((path) => basename(path));
+// The files a scan, a refresh, a pin, a lock create and a history walk stage in the store, by name.
+const STORE_STAGED = [...[FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK].map((path) => basename(path)), ...Object.values(HISTORY_FILES)];
+
+// Where a build before the lock tokens moved a dead refresh lock aside to break it.
+const LOCK_ASIDE = /^refresh\.lock\.stale-(\d+)-[0-9a-f]{16}$/;
+
+/**
+ * What a stopped writer left in the store: the files it staged, the lock tokens of the refresh lock a breaker
+ * that died left, and a dead lock an older build moved aside. Each of a process still running stays.
+ */
+function leftInStore(dir) {
+  const staged = stagedInStore(dir, STORE_STAGED).filter(({ pid }) => !processAlive(pid)).map(({ name }) => name);
+  let names;
+  try {
+    names = readdirSync(dir);
+  } catch {
+    names = [];
+  }
+  const asides = names.filter((name) => {
+    const aside = LOCK_ASIDE.exec(name);
+    return aside !== null && !processAlive(Number(aside[1])) && isFileAt(join(dir, name));
+  });
+  return [...staged, ...leftTokens(join(dir, basename(REFRESH_LOCK)), workerAge), ...asides].sort();
+}
 
 // Nobody read it, or the caller said to leave it alone: neither is written, cleared or turned off.
 const untouched = (o) => o.state === "unknown" || o.leftAlone === true;
@@ -574,7 +604,9 @@ export function commitMap(root, plan) {
     const settle = (stopped) => writePair(storeDir, factsJson(plan.result, holding(stopped), removing(stopped)), plan.result.layout);
     const left = [];
     const records = new Set([factsPath, join(storeDir, basename(LAYOUT_PATH))]);
-    const stopped = replaceAll([...staged, ...theirs], removals, { record: factsPath, records, was: readLayout(root), leftover, left, spared, settle }, stillOwn, said);
+    const was = readLayout(root);
+    const restore = (previous) => putBackRecord(factsPath, previous, was);
+    const stopped = replaceAll([...staged, ...theirs], removals, { record: factsPath, records, leftover, left, spared, settle, restore }, stillOwn, said);
     // Removed, so the names go: a keyed file somebody puts at one of them later is not this scan's to remove.
     if (JSON.stringify(removing(stopped)) !== JSON.stringify(removing(stopped, true))) {
       try {
@@ -607,20 +639,6 @@ export function commitMap(root, plan) {
 }
 
 const UNTOUCHED = "stopped before writing anything there";
-const PUT_BACK = "stopped and put back what it had replaced";
-
-// What a rename or a removal answers where it is not allowed. On Windows: `EPERM` for a target held open or
-// read-only, `EBUSY` for a sharing violation. Elsewhere: `EPERM` for an immutable file, `EACCES` for a directory
-// that cannot be written.
-const LOCKED = ["EPERM", "EACCES", "EBUSY"];
-
-// `locked` carries the sentence's first half, for the rollback to say what it put back.
-function lockedFile(err, at, verb) {
-  if (!LOCKED.includes(err.code)) return err;
-  return Object.assign(new Error(err.message, { cause: err }), { locked: `${at} could not be ${verb} (${err.code})` });
-}
-
-const UNLOCK = "close what holds it or change its mode";
 const PERMIT = "fix its permissions";
 
 /**
@@ -635,14 +653,6 @@ function stage(path, body, dir) {
     const unstaged = `a file could not be created in ${dir} (${err.code})`;
     throw Object.assign(new Error(`${unstaged}, so nothing was written: ${PERMIT} and scan again`, { cause: err }), { unstaged });
   }
-}
-
-const lockedSentence = (locked, did) => `${locked}, so the scan ${did}: the file is locked or read-only, so ${UNLOCK}, then scan again`;
-
-// `moved` names the directory, for the rollback to say what it could not reach.
-function movedAway(dir, did) {
-  const sentence = `${dir} was replaced by something else while the map was being written, so the scan ${did}: look at what is at ${dir} now, then scan again`;
-  return Object.assign(new Error(sentence), { moved: dir });
 }
 
 /**
@@ -668,140 +678,6 @@ function makeOwnDirectory(at, rel, made) {
       throw new Error(`${parts.slice(0, i + 1).join("/")} is not a directory, so nothing was written: remove it and scan again`);
     }
   }
-}
-
-/**
- * Rename every staged file into place and remove the orphans, or put back what
- * was there before the first one moved. `stillOwn` throws for a path whose
- * directory is no longer where the plan found it. A path in `pair.leftover` is
- * removed unread and never put back, and one whose removal fails goes on
- * `pair.left` and stops nothing. One in `pair.records` past the bound is
- * replaced without being read and taken back out on a rollback.
- *
- * A rename in a directory the temporary file was just created in still fails:
- * Windows refuses one over a file another process holds open. `said` names a
- * path for the sentence that failure gets.
- *
- * Where `pair.spared` answers for the path with a target, that failure stops
- * the target's directory alone: `pair.settle` writes the record again to name
- * what that directory held, then what was replaced there is put back and
- * nothing more is done there. A
- * permission in a directory another tool owns may not stop Claude Code's map.
- * Answers the targets stopped that way, each with what stopped it.
- */
-function replaceAll(staged, removals, pair, stillOwn, said) {
-  // Read before the first rename, so the window between the facts and the last
-  // file holds renames and nothing else.
-  const kept = removals.filter((path) => !pair.leftover.has(path));
-  const before = new Map([...staged.map(([, path]) => path), ...kept].map((p) => [p, pair.records.has(p) ? recordBytes(p) : bytesToPutBack(p, said)]));
-  const undo = [];
-  const stopped = new Map();
-  const past = (path) => stopped.has(pair.spared(path)?.id);
-  // Put one directory back and go on without it, or throw for the whole scan to be put back.
-  const stop = (err, path) => {
-    const t = pair.spared(path);
-    if (t === null || !err.locked) throw err;
-    // The record first, so a process killed from here on leaves one that names the files the directory holds.
-    try {
-      pair.settle(new Set([...stopped.keys(), t.id]));
-    } catch (failed) {
-      throw lockedFile(failed, said(pair.record), "replaced");
-    }
-    for (let i = undo.length - 1; i >= 0; i--) {
-      const [done, previous] = undo[i];
-      if (pair.spared(done) !== t) continue;
-      try {
-        stillOwn(done);
-        putBack(done, previous, null);
-      } catch {
-        // Not as it was, so not a directory to go on without.
-        throw err;
-      }
-      undo.splice(i, 1);
-    }
-    for (const [tmp, to] of staged) if (pair.spared(to) === t) quietUnlink(tmp);
-    stopped.set(t.id, err.locked);
-  };
-  try {
-    for (const [tmp, path] of staged) {
-      if (past(path)) continue;
-      stillOwn(path);
-      try {
-        renameSync(tmp, path);
-      } catch (err) {
-        // A directory swapped since the look above fails here on an errno, so it is asked once more.
-        stillOwn(path);
-        stop(lockedFile(err, said(path), "replaced"), path);
-        continue;
-      }
-      undo.push([path, before.get(path)]);
-    }
-    for (const path of removals) {
-      if (past(path)) continue;
-      stillOwn(path);
-      try {
-        unlinkSync(path);
-      } catch (err) {
-        if (err.code === "ENOENT") continue;
-        // Litter, and never a reason to stop: one that will not go stays, and the scan says how many did.
-        if (pair.leftover.has(path)) {
-          pair.left.push(path);
-          continue;
-        }
-        stop(lockedFile(err, said(path), "removed"), path);
-        continue;
-      }
-      // A leftover has no bytes here, which the put-back reads as one to leave gone.
-      undo.push([path, before.get(path)]);
-    }
-    return stopped;
-  } catch (err) {
-    let lost = 0;
-    for (const [path, previous] of undo.reverse()) {
-      try {
-        // The layout file is stamped from the record alone, so only the
-        // record's put-back writes it again. Nothing is put back through a
-        // directory that stopped being the repository's own.
-        stillOwn(path);
-        putBack(path, previous, path === pair.record ? pair.was : null);
-      } catch {
-        lost++;
-      }
-    }
-    // What this run had already put in a directory went with it when it moved.
-    if (err.moved && lost > 0) err.message = movedAway(err.moved, `${PUT_BACK} everywhere else`).message;
-    if (err.locked) err.message = lockedSentence(err.locked, lost > 0 ? "stopped part way" : PUT_BACK);
-    throw err;
-  }
-}
-
-// `previousBytes`, with a file grown past the bound since the plan refused by the repository's spelling of it.
-function bytesToPutBack(path, said) {
-  try {
-    return previousBytes(path);
-  } catch (err) {
-    if (err.tooLarge === undefined) throw err;
-    throw tooLarge(said(path), err.tooLarge);
-  }
-}
-
-const MOVE_IT = "move or delete it";
-const tooLarge = (at, size) => new Error(`${tooLargeSentence(at, size)}, so nothing was written: ${MOVE_IT} and scan again`);
-
-// Whether a process is there to be signalled. One this user may not signal is there.
-function running(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === "EPERM";
-  }
-}
-
-function quietUnlink(path) {
-  try {
-    unlinkSync(path);
-  } catch {}
 }
 
 function quietRmdir(path) {

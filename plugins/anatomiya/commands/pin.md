@@ -57,7 +57,8 @@ Before the first pin the scan measures against the current working tree, and no 
 exceed FIX. That is the weaker mode, not a broken one.
 
 If the pin exits non-zero, show its output and stop, and relay the remedy it names without acting on
-it yourself. It refuses while tracked files differ from HEAD, since the pin records HEAD and the files
+it yourself. A line that opens `git could not be asked` means git never answered a question the pin put to it: no pin was written.
+Run the pin again, and where it says the same, the text after the colon is git's own reason. It refuses while tracked files differ from HEAD, since the pin records HEAD and the files
 it holds (commit or stash them), mid-merge (finish or abort the merge), with unmerged paths left by a
 rebase, cherry-pick, revert, am or stash pop (resolve them, or abort what left them), and in a sparse
 checkout that leaves tracked source out of the tree. A population that makes no area refuses too, since it would hold

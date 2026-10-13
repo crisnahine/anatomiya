@@ -109,8 +109,10 @@ Then, in the repository you want mapped:
 ```
 
 It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
-`.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan
-without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
+`.claude/anatomiya/facts.json`, and `layout.json` beside it. It also keeps
+`history-authors.gz` and `history-cochange.gz` there: what it read of the history, so the next scan
+reads from git only the commits it has not seen. Deleting either costs one full read of the history.
+Pass `--dry-run` to see the plan without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
 as well, which is [Other tools](#other-tools). The one other file a scan can change is
 `.claude/settings.local.json`: where it still holds the hook entry versions 0.2.4 to 0.2.6 put
 there, the scan takes that entry out.
@@ -188,9 +190,11 @@ alone. What the four do:
   once per change, for one subagent to look for an existing function the new code could call
   instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
   such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
-  could be written with are not asked about. A file counts as the turn's work only when it was last
-  written during one of the session's own tool calls, so a file another session or an editor saved
-  in between is not asked about.
+  could be written with are not asked about. It reads ten languages and the script blocks of Vue and Svelte
+  components: JavaScript, TypeScript and Ruby by a rule over their lines, and Python, PHP, Go, Java, C#, Rust and Kotlin by the file's tree,
+  where an added comment, import or name bound to a literal asks nothing and any other added line
+  asks. A file counts as the turn's work only when it was last written during one of the session's
+  own tool calls, so a file another session or an editor saved in between is not asked about.
 
 > [!NOTE]
 > A session that is already running holds the overview it started with, and gets a changed one
@@ -215,7 +219,8 @@ way. It leaves
 alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
-failed until one succeeds. A Cursor or Copilot directory a rescan could not write, for a locked file
+failed until one succeeds. A refresh that could not ask git a question before the rescan records
+nothing, says nothing, and is tried again the next time the checkout moves or a session starts. A Cursor or Copilot directory a rescan could not write, for a locked file
 or a missing write permission, is tried again each half hour for as long as it stays so. A scan run
 by hand prints why and ends that retry until the checkout moves. A committed map's `.claude/anatomiya/layout.json` comes along but does
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
@@ -255,8 +260,10 @@ there (`git push`, a push by URL, a teammate's commit on top): that is work push
 shared branch, which nobody reviewed. A branch you push and merge through a pull request's merge
 commit is pinned once pulled, since the merge is its review; accepting a direct push is
 `/anatomiya:pin`, by hand. A commit you pushed from another machine before this clone existed does
-not hold its first pin. When the pin stops following for one of those reasons while the checkout
-sits on the tip, or because git could not say, each session you start or resume opens with one line
+not hold its first pin. A refresh that could not ask git for HEAD, the remote's tip, the pinned commit or which
+of two pins is newer holds nothing: it ends, and the next one asks again. When the pin stops
+following for one of those reasons while the checkout sits on the tip, or because git could not say
+how the remote's branch last moved or who made a commit on it, each session you start or resume opens with one line
 in your terminal saying why and at which commit, until a pin by hand, or a refresh that no longer
 holds it, ends it; it is never put in the model's context, since the model is the author the pin
 exists to keep from accepting its own work. Each automatic pin records what it accepted (the commit
@@ -448,8 +455,8 @@ about one area, with a precision marker where the predicate cannot see every sit
 A claim states only when it clears every gate: ratio at least 0.90, a Wilson lower bound on the
 same counts, evidence spread over enough files and authors, and a pinned baseline population so an
 agent's own output cannot raise the bar it is judged against. Gates and thresholds are in
-[docs/how-it-works.md](docs/how-it-works.md); the reasons they sit where they sit are in
-[DECISIONS.md](DECISIONS.md).
+[docs/how-it-works.md](docs/how-it-works.md); the reasons they sit where they sit are in the rows
+[DECISIONS.md](DECISIONS.md) lists.
 
 ## The commands
 
@@ -676,7 +683,8 @@ spell)`. No other language gets one. With `scan --targets cursor,copilot`, Curso
 `*.go`, and Copilot gets no file for it, since VS Code matches such a pattern at every depth: the
 Copilot overview says `1 area has no pattern GitHub Copilot can be given, so no file here covers it:
 the repository root.` None of the seven gets the
-type checker, the "most imported from here" lines or the end-of-turn reuse check. The notice before
+type checker or the "most imported from here" lines. The end-of-turn reuse check asks about all
+seven, reading each changed file's tree in the hook's own process. The notice before
 a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of the seven. Neither says anything of a Go, Java,
 Kotlin or C# test that sits in the one place its language's tool reads it from. No `.rs` file is
 asked, since cargo collects by place and a Rust test has no name. A file of any other language is not read: "What lives where" counts it, and
@@ -700,7 +708,8 @@ file a grammar read is one its compiler rejects (`docs/measurements/2026-10-08-r
 | Kotlin | `*Test`, `*Tests`, `*IT` under a test tree | doc comments | handlers (repositories differ by 0.12); naming (0.95 to 1.00); imports (ktlint's default rule) |
 
 The bar is one repository under 0.90 and a spread of 0.15. No filename claim is asked of any of the
-seven, for the same reason. `DECISIONS.md` rows C50 to C54 and H52 hold the numbers.
+seven, for the same reason. The files of rows C50 to C54 and H52 under `docs/decisions/` hold the
+numbers.
 
 **A grammar reads less than its language.** A file a grammar cannot read is left out of every
 count, and the scan and the overview say how many there were: `82 files could not be read by this
@@ -763,6 +772,17 @@ first-parent changes, so a shallow clone, such as a CI checkout at depth one, st
 older than 2.31 states none either. A kind of file added fewer than 35 times in those changes gets
 no claim, so most repositories state none: 51 of 60 measured.
 
+**A git that could not be asked stops the command.** Where a git call ends with no exit code, its
+clock run out on a loaded machine or a signal sent to it, `scan`, `pin` and `check` stop, write
+nothing and print the question at exit 1: `anatomiya: git could not be asked whether commit <sha> is
+still in this repository: git was ended by SIGTERM after 120000 ms`, or the same for `which commit
+<ref> names`, `for the merge base of <a> and <b>` and `whether this repository folds case`. The same holds for a
+listing, a range or a pinned file: `which files <sha> holds`, `what changed from <sha> to <ref>`,
+`which files differ from <sha>`, `for <path> at <sha>`, and for `check`, `whether this clone is
+shallow`, `which refs hold the name <base>`, `which parents HEAD's commit records` and `for the
+oldest commit this clone holds`. Run it again. Read as git saying no, the first of those dropped a map to counts over a commit that was
+still there. A repository git itself cannot open stops them the same way, with git's own text.
+
 **Who gets the most out of it**: repositories where a meaningful share of pull requests are
 agent-authored, with many directories and mechanical per-file obligations. A solo repository is not
 held back by the author gate: where the whole history has one author there is no second opinion to
@@ -775,9 +795,10 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 319 numbered decisions, each with the
-  measurement or the review finding that forced it. Why a threshold is where it is, why the parser
-  runs in child processes, why no hook carries the map on its own: that is the file.
+- [DECISIONS.md](DECISIONS.md) is the build contract: 335 numbered decisions, a line each, and each
+  links to its own file under [docs/decisions](docs/decisions) with the measurement or the review
+  finding that forced it. Why a threshold is where it is, why the parser runs in child processes, why
+  no hook carries the map on its own: that is where to look.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
 - [docs/how-it-works.md](docs/how-it-works.md) is the mechanical walkthrough, close enough to
   predict what the tool prints on your repository before you run it.

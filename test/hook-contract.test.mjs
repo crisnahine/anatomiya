@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { fieldsIn } from "../plugins/anatomiya/lib/hook.mjs";
 import { hostEnv } from "./host-env.mjs";
+import { removeTree } from "./platform.mjs";
 
 /**
  * The wire contract every hook this plugin ships answers: the payload read, the
@@ -81,7 +82,7 @@ const DECLARED = PLUGINS.flatMap(commandsOf);
  */
 function elsewhere(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-contract-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   // With a map here, anatomiya's hooks answer a real object rather than the
   // empty one they answer for an unscanned directory, so the assertions below
   // are about an answer rather than about its absence.

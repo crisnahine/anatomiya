@@ -6,7 +6,7 @@
  * read one blob at a time into strings and let the parser write them out again.
  * Two readings of what an unreadable path means, and the check's was serial:
  * 80 of the 88 git processes a 40-file run spawned were `cat-file` waiting on
- * each other.
+ * each other. One `cat-file` child per call answers every path (`blobReader`).
  *
  * Through disk because the parser runs out of process and takes a path (B5),
  * and `withSource` for the caller that also needs the bytes in hand, since the
@@ -14,22 +14,25 @@
  *
  * A path that will not come back is reported rather than thrown on: the caller
  * decides what one missing file means, and for both of them it is one file
- * rather than the whole set.
+ * rather than the whole set. One git could not be asked for is `unasked` with
+ * its `error`, never `absent`, and the caller decides that too (F29).
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join, dirname, resolve as resolvePath, sep } from "node:path";
 import { tmpdir } from "node:os";
 
-import { showBlob } from "./git.mjs";
+import { blobReader } from "./git.mjs";
 import { language } from "./langs.mjs";
 import { byCode } from "./paths.mjs";
 
-// How many `git cat-file` reads run at once.
+// How many reads are asked for at once. One child answers them in turn; the
+// bound is on what runs side by side in the per-call reader: every read once
+// that child has handed over, and each fetch of a blob the clone does not hold.
 const READERS = 8;
 
 export async function readAtRevision(root, sha, files, { withSource = false, timeout, lazyFetch = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-revision-"));
-  // The size cap is the reader's own and no caller sets it: `showBlob` gives up
+  // The size cap is the reader's own and no caller sets it: it gives up
   // at exactly the size the parser skips at, so a blob refused here is one the
   // parse would have refused anyway. The clock is the caller's, because the
   // scan and the check disagree about how long to wait on a stalled git.
@@ -37,6 +40,7 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
   const out = [];
   const missing = [];
   const dispose = () => rmSync(dir, { recursive: true, force: true });
+  const reader = blobReader(root, sha, bounds);
 
   // The directory exists before anything that can fail, so a throw past this
   // point is one nobody disposes: the caller has no handle on it yet.
@@ -46,8 +50,8 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
       const abs = placed.get(f) ?? null;
       if (!abs) return void missing.push({ rel: f?.rel ?? null, reason: "unsafe path" });
 
-      const blob = await showBlob(root, sha, f.rel, bounds);
-      if (!blob.ok) return void missing.push({ rel: f.rel, reason: blob.reason });
+      const blob = await reader.read(f.rel);
+      if (!blob.ok) return void missing.push({ rel: f.rel, reason: blob.reason, ...(blob.error ? { error: blob.error } : {}) });
 
       // A file the temporary directory will not take is one path this run did
       // not get, reported like any other. Throwing here would lose the whole set.
@@ -67,6 +71,8 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
   } catch (err) {
     dispose();
     throw err;
+  } finally {
+    await reader.close();
   }
 
   // Sorted, because the order blobs finish in is the order git answered them

@@ -60,7 +60,9 @@ Run the check and report what it found.
    make unprompted.
 
 Findings never set the exit code. A non-zero exit means the check could not run: show its output and
-stop, and do not guess at what it found.
+stop, and do not guess at what it found. A line that opens `git could not be asked` means git never
+answered a question the check put to it. Run the check again, and where it says the same, the text
+after the colon is git's own reason.
 
 If it says a parser engine is not installed, run the readiness probe:
 

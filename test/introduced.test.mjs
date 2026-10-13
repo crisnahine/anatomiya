@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseSync } from "oxc-parser";
@@ -10,6 +10,7 @@ import { doublingRatio, LINEAR } from "./growth.mjs";
 import { bodyIdentity, newlyIntroduced, siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { parseRuby } from "../plugins/anatomiya/lib/ruby.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
+import { removeTree } from "./platform.mjs";
 
 /** One revision of a file, parsed the way the check hands it over: the tree, the same string, the comments. */
 function revision(src, { file = "f.tsx", jsx = file.endsWith("x"), stripped = false } = {}) {
@@ -609,7 +610,7 @@ test("a row that throws on a tree loses its own sites for that file and nothing 
 
 async function rubyRevision(t, src) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-introduced-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const abs = join(dir, "w.rb");
   writeFileSync(abs, src);
   const out = await parseRuby([{ rel: "app/w.rb", abs, lang: "ruby" }]);

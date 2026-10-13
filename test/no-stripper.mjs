@@ -1,7 +1,8 @@
-import { mkdtempSync, mkdirSync, rmSync, cpSync, symlinkSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, cpSync, symlinkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ANATOMIYA, installed } from "../scripts/plugins.mjs";
+import { removeTree } from "./platform.mjs";
 
 /**
  * An install of this plugin that has the parser and not the Flow stripper.
@@ -15,7 +16,7 @@ import { ANATOMIYA, installed } from "../scripts/plugins.mjs";
  */
 export function installWithoutStripper(t) {
   const home = mkdtempSync(join(tmpdir(), "anatomiya-nostrip-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  t.after(() => removeTree(home));
 
   for (const d of ["lib", "bin", "grammars"]) cpSync(join(ANATOMIYA, d), join(home, d), { recursive: true });
   mkdirSync(join(home, "node_modules"), { recursive: true });

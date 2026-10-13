@@ -6,17 +6,20 @@ import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { needsPosixPermissions, needsShebang, needsSymlinks } from "./platform.mjs";
+import { ASKS_BY_ID, gitAhead, needsGitStub, unasked, exits } from "./git-stub.mjs";
+import { needsPosixPermissions, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH, readPin } from "../plugins/anatomiya/lib/baseline.mjs";
+import { Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
+import { readLayout } from "../plugins/anatomiya/lib/facts.mjs";
 
 const RULES = join(".claude", "rules");
 
@@ -27,7 +30,7 @@ const needsTs = (await loadTypeScript()) ? {} : { skip: "typescript is not insta
 /** A committed repository with one area's worth of source in it. */
 function repo(t, files = 8) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < files; i++) {
@@ -61,7 +64,7 @@ function repoWithBranch(t) {
  */
 function repoWithGemfile(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-gemfile-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   for (const sub of ["utils", "components"]) mkdirSync(join(dir, "src", sub), { recursive: true });
   for (let i = 0; i < 6; i++) {
@@ -81,7 +84,7 @@ function repoWithGemfile(t) {
 /** A repository written in Ruby and nothing else, so no file of it can be read without an interpreter. */
 function repoOnlyRuby(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-ruby-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   mkdirSync(join(dir, "app", "models"), { recursive: true });
   for (let i = 0; i < 8; i++) {
@@ -104,7 +107,7 @@ function repoOnlyRuby(t) {
  */
 function withoutRuby(t) {
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-commands-path-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const git = (process.env.PATH ?? "")
     .split(delimiter)
     .map((d) => join(d, "git"))
@@ -143,6 +146,70 @@ test("a scan writes the files its summary counted", async (t) => {
   assert.equal(summary.dryRun, false);
   assert.equal(readdirSync(join(dir, RULES)).length, summary.wrote);
   assert.ok(summary.wrote > 0, "a repository with an area writes a map");
+});
+
+/** Every file under the repository's `.claude`, by path, with its bytes. */
+function claudeTree(dir) {
+  const out = {};
+  const walk = (rel) => {
+    for (const entry of readdirSync(join(dir, rel), { withFileTypes: true })) {
+      const path = join(rel, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else out[path] = readFileSync(join(dir, path));
+    }
+  };
+  walk(".claude");
+  return out;
+}
+
+test("a scan refused one rename after the record moved leaves the tree as the scan before it left it", async (t) => {
+  const dir = repo(t);
+  await runScan(dir);
+  await runScan(dir);
+  mkdirSync(join(dir, "lib"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(dir, "lib", `g${i}.ts`), `const b${i} = 1\nexport { b${i} }\n`);
+  execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["commit", "-qm", "lib"], { cwd: dir, stdio: "pipe" });
+  const before = claudeTree(dir);
+  // Told by the path's own parts: the scan's root is git's spelling of the directory, which on macOS is
+  // under /private and on Windows is the long name of a temp directory this process knows by its short one.
+  const INTO_RULES = /[\\/]\.claude[\\/]rules[\\/]/;
+  const THE_RECORD = /[\\/]\.claude[\\/]anatomiya[\\/]facts\.json$/;
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  const renamed = [];
+  let refused = false;
+  fs.renameSync = (from, to) => {
+    if (!refused && INTO_RULES.test(String(to))) {
+      refused = true;
+      throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+    }
+    renamed.push(String(to));
+    return real(from, to);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  });
+
+  await assert.rejects(runScan(dir), /could not be replaced \(EPERM\), so the scan stopped and put back what it had replaced/);
+
+  assert.ok(refused && renamed.findIndex((to) => THE_RECORD.test(to)) === 0, "the record was replaced before the refusal, and put back after it");
+  const after = claudeTree(dir);
+  const layout = join(".claude", "anatomiya", "layout.json");
+  // The record put back is a new file with a new mtime, so its layout file alone is stamped again.
+  const unstamped = (bytes) => {
+    const parsed = JSON.parse(bytes);
+    delete parsed.record.mtimeMs;
+    return parsed;
+  };
+  assert.deepEqual(unstamped(after[layout]), unstamped(before[layout]));
+  delete after[layout];
+  delete before[layout];
+  assert.deepEqual(after, before, "every other file, byte for byte, and no temporary file beside them");
+  assert.notEqual(readLayout(dir), null, "and the layout file answers for the record put back");
 });
 
 test("a settings file the stale hook cannot be taken out of does not fail the scan", async (t) => {
@@ -254,7 +321,7 @@ test("a path inside the repository is widened to the root the scan reports", asy
 
 test("a scan of a directory that is not a repository refuses rather than reporting nothing", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-bare-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   await assert.rejects(() => runScan(dir, { dryRun: true }), /not a git repository/);
 });
@@ -283,7 +350,7 @@ test("a checked scan measures resolution over area files, so a bundle in no area
   // own code resolved at 100% down to 3% and printed it as low-resolution,
   // which points the reader at the tsconfig and the dependencies.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-bundle-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "src"), { recursive: true });
   mkdirSync(join(dir, "public", "assets"), { recursive: true });
   mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
@@ -470,7 +537,7 @@ test("a pin whose store is linked outside the repository refuses, dry run includ
   // for.
   const dir = repo(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   symlinkSync(outside, join(dir, ".claude"));
 
   for (const dryRun of [true, false]) {
@@ -661,7 +728,7 @@ test("a pin over no tracked source refuses, and counts the source still untracke
   // then made read postdates-baseline and stated nothing until somebody
   // re-pinned, with no line anywhere saying why.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-empty-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q");
   git("config", "user.email", "t@t.test");
@@ -947,7 +1014,7 @@ test("a pin over one this build cannot read says it is replacing it, not pinning
 
 test("a repository with no commit cannot be pinned", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-fresh-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
 
   await assert.rejects(() => runPin(dir), /no commit to pin/);
@@ -1107,7 +1174,7 @@ test("a doctor counts a target's files where the clone holds them and no record"
 
 test("a doctor run outside any repository answers about the installation alone", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-none-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   assert.deepEqual((await runDoctor({ cwd: dir })).lines, (await runDoctor()).lines);
 });
@@ -1239,4 +1306,198 @@ test("setup is the only command that runs npm, so a scan, a check and a pin inst
     d.body.includes("npm") || npmish.some((n) => !d.names.includes(n) && new RegExp(`\\b${n}\\b`).test(d.body));
 
   assert.deepEqual(decls.filter((d) => d.exported && reaches(d)).flatMap((d) => d.names), ["runSetup"]);
+});
+
+test("a scan stops where git could not be asked whether the pinned commit is still there, and writes nothing", needsGitStub, async (t) => {
+  const dir = repo(t);
+  await runPin(dir);
+  await runScan(dir);
+  const before = claudeTree(dir);
+  gitAhead(t, unasked(ASKS_BY_ID));
+
+  await assert.rejects(() => runScan(dir), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+test("the summary's line for a walk git could not be asked for carries the question and what ended git", needsGitStub, async (t) => {
+  const dir = repo(t);
+  gitAhead(t, unasked("*' rev-parse --verify --quiet origin/HEAD^{commit} '*"));
+
+  const lines = scanLines((await runScan(dir, { dryRun: true })).summary);
+
+  // One line is all the summary prints of an error, so the cause is on the first.
+  assert.deepEqual(
+    lines.filter((line) => line.startsWith("what ships together")),
+    ["what ships together could not be read, so no co-change claim was stated: git could not be asked which commit origin/HEAD names: git was ended by SIGTERM"]
+  );
+});
+
+test("a pinned scan stops where git could not be asked what the base ref names, or for its merge base, and writes nothing", needsGitStub, async (t) => {
+  const dir = repoWithBranch(t);
+  await runPin(dir);
+  await runScan(dir);
+  const before = claudeTree(dir);
+
+  let calls = gitAhead(t, unasked("*' rev-parse --verify --quiet main^{commit} '*"));
+  await assert.rejects(() => runScan(dir), /^Error: git could not be asked which commit main names: /);
+  calls.restore();
+
+  // Read as no fork point, the drift is measured to the ref's tip.
+  calls = gitAhead(t, unasked("*' merge-base '*"));
+  await assert.rejects(() => runScan(dir), /^Error: git could not be asked for the merge base of HEAD and [0-9a-f]{40}: git was ended by SIGTERM/);
+  calls.restore();
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+test("a check stops where git could not be asked for the merge base, and keeps its caveat where git found none", needsGitStub, async (t) => {
+  const dir = repoWithBranch(t);
+  let calls = gitAhead(t, unasked("*' merge-base '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /^Error: git could not be asked for the merge base of [0-9a-f]{40} and [0-9a-f]{40}: git was ended by SIGTERM/);
+  calls.restore();
+
+  calls = gitAhead(t, exits("*' merge-base '*", 1));
+  const { report } = await runCheck(dir, { baseRef: "main" });
+  assert.ok(report.caveats.some((c) => c.message === "no merge base between main and HEAD"), JSON.stringify(report.caveats));
+});
+
+test("a check stops where git could not be asked whether a base that looks like a commit id names a ref", needsGitStub, async (t) => {
+  // Read as "names no ref", an unasked name lets HEAD's own id, or a branch named in hex at HEAD, through as a commit id.
+  const dir = repo(t);
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
+  writeFileSync(join(dir, "src", "f0.ts"), "export const edited = 1\n");
+  assert.equal((await runCheck(dir, { baseRef: head })).report.base.sha, head, "a commit id at HEAD is a base for uncommitted work");
+
+  gitAhead(t, unasked("*' rev-parse --symbolic-full-name '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: head }), new RegExp(`^Error: git could not be asked which ref ${head} names: git was ended by SIGTERM`));
+});
+
+test("a pin stops where git could not be asked for HEAD, before the list is read or after it", needsGitStub, async (t) => {
+  const dir = repo(t);
+  const head = "*' rev-parse --verify --quiet HEAD^{commit} '*";
+  const calls = gitAhead(t, unasked(head));
+  await assert.rejects(() => runPin(dir), /^Error: git could not be asked which commit HEAD names: /);
+  calls.restore();
+
+  // Answered once, for the commit to pin, and not when it is asked again.
+  const count = join(scratch(t, "anatomiya-pin-count-"), "n");
+  gitAhead(t, `case " $* " in ${head}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -gt 1 ] && kill -TERM $$;; esac`);
+  await assert.rejects(() => runPin(dir), /^Error: git could not be asked which commit HEAD names: /);
+
+  assert.equal(existsSync(join(dir, PIN_PATH)), false, "no pin was written");
+});
+
+test("a check stops where git could not be asked about its base or about the pinned commit", needsGitStub, async (t) => {
+  const dir = repoWithBranch(t);
+  await runPin(dir);
+  await runScan(dir);
+
+  let calls = gitAhead(t, unasked("*' rev-parse --verify --quiet main^{commit} '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /^Error: git could not be asked which commit main names: /);
+  calls.restore();
+
+  calls = gitAhead(t, unasked("*' rev-parse --verify --quiet origin/HEAD^{commit} '*"));
+  await assert.rejects(() => runCheck(dir), /^Error: git could not be asked which commit origin\/HEAD names: /);
+  calls.restore();
+
+  calls = gitAhead(t, unasked(ASKS_BY_ID));
+  await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
+  calls.restore();
+
+  // Read as a repository with no commit, an unasked HEAD lets a base that names nothing through at exit 0.
+  gitAhead(t, unasked("*' rev-parse --verify --quiet HEAD^{commit} '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "no-such-branch" }), /^Error: git could not be asked which commit HEAD names: /);
+});
+
+test("a pinned scan stops where git could not be asked what the fork held, and writes nothing", needsGitStub, async (t) => {
+  // A branch cut before the pin: read as a fork that held none of the pinned paths,
+  // the files the base added since close the area as a population change.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("branch", "-M", "main");
+  git("branch", "feat");
+  for (const n of [8, 9, 10]) writeFileSync(join(dir, "src", `f${n}.ts`), `const a${n} = 1\nexport { a${n} }\n`);
+  git("add", "-A");
+  git("commit", "-qm", "the base moves on");
+  await runPin(dir);
+  await runScan(dir);
+  git("checkout", "-q", "feat");
+  const before = claudeTree(dir);
+  gitAhead(t, unasked("*' ls-tree '*"));
+
+  await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked which files [0-9a-f]{40} holds: git ls-tree exited SIGTERM/.test(err.message));
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+test("a pinned scan stops where git could not be asked what changed since the pin, and writes nothing", needsGitStub, async (t) => {
+  // Read as nothing renamed, an area the branch moved is one made after the pin.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  await runPin(dir);
+  await runScan(dir);
+  git("mv", "src", "lib");
+  git("commit", "-qm", "moved");
+  const before = claudeTree(dir);
+  gitAhead(t, unasked("*' diff '*'..'*"));
+
+  await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked what changed from [0-9a-f]{40} to \S+: git diff exited SIGTERM/.test(err.message));
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+test("a pinned scan stops where git could not be asked for a pinned blob, and writes nothing", needsGitStub, async (t) => {
+  // Read as absent, the file closes its area as a population change.
+  const dir = repo(t);
+  await runPin(dir);
+  await runScan(dir);
+  writeFileSync(join(dir, "src", "f0.ts"), "const a0 = 2\nexport { a0 }\n");
+  const before = claudeTree(dir);
+  // The one child and the per-call read behind it, and no other `cat-file`.
+  gitAhead(t, unasked(`*' cat-file --batch '*|*' cat-file blob '[0-9a-f]*`));
+
+  await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked for src\/f0\.ts at [0-9a-f]{40}: git was ended by SIGTERM/.test(err.message));
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+/** A `case` arm that ends git on the `nth` call matching `pattern`, and on no other. */
+function unaskedOn(t, pattern, nth) {
+  const count = join(scratch(t, "anatomiya-check-count-"), "n");
+  return `case " $* " in ${pattern}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -eq ${nth} ] && kill -TERM $$;; esac`;
+}
+
+// Each was read as an answer: not shallow, not ambiguous, a first commit, no test tracked.
+for (const [what, stub, said] of [
+  ["whether the clone is shallow", () => unasked("*' rev-parse --is-shallow-repository '*"), /^git could not be asked whether this clone is shallow: git was ended by SIGTERM/],
+  ["which refs hold a typed base's name", () => unasked("*' for-each-ref '*"), /^git could not be asked which refs hold the name main: git was ended by SIGTERM/],
+  ["for the oldest commit it holds", () => `${exits("*' merge-base '*", 1)}\n${unasked("*' rev-list --max-parents=0 '*")}`, /^git could not be asked for the oldest commit this clone holds: git was ended by SIGTERM/],
+  ["which tests are tracked", (t) => unaskedOn(t, "*' ls-files -z -- '", 1), /^git ls-files exited SIGTERM/],
+]) {
+  test(`a check stops where git could not be asked ${what}`, needsGitStub, async (t) => {
+    const dir = repoWithBranch(t);
+    gitAhead(t, stub(t));
+    await assert.rejects(() => runCheck(dir, { baseRef: "main" }), (err) => err instanceof Unasked && said.test(err.message));
+  });
+}
+
+test("a shallow check stops where git could not be asked which parents HEAD records", needsGitStub, async (t) => {
+  const origin = repoWithBranch(t);
+  const dir = scratch(t, "anatomiya-check-shallow-");
+  // Both tips arrive grafted as roots, so no merge base is reached and the commit object is read.
+  execFileSync("git", ["clone", "-q", "--depth=1", "--no-single-branch", `file://${origin}`, dir], { stdio: "pipe" });
+  gitAhead(t, unasked("*' cat-file commit HEAD '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "origin/main" }), (err) => err instanceof Unasked && /^git could not be asked which parents HEAD's commit records: git was ended by SIGTERM/.test(err.message));
+});
+
+test("a check says which file it could not read where git could not be asked for its blob, and finds nothing in it", needsGitStub, async (t) => {
+  const dir = repoWithBranch(t);
+  await runScan(dir);
+  gitAhead(t, unasked(`*' cat-file --batch '*|*' cat-file blob '[0-9a-f]*`));
+
+  const { report } = await runCheck(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.caveats.filter((c) => c.code === CAVEATS.HEAD_UNREADABLE).map((c) => c.message), ["could not read src/f8.ts at HEAD"]);
+  assert.deepEqual(report.findings.filter((f) => f.path === "src/f8.ts"), []);
 });

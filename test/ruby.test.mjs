@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsShebang } from "./platform.mjs";
+import { needsPosixPaths, needsShebang, removeTree } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
 import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { EventEmitter, once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
-import { choosePrism, heldHeap, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize } from "../plugins/anatomiya/lib/ruby.mjs";
+import { choosePrism, heldHeap, listPrism, parseBatch, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize, startFor } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
@@ -62,7 +63,7 @@ test("the listing names a prism installed in a gem path, by version and absolute
   // Asked of RubyGems rather than of prism, so it answers on any interpreter,
   // including one whose own prism is the 0.x this cannot read.
   const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-"));
-  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  t.after(() => removeTree(gems));
   mkdirSync(join(gems, "specifications"), { recursive: true });
   mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
   writeFileSync(join(gems, "gems", "prism-1.99.0", "lib", "prism.rb"), "module Prism; VERSION = \"1.99.0\"; end\n");
@@ -89,7 +90,7 @@ test("the listing finds a --user-install under XDG_DATA_HOME", needsRubyInterpre
   // ~/.local/share instead: `gem install --user-install prism` was installed
   // and invisible, and doctor went on naming the remedy just run.
   const home = mkdtempSync(join(tmpdir(), "anatomiya-home-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  t.after(() => removeTree(home));
   const api = execFileSync("ruby", ["-e", 'print RbConfig::CONFIG["ruby_version"]'], { encoding: "utf8" });
   const gems = join(home, "xdg", "gem", "ruby", api);
   mkdirSync(join(gems, "specifications"), { recursive: true });
@@ -112,7 +113,7 @@ test("the listing loads no installed gem's library, so a newer json cannot silen
   // With RubyGems enabled, `require "json"` activated the newest installed
   // json gem; one that raised (or merely printed) cost every prism choice.
   const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-json-"));
-  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  t.after(() => removeTree(gems));
   mkdirSync(join(gems, "specifications"), { recursive: true });
   mkdirSync(join(gems, "gems", "json-99.0.0", "lib"), { recursive: true });
   writeFileSync(join(gems, "gems", "json-99.0.0", "lib", "json.rb"), 'print "GEM CODE RAN"\nraise "planted json"\n');
@@ -132,7 +133,7 @@ test("a listed prism that raises on load is never put on the load path", needsRu
   // the way an extension linked to another libruby does is newest here, so
   // the choice has to be proved to load before the parser is handed it.
   const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-broken-"));
-  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  t.after(() => removeTree(gems));
   mkdirSync(join(gems, "specifications"), { recursive: true });
   mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
   writeFileSync(join(gems, "gems", "prism-1.99.0", "lib", "prism.rb"), 'raise LoadError, "incompatible library version"\n');
@@ -155,7 +156,7 @@ test("the parser loads the prism the listing chose, and says which", needsSheban
   // answers the version question on that path, which is how the choice is
   // proved to load before the parser is handed it.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stub-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -185,11 +186,11 @@ test("a version file in the repository chooses no interpreter: the listing, the 
   // keeps the three of them on one interpreter. The stub logs where it started,
   // spelled into its own body because the environment it gets is only PATH.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-where-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const log = join(bin, "started-in");
   writeFileSync(join(bin, "ruby"), `#!/bin/sh\npwd >> '${log}'\ncat >/dev/null\nexit 1\n`, { mode: 0o755 });
   const repo = mkdtempSync(join(tmpdir(), "anatomiya-ruby-pinned-"));
-  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  t.after(() => removeTree(repo));
   writeFileSync(join(repo, ".ruby-version"), "3.4.9\n");
   writeFileSync(join(repo, ".tool-versions"), "ruby path:./vendor/ruby\n");
   writeFileSync(join(repo, "a.rb"), "class A\nend\n");
@@ -223,11 +224,11 @@ test("a ruby planted in the temp directory never answers for an empty PATH entry
   // child starts in the temp directory, which anyone can write. The stub
   // stands in for the planted one and logs that it ran.
   const shared = mkdtempSync(join(tmpdir(), "anatomiya-ruby-shared-"));
-  t.after(() => rmSync(shared, { recursive: true, force: true }));
+  t.after(() => removeTree(shared));
   const log = join(shared, "planted-ran");
   writeFileSync(join(shared, "ruby"), `#!/bin/sh\necho "$*" >> '${log}'\ncat >/dev/null\nexit 1\n`, { mode: 0o755 });
   const empty = mkdtempSync(join(tmpdir(), "anatomiya-ruby-nobin-"));
-  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  t.after(() => removeTree(empty));
   const file = join(empty, "a.rb");
   writeFileSync(file, "class A\nend\n");
   const saved = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR };
@@ -258,7 +259,7 @@ test("a prism too old to read is a missing parser, never a repository of crashed
   // exit 0 and no remedy, and withheld the whole map; the scan and the check
   // name the remedy only for a missing parser.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-old-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -281,7 +282,7 @@ test("a ruby our clock stopped before its ready line is a stall, not a missing i
   // No version came back, which alone reads as an install to fix. The idle
   // window killed it both times, so what failed was the machine's time.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stall-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -306,7 +307,7 @@ test("one stalled child beside one that answered is files charged, not a stall",
   // A single child that said ready and then went silent reports a version and
   // no stall. Split across children, the run has to answer the same way.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-half-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -1064,7 +1065,7 @@ test("a Ruby with no prism at all is a missing parser, not a file that crashed i
   // raised before it could say why, so every file read as crashing the parser,
   // check reported nothing found and scan wrote nothing, with no remedy.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-noprism-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(join(bin, "prism.rb"), 'raise LoadError, "cannot load such file -- prism"\n');
   const stub = join(bin, "ruby");
   writeFileSync(
@@ -2257,6 +2258,10 @@ test("the smallest hold is at least twice what a shard thread uses before it rea
   );
 });
 
+// What the heap tests below wait through: a dense megabyte took a loaded runner past the
+// 15 s of silence a parse child is allowed, and a hold that held then read as a stall.
+const PATIENT = { idleMs: 120_000, wallBaseMs: 600_000 };
+
 test("a tree too large for a shard's held heap is read again on a full one, and the first child is stopped and reaped", { ...needsRuby, ...needsShebang }, async () => {
   // 253 KB of calls nested without parentheses, under the size where the hold
   // grows to cover the densest shapes. Measured, it runs out of a 40 MB hold
@@ -2280,7 +2285,7 @@ test("a tree too large for a shard's held heap is read again on a full one, and 
     { mode: 0o755 }
   );
   const big = write("heap_heavy", ("p ".repeat(300) + "a\n").repeat(430));
-  const out = await parseRuby([big], { ruby, dimensions: RUBY_DIMENSIONS });
+  const out = await parseRuby([big], { ruby, dimensions: RUBY_DIMENSIONS, guards: PATIENT });
 
   assert.equal(out.results[0].ok, true, out.results[0].error);
   assert.equal(out.results[0].attempts, 1);
@@ -2311,7 +2316,7 @@ test("a held heap that runs out keeps the records already answered and reads aga
   );
   const small = [write("held_small_a", "a = 1\n"), write("held_small_b", "b = 2\n")];
   const big = write("held_dense", ("p ".repeat(300) + "a\n").repeat(430));
-  const out = await parseRuby([...small, big], { ruby, dimensions: RUBY_DIMENSIONS, shards: 1 });
+  const out = await parseRuby([...small, big], { ruby, dimensions: RUBY_DIMENSIONS, shards: 1, guards: PATIENT });
 
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["held_small_a.rb", true, 1], ["held_small_b.rb", true, 1], ["held_dense.rb", true, 1]]);
   assert.equal(out.error, null);
@@ -2340,7 +2345,7 @@ test("the densest trees measured under the size cap are read by one child per sh
   const hashes = write("dense_hashes", ("x=" + "{a:".repeat(200) + "1" + "}".repeat(200) + "\n").repeat(1_240));
   for (const f of [calls, hashes]) assert.ok(statSync(f.abs).size > 950 * 1024 && statSync(f.abs).size < 1024 * 1024, "inside the size cap");
 
-  const out = await parseRuby([calls, hashes], { ruby, dimensions: RUBY_DIMENSIONS, shards: 2 });
+  const out = await parseRuby([calls, hashes], { ruby, dimensions: RUBY_DIMENSIONS, shards: 2, guards: PATIENT });
 
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["dense_calls.rb", true, 1], ["dense_hashes.rb", true, 1]]);
   assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2, "one child per shard, none read again");
@@ -2439,14 +2444,20 @@ process.stdout.write(JSON.stringify(out.results.map((r) => [r.rel, Boolean(r.cra
   }
 });
 
-/** A program of `depth` nested blocks, in the shape prism answers `a {` with. */
-function nestedBlocks(depth) {
-  let body;
-  for (let line = depth; line >= 1; line--) {
-    const block = { t: "block", line, ...(body ? { body: { t: "statements", line: line + 1, body: [body] } } : {}) };
-    body = { t: "call", line, name: "a", block };
+/**
+ * The JSON of a program of `depth` nested blocks, in the shape prism answers `a {` with.
+ * Written as text: `JSON.stringify` recurses, and on arm64 Linux this thread's stack holds
+ * about 3,600 levels of it, fewer than the test below needs.
+ */
+function nestedBlocksJson(depth) {
+  let open = "";
+  let close = "";
+  for (let line = 1; line <= depth; line++) {
+    const inner = line < depth;
+    open += `{"t":"call","line":${line},"name":"a","block":{"t":"block","line":${line}${inner ? `,"body":{"t":"statements","line":${line + 1},"body":[` : ""}`;
+    close = `${inner ? "]}" : ""}}}${close}`;
   }
-  return { t: "program", line: 1, statements: { t: "statements", line: 1, body: [body] } };
+  return `{"t":"program","line":1,"statements":{"t":"statements","line":1,"body":[${open}${close}]}}`;
 }
 
 test("a check's tree nested deeper than a message decodes crosses to the parent whole", needsShebang, async () => {
@@ -2454,13 +2465,18 @@ test("a check's tree nested deeper than a message decodes crosses to the parent 
   // structured-clone message, whatever depth this runner's prism could parse.
   const home = mkdtempSync(join(dir, "deep-"));
   const lines = join(home, "lines");
-  const program = nestedBlocks(1_000);
-  writeFileSync(lines, JSON.stringify({ rel: "a.rb", ok: true, ast: program, errors: 0, length: 1 }) + "\n");
+  writeFileSync(lines, `{"rel":"a.rb","ok":true,"ast":${nestedBlocksJson(1_000)},"errors":0,"length":1}\n`);
   const ruby = stubRuby("deep", ["cat >/dev/null", READY, `cat '${lines}'`]);
   const out = await parseRuby([pair[0]], { ruby, dimensions: [] });
 
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.error ?? null, Boolean(r.crashed)]), [["a.rb", true, null, false]]);
-  assert.equal(JSON.stringify(out.results[0].program), JSON.stringify(program), "every level arrived");
+  // Walked for the reason the tree is written as text.
+  let depth = 0;
+  for (let call = out.results[0].program.statements.body[0]; call; call = call.block.body?.body[0]) {
+    depth++;
+    assert.deepEqual([call.t, call.line, call.name, call.block.t, call.block.line], ["call", depth, "a", "block", depth]);
+  }
+  assert.equal(depth, 1_000, "every level arrived");
 });
 
 test("a check reads a tree 700 blocks deep with the real prism", needsRuby, async (t) => {
@@ -2487,4 +2503,116 @@ test("a record lost between a shard and the parent is charged rather than droppe
     ["a.rb", false, "its record never reached the parent", true, 1],
     ["b.rb", false, "x", false, 1],
   ]);
+});
+
+test("a child with no descriptors left to start on tells its thread, and every call the thread makes on it is safe", { ...needsShebang, timeout: 60_000 }, async () => {
+  // Measured on Node 22: spawn then hands back a child with no pipes and
+  // queues its error. The parent reads those pipes inside the thread's message
+  // handler, where a TypeError is an uncaught exception that ends the scan.
+  // Driven at the start itself: a thread to ask for it needs descriptors too.
+  const lib = new URL("../plugins/anatomiya/lib/ruby.mjs", import.meta.url).href;
+  const script = `
+    import { closeSync, openSync } from "node:fs";
+    import { startFor } from ${JSON.stringify(lib)};
+    const held = [];
+    try {
+      for (;;) held.push(openSync("/dev/null", "r"));
+    } catch {
+      // Every descriptor this process may hold is open.
+    }
+    const posted = [];
+    const out = {};
+    try {
+      const child = startFor({ postMessage: (msg) => posted.push(msg) }, { id: 7, spawn: [process.execPath, ["-e", ""], { stdio: ["pipe", "pipe", "pipe"] }] });
+      out.started = child.pid !== undefined;
+      // What a thread asks of its child: more output, and the end of its input.
+      child.read();
+      child.input("anything");
+      await new Promise(setImmediate);
+    } finally {
+      for (const fd of held) closeSync(fd);
+    }
+    out.posted = posted.map((msg) => ({ id: msg.id, error: msg.error?.code ?? null, close: msg.close ?? null }));
+    process.stdout.write(JSON.stringify(out));
+  `;
+
+  // The limit is lowered for this one process, in a process group of its own,
+  // so the machine's own table is never the one that fills.
+  const starved = spawn("sh", ["-c", 'ulimit -n 64 && exec "$0" --input-type=module -e "$1"', process.execPath, script], {
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  starved.stdout.on("data", (chunk) => (stdout += chunk));
+  starved.stderr.on("data", (chunk) => (stderr += chunk));
+  const [code, signal] = await once(starved, "close");
+
+  assert.deepEqual({ code, signal }, { code: 0, signal: null }, stderr);
+  const out = JSON.parse(stdout);
+  assert.equal(out.started, false);
+  // The error, then the close Node raises for a start that failed, its code the errno.
+  assert.equal(out.posted.length, 2, JSON.stringify(out.posted));
+  assert.deepEqual(out.posted.map((msg) => msg.id), [7, 7]);
+  assert.match(out.posted[0].error, /^(EMFILE|ENFILE)$/);
+  assert.ok(out.posted[1].close[0] < 0 && out.posted[1].close[1] === null, JSON.stringify(out.posted[1]));
+});
+
+test("a child whose command is not there tells its thread, and then closes", async () => {
+  const posted = [];
+  const closed = new Promise((resolve) => {
+    const worker = { postMessage: (msg) => (posted.push(msg), msg.close && resolve()) };
+    startFor(worker, { id: 3, spawn: [join(tmpdir(), "anatomiya-no-such-ruby"), [], { stdio: ["pipe", "pipe", "pipe"] }] });
+  });
+  await closed;
+
+  assert.deepEqual(posted.map((msg) => [msg.id, msg.error?.code ?? "close"]), [[3, "ENOENT"], [3, "close"]]);
+});
+
+test("a child's pipe that fails tells its thread, and the failure ends no process", async () => {
+  for (const pipe of ["stdout", "stderr"]) {
+    const posted = [];
+    const closed = new Promise((resolve) => {
+      const worker = { postMessage: (msg) => (posted.push(msg), msg.close && resolve()) };
+      const child = startFor(worker, { id: 4, spawn: [process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: ["pipe", "pipe", "pipe"] }] });
+      child[pipe].destroy(new Error("read EIO"));
+    });
+    await closed;
+
+    assert.deepEqual(posted.map((msg) => [msg.id, msg.error?.message ?? "close"]), [[4, "read EIO"], [4, "close"]], pipe);
+    assert.equal(posted[1].close[1], "SIGKILL", "a child nobody can read is ended");
+  }
+});
+
+// What a thread's stand-in for its child raises where the parent's start found
+// no descriptor left: the error, then the close Node raises with the errno.
+function unstarted(code) {
+  const child = new EventEmitter();
+  const stream = () => Object.assign(new EventEmitter(), { setEncoding: () => {} });
+  Object.assign(child, { stdout: stream(), stderr: stream(), stdin: { end: () => {}, on: () => {} }, kill: () => {} });
+  setImmediate(() => {
+    child.emit("error", Object.assign(new Error(`spawn ruby ${code}`), { code }));
+    child.emit("close", -24, null);
+  });
+  return child;
+}
+
+test("the files of a batch whose child had no descriptors to start on are charged, as they are for one that could not start", async () => {
+  const batch = (spawner) => {
+    const results = [];
+    return parseBatch(pair, { ruby: "ruby", guards: RUBY_GUARDS, rubyScript: "", load: [], dimensions: [], onResult: (r) => results.push(r), spawner }).then((out) => ({ out, results }));
+  };
+  const charge = (error) => pair.map(({ rel }) => ({ rel, ok: false, error, crashed: true, attempts: 1 }));
+
+  const starved = await batch(() => unstarted("EMFILE"));
+  assert.equal(starved.out.error, "spawn ruby EMFILE");
+  assert.equal(starved.out.missingParser, null, "a full descriptor table is no missing interpreter");
+  assert.deepEqual(starved.results, charge("spawn ruby EMFILE"));
+
+  const absent = await batch(() => unstarted("ENOENT"));
+  assert.deepEqual(absent.results, charge("spawn ruby ENOENT").map((r) => ({ ...r, missingParser: true })));
+});
+
+test("a batch with nothing to start its child on the parent is refused", async () => {
+  await assert.rejects(parseBatch(pair, { ruby: "ruby", guards: RUBY_GUARDS, rubyScript: "", load: [], dimensions: [], onResult: () => {} }), /parseBatch needs a spawner/);
 });

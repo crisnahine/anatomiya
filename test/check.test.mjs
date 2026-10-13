@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import { needsBatchZ, needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
 import fs, { chmodSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -37,7 +37,7 @@ const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
  */
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-check-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q");
@@ -1150,7 +1150,7 @@ test("a prism too old to read is a missing parser to the check, not Ruby files t
   // Charged per file, the check exited 0 with a "crashed the parser" note per
   // Ruby file and no remedy; the flag is what makes the command refuse with one.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-old-prism-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -2003,7 +2003,7 @@ test("a rules directory linked out of the repository is reported, not examined",
   // reported here is the same lie as a clean diff reported for one git would
   // not produce (F15, F2).
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   writeFileSync(join(outside, "house.md"), "# theirs\n");
 
   const dir = repo(t, ({ dir, write, commit }) => {
@@ -2171,7 +2171,7 @@ test("a file in a wholly new directory is examined", async (t) => {
 // the agent then reads back.
 test("a pending path that resolves outside the repository is not read", needsPosixPaths, async (t) => {
   const outside = mkdtempSync(join(tmpdir(), "anat-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   writeFileSync(join(outside, "secret.ts"), swallow(2));
 
   const dir = repo(t, ({ write, commit }) => {
@@ -2652,7 +2652,7 @@ test("the four causes carry four codes, so nothing has to read the sentence", ()
  */
 async function flowRepo(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-flow-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < 12; i++) {
@@ -2698,7 +2698,7 @@ test("a check that could not load the stripper names the dependency too", async 
   const home = installWithoutStripper(t);
 
   const repo = mkdtempSync(join(tmpdir(), "anatomiya-flowcheck-"));
-  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  t.after(() => removeTree(repo));
   const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
   mkdirSync(join(repo, "src"), { recursive: true });
   for (let i = 0; i < 12; i++) {
@@ -2743,7 +2743,7 @@ test("a claim is not silenced by a finding invented off the base's stripped tree
   // `explicit_return_type`, because a plain `.js` file cannot carry a return
   // type at all and no longer answers that row on either side.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-basestrip-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < 14; i++) {
@@ -2799,7 +2799,7 @@ test("a map holding a type-checked claim says the check did not enforce it", asy
   // Same shape as B13 for a missing parser and F15 for an unreadable git, and
   // both of those were real bugs.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-deepcaveat-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < 14; i++) {
@@ -5172,7 +5172,7 @@ test("a name spelling no class is an omission too, so it needs a stated claim", 
  */
 function shallowClone(t, build, { depth = 1, args = [] } = {}) {
   const outer = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
-  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  t.after(() => removeTree(outer));
   const origin = join(outer, "origin");
   mkdirSync(origin, { recursive: true });
 
@@ -5263,7 +5263,7 @@ test("a shallow clone with no base named still degrades rather than refusing", a
  */
 function mergeRefCheckout(t, build, { trunk = "main" } = {}) {
   const outer = mkdtempSync(join(tmpdir(), "anatomiya-mergeref-"));
-  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  t.after(() => removeTree(outer));
   const origin = join(outer, "origin");
   mkdirSync(origin, { recursive: true });
   const git = (cwd, ...a) => execFileSync("git", a, { cwd, stdio: "pipe" });
@@ -5754,7 +5754,7 @@ test("rename detection git skipped past the limit this run set is said, not char
  */
 async function checkThroughShim(t, dir, { fail = null } = {}) {
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-check-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const log = join(bin, "calls");
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   const refuse = fail === null ? "" : `case "$*" in *'${fail}'*) exit 128;; esac\n`;
@@ -5800,6 +5800,25 @@ test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, asyn
   assert.equal(calls.filter((c) => c === "rev-parse --verify --quiet main^{commit}").length, 1, "and main once");
   const listing = calls.filter((c) => c.startsWith("ls-tree -r"));
   assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
+});
+
+test("check spawns two cat-file children for a base and a head", { ...needsShebang, ...needsBatchZ }, async (t) => {
+  const rels = ["src/f1.ts", "src/f2.ts", "src/f3.ts"];
+  const dir = repo(t, ({ dir, git, write, commit }) => {
+    for (const rel of rels) write(rel, "export const f = 1\n");
+    commit("init");
+    facts(dir, { sha: sha(dir) });
+    git("checkout", "-q", "-b", "feature");
+    for (const rel of rels) write(rel, "export const f = 2\n");
+    commit("edit");
+  });
+
+  const { report, calls } = await checkThroughShim(t, dir);
+
+  assert.equal(report.examined.length, 3, "the fixture reached both sides of three files");
+  // Not the commit probe and not the index read of `.gitattributes`: neither reads a revision's blob.
+  const reads = calls.filter((c) => c.startsWith("cat-file ") && !/^cat-file (-e |blob :)/.test(c));
+  assert.deepEqual(reads, ["cat-file --batch -Z", "cat-file --batch -Z"], calls.join("\n"));
 });
 
 test("a merge base that cannot say whether it held a directory states no finding about a test for it, and says it could not", needsShebang, async (t) => {

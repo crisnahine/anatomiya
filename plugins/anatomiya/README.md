@@ -42,4 +42,4 @@ installs into a directory the rest of it does not follow to:
 [`README.md`](https://github.com/crisnahine/anatomiya/blob/main/README.md) for the user-facing view,
 [`docs/how-it-works.md`](https://github.com/crisnahine/anatomiya/blob/main/docs/how-it-works.md) for
 the pipeline, and [`DECISIONS.md`](https://github.com/crisnahine/anatomiya/blob/main/DECISIONS.md)
-for what was decided and why.
+for what was decided, each row linking to the file that says why.
