@@ -709,7 +709,8 @@ test("five hundred large parses leave the child's memory where it started", { ti
 import { readFileSync } from "node:fs";
 import { parseTreeFile } from ${JSON.stringify(pathToFileURL(BODY).href)};
 process.on("message", async ({ rel, abs, lang }) => {
-  const r = await parseTreeFile(readFileSync(abs, "utf8"), rel, lang);
+  // A clock that stands still: the retry this test measures is weighed on one, and a slow machine must still get it.
+  const r = await parseTreeFile(readFileSync(abs, "utf8"), rel, lang, { now: () => 0 });
   globalThis.gc();
   const { rss, external, heapUsed } = process.memoryUsage();
   process.send({ rel, ok: r.ok, error: r.error, oneBranch: r.oneBranch === true, rss, external, heapUsed });
