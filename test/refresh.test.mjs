@@ -2837,6 +2837,13 @@ test("a commit is held where git could not be asked who this clone commits as", 
   assert.equal(loadPin(dir).sha, pinned);
 });
 
+/** A `case` arm that ends git on the `nth` call matching `pattern`, and on no other. */
+function unaskedOn(t, pattern, nth) {
+  const count = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-count-"))), "n");
+  t.after(() => rmSync(join(count, ".."), { recursive: true, force: true }));
+  return `case " $* " in ${pattern}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -eq ${nth} ] && kill -TERM $$;; esac`;
+}
+
 for (const [what, start, pattern] of [
   ["which ref the remote's tip is", behindItsRemote, "*' rev-parse --symbolic-full-name '*"],
   ["how the remote's branch last moved", behindItsRemote, "*' reflog show -n1 '*"],
@@ -2861,6 +2868,39 @@ for (const [what, start, pattern] of [
     assert.equal((await refreshRepository(dir)).pinned, true, "asked again and answered, the pin follows");
   });
 }
+
+test("a pin that could not ask git ends the worker, and any other refusal of the pin is no pin", needsGitStub, async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const before = claudeBytes(dir);
+  // The worker reads HEAD once before the pin, and the pin reads it for itself.
+  const calls = gitAhead(t, unaskedOn(t, "*' rev-parse --verify --quiet HEAD^{commit} '*", 2));
+  await assert.rejects(() => refreshRepository(dir), /^Error: git could not be asked which commit HEAD names: /);
+  calls.restore();
+  assert.deepEqual(claudeBytes(dir), before, "no pin moved, no map written, nothing recorded");
+
+  const refusing = async () => {
+    throw new Error("the working tree does not match HEAD");
+  };
+  const r = await refreshRepository(dir, { pin: refusing });
+  assert.deepEqual([r.reason, r.pinned, r.held], ["scanned", false, null]);
+});
+
+test("a question that could not be asked after the stamp is read is a failed refresh of that stamp, on record with its text", needsGitStub, async (t) => {
+  const dir = await scanned(t);
+  source(dir, "lib", 8);
+  commit(dir, "moved");
+  // Asked once before the lock, for whether the map is committed, and once after the stamp, for the other targets.
+  const calls = gitAhead(t, unaskedOn(t, "*' --get core.ignorecase '*", 2));
+
+  const r = await refreshRepository(dir);
+  calls.restore();
+
+  assert.equal(r.reason, "failed");
+  const state = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8"));
+  assert.equal(state.ok, false);
+  assert.match(state.error, /^git could not be asked whether this repository folds case: git was ended by SIGTERM/);
+  assert.equal((await refreshRepository(dir)).reason, "failed-before", "and that stamp waits out the retry clock");
+});
 
 test("the detached worker ends with exit 1 where git could not be asked, and leaves its checkout as it found it", needsGitStub, async (t) => {
   const { dir } = await behindItsRemote(t);
