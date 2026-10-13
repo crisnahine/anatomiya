@@ -106,6 +106,12 @@ const NAMING =
 // row it reaches, a row of its text that holds no token included.
 const STRINGISH = /string|heredoc|nowdoc/;
 
+// Code in another language: the comment cgo compiles, which stands directly above an import of "C"
+// alone, and inline markup that holds a script.
+export const FOREIGN = { go: ["import_declaration", "import_spec"], php: ["text"] };
+const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
+const SCRIPT = /<script/i;
+
 // What an annotation or a struct type is made of where its grammar spells one as neither a name nor a type.
 export const ACCESS = {
   python: ["attribute", "subscript", "ellipsis"],
@@ -156,6 +162,10 @@ export const UNION = { python: { node: "binary_operator", within: "type" } };
  * A sign on a literal counts with them where `OWN_SIGN` has the language and
  * the text is not a pair it spells. So does a literal other than `null` whose
  * declared type is not one `OWN_TYPE` spells, outside a `const`.
+ *
+ * A comment counts where it is one of those with no line between them that
+ * end on the line above an import of "C" alone, and inline markup where it
+ * holds a script, each on any added line it spans.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];
@@ -273,6 +283,18 @@ export function oracleHits(tree, lang, added) {
     if (s.literal.includes(node.type) && spansAdded(node)) {
       const odd = foreign(node);
       if (odd !== null) hit(node, `string holding ${odd.type}`);
+    }
+    if (FOREIGN[lang]?.includes(node.type)) {
+      // Markup that ends with its line is on no row past it.
+      const last = node.endPosition.row + (node.endPosition.column === 0 ? 0 : 1);
+      if (lang === "php" && SCRIPT.test(node.text) && added.some(([from, to]) => node.startPosition.row + 1 <= to && last >= from)) hit(node, "markup holding a script");
+      if (lang === "go" && IMPORTS_C.test(node.text)) {
+        let below = node;
+        for (let c = node.previousSibling; c !== null && s.comment.includes(c.type) && c.endPosition.row >= below.startPosition.row - 1; c = c.previousSibling) {
+          if (spansAdded(c)) hit(c, "comment above an import of C");
+          below = c;
+        }
+      }
     }
     if (charged.has(node.id)) hit(node, node.type);
     // An interpolation sits inside a string's text, so it counts on any added line it spans; a PHP variable is one only inside a string.

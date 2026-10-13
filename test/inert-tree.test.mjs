@@ -507,3 +507,21 @@ test("a string spread over lines asks on every row where it is an argument, what
   assert.deepEqual(await asking("rust", 'fn f() {\n    run(r#"\na\nb\n"#);\n    run("\na\\n\nb\n");\n}\nconst B: &str = r#"\na\nb\n"#;\nconst C: &str = "\na\\n\nb\n";\n'), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
   assert.deepEqual(await asking("kotlin", 'val x = run("""\n    a\n    b\n""")\nval c = """\n    a\n    b\n"""\n'), [1, 2, 3, 4]);
 });
+
+test("a Go comment directly above an import of C asks, since cgo compiles it, and a comment above any other import asks nothing", async () => {
+  const block = 'package m\n\n/*\nstatic int add(int a, int b) { return a+b; }\n*/\nimport "C"\n\n// Printing.\nimport "fmt"\n';
+  assert.deepEqual(await asking("go", block), [3, 4, 5]);
+  const lines = 'package m\n\n// A note, a line away.\n\n// #include <stdio.h>\n// static int one() { return 1; }\nimport "C"\n';
+  assert.deepEqual(await asking("go", lines), [5, 6]);
+  // A comment with a line or another import between it and the import of C is no part of what cgo compiles.
+  assert.deepEqual(await asking("go", 'package m\n\n// A line away.\n\nimport "C"\n\n/* Printing. */ import "fmt"\nimport "C"\n\nimport (\n\t// Printing.\n\t"fmt"\n)\n'), []);
+  // In a group the comment on the import itself is the one cgo reads, and the one above the group is not.
+  const group = 'package m\n\n// Above the group.\nimport (\n\t// static int two() { return 2; }\n\t"C"\n)\n\n// static int three() { return 3; }\nimport (\n\t"C"\n)\n\n// Above two.\nimport (\n\t"C"\n\t"fmt"\n)\n';
+  // The group that is read inside asks where it opens and on the import, which is the cost of reading it.
+  assert.deepEqual(await asking("go", group, [4, 6]), [4, 5, 6, 9]);
+});
+
+test("PHP inline markup that holds a script asks, in any letter case, and markup with none asks nothing", async () => {
+  const source = '<p>plain</p>\n<?php\n$a = 1;\n?>\n<script>function dup() {}</script>\n<?php\n$b = 2;\n?>\n<p>plain</p>\n<?php $c = 3; ?>\n<SCRIPT type="module">\nfunction two() {}\n</SCRIPT>\n';
+  assert.deepEqual(await asking("php", source), [5, 11, 12, 13]);
+});

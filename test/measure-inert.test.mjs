@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Language } from "web-tree-sitter";
 
-import { ACCESS, CONTAINERS, COUNTED, measure, ORACLE, oracleHits, tally, UNION } from "../scripts/measure-inert.mjs";
+import { ACCESS, CONTAINERS, COUNTED, FOREIGN, measure, ORACLE, oracleHits, tally, UNION } from "../scripts/measure-inert.mjs";
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 
@@ -302,9 +302,18 @@ test("a comment or a docstring added inside a definition is not taken for the de
   }
 });
 
+test("the oracle names a comment cgo compiles and inline markup that holds a script, and passes their plain neighbours", async () => {
+  const go = 'package m\n\n/*\nstatic int add(int a, int b) { return a+b; }\n*/\nimport "C"\n\n// Printing.\nimport "fmt"\n';
+  assert.deepEqual(await named("go", go, [[4, 4]]), [[3, "comment above an import of C"]]);
+  assert.deepEqual(await named("go", go, [[6, 9]]), []);
+  const php = '<p>plain</p>\n<?php\n$a = 1;\n?>\n<Script>function dup() {}</script>\n';
+  assert.deepEqual(await named("php", php, [[5, 5]]), [[5, "markup holding a script"]]);
+  assert.deepEqual(await named("php", php, [[1, 3]]), []);
+});
+
 test("every node type the oracle names is one its grammar knows", async () => {
   const counted = (lang) => Object.entries(COUNTED[lang] ?? {}).flat();
-  for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l), ...(ACCESS[l] ?? []), ...Object.values(UNION[l] ?? {})]])) {
+  for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l), ...(ACCESS[l] ?? []), ...(FOREIGN[l] ?? []), ...Object.values(UNION[l] ?? {})]])) {
     const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
     assert.deepEqual(types.filter((type) => language.idForNodeType(type, true) === null), [], lang);
   }
