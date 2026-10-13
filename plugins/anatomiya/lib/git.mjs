@@ -612,9 +612,6 @@ export function gitStreamed(
     // `timeout`. Unreferenced, so a clear that is missed holds nothing open either (B77).
     const clock = timeout > 0 ? setTimeout(() => signalChild(child, "SIGTERM"), timeout) : null;
     clock?.unref();
-    // A git that exits before it has read `input` closes the pipe, and its exit code is what says so.
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(input);
     let rest = Buffer.alloc(0);
     let stderr = "";
     let stopped = false;
@@ -637,9 +634,12 @@ export function gitStreamed(
       reject(err);
     };
 
-    // Before any pipe is read: with no descriptor left, spawn hands back a
+    // Before any pipe is read, written or ended: with no descriptor left, spawn hands back a
     // child that has none and queues this error (B77).
     child.on("error", (err) => fail(new Unasked(`git ${sub} failed: ${err.message}`)));
+    // A git that exits before it has read `input` closes the pipe, and its exit code is what says so.
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(input);
 
     // Capped, because stderr grows with the repository the same way stdout
     // does and the message only has to name the failure.
