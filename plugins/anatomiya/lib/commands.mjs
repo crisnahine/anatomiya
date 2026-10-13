@@ -10,7 +10,7 @@ import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { answered, caseMagic, failureOf, gitBuffered, headSha } from "./git.mjs";
-import { encodePath, firstLine } from "./encode.mjs";
+import { encodePath } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
 import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, pendingAmong, PREFIX, RULES_DIR, targetStatus, trackedRulesDir, turningOff } from "./rules.mjs";

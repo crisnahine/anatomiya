@@ -140,6 +140,8 @@ test("a call that outruns its timeout answers instead of hanging", async () => {
 
   assert.equal(r.ok, false, "a killed call is not a successful one");
   assert.equal(r.stdout, "", "and it reports no output it did not receive");
+  assert.equal(r.code, null, "and it has no exit code to read as an answer");
+  assert.match(String(r.error), /git was ended by SIG[A-Z]+ after 250 ms/, "and its error says what ended it and when");
 });
 
 test("a non-zero exit is reported rather than read as an empty answer", async (t) => {
@@ -1293,6 +1295,13 @@ test("a commit is there, is not there, or git could not be asked, and only the f
   );
   calls.restore();
   assert.equal(await shaReachable(dir, second), true, "asked again, and answered");
+});
+
+test("a name git refuses without a word names no commit: a reflog entry past the log's end", async (t) => {
+  // `rev-parse --verify --quiet` exits 128 for it and prints nothing, where a directory it cannot open says why.
+  const { dir } = twoCommits(t);
+  assert.equal(await commitAt(dir, "HEAD@{9999}"), null);
+  await assert.rejects(() => commitAt(tmpdir(), "HEAD"), /git could not be asked which commit HEAD names: .*not a git repository/s);
 });
 
 test("a ref names a commit, names none, or git could not be asked, and only the first two are answers", needsGitStub, async (t) => {
