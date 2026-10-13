@@ -25,7 +25,9 @@
  * `bareInterpolation`, and the definitions every reader of the table shares
  * (`fn`, `cls`, `wrap`, `scope`, `annotation`). A kind that is wrongly on one
  * of those lists passes the rule and the oracle alike, so neither shows the
- * mistake. It reads none of the rule's lists of names, types, string parts,
+ * mistake. The closing tokens, the import that makes a comment C, and the tag
+ * that makes markup a script are spelled here as the rule spells them, so on
+ * those three it asks the rule's own question and cannot disagree. It reads none of the rule's lists of names, types, string parts,
  * signs, predefined types and targets, which it tells by how grammars spell
  * them and by a node's own text. Read-only: git is asked, nothing is checked
  * out.
