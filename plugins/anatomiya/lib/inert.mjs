@@ -138,6 +138,8 @@ function inertLines(engine, lines, deadline) {
   let open = null;
   let opened = 0;
   let depth = 0;
+  // Whether the line before is one this did not read, so what it left open is not known.
+  let unseen = false;
   let due = 0;
   for (let i = 0; i < lines.length; i++) {
     // By line number and not by count, since a braced import moves `i` on by its length.
@@ -146,6 +148,8 @@ function inertLines(engine, lines, deadline) {
       due = i + CLOCK_LINES;
     }
     const line = lines[i];
+    const blind = unseen;
+    unseen = false;
     if (open !== null) {
       // Inside a comment is inert; inside a string or a heredoc is not a literal this reads.
       const comment = open === "*/" || open === "=end";
@@ -157,11 +161,12 @@ function inertLines(engine, lines, deadline) {
         if (after === "}") depth = Math.max(0, depth - 1);
       }
       if (closed) open = null;
+      unseen = !inert[i];
       continue;
     }
     if (inert[i]) continue;
     if (line.length > LINE_READ) {
-      depth = 0;
+      [depth, unseen] = [0, true];
       continue;
     }
     if (engine === "prism") {
@@ -175,10 +180,12 @@ function inertLines(engine, lines, deadline) {
         continue;
       }
     }
-    const { code, open: left } = reduce(engine, line);
+    const reduced = reduce(engine, line);
+    // Under a line this did not read, the opening of a comment may be text of what that line left open.
+    const { code, open: left } = blind && reduced.open === "*/" ? { code: null, open: null } : reduced;
     [open, opened] = [left, i];
     if (code === null) {
-      depth = 0;
+      [depth, unseen] = [0, true];
       continue;
     }
     if (code === "") inert[i] = true;

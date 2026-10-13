@@ -325,11 +325,30 @@ test("a JavaScript string carried over a line by a backslash is read to its end,
   assert.deepEqual(await asking("js", "const s = 'x \\\n  y \\\n  /* glob';\nfunction real() {}\n/** doc */\n"), [1, 2, 3, 4]);
   assert.deepEqual(await asking("js", 'const s = "a \\\r\n/* b";\r\nfunction real() {}\r\n/** doc */\r\n'), [1, 2, 3], "a line that ends in a carriage return");
   assert.deepEqual(await asking("js", 'const s = "a \\" b \\\n/* c";\nfunction real() {}\n/** doc */\n'), [1, 2, 3], "an escaped quote before the backslash");
-  // A quote left open with no backslash carries nothing: the line is broken, and the next one is read as code.
-  assert.deepEqual(await asking("js", 'const s = "a\n/* b\nfunction old() {}\n*/\nconst A = 1;\n'), [1]);
+  // A quote left open with no backslash carries nothing: the line is broken, and the next ones are read as code.
+  assert.deepEqual(await asking("js", 'const s = "a\nconst B = 2;\nfunction f() {}\n'), [1, 3]);
 });
 
 test("a template literal and a Ruby string run on over lines with no backslash, and a comment marker in one is text", async () => {
   assert.deepEqual(await asking("js", "const s = `a\n// note\n`;\n// after\n"), [1, 2, 3]);
   assert.deepEqual(await asking("ruby", 'A = "a\n# note\nb"\n# after\n'), [1, 2, 3]);
+});
+
+test("after a line the JavaScript rule did not read, a /* on the next line asks and opens nothing", async () => {
+  // Too long to read, and it leaves a template literal open.
+  const long = `const s = ${"x + ".repeat(110)}\``;
+  assert.ok(long.length > 400);
+  assert.deepEqual(await asking("js", `${long}\n/* text\n\`;\nfunction real() {}\n/** doc */\n`), [1, 2, 3, 4, 5]);
+  // One it could not reduce: a template opened inside another's expression.
+  assert.deepEqual(await asking("js", "const s = `a ${`b\n/* text\n`} c`;\nfunction real() {}\n/** doc */\n"), [1, 2, 4]);
+  // The line that asked was not read either.
+  assert.deepEqual(await asking("js", "x(`${a}`);\n/* a\n/* b\nfunction real() {}\n*/\n/** doc */\n"), [1, 2, 3, 4, 5]);
+  // The line that ends a string spread over lines is not read past its end.
+  assert.deepEqual(await asking("js", "const s = `a\n` + `b\n/* text\n`;\nfunction real() {}\n/** doc */\n"), [1, 2, 3, 4, 5, 6]);
+  // Nor is the code after the end of a comment.
+  assert.deepEqual(await asking("js", "/* a\n*/ const s = `x\n/* text\n`;\nfunction real() {}\n/** doc */\n"), [2, 3, 4, 5, 6]);
+  // A comment that closes on its line, and one a blank line stands before, read as they do anywhere.
+  assert.deepEqual(await asking("js", "x(`${a}`);\n/* closed */\nconst A = 1;\n"), [1]);
+  assert.deepEqual(await asking("js", "x(`${a}`);\n\n/* note\nfunction old() {}\n*/\nconst A = 1;\n"), [1]);
+  assert.deepEqual(await asking("js", "x(`${a}`);\nconst A = 1;\n/* note\nfunction old() {}\n*/\n"), [1]);
 });
