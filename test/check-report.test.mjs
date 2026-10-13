@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -16,6 +16,7 @@ import {
 } from "../plugins/anatomiya/lib/check-report.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
+import { removeTree } from "./platform.mjs";
 
 /**
  * The report as something other than a rendering: a machine reader gets a
@@ -24,7 +25,7 @@ import { ANATOMIYA } from "../scripts/plugins.mjs";
  */
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-report-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q");

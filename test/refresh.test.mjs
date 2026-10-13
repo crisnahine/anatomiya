@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { runPin, runScan } from "../plugins/anatomiya/lib/commands.mjs";
@@ -11,15 +12,16 @@ import { buildPin, loadPin, PIN_PATH, writePin } from "../plugins/anatomiya/lib/
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
 import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
-import { noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
+import { acquire, noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
-import { gitBuffered } from "../plugins/anatomiya/lib/git.mjs";
+import { gitBuffered, Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
-import { needsFoldingFilesystem, needsSymlinks } from "./platform.mjs";
+import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
 const needsTs = { skip: (await loadTypeScript()) ? false : "typescript is not installed" };
@@ -59,7 +61,7 @@ function commit(dir, message) {
 /** A committed repository with one area, already scanned: a map of its own. */
 async function scanned(t) {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   source(dir, "src", 8);
   commit(dir, "init");
@@ -74,9 +76,9 @@ async function scanned(t) {
 async function cloned(t, before = () => {}) {
   const origin = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-origin-")));
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-clone-")));
-  t.after(() => {
-    rmSync(origin, { recursive: true, force: true });
-    rmSync(dir, { recursive: true, force: true });
+  t.after(async () => {
+    await removeTree(origin);
+    await removeTree(dir);
   });
   init(origin);
   source(origin, "src", 8);
@@ -105,7 +107,7 @@ test("a directory with no map of its own is answered with nothing, and nothing i
   // A plugin hook runs in every session for every directory, so its scoping is
   // its own (A24): a repository nobody scanned is never scanned behind its back.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-none-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   source(dir, "src", 8);
   commit(dir, "init");
@@ -153,7 +155,7 @@ test("a linked worktree with no map of its own is not refreshed through its main
   // run for it would write a map of the worktree's own, which nobody asked for.
   const dir = await scanned(t);
   const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
-  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(wt, "..")));
   git(dir, "worktree", "add", "-q", wt);
   const { started, start } = recorder();
 
@@ -164,7 +166,7 @@ test("a linked worktree with no map of its own is not refreshed through its main
 test("a linked worktree with a map of its own watches its own HEAD", async (t) => {
   const dir = await scanned(t);
   const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
-  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(wt, "..")));
   git(dir, "worktree", "add", "-q", wt);
   await runScan(wt);
   const { started, start } = recorder();
@@ -179,7 +181,7 @@ test("a linked worktree with a map of its own watches its own HEAD", async (t) =
 /** A directory that is not a repository, holding checkouts side by side, the way a project split into repositories is opened. */
 function parentOf(t) {
   const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-parent-")));
-  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  t.after(() => removeTree(parent));
   return parent;
 }
 
@@ -313,12 +315,221 @@ test("a moved HEAD is scanned again, and the map on disk is the new one", async 
   assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), /lib\/services/);
 });
 
+test("a directory holding a file at the refresh state's name stops every refresh before it scans", async (t) => {
+  // Each refresh scanned, threw on the write and recorded nothing, so the next one scanned again.
+  const dir = await scanned(t);
+  const state = join(dir, REFRESH_STATE);
+  mkdirSync(state);
+  writeFileSync(join(state, "kept"), "theirs");
+  let scans = 0;
+  const scan = async (root) => {
+    scans++;
+    return runScan(root);
+  };
+
+  for (let run = 0; run < 3; run++) {
+    assert.deepEqual(await refreshRepository(dir, { scan }), { reason: "state-blocked", blocked: state, pinned: false }, `run ${run}`);
+  }
+  assert.equal(scans, 0);
+  assert.equal(readFileSync(join(state, "kept"), "utf8"), "theirs");
+  assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.lock")), false, "and the lock is not left taken");
+});
+
+test("an empty directory at the refresh state's name is removed, and the refresh records its scan", async (t) => {
+  const dir = await scanned(t);
+  mkdirSync(join(dir, REFRESH_STATE));
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+  assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).ok, true);
+  assert.equal((await refreshRepository(dir)).reason, "current");
+});
+
+test("a scan run by hand records itself over an empty directory at the refresh state's name", async (t) => {
+  const dir = await scanned(t);
+  mkdirSync(join(dir, REFRESH_STATE));
+
+  await noteScan(dir);
+
+  assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).ok, true);
+});
+
+test("a link at the refresh state's name is replaced, never followed to the directory it leads to", needsSymlinks, async (t) => {
+  const dir = await scanned(t);
+  const outside = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-outside-")));
+  t.after(() => removeTree(outside));
+  writeFileSync(join(outside, "kept"), "theirs");
+  symlinkSync(outside, join(dir, REFRESH_STATE));
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+  assert.equal(lstatSync(join(dir, REFRESH_STATE)).isFile(), true);
+  assert.deepEqual(readdirSync(outside), ["kept"]);
+  assert.equal(readFileSync(join(outside, "kept"), "utf8"), "theirs");
+});
+
+test("a directory holding a file at a lock token's name is named by the refresh, whatever its age", async (t) => {
+  // Answered as busy for a minute and as blocked after, and the scan's plan named neither.
+  const dir = await scanned(t);
+  const store = join(dir, ".claude", "anatomiya");
+  const nonce = "0123456789abcdef";
+  // No process has this pid, so the lock is dead and its lock token is the next name a refresh creates.
+  writeFileSync(join(store, "refresh.lock"), JSON.stringify({ pid: 2 ** 22 + 4321, at: Date.now() - 1000, nonce }));
+  const token = join(store, `refresh.lock.${nonce}`);
+  mkdirSync(token);
+  writeFileSync(join(token, "kept"), "theirs");
+  const before = readdirSync(store).sort();
+  let scans = 0;
+  const scan = async (root) => {
+    scans++;
+    return runScan(root);
+  };
+
+  for (const age of [0, 10 * 60 * 1000]) {
+    const then = new Date(Date.now() - age);
+    utimesSync(token, then, then);
+    assert.deepEqual(await refreshRepository(dir, { scan }), { reason: "lock-blocked", blocked: token, pinned: false }, `aged ${age} ms`);
+    assert.deepEqual(readdirSync(store).sort(), before, "nothing left and nothing taken");
+  }
+  assert.equal(scans, 0);
+  assert.equal(readFileSync(join(token, "kept"), "utf8"), "theirs");
+});
+
+test("the entry a refresh answers as blocked is the one the scan's plan names", async (t) => {
+  for (const name of ["refresh.lock", "refresh.lock.0123456789abcdef", "refresh.lock.0123456789abcdef.1760000000000", "refresh.json"]) {
+    const dir = await scanned(t);
+    mkdirSync(join(dir, ".claude", "anatomiya", name));
+    writeFileSync(join(dir, ".claude", "anatomiya", name, "kept"), "theirs");
+
+    const answer = await refreshRepository(dir);
+    const { plan } = await runScan(dir, { dryRun: true });
+
+    assert.deepEqual(plan.refreshBlocked, [`.claude/anatomiya/${name}`]);
+    assert.equal(answer.blocked, join(dir, plan.refreshBlocked[0]));
+    assert.equal(answer.reason, name === "refresh.json" ? "state-blocked" : "lock-blocked");
+  }
+});
+
+test("a directory that cannot be listed at a name a refresh locks or records under stops the worker, is named by the plan and is never removed", needsUnreadableDirs, async (t) => {
+  // Read as empty, the plan said nothing, and at the state's name every trigger scanned and recorded nothing.
+  for (const name of ["refresh.lock", "refresh.json"]) {
+    for (const holds of [true, false]) {
+      const said = `${name}, ${holds ? "holding a file" : "empty"}`;
+      const dir = await scanned(t);
+      const entry = join(dir, ".claude", "anatomiya", name);
+      mkdirSync(entry);
+      if (holds) writeFileSync(join(entry, "kept"), "theirs");
+      chmodSync(entry, 0o000);
+      let scans = 0;
+      const scan = async (root) => {
+        scans++;
+        return runScan(root);
+      };
+      try {
+        const reason = name === "refresh.json" ? "state-blocked" : "lock-blocked";
+        assert.deepEqual(await refreshRepository(dir, { scan }), { reason, blocked: entry, pinned: false }, said);
+        assert.equal(scans, 0, said);
+        assert.deepEqual((await runScan(dir, { dryRun: true })).plan.refreshBlocked, [`.claude/anatomiya/${name}`], said);
+        await noteScan(dir);
+        assert.equal(lstatSync(entry).isDirectory(), true, `${said}: a scan run by hand leaves it too`);
+      } finally {
+        chmodSync(entry, 0o700);
+      }
+      assert.deepEqual(readdirSync(entry), holds ? ["kept"] : [], said);
+    }
+  }
+});
+
 test("a refresh already running is not started twice", async (t) => {
   const dir = await scanned(t);
   // This process is alive, so its lock is live.
   writeFileSync(join(dir, ".claude", "anatomiya", "refresh.lock"), JSON.stringify({ pid: process.pid, at: Date.now() }));
 
   assert.equal((await refreshRepository(dir)).reason, "busy");
+});
+
+test("an empty directory at the refresh lock's name is removed, and that refresh takes the lock", async (t) => {
+  const dir = await scanned(t);
+  const lock = join(dir, ".claude", "anatomiya", "refresh.lock");
+  mkdirSync(lock);
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+  assert.equal(existsSync(lock), false, "taken, and given back");
+});
+
+test("a directory holding a file at the refresh lock's name is named by the refresh and left whole", async (t) => {
+  // Answered as busy, nothing said which entry a person has to remove, and every refresh after answered the same.
+  const dir = await scanned(t);
+  const store = join(dir, ".claude", "anatomiya");
+  const lock = join(store, "refresh.lock");
+  mkdirSync(lock);
+  writeFileSync(join(lock, "kept"), "theirs");
+  const before = readdirSync(store).sort();
+
+  for (let run = 0; run < 2; run++) {
+    assert.deepEqual(await refreshRepository(dir), { reason: "lock-blocked", blocked: lock, pinned: false }, `run ${run}`);
+    assert.equal(readFileSync(join(lock, "kept"), "utf8"), "theirs");
+    assert.deepEqual(readdirSync(store).sort(), before, "no lock token and no word for a holder left");
+  }
+});
+
+test("an entry at the refresh lock's name that only the take finds it cannot remove ends the worker, and nothing is scanned without the lock", needsPosixSpecialFiles, async (t) => {
+  // A fifo is no directory holding entries, so nothing names it before the take.
+  const dir = await scanned(t);
+  const store = join(dir, ".claude", "anatomiya");
+  const lock = join(store, "refresh.lock");
+  execFileSync("mkfifo", [lock]);
+  const real = fs.unlinkSync;
+  fs.unlinkSync = (p) => {
+    if (String(p) === lock) throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${p}'`), { code: "EPERM" });
+    return real(p);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.unlinkSync = real;
+    syncBuiltinESMExports();
+  });
+  const held = () => [readdirSync(store).sort(), readFileSync(join(store, "facts.json"), "utf8"), readFileSync(join(dir, OVERVIEW), "utf8")];
+  const before = held();
+  let scans = 0;
+  let pins = 0;
+  const scan = async (root) => {
+    scans++;
+    return runScan(root);
+  };
+  const pin = async (root, options) => {
+    pins++;
+    return runPin(root, options);
+  };
+
+  for (let run = 0; run < 2; run++) {
+    assert.deepEqual(await refreshRepository(dir, { scan, pin }), { reason: "lock-blocked", blocked: lock, pinned: false }, `run ${run}`);
+    assert.deepEqual(held(), before, "no lock token, no state and no word for a holder left, and the map as it was");
+  }
+  assert.equal(scans, 0);
+  assert.equal(pins, 0);
+});
+
+test("a directory that takes the refresh lock's name during a scan ends the worker, and nothing is scanned without the lock", async (t) => {
+  const dir = await scanned(t);
+  const store = join(dir, ".claude", "anatomiya");
+  const lock = join(store, "refresh.lock");
+  let scans = 0;
+  const scan = async (root, opts) => {
+    scans++;
+    await runScan(root, opts);
+    // HEAD moves under every pass the worker has, so a round after them has a scan to run.
+    source(dir, `lib/m${scans}`, 8);
+    commit(dir, `move ${scans}`);
+    if (scans !== 3) return;
+    // A worker turned away leaves its word, and the name is a directory by the time the holder reads it.
+    writeFileSync(join(store, "refresh.again"), "");
+    rmSync(lock);
+    mkdirSync(lock);
+    writeFileSync(join(lock, "kept"), "theirs");
+  };
+
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+  assert.equal(scans, 3);
+  assert.equal(readFileSync(join(lock, "kept"), "utf8"), "theirs");
 });
 
 test("a lock left behind by a process that is gone is taken over", async (t) => {
@@ -662,7 +873,7 @@ test("a map committed through a linked rules directory is tracked too", needsSym
   // Git matches no pathspec past a symlink, so the map it stores under
   // `agents/rules/` read as untracked and every move of HEAD rewrote it.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   source(dir, "src", 8);
   mkdirSync(join(dir, "agents", "rules"), { recursive: true });
@@ -683,7 +894,7 @@ test("a link spelled in another case than the directory it names still finds the
   // A case-insensitive filesystem follows `../Agents/Rules` to `agents/rules`,
   // and git matches pathspecs case-sensitively whatever core.ignorecase says.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "agents", "rules"), { recursive: true });
   if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
   init(dir);
@@ -704,7 +915,7 @@ test("a link spelled in another case than the directory it names still finds the
 test("a directory renamed in case outside git still finds the map the index holds under the old case", needsSymlinks, async (t) => {
   // The index keeps `Agents/Rules` after a rename git never saw, while the disk says `agents`.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "Agents", "Rules"), { recursive: true });
   if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
   init(dir);
@@ -794,7 +1005,7 @@ const TRIMS = "(s: string) {\n  return s.trim().toLowerCase()\n}\n";
 /** A committed TypeScript repository with its packages on disk and one root config (none where `config` is null), scanned by hand. */
 async function typed(t, { name = "tsconfig.json", config = BROKEN, body = TRIMS } = {}) {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-typed-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   writeFileSync(join(dir, ".gitignore"), "node_modules\n");
   if (config !== null) writeFileSync(join(dir, name), config);
@@ -1911,7 +2122,7 @@ test("a linked worktree on reftable watches the shared table list", async (t) =>
   const dir = await scanned(t);
   const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
   rmSync(wt, { recursive: true, force: true });
-  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  t.after(() => removeTree(wt));
   git(dir, "worktree", "add", "-q", "--detach", wt);
   mkdirSync(join(dir, ".git", "reftable"));
 
@@ -1924,7 +2135,7 @@ test("a linked worktree on reftable also watches its own table list, where its d
   const { watchTargets } = await import("../plugins/anatomiya/lib/refresh.mjs");
   const dir = await scanned(t);
   const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
-  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(wt, "..")));
   git(dir, "worktree", "add", "-q", "--detach", wt);
   await runScan(wt);
   const own = join(dir, ".git", "worktrees", "wt");
@@ -2020,6 +2231,206 @@ test("a checkout's name in the held notice carries no control, bidi override or 
   for (const name of ["#api", "> api", "1. api", "`api`", "api|v2", "===", "\uff46\uff55\uff4c\uff4c", "caf\u0065\u0301"]) {
     assert.ok(holdNotice(dir, name).includes(`inside ${JSON.stringify(name)}.`), name);
   }
+});
+
+/* --- a dead lock is broken by one worker, and taken by one --- */
+
+// Older than any scan runs, so dead whatever its pid names, on every platform.
+const deadLock = () => JSON.stringify({ pid: process.pid, at: Date.now() - 31 * 60 * 1000 });
+
+function lockDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-lock-"));
+  t.after(() => removeTree(dir));
+  return dir;
+}
+
+/** Runs `call` with each `fs` function in `stubs` replaced, each stub handed the real one. */
+function stubbing(stubs, call) {
+  const real = Object.fromEntries(Object.keys(stubs).map((name) => [name, fs[name]]));
+  for (const [name, stub] of Object.entries(stubs)) fs[name] = (...args) => stub(real[name], ...args);
+  syncBuiltinESMExports();
+  try {
+    return call();
+  } finally {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  }
+}
+
+test("a dead lock file the system will not unlink is a lock taken, so the refresh answers busy", (t) => {
+  const lock = join(lockDir(t), "refresh.lock");
+  writeFileSync(lock, deadLock());
+
+  const taken = stubbing({
+    unlinkSync: (real, p) => {
+      if (p === lock) throw Object.assign(new Error(`EPERM: unlink '${p}'`), { code: "EPERM" });
+      return real(p);
+    },
+  }, () => acquire(lock));
+
+  assert.equal(taken, null, "tried again by the next refresh, and nothing for a person to remove");
+});
+
+test("a worker that judged a lock dead before two others ran leaves one holder", (t) => {
+  // B judges the lock dead. Before B's first change to it, A breaks it and takes its own; before B's
+  // second, C runs whole. Renamed aside, B's move caught A's lock and C took the name before B could
+  // put A's back, so A and C both held.
+  const dir = lockDir(t);
+  const lock = join(dir, "refresh.lock");
+  writeFileSync(lock, deadLock());
+  const others = [];
+  let judged = false;
+  let changes = 0;
+  let inside = false;
+  const runOthers = (p) => {
+    if (inside || !judged || !String(p).startsWith(lock)) return;
+    changes++;
+    if (changes > 2) return;
+    inside = true;
+    try {
+      others.push(acquire(lock));
+    } finally {
+      inside = false;
+    }
+  };
+  const changing = (real, p, ...rest) => {
+    runOthers(p);
+    return real(p, ...rest);
+  };
+  const b = stubbing(
+    {
+      renameSync: changing,
+      linkSync: changing,
+      unlinkSync: changing,
+      openSync: (real, p, flags, ...rest) => {
+        if (flags === "wx") runOthers(p);
+        const fd = real(p, flags, ...rest);
+        if (!inside && typeof flags === "number" && p === lock) judged = true;
+        return fd;
+      },
+    },
+    () => acquire(lock)
+  );
+
+  assert.equal(changes >= 2, true, `B changed the lock ${changes} times after judging it`);
+  const holders = [b, ...others].filter(Boolean);
+  assert.equal(holders.length, 1, `${holders.length} workers hold the lock`);
+  assert.equal(readFileSync(lock, "utf8"), holders[0].content);
+});
+
+const REFRESH_RUN = new URL("../plugins/anatomiya/lib/refresh-run.mjs", import.meta.url).href;
+
+// Says it is up, takes the lock when told to, says what it holds, and holds it until its stdin ends.
+const LOCK_WORKER = `
+import { acquire } from ${JSON.stringify(REFRESH_RUN)};
+process.stdout.write("up\\n");
+process.stdin.once("data", () => {
+  // Spread, as workers started by one checkout arrive.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.random() * 5);
+  const lock = acquire(process.env.ANATOMIYA_LOCK);
+  process.stdout.write(JSON.stringify(lock?.content ?? null) + "\\n");
+  process.stdin.on("end", () => process.exit(0));
+  process.stdin.resume();
+});
+`;
+
+// Holds each read of a lock's content up to 2 ms, so workers that judge one lock dead interleave their
+// changes to it. With a start spread over 5 ms, the rename-aside protocol let two hold in 1 of 200 rounds
+// at 3 workers and 11 of 200 at 8.
+const SLOW_LOCK_READ = `data:text/javascript,${encodeURIComponent(`
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const real = fs.openSync;
+const pause = new Int32Array(new SharedArrayBuffer(4));
+fs.openSync = (path, flags, ...rest) => {
+  if (typeof flags === "number" && String(path).startsWith(process.env.ANATOMIYA_LOCK)) Atomics.wait(pause, 0, 0, Math.random() * 2);
+  return real(path, flags, ...rest);
+};
+syncBuiltinESMExports();
+`)}`;
+
+/** What each of `n` workers holds after all are told at once to take the lock at `lock`. */
+async function lockWorkers(lock, n) {
+  const runs = [];
+  for (let i = 0; i < n; i++) {
+    const child = spawn(process.execPath, [`--import=${SLOW_LOCK_READ}`, "--input-type=module", "-e", LOCK_WORKER], { env: { ...process.env, ANATOMIYA_LOCK: lock }, timeout: 60_000 });
+    const lines = [];
+    const waiters = [];
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+      for (let at; (at = out.indexOf("\n")) >= 0; out = out.slice(at + 1)) lines.push(out.slice(0, at));
+      while (waiters.length > 0 && waiters[0].count <= lines.length) waiters.shift().done();
+    });
+    const line = (count) => new Promise((done) => (count <= lines.length ? done() : waiters.push({ count, done })));
+    runs.push({ child, lines, line, closed: new Promise((done) => child.on("close", done)) });
+  }
+  // Every worker has its module loaded before any is told to go.
+  await Promise.all(runs.map((run) => run.line(1)));
+  for (const { child } of runs) child.stdin.write("go\n");
+  await Promise.all(runs.map((run) => run.line(2)));
+  const held = runs.map((run) => JSON.parse(run.lines[1]));
+  for (const { child } of runs) child.stdin.end();
+  await Promise.all(runs.map((run) => run.closed));
+  return held.filter((content) => content !== null);
+}
+
+test("three workers over a dead lock leave one holder", async (t) => {
+  const dir = lockDir(t);
+  const lock = join(dir, "refresh.lock");
+  for (const n of [3, 8]) {
+    for (let round = 0; round < 50; round++) {
+      writeFileSync(lock, deadLock());
+      const held = await lockWorkers(lock, n);
+      assert.equal(held.length, 1, `${n} at once, round ${round}: ${held.length} hold it`);
+      assert.equal(readFileSync(lock, "utf8"), held[0], `${n} at once, round ${round}: the holder's lock is on disk`);
+      assert.deepEqual(readdirSync(dir), ["refresh.lock"], `${n} at once, round ${round}: no lock token or lock moved aside left`);
+    }
+  }
+});
+
+// A dead lock and the lock token of a worker that died breaking it, `ms` ago.
+function deadBreak(t, ms) {
+  const dir = lockDir(t);
+  const lock = join(dir, "refresh.lock");
+  writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() - 31 * 60 * 1000, nonce: "0123456789abcdef" }));
+  const token = `${lock}.0123456789abcdef`;
+  writeFileSync(token, "");
+  const at = new Date(Date.now() - ms);
+  utimesSync(token, at, at);
+  return { dir, lock, token };
+}
+
+test("a lock token a killed worker left does not stop later refreshes", (t) => {
+  const { dir, lock } = deadBreak(t, 5 * 60 * 1000);
+
+  const held = acquire(lock);
+
+  assert.ok(held, "the lock is taken");
+  assert.equal(readFileSync(lock, "utf8"), held.content);
+  assert.deepEqual(readdirSync(dir), ["refresh.lock"], "and only the lock is left");
+});
+
+test("a lock token younger than the bound is left alone", (t) => {
+  // Its breaker may still be running.
+  const { dir, lock, token } = deadBreak(t, 1000);
+  const before = readFileSync(lock, "utf8");
+
+  assert.equal(acquire(lock), null);
+  assert.equal(readFileSync(lock, "utf8"), before);
+  assert.ok(existsSync(token));
+  assert.deepEqual(readdirSync(dir).sort(), ["refresh.lock", "refresh.lock.0123456789abcdef"]);
+});
+
+test("a lock token a worker died holding is removed by the next worker to take the lock", (t) => {
+  const dir = lockDir(t);
+  const lock = join(dir, "refresh.lock");
+  writeFileSync(`${lock}.0123456789abcdef`, "");
+
+  const held = acquire(lock);
+
+  assert.ok(held);
+  assert.deepEqual(readdirSync(dir), ["refresh.lock"]);
 });
 
 /* --- the lock is given back only while it is still this worker's --- */
@@ -2123,7 +2534,7 @@ test("a worktree made on a teammate's commit creates nothing, and the pin follow
   git(dir, "fetch", "-q");
   for (const args of [["--detach"], ["-b", "feat"]]) {
     const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
-    t.after(() => rmSync(wt, { recursive: true, force: true }));
+    t.after(() => removeTree(wt));
     rmSync(wt, { recursive: true, force: true });
     git(dir, "worktree", "add", "-q", ...args, wt, "origin/main");
   }
@@ -2144,7 +2555,7 @@ test("a worktree made on a teammate's commit and refreshed from inside creates n
   const teammate = commit(origin, "a teammate's commit");
   git(dir, "fetch", "-q");
   const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
-  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  t.after(() => removeTree(wt));
   rmSync(wt, { recursive: true, force: true });
   git(dir, "worktree", "add", "-q", "--detach", wt, "origin/main");
   await runScan(wt);
@@ -2206,7 +2617,7 @@ test("a record below its checkout's root refreshes nothing, and nothing is writt
   // A copied project's `.claude/` inside a repository that never opted in.
   const dir = await scanned(t);
   const outer = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-outer-")));
-  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  t.after(() => removeTree(outer));
   init(outer);
   source(outer, "src", 8);
   commit(outer, "init");
@@ -2224,7 +2635,7 @@ test("the index changing after a first commit moved the watch still refreshes, a
   // Scanned before any commit, the watch names the index; the first commit
   // writes `logs/HEAD` and the watch moves there.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-first-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   source(dir, "src", 8);
   git(dir, "add", "-A");
@@ -2279,9 +2690,9 @@ test("a reftable clone pins its tip, follows a teammate's fetch, and holds its o
   // and read as a commit made here it held the pin on every reftable clone.
   const origin = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-rt-origin-")));
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-rt-clone-")));
-  t.after(() => {
-    rmSync(origin, { recursive: true, force: true });
-    rmSync(dir, { recursive: true, force: true });
+  t.after(async () => {
+    await removeTree(origin);
+    await removeTree(dir);
   });
   init(origin);
   git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
@@ -2516,4 +2927,168 @@ test("a refresh that moves a pin taken at the plain ceiling gives the places bac
   assert.equal(back.areas.length, 120);
   assert.equal(back.corpus.orphaned, 0);
   assert.ok(back.areas.every((a) => a.baseline.status === "ok"));
+});
+
+/** Every file under the checkout's `.claude`, by path, with its bytes: the pin, the map and what the worker records. */
+function claudeBytes(dir) {
+  return Object.fromEntries(
+    readdirSync(join(dir, ".claude"), { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name))
+      .sort()
+      .map((path) => [path, readFileSync(path, "hex")])
+  );
+}
+
+/** A clone pinned on the remote's tip, with a teammate's commit pulled since: the next refresh would pin it. */
+async function behindItsRemote(t) {
+  const { origin, dir } = await cloned(t);
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  source(origin, "lib/merged", 8);
+  commit(origin, "a teammate's merge");
+  git(dir, "pull", "-q", "--ff-only");
+  return { origin, dir };
+}
+
+for (const [what, pattern, said] of [
+  ["HEAD", "*' rev-parse --verify --quiet HEAD^{commit} '*", /^Error: git could not be asked which commit HEAD names: /],
+  ["the remote's tip", "*' rev-parse --verify --quiet origin/HEAD^{commit} '*", /^Error: git could not be asked which commit origin\/HEAD names: /],
+  ["the pinned commit", ASKS_BY_ID, /^Error: git could not be asked whether commit [0-9a-f]{40} is still in this repository: /],
+  ["whether the map is committed", "*' ls-files -z -- '*anatomiya-overview.md*", /^Error: git could not be asked whether this repository commits its map: /],
+  ["whether the repository folds case", "*' --get core.ignorecase '*", /^Error: git could not be asked whether this repository folds case: /],
+  // The pin's own reads: a plain refusal of the pin is no pin, and the worker goes on to scan.
+  ["whether the index holds unmerged paths", "*' ls-files --unmerged '*", /^Error: git could not be asked whether the index holds unmerged paths: /],
+  ["whether a merge is in progress", "*' rev-parse --verify --quiet MERGE_HEAD '*", /^Error: git could not be asked whether a merge is in progress: /],
+  ["whether the tree is HEAD's", "*' status '*' --porcelain --untracked-files=no '*", /^Error: git could not be asked whether the working tree matches HEAD: /],
+  ["which files the pin would hold", "*' ls-files -z -- '", /^Error: git ls-files exited SIGTERM/],
+]) {
+  test(`a refresh that could not ask git for ${what} moves no pin, writes no map and records nothing`, needsGitStub, async (t) => {
+    const { dir } = await behindItsRemote(t);
+    const before = claudeBytes(dir);
+    gitAhead(t, unasked(pattern));
+
+    await assert.rejects(() => refreshRepository(dir), said);
+
+    assert.deepEqual(claudeBytes(dir), before);
+  });
+}
+
+test("a pin is not moved back where git could not be asked whether it is the newer one", needsGitStub, async (t) => {
+  const { origin, dir } = await behindItsRemote(t);
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  const later = loadPin(dir).sha;
+  git(origin, "reset", "-q", "--hard", "HEAD~1");
+  git(dir, "fetch", "-q");
+  git(dir, "reset", "-q", "--hard", "origin/main");
+  const before = claudeBytes(dir);
+  gitAhead(t, unasked("*' merge-base --is-ancestor '*"));
+
+  await assert.rejects(() => refreshRepository(dir), new RegExp(`^Error: git could not be asked whether the pin at ${later} is newer than `));
+
+  assert.deepEqual(claudeBytes(dir), before);
+});
+
+test("a commit is held where git could not be asked who this clone commits as", needsGitStub, async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const pinned = loadPin(dir).sha;
+  gitAhead(t, unasked("*' var GIT_COMMITTER_IDENT '*"));
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.pinned, false);
+  assert.equal(r.held?.reason, "unread");
+  assert.equal(loadPin(dir).sha, pinned);
+});
+
+/** A `case` arm that ends git on the `nth` call matching `pattern`, and on no other. */
+function unaskedOn(t, pattern, nth) {
+  const count = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-count-"))), "n");
+  t.after(() => removeTree(join(count, "..")));
+  return `case " $* " in ${pattern}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -eq ${nth} ] && kill -TERM $$;; esac`;
+}
+
+for (const [what, start, pattern] of [
+  ["which ref the remote's tip is", behindItsRemote, "*' rev-parse --symbolic-full-name '*"],
+  ["how the remote's branch last moved", behindItsRemote, "*' reflog show -n1 '*"],
+  ["how the clone was made", cloned, "*' reflog show '*' main-worktree/HEAD '*"],
+]) {
+  test(`a refresh that could not ask git ${what} holds the pin as unread, and says nothing git did not`, needsGitStub, async (t) => {
+    const { holdNotice } = await import("../plugins/anatomiya/lib/refresh.mjs");
+    const { dir } = await start(t);
+    const pinned = loadPin(dir)?.sha ?? null;
+    const calls = gitAhead(t, unasked(pattern));
+
+    const r = await refreshRepository(dir);
+    calls.restore();
+
+    assert.equal(r.pinned, false);
+    assert.equal(r.held?.reason, "unread");
+    assert.equal(loadPin(dir)?.sha ?? null, pinned);
+    assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held.reason, "unread", "the hold on record");
+    const said = holdNotice(dir);
+    assert.match(said, /git could not say/);
+    assert.doesNotMatch(said, /last moved by this clone|no reflog/);
+    assert.equal((await refreshRepository(dir)).pinned, true, "asked again and answered, the pin follows");
+  });
+}
+
+test("a pin that could not ask git ends the worker, and any other refusal of the pin is no pin", needsGitStub, async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const before = claudeBytes(dir);
+  // The worker reads HEAD once before the pin, and the pin reads it for itself.
+  const calls = gitAhead(t, unaskedOn(t, "*' rev-parse --verify --quiet HEAD^{commit} '*", 2));
+  await assert.rejects(() => refreshRepository(dir), /^Error: git could not be asked which commit HEAD names: /);
+  calls.restore();
+  assert.deepEqual(claudeBytes(dir), before, "no pin moved, no map written, nothing recorded");
+
+  const refusing = async () => {
+    throw new Error("the working tree does not match HEAD");
+  };
+  const r = await refreshRepository(dir, { pin: refusing });
+  assert.deepEqual([r.reason, r.pinned, r.held], ["scanned", false, null]);
+});
+
+test("a question that could not be asked after the stamp is read is a failed refresh of that stamp, on record with its text", needsGitStub, async (t) => {
+  const dir = await scanned(t);
+  source(dir, "lib", 8);
+  commit(dir, "moved");
+  // Asked once before the lock, for whether the map is committed, and once after the stamp, for the other targets.
+  const calls = gitAhead(t, unaskedOn(t, "*' --get core.ignorecase '*", 2));
+
+  const r = await refreshRepository(dir);
+  calls.restore();
+
+  assert.equal(r.reason, "failed");
+  const state = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8"));
+  assert.equal(state.ok, false);
+  assert.match(state.error, /^git could not be asked whether this repository folds case: git was ended by SIGTERM/);
+  assert.equal((await refreshRepository(dir)).reason, "failed-before", "and that stamp waits out the retry clock");
+});
+
+test("the word a second worker left is taken when the worker holding the lock throws", needsGitStub, async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const word = join(dir, ".claude", "anatomiya", "refresh.again");
+  // Left once the lock is held: by then the worker is past every read before it.
+  let left = false;
+  const leaving = async () => {
+    if (!left) writeFileSync(word, "");
+    left = true;
+    throw new Unasked("git could not be asked anything");
+  };
+
+  await assert.rejects(() => refreshRepository(dir, { pin: leaving }), /^Error: git could not be asked anything/);
+
+  assert.equal(existsSync(word), false, "left there, it costs the next worker a pass nobody asked for");
+});
+
+test("the detached worker ends with exit 1 where git could not be asked, and leaves its checkout as it found it", needsGitStub, async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const before = claudeBytes(dir);
+  gitAhead(t, unasked("*' rev-parse --verify --quiet HEAD^{commit} '*"));
+
+  const r = spawnSync(process.execPath, [BIN, "refresh-run", dir], { encoding: "utf8" });
+
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /^anatomiya: git could not be asked which commit HEAD names: /);
+  assert.deepEqual(claudeBytes(dir), before);
 });

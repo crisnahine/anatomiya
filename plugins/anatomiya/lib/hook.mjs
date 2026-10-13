@@ -20,11 +20,12 @@
  * lives: yours, on this machine, not committed.
  */
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTailOf, realpathOrNull, resolveInside } from "./rules.mjs";
+import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
 import { locator } from "./encode.mjs";
+import { echoDue } from "./echo.mjs";
 import { FACTS_PATH, readLayout, readRecord, schemaProblem } from "./facts.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
@@ -474,19 +475,6 @@ export function targetIn(payload, root, from) {
   return sep === "\\" ? rel.split("\\").join("/") : rel;
 }
 
-/** How far back a delivery still counts, in bytes the model reads: about 29.9k tokens at the 6.57 per token measured on 2.1.292 to 2.1.296, A92's distance. */
-export const ECHO_WINDOW_BYTES = 192 * 1024;
-
-// How much transcript is read to find a window's worth of those records. Records that count for nothing
-// take room in it too, one prompt snapshot 78,191 bytes. Past it the window counts as run out.
-const ECHO_READ_MOST = 1024 * 1024;
-
-// A batch claim this old is no batch's: its delivery has reached the transcript.
-const BATCH_CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
-// A batch claim, its temp file, its lock, or a lock token.
-const ECHO_FILE_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+)?)?$/;
-const BATCH_CLAIMS_LISTED_MOST = 4096;
-
 /**
  * The map as a hook would deliver it, or null where there is none to deliver or
  * the session's context window already holds this same map (A92).
@@ -515,9 +503,7 @@ export function echoContext(root, { now = new Date(), transcript = null, data = 
   const failed = refreshFailed(found.from ?? found.root);
   if (failed) hash.update("\0refresh-failed");
   const digest = hash.digest("hex").slice(0, 12);
-  const tail = readTailOf(transcript, ECHO_READ_MOST);
-  if (heldIn(tail, digest)) return null;
-  if (!batchClaimed(batchClaimPath(data, transcript, digest), transcript, tail, digest)) return null;
+  if (!echoDue({ digest, transcript, data })) return null;
 
   // The remedy is the plugin's own command, which is the one spelling a model
   // can run: the binary is `anatomiya.mjs` under a directory only the plugin
@@ -606,235 +592,6 @@ function inWorkflowRun(workflows, file) {
     if (existsSync(join(workflows, run, file))) return join(workflows, run, file);
   }
   return null;
-}
-
-/**
- * What one transcript line says about the echo: "compact" for a compaction
- * boundary, the texts of a hook's `additionalContext` for a delivery, or null.
- * Parsed rather than searched, so a tool result quoting a map is not a delivery.
- */
-export function echoEvent(line) {
-  if (!line.includes("compact_boundary") && !line.includes("hook_additional_context")) return null;
-  return eventOf(parsed(line));
-}
-
-/**
- * The bytes one transcript line adds to the window: the whole line where the
- * model reads it, none where the build wrote it for itself.
- *
- * A user or assistant message is read, and an attachment is read where it
- * carries `rendered`, which the build sets only on one that converts into a
- * message. A prompt snapshot, a hook's stdout and every bookkeeping line carry
- * none, and counted they pushed a delivery out within one tool call. The
- * CLAUDE.md files carry it, but the build places them at the head of the
- * context, ahead of the delivery they follow in the transcript.
- */
-export function windowBytes(line) {
-  return readBytes(parsed(line), line);
-}
-
-const readBytes = (entry, line) => (readByModel(entry) ? Buffer.byteLength(line) + 1 : 0);
-
-function parsed(line) {
-  try {
-    return JSON.parse(line);
-  } catch {
-    return null;
-  }
-}
-
-function eventOf(entry) {
-  if (entry?.type === "system" && entry.subtype === "compact_boundary") return "compact";
-  if (entry?.type !== "attachment" || entry.attachment?.type !== "hook_additional_context") return null;
-  return [].concat(entry.attachment.content ?? []).filter((text) => typeof text === "string");
-}
-
-const readByModel = (entry) =>
-  entry?.type === "user" || entry?.type === "assistant" || (entry?.type === "attachment" && Array.isArray(entry.rendered) && entry.attachment?.type !== "instructions");
-
-/**
- * Whether the window holds a delivery of this map with no compaction after it,
- * or a batch claim at offset `batchClaimAt` that stands in for one not written yet.
- */
-function heldIn(tail, digest, batchClaimAt = null) {
-  if (tail === null) return false;
-  const mark = `digest="${digest}"`;
-  const lines = tail.text.split("\n");
-  let end = tail.end;
-  let counted = 0;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (batchClaimAt !== null && end <= batchClaimAt) return true;
-    const bytes = Buffer.byteLength(lines[i]) + (i < lines.length - 1 ? 1 : 0);
-    end -= bytes;
-    const entry = parsed(lines[i]);
-    const event = eventOf(entry);
-    if (event === "compact") return false;
-    if (event?.some((text) => text.includes(mark))) return true;
-    counted += readBytes(entry, lines[i]);
-    if (counted > ECHO_WINDOW_BYTES) return false;
-  }
-  return batchClaimAt !== null && end <= batchClaimAt;
-}
-
-/** Where this window's batch claim on this map is kept, or null where the plugin names no data directory. */
-function batchClaimPath(data, transcript, digest) {
-  if (typeof data !== "string" || !isAbsolute(data) || typeof transcript !== "string") return null;
-  return join(data, "echo", `${createHash("sha256").update(transcript).digest("hex").slice(0, 16)}-${digest}`);
-}
-
-/** A hook is killed at its 5 s timeout (hooks.json), so this is the longest a live call holds the lock. */
-export const LOCK_HELD_MOST_MS = 5000;
-
-// FAT keeps a file's mtime to 2 s, so a live lock can read that much older or newer than it is.
-const LOCK_MTIME_SLACK_MS = 2000;
-
-/**
- * Whether this call is the one in its batch that delivers.
- *
- * The calls of a parallel batch run their hooks before any of their records
- * reach the transcript, so each would read the window as empty. The batch
- * claim names the transcript offset its maker read up to, and the others read
- * it as a delivery made there, so it keeps them silent only while that offset is
- * inside the window, judged against the transcript as it is when the batch
- * claim is read. The decision is taken under a lock made with an exclusive
- * create, and a call that finds the lock taken stays silent; the batch claim is
- * replaced by a rename, so no reader sees it half written. Anything that
- * cannot be written or read answers as the transcript alone does.
- */
-function batchClaimed(path, transcript, tail, digest) {
-  if (path === null || tail === null) return true;
-  const lock = `${path}.lock`;
-  try {
-    mkdirSync(dirname(path), { recursive: true });
-    if (!takeLock(lock)) return false;
-  } catch {
-    return true;
-  }
-  try {
-    const entry = readHead(path, 32);
-    const at = entry.kind === "file" && /^\d+\n$/.test(entry.head) ? Number(entry.head) : null;
-    // A sibling's batch claim may sit past what this call read; only past the transcript as it is now is stale.
-    const now = at !== null && at > tail.end ? (readTailOf(transcript, ECHO_READ_MOST) ?? tail) : tail;
-    if (at !== null && at <= now.end && heldIn(now, digest, at)) return false;
-    const temp = `${path}.${process.pid}`;
-    writeFileSync(temp, `${now.end}\n`);
-    renameSync(temp, path);
-  } catch {
-    return true;
-  } finally {
-    try {
-      unlinkSync(lock);
-    } catch {
-      // Taken out by a call that read it as stale; nothing is left to release. A holder suspended past the
-      // dead-lock age removes whichever lock is there now, and a check before it would only narrow that window.
-    }
-  }
-  sweep(dirname(path), path);
-  return true;
-}
-
-/**
- * Takes the lock, breaking it once where it outlived any hook; false where another call holds it.
- *
- * A lock whose mtime is within the dead-lock age of the clock, either way, is never broken: the right to
- * remove one dead generation goes to whichever call creates the lock token named by its mtime, and that
- * call removes it only while the lock is still that generation. Every other call goes to the one create,
- * and the losers stay silent.
- */
-function takeLock(lock) {
-  for (let broken = false; ; broken = true) {
-    if (createdAlone(lock)) return true;
-    if (broken) return false;
-    const found = lstatOf(lock);
-    if (found === null) continue;
-    if (Math.abs(Date.now() - Number(found.mtimeMs)) <= LOCK_HELD_MOST_MS + LOCK_MTIME_SLACK_MS) return false;
-    const token = `${lock}.${found.mtimeMs}`;
-    if (!createdAlone(token)) continue;
-    try {
-      const now = lstatOf(lock);
-      if (now !== null && now.ino === found.ino && now.mtimeNs === found.mtimeNs) removeDeadLock(lock);
-    } finally {
-      removeLockToken(token);
-    }
-  }
-}
-
-/** Removes a dead lock; one the system will not let go of is thrown, so the call answers alone rather than silence the window for good. */
-function removeDeadLock(lock) {
-  try {
-    unlinkSync(lock);
-  } catch (err) {
-    if (err?.code !== "ENOENT") throw err;
-  }
-}
-
-/**
- * Creates `path` with an exclusive create: true where this call made it, false where a file holds the name.
- *
- * Windows answers EPERM, not EEXIST, for a name another process is still deleting, which frees in
- * milliseconds; a refusal that outlasts the backoff is thrown, and the call answers alone.
- */
-function createdAlone(path) {
-  for (let tries = 0; ; tries++) {
-    try {
-      closeSync(openSync(path, "wx"));
-      return true;
-    } catch (err) {
-      if (err?.code === "EEXIST") return false;
-      if (err?.code !== "EPERM" || tries === DELETING_RETRIES) throw err;
-    }
-    Atomics.wait(PAUSE, 0, 0, 2 ** tries);
-  }
-}
-
-// Seven waits doubling from 1 ms: 127 ms asked for, longer on a coarse timer.
-const DELETING_RETRIES = 7;
-const PAUSE = new Int32Array(new SharedArrayBuffer(4));
-
-/**
- * Removes a lock token; one the system refuses to remove is left for the sweep. It names a generation no
- * call breaks again: a later dead lock takes its name only after the clock is set back, and that window then stays silent.
- */
-function removeLockToken(path) {
-  try {
-    unlinkSync(path);
-  } catch {
-    // Still there, or gone already.
-  }
-}
-
-/** A lock's stat, or null where it is gone. Exact: an NTFS file id runs past what a float holds. */
-function lstatOf(path) {
-  try {
-    return lstatSync(path, { bigint: true });
-  } catch {
-    return null;
-  }
-}
-
-/** Takes out batch claims, locks and lock tokens older than a day, so they stay bounded however many sessions run. */
-function sweep(dir, kept) {
-  const names = [];
-  try {
-    const listing = opendirSync(dir);
-    try {
-      for (let entry; names.length < BATCH_CLAIMS_LISTED_MOST && (entry = listing.readSync()) !== null; ) names.push(entry.name);
-    } finally {
-      listing.closeSync();
-    }
-  } catch {
-    return;
-  }
-  const before = Date.now() - BATCH_CLAIM_KEPT_MS;
-  for (const name of names) {
-    const path = join(dir, name);
-    if (path === kept || !ECHO_FILE_NAME.test(name)) continue;
-    try {
-      if (lstatSync(path).mtimeMs < before) unlinkSync(path);
-    } catch {
-      // Gone already, or not ours to read.
-    }
-  }
 }
 
 /**

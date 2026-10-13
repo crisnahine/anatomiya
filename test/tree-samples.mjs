@@ -15,6 +15,16 @@ USAGE = (
     "usage: totals FILE "
     "[--currency CODE]"
 )
+LIMITS = {"low": -1, "flags": [True, None], "pair": (2.5,), "set": {False}}
+GREETING = f"{USAGE}"
+LOW, HIGH = 1, 2
+[FIRST, (*REST, LAST)] = 1, (2, 3)
+RATES: Dict[str, a.Rate | None] = {}
+HOOKS: Callable[[int], tuple[int, ...]] = None
+FIRST: a.Rates[0] = None
+MODE: Literal["a"] | None = None
+EOL = "\\n"
+BRACES = f"{{}}"
 
 
 class Order(Record):
@@ -101,6 +111,14 @@ enum Currency: string
     case Eur = 'eur';
 }
 
+const LIMITS = [1, 'low' => -2.5, true, null];
+const NOTE = <<<'TEXT'
+plain
+TEXT;
+$greeting = "hello $name";
+[$low, $high] = [1, 2];
+const EOL = "\\n";
+
 function format_total(int $cents): string
 {
     return number_format($cents / 100, 2);
@@ -117,7 +135,13 @@ function parse_total(string $text): int
 final class Rate
 {
     public int $cents = 0;
+    public static ?int $limit = 1;
+    final public const int SCALE = 100;
+    protected readonly array $parts;
+    var $legacy = 2;
 }
+
+$rate->cents = 1;
 ?>
 <p>Totals are in cents.</p>
 `;
@@ -133,6 +157,25 @@ import (
 const usage = \`
 usage: totals FILE
 \`
+
+const (
+	low = iota
+	mid
+	high = -(1 << iota)
+)
+
+var limits = map[string]float64{"low": -1, "high": 2.5}
+var marks = [...]string{"a\\n"}
+var cells = map[string][2]*fmt.State{}
+var extra = map[string]interface{}{}
+var boxed = struct{ v Box[int] }{}
+
+var (
+	ready, done = true, false
+	none  error = nil
+	mark        = 'x'
+	wave        = 2i
+)
 
 // Order is one order and its prices.
 type Order struct {
@@ -169,6 +212,14 @@ public class Totals extends Money implements Summable {
     private static final String USAGE = """
         usage: totals FILE
         """;
+    static final int[] LIMITS = {1, -0x1F, 07, 0b1};
+    double rate = 2.5, scale = 0x1p3;
+    char mark = 'x';
+    boolean on = true, off = false;
+    Object none = null;
+    java.util.List<String> names = null;
+    String eol = "\\n";
+    String greeting = STR."hello \\{USAGE}";
 
     // The sum of every price, or zero when the order cannot be read.
     @Override
@@ -182,6 +233,8 @@ public class Totals extends Money implements Summable {
 }
 
 interface Summable {
+    int SCALE = 100;
+
     int total(Order order);
 }
 
@@ -238,9 +291,18 @@ namespace Billing
         private const string Usage = """
             usage: totals FILE
             """;
+        private static readonly int[] Limits = { 1, -2 };
+        double Rate = 2.5;
+        char Mark = 'x';
+        bool On = true;
+        string Root = @"c:\\x";
+        object None = null;
+        System.Collections.Generic.List<int?> Marks = null;
 
         public int Total(Order order)
         {
+            const int scale = 100;
+            var eol = "\\n";
             int Cents(decimal price)
             {
                 return (int)(price * 100);
@@ -300,6 +362,12 @@ const USAGE: &str = "
 usage: totals FILE
 ";
 
+static LIMITS: [i64; 3] = [1, -2, 3];
+const RATE: (f64, bool, char) = (2.5, true, 'x');
+const RAW: &str = r"raw";
+pub(crate) static EOL: &'static str = "\\n";
+static mut HEAD: *const u8 = 0;
+
 /// One order and its prices.
 #[derive(Debug)]
 pub struct Order {
@@ -328,6 +396,11 @@ mod units {
 }
 
 pub fn describe(order: &Order) -> String {
+    let scale = 100;
+    let (low, high) = (1, 2);
+    let Some(first) = order.prices.first() else {
+        return USAGE.to_string();
+    };
     if order.prices.is_empty() {
         return USAGE.to_string();
     }
@@ -342,6 +415,12 @@ import java.io.IOException
 import kotlin.collections.*
 import kotlin.math.max as larger
 
+const val LIMIT = -1
+val RATE = 2.5
+val MARK = 'x'
+val READY = true
+val GREETING = "hello $RATE and \${LIMIT}"
+
 // Shown when no file is given.
 val USAGE = """
     usage: totals FILE
@@ -349,6 +428,8 @@ val USAGE = """
 
 @Suppress("unused")
 class Totals(private val orders: List<Order>) {
+    override val unit = "cents\\n"
+
     fun total(): Int {
         try {
             return orders.sumOf { it.price }

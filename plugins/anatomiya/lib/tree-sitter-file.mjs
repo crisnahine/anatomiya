@@ -9,16 +9,14 @@
  * the copy. The body lives apart from the shell for the reason `parse-file.mjs`
  * does: tests and the pool cross the same seam.
  */
-import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { TREE_DIMENSIONS } from "./dimensions-tree.mjs";
-import { encode } from "./encode.mjs";
 import { collectHits, dimensionsFor } from "./walk.mjs";
 import { withOneBranch } from "./csharp-directives.mjs";
 import { ENGINES, declOf, grammarFor, hostedBy, mayHoldDirectives } from "./langs.mjs";
 import { treeFacets } from "./tree-facets.mjs";
+import { GRAMMAR_MOST_BYTES, GRAMMARS, MANIFEST_MOST_BYTES, parserFor, shippedBytes } from "./tree-sitter-runtime.mjs";
 import { copyTree, walkTree } from "./tree-walk.mjs";
 import { installedVersion } from "./version.mjs";
 
@@ -30,17 +28,6 @@ export const ENGINE = DECLARED.id;
 /** Which runtime is installed, read from its own manifest; null where it is not. */
 export const ENGINE_VERSION = installedVersion(DECLARED.module);
 
-// The grammars ship in the plugin, beside `lib/`, and no install writes them.
-const GRAMMARS = fileURLToPath(new URL("../grammars/", import.meta.url));
-
-let runtime = null;
-// One parser per grammar file for the life of the process: a warm worker pays each load once.
-// A file that did not load holds its error here, whatever stopped it, for the life of the process:
-// one that could not be read off the disk is remembered like one that does not instantiate, and is not tried
-// again. Loaded again for every file, a grammar that instantiates and then fails took 2.9 GB in
-// 1,500 files, since nothing frees an instance.
-const parsers = new Map();
-
 /**
  * How long a rejected file may have taken, one more parse as long as its first included, for a retry to be worth starting.
  *
@@ -49,82 +36,6 @@ const parsers = new Map();
  * pool's clock leaves room for the read and the reply, and every file that ends well inside it keeps all three.
  */
 export const RETRY_BUDGET_MS = 4_000;
-
-// The most a grammar file or the manifest beside them is read at. The largest grammar shipped is 5.4 MB and the
-// manifest 1.8 kB: six times the one and thirty-six times the other, so a later grammar fits and a file that is
-// neither is never held in memory.
-const GRAMMAR_MOST_BYTES = 32 * 1024 * 1024;
-const MANIFEST_MOST_BYTES = 64 * 1024;
-
-/**
- * The bytes of an entry that is a regular file of at most `most` bytes, or null for any other: a directory, a fifo, a
- * device, a link, a file past the bound. A missing or unreadable one throws as the read it is.
- *
- * Typed on the handle that is read, so the file typed is the file read. `O_NONBLOCK` keeps a fifo from holding the
- * open and `O_NOFOLLOW` refuses a link out of the directory; both are absent on Windows and fold to 0.
- */
-function shippedBytes(path, most) {
-  let fd;
-  try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0));
-    const entry = fstatSync(fd);
-    return entry.isFile() && entry.size <= most ? readFileSync(fd) : null;
-  } catch (err) {
-    // A shape that will not open is typed by its path, and nothing is read after it.
-    if (lstatSync(path, { throwIfNoEntry: false })?.isFile() === false) return null;
-    throw err;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
-const missing = (message, extra = {}) => Object.assign(new Error(message), { missingParser: true }, extra);
-
-/** The runtime, loaded and initialised on first use, or a throw marked as the missing install it is. */
-export async function ensureRuntime() {
-  if (runtime) return runtime;
-  try {
-    const loaded = await import("web-tree-sitter");
-    await loaded.Parser.init();
-    runtime = loaded;
-  } catch (err) {
-    // The loader's own words, which quote what it read: encoded, since a scan and a check print them.
-    throw missing(`${DECLARED.module} is not installed: ${encode(err && err.message)}`);
-  }
-  return runtime;
-}
-
-// What a grammar file is that no load was tried of: the words `doctor` has for one whose bytes are another file's.
-const NOT_SHIPPED = "is not the file this plugin shipped";
-
-async function parserFor(grammar, dir, lang) {
-  const key = `${dir}\0${grammar}`;
-  const known = parsers.get(key);
-  if (known instanceof Error) throw known;
-  if (known) return known;
-  const { Language, Parser } = await ensureRuntime();
-  let parser = null;
-  // One language's loss, named as the language: every other grammar on this engine still reads its files.
-  let lost = null;
-  try {
-    // Handed the bytes, so the path is read by node and never by the runtime's own loader.
-    const bytes = shippedBytes(join(dir, `${grammar}.wasm`), GRAMMAR_MOST_BYTES);
-    if (bytes === null) {
-      lost = missing(`grammars/${grammar}.wasm ${NOT_SHIPPED}`, { missingGrammar: lang, foreignGrammar: true });
-    } else {
-      const language = await Language.load(bytes);
-      parser = new Parser();
-      parser.setLanguage(language);
-    }
-  } catch (err) {
-    parser?.delete();
-    // A grammar's failure quotes the file, a function name out of it included: encoded, since a scan and a check print it.
-    lost = missing(`grammars/${grammar}.wasm did not load: ${encode(err && err.message)}`, { missingGrammar: lang });
-  }
-  parsers.set(key, lost ?? parser);
-  if (lost) throw lost;
-  return parser;
-}
 
 /**
  * How many ERROR and MISSING nodes a rejected tree holds, and never fewer than

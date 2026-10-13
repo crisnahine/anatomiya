@@ -1,15 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
-import { transcript } from "./transcript.mjs";
-import { askedMarks, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason } from "../plugins/anatomiya/lib/reuse.mjs";
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, removeTree } from "./platform.mjs";
+import { snapshot, transcript } from "./transcript.mjs";
+import { askedMarksIn, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
+import { REUSE_PARSE_MS } from "../plugins/anatomiya/lib/inert.mjs";
+import { transcriptTail } from "../plugins/anatomiya/lib/transcript.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { corpusDrop } from "../plugins/anatomiya/lib/corpus.mjs";
@@ -22,7 +26,7 @@ import { corpusDrop } from "../plugins/anatomiya/lib/corpus.mjs";
  */
 function repo(t, { scanned = true, commit = true, refFormat = null, at = null } = {}) {
   const dir = at ?? mkdtempSync(join(tmpdir(), "anatomiya-reuse-"));
-  if (at === null) t.after(() => rmSync(dir, { recursive: true, force: true }));
+  if (at === null) t.after(() => removeTree(dir));
   else mkdirSync(dir);
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q", ...(refFormat ? [`--ref-format=${refFormat}`] : []));
@@ -132,20 +136,120 @@ test("an edited source file names only the lines it added", async (t) => {
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 2, to: 3, created: false }]]]);
 });
 
-test("a file of a language with no line rule of its own is not asked about", async (t) => {
+test("a tree-sitter file is asked about the hunks that may define something, and only those", async (t) => {
   const { dir, git, write } = repo(t);
   write("svc/total.py", "def total(xs):\n    return sum(xs)\n");
   git("add", "-A");
   git("commit", "-qm", "python");
-  // An edit and a new file, each adding a function: nothing here can tell that from a comment yet.
+  // The import hunk defines nothing and is left out; the function's hunk and the new file's are asked about.
   write("svc/total.py", "import os\n\n\ndef total(xs):\n    return sum(xs)\n\n\ndef mean(xs):\n    return total(xs) / len(xs)\n");
   write("cmd/main.go", "package main\n\nfunc main() {}\n");
+  write("cmd/doc.go", "// Package cmd runs the service.\npackage cmd\n");
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [
+    ["cmd/main.go", [{ from: 1, to: 3, created: true }]],
+    ["svc/total.py", [{ from: 6, to: 9, created: false }]],
+  ]);
+});
+
+test("a tree-sitter file reached after the stop's parse budget is asked about whole", async (t) => {
+  // Unread is not evidence: a comment the parse never reached asks.
+  const { dir, write } = repo(t);
+  write("svc/note.py", "# A note.\n");
+
+  assert.equal(await pendingChange(dir), null, "read in time, a comment asks nothing");
+  assert.deepEqual(hunksOf(await pendingChange(dir, { parsing: { deadline: performance.now() - 1 } })), [["svc/note.py", [{ from: 1, to: 1, created: true }]]]);
+});
+
+test("a tree-sitter file whose grammar will not load asks nothing", async (t) => {
+  // Nothing read it, so nothing says it holds a function. Run as a process of its own, because a failed load is kept for the life of one.
+  const { dir, write } = repo(t);
+  write("app/Total.kt", "fun total(xs: List<Int>): Int {\n    return xs.sum()\n}\n");
+  const module = new URL("../plugins/anatomiya/lib/reuse.mjs", import.meta.url).href;
+  const script = `
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const real = fs.openSync;
+    let refused = 0;
+    fs.openSync = (path, ...rest) => {
+      if (!String(path).endsWith("kotlin.wasm")) return real(path, ...rest);
+      refused++;
+      throw Object.assign(new Error("ENOENT: no such file or directory, open"), { code: "ENOENT" });
+    };
+    syncBuiltinESMExports();
+    const { pendingChange } = await import(${JSON.stringify(module)});
+    process.stdout.write(JSON.stringify({ change: await pendingChange(${JSON.stringify(dir)}), refused: refused > 0 }));
+  `;
+
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60_000 });
+
+  assert.equal(run.stderr, "");
+  assert.deepEqual(JSON.parse(run.stdout), { change: null, refused: true });
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/Total.kt", [{ from: 1, to: 3, created: true }]]], "with the grammar there, the file asks");
+});
+
+test("a JavaScript, Ruby or component file reached after the stop's budget is asked about whole", async (t) => {
+  const { dir, write } = repo(t);
+  write("src/note.ts", "// A note.\n");
+  write("lib/note.rb", "# A note.\n");
+  write("src/Note.vue", "<template>\n  <p />\n</template>\n<script>\n// A note.\n</script>\n");
+
+  assert.equal(await pendingChange(dir), null, "read in time, a comment asks nothing");
+  assert.deepEqual(hunksOf(await pendingChange(dir, { parsing: { deadline: -Infinity } })), [
+    ["lib/note.rb", [{ from: 1, to: 1, created: true }]],
+    ["src/Note.vue", [{ from: 5, to: 5, created: true }]],
+    ["src/note.ts", [{ from: 1, to: 1, created: true }]],
+  ]);
+});
+
+test("the budget starts at the first file a rule reads and is shared by every checkout of the stop", async (t) => {
+  const { dir, write } = repo(t);
+  write("db/migrate/20260101000000_add_notes.rb", "class AddNotes < ActiveRecord::Migration[7.1]\nend\n");
+  write("notes.txt", "A note.\n");
+  const parsing = { deadline: null };
+  await pendingChange(dir, { parsing });
+  assert.equal(parsing.deadline, null, "a stop with no file a rule reads starts no clock");
+
   write("src/b.ts", NEW_B);
+  const before = performance.now();
+  await pendingChange(dir, { parsing });
+  assert.ok(parsing.deadline >= before + REUSE_PARSE_MS && parsing.deadline <= performance.now() + REUSE_PARSE_MS, String(parsing.deadline));
+  const started = parsing.deadline;
+  write("svc/note.py", "# A note.\n");
+  await pendingChange(dir, { parsing });
+  assert.equal(parsing.deadline, started, "a later file reads against the same deadline");
+});
 
-  assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/b.ts", [{ from: 1, to: 3, created: true }]]]);
+test("a hunk whose added lines reach past the end of what was read is asked about", async (t) => {
+  // The file shrank between the diff and the read: lines nobody read are no evidence that they define nothing.
+  const { dir, git, write } = repo(t);
+  write("src/b.ts", "export const b = 1;\n");
+  git("add", "-A");
+  git("commit", "-qm", "b");
+  write("src/b.ts", "export const b = 1;\n// one\n// two\n");
+  assert.equal(await pendingChange(dir), null, "read whole, two comments ask nothing");
 
-  rmSync(join(dir, "src/b.ts"));
-  assert.equal(await pendingChange(dir), null, "with the TypeScript file gone the turn asks nothing");
+  const target = join(dir, "src/b.ts");
+  const opened = new Set();
+  const short = (keep) =>
+    stubbedAsync(
+      "openSync",
+      (real, path, ...rest) => {
+        const fd = real(path, ...rest);
+        if (path === target) opened.add(fd);
+        else opened.delete(fd);
+        return fd;
+      },
+      () =>
+        stubbedAsync(
+          "readSync",
+          (real, fd, buf, offset, length, position) => (opened.has(fd) ? (position >= keep ? 0 : real(fd, buf, offset, Math.min(length, keep - position), position)) : real(fd, buf, offset, length, position)),
+          () => pendingChange(dir)
+        )
+    );
+
+  assert.deepEqual(hunksOf(await short("export const b = 1;\n// one\n".length)), [["src/b.ts", [{ from: 2, to: 3, created: false }]]], "the last line was not read");
+  assert.deepEqual(hunksOf(await short("export const b = 1;\n".length)), [["src/b.ts", [{ from: 2, to: 3, created: false }]]], "neither line was read");
 });
 
 test("a change that adds no source line has nothing to check", async (t) => {
@@ -495,7 +599,7 @@ test("a record copied below the checkout's root has no change to read", async (t
 
 test("a directory that is not a repository has no change to read", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-nogit-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "a.ts"), "export const a = 1;\n");
 
   assert.equal(await pendingChange(dir), null);
@@ -565,7 +669,7 @@ test("a diff driver the repository configures is never run", needsShebang, async
   // at the end of every turn in any scanned repository.
   const { dir, git, write } = repo(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-reuse-driver-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const marker = join(outside, "ran");
   const driver = join(outside, "driver.sh");
   writeFileSync(driver, `#!/bin/sh\ntouch "${marker}"\n`);
@@ -582,7 +686,7 @@ test("a diff driver the repository configures is never run", needsShebang, async
 test("a text conversion the repository configures is never run", needsShebang, async (t) => {
   const { dir, git, write } = repo(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-reuse-textconv-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const marker = join(outside, "ran");
   const conv = join(outside, "conv.sh");
   writeFileSync(conv, `#!/bin/sh\ntouch "${marker}"\ncat "$1"\n`);
@@ -607,16 +711,30 @@ test("the files a transcript already asked about or recorded are read back by th
     recorded(`anatomiya checked 1 changed file for existing functions (${REUSE_MARK} cccccccccccc)`),
   ]);
 
-  assert.deepEqual([...askedMarks(path)].sort(), ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"]);
+  assert.deepEqual([...askedMarksIn(readFileSync(path, "utf8"))].sort(), ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"]);
+});
+
+test("a transcript's text names the marks it holds and whether its last block was this hook's", (t) => {
+  const path = transcript(t, [
+    blocked(`Before you finish, give one subagent this change's diff... (${REUSE_MARK} aaaaaaaaaaaa)`),
+    recorded(`anatomiya checked 1 changed file for existing functions (${REUSE_MARK} cccccccccccc)`),
+  ]);
+  const text = readFileSync(path, "utf8");
+
+  assert.deepEqual([...askedMarksIn(text)].sort(), ["aaaaaaaaaaaa", "cccccccccccc"]);
+  assert.equal(continuedByReuseIn(text), true);
+  assert.equal(continuedByReuseIn(`${text}${JSON.stringify(blocked("another hook's reason"))}\n`), false, "another hook blocked last");
+  assert.equal(askedMarksIn(null).size, 0);
+  assert.equal(continuedByReuseIn(null), false);
 });
 
 test("a transcript that cannot be read has covered nothing", (t) => {
   // Unreadable is not evidence: the worst it costs is one more search.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-transcript-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   for (const path of [join(dir, "missing.jsonl"), dir, undefined, 42, ""]) {
-    assert.equal(askedMarks(path).size, 0, String(path));
+    assert.equal(askedMarksIn(transcriptTail(path, TRANSCRIPT_MOST)?.text ?? null).size, 0, String(path));
   }
 });
 
@@ -624,18 +742,18 @@ test("a named pipe at the transcript's path answers nothing rather than blocking
   // Run as a process with a budget, because a read that never returns cannot be
   // failed from inside this one.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-fifo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const fifo = join(dir, "session.jsonl");
   execFileSync("mkfifo", [fifo]);
-  const module = new URL("../plugins/anatomiya/lib/reuse.mjs", import.meta.url).href;
+  const module = new URL("../plugins/anatomiya/lib/transcript.mjs", import.meta.url).href;
 
-  const run = spawnSync(process.execPath, ["--input-type=module", "-e", `import { askedMarks } from ${JSON.stringify(module)}; process.stdout.write(String(askedMarks(${JSON.stringify(fifo)}).size));`], {
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", `import { transcriptTail } from ${JSON.stringify(module)}; process.stdout.write(String(transcriptTail(${JSON.stringify(fifo)}, ${TRANSCRIPT_MOST})));`], {
     encoding: "utf8",
     timeout: 10_000,
   });
 
   assert.equal(run.signal, null, "it came back on its own");
-  assert.equal(run.stdout, "0");
+  assert.equal(run.stdout, "null");
 });
 
 // --- the hook ----------------------------------------------------------------
@@ -654,7 +772,7 @@ test("a session started above its checkouts is asked about each one's change, na
   // A Stop payload names no file, so its directory is the session's, which
   // holds no map when the project is split into sibling repositories.
   const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-reuse-parent-")));
-  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  t.after(() => removeTree(parent));
   const api = repo(t, { at: join(parent, "api") });
   const client = repo(t, { at: join(parent, "client") });
   const unscanned = repo(t, { at: join(parent, "docs"), scanned: false });
@@ -781,7 +899,7 @@ test("a turn that commits everything is still asked about where the reflog is no
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   const recorded = execFileSync(real, ["log", "-g", "--max-count=256", "--date=unix", "--format=%H %gd %gs", "HEAD"], { cwd: r.dir });
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-reftable-git-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(join(bin, "reflog.txt"), recorded);
   writeFileSync(
     join(bin, "git"),
@@ -1082,6 +1200,84 @@ test("the stop right after the check records what the check left, so the next tu
   assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: session })), {});
 });
 
+/** Runs `call` with `fs[name]` replaced by `stub`, which is handed the real one, until its promise settles. */
+async function stubbedAsync(name, stub, call) {
+  const real = fs[name];
+  fs[name] = (...args) => stub(real, ...args);
+  syncBuiltinESMExports();
+  try {
+    return await call();
+  } finally {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  }
+}
+
+test("a recording stop reads the transcript's head once and its tail twice", async (t) => {
+  // The head once, and the tail once before the change set and once after it,
+  // where each reader once read a 64 MiB tail of its own. A recording stop runs
+  // all four readers. The snapshot puts the transcript past the head's 64 KiB,
+  // so a head read and a tail read differ in size.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const first = await runReuse(dir, stop(dir, { transcript_path: begun(t) }));
+  const session = begun(t, [snapshot(70 * 1024), blocked(first.reason)]);
+  write("src/b.ts", "import { one } from \"./a.ts\";\nexport const b = () => one + 1;\n");
+  const size = fs.statSync(session).size;
+  const opened = new Set();
+  const reads = [];
+
+  const after = await stubbedAsync(
+    "openSync",
+    (real, path, ...rest) => {
+      const fd = real(path, ...rest);
+      // A closed descriptor's number is handed to the next file opened.
+      if (path === session) opened.add(fd);
+      else opened.delete(fd);
+      return fd;
+    },
+    () =>
+      stubbedAsync(
+        "readSync",
+        (real, fd, buf, ...rest) => {
+          if (opened.has(fd)) reads.push(buf.length === size ? "tail" : "head");
+          return real(fd, buf, ...rest);
+        },
+        () => runReuse(dir, stop(dir, { stop_hook_active: true, transcript_path: session }))
+      )
+  );
+
+  assert.deepEqual(Object.keys(after), ["systemMessage"], "every reader ran");
+  assert.ok(size > 64 * 1024, `the transcript is ${size} bytes`);
+  assert.deepEqual(reads.sort(), ["head", "tail", "tail"]);
+});
+
+test("the marks read after the change set include one written meanwhile", async (t) => {
+  // The git reads take up to seconds, and an ask another stop wrote while they
+  // ran covers this change: asking again would pay a second search for it.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  const session = begun(t);
+  const first = await runReuse(dir, stop(dir, { transcript_path: session }));
+  assert.equal(first.decision, "block");
+  let written = false;
+
+  const again = await stubbedAsync(
+    "openSync",
+    (real, path, ...rest) => {
+      if (!written && String(path).endsWith(join("src", "b.ts"))) {
+        written = true;
+        append(session, blocked(first.reason));
+      }
+      return real(path, ...rest);
+    },
+    () => runReuse(dir, stop(dir, { transcript_path: session }))
+  );
+
+  assert.equal(written, true, "the change set read the file");
+  assert.deepEqual(again, {});
+});
+
 test("a stop another hook continued records nothing", async (t) => {
   // `stop_hook_active` says some hook blocked, not which one. Recording there
   // would mark a file checked that no search ever read.
@@ -1119,11 +1315,24 @@ test("the hook is silent wherever it has nothing to ask", async (t) => {
 });
 
 test("the git reads fit inside the time the hook asks Claude Code for", () => {
-  // A hook killed at its timeout answers nothing at all. The payload wait and
-  // both git reads have to end first, with a second to spare for the rest.
+  // A hook killed at its timeout answers nothing at all. The payload wait, both
+  // git reads and the stop's reading of its files have to end first, with a
+  // second to spare for the rest.
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks.Stop[0].hooks[0].timeout;
 
-  assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} against ${declared}s`);
+  assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + REUSE_PARSE_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} + ${REUSE_PARSE_MS} against ${declared}s`);
+});
+
+test("a checkout whose attributes git could not be asked for asks nothing, and the next one is still asked about", needsGitStub, async (t) => {
+  // The hook reads every checkout of a stop together, so a read that throws in one would end them all.
+  const held = repo(t);
+  held.write("src/b.ts", NEW_B);
+  const other = repo(t);
+  other.write("src/b.ts", NEW_B);
+  gitAhead(t, `case "$PWD" in *'/${basename(held.dir)}') ${unasked("*' cat-file blob :.gitattributes '*")};; esac`);
+
+  assert.equal(await pendingChange(held.dir), null);
+  assert.deepEqual((await pendingChange(other.dir)).map((f) => f.path), ["src/b.ts"]);
 });
 
 test("a deletion in the tree adds no git read to the two the budget allows", { ...needsShebang, ...needsPathControl }, async (t) => {
@@ -1141,7 +1350,7 @@ test("a deletion in the tree adds no git read to the two the budget allows", { .
   // together overlap however fast this machine runs a small one.
   const HELD_MS = 300;
   const slow = mkdtempSync(join(tmpdir(), "anatomiya-slow-git-"));
-  t.after(() => rmSync(slow, { recursive: true, force: true }));
+  t.after(() => removeTree(slow));
   const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
   writeFileSync(join(slow, "git"), `#!/bin/sh\n'${real}' "$@"\ncode=$?\nsleep ${HELD_MS / 1000}\nexit $code\n`);
   chmodSync(join(slow, "git"), 0o755);

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { createHash } from "node:crypto";
@@ -12,6 +12,8 @@ import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, i
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { GIT } from "../plugins/anatomiya/lib/git.mjs";
 
 const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
 
@@ -21,7 +23,7 @@ const glob = (dir, langs) => globText(globEntry(dir, langs));
 /** A temp directory removed by the runner, so a failed assertion still cleans up. */
 function tmp(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
@@ -163,6 +165,51 @@ test("collect follows a .claude/rules link to where git tracks the map, and nowh
 
   assert.deepEqual(await under(build(true)), ["agents/rules/team.md"]);
   assert.deepEqual(await under(build(false)), [...named, "agents/rules/team.md"].sort());
+});
+
+test("an index read of .gitattributes that could not be asked stops the corpus, and is not read as an index that marks nothing", needsGitStub, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", "gen.ts linguist-generated\n");
+    write("a.ts");
+    write("gen.ts");
+    git("add", "-A");
+  });
+  assert.ok((await collect(dir)).files.some((f) => f.rel === "a.ts"));
+
+  for (const pattern of ["*' cat-file blob :.gitattributes '*", "*' ls-files -v -z -- .gitattributes '*"]) {
+    const calls = gitAhead(t, unasked(pattern));
+    await assert.rejects(() => collect(dir), /git could not be asked .*\.gitattributes/, pattern);
+    calls.restore();
+  }
+});
+
+test("the corpus stops on an index read that could not be asked only once the read beside it has ended", needsGitStub, async (t) => {
+  // The two reads start together, and a throw passed on from the first would leave the other git running behind it.
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", "gen.ts linguist-generated\n");
+    write("a.ts");
+    git("add", "-A");
+  });
+  const ended = join(dir, "..", `${dir.split(sep).pop()}.ended`);
+  t.after(() => rmSync(ended, { force: true }));
+  gitAhead(t, `case " $* " in *' cat-file blob :.gitattributes '*) kill -TERM $$;; *' ls-files -v -z -- .gitattributes '*) sleep 0.5; : > '${ended}';; esac`);
+
+  await assert.rejects(() => collect(dir), /git could not be asked for the index's \.gitattributes/);
+  assert.equal(existsSync(ended), true, "the listing beside it was not left running");
+});
+
+test("an index copy of .gitattributes past the bound of the read leaves the working tree's file to decide", needsGitStub, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", "gen.ts linguist-generated\n");
+    write("a.ts");
+    write("gen.ts");
+    git("add", "-A");
+  });
+  // git did answer, with more than is read: that is no git that could not be asked.
+  gitAhead(t, `case " $* " in *' cat-file blob :.gitattributes '*) head -c ${GIT.maxBytes + 1} /dev/zero; exit 0;; esac`);
+
+  const rels = (await collect(dir)).files.map((f) => f.rel);
+  assert.ok(rels.includes("a.ts") && !rels.includes("gen.ts"), JSON.stringify(rels));
 });
 
 test("a tracked .env contributes nothing even though git lists it", async (t) => {

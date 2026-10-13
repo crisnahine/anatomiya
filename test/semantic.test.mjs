@@ -1,12 +1,12 @@
 // test/semantic.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, mkdirSync, symlinkSync, utimesSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { repo } from "./ts-repo.mjs";
-import { needsPosixPermissions, needsSymlinks } from "./platform.mjs";
+import { needsPosixPermissions, needsSymlinks, removeTree } from "./platform.mjs";
 import { scratch } from "./git-worktrees.mjs";
 import {
   loadTypeScript,
@@ -119,7 +119,8 @@ test("the tier answers a real file and reports a resolution rate", needsTs, asyn
     assert.equal(r.error, null);
     assert.equal(r.status, "ok");
     assert.ok(r.typedResolutionRate === null || r.typedResolutionRate > 0.5);
-    assert.ok(r.records.has("a.ts"));
+    // Nobody asked it to stop, so the answer kept is the walk's and not the stub before it.
+    assert.deepEqual(r.records.get("a.ts").hits, { law_of_demeter: [{ conforming: false, where: "go" }] });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -184,7 +185,7 @@ test("a checker outside major 5 is refused, because 7 has no JS API", async (t) 
   // into a silent no-op the day it publishes. Refusing here is what makes doctor
   // name it rather than the scan quietly leaving it off.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsver-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   assert.equal(await loadTypeScript({ specifier: typescriptStub(dir, "7.0.0") }), null, "the Go port is refused");
   assert.equal(await loadTypeScript({ specifier: typescriptStub(dir, "6.1.2") }), null, "so is anything else off major 5");
@@ -288,7 +289,7 @@ test("a node_modules this cannot read is no install, not a crash", needsPosixPer
   chmodSync(deps, 0o000);
   t.after(() => {
     chmodSync(deps, 0o755);
-    rmSync(dir, { recursive: true, force: true });
+    return removeTree(dir);
   });
 
   assert.equal(await checkerBlocked(dir, { checkedRels: ["src/a.ts"] }), "no-dependencies");
@@ -331,7 +332,7 @@ test("a checker that dies partway through is a failure, not a clean partial answ
   // measured over a fraction of it with nothing saying so. That is the silent
   // partial answer B8 exists to refuse.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-halfdead-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const worker = join(dir, "half-dead.mjs");
   writeFileSync(
     worker,
@@ -354,7 +355,7 @@ test("a checker that dies partway through is a failure, not a clean partial answ
 /** A worker that answers what it is told to and then never speaks again. */
 function stallingWorker(t, name, says) {
   const dir = mkdtempSync(join(tmpdir(), `anatomiya-${name}-`));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const worker = join(dir, `${name}.mjs`);
   writeFileSync(
     worker,
@@ -427,12 +428,161 @@ test("a checker that built its program and then stalled is killed by the shorter
   assert.match(String(r.error ?? ""), /went quiet/);
 });
 
+/**
+ * A worker that leaves its pid in `pid` beside it, answers one file's sites,
+ * low on resolution, says `sited`, and then does `then` with the rows it has left.
+ */
+function sitedWorker(t, name, then) {
+  const dir = mkdtempSync(join(tmpdir(), `anatomiya-${name}-`));
+  t.after(() => removeTree(dir));
+  const worker = join(dir, `${name}.mjs`);
+  writeFileSync(
+    worker,
+    [
+      "import { writeFileSync } from 'node:fs';",
+      "process.send({ ready: true });",
+      "process.on('message', () => {",
+      "  writeFileSync(new URL('./pid', import.meta.url), String(process.pid));",
+      "  process.send({ built: true, config: { status: 'ok', reason: null } });",
+      "  process.send({ rel: 'a.ts', hits: {}, resolution: { resolved: 1, total: 10 }, sites: { law_of_demeter: [{ conforming: true, where: null }] } });",
+      "  process.send({ sited: true });",
+      then,
+      "});",
+      "setTimeout(() => {}, 60_000);",
+    ].join("\n")
+  );
+  return { worker, pid: () => Number(readFileSync(join(dir, "pid"), "utf8")) };
+}
+
+/** Whether a process is still there to be signalled. */
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const WALKED = "process.send({ rel: 'a.ts', hits: { law_of_demeter: [{ conforming: false, where: 'go' }] }, resolution: { resolved: 1, total: 10 } });";
+// For 30 seconds and not for ever, so a run that failed to end it leaves nothing behind.
+const WALKS_ON = `  setInterval(() => { ${WALKED} }, 50);\n  setTimeout(() => process.exit(0), 30_000);`;
+const WALKS_AND_ENDS = `  setTimeout(() => { ${WALKED} process.send({ done: true }); }, 100);`;
+const STUBBED = [["a.ts", { hits: { law_of_demeter: [{ conforming: true, where: null }] }, resolution: { resolved: 1, total: 10 } }]];
+const REAL = [["a.ts", { hits: { law_of_demeter: [{ conforming: false, where: "go" }] }, resolution: { resolved: 1, total: 10 } }]];
+const aFile = [{ rel: "a.ts", abs: "/nowhere/a.ts", lang: "js" }];
+
+test("a degraded rate stops the dimension walk", { timeout: 60_000 }, async (t) => {
+  // The worker answers a walked row every 50 ms and never says done, so an
+  // answer with no error is the run ending at the verdict.
+  const { worker, pid } = sitedWorker(t, "stops", WALKS_ON);
+  const seen = [];
+
+  const r = await runSemantic(tmpdir(), aFile, {
+    workerPath: worker,
+    stopWhen: (sited) => {
+      seen.push({ config: sited.config, records: [...sited.records] });
+      return true;
+    },
+  });
+
+  assert.deepEqual(seen, [{ config: { status: "ok", reason: null }, records: STUBBED }]);
+  assert.deepEqual(
+    { status: r.status, reason: r.reason, rate: r.typedResolutionRate, error: r.error, stopped: r.stopped },
+    { status: "degraded", reason: "low-resolution", rate: 0.1, error: null, stopped: true }
+  );
+  assert.deepEqual([...r.records], STUBBED);
+  // Killed, and the kill lands a moment after the answer does.
+  const child = pid();
+  for (let waited = 0; alive(child) && waited < 10_000; waited += 50) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(alive(child), false, "the checker was left walking rows nobody will read");
+});
+
+test("an ok rate waits for the real hits", { timeout: 60_000 }, async (t) => {
+  const { worker } = sitedWorker(t, "waits", WALKS_AND_ENDS);
+
+  const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen: async () => false });
+
+  assert.equal(r.error, null);
+  assert.equal("stopped" in r, false);
+  assert.deepEqual([...r.records], REAL);
+});
+
+test("the job is never silent past idleMs while the parent decides", { timeout: 60_000 }, async (t) => {
+  // Thirty answers 100 ms apart under a 2 s clock, and a reader that takes
+  // longer than the clock to decide: the walk it has not stopped keeps the
+  // clock fed, and its answer is the one kept when the reader says no.
+  const { worker } = sitedWorker(
+    t,
+    "deciding",
+    `  let n = 0;\n  const tick = setInterval(() => { ${WALKED} if (++n === 30) { clearInterval(tick); process.send({ done: true }); } }, 100);`
+  );
+
+  const r = await runSemantic(tmpdir(), aFile, {
+    workerPath: worker,
+    guards: { buildMs: 60_000, idleMs: 2_000 },
+    stopWhen: () => new Promise((resolve) => setTimeout(() => resolve(false), 2_500)),
+  });
+
+  assert.equal(r.error, null);
+  assert.deepEqual([...r.records], REAL);
+});
+
+test("a checker that finished before the reader decided keeps the hits it walked", { timeout: 60_000 }, async (t) => {
+  const { worker } = sitedWorker(t, "finished", `  ${WALKED}\n  process.send({ done: true });`);
+  let decide;
+  const decided = new Promise((resolve) => (decide = resolve));
+
+  const run = runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen: () => decided.then(() => true) });
+  const r = await run;
+  decide();
+  await decided;
+
+  assert.equal(r.error, null);
+  assert.equal("stopped" in r, false);
+  assert.deepEqual([...r.records], REAL);
+});
+
+test("a checker that says its sites are answered twice has the reader asked once", { timeout: 60_000 }, async (t) => {
+  const { worker } = sitedWorker(t, "twice", `  process.send({ sited: true });\n${WALKS_AND_ENDS}`);
+  let asked = 0;
+
+  const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen: () => void ++asked });
+
+  assert.equal(asked, 1);
+  assert.deepEqual([...r.records], REAL);
+});
+
+for (const [how, stopWhen] of [
+  ["throws", () => { throw new Error("no areas yet"); }],
+  ["never answers", () => new Promise(() => {})],
+]) {
+  test(`a reader that ${how} stops nothing`, { timeout: 60_000 }, async (t) => {
+    const { worker } = sitedWorker(t, "undecided", WALKS_AND_ENDS);
+
+    const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen });
+
+    assert.equal(r.error, null);
+    assert.deepEqual([...r.records], REAL);
+  });
+}
+
+test("a checker that never says its sites are answered is never asked about stopping", { timeout: 60_000 }, async (t) => {
+  const { worker } = stallingWorker(t, "unsited", `  process.send({ built: true, config: { status: 'ok', reason: null } });\n  ${WALKED}\n  process.send({ done: true });`);
+  let asked = 0;
+
+  const r = await runSemantic(tmpdir(), aFile, { workerPath: worker, stopWhen: () => ++asked });
+
+  assert.equal(asked, 0);
+  assert.deepEqual([...r.records], REAL);
+});
+
 test("a checker that cannot start degrades the tier instead of crashing the scan", async (t) => {
   // fork emits 'error' on EMFILE or EAGAIN, and nothing listened for it, so an
   // unhandled 'error' event became an uncaughtException and took the whole
   // scan down, losing the syntactic pass that had already finished.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-nostart-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
     workerPath: join(dir, "does-not-exist.mjs"),
@@ -450,7 +600,7 @@ test("a checker that cannot be spawned degrades the tier instead of crashing the
   // syntactic pass that already finished. A missing cwd is the reachable
   // version of the same failure: a missing script exits instead.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-nospawn-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
     cwd: join(dir, "not-a-directory"),

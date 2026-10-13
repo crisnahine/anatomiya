@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { bytesPerToken, replayEcho } from "../scripts/measure-echo.mjs";
-import { compact, delivered, filler } from "./transcript.mjs";
+import { compact, delivered, filler, snapshot, transcript } from "./transcript.mjs";
+import { ECHO_READ_MOST, ECHO_WINDOW_BYTES, echoDue } from "../plugins/anatomiya/lib/echo.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "measure-echo.mjs");
 
@@ -55,6 +56,29 @@ test("transcript bytes per context token are read off the assistant's usage, mai
   assert.equal(bytesPerToken(text, 1000), between / 1000);
   assert.equal(bytesPerToken(text, 1001), null, "grew less than asked");
   assert.equal(bytesPerToken(lines([turn(100, 900)]), 1), null, "one turn measures nothing");
+});
+
+test("the replay holds what the hook holds", (t) => {
+  // The delivery is rendered, so its own line counts in the window: a walk forward from its start counts
+  // it, and the hook, walking back to it, stops before it. The filler alone fills the window exactly.
+  const digest = "a1b2c3d4e5f6";
+  const stamped = `<repository-map delivered="2026-10-12T00:00:00.000Z" digest="${digest}">\n# Repository map\n</repository-map>`;
+  const window = [delivered(stamped, { rendered: true }), filler(ECHO_WINDOW_BYTES - 41)];
+
+  assert.equal(echoDue({ digest, transcript: transcript(t, window), data: null }), false, "the hook holds");
+  assert.deepEqual(replayEcho(lines([...window, delivered(stamped, { rendered: true })])), { made: 2, repeats: 1, kept: 1 });
+
+  // Records the window does not count still fill what the hook reads back, which here ends inside the delivery.
+  const far = [delivered(stamped), snapshot(ECHO_READ_MOST - 100)];
+  assert.ok(Buffer.byteLength(lines(far)[1]) + 1 < ECHO_READ_MOST, "the delivery is cut, not left out");
+  assert.equal(echoDue({ digest, transcript: transcript(t, far), data: null }), true, "the hook delivers");
+  assert.deepEqual(replayEcho(lines([...far, delivered(stamped)])), { made: 2, repeats: 1, kept: 2 });
+});
+
+test("a copy the rule drops holds no later delivery back", () => {
+  const at = (n) => delivered(map("A", `t${n}`), { rendered: true });
+  const entries = [at(1), filler(600), at(2), filler(600), at(3)];
+  assert.deepEqual(replayEcho(lines(entries), 1024), { made: 3, repeats: 2, kept: 2 });
 });
 
 test("a store that is not a directory is refused with a line and exit 2", () => {

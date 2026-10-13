@@ -59,6 +59,9 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
      off now, how many areas have no file there because no pattern of theirs can be given to that
      tool, how many entries named `anatomiya-*` there it neither wrote nor removed, and a
      directory it could not read, with the reason and what to do about it
+   - that `.claude/anatomiya/refresh.lock`, a lock token beside it or `refresh.json` is a directory
+     holding entries, so no refresh of the map can run in this checkout while it stays. Relay each
+     line, and leave the directory for the user to remove
    - every file in `.claude/rules/` this tool did not write, since those also reach the agent on
      every turn. The scanner names them one per line, and names separately any file carrying our
      frontmatter that no map lists, which it leaves alone rather than removing
@@ -73,7 +76,10 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    prompt or tool call. An area file it has already read keeps its old counts until the window is
    rebuilt: a new session, a compaction or `/clear` loads the whole map.
 
-If the scanner exits non-zero, show its output and stop. Do not guess at what it found.
+If the scanner exits non-zero, show its output and stop. Do not guess at what it found. A line that
+opens `git could not be asked` means git never answered a question the scan put to it:
+nothing was written. Run the scan again, and where it says the same, the text after the colon is
+git's own reason.
 
 If the reason line says an engine was stopped by its own clock before it answered, the install is
 not the cause, so do not run setup. Say that the parser stalled on this machine and that a scan on a

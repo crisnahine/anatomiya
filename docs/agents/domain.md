@@ -2,15 +2,18 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-Layout: **single-context**. One `CONTEXT.md` at the repo root, and `DECISIONS.md` in place of `docs/adr/`.
+Layout: **single-context**. One `CONTEXT.md` at the repo root, and `DECISIONS.md` with `docs/decisions/` in
+place of `docs/adr/`.
 
 ## Before exploring, read these
 
 - **`CONTEXT.md`** at the repo root. The glossary, and nothing else: what each term IS, with the synonyms
   to avoid.
-- **`DECISIONS.md`** at the repo root. The decision record. This repo does not use `docs/adr/`; every
-  decision that would be an ADR elsewhere is a row here. Read the sections that touch the area you are
-  about to work in.
+- **`DECISIONS.md`** at the repo root. The index of the decision record. This repo does not use
+  `docs/adr/`; every decision that would be an ADR elsewhere is a row here. Read the sections that touch
+  the area you are about to work in.
+- **`docs/decisions/<id>.md`**, one file per row, holding the row's full text. Open the files of the
+  rows your work touches. Do not read the directory whole: it is about 800 KB.
 - **`docs/how-it-works.md`**, the mechanical walkthrough of the pipeline. Useful when a decision row's
   `Why` assumes you know the stage it names.
 
@@ -34,14 +37,34 @@ One table per section, one row per decision:
 The closing `What is deliberately not built` is prose rather than rows. Read it before proposing a
 channel or a dependency this repo already refused.
 
-Each row is `| # | Decision | Why | Status |`.
+Each row of the index is `| # | Decision | Status | File |`, on one line.
 
 - **`#`** is the stable id, for example `B10`, `E4`, `F5`. Cite decisions by that id.
-- **`Why`** is the evidence the decision rests on, usually a measurement. A row whose `Why` names a number
-  was settled by a probe, not by preference.
-- **`Status`** is **what the code does today**, not what it should do. `done` means shipped, often with the
-  owning module named. `partial` means shipped in some paths and not others, and the cell says which.
-  `todo` means not built.
+- **`Decision`** is the decision, whole.
+- **`Status`** is one of three words: `done` where the row's Status opens with `**done**`, `partial`
+  where it opens with `partial`, `todo` where it opens with `todo`.
+- **`File`** links to `docs/decisions/<id>.md`.
+
+So `grep -n "B10" DECISIONS.md` answers with the row and every row that cites it in its Decision, a
+line each.
+
+## How to read a row file
+
+`docs/decisions/<id>.md` is `# <id>`, a `Section:` line, then three headings:
+
+- **`## Decision`** is the same text as the index holds.
+- **`## Why`** is the evidence the decision rests on, usually a measurement, one sentence per line. A row
+  whose `Why` names a number was settled by a probe, not by preference. A few rows have none.
+- **`## Status`** is **what the code does today**, not what it should do, one sentence per line.
+  `**done**` means shipped, often with the owning module named. `partial` means shipped in some paths
+  and not others, and the text says which. `todo` means not built.
+
+`grep -rn "<word>" docs/decisions` answers with the sentences that hold the word, each under its row's
+file name. `node scripts/decisions.mjs` prints the whole record as one table, a row per line.
+
+`npm run check:docs` holds the two to each other: every row has a file and every file a row, and the
+section, the Decision and the short status agree. `CONTRIBUTING.md` says how to add a row and how to
+change one.
 
 A `partial` or `todo` row is a known gap, not a defect to report as news. A `done` row the code no longer
 honours **is** a defect, and worth surfacing.
@@ -51,10 +74,11 @@ honours **is** a defect, and worth surfacing.
 ```
 /
 ├── CONTEXT.md          ← the glossary
-├── DECISIONS.md        ← the decision record, sections A to H
+├── DECISIONS.md        ← the index of the decision record, sections A to H
 ├── docs/
 │   ├── how-it-works.md
 │   ├── why.md
+│   ├── decisions/      ← one file per row: its Decision, Why and Status
 │   └── agents/         ← this directory: how skills read the repo
 ├── plugins/
 │   └── anatomiya/      ← bin/, lib/, commands/, hooks/
@@ -79,8 +103,8 @@ does not use (reconsider), or there's a real gap (note it for `/domain-modeling`
 
 ## Flag decision conflicts
 
-If your output contradicts a `DECISIONS.md` row, surface it explicitly rather than silently overriding.
-Cite the row id:
+If your output contradicts a row, surface it explicitly rather than silently overriding. Read the row's
+file first, since the Why is there and not in the index. Cite the row id:
 
 > _Contradicts B2 (oxc runs in child processes, never in-process), but worth reopening because…_
 

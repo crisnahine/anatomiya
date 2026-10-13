@@ -43,18 +43,15 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] `npm run coverage` passes its floors. It reads them off an lcov record rather than off the
       total, so the files in a scope are each held to one: an aggregate over a scope says nothing
       about one file inside it, whichever scope it is drawn around.
-- [ ] The line-ending pass shows nothing new: `node scripts/line-endings.mjs`. It runs the suite as a
+- [ ] The line-ending pass is green: `node scripts/line-endings.mjs`. It runs the suite as a
       Windows runner checks it out:
       clone the checkout with `git -c core.autocrlf=true clone`, copy `node_modules` into the clone,
       write a file holding `[core]` and `autocrlf = true`, and run every test file in the clone one
       at a time with `GIT_CONFIG_SYSTEM` pointing at that file, so every `git init` a test makes
       converts line endings too. `git ls-files --eol` there lists the tracked text as `w/crlf` and
       the seven grammars as `w/-text`. It catches a test that reads a tracked file as text and
-      compares bytes, offsets or a multi-line match. One file fails under that override on macOS
-      and is no finding: `test/git.test.mjs`, in `a submodule's filter driver never runs through
-      the superproject's status`, because the override replaces the machine's own system git
-      config. That test is skipped on Windows. Why the clone stands in for the runner, and what
-      Windows does with a held file, a process id and a name in another case, is read from the
+      compares bytes, offsets or a multi-line match. Why the clone stands in for the runner, and
+      what Windows does with a held file, a process id and a name in another case, is read from the
       owners' pages and source in `docs/research/what-windows-does-with-a-name-a-lock-and-a-pid.md`.
 - [ ] CI is green on the branch. Check it, do not assume: a suite that passes here can fail there
       over `init.defaultBranch`, path separators, or 8.3 short names, and all three have.
@@ -99,7 +96,7 @@ upstreams and are not meant to move together.
 - [ ] `commands/*.md` match the CLI. The agent reads these, not `--help`.
 - [ ] `SECURITY.md` names the current dependency set and says nothing about a tier that now ships.
 - [ ] `DECISIONS.md` has no `todo` row that this release actually closed, and every `**done**` note
-      names the symbols that exist today.
+      in a row's file under `docs/decisions/` names the symbols that exist today.
 - [ ] Merge to `main` and pull it.
 - [ ] `main`'s own CI on the merge commit is green. The tree the pull request tested can still fail
       there: 0.15.0's merge commit failed a memory test the pull request had passed twice.

@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 
 import { RELEASES, TAG_GLOBS, notesFor, prefixOf, releaseFor, sectionFor, tagFor } from "../scripts/release.mjs";
 import { REL } from "../scripts/plugins.mjs";
+import { removeTree } from "./platform.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -32,14 +33,14 @@ const TAG = `v${JSON.parse(readFileSync(join(ROOT, REL.anatomiya, "package.json"
  */
 function scratch(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-release-cwd-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
 /** A marketplace with the plugin in it, carrying its version and its changelog. */
 function repository(t, { anatomiya = "1.2.3", changelogs = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-release-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   // The shape the marketplace has: a plugin per directory under `plugins/`,
   // each with its own manifests, and one lockfile at the marketplace root.
@@ -428,7 +429,7 @@ test("a repeated flag is refused rather than taking the last one", (t) => {
 
 test("a notes path that cannot be written is a sentence, not a stack", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-release-notes-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "adir"));
 
   const run = spawnSync(process.execPath, [join(ROOT, "scripts", "release.mjs"), TAG, "--notes", join(dir, "adir")], {

@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { needsPathControl, needsPosixPaths, needsShebang, removeTree } from "./platform.mjs";
+import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
+import { exits, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { authorsByFile, repoAuthorCount } from "../plugins/anatomiya/lib/authors.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 import * as scan from "../plugins/anatomiya/lib/scan.mjs";
@@ -27,7 +28,7 @@ function repo(t, build) {
   // site is one somebody forgets, and two here did, which is where the 915
   // directories one machine had piled up came from.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-authors-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q", "-b", "main");
   git("config", "user.email", "first@t.test");
@@ -182,9 +183,9 @@ test("a blobless clone answers without reaching for the network", async (t) => {
   });
   const parent = mkdtempSync(join(tmpdir(), "anatomiya-partial-"));
   const clone = join(parent, "clone");
-  t.after(() => {
-    rmSync(parent, { recursive: true, force: true });
-    rmSync(origin, { recursive: true, force: true });
+  t.after(async () => {
+    await removeTree(parent);
+    await removeTree(origin);
   });
   execFileSync("git", ["clone", "-q", "--filter=blob:none", `file://${origin}`, clone], { stdio: "pipe" });
   rmSync(origin, { recursive: true, force: true });
@@ -211,9 +212,9 @@ test("a blobless clone whose remote is not called origin still answers offline",
   });
   const parent = mkdtempSync(join(tmpdir(), "anatomiya-partial-"));
   const clone = join(parent, "clone");
-  t.after(() => {
-    rmSync(parent, { recursive: true, force: true });
-    rmSync(origin, { recursive: true, force: true });
+  t.after(async () => {
+    await removeTree(parent);
+    await removeTree(origin);
   });
   execFileSync("git", ["clone", "-q", "-o", "upstream", "--filter=blob:none", `file://${origin}`, clone], {
     stdio: "pipe",
@@ -224,6 +225,123 @@ test("a blobless clone whose remote is not called origin still answers offline",
 
   assert.equal(map.error, undefined, `history must read offline: ${map.error}`);
   assert.deepEqual(sorted(map.get("src/b.ts")), ["second@t.test"]);
+});
+
+/**
+ * A `git` ahead of the real one on PATH for this test, which writes each call's
+ * arguments down and then runs `script`, with `$real` the git it stands in front of.
+ * Answers with the calls made so far, and `restore` takes it off PATH before the test ends.
+ */
+function gitWatched(t, script = "") {
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-authors-bin-"));
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "calls"), "");
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nreal='${real}'\necho " $* " >> '${join(bin, "calls")}'\n${script}\nexec "$real" "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  const calls = () => readFileSync(join(bin, "calls"), "utf8").split("\n").filter(Boolean);
+  calls.restore = () => {
+    process.env.PATH = path;
+    rmSync(bin, { recursive: true, force: true });
+  };
+  t.after(calls.restore);
+  return calls;
+}
+
+/** A rename with an edit, which `-M` follows and `-M100%` does not. */
+function renamedWithEdit(d, { git, write, author, commit }) {
+  write("src/a.ts", "export const a = 1\nexport const b = 2\n");
+  commit("one");
+  author("second@t.test");
+  git("mv", "src/a.ts", "src/b.ts");
+  write("src/b.ts", "export const a = 1\nexport const b = 2\nexport const c = 3\n");
+  commit("rename and edit");
+}
+
+const ASKS_PARTIAL = / config .*promisor/;
+const logsOf = (calls) => calls.filter((call) => / log .*--name-status /.test(call));
+
+test("a clone whose partial keys are not set is walked with -M, on one question", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const dir = repo(t, renamedWithEdit);
+  const calls = gitWatched(t);
+
+  const map = await authorsByFile(dir);
+
+  assert.equal(map.error, undefined);
+  assert.deepEqual(sorted(map.get("src/b.ts")), ["first@t.test", "second@t.test"]);
+  assert.equal(calls().filter((call) => ASKS_PARTIAL.test(call)).length, 1);
+  assert.equal(calls().filter((call) => / (remote|config --get) /.test(call)).length, 0);
+  assert.match(logsOf(calls())[0], / -M /);
+});
+
+// Written into the file between quotes, so a space at either end and a leading dash stay part of the value.
+const flagged = (...values) => (d) => appendFileSync(join(d, ".git", "config"), `[remote "Late"]\n${values.map((value) => `\tpromisor = "${value}"\n`).join("")}`);
+const flags = (spellings) => Object.fromEntries(spellings.map((spelling) => [`a remote's flag set to "${spelling}"`, flagged(spelling)]));
+
+test("a clone is partial where the extension names a promisor or a remote's flag reads as true to git", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const PARTIAL = {
+    "the extension": (d, git) => git("config", "extensions.partialClone", "origin"),
+    "a flag with no value": (d) => appendFileSync(join(d, ".git", "config"), '[remote "late"]\n\tpromisor\n'),
+    // Each answered `true` by `git config --type=bool`: the words in any case, and a number but zero in any base git's parser takes, scaled or not.
+    ...flags(["true", "yes", "on", "TRUE", "1", "2", "-1", "+1", "01", "010", "0x10", "0X1f", "1k", "1K", "1m", "1g", "017777777777", "0x7fffffff", "2147483647", "-2147483647", "-2147483648", " 1"]),
+    // git makes a promisor of the remote at the first value that is true, whatever a later one says.
+    "a flag set and then unset by a later value": flagged("true", "false"),
+  };
+  const WHOLE = flags(["false", "no", "OFF", "", "0", "00", "-0", "0x0", "0k"]);
+  for (const [flag, cases] of [["-M100%", PARTIAL], ["-M", WHOLE]]) {
+    for (const [name, set] of Object.entries(cases)) {
+      const dir = repo(t, (d, { git }) => set(d, git));
+      const calls = gitWatched(t);
+      await authorsByFile(dir);
+      const logs = logsOf(calls());
+      calls.restore();
+      assert.equal(logs.length, 1, name);
+      assert.equal(logs[0].includes(` ${flag} `), true, `${name}: ${logs[0]}`);
+    }
+  }
+});
+
+test("a promisor flag git refuses as a boolean is unread history, as the log git would die on", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // Each refused by `git config --type=bool` with "bad boolean config value".
+  const REFUSED = {
+    ...flags(["maybe", "08", "0x", "1.0", "1kb", "1 k", "2g", "2147483648", "020000000000", "0x80000000", "9999999999999999999999", "1 ", " true", "-", "+"]),
+    "a refused value before one git reads": flagged("maybe", "false"),
+  };
+  for (const [name, set] of Object.entries(REFUSED)) {
+    const dir = repo(t, (d, tools) => {
+      renamedWithEdit(d, tools);
+      set(d);
+    });
+    const calls = gitWatched(t);
+    const map = await authorsByFile(dir);
+    const made = calls();
+    calls.restore();
+    assert.equal(map.size, 0, name);
+    assert.match(map.error, /git could not say whether this clone is partial: remote\.Late\.promisor/, name);
+    assert.deepEqual(logsOf(made), [], name);
+  }
+});
+
+test("a git that cannot be asked whether the clone is partial is unread history, and no log is started on a guess", { ...needsShebang, ...needsPathControl }, async (t) => {
+  const NO_ANSWER = {
+    "a git that dies on the question": "kill -9 $$",
+    "a git that refuses it": "exit 129",
+    // The signal the runner stops a git with once its clock runs out, sent at once so no clock is waited on.
+    "a git stopped as one that hangs is": "kill -TERM $$",
+  };
+  for (const [name, how] of Object.entries(NO_ANSWER)) {
+    const dir = repo(t, renamedWithEdit);
+    const calls = gitWatched(t, `case " $* " in *" config "*promisor*) ${how};; esac`);
+
+    const map = await authorsByFile(dir);
+
+    const made = calls();
+    calls.restore();
+    assert.equal(map.size, 0, name);
+    assert.match(map.error, /git could not say whether this clone is partial/, name);
+    assert.equal(made.filter((call) => ASKS_PARTIAL.test(call)).length, 1, name);
+    assert.deepEqual(logsOf(made), [], name);
+  }
 });
 
 test("the root commit's author counts whatever log.showRoot says", async (t) => {
@@ -341,12 +459,38 @@ test("a clone that holds only a window of history says so, and a whole one says 
   assert.equal((await authorsByFile(dir)).shallow, null, "a whole history is not a window");
 
   const shallow = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
-  t.after(() => rmSync(shallow, { recursive: true, force: true }));
+  t.after(() => removeTree(shallow));
   execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, shallow], { stdio: "pipe" });
 
   const window = (await authorsByFile(shallow)).shallow;
   assert.equal(window.commits, 1, "one commit is what a depth-1 checkout holds");
   assert.match(window.oldest, /^\d{4}-\d{2}-\d{2}T/, "and the moment its history begins");
+});
+
+test("a clone git could not be asked the depth of is unread history, and one git answered about is read", needsGitStub, async (t) => {
+  // Read as whole, a depth-1 checkout states claims its full clone does not.
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    commit("a");
+  });
+  const probe = `*" rev-parse --is-shallow-repository "*`;
+
+  const calls = gitAhead(t, unasked(probe));
+  const unread = await authorsByFile(dir);
+  assert.match(unread.error, /^git could not be asked whether this clone holds its whole history: /);
+  assert.equal(unread.size, 0);
+  assert.equal(unread.shallow, null);
+  assert.deepEqual(calls().filter((call) => call.includes(" log ")), [], "no walk is read under an answer nobody gave");
+  // Nothing committed is an answer only where git gave it.
+  assert.match((await authorsByFile(repo(t, () => {}))).error, /^git could not be asked whether this clone holds/);
+  calls.restore();
+
+  // Any exit code is git's own answer: one that says nothing reads as whole.
+  gitAhead(t, exits(probe, 129));
+  const read = await authorsByFile(dir);
+  assert.equal(read.error, undefined);
+  assert.equal(read.shallow, null);
+  assert.deepEqual([...read.keys()], ["src/a.ts"]);
 });
 
 test("the boundary of a window is its oldest root, whatever order git prints them", async (t) => {
@@ -370,7 +514,7 @@ test("the boundary of a window is its oldest root, whatever order git prints the
   });
 
   const window = mkdtempSync(join(tmpdir(), "anatomiya-roots-"));
-  t.after(() => rmSync(window, { recursive: true, force: true }));
+  t.after(() => removeTree(window));
   execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, window], { stdio: "pipe" });
 
   const { shallow } = await authorsByFile(window);
@@ -403,7 +547,7 @@ test("the scan hands the gate the window it read, not just the author count", as
   assert.equal((await scan.scan(dir)).authors.shallow, null, "a whole clone read the whole history");
 
   const window = mkdtempSync(join(tmpdir(), "anatomiya-window-"));
-  t.after(() => rmSync(window, { recursive: true, force: true }));
+  t.after(() => removeTree(window));
   execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, window], { stdio: "pipe" });
 
   const truncated = await scan.scan(window);
@@ -542,7 +686,7 @@ test("history git could not read is distinguished from history that is empty", a
   // dimension. Buffering the log put an oversize repository in the same silent
   // branch as a repository with no commits: no authors, no claims, no reason.
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-nogit-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
 
   const unread = await authorsByFile(outside);
   assert.equal(unread.size, 0);

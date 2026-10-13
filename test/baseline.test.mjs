@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
+import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, removeTree } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +20,7 @@ import {
 // never runs.
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-baseline-test-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
@@ -253,6 +254,42 @@ test("a squashed-away baseline commit drops every directive to counts", async (t
   assert.equal(population.status, "unreachable");
 });
 
+test("a pinned commit git could not be asked about is not read as gone", needsGitStub, async (t) => {
+  const files = ["src/a/x.ts", "src/a/y.ts"];
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    for (const rel of files) write(rel, CONFORMING);
+    sha = commit("init");
+  });
+  const pin = buildPin([area("src/a", files)], { sha });
+  assert.equal((await resolve(dir, { pin, baseRef: "main" })).status, "ok");
+
+  gitAhead(t, unasked(ASKS_BY_ID));
+
+  await assert.rejects(() => resolve(dir, { pin, baseRef: "main" }), new RegExp(`git could not be asked whether commit ${sha} is still in this repository`));
+});
+
+for (const [what, asks] of [
+  ["the commit the pin and HEAD share", (pinned) => `*' merge-base ${pinned} HEAD '*`],
+  ["the commit the pin and the base share", (pinned, tip) => `*' merge-base ${pinned} ${tip} '*`],
+]) {
+  test(`${what}, where git could not be asked for it, stops the baseline and is not read as none`, needsGitStub, async (t) => {
+    const files = ["src/a/x.ts", "src/a/y.ts"];
+    let pinned, tip;
+    const dir = repo(t, (d, { write, commit }) => {
+      for (const rel of files) write(rel, CONFORMING);
+      pinned = commit("init");
+      write("src/a/z.ts", CONFORMING);
+      tip = commit("later");
+    });
+    const pin = buildPin([area("src/a", files)], { sha: pinned });
+
+    gitAhead(t, unasked(asks(pinned, tip)));
+
+    await assert.rejects(() => resolve(dir, { pin, baseRef: "main" }), /git could not be asked for the merge base of/);
+  });
+}
+
 test("the pin stores no counts, so there is nothing to fall back to", () => {
   const pin = buildPin([area("src/a", ["src/a/x.ts"])], { sha: "a".repeat(40) });
   const text = JSON.stringify(pin);
@@ -353,7 +390,7 @@ test("a .claude symlinked outside the repository refuses the pin write", async (
     sha = commit("init");
   });
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   symlinkSync(outside, join(dir, ".claude"));
 
   const pin = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
@@ -372,7 +409,7 @@ test("a pin read through a .claude symlinked outside the repository is no pin", 
     sha = commit("init");
   });
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const planted = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
   mkdirSync(join(outside, "anatomiya"), { recursive: true });
   writeFileSync(join(outside, "anatomiya", "baseline.json"), JSON.stringify(planted));
@@ -1116,7 +1153,7 @@ test("a pin path holding a fifo reads as no pin, rather than waiting on it", nee
   // scan and every check. Driven in a child with a bound, because a hung read
   // holds this process too.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-fifo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   execFileSync("mkfifo", [join(dir, PIN_PATH)]);
 
@@ -1142,7 +1179,7 @@ test("a linked worktree with no pin of its own reads its main checkout's, and it
   const main = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
   writePin(dir, main);
   const wt = join(mkdtempSync(join(tmpdir(), "anatomiya-baseline-wt-")), "wt");
-  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(wt, "..")));
   execFileSync("git", ["worktree", "add", "-q", wt], { cwd: dir, stdio: "pipe" });
 
   assert.deepEqual(loadPin(wt), main, "borrowed from the main checkout");
@@ -1217,7 +1254,7 @@ test("a baseline.json linked out of the repository is no pin", async (t) => {
     sha = commit("init");
   });
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const planted = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
   writeFileSync(join(outside, "baseline.json"), JSON.stringify(planted));
   mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });

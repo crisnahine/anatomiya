@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { repo } from "./ts-repo.mjs";
@@ -9,6 +8,7 @@ import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { MINITEST_SUPERCLASSES, TEST_RUNNER_MODULES, rubyFacets } from "../plugins/anatomiya/lib/facets.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { removeTree } from "./platform.mjs";
 
 /**
  * What a file says about itself, beside what the dimensions counted in it.
@@ -30,7 +30,7 @@ test("jsFacets reads imports, exports, jsx, runner and inline helpers", async (t
     "b.test.ts": `import { describe, it, expect } from "vitest"\ndescribe("b", () => { it("x", () => { expect(1).toBe(1) }) })\n`,
     "c.js": `const chai = require("chai")\ndescribe("c", function () {})\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["a.tsx", "b.test.ts", "c.js"]));
 
@@ -71,7 +71,7 @@ test("a CommonJS file's exports are read off its assignments", async (t) => {
     "klass.js": `module.exports = class Widget {}\n`,
     "named.js": `function make() {}\nexports.make = make\nmodule.exports.other = () => 1\nfunction hidden() {}\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["obj.js", "one.js", "anon.js", "klass.js", "named.js"];
   const { records } = await parseAll(list(dir, rels));
@@ -95,7 +95,7 @@ test("a chained CommonJS assignment hands out the object at the end of the chain
     "chain.js": `function a() {}\nfunction hidden() {}\nmodule.exports = exports = { a, b: 2 }\n`,
     "lazy.js": `function plain() {}\nmodule.exports = { get other() { return require("./other") }, plain }\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["chain.js", "lazy.js"]));
   const facets = (rel) => records.get(rel).facets;
@@ -120,7 +120,7 @@ test("a file whose Flow types were stripped still answers its facets", async (t)
       "",
     ].join("\n"),
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["flow.js"]));
   const r = records.get("flow.js");
@@ -143,7 +143,7 @@ test("rubyFacets says which test runner a file speaks", needsRuby, async (t) => 
     "test/b_test.rb": `class BTest < ActiveSupport::TestCase\n  def test_x\n  end\nend\n`,
     "app/models/c.rb": `class C < ApplicationRecord\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["spec/a_spec.rb", "test/b_test.rb", "app/models/c.rb"];
   const { records } = await parseAll(list(dir, rels));
@@ -193,7 +193,7 @@ test("every module the runner table names is read off a real import", async (t) 
     ])
   );
   const dir = repo(files);
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = Object.keys(files);
   const { records } = await parseAll(list(dir, rels));
@@ -215,7 +215,7 @@ test("a runner the table names is read off the import, qunit included", async (t
   const dir = repo({
     "tests/acceptance/login-test.js": `import { test } from "qunit"\nacceptance("Login", function () {\n  test("x", function (assert) { assert.ok(true) })\n})\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["tests/acceptance/login-test.js"]));
 
@@ -231,7 +231,7 @@ test("a type-only import does not set the test runner", async (t) => {
     "setup.ts": `import type { ProvidedContext } from "vitest"\nexport const ctx = 1\n`,
     "mixed.spec.ts": `import { test, type TestInfo } from "@playwright/test"\ntest("x", (info: TestInfo) => {})\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["setup.ts", "mixed.spec.ts"]));
 
@@ -262,7 +262,7 @@ test("a declared case does not let a type-only import name the runner", async (t
       `import type { TestContext } from "vitest"\n` +
       `describe("thing", () => {\n  it("works", (c: TestContext) => {})\n})\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["suite.spec.ts"]));
   const f = records.get("suite.spec.ts").facets;
@@ -277,7 +277,7 @@ test("an import alone does not set the test runner without a declared case", asy
     "page.ts": `import { Page } from "@playwright/test"\nexport class LoginPage {\n  page: Page\n  constructor(page: Page) { this.page = page }\n  async open() { await this.page.goto("/login") }\n}\n`,
     "no-import.cy.js": `describe("login", () => {\n  it("works", () => {\n    cy.visit("/login")\n  })\n})\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["cypress.config.ts", "page.ts", "no-import.cy.js"];
   const { records } = await parseAll(list(dir, rels));
@@ -324,7 +324,7 @@ test("every minitest base class the table names is read off a real class", needs
     MINITEST_TABLE.map((base, i) => [`app/models/m${i}.rb`, `class M${i} < ${base}\nend\n`])
   );
   const dir = repo(files);
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = Object.keys(files);
   const { records } = await parseAll(list(dir, rels));
@@ -350,7 +350,7 @@ test("a method named test_ in an ordinary class is not a minitest case", needsRu
     "test/webhook_test.rb": `class WebhookTest\n  def test_connection\n  end\nend\n`,
     "app/models/probe.rb": `class Probe < ActiveSupport::TestCase\n  def test_x\n  end\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["app/services/webhook.rb", "test/webhook_test.rb", "app/models/probe.rb"];
   const { records } = await parseAll(list(dir, rels));
@@ -370,7 +370,7 @@ test("a DSL call inside a method is not a case the file declares", needsRuby, as
     "app/pages/page.rb": `class Page\n  def open\n    context "x" do\n    end\n  end\nend\n`,
     "spec/foo_spec.rb": `RSpec.describe Foo do\n  it "x" do\n  end\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["app/pages/page.rb", "spec/foo_spec.rb"];
   const { records } = await parseAll(list(dir, rels));
@@ -389,7 +389,7 @@ test("an ordinary call named like the DSL is not one, without a block", needsRub
   const dir = repo({
     "app/services/charge.rb": `class Charge\n  include Interactor\n\n  def call\n    context.amount = 100\n  end\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["app/services/charge.rb"]));
   const r = records.get("app/services/charge.rb");
@@ -405,7 +405,7 @@ test("an RSpec-named call with a block and no description is not a case", needsR
   const dir = repo({
     "spec/factories/taggings.rb": `FactoryBot.define do\n  factory :tagging do\n    context { "tags" }\n  end\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["spec/factories/taggings.rb"]));
   const r = records.get("spec/factories/taggings.rb");
@@ -421,7 +421,7 @@ test("the declarative `test` macro inside a class body is minitest", needsRuby, 
     "app/models/concerns/testable.rb": `class ThingTest\n  test "does the thing" do\n    assert true\n  end\nend\n`,
     "app/lib/bare_test_call.rb": `test "not inside anything" do\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["app/models/concerns/testable.rb", "app/lib/bare_test_call.rb"];
   const { records } = await parseAll(list(dir, rels));
@@ -445,7 +445,7 @@ test("a class that reuses `test` as its own DSL is not minitest", needsRuby, asy
       `class ApprovalPolicy\n  test "approver is not the requester" do\n    true\n  end\nend\n`,
     "test/models/thing_test.rb": `class Whatever\n  test "still minitest by path" do\n    assert true\n  end\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["app/policies/approval_policy.rb", "test/models/thing_test.rb"];
   const { records } = await parseAll(list(dir, rels));
@@ -458,7 +458,7 @@ test("Beaker's `test_name` macro sets the runner", needsRuby, async (t) => {
   const dir = repo({
     "acceptance/tests/base/provision.rb": `test_name "provisions a node" do\n  step "installs the package"\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const { records } = await parseAll(list(dir, ["acceptance/tests/base/provision.rb"]));
   const r = records.get("acceptance/tests/base/provision.rb");
@@ -476,7 +476,7 @@ test("a table-driven case is a case, whatever wraps the runner's word", async (t
     "describe-each.test.ts": `import { describe, it } from "vitest"\ndescribe.each([1, 2])("n %i", (n) => { it("x", () => {}) })\n`,
     "tagged.test.ts": `import { it } from "@jest/globals"\nit.only.each\`a | b\n\${1} | \${1}\`("x", () => {})\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["each.test.ts", "describe-each.test.ts", "tagged.test.ts"];
   const { records } = await parseAll(list(dir, rels));
@@ -496,7 +496,7 @@ test("minitest's spec DSL is minitest, not RSpec", needsRuby, async (t) => {
     "spec/models/user_spec.rb": `describe User do\n  it "has a name" do\n  end\nend\n`,
     "test/explicit_test.rb": `RSpec.describe Thing do\n  it "x" do\n  end\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["test/models/user_test.rb", "lib/checks/probe.rb", "spec/models/user_spec.rb", "test/explicit_test.rb"];
   const { records } = await parseAll(list(dir, rels));
@@ -515,7 +515,7 @@ test("minitestByPath only trusts a top-level test tree", needsRuby, async (t) =>
     "Library/Homebrew/test/support/helper/test_each.rb": `module Test\n  module Helper\n    module TestEach\n      def test_each\n      end\n    end\n  end\nend\n`,
     "test/support_helper.rb": `module SupportHelper\n  def test_shared_case\n  end\nend\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["Library/Homebrew/test/support/helper/test_each.rb", "test/support_helper.rb"];
   const { records } = await parseAll(list(dir, rels));
@@ -539,7 +539,7 @@ test("a file the parse read and found no statement in says so", needsRuby, async
     "src/commented.test.ts": `// describe("a", () => { it("x", () => {}) })\n`,
     "src/real.test.ts": `describe("a", () => { it("x", () => {}) })\n`,
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const rels = ["spec/commented_spec.rb", "spec/real_spec.rb", "src/commented.test.ts", "src/real.test.ts"];
   const { records } = await parseAll(list(dir, rels));

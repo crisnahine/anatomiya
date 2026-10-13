@@ -85,9 +85,10 @@ without-map task diff, not more comment classification.
 ## What the measurements changed
 
 Every row here is a design that was in a specification and got replaced because a probe contradicted
-it. The reference in the last column is the numbered decision in `DECISIONS.md`, and that file's
-status column is what the code does today. The middle column is the decision the measurement forced,
-not a claim that it is built: three rows below are marked where the two differ.
+it. The reference in the last column is the numbered decision in `DECISIONS.md`, and the Status in
+that row's file under `docs/decisions/` is what the code does today. The middle column is the
+decision the measurement forced, not a claim that it is built: three rows below are marked where the
+two differ.
 
 | Measured | Decision it forced | Ref |
 |---|---|---|
@@ -167,5 +168,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 319 numbered decisions with the finding
-behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 335 numbered decisions, each linking to a
+file under [`decisions/`](decisions) with the finding behind it. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

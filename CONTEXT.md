@@ -368,12 +368,23 @@ _Avoid_: snapshot, lockfile, baseline
 **Hold**:
 A pin that has stopped following the remote default branch while the checkout sits on its tip, because
 a commit on the way was made in this clone or carries its committer identity, the tip was not brought
-by a fetch, or git could not say.
+by a fetch, or git could not say how the tip was brought or whether a commit on the way was made
+here. A pinned commit, or an order of two pins, that git **could not be asked** about is no hold:
+the refresh ends and nothing is recorded.
 Said to the person in the terminal and never to the agent, and ended by a pin taken by hand or by a
 refresh that finds nothing holding it any more. The word is also said of an area: an area holding a
 file of a language no parser answered for is held, its file neither rewritten nor removed, until a
 scan can read that language.
 _Avoid_: block, freeze, lock
+
+**Could not be asked**:
+Said of a question put to git that git never answered: the call ended with no exit code, by a
+signal or a start that failed, or was ended by its clock whatever code git left, or, for whether a commit is there, which commit a ref
+names and the merge base of two commits git holds, with an exit code other than 0 and 1, a 128 with nothing printed aside for a ref's name. It is no answer and is never read as a no. A scan, a
+pin and a check stop on one that would decide what is written and print the question, and a refresh
+ends and asks again later. A git that ran and said no has
+answered.
+_Avoid_: failed (alone: a git that ran and refused has answered), unread (for a call that stops a command; a hold's reason and a history keep the word), unanswerable
 
 **Population**:
 One area's slice of the pin: the files it held at the pinned commit, followed through renames to the names
@@ -465,6 +476,9 @@ or created. Nothing there is written or removed by that scan, and the rest of th
 The summary says so with a remedy, `--format json` carries `unwritable` on that target, and a
 refresh lists the directory under `stopped` in `refresh.json` and comes due again on its retry clock
 while it stays so. A scan that names the target refuses whole.
+A second sense, in the code and the decision rows only: a stopped run is a checker run the scan
+ended once its answer could only be a degraded verdict. It is never printed and does not reach the
+record.
 _Avoid_: left alone (for a stopped file), locked, skipped, failed
 
 **Main checkout**:
@@ -488,14 +502,29 @@ there is none, and each call answers alone.
 _Avoid_: claim (alone: that is a dimension's sentence), marker, token
 
 **Lock token**:
-What gives one call the right to break a dead lock beside a **batch claim**, for one generation of
-that lock: the lock file found dead, told apart from a later lock at the same name.
-_Avoid_: token (alone), lock (alone: that is the file it breaks)
+What gives one call the right to break a dead lock, for one generation of that lock: the lock file
+found dead, told apart from a later lock at the same name. The echo's lock beside a **batch claim**
+and the refresh's lock in the **store** are each broken through one. A lock token whose maker died
+is a dead lock too, broken through a lock token of its own, which is written "a token's own token".
+_Avoid_: token (alone, but for that one phrase), lock (alone: that is the file it breaks)
+
+**Store**:
+The directory a scan keeps its own files in, `.claude/anatomiya`: the **facts**, the **layout
+file**, the **pin**, the two **history stores**, and what the refresh leaves there. The **map** is
+not in it.
+_Avoid_: cache, data directory (that is the plugin's own, outside the repository)
+
+**History store**:
+What one history walk read of each commit, kept in the **store** so the next scan reads from git only
+the commits it has not seen. There are two, one for the walk that counts **authors** and one for
+the walk behind the **co-change claims**. It is a copy of what git printed, and one that cannot be
+checked is not used.
+_Avoid_: history cache, commit cache, log cache, store (alone, before the passage has named a history store: the **store** is the directory)
 
 **Facts**:
 The machine record of every slot, gated or not, including which side was stated. The map is derivable from
 it, and the check reads it rather than reading the map.
-_Avoid_: cache, state, database, store
+_Avoid_: cache, state, database, store (alone, for the facts: the **store** is the directory they sit in)
 
 **Layout file**:
 The facts' layout written again on its own beside them, stamped with the size and mtime of the facts

@@ -51,6 +51,8 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * are the checker's, and none is kept from a run that measures the tier degraded.
  * A failed run's verdict is carried from its second failure under one stamp
  * (`standsIn`): handed the first, the checker runs and the scan records the count.
+ * `history` is what the two history walks read their history stores through and leave
+ * for `saveHistory` to write: a scan itself writes nothing.
  */
 export async function scan(cwd, options = {}) {
   // A scan that fails anywhere stops the walk, rather than leave `git log` running behind the error.
@@ -62,7 +64,7 @@ export async function scan(cwd, options = {}) {
   }
 }
 
-async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null }, walkSignal) {
+async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll, carried = null, history = null }, walkSignal) {
   const started = Date.now();
   const scannedAt = new Date().toISOString();
   const root = await gitRoot(cwd);
@@ -80,6 +82,21 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   const checked = files.filter((f) => langHas(f.lang, "semantic"));
   const kept = carried !== null && standsIn(carried) ? carried : null;
   const stopChecker = new AbortController();
+  // A degraded tier keeps no type-checked row, so the checker's run ends once
+  // its rate, and where its rows have sites, say that is the verdict. The
+  // fold below decides it again over the same files, stubs for hits.
+  const partitioned = Promise.withResolvers();
+  const degradedAlready = async (sited) => {
+    const { areas, capabilities, frameworks, records } = await partitioned.promise;
+    const withSites = (f) => {
+      const record = records.get(f.rel);
+      const stubs = sited.records.get(f.rel)?.hits;
+      return record?.ok && stubs ? { ...record, hits: { ...record.hits, ...stubs } } : record;
+    };
+    // "all" is the tier the fold below takes for a run with a checker answer.
+    const folded = areas.filter((area) => foldedArea(area, withSites, { frameworks, capabilities, tier: "all" }));
+    return semanticOver(sited, countedIn(files, areas, folded, sited.records)).status === "degraded";
+  };
   const startChecker = async () => {
     const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checkedRels: checked.map((f) => f.rel) });
     if (offReason || kept !== null || stopChecker.signal.aborted) return { offReason, whole: null, measuredUnder: null };
@@ -87,12 +104,12 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     // not recorded as the one it measured, and only where it runs: a scan that
     // leaves the checker off reads no config.
     const measuredUnder = verdictStamp(root, buildVersion());
-    return { offReason, whole: await runChecker(root, checked, { signal: stopChecker.signal }), measuredUnder };
+    return { offReason, whole: await runChecker(root, checked, { signal: stopChecker.signal, stopWhen: degradedAlready }), measuredUnder };
   };
   // Neither needs the parse, so both start first; the checker only with a core
   // to spare, or it slows the parse's one worker. The catches are for a throw below.
   const semanticRun = defaultPoolSize() > 1 ? startChecker() : null;
-  const authorsRun = authorsByFile(root);
+  const authorsRun = authorsByFile(root, { history });
   semanticRun?.catch(() => {});
   authorsRun.catch(() => {});
 
@@ -101,7 +118,8 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   const stateRun = resolveState(root);
   stateRun.catch(() => {});
 
-  let state, frameworks, head, headRun, cochangeRun;
+  const corpusRels = new Set(files.map((f) => f.rel));
+  let state, frameworks, head, headRun, cochangeRun, capabilities, areas;
   try {
     // A claim that belongs to a framework cannot be judged without knowing the
     // repository uses it, and one file never says. Read from the corpus, so a
@@ -113,9 +131,36 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     state = await stateRun;
     // The walk stops at the pin, so it starts once the pin has answered, and
     // like the history read it needs nothing the parse makes.
-    cochangeRun = startCochange(root, state, { signal: walkSignal });
+    cochangeRun = startCochange(root, state, { signal: walkSignal, history });
     cochangeRun.catch(() => {});
     head = await headRun;
+    // Which routing claims this repository can be asked at all: at least three
+    // files already routing through a wrapper is what makes the habit real (C14).
+    capabilities = adoptedCapabilities(head.records);
+    // An obligation is answered by the corpus, not by a tree, so it is merged in
+    // after the parse rather than counted inside the worker.
+    applyPairings(head.records, corpusRels, langsIn(files));
+
+    // The areas are partitioned over the corpus the pin was built over where
+    // there is one. The floor is a step function of the corpus size, so deriving
+    // it from today's file count re-partitions the repository on one added file
+    // and every area then reads as a population change against a pin that knew
+    // the old one.
+    //
+    // Under a pin the ceiling is the one it settled on and nothing is given back:
+    // the give-back reads file content, so an edit that adds no file would move
+    // areas against the pin. A pin that names none folds at the plain ceiling.
+    const partitionSize = state.partitionSize ?? files.length;
+    const pinned = state.status === "ok" || state.status === "unreachable";
+    areas = discover(files, {
+      minFiles: areaFloor(partitionSize),
+      maxAreas: state.ceiling ?? areaCeiling(partitionSize),
+      uncounted,
+      countsNothing: pinned ? null : countsNothingIn(files, head.records, frameworks),
+    });
+    // Before the checker's answer is waited for, so its reader can ask while
+    // the checker still walks.
+    partitioned.resolve({ areas, capabilities, frameworks, records: head.records });
   } catch (err) {
     // Otherwise the process stays up until a checker nobody will read finishes.
     stopChecker.abort();
@@ -125,34 +170,9 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     throw err;
   }
   const { offReason, whole, measuredUnder } = await (semanticRun ?? startChecker());
-  // Which routing claims this repository can be asked at all: at least three
-  // files already routing through a wrapper is what makes the habit real (C14).
-  const capabilities = adoptedCapabilities(head.records);
   const tier = whole ? "all" : "syntactic";
   if (whole) mergeSemanticHits(head.records, whole.records);
-  // An obligation is answered by the corpus, not by a tree, so it is merged in
-  // after the parse rather than counted inside the worker.
-  const corpusRels = new Set(files.map((f) => f.rel));
-  applyPairings(head.records, corpusRels, langsIn(files));
   const headTruncated = corpusTruncated || head.truncated;
-
-  // The areas are partitioned over the corpus the pin was built over where
-  // there is one. The floor is a step function of the corpus size, so deriving
-  // it from today's file count re-partitions the repository on one added file
-  // and every area then reads as a population change against a pin that knew
-  // the old one.
-  //
-  // Under a pin the ceiling is the one it settled on and nothing is given back:
-  // the give-back reads file content, so an edit that adds no file would move
-  // areas against the pin. A pin that names none folds at the plain ceiling.
-  const partitionSize = state.partitionSize ?? files.length;
-  const pinned = state.status === "ok" || state.status === "unreachable";
-  const areas = discover(files, {
-    minFiles: areaFloor(partitionSize),
-    maxAreas: state.ceiling ?? areaCeiling(partitionSize),
-    uncounted,
-    countsNothing: pinned ? null : countsNothingIn(files, head.records, frameworks),
-  });
 
   const authors = await authorsRun;
   // Unread history and empty history both give every file zero authors, which
@@ -217,11 +237,9 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   // scanning a subtree answers differently from scanning the whole of it.
   const folded = [];
   for (const area of areas) {
-    const areaParsed = area.files.map((f) => head.records.get(f.rel)).filter(Boolean);
-    if (areaParsed.length === 0) continue;
-
-    const dims = reduceArea(area, areaParsed, { frameworks, capabilities, tier });
-    if (dims.length === 0) continue;
+    const counted = foldedArea(area, (f) => head.records.get(f.rel), { frameworks, capabilities, tier });
+    if (!counted) continue;
+    const { areaParsed, dims } = counted;
 
     // `measure` writes a record for every area it was handed, so a miss is a
     // caller measuring one list and reading another. Said out loud, because the
@@ -238,12 +256,12 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   // area's type-checked rows either. When no folded file was checked, the files
   // in no area stand in, so root code below the floor is still measured whether
   // the areas beside it were folded or held.
-  const inArea = new Set(areas.flatMap((a) => a.files.map((f) => f.rel)));
-  const areaFiles = folded.flatMap(({ area }) => area.files.map((f) => f.rel));
-  const counted = areaFiles.some((rel) => whole?.records.has(rel))
-    ? areaFiles
-    : files.map((f) => f.rel).filter((rel) => !inArea.has(rel));
-  const semantic = semanticOver(whole, counted);
+  const semantic = semanticOver(whole, countedIn(files, areas, folded.map((f) => f.area), whole?.records));
+  // A stopped run holds a stub for every site, each one conforming. Said out
+  // loud, because a tier that read ok would print them as what was counted.
+  if (whole?.stopped && semantic.status !== "degraded") {
+    throw new Error(`the checker was stopped as degraded and the fold reads it ${semantic.status}, so its rows were never counted`);
+  }
   // A checker that resolved too few types counted nothing to print, so its
   // rows leave the fold here, as they never enter it where the verdict is
   // carried: the two scans write the same map.
@@ -441,6 +459,25 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     layout: { ...layout, cochange },
     areas: out,
   };
+}
+
+/** An area's parsed records and the rows they reduce to, or null where it has none of either. */
+function foldedArea(area, recordOf, options) {
+  const areaParsed = area.files.map(recordOf).filter(Boolean);
+  if (areaParsed.length === 0) return null;
+  const dims = reduceArea(area, areaParsed, options);
+  return dims.length === 0 ? null : { areaParsed, dims };
+}
+
+/**
+ * The files the checker's rate is taken over: those of the folded areas, or
+ * those in no area where the checker read none of them.
+ */
+function countedIn(files, areas, foldedAreas, checkerRecords) {
+  const areaFiles = foldedAreas.flatMap((area) => area.files.map((f) => f.rel));
+  if (areaFiles.some((rel) => checkerRecords?.has(rel))) return areaFiles;
+  const inArea = new Set(areas.flatMap((a) => a.files.map((f) => f.rel)));
+  return files.map((f) => f.rel).filter((rel) => !inArea.has(rel));
 }
 
 /**

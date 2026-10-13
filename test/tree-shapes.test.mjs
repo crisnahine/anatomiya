@@ -71,6 +71,32 @@ test("every language names what the walk and the copy read", () => {
   }
 });
 
+test("every language names what the reuse check's line rule reads", () => {
+  // A binding to a literal is the one shape past comments and imports that asks nothing, so each
+  // language spells its bindings, its literals and what holds them; a value with no field is the
+  // binding's last named child.
+  for (const id of IDS) {
+    for (const key of ["binding", "literal", "unary", "collection"]) assert.ok(Array.isArray(SHAPES[id][key]), `${id}.${key}`);
+    assert.ok(SHAPES[id].binding.length > 0, `${id} names no binding`);
+    assert.ok(SHAPES[id].literal.length > 0, `${id} names no literal`);
+  }
+  assert.deepEqual(
+    IDS.map((id) => [id, SHAPES[id].value ?? null]),
+    [["python", "right"], ["php", "default_value"], ["go", "value"], ["java", "value"], ["csharp", null], ["rust", "value"], ["kotlin", null]],
+  );
+  // The other five bind by declaration alone, so a write through a member is no binding of theirs to rule out.
+  assert.deepEqual(
+    IDS.filter((id) => SHAPES[id].target),
+    ["python", "php"],
+    "the languages where an assignment binds a name or writes through a member",
+  );
+  assert.deepEqual(
+    IDS.filter((id) => SHAPES[id].interpolation),
+    ["python", "php", "java", "kotlin"],
+    "the languages whose string literal can hold an interpolation",
+  );
+});
+
 test("a Go method has no body around it to be a class", () => {
   assert.deepEqual(SHAPES.go.cls, []);
   for (const id of IDS.filter((lang) => lang !== "go")) assert.ok(SHAPES[id].cls.length > 0, `${id} names no class body`);

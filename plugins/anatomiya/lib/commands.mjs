@@ -9,8 +9,8 @@ import { check } from "./check.mjs";
 import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
-import { caseMagic, gitBuffered, headSha } from "./git.mjs";
-import { encodePath, firstLine } from "./encode.mjs";
+import { answered, caseMagic, failureOf, gitBuffered, headSha } from "./git.mjs";
+import { encodePath } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
 import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, pendingAmong, PREFIX, RULES_DIR, targetStatus, trackedRulesDir, turningOff } from "./rules.mjs";
@@ -20,6 +20,7 @@ import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, p
 import { otherEntries, pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { removeStaleHook } from "./hook.mjs";
+import { saveHistory } from "./history.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -36,9 +37,12 @@ import { removeStaleHook } from "./hook.mjs";
  * `leaveAlone` is the other targets whose files this scan leaves as they are.
  * `carried` is the checker's last measured verdict, which only a refresh hands
  * in: the scan then does not run the checker, and a scan a person runs always does.
+ * `history` in the answer says, per history walk, how many commits its store
+ * supplied, how many git was asked for, and whether the store was written.
  */
 export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone = [], carried = null } = {}) {
-  const result = await (carried !== null ? scan(cwd, { carried }) : scan(cwd));
+  const history = {};
+  const result = await scan(cwd, carried !== null ? { carried, history } : { history });
   // Only where it left nothing to read (B13). An engine missing for one
   // language costs that language's files and the scan goes on for the rest:
   // refusing here gave a TypeScript repository with one Gemfile no map at all
@@ -47,6 +51,10 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
   const plan = writeMap(result, { dryRun, targets, leaveAlone });
+  // After the map, into the directory it made, and never on a dry run, which
+  // drops what its walks read: the history stores are copies of what git
+  // printed, kept beside the record, in no plan and no summary.
+  await saveHistory(result.root, history, { write: !dryRun });
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
   // settings, where `${CLAUDE_PLUGIN_ROOT}` is never substituted and Claude Code
   // refuses the hook by name on every prompt and every tool call. The plugin
@@ -54,7 +62,7 @@ export async function runScan(cwd, { dryRun = false, targets = null, leaveAlone 
   // answers with a refusal rather than throwing one; the reasons are in
   // `removeStaleHook`.
   const hook = removeStaleHook(result.root, { dryRun });
-  return { result, plan, hook, summary: scanSummary(result, plan, { dryRun, hook }) };
+  return { result, plan, hook, history, summary: scanSummary(result, plan, { dryRun, hook }) };
 }
 
 /**
@@ -160,9 +168,10 @@ async function refuseUnlikeHead(root) {
   // listed once per stage, so a pin taken mid-merge holds it three times and a
   // corpus larger than the tree, and the corpus fixes the area floor for every
   // scan after.
-  const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
-  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${firstLine(unmerged.error ?? "")}`);
-  const merging = (await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"])).ok;
+  // Each of the three throws `Unasked` where git gave no exit code, which the refresh worker tells from a refusal (F29).
+  const unmerged = answered(await gitBuffered(root, ["ls-files", "--unmerged", "-z"]), "whether the index holds unmerged paths");
+  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${failureOf(unmerged)}`);
+  const merging = answered(await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]), "whether a merge is in progress").ok;
   const inMerge = "a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin";
   if (unmerged.stdout.length > 0) {
     // A rebase, cherry-pick, revert, am or stash pop leaves them too, with no merge to abort.
@@ -178,8 +187,8 @@ async function refuseUnlikeHead(root) {
   const rules = trackedRulesDir(root);
   const exclude = `:(${["exclude", await caseMagic(root)].filter(Boolean).join(",")})`;
   const own = [...(rules === RULES_DIR ? [] : [`${rules}/${PREFIX}*.md`]), ...EXCLUDE_LINES].map((line) => `${exclude}${line}`);
-  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]);
-  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
+  const dirty = answered(await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]), "whether the working tree matches HEAD");
+  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${failureOf(dirty)}`);
   if (dirty.stdout.length > 0) {
     // Stashing a merge in progress drops the merge.
     throw new Error(merging ? inMerge : "tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");

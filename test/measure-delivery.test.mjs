@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   eventOf,
+  eventsIn,
   parseArgs,
   sessionOf,
   summarize,
   tableOf,
 } from "../scripts/measure-delivery.mjs";
-import { compact } from "./transcript.mjs";
+import { compact, filler, transcript } from "./transcript.mjs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +45,12 @@ test("a rule file with no paths key is delivered unscoped", () => {
 test("both shapes of a compaction boundary are one event", () => {
   assert.deepEqual(eventOf(compact()), { kind: "compact" });
   assert.deepEqual(eventOf({ isCompactSummary: true, type: "user" }), { kind: "compact" });
+});
+
+test("a transcript's compactions are counted in either shape", async (t) => {
+  const path = transcript(t, [delivery(LIB), filler(64), compact(), { isCompactSummary: true, type: "user" }, filler(64)]);
+
+  assert.deepEqual((await eventsIn(path, null)).map((event) => event.kind), ["delivery", "compact", "compact"]);
 });
 
 // The first cut of this measurement counted every line mentioning a rule

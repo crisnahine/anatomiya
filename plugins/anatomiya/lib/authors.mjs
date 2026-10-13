@@ -1,10 +1,9 @@
-import { gitBuffered, gitStreamed } from "./git.mjs";
-
-// A record separator git will never find inside an email address or a path.
-const SEP = "\x1e";
+import { Unasked, answered, failureOf, gitBuffered } from "./git.mjs";
+import { SEP, historyFields } from "./history.mjs";
 
 /**
- * Distinct authors per file, from ONE pass over history.
+ * Distinct authors per file, from one read of history in git's order: one
+ * `git log` pass, or the same commits replayed from a history store (`history.mjs`).
  *
  * Measured: one `git log` pass is 0.03s to 0.84s regardless of file count,
  * against 103s for per-file calls on an eight-year repository, and the two
@@ -30,8 +29,37 @@ const SEP = "\x1e";
  *
  * Returns a Map of path to a Set of emails, carrying `error` when git itself
  * failed, so a scan can tell an empty history from an unread one.
+ *
+ * `history` is one scan's: with it the commits a history store already holds are
+ * replayed and only the rest are asked of git (`history.mjs`).
  */
-export async function authorsByFile(root) {
+export async function authorsByFile(root, { history = null } = {}) {
+  // Asked before the log rather than after it: the map carries the answer
+  // however the log goes, a repository with nothing committed included.
+  let shallow = null;
+  let reader = authorsReader();
+  let error;
+  try {
+    shallow = await shallowHistory(root);
+    // A read given up part way starts over, and the reader with it.
+    await logStream(root, () => (reader = authorsReader()).onField, history);
+  } catch (err) {
+    // A repository with no commits yields no authors, and `git log` fails on
+    // it. That is a gap the author gate handles, not a failure, so the two are
+    // told apart by asking whether HEAD resolves rather than by reading git's
+    // message, which is translated. Anything else travels with the map: unread
+    // history and empty history both state nothing, and only one is an answer.
+    // A question git could not be asked is unread history whatever HEAD says.
+    if (err instanceof Unasked || (await headState(root)) !== "no-commits") error = String(err && err.message ? err.message : err);
+  }
+  const { map } = reader;
+  map.shallow = shallow;
+  if (error !== undefined) map.error = error;
+  return map;
+}
+
+/** The map one walk builds, and the reader that builds it a field at a time. */
+function authorsReader() {
   const map = new Map();
   const renamedTo = new Map();
 
@@ -107,23 +135,7 @@ export async function authorsByFile(root) {
     }
   };
 
-  // Asked before the log rather than after it: every return below carries the
-  // answer, including the one for a repository with nothing committed.
-  map.shallow = await shallowHistory(root);
-
-  try {
-    await logStream(root, onField);
-  } catch (err) {
-    // A repository with no commits yields no authors, and `git log` fails on
-    // it. That is a gap the author gate handles, not a failure, so the two are
-    // told apart by asking whether HEAD resolves rather than by reading git's
-    // message, which is translated. Anything else travels with the map: unread
-    // history and empty history both state nothing, and only one is an answer.
-    if ((await headState(root)) === "no-commits") return map;
-    map.error = String(err && err.message ? err.message : err);
-  }
-
-  return map;
+  return { map, onField };
 }
 
 /**
@@ -148,9 +160,10 @@ async function headState(root) {
  * is what `actions/checkout` does by default, held one author, dropped the
  * author bar to one and stated 484 claims where the full clone states 465.
  *
- * Null where the clone is whole, and null where the question cannot be
- * answered: a call that fails reads as not shallow, which costs a caveat rather
- * than a wrong answer (F15).
+ * Null where the clone is whole, and where git ran and gave any other answer.
+ * It throws where git could not be asked: read as whole, a window states the
+ * claims above, so the history is unread. A count or a root that could not be
+ * read leaves the clone shallow with that part unknown.
  *
  * The boundary is the grafted root, which is the oldest commit the clone holds.
  * A shallow cut across a merge can graft more than one, and `log` orders by
@@ -158,7 +171,7 @@ async function headState(root) {
  * whichever line git printed last.
  */
 async function shallowHistory(root) {
-  const asked = await gitBuffered(root, ["rev-parse", "--is-shallow-repository"]);
+  const asked = answered(await gitBuffered(root, ["rev-parse", "--is-shallow-repository"]), "whether this clone holds its whole history");
   if (!asked.ok || asked.stdout.trim() !== "true") return null;
   const counted = await gitBuffered(root, ["rev-list", "--count", "HEAD"]);
   const commits = counted.ok ? Number.parseInt(counted.stdout.trim(), 10) : Number.NaN;
@@ -186,51 +199,86 @@ async function shallowHistory(root) {
  * where `-M` cannot work rather than everywhere.
  *
  * Any remote can be the promisor, not only `origin`: `git clone -o upstream
- * --filter=blob:none` marks `remote.upstream.promisor`, and a check of origin
- * alone took that clone for a full one and read no history at all. A clone
- * sets `extensions.partialClone` to its promisor's name, so that answers first;
- * each remote's own flag covers a promisor added after the clone.
+ * --filter=blob:none` marks `remote.upstream.promisor`. A clone sets
+ * `extensions.partialClone` to its promisor's name, and each remote's own
+ * flag covers a promisor added after the clone: one read answers for both.
+ *
+ * It throws where git cannot be asked, and where a flag holds a value git
+ * refuses as a boolean, which its own `log` dies on. "Not partial" is an
+ * answer, and one given on a guess picks `-M` for a clone that needs
+ * `-M100%`: the map then differs from one scan to the next.
  */
 async function isPartialClone(root) {
-  const ext = await gitBuffered(root, ["config", "--get", "extensions.partialClone"]);
-  if (ext.ok && ext.stdout.trim() !== "") return true;
-  const remotes = await gitBuffered(root, ["remote"]);
-  if (!remotes.ok) return false;
-  for (const name of remotes.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    const r = await gitBuffered(root, ["config", "--get", `remote.${name}.promisor`]);
-    if (r.ok && /^(true|yes|on|1)$/i.test(r.stdout.trim())) return true;
+  const asked = await gitBuffered(root, ["config", "--null", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.promisor)$"]);
+  // Exit code 1 is git saying neither key is set.
+  if (!asked.ok && asked.code !== 1) throw new Error(`git could not say whether this clone is partial: ${failureOf(asked)}`);
+  let extension;
+  let flagged = false;
+  // A key and its value a line apart, and a key with no value alone.
+  for (const [key, value] of asked.stdout.split("\0").filter(Boolean).map((entry) => entry.split(/\n(.*)/s, 2))) {
+    if (key === "extensions.partialclone") {
+      extension = value;
+      continue;
+    }
+    const flag = gitBoolean(value);
+    if (flag === null) throw new Error(`git could not say whether this clone is partial: ${key} holds no boolean git reads`);
+    // git makes a promisor of the remote at the first value that is true, whatever a later one says.
+    flagged ||= flag;
   }
-  return false;
+  return flagged || Boolean(extension?.trim());
 }
 
 /**
- * Feed each NUL-delimited field of the log to `onField`.
+ * A configuration value as git reads a boolean, or null where git refuses it:
+ * a key with no value is true and an empty one false, then the words in any
+ * case, then an integer as `strtoimax` reads one with base 0 (`0x10`, `010`),
+ * which a `k`, `m` or `g` scales and which must fit an `int`. Any but zero is true.
+ */
+function gitBoolean(value) {
+  if (value === undefined) return true;
+  if (value === "") return false;
+  if (/^(?:true|yes|on)$/i.test(value)) return true;
+  if (/^(?:false|no|off)$/i.test(value)) return false;
+  const number = /^[ \t\n\v\f\r]*([+-]?)(0x[0-9a-f]+|0[0-7]*|[1-9][0-9]*)([kmg]?)$/i.exec(value);
+  if (number === null) return null;
+  const [, sign, digits, unit] = number;
+  const size = BigInt(/^0[0-7]/.test(digits) ? `0o${digits.slice(1)}` : digits) * 1024n ** BigInt(["", "k", "m", "g"].indexOf(unit.toLowerCase()));
+  // git 2.54 takes the least `int` and 2.39 refuses it; read as true, the log of a git that refuses it says so itself.
+  if (size > 2n ** 31n - (sign === "-" ? 0n : 1n)) return null;
+  return size !== 0n;
+}
+
+/**
+ * Feed each NUL-delimited field of the log to the reader `open` answers with.
  *
  * The rename-chain state machine above stays here, because it is this pass's
  * own reading of what the fields mean and forcing it through a shared parser
  * would cost more clarity than the sharing buys. What crosses the seam is the
  * field split alone.
  */
-async function logStream(root, onField) {
+async function logStream(root, open, history) {
   const partial = await isPartialClone(root);
-  return gitStreamed(
+  return historyFields(
     root,
-    // Nothing follows `--`, which is the rule for every git call here: no
-    // argument after it can be read as an option. `%aE` is the address after
-    // the repository's .mailmap, so a person the repository has already said
-    // is one person under two addresses is counted once.
-    // `log.showRoot=false` prints no diff for a root commit, so every file the
-    // first commit added would carry no author: forced back on, as git ships it.
-    ["-c", "log.showRoot=true", "log", partial ? "-M100%" : "-M", "--no-merges", "--name-status", "-z", `--format=${SEP}%aE`, "--"],
-    onField,
     {
-      // `--format` leaves the final record unterminated, so a remainder at exit
-      // is the last commit's author rather than a truncated one.
-      terminated: false,
+      kind: "authors",
+      renames: true,
+      // `log.showRoot=false` prints no diff for a root commit, so every file the
+      // first commit added would carry no author: forced back on, as git ships it.
+      config: ["-c", "log.showRoot=true"],
+      tip: [],
+      walk: ["--no-merges"],
+      // `%aE`, which the walk asks for, is the address after the repository's
+      // .mailmap, so a person the repository has already said is one person
+      // under two addresses is counted once.
+      diff: [partial ? "-M100%" : "-M", "--name-status", "-z"],
+      cap: [],
       // Belt as well as braces on a partial clone: nothing in this walk may
       // reach the network, so a missing object fails here instead of hanging.
       env: partial ? { ...process.env, GIT_NO_LAZY_FETCH: "1" } : process.env,
-    }
+    },
+    open,
+    { history }
   );
 }
 

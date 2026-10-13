@@ -1,7 +1,7 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
-import { caseMagic, gitBuffered, gitStreamed } from "./git.mjs";
+import { answered, caseMagic, gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { placedTests } from "./layout.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
@@ -254,10 +254,17 @@ async function generatedAttrRules(root, { timeout } = {}) {
  * together, so asking costs one git read in a row, not two.
  */
 async function rootAttributes(root, timeout) {
-  const [listed, blob] = await Promise.all([
-    gitBuffered(root, ["ls-files", "-v", "-z", "--", ".gitattributes"], { timeout }),
-    gitBuffered(root, ["cat-file", "blob", ":.gitattributes"], { timeout }),
+  // Unasked is not an index that marks nothing: the working tree's file would then decide what counts as source (F29).
+  // Past the bound git did answer, with more than is read: the working tree's file decides.
+  const ask = (args, question) => gitBuffered(root, args, { timeout }).then((r) => (r.oversize ? r : answered(r, question)));
+  // Both are awaited to their end before a throw is passed on, so no git is left running behind it.
+  const ended = await Promise.allSettled([
+    ask(["ls-files", "-v", "-z", "--", ".gitattributes"], "how the index marks .gitattributes"),
+    ask(["cat-file", "blob", ":.gitattributes"], "for the index's .gitattributes"),
   ]);
+  const unasked = ended.find((read) => read.status === "rejected");
+  if (unasked) throw unasked.reason;
+  const [listed, blob] = ended.map((read) => read.value);
   if (listed.ok && blob.ok && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
   const abs = safeResolve(root, ".gitattributes");
   const file = abs ? readHead(abs, ATTR_FILE_BYTES) : null;

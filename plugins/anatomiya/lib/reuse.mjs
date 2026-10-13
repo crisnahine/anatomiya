@@ -14,13 +14,15 @@ import { join } from "node:path";
 import { addedRanges, pendingPaths } from "./changeset.mjs";
 import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
-import { gitBuffered, operationUnfinished } from "./git.mjs";
+import { gitBuffered, operationUnfinished, Unasked } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
+import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
 import { embeddedIn, engineOf, language } from "./langs.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
+import { sessionStartIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -39,7 +41,7 @@ const MARKED_MOST = 200;
 
 // This session's own asks sit at the end of its transcript, and its first
 // entry at the start.
-const TRANSCRIPT_MOST = 64 * 1024 * 1024;
+export const TRANSCRIPT_MOST = 64 * 1024 * 1024;
 const TRANSCRIPT_HEAD = 64 * 1024;
 
 // A turn's commits are the last lines of the reflog, and one kept for years
@@ -60,156 +62,7 @@ const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 // Only the file right under the directory: measured on the corpus, code nested
 // deeper under a `migrations` segment (angular's schematics, prisma's
 // `core/migrations`, openproject's `db/migrate/tables`) is ordinary library code.
-const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
-
-// The only lines a hunk may hold and still ask nothing, per engine: a comment,
-// an import, a name bound to a literal or a member of one, and a closing
-// bracket. Anything else may define something callable, so it asks.
-const V = "\0";
-const KEY = { oxc: String.raw`(?:[A-Za-z_$][\w$]*|\0|\[\0\])\s*:\s*`, prism: String.raw`(?:[A-Za-z_]\w*[?!]?:\s*|\0:?\s*=>\s*|\0:\s*)` };
-const LITERAL = {
-  oxc: /(?<![\w$.])-?(?:0[xXbBoO][\da-fA-F_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?)n?(?![\w$])|(?<![\w$.])(?:true|false|null|undefined)(?![\w$])/g,
-  prism:
-    /%[wi](?:\[[^\]]*\]|\([^)]*\))|(?<![\w:]):[A-Za-z_]\w*[?!=]?|(?<![\w.])-?(?:0[xXbBoO][\da-fA-F_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?)(?![\w])|(?<![\w.:])(?:true|false|nil)(?![\w?!])/g,
-};
-const STRING = {
-  oxc: { '"': /"(?:[^"\\]|\\.)*"/y, "'": /'(?:[^'\\]|\\.)*'/y, "`": /`(?:[^`\\$]|\\.)*`/y },
-  prism: { '"': /"(?:[^"\\#]|\\.)*"/y, "'": /'(?:[^'\\]|\\.)*'/y },
-};
-const NAME = { oxc: String.raw`(?:export\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*(?:\s*:\s*[\w$.<>[\]|&, ]+?)?`, prism: String.raw`[A-Za-z_]\w*` };
-const INERT = {
-  oxc: {
-    bind: new RegExp(String.raw`^${NAME.oxc}\s*=\s*(?:\0(?:\s+as\s+const)?\s*;?|([[{]))$`),
-    other: new RegExp(
-      String.raw`^(?:import\s+(?:type\s+)?(?:[\w$\s,{}*\0]+?\s+from\s+)?\0|export\s+(?:type\s+)?[\w$\s,{}*]+?\s+from\s+\0|(?:(?:const|let|var)\s+(?:[\w$]+|\{[\w$\s,:]*\})\s*=\s*)?require\(\0\)(?:\.[\w$]+)?|\0|[\]})]+(?:\s*as\s+const)?\s*[,;]?)\s*;?$`
-    ),
-    block: /^(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{$/,
-    blockEnd: /^\}\s*from\s+\0\s*;?$/,
-  },
-  prism: {
-    bind: new RegExp(String.raw`^${NAME.prism}\s*=\s*(?:\0(?:\.freeze)?|([[{]))$`),
-    other: /^(?:require(?:_relative)?(?:\s+\0|\s*\(\s*\0\s*\))|(?:end|[\]})]+)(?:\.freeze)?,?)$/,
-  },
-};
-for (const [engine, rule] of Object.entries(INERT)) {
-  const member = String.raw`(?:${KEY[engine]})?\0`;
-  const list = String.raw`\s*(?:${member}\s*,\s*)*(?:${member}\s*,?\s*)?`;
-  rule.collection = new RegExp(String.raw`\[${list}\]|\{${list}\}`, "g");
-  rule.member = new RegExp(String.raw`^(?:[\]}]+\s*,\s*)?(?:${KEY[engine]})?(?:\0|[[{])\s*,?$`);
-}
-
-// A name inside a braced import or re-export, or a blank line between them.
-const BLOCK_NAME = /^$|^(?:type\s+)?[\w$]+(?:\s+as\s+[\w$]+)?\s*,?$/;
-
-// Past this a line asks unread, which bounds what each search costs.
-const LINE_READ = 400;
-
-/**
- * A line with its strings, numbers and literal collections each read as one
- * value and its comment dropped, or what it leaves open: a block comment, a
- * string or a heredoc that runs on to a later line.
- */
-function reduce(engine, line) {
-  const strings = STRING[engine];
-  let out = "";
-  let open = null;
-  for (let i = 0; i < line.length; ) {
-    const c = line[i];
-    if ((engine === "prism" && c === "#") || (engine === "oxc" && c === "/" && line[i + 1] === "/")) break;
-    if (engine === "oxc" && c === "/" && line[i + 1] === "*") {
-      const end = line.indexOf("*/", i + 2);
-      if (end === -1) {
-        open = "*/";
-        break;
-      }
-      i = end + 2;
-      out += " ";
-      continue;
-    }
-    if (c in strings) {
-      const re = strings[c];
-      re.lastIndex = i;
-      if (!re.test(line)) {
-        // Odd quotes leave a string running on; a closed one this does not read is no literal.
-        const odd = line.slice(i).split(c).length % 2 === 0;
-        return { code: null, open: odd && (engine === "prism" || c === "`") ? c : null };
-      }
-      out += V;
-      i = re.lastIndex;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  let code = out.replace(LITERAL[engine], V).trim();
-  const { collection } = INERT[engine];
-  for (let before = ""; before !== code; ) [before, code] = [code, code.replace(collection, V)];
-  return { code, open };
-}
-
-/** Which of a file's lines provably define nothing callable, blank ones included. */
-function inertLines(engine, lines) {
-  const rule = INERT[engine];
-  const inert = lines.map((line) => line.trim() === "");
-  let open = null;
-  let depth = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (open !== null) {
-      // Inside a comment is inert; inside a string or a heredoc is not a literal this reads.
-      const comment = open === "*/" || open === "=end";
-      const closed = open === "=end" ? line.startsWith("=end") : open.startsWith("<<") ? line.trim() === open.slice(2) : line.includes(open);
-      if (comment) inert[i] = !closed || line.slice(line.indexOf(open) + open.length).trim() === "";
-      if (closed) open = null;
-      continue;
-    }
-    if (inert[i]) continue;
-    if (line.length > LINE_READ) {
-      depth = 0;
-      continue;
-    }
-    if (engine === "prism") {
-      if (line.startsWith("=begin")) {
-        [inert[i], open] = [true, "=end"];
-        continue;
-      }
-      const heredoc = /<<[~-]?(["'`]?)([A-Za-z_]\w*)\1/.exec(line);
-      if (heredoc !== null) {
-        [open, depth] = [`<<${heredoc[2]}`, 0];
-        continue;
-      }
-    }
-    const { code, open: left } = reduce(engine, line);
-    open = left;
-    if (code === null) {
-      depth = 0;
-      continue;
-    }
-    if (code === "") inert[i] = true;
-    else if (depth > 0 && rule.member.test(code)) {
-      inert[i] = true;
-      depth += code.split(/[[{]/).length - code.split(/[\]}]/).length;
-    } else if (rule.other.test(code)) {
-      inert[i] = true;
-      depth = Math.max(0, depth - (code.split(/[\]}]/).length - 1));
-    } else {
-      const bound = rule.bind.exec(code);
-      depth = bound?.[1] ? 1 : 0;
-      inert[i] = bound !== null;
-      if (bound === null && rule.block?.test(code)) {
-        // A braced import or re-export spread over lines, read up to its `from`.
-        let j = i + 1;
-        const names = (k) => reduce(engine, lines[k]).code;
-        while (j < lines.length && lines[j].length <= LINE_READ && BLOCK_NAME.test(names(j) ?? "-")) j++;
-        if (j < lines.length && rule.blockEnd.test(names(j) ?? "")) {
-          for (let k = i; k <= j; k++) inert[k] = true;
-          i = j;
-        }
-      }
-    }
-  }
-  return inert;
-}
+export const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
 
 /**
  * The script a component file holds: the lines its blocks cover, and which of
@@ -218,7 +71,7 @@ function inertLines(engine, lines) {
  * Each block is read with the file blanked around it, since markup that opens
  * a comment would carry it into the script below.
  */
-function componentScript(engine, source, kind) {
+async function componentScript(engine, lang, source, kind, deadline) {
   const { blocks, unterminated } = scriptBlocks(source, kind);
   const lineAt = (offset) => source.slice(0, offset).split("\n").length;
   const spans = (unterminated ? [] : blocks).flatMap((b) => {
@@ -226,7 +79,7 @@ function componentScript(engine, source, kind) {
     if (body.trim() === "") return [];
     return [{ from: lineAt(b.end - body.trimStart().length), to: lineAt(b.start + body.trimEnd().length) }];
   });
-  const views = blocks.map((b) => inertLines(engine, blankOutside(source, b.start, b.end).split("\n")));
+  const views = await Promise.all(blocks.map((b) => inertLinesOf({ engine, lang, source: blankOutside(source, b.start, b.end), deadline })));
   return { spans, inert: views[0]?.map((_, i) => views.every((view) => view[i])) ?? [] };
 }
 
@@ -279,12 +132,15 @@ export function reuseRecord(files) {
  * out, and so is a hunk whose every added line provably defines nothing
  * callable.
  *
+ * `parsing` holds the deadline every file a rule reads in the stop shares, set
+ * at the first one: the hook reads every checkout of a stop against one budget.
+ *
  * `turnStart` adds what this turn committed: a turn told to write and commit
  * leaves the tree clean, and read against HEAD alone its work was never asked
  * about. The commits are found in the reflog rather than in state this writes,
  * since a marker file would be one more change `git status` reports (A91).
  */
-export async function pendingChange(root, { since = null, turnStart = null, calls = null } = {}) {
+export async function pendingChange(root, { since = null, turnStart = null, calls = null, parsing = { deadline: null } } = {}) {
   // git names every path from the top of the checkout, which is where a scan
   // writes its record. A record further down came with a copy of another
   // project, and joined against it git's paths name files nobody changed.
@@ -296,9 +152,14 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const [pending, gitdir, dropOf] = await Promise.all([
     pendingPaths(root, { timeout: REUSE_GIT_MS }),
     gitDir(root),
-    corpusDrop(root, { timeout: REUSE_GIT_MS }),
+    // The hook reads every checkout of a stop together: one whose attributes git could not be asked for
+    // asks nothing, as one whose status git would not give does, and the others are still read.
+    corpusDrop(root, { timeout: REUSE_GIT_MS }).catch((err) => {
+      if (err instanceof Unasked) return null;
+      throw err;
+    }),
   ]);
-  if (gitdir === null || operationUnfinished(gitdir) || pending === null) return null;
+  if (gitdir === null || operationUnfinished(gitdir) || pending === null || dropOf === null) return null;
   // One diff from before the turn's first commit to the tree reads what it
   // committed and what it left uncommitted together, so the reads in a row
   // stay two however many commits the turn made.
@@ -317,11 +178,10 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
     if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
-    // An engine with no line rule cannot tell a function from a comment, so its files ask nothing.
-    // The absence is deliberate until a language has a rule of its own.
+    // An engine with no rule cannot tell a function from a comment, so its files ask nothing.
     const lang = language(path);
     const engine = engineOf(lang);
-    if (!(engine in INERT)) continue;
+    if (!INERT_ENGINES.includes(engine)) continue;
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
@@ -332,10 +192,15 @@ export async function pendingChange(root, { since = null, turnStart = null, call
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
     const kind = embeddedIn(lang);
-    const script = kind === null ? null : componentScript(engine, entry.head, kind);
+    parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
+    const script = kind === null ? null : await componentScript(engine, lang, entry.head, kind, parsing.deadline);
     const hunks = script === null ? added : clipped(added, script.spans);
-    const inert = script === null ? inertLines(engine, entry.head.split("\n")) : script.inert;
-    const defining = hunks.filter((h) => !inert.slice(h.from - 1, h.to).every(Boolean));
+    const inert = script === null ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline }) : script.inert;
+    // A missing runtime or grammar reads nothing, and a file nothing read asks nothing.
+    if (inert === null) continue;
+    // A line past the end of what was read is one nobody read, so its hunk asks.
+    const read = lineCount(entry.head);
+    const defining = hunks.filter((h) => h.to > read || !inert.slice(h.from - 1, h.to).every(Boolean));
     if (defining.length === 0) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
     const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);
@@ -427,51 +292,11 @@ async function headMovesFromGit(root) {
 
 const lineCount = (text) => (text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0));
 
-/**
- * The moment this session's transcript began, or null where it cannot be read.
- *
- * Its first entry carrying a timestamp, which 2.1.272 writes before the first
- * prompt is answered.
- */
+/** When this session's transcript began, off its head (`sessionStartIn`), or null where it cannot be read. */
 export function sessionStart(transcriptPath) {
   if (typeof transcriptPath !== "string" || transcriptPath === "") return null;
   const entry = readHead(transcriptPath, TRANSCRIPT_HEAD);
-  if (entry.kind !== "file") return null;
-  for (const line of entry.head.split("\n")) {
-    const at = /"timestamp":"([^"]+)"/.exec(line);
-    const ms = at ? Date.parse(at[1]) : NaN;
-    if (Number.isFinite(ms)) return ms;
-  }
-  return null;
-}
-
-/**
- * The moment this turn's prompt arrived, or null where the transcript names none.
- *
- * The last user entry that a person wrote: a tool's result and a hook's block
- * reason are written as user entries too, and either would move the turn's
- * start past the commits it made. Read from the end, so a long session parses
- * only the lines after its last prompt.
- */
-export function turnStart(transcriptPath) {
-  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
-  if (tail === null) return null;
-  const lines = tail.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (!lines[i].includes("\"user\"")) continue;
-    let entry;
-    try {
-      entry = JSON.parse(lines[i]);
-    } catch {
-      continue;
-    }
-    if (entry?.type !== "user" || entry.isMeta === true) continue;
-    const content = entry.message?.content;
-    if (Array.isArray(content) && content.some((part) => part?.type === "tool_result")) continue;
-    const ms = Date.parse(entry.timestamp);
-    return Number.isFinite(ms) ? ms : null;
-  }
-  return null;
+  return entry.kind === "file" ? sessionStartIn(entry.head) : null;
 }
 
 /**
@@ -480,60 +305,16 @@ export function turnStart(transcriptPath) {
  */
 const inCall = (calls, ms) => calls.some((c) => c.from - 1000 <= ms && ms <= c.to + 1000);
 
-// The completion of a call run in the background opens with this tag, and the first id it names is the call it ends.
-const NOTIFICATION = "<task-notification>";
-const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/;
-
 /**
- * This session's tool calls, each from the moment its call was written to the
- * moment it returned, or empty where the transcript stamps none.
+ * The marks a transcript's tail already holds, from an ask or a record.
  *
- * A call run in the background returns as it starts, so it runs on to the
- * first record of its completion: the queue entry made as it ended, or the
- * notification where there is no such entry. One with no completion recorded
- * ends at its result, which misses its later writes rather than charging the
- * session with somebody else's.
+ * Anything but text, which is what an unreadable transcript's tail is, holds
+ * none: the worst that costs is one more search, where a mark read that was
+ * never there would skip a file nobody checked.
  */
-export function toolCalls(transcriptPath) {
-  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
-  if (tail === null) return [];
-  const started = new Map();
-  const returned = new Map();
-  const finished = new Map();
-  for (const line of tail.split("\n")) {
-    if (!line.includes("tool_use") && !line.includes("<tool-use-id>")) continue;
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const ms = Date.parse(entry?.timestamp);
-    if (!Number.isFinite(ms)) continue;
-    const content = entry.message?.content;
-    for (const part of Array.isArray(content) ? content : []) {
-      if (part?.type === "tool_use" && typeof part.id === "string") started.set(part.id, ms);
-      if (part?.type === "tool_result" && typeof part.tool_use_id === "string") returned.set(part.tool_use_id, ms);
-    }
-    const notice =
-      entry.type === "queue-operation" ? entry.content : entry.attachment?.type === "queued_command" ? entry.attachment.prompt : entry.type === "user" ? content : null;
-    // A prompt typed or pasted is queued and recorded the same way, and may quote any call's id.
-    const id = typeof notice === "string" && notice.startsWith(NOTIFICATION) ? (notice.match(FINISHED_CALL)?.[1] ?? null) : null;
-    if (id !== null) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
-  }
-  return [...started].flatMap(([id, from]) => (returned.has(id) ? [{ from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));
-}
-
-/**
- * The marks this session's transcript already holds, from an ask or a record.
- *
- * A transcript that cannot be read holds none: the worst that costs is one more
- * search, where a mark read that was never there would skip a file nobody checked.
- */
-export function askedMarks(transcriptPath) {
+export function askedMarksIn(tail) {
   const marks = new Set();
-  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
-  if (tail === null) return marks;
+  if (typeof tail !== "string") return marks;
   for (const [, list] of tail.matchAll(MARKS_READ)) {
     for (const mark of list.trim().split(" ")) marks.add(mark);
   }
@@ -541,15 +322,14 @@ export function askedMarks(transcriptPath) {
 }
 
 /**
- * Whether the last block this session saw at a stop was this hook's own.
+ * Whether the last block a transcript's tail holds at a stop was this hook's own.
  *
  * `stop_hook_active` says some hook continued the turn, not which one, and
  * recording after another hook's block would mark a file checked that no search
  * read.
  */
-export function continuedByReuse(transcriptPath) {
-  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
-  if (tail === null) return false;
+export function continuedByReuseIn(tail) {
+  if (typeof tail !== "string") return false;
   const last = tail.lastIndexOf("Stop hook feedback:");
   return last !== -1 && tail.indexOf(REASON_OPENING, last) !== -1;
 }

@@ -1,4 +1,4 @@
-import { guardedChild, absentInterpreter } from "./child.mjs";
+import { guardedChild, absentInterpreter, signalChild } from "./child.mjs";
 import { collectHits } from "./walk.mjs";
 import { walkRuby } from "./ruby-walk.mjs";
 import { rubyFacets } from "./facets.mjs";
@@ -524,8 +524,8 @@ function onThread(files, job, resourceLimits) {
       else if (msg.out) resolve({ ...msg.out, results: charged(files, results, "its record never reached the parent") });
       else if (msg.spawn) children.set(msg.id, startFor(worker, msg));
       else if (msg.read) children.get(msg.id)?.read();
-      else if (msg.kill) children.get(msg.id)?.kill("SIGKILL");
-      else if (msg.stdin !== undefined) children.get(msg.id)?.stdin.end(msg.stdin);
+      else if (msg.kill) signalChild(children.get(msg.id));
+      else if (msg.stdin !== undefined) children.get(msg.id)?.input(msg.stdin);
     });
     worker.once("error", (err) => {
       failure = err;
@@ -557,7 +557,7 @@ function charged(files, results, error) {
 const IN_FLIGHT = 4;
 
 /** A child started for a thread, every event it raises sent back to that thread in order. */
-function startFor(worker, { id, spawn: [command, args, options] }) {
+export function startFor(worker, { id, spawn: [command, args, options] }) {
   const send = (msg, moved) => worker.postMessage({ id, ...msg }, moved);
   let child;
   try {
@@ -566,8 +566,12 @@ function startFor(worker, { id, spawn: [command, args, options] }) {
     send({ error: { message: String(err?.message ?? err), code: err?.code } });
     return null;
   }
+  // Before any pipe is read: with no descriptor left, spawn hands back a child
+  // that has none and queues its error (B77).
+  child.on("error", (err) => send({ error: { message: String(err?.message ?? err), code: err?.code } }));
+  child.on("close", (code, signal) => send({ close: [code, signal] }));
   let unread = 0;
-  child.stdout.on("data", (bytes) => {
+  child.stdout?.on("data", (bytes) => {
     // Moved rather than copied where the chunk owns its memory: a copy left
     // the parent holding every chunk it had read until its own next collection.
     const owned = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
@@ -575,14 +579,22 @@ function startFor(worker, { id, spawn: [command, args, options] }) {
     if (++unread >= IN_FLIGHT) child.stdout.pause();
   });
   child.read = () => {
-    if (--unread < IN_FLIGHT) child.stdout.resume();
+    if (--unread < IN_FLIGHT) child.stdout?.resume();
   };
-  child.stderr.on("data", (bytes) => send({ stderr: bytes }));
-  child.stdin.on("error", () => {
+  child.input = (text) => child.stdin?.end(text);
+  child.stderr?.on("data", (bytes) => send({ stderr: bytes }));
+  // A pipe that fails says so on the stream, and with nobody listening that
+  // ends the scan. The batch cannot be read past it, so it fails as a child
+  // that errored does, and the child goes.
+  for (const pipe of [child.stdout, child.stderr]) {
+    pipe?.on("error", (err) => {
+      send({ error: { message: String(err?.message ?? err), code: err?.code } });
+      signalChild(child);
+    });
+  }
+  child.stdin?.on("error", () => {
     /* the child died first; its exit is what reports the failure */
   });
-  child.on("error", (err) => send({ error: { message: String(err?.message ?? err), code: err?.code } }));
-  child.on("close", (code, signal) => send({ close: [code, signal] }));
   return child;
 }
 
@@ -597,7 +609,7 @@ function killAndReap(child) {
   return new Promise((resolve) => {
     if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return resolve();
     child.once("exit", () => resolve());
-    child.kill("SIGKILL");
+    signalChild(child);
   });
 }
 
@@ -630,6 +642,8 @@ function gathered() {
  * and `spawner` starts the child on the parent.
  */
 export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult, spawner }) {
+  // The pipes below are read unguarded, which holds only for the stand-in a thread makes.
+  if (typeof spawner !== "function") throw new TypeError("parseBatch needs a spawner");
   const out = blank();
   const seen = new Set();
   const unanswered = () => files.filter((f) => !seen.has(f.rel));
@@ -648,7 +662,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
           env: rubyEnv(),
           stdio: ["pipe", "pipe", "pipe"],
           stderrBytes: guards.stderrBytes,
-          ...(spawner ? { spawner } : {}),
+          spawner,
           // The whole run's ceiling: a child answering one file every fourteen
           // seconds keeps the idle clock happy and never ends.
           wallMs: guards.wallBaseMs + guards.wallPerFileMs * batch.length,

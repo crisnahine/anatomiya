@@ -117,6 +117,78 @@ test("every bridge that runs a child takes the guards from the one supervisor", 
   assert.equal(reachedFrom("parse-worker.mjs", edges).has("child.mjs"), false);
 });
 
+test("a signal goes to a child from the one function that sends it only where the child started", () => {
+  // A kill of a child with no pid signals this process's own group, and a
+  // guard written by hand at each site is one a new site forgets.
+  // Not a signal to a child of this tool's: a probe of whether a pid is alive
+  // (signal 0), and the handle `guardedChild` gives, whose `kill(reason)`
+  // takes a reason and sends through the one function.
+  const NOT_A_CHILD_SIGNAL = [/\bprocess\.kill\(pid, 0\)/g, /\bsup\.kill\(/g];
+  const sites = [];
+  for (const file of readdirSync(LIB).filter((f) => f.endsWith(".mjs"))) {
+    for (const [i, line] of readFileSync(join(LIB, file), "utf8").split("\n").entries()) {
+      if (NOT_A_CHILD_SIGNAL.reduce((left, allowed) => left.replace(allowed, ""), line).includes(".kill(")) sites.push(`${file}:${i + 1}`);
+    }
+  }
+  assert.equal(sites.length, 1, `a kill outside signalChild: ${sites.join(", ")}`);
+  assert.match(sites[0], /^child\.mjs:/);
+});
+
+/**
+ * Every read of a git result outside `git.mjs` that does not go through
+ * `answered`, by file and function, with what a git that could not be asked
+ * does there (F29). SAYS SO: the caller degrades and its output says the read
+ * could not be made. NOTHING DONE: nothing is written, moved or stated. STOP:
+ * the function throws on every failure, in its own words. OPEN: not ruled yet.
+ */
+const RAW_GIT_READS = {
+  "authors.mjs headState": ["SAYS SO", "asked after the log failed; anything but exit code 1 keeps the history error on the map"],
+  "authors.mjs isPartialClone": ["SAYS SO", "throws unless exit code 1, and the history error travels with the map"],
+  "authors.mjs shallowHistory": ["SAYS SO", "a count or a root not read leaves the clone shallow with that part null"],
+  "changeset.mjs addedRanges": ["SAYS SO", "null, which the check words as ranges that could not be read and the stop hook reads as nothing to ask"],
+  "changeset.mjs changedFiles": ["SAYS SO", "not ok, and the check says the diff could not be read"],
+  "changeset.mjs pendingPaths": ["SAYS SO", "null, which the check words as pending edits it could not list and the stop hook reads as nothing to ask"],
+  "check.mjs absentAt": ["SAYS SO", "null, and the placement finding is declined with a caveat"],
+  "check.mjs remoteSha": ["SAYS SO", "no commit to fetch, then the caveat that the base could not be fetched"],
+  "check.mjs resolveBase": ["SAYS SO", "the shallow fetch: not fetched is the next candidate, then the same caveat"],
+  "corpus.mjs gitRoot": ["STOP", "throws on every failure with git's own text"],
+  "corpus.mjs lsFiles": ["STOP", "hands the stream's rejection to its caller, Unasked where git left no exit code"],
+  "corpus.mjs rootAttributes": ["STOP", "both reads go through answered(), started together so a stop counts one read in a row; the stop hook catches the throw and asks nothing about that checkout"],
+  "history.mjs historyFields": ["SAYS SO", "rejects into the walk's error, which the summary and the record state"],
+  "history.mjs isTracked": ["NOTHING DONE", "reads as tracked, so no store is written"],
+  "history.mjs readBesides": ["NOTHING DONE", "no stamp, so nothing is replayed or kept and the plain walk answers"],
+  "refresh-run.mjs gitBusy": ["NOTHING DONE", "reads as busy, and the worker leaves"],
+  "refresh-run.mjs madeHereOnLine": ["SAYS SO", "the walk is unread and the pin is held as unread"],
+  "refresh-run.mjs refreshRepository": ["NOTHING DONE", "reads as outside a checkout's root, and the worker leaves"],
+  "refresh-run.mjs remoteTip": ["NOTHING DONE", "no remote named, so fewer candidates and no pin"],
+  "refresh-run.mjs stampOf": ["NOTHING DONE", "no stamp, so no scan and no record"],
+  "reuse.mjs gitDir": ["NOTHING DONE", "no git directory, so the stop asks nothing"],
+  "reuse.mjs headMovesFromGit": ["NOTHING DONE", "no moves read, so no commit is charged to the turn"],
+};
+
+test("every read of a git result outside git.mjs goes through answered or is on the list of what it does unasked", () => {
+  const found = new Set();
+  for (const file of readdirSync(LIB).filter((name) => name.endsWith(".mjs") && name !== "git.mjs")) {
+    let fn = null;
+    for (const line of readFileSync(join(LIB, file), "utf8").split("\n")) {
+      const named = /^(?:export )?(?:async )?function\*? (\w+)|^(?:export )?const (\w+) = /.exec(line);
+      if (named) fn = named[1] ?? named[2];
+      if (/^\s*(?:\/\/|\*|import )/.test(line) || !/\bgit(?:Buffered|Streamed)\(/.test(line)) continue;
+      if (!/answered\(await gitBuffered\(/.test(line)) found.add(`${file} ${fn}`);
+    }
+  }
+  const unlisted = [...found].filter((site) => !(site in RAW_GIT_READS));
+  assert.deepEqual(unlisted, [],
+    `${unlisted.join(", ")}: a git call with no exit code was never an answer (F29). Either ask through answered(), so the could-not-ask ` +
+    "stops the command with nothing written, or add the function to RAW_GIT_READS as SAYS SO (the output says the read could not be made) " +
+    "or NOTHING DONE (nothing is written, moved or stated). Anything else states or writes what git did not say.");
+  assert.deepEqual(Object.keys(RAW_GIT_READS).filter((site) => !found.has(site)), [], "listed, and no such read is left");
+  for (const [site, [verdict, why]] of Object.entries(RAW_GIT_READS)) {
+    assert.ok(["SAYS SO", "NOTHING DONE", "STOP", "OPEN"].includes(verdict) && why.length > 0, site);
+  }
+  assert.deepEqual(Object.keys(RAW_GIT_READS).filter((site) => RAW_GIT_READS[site][0] === "OPEN"), [], "no read joins the list unruled");
+});
+
 test("the writers do not reach the pipeline that produced the record", () => {
   // Three of the four readers of the old module wanted a writer or the caveat
   // table and paid a parser, a git runner and the whole registry for it. The
@@ -127,6 +199,7 @@ test("the writers do not reach the pipeline that produced the record", () => {
     "check-report.mjs",
     "encode.mjs",
     "rules.mjs",
+    "store.mjs",
     "targets.mjs",
   ]);
 });
@@ -226,12 +299,12 @@ test("a parser is loaded by the body that parses with it, and by no other module
   // Statically imported anywhere, a runtime that is not installed is a module
   // that will not load: the worker would not start, and no file could say why.
   const loads = (file) => /import\(\s*["']web-tree-sitter["']\s*\)|from\s*["']web-tree-sitter["']/.test(readFileSync(join(LIB, file), "utf8"));
-  assert.deepEqual(readdirSync(LIB).filter((f) => f.endsWith(".mjs") && loads(f)), ["tree-sitter-file.mjs"]);
-  assert.doesNotMatch(readFileSync(join(LIB, "tree-sitter-file.mjs"), "utf8"), /from\s*["']web-tree-sitter["']/);
+  assert.deepEqual(readdirSync(LIB).filter((f) => f.endsWith(".mjs") && loads(f)), ["tree-sitter-runtime.mjs"]);
+  assert.doesNotMatch(readFileSync(join(LIB, "tree-sitter-runtime.mjs"), "utf8"), /from\s*["']web-tree-sitter["']/);
 });
 
 // What only a tree-sitter read needs: the engine's body, its rows, its walk and the tables behind them.
-const TREE_SITTER_ONLY = ["csharp-directives.mjs", "dimensions-tree.mjs", "tree-facets.mjs", "tree-shapes.mjs", "tree-sitter-file.mjs", "tree-walk.mjs"];
+const TREE_SITTER_ONLY = ["csharp-directives.mjs", "dimensions-tree.mjs", "inert-tree.mjs", "tree-facets.mjs", "tree-shapes.mjs", "tree-sitter-file.mjs", "tree-sitter-runtime.mjs", "tree-walk.mjs"];
 
 test("a Ruby shard thread loads the prism rows and no other engine's", () => {
   // The thread's heap hold is sized over what its own modules hold (`heldHeap`),
@@ -646,15 +719,19 @@ function armReach(verb, { lazy = false } = {}) {
 // Written out rather than counted, so a module joining the echo's load shows by name.
 const ECHO_LOADS = [
   "child.mjs",
+  "echo.mjs",
   "encode.mjs",
   "facts.mjs",
   "gates.mjs",
   "hook-verbs.mjs",
   "hook.mjs",
   "langs.mjs",
+  "lock.mjs",
   "readiness.mjs",
   "rules.mjs",
+  "store.mjs",
   "targets.mjs",
+  "transcript.mjs",
   "version.mjs",
   "worktree.mjs",
 ];
@@ -674,6 +751,10 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
     assert.deepEqual(oxc, [], `${verb} loads oxc`);
   }
   assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
+  // The other arms by count, before any lazy import and with each followed (A100).
+  const sizes = (opts) => Object.fromEntries(["echo", "notice", "reuse", "refresh"].map((verb) => [verb, armReach(verb, opts).size]));
+  assert.deepEqual(sizes(), { echo: 16, notice: 16, reuse: 16, refresh: 31 });
+  assert.deepEqual(sizes({ lazy: true }), { echo: 37, notice: 37, reuse: 37, refresh: 31 });
   assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
   assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
 });

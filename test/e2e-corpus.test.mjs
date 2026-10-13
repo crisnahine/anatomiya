@@ -4,7 +4,7 @@ import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { needsPosixSeparators, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import { needsPosixSeparators, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
 import { git, initWithCommit, scratch } from "./git-worktrees.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanJson, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
@@ -388,7 +388,7 @@ test("a scratch directory that reaches the corpus through a symlink is refused",
   // Lexically the two are siblings. `resolve` normalises `..` and never follows
   // a link, which is the repository's own reason for realpathing both sides.
   const home = mkdtempSync(join(tmpdir(), "e2e-dirs-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  t.after(() => removeTree(home));
   const corpus = join(home, "corpus");
   mkdirSync(join(corpus, "inner"), { recursive: true });
   const scratch = join(home, "scratch");
@@ -402,7 +402,7 @@ test("a corpus path that cannot be listed is a refusal, not a stack trace", (t) 
   // It threw ENOENT out of the driver, after the scratch directory had already
   // been made for a run that was never going to happen.
   const home = mkdtempSync(join(tmpdir(), "e2e-corpus-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  t.after(() => removeTree(home));
   mkdirSync(join(home, "errbit", ".git"), { recursive: true });
   mkdirSync(join(home, "notes"));
 
@@ -467,7 +467,7 @@ test("a glob ending in a bare /** is refused, since an exclusion under it silent
 
 test("what a scan wrote is held to the count it printed and to every rule the corpus run keeps", (t) => {
   const repo = mkdtempSync(join(tmpdir(), "e2e-written-"));
-  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  t.after(() => removeTree(repo));
   mkdirSync(join(repo, ".claude/rules"), { recursive: true });
   mkdirSync(join(repo, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(repo, ".claude/rules/anatomiya-overview.md"), [...front, "## What lives where"].join("\n"));
@@ -490,7 +490,7 @@ test("what a scan wrote is held to the count it printed and to every rule the co
 
 test("what a scan wrote for Cursor and Copilot is listed and held to the same rules, once the scan says the target is on", (t) => {
   const repo = mkdtempSync(join(tmpdir(), "e2e-written-"));
-  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  t.after(() => removeTree(repo));
   const put = (rel, lines) => {
     mkdirSync(join(repo, rel, ".."), { recursive: true });
     writeFileSync(join(repo, rel), lines.join("\n"));

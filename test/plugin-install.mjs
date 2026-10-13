@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ANATOMIYA, installed } from "../scripts/plugins.mjs";
+import { removeTree } from "./platform.mjs";
 
 /**
  * The plugin's own code with no `node_modules` beside it, which is what a
@@ -18,7 +19,7 @@ import { ANATOMIYA, installed } from "../scripts/plugins.mjs";
  */
 export function installWithoutDependencies(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-install-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   // The plugin's own directory is what the marketplace copies, so the fixture
   // copies out of there rather than out of the repository around it.

@@ -4,30 +4,25 @@
  * the scan to answer with a watch list.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, linkSync, lstatSync, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, lstatSync, openSync, rmdirSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
-import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
-import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
+import { readFacts, readRecord } from "./facts.mjs";
+import { createdAlone, lockContent, refreshBlockers, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
+import { atomic } from "./store.mjs";
+import { answered, BASE_REFS, Unasked, caseMagic, commitAt, failureOf, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
-import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { OVERVIEW_FILE, realpathOf, REFRESH_LOCK, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
 import { isClaude, overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
-
-const LOCK_FILE = "refresh.lock";
 
 // Left by a worker that found the lock taken, for the holder to read after it
 // lets go.
 const AGAIN_FILE = "refresh.again";
-
-// A worker holds the lock for one scan, and the largest measured takes about
-// two minutes. A lock older than this belongs to a worker that is not coming
-// back, whatever its pid now names.
-const LOCK_STALE_MS = 30 * 60 * 1000;
 
 // How long a failed rescan of an unchanged checkout waits before it is tried
 // again. A failure can be the machine's rather than the checkout's (a temp
@@ -62,7 +57,22 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  * checkout, and say what it did.
  *
  * `reason` is one of: scanned, current, failed, failed-before, busy, git-busy,
- * tracked, no-map, outside, no-head.
+ * tracked, no-map, outside, no-head, lock-blocked, state-blocked. The last
+ * two come with `blocked`, the entry that has to be removed by hand, and are
+ * answered before the lock is taken where `refreshBlockers` names one: a
+ * directory holding entries, or one that cannot be listed, at the lock's name
+ * or a lock token's, or at the state's, where a refresh that cannot record
+ * what it did does not run.
+ *
+ * A question git could not be asked before the stamp is read throws out of
+ * here, with the lock let go, the pin and the map as they were and nothing
+ * recorded, so the next trigger tries again. Those are: whether the map is
+ * committed and how the repository folds case for that, HEAD, the remote's
+ * tip, whether the pinned commit is still here, whether the pin is newer than
+ * HEAD, and any read the pin itself makes. How the remote's branch last moved
+ * and who this clone commits as are held as `unread` instead. A failure after
+ * the stamp is read, a could-not-ask included, is a failed refresh of that
+ * stamp: it is recorded with its text and waits out the retry clock.
  *
  * `git` is a test seam with one use: it answers whether a target's overview
  * is committed, which only a git that fails on that question can prove.
@@ -80,7 +90,11 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
   if (await mapTracked(root)) return { reason: "tracked", pinned: false };
   if (await gitBusy(root)) return { reason: "git-busy", pinned: false };
 
-  const lockPath = join(store, LOCK_FILE);
+  // Before the lock and the scan: a scan nothing could record ran again on every trigger.
+  const [blocked] = refreshBlockers(store);
+  if (blocked !== undefined) return { reason: blocked === basename(REFRESH_STATE) ? "state-blocked" : "lock-blocked", blocked: join(store, blocked), pinned: false };
+
+  const lockPath = join(store, basename(REFRESH_LOCK));
   const again = join(store, AGAIN_FILE);
   let lock = acquire(lockPath);
   if (!lock) {
@@ -90,20 +104,24 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
     lock = acquire(lockPath);
     if (!lock) return { reason: "busy", pinned: false };
   }
+  if (lock.blocked) return { reason: "lock-blocked", blocked: lock.blocked, pinned: false };
   let result = null;
   let pinned = false;
   for (;;) {
     let round;
+    let more;
     try {
       round = await passes(root, store, { scan, pin, git });
     } finally {
       release(lock);
+      // Taken where the round threw too: left, it costs a later worker a pass nobody asked for.
+      more = takeWord(again);
     }
     result = result !== null && round.reason === "current" ? { ...round, reason: result.reason } : round;
     pinned ||= round.pinned;
-    if (!takeWord(again)) return { ...result, pinned };
+    if (!more) return { ...result, pinned };
     lock = acquire(lockPath);
-    if (!lock) return { ...result, pinned };
+    if (!lock || lock.blocked) return { ...result, pinned };
   }
 }
 
@@ -160,6 +178,8 @@ export async function noteScan(root) {
   try {
     const store = resolveInside(root, STORE_DIR);
     if (store === null) return;
+    // Not this scan's to remove: an empty directory that cannot be listed goes with `rmdir` all the same.
+    if (refreshBlockers(store).includes(basename(REFRESH_STATE))) return;
     const stamp = await stampOf(root);
     if (stamp === null) return;
     const previous = readRecord(join(store, basename(REFRESH_STATE))).record;
@@ -232,7 +252,14 @@ async function followPin(root, pin) {
   if (current?.sha === head) return none;
   // Each hold names the pin it held, so a pin taken by hand since ends it.
   const hold = (reason, commit, by = null) => ({ accepted: null, held: { reason, commit, pin: current?.sha ?? null, ...(by ? { by } : {}) } });
-  const moved = await fetchedHere(root, tip.ref, tip.sha);
+  let moved;
+  try {
+    moved = await fetchedHere(root, tip.ref, tip.sha);
+  } catch (err) {
+    // No exit code is neither a push nor a missing reflog: the pin is held, and the hold says git could not say.
+    if (!(err instanceof Unasked)) throw err;
+    return hold("unread", head);
+  }
   if (moved !== "fetched") return hold(moved === "no-record" ? "no-record" : "not-fetched", head);
   // A pinned commit git no longer holds (its branch merged, deleted and
   // collected) bounds nothing, and the line is read as for a first pin.
@@ -240,7 +267,8 @@ async function followPin(root, pin) {
   if (from !== null) {
     // Newer than this checkout: the remote was rewound, or this clone is
     // behind the one that pinned. Either way the pin does not move backwards.
-    const newer = await gitBuffered(root, ["merge-base", "--is-ancestor", head, from]);
+    // Exit code 1 is git saying it is not. Unasked, the pin stays where it is.
+    const newer = await asked(root, ["merge-base", "--is-ancestor", head, from], `whether the pin at ${from} is newer than ${head}`);
     if (newer.ok) return none;
   }
   const made = await madeHereOnLine(root, from, head);
@@ -257,10 +285,15 @@ async function followPin(root, pin) {
       accepted: { from: current?.sha ?? null, to: head, addedFiles: delta.addedFiles, removedFiles: delta.removedFiles },
       held: null,
     };
-  } catch {
+  } catch (err) {
+    // A pin that could not ask git refused nothing: the worker ends, and the scan after it is not run on a guess.
+    if (err instanceof Unasked) throw err;
     return none;
   }
 }
+
+/** What git answered `question` with, whatever its exit code. It throws `Unasked` where git gave none (F29). */
+const asked = async (root, args, question) => answered(await gitBuffered(root, args), question);
 
 // Reflog entries that create no commit; every other entry is a commit made
 // here, since a list of what creates commits missed each spelling git gives a
@@ -341,7 +374,8 @@ async function madeHereOnLine(root, from, to) {
  * committer holds, the safe direction.
  */
 async function committerEmail(root) {
-  const r = await gitBuffered(root, ["var", "GIT_COMMITTER_IDENT"]);
+  // Unasked is not a clone with no identity: the walk that called is then unread, and the pin held.
+  const r = await asked(root, ["var", "GIT_COMMITTER_IDENT"], "who this clone commits as");
   const email = r.ok ? /<([^>]*)>/.exec(r.stdout)?.[1]?.trim().toLowerCase() : "";
   return email ? email : null;
 }
@@ -362,7 +396,8 @@ async function clonedAt(root) {
   } catch {
     // No such file, which a clone made without templates leaves.
   }
-  const log = await gitBuffered(root, ["reflog", "show", "--date=unix", "--format=%gd", "main-worktree/HEAD"]);
+  // Unasked, the walk that called is unread, as for the identity.
+  const log = await asked(root, ["reflog", "show", "--date=unix", "--format=%gd", "main-worktree/HEAD"], "when this clone's oldest reflog entry was written");
   const oldest = log.ok ? (log.stdout.trimEnd().split("\n").pop() ?? "") : "";
   const at = /@\{(\d+)\}$/.exec(oldest)?.[1];
   if (at !== undefined) times.push(Number(at));
@@ -389,7 +424,8 @@ async function remoteTip(root) {
 /**
  * How the remote-tracking ref last moved: `fetched` by a fetch or a pull,
  * `moved-here` by this clone (a push, a ref written by hand, a fetch naming its
- * own source), or `no-record` where git kept none to tell by.
+ * own source), or `no-record` where git kept none to tell by. It throws where
+ * git could not be asked: no exit code is neither a push nor a missing reflog.
  *
  * Asked through `git reflog`, which reads every ref backend: the files backend
  * keeps `logs/refs/...`, reftable keeps none, and reading the file had a
@@ -399,19 +435,19 @@ async function remoteTip(root) {
  * onto this same commit; anything else with no record is refused.
  */
 async function fetchedHere(root, ref, sha) {
-  const full = await gitBuffered(root, ["rev-parse", "--symbolic-full-name", ref]);
+  const full = await asked(root, ["rev-parse", "--symbolic-full-name", ref], `which ref ${ref} names`);
   const name = full.ok ? full.stdout.trim() : "";
   if (!name.startsWith("refs/remotes/")) return "moved-here";
-  const last = await gitBuffered(root, ["reflog", "show", "-n1", "--format=%gs", name]);
+  const last = await asked(root, ["reflog", "show", "-n1", "--format=%gs", name], `how ${name} last moved`);
   if (!last.ok) return "no-record";
   const message = last.stdout.trim();
   if (message !== "") return movedByRemote(message) ? "fetched" : "moved-here";
   return (await clonedOnto(root, sha)) ? "fetched" : "no-record";
 }
 
-/** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`. */
+/** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`. It throws where git could not be asked. */
 async function clonedOnto(root, sha) {
-  const log = await gitBuffered(root, ["reflog", "show", "--format=%H %gs", "main-worktree/HEAD"]);
+  const log = await asked(root, ["reflog", "show", "--format=%H %gs", "main-worktree/HEAD"], "how this clone was made");
   if (!log.ok) return false;
   const first = log.stdout.trimEnd().split("\n").pop() ?? "";
   return first.startsWith(`${sha} clone: `);
@@ -425,8 +461,10 @@ async function clonedOnto(root, sha) {
  */
 async function mapTracked(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
-  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`]);
-  return r.ok && r.stdout.length > 0;
+  const r = await asked(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`], "whether this repository commits its map");
+  // A listing git did not give is not an empty one, which would have the worker write over a committed map.
+  if (!r.ok) throw new Error(`git would not say whether this repository commits its map: ${failureOf(r)}`);
+  return r.stdout.length > 0;
 }
 
 /**
@@ -434,7 +472,9 @@ async function mapTracked(root) {
  * id. A scan here leaves those files as the commit has them, for the reason
  * above, and still writes the map nobody commits: a repository that commits
  * only the copy another tool reads from the remote has no other way to keep
- * the local one current. A question git could not answer leaves the target alone.
+ * the local one current. A listing git would not give leaves the target alone.
+ * How the repository folds case is asked first and throws where it could not
+ * be: that is after the stamp, so it is a failed refresh of that stamp.
  */
 async function committedTargets(root, git) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
@@ -454,7 +494,14 @@ async function gitBusy(root) {
 
 function writeState(store, { stamp, ok, error, pinned = null, held = null, stopped = [], at = new Date().toISOString() }) {
   const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}), ...(stopped?.length > 0 ? { stopped } : {}) };
-  atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
+  const path = join(store, basename(REFRESH_STATE));
+  try {
+    // A rename replaces a file or a link at the name, never a directory. Refuses a link and a directory holding entries.
+    rmdirSync(path);
+  } catch {
+    // No directory there, or one holding entries, which the rename then names.
+  }
+  atomic(path, JSON.stringify(record, null, 2) + "\n");
 }
 
 const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.[key] ?? null) === (b?.[key] ?? null));
@@ -463,101 +510,25 @@ const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.
  * Take the lock, or answer null when a live worker holds it.
  *
  * Created exclusively, so two workers cannot both create it. One whose owner is
- * gone, or which is older than any scan runs, is taken over by renaming it
- * aside rather than unlinking it: two workers that both judged it stale race
- * for one rename of one entry, and only one of them gets it. A worker whose
- * rename caught a lock somebody created after it judged the old one stale
- * finds bytes it did not judge, and puts that lock back.
+ * gone, or which is older than any scan runs, is broken by the one worker
+ * holding the lock token named by its nonce (`takeDeadLock`), and taken by the
+ * one create after. A lock token a worker died holding names a generation that is gone
+ * once this one holds the lock, so it is removed here.
+ *
+ * Answers `{ blocked }` where an entry that is no regular file holds a name and
+ * could not be removed: no worker lets go of that, so it is not a lock taken. A
+ * lock file the system refuses to unlink is one, and answers null.
  */
-function acquire(path) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(8).toString("hex") });
-    try {
-      create(path, content);
-      return { path, content };
-    } catch (err) {
-      if (err?.code !== "EEXIST") return null;
-      const judged = contentOf(path);
-      if (!stale(judged)) return null;
-      const aside = `${path}.stale-${process.pid}-${randomBytes(8).toString("hex")}`;
-      try {
-        renameSync(path, aside);
-      } catch {
-        return null;
-      }
-      if (contentOf(aside) !== judged) {
-        try {
-          linkSync(aside, path);
-        } catch {
-          // Somebody holds it already; either way it is not ours.
-        }
-        remove(aside);
-        return null;
-      }
-      remove(aside);
-    }
-  }
-  return null;
-}
-
-/**
- * The lock file, appearing whole or not at all. Opened with `wx` and filled in
- * after, it was empty for a moment; a second worker reading it then (a checkout
- * rewrites `HEAD` and `logs/HEAD` within milliseconds) found nothing parsable,
- * judged it abandoned and took it over, and two scans ran at once. The content
- * is written beside it and linked into place, which fails with EEXIST exactly
- * as `wx` does. A filesystem with no hard links takes the `wx` path.
- */
-function create(path, content) {
-  const temp = writeTemp(path, content);
+export function acquire(path) {
+  const nonce = randomBytes(8).toString("hex");
+  const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce });
   try {
-    linkSync(temp, path);
+    if (!createdAlone(path, content) && !takeDeadLock(path, workerAge, content)) return null;
   } catch (err) {
-    if (err?.code === "EEXIST") throw err;
-    const direct = openSync(path, "wx");
-    try {
-      writeSync(direct, content);
-    } finally {
-      closeSync(direct);
-    }
-  } finally {
-    try {
-      unlinkSync(temp);
-    } catch {
-      // Already gone; nothing of ours is left.
-    }
+    return typeof err?.blocked === "string" ? { blocked: err.blocked } : null;
   }
-}
-
-// Bounded and typed, since the directory can come with the repository: a lock
-// planted as a link to `/dev/zero` read whole never returned. Ours is under 100 bytes.
-function contentOf(path) {
-  const entry = readHead(path, 256);
-  return entry.kind === "file" ? entry.head : null;
-}
-
-function stale(content) {
-  let held;
-  try {
-    held = JSON.parse(content);
-  } catch {
-    return true;
-  }
-  if (!Number.isInteger(held?.pid) || !Number.isFinite(held?.at)) return true;
-  // A moment that has not come yet is no worker's on this machine.
-  const age = Date.now() - held.at;
-  if (age < 0 || age > LOCK_STALE_MS) return true;
-  return !alive(held.pid);
-}
-
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    // EPERM is a process that exists and belongs to somebody else.
-    return err?.code === "EPERM";
-  }
+  removeLeftTokens(path, nonce);
+  return { path, content };
 }
 
 /**
@@ -567,7 +538,7 @@ function alive(pid) {
  * worker's lock for a fourth to take.
  */
 function release(lock) {
-  if (contentOf(lock.path) === lock.content) remove(lock.path);
+  if (lockContent(lock.path) === lock.content) remove(lock.path);
 }
 
 function remove(path) {

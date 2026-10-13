@@ -5,6 +5,10 @@
  * fixtures cannot be written there at all. The defence still matters on the
  * systems where the input is possible, and a test that cannot create its own
  * input proves nothing about the code either way.
+ *
+ * Beside the skips, the two things a test does another way by platform: a
+ * directory that tells case apart (`caseSensitiveDir`), and one removed once
+ * the process started in it has gone (`removeTree`).
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -111,6 +115,27 @@ export const needsUnreadableDirs = WINDOWS
     ? { skip: "root traverses a mode-000 directory, so the denial this needs cannot happen" }
     : {};
 
+/**
+ * Remove a test's directory, waiting out a process that is still leaving it.
+ *
+ * Windows will not remove a directory a process was started in until that
+ * process has gone, and a git a test's reader ended can still be going when the
+ * cleanup runs: `EBUSY` from Node 22, `EPERM` from Node 24. The wait is the
+ * loop's own and not `rmSync`'s, which holds the loop while it retries. A
+ * directory still held after a hundred waits, ten seconds at the wait a test
+ * takes, is a child that never left, and that fails the test.
+ */
+export async function removeTree(dir, wait = 100) {
+  for (let tries = 100; ; tries--) {
+    try {
+      return rmSync(dir, { recursive: true, force: true });
+    } catch (err) {
+      if (tries === 0 || !["EBUSY", "EPERM"].includes(err.code)) throw err;
+      await new Promise((done) => setTimeout(done, wait));
+    }
+  }
+}
+
 // Windows holds a lock on the directory a process is running in, so the state
 // this needs, a live process whose own cwd has been removed, cannot be reached
 // there at all.
@@ -131,6 +156,26 @@ export const needsSymlinks = WINDOWS
 export const needsSpawnableNpm = WINDOWS
   ? { skip: "npm on Windows is a batch file, and running one needs a shell no command here may spawn" }
   : {};
+
+// `cat-file -Z` came with git 2.42. An older git hands every read to the
+// per-call reader, so a case that counts on the one child answering cannot be
+// set up there. Which git a run finds is the run's to choose, and so is a run
+// that finds none, or one whose version cannot be read.
+const gitVersion = (() => {
+  let said;
+  try {
+    said = execFileSync("git", ["--version"], { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch (err) {
+    return { unread: `\`git --version\` could not be run (${err.code ?? `exit ${err.status}`})` };
+  }
+  const read = /(\d+)\.(\d+)/.exec(said);
+  return read ? { major: Number(read[1]), minor: Number(read[2]) } : { unread: `\`git --version\` answered ${JSON.stringify(said.slice(0, 80))}, which names no version` };
+})();
+export const needsBatchZ = gitVersion.unread
+  ? avoidable("needsBatchZ", `${gitVersion.unread}, so whether a child answers a read is unknown: run with git 2.42 or newer first on PATH`)
+  : gitVersion.major > 2 || (gitVersion.major === 2 && gitVersion.minor >= 42)
+    ? {}
+    : avoidable("needsBatchZ", `git ${gitVersion.major}.${gitVersion.minor} is older than 2.42, so no child answers a read: run with a newer git first on PATH`);
 
 // Asked of the temp directory the fixtures live in, since folding belongs to the
 // filesystem: APFS and NTFS fold case by default, ext4 and a case-sensitive
@@ -161,7 +206,7 @@ export const needsCaseSensitiveFilesystem = folds
 export function caseSensitiveDir(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-case-"));
   if (!folds) {
-    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    t.after(() => removeTree(dir));
     return { dir };
   }
   const image = join(dir, "volume.dmg");

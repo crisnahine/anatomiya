@@ -1,8 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { EventEmitter, once } from "node:events";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { needsShebang } from "./platform.mjs";
 import { guardedChild, absentInterpreter, retryOnce } from "../plugins/anatomiya/lib/child.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-child-"));
@@ -205,6 +208,65 @@ test("a child under both clocks is killed by one of them and never by both", asy
   assert.equal(fired.length, 1, `one reason, got ${JSON.stringify(fired)}`);
   assert.ok(["idle", "wall"].includes(fired[0]), fired[0]);
   assert.equal(sup.killedBy(), fired[0]);
+});
+
+test("a kill in the tick of a start that failed signals nothing", { ...needsShebang, timeout: 60_000 }, async () => {
+  const lib = new URL("../plugins/anatomiya/lib/child.mjs", import.meta.url).href;
+  const idle = child("idle", "setTimeout(() => {}, 60_000)\n");
+  const script = `
+    import { closeSync, openSync } from "node:fs";
+    import { guardedChild } from ${JSON.stringify(lib)};
+    const held = [];
+    try {
+      for (;;) held.push(openSync("/dev/null", "r"));
+    } catch {
+      // Every descriptor this process may hold is open.
+    }
+    const out = {};
+    for (const kind of ["spawn", "fork"]) {
+      const sup = guardedChild({
+        kind,
+        command: process.execPath,
+        modulePath: ${JSON.stringify(idle)},
+        args: [${JSON.stringify(idle)}],
+        stdio: ${JSON.stringify(STDIO)},
+        stderrBytes: 64,
+      });
+      sup.child.on("error", () => {});
+      const started = sup.child.pid !== undefined;
+      sup.kill("asked");
+      out[kind] = { started, killedBy: sup.killedBy() };
+    }
+    for (const fd of held) closeSync(fd);
+    process.stdout.write(JSON.stringify(out));
+  `;
+
+  // The limit is lowered for this one process, so the machine's own table is
+  // never the one that fills. In a process group of its own, because the kill
+  // under test is a kill of the sender's group where the guard is gone.
+  const starved = spawn("sh", ["-c", 'ulimit -n 64 && exec "$0" --input-type=module -e "$1"', process.execPath, script], {
+    detached: true,
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let stdout = "";
+  starved.stdout.on("data", (chunk) => (stdout += chunk));
+  const [code, signal] = await once(starved, "close");
+
+  assert.deepEqual({ code, signal }, { code: 0, signal: null }, "the process that asked for the kill outlived it");
+  assert.deepEqual(JSON.parse(stdout), {
+    spawn: { started: false, killedBy: "asked" },
+    fork: { started: false, killedBy: "asked" },
+  });
+});
+
+test("a kill of a child a spawner stands in for is the stand-in's to send", () => {
+  // The Ruby thread's child lives on the parent and has no pid on the thread.
+  const standIn = Object.assign(new EventEmitter(), { signals: [], kill: (signal) => standIn.signals.push(signal) });
+  const sup = guardedChild({ kind: "spawn", command: "ruby", stderrBytes: 64, spawner: () => standIn });
+
+  sup.kill("asked");
+
+  assert.deepEqual(standIn.signals, ["SIGKILL"]);
 });
 
 test("a spawn that found no interpreter is told apart from one that ran and failed", () => {

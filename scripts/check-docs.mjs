@@ -22,6 +22,7 @@ import { dirname, join } from "node:path";
 
 import { parseSync } from "oxc-parser";
 
+import { DECISIONS_DIR, escaped, indexRows, readRowFile, rowFiles, shortStatus } from "./decisions.mjs";
 import { invokedAs } from "./entry.mjs";
 import { REL } from "./plugins.mjs";
 import { RELEASES, notesFor, tagFor } from "./release.mjs";
@@ -442,7 +443,6 @@ export function pathsThatMoved(text, docRel, tracked) {
   return [...moved.values()];
 }
 
-const DECISION_ROW = /^\| ([A-H]\d+) \|/;
 const OWN_CODE = /^(?:plugins|scripts|test)\//;
 const dirOf = (rel) => rel.slice(0, rel.lastIndexOf("/"));
 
@@ -450,17 +450,17 @@ const dirOf = (rel) => rel.slice(0, rel.lastIndexOf("/"));
 // and what the row should say instead is a decision, not a typo.
 const DONE_UNHELD = new Set(["A42"]);
 
-/** A bare module name, the spelling most status cells use for a file of ours. */
+/** A bare module name, the spelling most rows' Status uses for a file of ours. */
 const DONE_BARE = /`([A-Za-z0-9._-]+\.mjs)`/g;
 
-// Bare names a status cell spells as an example in prose, not as a file here.
+// Bare names a Status spells as an example in prose, not as a file here.
 const DONE_EXAMPLES = new Set([
   // H25: the module a test of the companion table would credit by mistake.
   "defaults.mjs",
 ]);
 
 /**
- * Files a decision row's status cell names as done that this tree does not hold.
+ * Files a decision row's Status names as done that this tree does not hold.
  *
  * `pathsThatMoved` answers only for a path found somewhere else, so a file
  * renamed or deleted outright left its row pointing at nothing. The tree is the
@@ -468,34 +468,114 @@ const DONE_EXAMPLES = new Set([
  * repository's (`test/models/user_test.rb`), and one whose directory does is ours.
  * A bare `.mjs` name is held to the file names the tree holds at any depth.
  */
-export function doneFilesGone(text, tracked) {
+export function doneFilesGone(rows, tracked) {
   const dirs = new Set([...tracked].map(dirOf));
   const names = new Set([...tracked].map((rel) => rel.slice(rel.lastIndexOf("/") + 1)));
   const gone = [];
-  for (const line of text.split(/\r?\n/)) {
-    const row = DECISION_ROW.exec(line)?.[1];
-    const done = line.indexOf("**done**");
-    if (!row || done < 0 || DONE_UNHELD.has(row)) continue;
-    for (const [, spelled] of line.slice(done).matchAll(DOC_PATH)) {
+  for (const { id: row, status } of rows) {
+    const done = status.indexOf("**done**");
+    if (done < 0 || DONE_UNHELD.has(row)) continue;
+    for (const [, spelled] of status.slice(done).matchAll(DOC_PATH)) {
       if (OWN_CODE.test(spelled) && !tracked.has(spelled) && dirs.has(dirOf(spelled))) gone.push({ row, spelled });
     }
-    for (const [, spelled] of line.slice(done).matchAll(DONE_BARE)) {
+    for (const [, spelled] of status.slice(done).matchAll(DONE_BARE)) {
       if (names.size > 0 && !names.has(spelled) && !DONE_EXAMPLES.has(spelled)) gone.push({ row, spelled });
     }
   }
   return gone;
 }
 
-/** Row numbers a decision row cites that no row carries. A code span is skipped: `B7` there is a key, not a row. */
-export function rowsCitedMissing(text) {
-  const rows = text.split(/\r?\n/).filter((line) => DECISION_ROW.test(line));
-  const ids = new Set(rows.map((line) => DECISION_ROW.exec(line)[1]));
-  return rows.flatMap((line) =>
-    [...line.replace(/`[^`]*`/g, "").matchAll(/\b[A-H]\d+\b/g)]
+/** Row ids a decision row cites that no row carries. A code span is skipped: `B7` there is a key, not a row. */
+export function rowsCitedMissing(rows) {
+  const ids = new Set(rows.map((row) => row.id));
+  return rows.flatMap((row) =>
+    [...[row.decision, row.why, row.status].join(" ").replace(/`[^`]*`/g, "").matchAll(/\b[A-H]\d+\b/g)]
       .filter(([cited]) => !ids.has(cited))
-      .map(([cited]) => ({ row: DECISION_ROW.exec(line)[1], cited }))
+      .map(([cited]) => ({ row: row.id, cited }))
   );
 }
+
+/** Whether a file's comments are read for the rows they cite: the shipped code and the scripts. */
+export const citesRows = (rel) => rel.endsWith(".mjs") && [`${REL.anatomiya}/lib/`, `${REL.anatomiya}/bin/`, "scripts/"].some((dir) => rel.startsWith(dir));
+
+/**
+ * Row ids the comments of `files` cite that no row carries, by file. The caller hands it the files `citesRows` names.
+ *
+ * Every comment is read and nothing else: a comment is where CONTRIBUTING puts a citation, and a
+ * string is a message or a fixture. An id outside parentheses counts, since a comment also writes
+ * "as H12 has it". A code span is skipped as in a row, and so is a code point (`U+E0100`).
+ */
+export function rowsCitedInCode(ids, files) {
+  const missing = [];
+  for (const [rel, source] of files) {
+    let comments = [source];
+    try {
+      const parsed = parseSync(rel, source);
+      // A file oxc could not read is read whole, as `spokenIn` reads it.
+      if (parsed.errors.length === 0) comments = parsed.comments.map((c) => source.slice(c.start, c.end));
+    } catch {}
+    const cited = new Set(comments.flatMap((text) => [...text.replace(/`[^`]*`/g, "").matchAll(/(?<![+\w])[A-H]\d+\b/g)].map(([id]) => id)));
+    for (const id of cited) if (!ids.has(id)) missing.push({ rel, cited: id });
+  }
+  return missing;
+}
+
+/**
+ * Where the index and the row files say different things about the record.
+ *
+ * A row is written in two places, and every rule that reads what a row says
+ * reads its file, so an index left behind is a table of contents for some other
+ * record with every gate passing. `rows` is the index as `indexRows` reads it,
+ * and `files` is row id to the file as `readRowFile` reads it. An index or
+ * a directory holding nothing is a fault too: with no row, each rule below this
+ * one reads nothing and reports that as agreement.
+ */
+export function recordProblems(rows, files) {
+  const problems = [];
+  const say = (where, detail) => problems.push({ where, detail });
+  if (rows.length === 0) say("DECISIONS.md", "holds no row, so no decision was read");
+  if (files.size === 0) {
+    say(DECISIONS_DIR, "holds no row file, so no decision was read");
+    return problems;
+  }
+  const first = new Map();
+  for (const row of rows) {
+    const rel = `${DECISIONS_DIR}/${row.id}.md`;
+    const at = `row ${row.id} on line ${row.line}`;
+    // A row id appearing twice is a row nobody can cite.
+    if (first.has(row.id)) {
+      say("DECISIONS.md", `${at} is a second line for the row on line ${first.get(row.id)}: two rows share an id`);
+      continue;
+    }
+    first.set(row.id, row.line);
+    if (!row.section?.startsWith(`${row.id[0]}. `)) say("DECISIONS.md", `${at} sits under "${row.section}", and a row is filed under the section of its letter`);
+    if (row.file !== rel) say("DECISIONS.md", `${at} does not link to its file: its last cell is \`[${row.id}](${rel})\``);
+    if (!files.has(row.id)) {
+      say("DECISIONS.md", `${at} has no file ${rel}`);
+      continue;
+    }
+    const file = files.get(row.id);
+    if (!file) {
+      say(rel, `is not a row file: \`# ${row.id}\`, a \`Section:\` line, then \`## Decision\`, \`## Why\` and \`## Status\` in that order, each once`);
+      continue;
+    }
+    if (file.id !== row.id) say(rel, `is headed # ${file.id}, and a row file is named by its id`);
+    if (file.section !== row.section) say(rel, `says "Section: ${file.section}", and DECISIONS.md holds row ${row.id} under "${row.section}"`);
+    if (file.decision === "") say(rel, "has nothing under `## Decision`");
+    else if (escaped(file.decision) !== row.decision) say(rel, `its Decision is not the Decision cell DECISIONS.md holds for ${at}: the two are one text, a \`|\` written \`\\|\` in the index`);
+    const opens = shortStatus(file.status);
+    if (!opens) say(rel, "its Status opens with none of `**done**`, `partial` and `todo`, and the index says which of the three");
+    else if (opens !== row.status) say(rel, `its Status opens "${opens}", and DECISIONS.md says "${row.status}" for ${at}`);
+  }
+  const indexed = new Set(rows.map((row) => row.id));
+  for (const name of files.keys()) {
+    if (!indexed.has(name)) say(`${DECISIONS_DIR}/${name}.md`, "no row of DECISIONS.md has this id");
+  }
+  return problems;
+}
+
+/** Whether a document is the decision record: its index, or one of its row files. */
+const inRecord = (rel) => rel === "DECISIONS.md" || rel.startsWith(`${DECISIONS_DIR}/`);
 
 // A document that records a past state names the paths that state had, and
 // today's path in it would be a claim the measurement never made.
@@ -554,6 +634,7 @@ export const READS = [
   "CONTRIBUTING.md",
   "CHANGELOG.md",
   "DECISIONS.md",
+  DECISIONS_DIR,
   "CONTEXT.md",
   "SECURITY.md",
   "package.json",
@@ -683,7 +764,8 @@ export function checkDocs() {
   // table held 55 rows, the README said 55 and CONTRIBUTING said 54. It is the
   // one number in the docs that moves on every substantive change, so all three
   // are read against the table rather than against one another.
-  const rows = [...read("DECISIONS.md").matchAll(/^\| [A-H]\d+ \|/gm)].length;
+  const indexed = indexRows(read("DECISIONS.md"));
+  const rows = indexed.length;
   for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
     for (const m of read(rel).matchAll(new RegExp(`(${N})\\s+numbered (?:decisions|rows)`, "g"))) {
       claim(rel, counted(m[1]) === rows, `says "${m[1]} numbered", DECISIONS.md holds ${rows} rows`);
@@ -692,28 +774,22 @@ export function checkDocs() {
 
   // A row whose cells outnumber the header's is a row whose tail GitHub drops,
   // silently: an unescaped `|` inside a code span splits the cell it sits in, and
-  // the Status column falls off the end. Three rows had it at once, one of them a
-  // whole `**done**` list. The escape is `\|`, which the file already uses.
-  for (const [i, line] of read("DECISIONS.md").split(/\r?\n/).entries()) {
-    if (!/^\| [A-H]\d+ \|/.test(line)) continue;
-    // No fallback: the filter above took only lines starting `| A1 |`, and one of
-    // those holds at least two unescaped pipes.
-    const cells = line.match(/(?<!\\)\|/g).length;
-    claim(
-      "DECISIONS.md",
-      cells === 5,
-      `row ${/^\| ([A-H]\d+) \|/.exec(line)[1]} on line ${i + 1} has ${cells - 1} cells, not 4: escape a \`|\` inside a code span as \`\\|\``
-    );
+  // the File column falls off the end, the row's link with it. The escape is
+  // `\|`, which the file already uses.
+  for (const row of indexed) {
+    claim("DECISIONS.md", row.cells === 4, `row ${row.id} on line ${row.line} has ${row.cells} cells, not 4: escape a \`|\` inside a code span as \`\\|\``);
   }
 
-  // A row number appearing twice is a row nobody can cite.
-  const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-H]\d+) \|/gm)].map((m) => m[1]);
-  claim("DECISIONS.md", new Set(ids).size === ids.length, "two rows share a number");
+  // The index says a row exists and its file says what the row is, so the two
+  // are held to each other before anything below reads a row.
+  const rowsRead = new Map([...rowFiles(root)].map(([id, text]) => [id, readRowFile(text)]));
+  for (const { where, detail } of recordProblems(indexed, rowsRead)) claim(where, false, detail);
+  const record = [...rowsRead.values()].filter(Boolean);
 
   // "(B13)" read as the source of a rule another row holds, and nothing read it.
-  // A number that names the wrong row still passes; one that names no row does not.
-  for (const { row, cited } of rowsCitedMissing(read("DECISIONS.md"))) {
-    claim("DECISIONS.md", false, `row ${row} cites ${cited}, and no row has that number`);
+  // An id that names the wrong row still passes; one that names no row does not.
+  for (const { row, cited } of rowsCitedMissing(record)) {
+    claim(`${DECISIONS_DIR}/${row}.md`, false, `cites ${cited}, and no row has that id`);
   }
 
   // --- the gate table ---------------------------------------------------------
@@ -950,15 +1026,16 @@ export function checkDocs() {
     [`(${N})\\s+node-hosted\\s+engines`, Object.values(ENGINES).filter((e) => e.host === "node").length, (n) => `the registry declares ${n} hosted by node`],
     // Told apart by the document: a build contract row says "spans two engines"
     // of the pair it compares, where every other document counts them.
-    [`(?:(?:the|all)\\s+)?(${N})\\s+engines\\b`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`, "DECISIONS.md"],
+    [`(?:(?:the|all)\\s+)?(${N})\\s+engines\\b`, Object.keys(ENGINES).length, (n) => `the registry declares ${n}`, inRecord],
     [`(${N})\\s+(?:vendored\\s+)?grammar(?:s|\\s+files|\\s+packages)\\b`, hosted, (n) => `the registry routes ${n} languages to tree-sitter`],
     [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
   ];
-  const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
+  const rowDocs = [...rowsRead.keys()].map((name) => `${DECISIONS_DIR}/${name}.md`);
+  const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", ...rowDocs, "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
   for (const rel of stating) {
     const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
     for (const [phrasing, held, source, pairsIn] of COUNTS) {
-      if (rel === pairsIn) continue;
+      if (pairsIn?.(rel)) continue;
       for (const m of text.matchAll(new RegExp(phrasing, "gi"))) {
         claim(rel, counted(m[1]) === held, `says "${m[0]}", ${source(held)}`);
       }
@@ -1036,8 +1113,13 @@ export function checkDocs() {
   for (const { rel, line, word, term } of avoidedWords(glossary.terms, written.map((rel) => [rel, CHANGELOG.test(rel) ? unreleased(read(rel)) : read(rel)]))) {
     claim(`${rel}:${line}`, false, `says "${word}", a word the ${term} entry in CONTEXT.md displaces`);
   }
-  for (const { row, spelled } of doneFilesGone(read("DECISIONS.md"), tracked)) {
-    claim("DECISIONS.md", false, `row ${row} names \`${spelled}\` as done, and no such file is here`);
+  for (const { row, spelled } of doneFilesGone(record, tracked)) {
+    claim(`${DECISIONS_DIR}/${row}.md`, false, `names \`${spelled}\` as done, and no such file is here`);
+  }
+  // A comment cited two rows before either was written, and every check passed.
+  const rowIds = new Set(record.map((row) => row.id));
+  for (const { rel, cited } of rowsCitedInCode(rowIds, [...tracked].filter(citesRows).map((rel) => [rel, read(rel)]))) {
+    claim(rel, false, `a comment cites ${cited}, and no row has that id`);
   }
 
   // --- versions ---------------------------------------------------------------
