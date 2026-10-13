@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 333 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 335 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -109,7 +109,9 @@ pointer to it. A comment may end with the row's id in parentheses, `(F17)`, and 
 full of them: an id
 here names this repository's own register rather than a ticket, and the row it points at is one file
 away, at `docs/decisions/<id>.md`. A ticket number, a PR number or a link to a conversation is none
-of that, and stays out.
+of that, and stays out. `npm run check:docs` reads every comment of a `.mjs` file under
+`plugins/anatomiya/lib`, `plugins/anatomiya/bin` and `scripts` and fails on an id no row carries,
+naming the file and the id, so the row is written in the change that cites it.
 
 If there is no row yet, add one. A row is written in two places, and `npm run check:docs` fails when
 they disagree.
@@ -251,7 +253,9 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-tree.mjs` the rows asked of Python, PHP, Go, Java, C#, Rust and Kotlin, in
   `TREE_DIMENSIONS`, walking a plain copy of a tree-sitter tree through `walkTree`
 - `plugins/anatomiya/lib/tree-shapes.mjs` what each grammar calls a function, a class, a comment, a handler and an
-  import. The only file that spells a grammar's node type or field name
+  import. One of the two files that spell a grammar's node type or field name: the other is the
+  oracle in `scripts/measure-inert.mjs`, which reads the grammars apart from the rule it measures
+  (B75), and a test holds each of the two to the grammars the plugin ships
 - `plugins/anatomiya/lib/tree-facets.mjs` whether a file of those seven declares a test case, and for which runner
 - `plugins/anatomiya/lib/pairing.mjs` file-to-file obligations and the `PAIRINGS` list. These are the one class the
   parse worker never runs, because it runs a program and an obligation has no program to run
@@ -265,29 +269,33 @@ about or how a history walk is fed goes in the one that owns it:
 
 - `plugins/anatomiya/lib/store.mjs` how a file this tool writes reaches the disk: the staged name
   and its reading, `writeTemp` and `atomic`, the 64 MiB bound on a read, `putBack`, and
-  `replaceAll`, which replaces a set of files and puts every one back when one fails. It imports
+  `replaceAll`, which replaces a set of files and puts every one back when one fails, and
+  `isFileAt`, the one test of a regular file at a path. It imports
   only the path encoder, so the pin and the refresh state are written through it without importing
   the record's module to write (A115)
 - `plugins/anatomiya/lib/lock.mjs` the one lock the echo and the refresh worker take: an exclusive
   create, and a dead lock broken through a lock token. What makes a lock dead is a judge the caller
-  passes, `mtimeAge` or `ownerAge` (A117)
+  passes, `mtimeAge` or `ownerAge`. An entry at a lock's name that is no lock is its to tell apart:
+  an empty directory is removed, and anything else that will not go is thrown with `blocked` (A117)
 - `plugins/anatomiya/lib/transcript.mjs` what Claude Code's transcript records say, by functions
-  that take text, so a hook reads the transcript once for several answers (A116)
+  that take text, so a hook reads the transcript once for several answers, and the one table of
+  what makes a record a compaction (A116)
 - `plugins/anatomiya/lib/echo.mjs` whether the echo delivers on a call: `echoDue` over a digest, a
   transcript and the plugin's data directory, and `heldIn`, the walk of the window that
   `scripts/measure-echo.mjs` replays through (A119, A92)
 - `plugins/anatomiya/lib/inert.mjs` which of a file's lines define nothing callable, the one question
-  the end-of-turn reuse check asks: `inertLinesOf`, the line rules of oxc and prism, and the stop's
-  parse budget, `REUSE_PARSE_MS` (A91, B73)
+  the end-of-turn reuse check asks: `inertLinesOf`, the line rules of oxc and prism, and
+  `REUSE_PARSE_MS`, the second one stop's tree-sitter files share for their loads, parses and walks
+  (A91, B73)
 - `plugins/anatomiya/lib/inert-tree.mjs` the same answer for the seven tree-sitter languages, read
-  off the file's tree with the kinds `tree-shapes.mjs` lists. Loaded on the first such file a stop
-  reaches (B68, B74)
+  off the file's tree with the kinds `tree-shapes.mjs` lists, in a walk that reads the stop's clock.
+  Loaded on the first such file a stop reaches (B68, B74)
 - `plugins/anatomiya/lib/tree-sitter-runtime.mjs` the tree-sitter runtime and one parser per grammar,
   loaded once per process for the scan's worker and for the reuse check. It imports no walker and no
   dimension, which is what lets the Stop hook parse (B73)
 - `plugins/anatomiya/lib/history.mjs` the two history walks' feed: `historyFields`, which replays a
-  history store's commits and asks git for the rest, the stamp a store is used under, and
-  `saveHistory` (D15)
+  history store's commits and asks git for the rest, the stamp a history store is used under, and
+  `saveHistory`, which takes that stamp again before it writes (D15)
 
 To change which lines the reuse check asks about in one of the seven languages, write the case in
 `test/inert-tree.test.mjs` through its `asking` helper, which puts every line of the case to the
@@ -326,6 +334,11 @@ A row is a visitor of the one walk its engine takes over each file (B49): `walk`
 visitor row its `run` with `fromVisitor` on its engine's walk, so the check and the tests can still
 ask one row at a time. Work that needs the whole file goes in an optional `done()` after the walk. A
 row that never walks, because it reads `program.body` alone, declares `run` instead.
+
+A type-checked row, one of `SEMANTIC_DIMENSIONS` in `dimensions-semantic.mjs`, also declares
+`sited(ts, source)`, which says off the tree alone, with no type, whether the file holds a site of
+the row. The checker's job asks it of every file before it walks a row (B72), and a row that
+declares none is refused when the module loads, by name.
 
 A file-to-file obligation is the same three numbers with the site defined differently: the site is
 the file, so `candidates` equals `applicability` and `conforming` counts the producers whose companion

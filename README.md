@@ -111,7 +111,7 @@ Then, in the repository you want mapped:
 It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
 `.claude/anatomiya/facts.json`, and `layout.json` beside it. It also keeps
 `history-authors.gz` and `history-cochange.gz` there: what it read of the history, so the next scan
-asks git only for the commits it has not seen. Deleting either costs one full read of the history.
+reads from git only the commits it has not seen. Deleting either costs one full read of the history.
 Pass `--dry-run` to see the plan without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
 as well, which is [Other tools](#other-tools). The one other file a scan can change is
 `.claude/settings.local.json`: where it still holds the hook entry versions 0.2.4 to 0.2.6 put
@@ -190,8 +190,8 @@ alone. What the four do:
   once per change, for one subagent to look for an existing function the new code could call
   instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
   such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
-  could be written with are not asked about. It reads ten languages: JavaScript, TypeScript and Ruby
-  by a rule over their lines, and Python, PHP, Go, Java, C#, Rust and Kotlin by the file's tree,
+  could be written with are not asked about. It reads ten languages and the script blocks of Vue and Svelte
+  components: JavaScript, TypeScript and Ruby by a rule over their lines, and Python, PHP, Go, Java, C#, Rust and Kotlin by the file's tree,
   where an added comment, import or name bound to a literal asks nothing and any other added line
   asks. A file counts as the turn's work only when it was last written during one of the session's
   own tool calls, so a file another session or an editor saved in between is not asked about.
@@ -219,7 +219,8 @@ way. It leaves
 alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
-failed until one succeeds. A Cursor or Copilot directory a rescan could not write, for a locked file
+failed until one succeeds. A refresh that could not ask git a question before the rescan records
+nothing, says nothing, and is tried again the next time the checkout moves or a session starts. A Cursor or Copilot directory a rescan could not write, for a locked file
 or a missing write permission, is tried again each half hour for as long as it stays so. A scan run
 by hand prints why and ends that retry until the checkout moves. A committed map's `.claude/anatomiya/layout.json` comes along but does
 nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
@@ -259,8 +260,10 @@ there (`git push`, a push by URL, a teammate's commit on top): that is work push
 shared branch, which nobody reviewed. A branch you push and merge through a pull request's merge
 commit is pinned once pulled, since the merge is its review; accepting a direct push is
 `/anatomiya:pin`, by hand. A commit you pushed from another machine before this clone existed does
-not hold its first pin. When the pin stops following for one of those reasons while the checkout
-sits on the tip, or because git could not say, each session you start or resume opens with one line
+not hold its first pin. A refresh that could not ask git for HEAD, the remote's tip, the pinned commit or which
+of two pins is newer holds nothing: it ends, and the next one asks again. When the pin stops
+following for one of those reasons while the checkout sits on the tip, or because git could not say
+how the remote's branch last moved or who made a commit on it, each session you start or resume opens with one line
 in your terminal saying why and at which commit, until a pin by hand, or a refresh that no longer
 holds it, ends it; it is never put in the model's context, since the model is the author the pin
 exists to keep from accepting its own work. Each automatic pin records what it accepted (the commit
@@ -769,6 +772,14 @@ first-parent changes, so a shallow clone, such as a CI checkout at depth one, st
 older than 2.31 states none either. A kind of file added fewer than 35 times in those changes gets
 no claim, so most repositories state none: 51 of 60 measured.
 
+**A git that could not be asked stops the command.** Where a git call ends with no exit code, its
+clock run out on a loaded machine or a signal sent to it, `scan`, `pin` and `check` stop, write
+nothing and print the question at exit 1: `anatomiya: git could not be asked whether commit <sha> is
+still in this repository: git was ended by SIGTERM after 120000 ms`, or the same for `which commit
+<ref> names`, `for the merge base of <a> and <b>` and `whether this repository folds case`. Run it
+again. Read as git saying no, the first of those dropped a map to counts over a commit that was
+still there. A repository git itself cannot open stops them the same way, with git's own text.
+
 **Who gets the most out of it**: repositories where a meaningful share of pull requests are
 agent-authored, with many directories and mechanical per-file obligations. A solo repository is not
 held back by the author gate: where the whole history has one author there is no second opinion to
@@ -781,7 +792,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 333 numbered decisions, a line each, and each
+- [DECISIONS.md](DECISIONS.md) is the build contract: 335 numbered decisions, a line each, and each
   links to its own file under [docs/decisions](docs/decisions) with the measurement or the review
   finding that forced it. Why a threshold is where it is, why the parser runs in child processes, why
   no hook carries the map on its own: that is where to look.

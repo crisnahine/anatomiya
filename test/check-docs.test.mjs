@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { PROSE_NAMES, READS, avoidedWords, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, avoidedWords, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedInCode, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
 import { DECISIONS_DIR, indexRows, readRowFile } from "../scripts/decisions.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
@@ -1013,7 +1013,7 @@ test("a bare file name a decision row names as done is held to the names this tr
   assert.deepEqual(doneFilesGone(rows, new Set()), [], "and a tree git cannot list answers nothing");
 });
 
-test("a row citing a number no row has is named, and a key in a code span is not a citation", () => {
+test("a row citing an id no row has is named, and a key in a code span is not a citation", () => {
   assert.deepEqual(rowsCitedMissing(ROWS), [{ row: "B2", cited: "B9" }, { row: "B2", cited: "H3" }]);
 });
 
@@ -1044,7 +1044,31 @@ test("a decision row citing a row that does not exist fails the check", (t) => {
   const { status, output } = check(dir);
 
   assert.equal(status, 1, output);
-  assert.ok(output.includes(`${DECISIONS_DIR}/B53.md: cites B99, and no row has that number`), output);
+  assert.ok(output.includes(`${DECISIONS_DIR}/B53.md: cites B99, and no row has that id`), output);
+});
+
+test("a row id a comment cites and no row carries is named with its file, whether or not parentheses hold it", () => {
+  const ids = new Set(["B1", "B2"]);
+  const source = [
+    "// Bounded, since the listing grows with the repository (B1, B9).",
+    "// As H3 has it, and `C7` is a key, and U+E0100 is a code point.",
+    'export const said = "see (D4)";',
+    "/** One read per file (B2). */",
+  ].join("\n");
+
+  assert.deepEqual(rowsCitedInCode(ids, [["scripts/a.mjs", source]]), [{ rel: "scripts/a.mjs", cited: "B9" }, { rel: "scripts/a.mjs", cited: "H3" }]);
+  assert.deepEqual(rowsCitedInCode(ids, [[`${REL.anatomiya}/lib/a.mjs`, "// (B9)"], [`${REL.anatomiya}/bin/a.mjs`, "// (B9)"]]).length, 2, "the library and the binary are read");
+  assert.deepEqual(rowsCitedInCode(ids, [["test/a.test.mjs", "// (B9)"], ["scripts/a.md", "(B9)"]]), [], "a test and a document are other checks' to read");
+});
+
+test("a comment citing a row that does not exist fails the check", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "scripts/decisions.mjs"), (text) => `${text}// Held to the record (B999).\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.ok(output.includes("scripts/decisions.mjs: a comment cites B999, and no row has that id"), output);
 });
 
 const INDEX = [
@@ -1066,7 +1090,7 @@ test("an index and the row files that say the same have no problem", () => {
 test("an index row with no file, and a row file with no index row, are each named", () => {
   assert.deepEqual(recordProblems(indexRows(INDEX), files({ B2: null })), [{ where: "DECISIONS.md", detail: "row B2 on line 6 has no file docs/decisions/B2.md" }]);
   assert.deepEqual(recordProblems(indexRows(INDEX), files({ B7: { id: "B7", decision: "Seven.", status: "**done**" } })), [
-    { where: "docs/decisions/B7.md", detail: "no row of DECISIONS.md has this number" },
+    { where: "docs/decisions/B7.md", detail: "no row of DECISIONS.md has this id" },
   ]);
 });
 
@@ -1097,7 +1121,7 @@ test("a row file with no Decision, or a Status that opens with none of the three
 
 test("a file under another row's name, a file that is no row file, and a row linking elsewhere are named", () => {
   assert.deepEqual(recordProblems(indexRows(INDEX), files({ B2: { ...FILES.B2, id: "B3" } })), [
-    { where: "docs/decisions/B2.md", detail: "is headed # B3, and a row file is named by its number" },
+    { where: "docs/decisions/B2.md", detail: "is headed # B3, and a row file is named by its id" },
   ]);
   assert.deepEqual(recordProblems(indexRows(INDEX), files({ B2: "Two.\n" })), [
     { where: "docs/decisions/B2.md", detail: "is not a row file: `# B2`, a `Section:` line, then `## Decision`, `## Why` and `## Status` in that order, each once" },
@@ -1132,7 +1156,7 @@ test("a row file with no index row fails the check", (t) => {
   const { status, output } = check(dir);
 
   assert.equal(status, 1, output);
-  assert.ok(output.includes(`${DECISIONS_DIR}/C999.md: no row of DECISIONS.md has this number`), output);
+  assert.ok(output.includes(`${DECISIONS_DIR}/C999.md: no row of DECISIONS.md has this id`), output);
 });
 
 test("a decisions directory holding no file fails the check, and says no decision was read", (t) => {

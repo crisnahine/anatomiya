@@ -450,9 +450,10 @@ clock than that: the right to remove a dead one goes to the call that creates it
 it is still the one it found dead, then removes that lock token. Every call then tries the one
 create of the lock, and those that lose it deliver nothing. A lock token whose mtime is more than 62
 seconds from the clock, either way, was left by a call killed while it broke the lock, and is broken the same way under a
-lock token of its own, `<batch claim>.lock.<mtime in ms>.<the token's mtime in ms>`, one level down and
+lock token of its own, `<batch claim>.lock.<mtime in ms>.<the lock token's mtime in ms>`, one level down and
 no further. A lock token the system refuses to
-remove is left for the sweep, and a dead lock it refuses to remove makes the call answer alone. An
+remove is left for the sweep, and a dead lock it refuses to remove makes the call answer alone. An empty directory at
+the lock's name is removed with `rmdir` and the lock taken; one holding entries is never emptied. An
 exclusive create Windows refuses with EPERM, its answer for a name another process is still
 deleting, is tried again seven times, after waits doubling from 1 ms to 64 ms, before the call
 answers alone. A batch claim is written to `<batch claim>.<pid>` and renamed over the batch claim,
@@ -493,23 +494,28 @@ first 100 of each kind.
 
 A scan keeps two more files in `.claude/anatomiya`, `history-authors.gz` and `history-cochange.gz`
 (D15). Each holds, for the commits git already holds, what one history walk read of them: the
-author's address after the mailmap, and the paths the commit changed with their status letters.
+commit's name, the author's address after the mailmap, and the paths the commit changed with their
+status letters.
 Nothing else of a commit is kept, no message and no content. They are written only by a scan, a
 person's or the refresh's, never by a dry run, and the exclude lines in the README keep the directory out of git. A repository that
 commits the directory without them commits those addresses, as its own history already does.
 
-A store that came with a clone is never read: one git tracks, under any letter case, is passed
+A history store that came with a clone is never read: one git tracks, under any letter case, is passed
 over, and so is one git will not answer about. A store is read only as a regular file inside the
 repository's own `.claude`, through `O_NOFOLLOW` where the system has it, at most 64 MiB packed
 and 256 MiB inflated, refused past that before the bytes are held. It must open with a stamp, a
 digest of everything a commit's record depends on besides the commit, and with a digest of its
 records, and be records end to end, one per commit. Only the digest of the configuration is kept,
 since the configuration names paths and can hold a token. The stamp reads at most 1,024 tracked
-`.gitattributes` files and at most 8 MiB of any one file, and past either the walk reads the log
-whole and keeps no store. A store that fails any of this is the full walk and never an error.
+`.gitattributes` files and at most 8 MiB of any one file, and past either the walk that depends on
+that file reads the log whole and keeps no store: both walks for `.mailmap`, the order file, the
+shallow file and the grafts file, and the authors walk alone for an attributes file. A `.mailmap`
+at the root or a `.gitattributes` in the working tree that is a link is no stamp either, since git
+follows no link at those names. A store is written only where the stamp, taken again before the
+write, is the one its records were read under. A store that fails any of this is the full walk and never an error.
 
 The digest stops a hand edit and not a forger. Someone who can write the file can copy the stamp
-from the store that is there and seal records of their own, and so choose which addresses touched
+from the history store that is there and seal records of their own, and so choose which addresses touched
 which path, which moves a file's author count and the repository's, and which paths each change
 added and touched, which moves which co-change claims are mined. They cannot put a path into the
 map that git does not hold: a co-change claim's files are checked against the tree at the walk's
@@ -537,11 +543,14 @@ also be slow on input built for it: a 195 KB Kotlin file of 4,000 `<` comparison
 
 One place parses a grammar outside that pool: the end-of-turn reuse check reads a changed file of
 those seven languages in the hook's own process (B73). It reads only a file under the same 1 MB
-cap, and every tree-sitter parse of one stop shares one second, asked through the runtime's
-progress callback while a parse runs, so a parse that runs past it is cancelled and its file asked
-about whole. Each tree is freed before the answer, a parse or a walk that throws is caught and its file
-asked about whole, and anything past that reaches the hook's own boundary, which answers `{}`. The
-most a file can cost a stop is that second and one question.
+cap, and the tree-sitter files of one stop share one second: every parse, asked through the
+runtime's progress callback while it runs, and every walk of a parsed tree, which reads the clock
+once in 4,096 nodes it counts. A parse or a walk that runs past the second ends, and its file is
+asked about whole. A load of the runtime or of a grammar counts against the second and cannot be
+stopped part way. Each tree is freed before the answer, a parse or a walk that throws is caught and
+its file asked about whole, and anything past that reaches the hook's own boundary, which answers
+`{}`. A 32 KB Python file of 8,000 chained assignments took 72.9 s to walk before the walk had a
+clock, past the 15 seconds the hook is given, and walks in 70 ms at a load average of 45 to 48.
 
 This is availability, not confidentiality. A repository can still make a scan slow.
 
@@ -561,7 +570,10 @@ Beside what they write, it writes in `.claude/anatomiya` its state, `refresh.jso
 worker's word to the lock's holder to run once more; and, while it breaks a lock whose owner is
 gone, a lock token, `refresh.lock.<16 hex>`, or that name and `.<digits>`. A lock token is empty, made with an exclusive create that refuses any entry already at
 the name, a link included, and removed by the worker that made it; one a killed worker left is
-removed by the next worker to take the lock, or by a scan.
+removed by the next worker to take the lock, or by a scan. A worker also removes an empty directory
+at `refresh.lock`, which a repository can ship, with `rmdir`: no link is followed and nothing that
+holds an entry is removed. A directory holding entries there is left whole, no refresh runs in that
+checkout while it stays, and a scan's summary says so.
 
 `npm` runs from `anatomiya setup` and from nothing else. `scan`, `check` and `pin` never call it,
 which is the whole reason the install is a command of its own rather than something a scan does on

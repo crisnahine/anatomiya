@@ -10,7 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 The end-of-turn reuse check asks about seven more languages, `check` reads a revision's files
 through one git process where it started one per file, and a scan keeps what it read of the history
 so the next scan reads only the new commits. A dead refresh lock is broken through a lock token,
-since two workers could hold the lock before.
+since two workers could hold the lock before. A git call that could not be asked stops a scan, a
+pin and a check, where it was read as git saying no.
 
 A scan writes the same map as 0.15.1: the history stores were held to 0.15.1's plan on all 60
 measured repositories, and the checker's early end on the 12 it was run on, 8 that run the checker
@@ -26,7 +27,7 @@ no git version is needed that 0.15.1 did not need.
   every added line provably defines nothing callable and calls nothing: a blank line, a comment, an
   import or a `use`, a package line, a Python docstring, a name bound to a literal, a closing
   bracket. Every other added line asks. Over the last 200 commits of 21 repositories of those
-  languages it asks about 26,542 of 34,075 added hunks and leaves out 7,533, and a second reading
+  languages it asks about 26,545 of 34,075 added hunks and leaves out 7,530, and a second reading
   of every left-out hunk, written apart from the rule, found nothing defined, called, built or
   computed in any of them (`node scripts/measure-inert.mjs`).
 
@@ -35,17 +36,34 @@ no git version is needed that 0.15.1 did not need.
   holding more than its own text, a sign Kotlin or C# does not define for the literal after it
   (`-1u`), a C# literal declared as a named type (`Money a = 5;`), a write through an attribute or
   a subscript in Python and PHP (`self.x = 0`, `$a['k'] = 1;`), and any token that is not a closing
-  bracket or a separator. That costs false asks, one search each. In those 34,075 hunks: 18 of 21
-  writes through an attribute or a subscript reach no setter, 12 hunks hold an `else`, an
-  `except:` or an opening bracket alone, and 2 hold C# enum members.
+  bracket or a separator. That costs false asks, one search each. In those 34,075 hunks: 21
+  hunks ask only because of a write through an attribute or a subscript, and 18 of those reach no
+  setter; 12 hunks hold an `else`, an `except:` or an opening bracket alone; and 2 hold C# enum
+  members.
 
-  The tree-sitter parses of one stop share one second. A file reached after it, and one the grammar
-  rejects, is asked about whole; a file whose grammar or runtime is missing is not asked about, as
-  before. The largest parse measured took 179 ms on a quiet machine and 619 ms at a load average
-  above 70. A stop that changed only JavaScript or Ruby loads no grammar. Not covered: a Python
-  `x = 1` in a class whose metaclass runs code on assignment, and `var v = 1;` in C# where a type
-  named `var` is in scope, are left out; and the rules for Java, C#, Rust and Kotlin were settled
-  by reading, with no compiler for them on the machine that measured.
+  Three more kinds ask because they hold what the tree does not show as code: every row of a
+  string spread over lines and passed to a call, the rows that open and close a raw string among
+  them, where the same string bound to a name asks nothing; a Go comment directly above
+  `import "C"`, which cgo compiles; and PHP markup outside the tags that holds a `<script`. Three
+  of the 34,075 hunks moved to asking for it, two rows of a Rust raw string and a comment between
+  the parts of a Python string, and none of the 34,075 holds a cgo preamble or a script in PHP
+  markup.
+
+  The tree-sitter files of one stop share one second: the first load of the runtime and of each
+  grammar, every parse and every walk of a parsed tree. A file reached after it, one whose parse or
+  walk runs past it, and one the grammar rejects, is asked about whole; a file whose grammar or
+  runtime is missing is not asked about, as before. The walk searches a file once however deep its
+  bindings nest: 8,000 chained Python assignments, 32 KB, walk in 70 ms and 8,000 nested C# blocks
+  in 369 ms, at a load average of 45 to 48. Over those 200 commits the slowest file's parse and walk
+  took 179 ms on a quiet machine and 619 ms at a load average above 70. The three largest files per
+  language of the 25 language repositories, the largest 451 KiB, took 59 to 1,556 ms at the median
+  and 1,773 ms at most at a load average of 35 to 38, so a loaded machine asks about the largest
+  files unread. A load cannot be stopped part way. A stop that changed only JavaScript or Ruby loads
+  no grammar. Not covered: a Python `x = 1` in a class whose metaclass runs code on assignment, and
+  `var v = 1;` in C# where a type named `var` is in scope, are left out; a Rust doc comment that
+  holds a doctest, and PHP markup that runs code with no `<script` tag, read as inert; and the rules
+  for Java, C#, Rust and Kotlin were settled by reading, with no compiler for them on the machine
+  that measured.
 - History stores. A scan keeps what its two history walks read, the one that counts authors and the
   one behind the co-change claims, in `.claude/anatomiya/history-authors.gz` and
   `history-cochange.gz`: each commit's author address after the mailmap and the paths it changed.
@@ -63,7 +81,9 @@ no git version is needed that 0.15.1 did not need.
   place git reads attributes from that can be watched. Stores taken 1, 30, 300 and 3,000 commits
   back and replayed on discourse, vscode and openproject gave the plain walk's answer 24 times of
   24. A store git tracks is never read, a store or a stamp that cannot be checked is the full
-  walk, and a dry run reads the stores and writes neither. Not watched: a `.gitattributes` below
+  walk, and a dry run reads the stores and writes neither. A store is written only where the stamp, taken
+  again before the write, is the one its records were read under, and a `.mailmap` or a working-tree
+  `.gitattributes` that is a link is no stamp. Not watched: a `.gitattributes` below
   the root that git does not track, and the system-wide attributes file on a git older than 2.42.
   Past 256 MiB of records, about 520,000 commits of discourse's shape, nothing is stored.
   `SECURITY.md` says what the files hold and what someone who can write one can change.
@@ -78,7 +98,9 @@ no git version is needed that 0.15.1 did not need.
   started, breaks its framing or outlasts the caller's clock, every read goes to `git cat-file
   blob` as before, with the same answers. On a blobless clone that process never fetches: the
   blobs `check` may fetch for the merge base are fetched by `git cat-file blob`, eight side by
-  side, 1.1 s for 60 blobs from a local promisor where fetching them in turn took 4.3 s.
+  side, 1.1 s for 60 blobs from a local promisor where fetching them in turn took 4.3 s. A gitlink, which
+  that process answers with an object id and `submodule`, reads as absent, as `git cat-file blob`
+  reads it, and the process is kept.
 - A scan whose type checker will degrade ends the checker there. The checker answers every file's
   resolution, and where each type-checked claim has a site, before it walks a claim; a scan that
   reads a degraded verdict off that kills the job, since a degraded checker states no claim. On
@@ -95,10 +117,55 @@ no git version is needed that 0.15.1 did not need.
 - `DECISIONS.md` is an index, one line per row, and each row's measurement and status are in
   `docs/decisions/<id>.md`. At 319 rows the index was 80,837 bytes where the one table was
   709,540. `node scripts/decisions.mjs` prints the record as one table, and `check:docs` holds the
-  index and the files to each other. The record holds 333 rows.
+  index and the files to each other. The record holds 335 rows.
+- An entry at the refresh lock's name that is no lock is told apart from a lock taken. A refresh
+  removes an empty directory there and takes the lock. A directory holding entries is left whole,
+  no refresh runs in that checkout while it stays, and a scan says so in one line,
+  `".claude/anatomiya/refresh.lock" is a directory holding entries, so the map is not refreshed in
+  the background in this checkout while it stays: remove it`, and under `lockBlocked` in its JSON.
 
 ### Fixed
 
+- A git call that could not be asked was read as git saying no. A call that ended with no exit
+  code, its clock run out, a signal sent to it or a start that failed, answered "the commit is gone"
+  or "the ref names nothing". Measured with a git ended by a signal: a scan dropped its map to counts
+  and said the pinned commit was gone, the refresh read a pin as a first pin and skipped the guard
+  that keeps it from moving back, and a check with HEAD unasked let a `--base` naming nothing pass
+  at exit 0. `scan`, `pin` and `check` now stop, write nothing and print the question at exit 1:
+  `anatomiya: git could not be asked whether commit <sha> is still in this repository: git was
+  ended by SIGTERM after 120000 ms`, or the same for `which commit <ref> names`, `for the merge base
+  of <a> and <b>`, `which ref <name> names` and `whether this repository folds case`. A refresh that
+  could not ask before its rescan ends with nothing recorded and asks again when the checkout next
+  moves or a session starts, and a pin is held where git could not be asked how the remote's branch
+  last moved or who this clone commits as. Where the tip of the co-change walk could not be asked
+  for, the summary says what ships together could not be read. Whether a commit is there is asked
+  with `git rev-parse --verify --quiet`, which exits 1 for a commit that is not there and 128 for a
+  repository it cannot open, the same on git 2.39.5 and 2.54.0, where `git cat-file -e` exits 128
+  for both. So a repository git cannot open now stops these commands with git's own text.
+- A clone git could not be asked the depth of is history that could not be read. It was read as a
+  whole clone, and a window read as the whole history lowers the author bar: at depth 1 the
+  repository D11 measured stated 484 claims where its full clone states 465.
+- `check` stops where the merge base could not be asked for. It printed `no merge base between
+  <ref> and HEAD` and went on to exit 0, a sentence git had not said; the caveat is printed only
+  where git ran and found none. A `--base` that looks like a commit id is taken for one only on
+  git's own answer that no ref has that name.
+- The reuse check's line rule read a regex holding `/*`, as in `const trailing = /\/*$/;`, as the
+  start of a block comment, so a function defined below it asked nothing until the next `*/`.
+  0.15.1 shipped this. A block comment that is not closed on its line now opens only at the start
+  of its line or behind one `{`, as JSX writes it, and after anything else the line asks. A line
+  comment that holds `*/` asks, and so does a Ruby comment that holds `#{`, which inside a regex or
+  a percent literal spread over lines is an interpolation that runs. That costs false asks, counted
+  over the corpus: 53 of 144,292 JavaScript and TypeScript files hold a comment opened after code
+  that asks on each of its lines, 300 lines in 164 files ask for a `//` comment that quotes `*/`,
+  and 525 lines in 273 of 66,132 Ruby files ask for a comment holding `#{`, 367 of them comments
+  that quote an interpolation. A hunk whose added lines reach past the last line read of its file
+  asks too.
+- A git or a Ruby child that could not start for want of a file descriptor ended the scan. The
+  streamed git read touched the pipes of a child that had none, and the `error` after it had no
+  listener; measured on Node 22.22.3. Such a start is now a git that failed to start, said in one
+  line, and a pipe that fails part way is heard the same way. The streamed read keeps its own
+  clock, since Node never clears `spawn`'s `timeout` for a child that did not start, which held the
+  process open for 120 seconds.
 - Two refresh workers could hold the refresh lock at once. A worker that found a dead lock moved it
   aside, and its rename could catch the lock another worker had just made: 1 of 200 rounds at 3
   workers started together ended with two holders, and 11 of 200 at 8. A dead lock is now broken
@@ -131,10 +198,14 @@ no git version is needed that 0.15.1 did not need.
 - Three Ruby heap tests set their own silence and wall clocks, since a slow parse child on a loaded
   runner read as a `ruby` that went silent, and the deep-tree test builds its fixture as text,
   since `JSON.stringify` holds about 3,600 levels on arm64 Linux.
-- The 32 tests of the echo's decision run with no `ruby` on PATH. They scanned a Ruby fixture to
+- The tests of the echo's decision run with no `ruby` on PATH. They scanned a Ruby fixture to
   get a map, so a machine without prism skipped all of them.
 - A test that needs the one `cat-file` process to answer is an avoidable skip on a git older than
   2.42, so a run on such a git fails and names it.
+- The test of five hundred large tree-sitter parses failed with `300 syntax error(s)` on a machine
+  slow enough that the retry of its C# file was never started: its worker weighed that retry on the
+  real clock, measured at a load average rising from 34 to 60. The worker hands the parser a clock
+  that stands still.
 
 ### Changed for contributors
 
@@ -151,6 +222,14 @@ no git version is needed that 0.15.1 did not need.
 - A change to the reuse check's tree rule goes through the `asking` helper of
   `test/inert-tree.test.mjs`, which holds the measurement's oracle to every case, and a run of
   `scripts/measure-inert.mjs` whose oracle count stays at zero.
+- Every signal to a child goes through `signalChild` in `child.mjs`, and `test/modules.test.mjs`
+  fails on any other `.kill(` in the library.
+- A question git could not be asked is an `Unasked` error, thrown by `answered` in `git.mjs`. A
+  `catch` that reads a failed git call as "no" lets it through.
+- `check:docs` fails on a row id that a comment cites and no row carries, in the library, the
+  binary and the scripts. Two comments cited rows before either row was written, and the gate
+  passed.
+- A type-checked row declares `sited`, and one that does not stops its module loading, by name.
 
 ## [0.15.1] - 2026-10-12
 

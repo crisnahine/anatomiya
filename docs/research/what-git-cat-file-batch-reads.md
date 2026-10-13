@@ -132,10 +132,13 @@ NUL, or bytes that look like another header. **measured**: the tree reply above 
 inside its 29 bytes and still ends on the one LF its size predicts. The safe reader is:
 
 1. Read up to the first output delimiter (LF, or NUL under `-Z`). That is the header.
-2. If the header is the request text followed by ` missing`, ` ambiguous`, ` excluded` or
-   ` submodule`, the reply ends there. Match against the text the reader sent: under `-Z` the
-   echoed name may itself hold spaces or a newline (see section 3), so splitting on spaces is
-   wrong.
+2. If the header is the request text followed by ` missing`, ` ambiguous` or ` excluded`, the
+   reply ends there. Match against the text the reader sent: under `-Z` the echoed name may itself
+   hold spaces or a newline (see section 3), so splitting on spaces is wrong. A gitlink is the one
+   such reply that does not echo the request. **measured** on git 2.54.0:
+   `printf 'HEAD:sub\0HEAD:gone\0HEAD:a.ts\0' | git cat-file --batch -Z` prints
+   `1111111111111111111111111111111111111111 submodule`, then `HEAD:gone missing`, then the blob.
+   So a header that is an object id and ` submodule` ends the reply too, with no size to read.
 3. Otherwise split the header from the right into `<oid> <type> <size>`, read exactly `<size>`
    bytes, and then exactly one delimiter byte. Never scan the body for a delimiter.
 
@@ -295,5 +298,5 @@ older git `-Z` is an unknown switch and the child exits before reading anything.
 not measured here, since no git older than 2.54 is installed. Whether to state 2.42 as a floor, or
 to fall back to the per-file read when the child dies at once, is a decision this note leaves open.
 
-It was decided since: the reader falls back to the per-file read, so no git version is a floor
-(`DECISIONS.md`, row E17).
+The reader falls back to the per-file read, so no git version is a floor (`DECISIONS.md`, row
+E17).
