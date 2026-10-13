@@ -102,6 +102,10 @@ const OWN_TYPE = { csharp: /^(?:bool|s?byte|char|decimal|double|float|n?u?int|u?
 const NAMING =
   /(?:^|_)(?:identifier|name|type|modifiers?|specifier|lifetime|dimensions|wildcard|scope|pattern)$|^(?:type_arguments|type_argument_list|type_parameter|type_projection|type_elem|variable_declaration|multi_variable_declaration|crate|self|super)$/;
 
+// How the seven grammars spell a string and the parts of one. A string spread over lines is on every
+// row it reaches, a row of its text that holds no token included.
+const STRINGISH = /string|heredoc|nowdoc/;
+
 // What an annotation or a struct type is made of where its grammar spells one as neither a name nor a type.
 export const ACCESS = {
   python: ["attribute", "subscript", "ellipsis"],
@@ -124,7 +128,8 @@ export const UNION = { python: { node: "binary_operator", within: "type" } };
  * member it belongs to, so a call's added argument counts and a constant
  * added inside a class body does not count for the class. A token inside a
  * comment or a string's text is no token here, and an interpolation counts on
- * any added line it spans.
+ * any added line it spans. A string spread over lines is charged the same way
+ * for every added row it reaches, as if a token of it stood on each.
  *
  * An added line holding only closing brackets and separators is not charged:
  * A91's rule calls a closing bracket inert for every engine, since such a line
@@ -166,6 +171,13 @@ export function oracleHits(tree, lang, added) {
   const opening = new Set();
   for (const todo = [[tree.rootNode, false]]; todo.length > 0; ) {
     const [node, inside] = todo.pop();
+    if (STRINGISH.test(node.type)) {
+      for (let row = node.startPosition.row + 1; row <= node.endPosition.row; row++) {
+        if (!onAddedRow(row)) continue;
+        opening.add(row);
+        tokens.push([node, row]);
+      }
+    }
     if (node.childCount > 0) {
       for (const child of node.children) if (child) todo.push([child, inside || quiet.has(node.type)]);
       continue;
@@ -177,11 +189,11 @@ export function oracleHits(tree, lang, added) {
       for (let row = node.startPosition.row; row <= Math.max(last, node.startPosition.row); row++) if (onAddedRow(row)) opening.add(row);
     }
     // A token inside a string's text is no token here.
-    if (!inside && onAddedRow(node.startPosition.row)) tokens.push(node);
+    if (!inside && onAddedRow(node.startPosition.row)) tokens.push([node, node.startPosition.row]);
   }
-  for (const node of tokens) {
+  for (const [node, row] of tokens) {
     // A line of closing brackets alone starts no definition and no call (A91).
-    if (!opening.has(node.startPosition.row)) continue;
+    if (!opening.has(row)) continue;
     for (let up = node.parent; up !== null; up = up.parent) {
       if (flagged.has(up.type) || computing.has(up.type)) charged.set(up.id, up);
       if (containers.has(up.type) || (up.parent !== null && containers.has(up.parent.type))) break;
