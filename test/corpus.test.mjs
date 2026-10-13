@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { createHash } from "node:crypto";
@@ -181,6 +181,21 @@ test("an index read of .gitattributes that could not be asked stops the corpus, 
     await assert.rejects(() => collect(dir), /git could not be asked .*\.gitattributes/, pattern);
     calls.restore();
   }
+});
+
+test("the corpus stops on an index read that could not be asked only once the read beside it has ended", needsGitStub, async (t) => {
+  // The two reads start together, and a throw passed on from the first would leave the other git running behind it.
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", "gen.ts linguist-generated\n");
+    write("a.ts");
+    git("add", "-A");
+  });
+  const ended = join(dir, "..", `${dir.split(sep).pop()}.ended`);
+  t.after(() => rmSync(ended, { force: true }));
+  gitAhead(t, `case " $* " in *' cat-file blob :.gitattributes '*) kill -TERM $$;; *' ls-files -v -z -- .gitattributes '*) sleep 0.5; : > '${ended}';; esac`);
+
+  await assert.rejects(() => collect(dir), /git could not be asked for the index's \.gitattributes/);
+  assert.equal(existsSync(ended), true, "the listing beside it was not left running");
 });
 
 test("an index copy of .gitattributes past the bound of the read leaves the working tree's file to decide", needsGitStub, async (t) => {

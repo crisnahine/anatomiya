@@ -29,7 +29,8 @@ export function gitAhead(t, script = "") {
     if (restored) return;
     restored = true;
     process.env.PATH = path;
-    rmSync(bin, { recursive: true, force: true });
+    // Retried: a read left behind a throw can still be writing its call down here.
+    rmSync(bin, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   };
   t.after(calls.restore);
   return calls;
