@@ -324,8 +324,9 @@ test("a git that never answers is given up on at the caller's clock", { ...needs
   }
   t.after(out.dispose);
 
-  assert.deepEqual(out.missing, [{ rel: "a.js", reason: "absent" }]);
-  // A config read that ran out of time answers absent as well, having started neither.
+  assert.deepEqual(out.missing.map(({ rel, reason }) => ({ rel, reason })), [{ rel: "a.js", reason: "unasked" }]);
+  assert.match(out.missing[0].error, new RegExp(`^git could not be asked for a\\.js at ${sha}: .*git was ended by SIGTERM after 10000 ms`, "s"));
+  // A config read that ran out of time answers unasked as well, having started neither.
   const stalled = readFileSync(join(bin, "pids"), "utf8").trim().split("\n").map(Number);
   assert.equal(stalled.length, 2, "the one child and the per-call read were both started");
   for (const pid of stalled) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "and both were ended");

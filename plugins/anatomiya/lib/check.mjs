@@ -571,7 +571,6 @@ async function resolveBase(root, baseRef, caveats) {
       const fetched = await git(root, ["fetch", "--depth=1", "origin", remote]);
       if (!fetched.ok) continue;
       const mb = await mergeBase(root, remote, "HEAD");
-      if (mb.unasked) throw mb.unasked;
       // A depth-1 checkout grafts HEAD as a root, so `merge-base` cannot see
       // past it, not even to the commit just fetched. The commit object still
       // records its parents, and a parent of HEAD is its own merge base with
@@ -1097,10 +1096,11 @@ async function addPairingFindings(root, findings, { examined, areas, base, cappe
   // corruption that fails one fails the other, and the run reports the diff
   // first. What is pinned instead is `filesAt` answering null at all, in
   // `git.test.mjs`, and the obligation still firing on a tree git does answer.
+  // Null where git could not be asked as well: the caveat below says the list could not be read.
   const tree = await filesAt(root, base.head, {
     timeout: GIT.checkTimeoutMs,
     maxFieldBytes: GIT.checkMaxBytes,
-  });
+  }).catch(() => null);
   if (tree === null) {
     caveat(
       caveats,

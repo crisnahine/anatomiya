@@ -577,6 +577,11 @@ function subcommandAt(args) {
 /**
  * The other entry point: output read off the stream, one NUL-delimited field at
  * a time (F6). `delimiter` is the byte that ends a field where git prints no NUL.
+ *
+ * It rejects with `Unasked` where git left no exit code: an argument refused, a
+ * configuration nobody could read, a start that failed, a signal, a clock, a
+ * pipe that broke, a record past its bound. A git that exited with a code
+ * rejects with a plain error, and so does a read its caller stopped (F29).
  */
 export function gitStreamed(
   root,
@@ -585,10 +590,10 @@ export function gitStreamed(
   { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false, signal = null, input = null, delimiter = 0 } = {}
 ) {
   const refused = refuse(args);
-  if (refused) return Promise.reject(new Error(refused));
+  if (refused) return Promise.reject(new Unasked(refused));
   const sub = args[subcommandAt(args)];
   return prepared(root, args, env, { lazyFetch, timeout }).then((call) => new Promise((fulfil, reject) => {
-    if (call.unread) return reject(new Error(`git ${sub}: ${unreadConfig(call)}`));
+    if (call.unread) return reject(new Unasked(`git ${sub}: ${unreadConfig(call)}`));
     if (signal?.aborted) return reject(new Error(`git ${sub} stopped by its caller`));
 
     let child;
@@ -600,7 +605,7 @@ export function gitStreamed(
       });
     } catch (err) {
       // An option Node refuses is thrown from the start itself.
-      return reject(new Error(`git ${sub} failed: ${err.message}`));
+      return reject(new Unasked(`git ${sub} failed: ${err.message}`));
     }
     // This clock and not spawn's own, which nothing stops for a child that
     // never started and which then holds the process open for the whole of
@@ -634,7 +639,7 @@ export function gitStreamed(
 
     // Before any pipe is read: with no descriptor left, spawn hands back a
     // child that has none and queues this error (B77).
-    child.on("error", (err) => fail(new Error(`git ${sub} failed: ${err.message}`)));
+    child.on("error", (err) => fail(new Unasked(`git ${sub} failed: ${err.message}`)));
 
     // Capped, because stderr grows with the repository the same way stdout
     // does and the message only has to name the failure.
@@ -661,14 +666,14 @@ export function gitStreamed(
       // string limit and throws from a place no caller can catch, which is the
       // failure streaming exists to avoid.
       if (buf.length > maxFieldBytes) {
-        return fail(new Error(`git ${sub} sent one record past ${maxFieldBytes} bytes`));
+        return fail(new Unasked(`git ${sub} sent one record past ${maxFieldBytes} bytes`));
       }
       rest = buf;
     });
 
     // A pipe that fails says so on the stream, and with nobody listening that
     // ends the process. Half of stdout is not the answer; stderr only words a failure.
-    child.stdout?.on("error", (err) => fail(new Error(`git ${sub} failed: ${err.message}`)));
+    child.stdout?.on("error", (err) => fail(new Unasked(`git ${sub} failed: ${err.message}`)));
     child.stderr?.on("error", () => {});
 
     signal?.addEventListener("abort", () => fail(new Error(`git ${sub} stopped by its caller`)), { once: true });
@@ -685,7 +690,7 @@ export function gitStreamed(
       // A caller of a stream has already been handed part of the output, so
       // the only way to say "that was not the answer" is to refuse the whole
       // read (F13, F15).
-      if (code !== 0) return fail(new Error(`git ${sub} exited ${exitSignal || code}: ${stderr.trim()}`));
+      if (code !== 0) return fail(new (typeof code === "number" ? Error : Unasked)(`git ${sub} exited ${exitSignal || code}: ${stderr.trim()}`));
       // Whether a leftover is the final record or a cut-off one is a fact about
       // the command, not about the caller: `ls-files -z` terminates every entry
       // and `log --format=` terminates none of them.
@@ -901,7 +906,9 @@ export async function commitAt(root, ref, bounds = {}) {
  * yielding a tree listing that would then be parsed as source.
  *
  * An empty file returns ok with empty content; an absent path returns not-ok.
- * The two must never collapse into the same value.
+ * The two must never collapse into the same value. Neither may a read git
+ * could not be asked for: its reason is `unasked`, with `error` saying what
+ * ended git, and a caller that takes it for `absent` states what git did not.
  *
  * The read gives up at exactly the size the parser skips at, which is what makes
  * a blob this refuses one the parse would have refused anyway.
@@ -911,6 +918,8 @@ export async function commitAt(root, ref, bounds = {}) {
  */
 export async function showBlob(root, sha, path, { timeout, env, lazyFetch = false } = {}) {
   if (!isSha(sha)) return { ok: false, reason: "bad sha" };
+  // No tree names a path holding a NUL, and Node refuses the argument before git is asked.
+  if (String(path).includes("\0")) return { ok: false, reason: "absent" };
   const r = await gitBuffered(root, ["cat-file", "blob", `${sha}:${path}`], {
     encoding: "buffer",
     maxBytes: MAX_FILE_BYTES,
@@ -919,7 +928,10 @@ export async function showBlob(root, sha, path, { timeout, env, lazyFetch = fals
     ...(env === undefined ? {} : { env }),
   });
   if (r.ok) return { ok: true, content: r.stdout };
-  return { ok: false, reason: r.oversize ? "over size cap" : "absent" };
+  if (r.oversize) return { ok: false, reason: "over size cap" };
+  // No exit code is no answer, and `absent` is one (F29).
+  if (r.code === null) return { ok: false, reason: "unasked", error: `git could not be asked for ${path} at ${sha}: ${failureOf(r)}` };
+  return { ok: false, reason: "absent" };
 }
 
 const BATCH = ["cat-file", "--batch", "-Z"];
@@ -961,7 +973,8 @@ function exited(proc, ms) {
  * `-Z` is git 2.42's, so a git that refuses it is a path users take: a child
  * that will not start, exits, breaks the framing or outlasts `timeout` on one
  * request hands that read and every later one to `showBlob`, and an answer
- * already given stands. A stalled git costs the read in flight `timeout`
+ * already given stands. Only where `showBlob` could not ask either is the
+ * read `unasked`. A stalled git costs the read in flight `timeout`
  * twice, once here and once in `showBlob`.
  *
  * The child never fetches. With `lazyFetch`, a request it answers `missing`
@@ -1138,20 +1151,18 @@ export function blobReader(
 /**
  * The merge base of two commits, with the three outcomes kept apart: found,
  * genuinely no common ancestor (exit 1, empty stdout, no stderr), and the
- * command failing for some other reason. Where it failed with no exit code git
- * was never asked, and `unasked` is the error for a caller that must not read
- * that as "none".
+ * command failing with any other exit code. It throws where git gave no exit
+ * code: git was never asked, and no caller may read that as "none" (F29).
  */
 export async function mergeBase(root, a, b) {
   if (!safeRef(a) || !safeRef(b)) return { found: false, failed: true, sha: null };
   const ask = async () => {
-    const r = await gitBuffered(root, ["merge-base", a, b]);
+    const r = answered(await gitBuffered(root, ["merge-base", a, b]), `for the merge base of ${a} and ${b}`);
     if (r.ok) {
       const sha = r.stdout.trim();
       return { found: sha.length > 0, failed: false, sha: sha || null };
     }
-    if (r.code !== null) return { found: false, failed: r.code !== 1, sha: null };
-    return { found: false, failed: true, sha: null, unasked: new Unasked(`git could not be asked for the merge base of ${a} and ${b}: ${failureOf(r)}`) };
+    return { found: false, failed: r.code !== 1, sha: null };
   };
   // A commit is its own merge base, so verifying it answers the whole question.
   if (a === b && isFullSha(a)) {
@@ -1219,7 +1230,6 @@ export async function resolveBaseRef(root, ref = null, { head = "HEAD" } = {}) {
     // `head` is HEAD's own sha where the caller resolved it, so the question
     // is about two commits and asked once per process.
     const base = await mergeBase(root, head, sha);
-    if (base.unasked) throw base.unasked;
     return { ok: true, ref: candidate, sha: base.found ? base.sha : sha, tip: sha, forkPoint: base.found };
   }
   return { ok: false, reason: ref ? `cannot resolve ${ref}` : "no base branch found" };
@@ -1234,8 +1244,9 @@ export async function resolveBaseRef(root, ref = null, { head = "HEAD" } = {}) {
  * `git cat-file` process per file, which measured 6.9s against 1.4s to parse
  * the entire corpus, on a repository where nothing had changed at all.
  *
- * `null` rather than an empty set when git will not answer: an empty set claims
- * every file is unchanged, which is the unsafe direction.
+ * `null` rather than an empty set when git refuses: an empty set claims every
+ * file is unchanged, which is the unsafe direction. It throws where git could
+ * not be asked.
  */
 export async function changedSinceWorktree(root, sha) {
   if (!safeRef(sha)) return null;
@@ -1244,16 +1255,26 @@ export async function changedSinceWorktree(root, sha) {
   //
   // Streamed, because the listing grows with the repository: a pin far enough
   // behind the working tree differs in every path.
-  return pathSet(root, ["diff", "--name-only", "-z", sha, "--"]);
+  return pathSet(root, ["diff", "--name-only", "-z", sha, "--"], `which files differ from ${sha}`);
 }
 
 /**
- * Every path a NUL-terminated listing names, or `null` if git would not answer.
+ * What a streamed read that failed answers: null where git ran and refused,
+ * and a throw where it could not be asked `question` (F29).
+ */
+function refusedOrThrow(err, question) {
+  if (err instanceof Unasked) throw new Unasked(`git could not be asked ${question}: ${err.message}`);
+  return null;
+}
+
+/**
+ * Every path a NUL-terminated listing names, or `null` if git refused with an
+ * exit code. It throws where git could not be asked `question`.
  *
  * `null` rather than an empty set: an empty set is a real answer meaning "no
  * paths", and every caller here reads that as a population it can trust.
  */
-async function pathSet(root, args, opts = {}) {
+async function pathSet(root, args, question, opts = {}) {
   const paths = new Set();
   // Undefined keys fall back to the runner's own defaults, so a caller that
   // does not care never has to name a budget.
@@ -1263,14 +1284,16 @@ async function pathSet(root, args, opts = {}) {
       if (rel) paths.add(rel);
       return true;
     }, bounded);
-  } catch {
-    return null;
+  } catch (err) {
+    return refusedOrThrow(err, question);
   }
   return paths;
 }
 
 /**
- * Every tracked path at one commit, or `null` when git would not answer.
+ * Every tracked path at one commit, or `null` when git refused with an exit
+ * code. It throws where git could not be asked, and answers null where the
+ * caller's own `signal` stopped the read.
  *
  * A file-to-file obligation is answered by which files exist, so measuring it
  * against the baseline needs the baseline's file list and not the working
@@ -1290,7 +1313,7 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes, signal } = {}
   //
   // The rev goes before the separator: git reads anything past `--` as a path.
   const args = ["ls-tree", "-r", "--name-only", "-z", sha, "--"];
-  const ask = () => pathSet(root, args, { timeout, maxFieldBytes, signal });
+  const ask = () => pathSet(root, args, `which files ${sha} holds`, { timeout, maxFieldBytes, signal });
   // The bounds are part of the question: a listing read under one caller's
   // must not answer a caller that set tighter ones.
   const key = [...args, `${timeout}`, `${maxFieldBytes}`];
@@ -1303,6 +1326,9 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes, signal } = {}
  * NUL-delimited because git permits newlines in paths, the same reason the
  * corpus is collected with `ls-files -z`. Rename records arrive as three
  * fields, everything else as two.
+ *
+ * Null where git refused the range with an exit code. It throws where git
+ * could not be asked.
  */
 export async function diffRange(root, from, to) {
   // `${from}..` puts a leading dash at the head of the argument, where git
@@ -1331,8 +1357,8 @@ export async function diffRange(root, from, to) {
           return true;
         })
       );
-    } catch {
-      return null;
+    } catch (err) {
+      return refusedOrThrow(err, `what changed from ${from} to ${to}`);
     }
     return { renames, changed };
   };
