@@ -158,6 +158,10 @@ test("the walk searches a file of nested bindings once, however deep they nest",
 test("the walk asks the tree for no parent, which the tree answers by reading down from its root", async (t) => {
   const nested = `class A {\n    void M() {\n${"{ Money a = 5; int b = 1;\n".repeat(200)}${"}\n".repeat(200)}    }\n}\n`;
   assert.equal((await treeReads(t, nested, "csharp")).parents, 0);
+  // A declaration held by what is none: a loop, a `using`, a `fixed` and an event.
+  const held = "class A {\n    event Money E = 5;\n    void M() {\n        for (Money a = 5; ; ) { }\n        using (Money b = 5) { }\n        fixed (Money* c = 5) { }\n        for (int d = 5; ; ) { }\n    }\n}\n";
+  assert.equal((await treeReads(t, held, "csharp")).parents, 0);
+  assert.deepEqual(await treeInertLines(held, "csharp", Infinity), [false, false, false, false, false, false, false, true, true, true]);
 });
 
 test("a search of a subtree larger than the clock's interval starts only after the clock is read", async (t) => {
