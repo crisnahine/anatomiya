@@ -216,3 +216,14 @@ test("the line rules of oxc and prism answer through the same seam", async () =>
   assert.deepEqual(await asking("js", "// note\nexport const A = 1;\nexport function f() {}\n"), [3]);
   assert.deepEqual(await asking("ruby", "# note\nA = 1\ndef f; end\n"), [3]);
 });
+
+test("a regex literal holding /* opens no comment, so the lines after it ask", async () => {
+  assert.deepEqual(await asking("js", "const trailing = /\\/*$/;\nexport function duplicate(a, b) {\n  return a + b;\n}\n/** doc */\nfunction after() {}\n"), [1, 2, 3, 6]);
+  assert.deepEqual(await asking("js", 'p.replace(/^\\/*/, "");\nfunction f() {}\n'), [1, 2]);
+});
+
+test("a block comment opens only at the start of its line, and one opened after code asks on every line it runs over", async () => {
+  assert.deepEqual(await asking("js", "  /* note\nfunction old() {}\n*/\nconst A = 1; /* closed */\n/* a */ /* b\nfunction older() {}\n*/\n"), []);
+  // Nothing tells a comment opened after code from a regex, so its later lines are read as code.
+  assert.deepEqual(await asking("js", "const a = 1; /* note\nfunction f() {}\n*/\nfunction g() {}\n"), [1, 2, 3, 4]);
+});
