@@ -225,7 +225,7 @@ export function schemaProblem(parsed) {
  * would have gone silent on exactly the repositories where a directory nobody
  * read is easiest to miss. The cap is there for the shape a rule file cap is
  * there for, a path holding something nobody wrote, and only such a file ever
- * pays it. Equal to the store's `READ_MOST`, so the bytes a scan reads to put
+ * pays it. Equal to `READ_MOST` in `store.mjs`, so the bytes a scan reads to put
  * a record back are bytes a command reads of it.
  */
 const RECORD_MOST = READ_MOST;
@@ -369,7 +369,7 @@ export function writeFacts(root, result) {
 }
 
 /**
- * The record's `previous` bytes back at `path`, as the store's `putBack` puts
+ * The record's `previous` bytes back at `path`, as `putBack` in `store.mjs` puts
  * any file back, except that where `was` is the layout file that answered for
  * it, the pair is written again so the restored record has one.
  */

@@ -109,7 +109,7 @@ test("the name a staged file is given is the name a later scan knows as one", (t
   }
 });
 
-test("putBack removes a file that was not there", (t) => {
+test("a file that was not there before the write is removed when it is put back", (t) => {
   const path = join(workspace(t), "facts.json");
   writeFileSync(path, "new\n");
 
@@ -118,7 +118,7 @@ test("putBack removes a file that was not there", (t) => {
   assert.equal(existsSync(path), false);
 });
 
-test("putBack leaves a file it could not read", (t) => {
+test("a file whose earlier bytes could not be read is left as it is when it is put back", (t) => {
   const path = join(workspace(t), "facts.json");
   writeFileSync(path, "new\n");
 
@@ -127,7 +127,7 @@ test("putBack leaves a file it could not read", (t) => {
   assert.equal(readFileSync(path, "utf8"), "new\n");
 });
 
-test("replaceAll undoes every rename when one fails", async (t) => {
+test("a rename that fails puts back every file already replaced", async (t) => {
   const dir = workspace(t);
   const [a, b] = [join(dir, "a.md"), join(dir, "b.md")];
   writeFileSync(a, "old a\n");

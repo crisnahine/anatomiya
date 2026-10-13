@@ -2097,7 +2097,7 @@ function stubbing(stubs, call) {
   }
 }
 
-test("the rename-aside protocol let a third worker in", (t) => {
+test("a worker that judged a lock dead before two others ran leaves one holder", (t) => {
   // B judges the lock dead. Before B's first change to it, A breaks it and takes its own; before B's
   // second, C runs whole. Renamed aside, B's move caught A's lock and C took the name before B could
   // put A's back, so A and C both held.
@@ -2210,12 +2210,12 @@ test("three workers over a dead lock leave one holder", async (t) => {
       const held = await lockWorkers(lock, n);
       assert.equal(held.length, 1, `${n} at once, round ${round}: ${held.length} hold it`);
       assert.equal(readFileSync(lock, "utf8"), held[0], `${n} at once, round ${round}: the holder's lock is on disk`);
-      assert.deepEqual(readdirSync(dir), ["refresh.lock"], `${n} at once, round ${round}: no token or lock moved aside left`);
+      assert.deepEqual(readdirSync(dir), ["refresh.lock"], `${n} at once, round ${round}: no lock token or lock moved aside left`);
     }
   }
 });
 
-// A dead lock and the token of a worker that died breaking it, `ms` ago.
+// A dead lock and the lock token of a worker that died breaking it, `ms` ago.
 function deadBreak(t, ms) {
   const dir = lockDir(t);
   const lock = join(dir, "refresh.lock");
@@ -2227,7 +2227,7 @@ function deadBreak(t, ms) {
   return { dir, lock, token };
 }
 
-test("a token a killed worker left does not stop later refreshes", (t) => {
+test("a lock token a killed worker left does not stop later refreshes", (t) => {
   const { dir, lock } = deadBreak(t, 5 * 60 * 1000);
 
   const held = acquire(lock);
@@ -2237,7 +2237,7 @@ test("a token a killed worker left does not stop later refreshes", (t) => {
   assert.deepEqual(readdirSync(dir), ["refresh.lock"], "and only the lock is left");
 });
 
-test("a token younger than the bound is left alone", (t) => {
+test("a lock token younger than the bound is left alone", (t) => {
   // Its breaker may still be running.
   const { dir, lock, token } = deadBreak(t, 1000);
   const before = readFileSync(lock, "utf8");
@@ -2248,7 +2248,7 @@ test("a token younger than the bound is left alone", (t) => {
   assert.deepEqual(readdirSync(dir).sort(), ["refresh.lock", "refresh.lock.0123456789abcdef"]);
 });
 
-test("a token a worker died holding is removed by the next worker to take the lock", (t) => {
+test("a lock token a worker died holding is removed by the next worker to take the lock", (t) => {
   const dir = lockDir(t);
   const lock = join(dir, "refresh.lock");
   writeFileSync(`${lock}.0123456789abcdef`, "");

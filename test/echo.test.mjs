@@ -16,10 +16,10 @@ const DIGEST = "a1b2c3d4e5f6";
 const map = (digest = DIGEST) => `<repository-map delivered="2026-10-12T00:00:00.000Z" digest="${digest}">\nCounted just now.\n\n# Repository map\n</repository-map>`;
 const first = map();
 
-/** A transcript as the hook reads its tail: the text, and the offset it ends at. */
+/** A transcript as the hook reads its tail: its lines, and the offset it ends at. */
 function tailOf(entries) {
   const text = entries.map((entry) => `${JSON.stringify(entry)}\n`).join("");
-  return { text, end: Buffer.byteLength(text) };
+  return { end: Buffer.byteLength(text), lines: () => text.split("\n") };
 }
 
 const ours = (text) => text.includes(`digest="${DIGEST}"`);

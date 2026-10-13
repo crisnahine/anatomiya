@@ -9,7 +9,7 @@ import { createdAlone, mtimeAge, ownerAge, removeLeftTokens, takeDeadLock } from
 
 /**
  * The lock both hooks take: one exclusive create, a dead lock broken by the one
- * call holding its token, and the two ways of telling a dead one from a live one.
+ * call holding its lock token, and the two ways of telling a dead one from a live one.
  */
 function workspace(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-lock-"));
@@ -92,10 +92,10 @@ test("a lock judged dead whose generation changed is left alone", (t) => {
 
   assert.equal(takeDeadLock(lock, judge, "mine"), false);
   assert.equal(readFileSync(lock, "utf8"), "next");
-  assert.deepEqual(readdirSync(dir), ["lock"], "and its token is gone");
+  assert.deepEqual(readdirSync(dir), ["lock"], "and its lock token is gone");
 });
 
-test("a dead lock is removed by the call holding its token, and taken", (t) => {
+test("a dead lock is removed by the call holding its lock token, and taken", (t) => {
   const dir = workspace(t);
   const lock = join(dir, "lock");
   writeFileSync(lock, "dead");
@@ -105,7 +105,7 @@ test("a dead lock is removed by the call holding its token, and taken", (t) => {
   assert.equal(readFileSync(lock, "utf8"), "mine");
   assert.deepEqual(readdirSync(dir), ["lock"]);
 
-  // Another call holds this generation's token, so this one leaves the dead lock to it.
+  // Another call holds this generation's lock token, so this one leaves the dead lock to it.
   writeFileSync(lock, "dead");
   writeFileSync(`${lock}.7`, "");
   assert.equal(takeDeadLock(lock, judge, "mine"), false);
@@ -127,7 +127,7 @@ test("a lock's mtime says whether a live call can still hold it, either way of t
     const verdict = judge(lock);
     assert.equal(verdict.live, live, `${ms} ms`);
     // As the file system keeps it, which can round a millisecond off what was set.
-    if (!live) assert.equal(verdict.generation, String(statSync(lock, { bigint: true }).mtimeMs), "the token is named by the mtime in ms");
+    if (!live) assert.equal(verdict.generation, String(statSync(lock, { bigint: true }).mtimeMs), "the lock token is named by the mtime in ms");
   }
 });
 
@@ -151,15 +151,15 @@ test("a lock's owner and age say whether a worker can still hold it", (t) => {
   const dead = verdict(JSON.stringify({ pid: 2, at: now, nonce: "0123456789abcdef" }));
   assert.equal(dead.generation, "0123456789abcdef", "a worker's lock is its nonce's generation");
   for (const content of ["{", JSON.stringify({ pid: 2, at: now, nonce: "../x" })]) {
-    assert.match(verdict(content).generation, /^[0-9a-f]{16}$/, `a lock with no nonce of ours still names a token: ${content}`);
+    assert.match(verdict(content).generation, /^[0-9a-f]{16}$/, `a lock with no nonce of ours still names a lock token: ${content}`);
   }
 });
 
-test("a token left by a breaker that died is removed, and the live generation's and other names stay", (t) => {
+test("a lock token left by a breaker that died is removed, and the live generation's and other names stay", (t) => {
   const dir = workspace(t);
   const lock = join(dir, "refresh.lock");
   const keep = ["refresh.lock", "refresh.lock.aaaaaaaaaaaaaaaa", "refresh.lock.tmp-1-0123456789abcdef", "refresh.lock.0123", "refresh.json"];
-  // And a token's own token, left by a call killed breaking that token.
+  // And a token's own token, left by a call killed breaking that lock token.
   for (const name of [...keep, "refresh.lock.0123456789abcdef", "refresh.lock.0123456789abcdef.1700000000000"]) writeFileSync(join(dir, name), "");
 
   removeLeftTokens(lock, "aaaaaaaaaaaaaaaa");

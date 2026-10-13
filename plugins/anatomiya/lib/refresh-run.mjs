@@ -10,13 +10,13 @@ import { basename, join } from "node:path";
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
-import { createdAlone, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
+import { createdAlone, lockContent, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
 import { atomic } from "./store.mjs";
 import { answered, BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
-import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_LOCK, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
+import { OVERVIEW_FILE, realpathOf, REFRESH_LOCK, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
 import { isClaude, overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
@@ -469,8 +469,8 @@ const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.
  *
  * Created exclusively, so two workers cannot both create it. One whose owner is
  * gone, or which is older than any scan runs, is broken by the one worker
- * holding the token named by its nonce (`takeDeadLock`), and taken by the one
- * create after. A token a worker died holding names a generation that is gone
+ * holding the lock token named by its nonce (`takeDeadLock`), and taken by the
+ * one create after. A lock token a worker died holding names a generation that is gone
  * once this one holds the lock, so it is removed here.
  *
  * Answers `{ blocked }` where an entry that is no lock holds a name and could
@@ -488,13 +488,6 @@ export function acquire(path) {
   return { path, content };
 }
 
-// Bounded and typed, since the directory can come with the repository: a lock
-// planted as a link to `/dev/zero` read whole never returned. Ours is under 100 bytes.
-function contentOf(path) {
-  const entry = readHead(path, 256);
-  return entry.kind === "file" ? entry.head : null;
-}
-
 /**
  * Give the lock back, but only while it is still this worker's. A takeover
  * can leave the entry at the lock's path belonging to another worker (three
@@ -502,7 +495,7 @@ function contentOf(path) {
  * worker's lock for a fourth to take.
  */
 function release(lock) {
-  if (contentOf(lock.path) === lock.content) remove(lock.path);
+  if (lockContent(lock.path) === lock.content) remove(lock.path);
 }
 
 function remove(path) {

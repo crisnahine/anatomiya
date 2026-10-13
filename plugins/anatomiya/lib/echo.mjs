@@ -7,12 +7,12 @@
  * replay over kept transcripts walks the window the way a call does.
  */
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, opendirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
-import { readHead } from "./rules.mjs";
+import { namesIn, readHead } from "./rules.mjs";
 import { createdAlone, mtimeAge, takeDeadLock } from "./lock.mjs";
-import { eventOf, parsed, transcriptTail, windowBytes } from "./transcript.mjs";
+import { echoEventOf, parsed, transcriptTail, windowBytes } from "./transcript.mjs";
 
 /** How far back a delivery still counts, in bytes the model reads: about 29.9k tokens at the 6.57 per token measured on 2.1.292 to 2.1.296, A92's distance. */
 export const ECHO_WINDOW_BYTES = 192 * 1024;
@@ -51,7 +51,7 @@ export function echoDue({ digest, transcript, data }) {
  */
 export function heldIn(tail, isOurs, { batchClaimAt = null, window = ECHO_WINDOW_BYTES } = {}) {
   if (tail === null) return false;
-  const lines = tail.lines?.() ?? tail.text.split("\n");
+  const lines = tail.lines();
   let end = tail.end;
   let counted = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -59,7 +59,7 @@ export function heldIn(tail, isOurs, { batchClaimAt = null, window = ECHO_WINDOW
     const bytes = Buffer.byteLength(lines[i]) + (i < lines.length - 1 ? 1 : 0);
     end -= bytes;
     const entry = parsed(lines[i]);
-    const event = eventOf(entry);
+    const event = echoEventOf(entry);
     if (event === "compact") return false;
     if (event?.some(isOurs)) return true;
     counted += windowBytes(lines[i], entry);
@@ -140,19 +140,8 @@ function takeLock(lock) {
  * so they stay bounded however many sessions run.
  */
 function sweep(dir, kept) {
-  const names = [];
-  try {
-    const listing = opendirSync(dir);
-    try {
-      for (let entry; names.length < BATCH_CLAIMS_LISTED_MOST && (entry = listing.readSync()) !== null; ) names.push(entry.name);
-    } finally {
-      listing.closeSync();
-    }
-  } catch {
-    return;
-  }
   const before = Date.now() - BATCH_CLAIM_KEPT_MS;
-  for (const name of names) {
+  for (const name of namesIn(dir, BATCH_CLAIMS_LISTED_MOST)) {
     const path = join(dir, name);
     if (path === kept || !ECHO_FILE_NAME.test(name)) continue;
     try {

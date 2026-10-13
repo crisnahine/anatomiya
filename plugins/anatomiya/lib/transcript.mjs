@@ -35,21 +35,23 @@ export const isCompactBoundary = (entry) => entry?.type === "system" && entry.su
  */
 export const isCompaction = (entry) => entry?.isCompactSummary === true || entry?.subtype === "compact_boundary";
 
-/** What one record says about the echo: "compact", the texts of a hook's `additionalContext`, or null. */
-export function eventOf(entry) {
+/**
+ * What one record says about the echo: "compact" for a compaction boundary,
+ * the texts of a hook's `additionalContext` for a delivery, or null.
+ */
+export function echoEventOf(entry) {
   if (isCompactBoundary(entry)) return "compact";
   if (entry?.type !== "attachment" || entry.attachment?.type !== "hook_additional_context") return null;
   return [].concat(entry.attachment.content ?? []).filter((text) => typeof text === "string");
 }
 
 /**
- * What one transcript line says about the echo: "compact" for a compaction
- * boundary, the texts of a hook's `additionalContext` for a delivery, or null.
- * Parsed rather than searched, so a tool result quoting a map is not a delivery.
+ * `echoEventOf` for one transcript line. Parsed rather than searched, so a
+ * tool result quoting a map is not a delivery.
  */
 export function echoEvent(line) {
   if (!line.includes("compact_boundary") && !line.includes("hook_additional_context")) return null;
-  return eventOf(parsed(line));
+  return echoEventOf(parsed(line));
 }
 
 /**

@@ -5,8 +5,8 @@ import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mj
 import { claimsIn } from "./cochange.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBackRecord, writePair } from "./facts.mjs";
 import { HISTORY_FILES } from "./history.mjs";
-import { leftTokens, workerAge } from "./lock.mjs";
-import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
+import { leftTokens, processAlive, workerAge } from "./lock.mjs";
+import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, isFileAt, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import {
   REFRESH_LOCK,
@@ -306,7 +306,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // and where a target was left out by name, since off is none of this tool's
   // files. One whose stager is still running is a scan about to rename it.
   const cleans = on || explicit || stale.length > 0;
-  const staged = blind || !cleans ? [] : audit.staged.filter((f) => !running(stagedBy(f, target)));
+  const staged = blind || !cleans ? [] : audit.staged.filter((f) => !processAlive(stagedBy(f, target)));
   // Claude Code's two directories were held to this before anything was read.
   if (!isClaude(target) && (names.length > 0 || stale.length > 0 || staged.length > 0)) {
     // Named, the target cannot be written as asked, and the scan says so.
@@ -432,11 +432,11 @@ const STORE_STAGED = [...[FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFR
 const LOCK_ASIDE = /^refresh\.lock\.stale-(\d+)-[0-9a-f]{16}$/;
 
 /**
- * What a stopped writer left in the store: the files it staged, the refresh lock's tokens a breaker
+ * What a stopped writer left in the store: the files it staged, the lock tokens of the refresh lock a breaker
  * that died left, and a dead lock an older build moved aside. Each of a process still running stays.
  */
 function leftInStore(dir) {
-  const staged = stagedInStore(dir, STORE_STAGED).filter(({ pid }) => !running(pid)).map(({ name }) => name);
+  const staged = stagedInStore(dir, STORE_STAGED).filter(({ pid }) => !processAlive(pid)).map(({ name }) => name);
   let names;
   try {
     names = readdirSync(dir);
@@ -445,17 +445,9 @@ function leftInStore(dir) {
   }
   const asides = names.filter((name) => {
     const aside = LOCK_ASIDE.exec(name);
-    return aside !== null && !running(Number(aside[1])) && isFileAt(join(dir, name));
+    return aside !== null && !processAlive(Number(aside[1])) && isFileAt(join(dir, name));
   });
   return [...staged, ...leftTokens(join(dir, basename(REFRESH_LOCK)), workerAge), ...asides].sort();
-}
-
-function isFileAt(path) {
-  try {
-    return lstatSync(path).isFile();
-  } catch {
-    return false;
-  }
 }
 
 // Nobody read it, or the caller said to leave it alone: neither is written, cleared or turned off.
@@ -681,16 +673,6 @@ function makeOwnDirectory(at, rel, made) {
     if (!lstatSync(dir).isDirectory()) {
       throw new Error(`${parts.slice(0, i + 1).join("/")} is not a directory, so nothing was written: remove it and scan again`);
     }
-  }
-}
-
-// Whether a process is there to be signalled. One this user may not signal is there.
-function running(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === "EPERM";
   }
 }
 

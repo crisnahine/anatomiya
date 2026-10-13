@@ -3979,10 +3979,10 @@ test("a lock temp a killed create left is swept", (t) => {
 const workerLock = (pid, nonce, at = Date.now()) => JSON.stringify({ pid, at, nonce });
 const DEAD_GENERATION = "0123456789abcdef";
 const LIVE_GENERATION = "aaaaaaaaaaaaaaaa";
-// What a token's token is named by: an old mtime in ms.
+// What a token's own token is named by: an old mtime in ms.
 const OLD_MS = "1700000000000";
 
-test("the refresh lock's tokens of a generation that is gone are swept, and a live generation's stay", (t) => {
+test("the lock tokens of the refresh lock of a generation that is gone are swept, and a live generation's stay", (t) => {
   const left = [
     `refresh.lock.${DEAD_GENERATION}`,
     `refresh.lock.${DEAD_GENERATION}.${OLD_MS}`,
@@ -4006,13 +4006,13 @@ test("the refresh lock's tokens of a generation that is gone are swept, and a li
   assert.deepEqual([went, stayed], [left, kept]);
 });
 
-test("with no refresh lock, every token of it is swept", (t) => {
+test("with no refresh lock, every lock token of it is swept", (t) => {
   const left = [`refresh.lock.${LIVE_GENERATION}`, `refresh.lock.${DEAD_GENERATION}.${OLD_MS}`].sort();
   const { plan, gone: went } = sweptFromStore(t, left, []);
   assert.deepEqual([plan.storeStaged, went], [left, left]);
 });
 
-test("a token's token a breaker killed twice left is swept once past the bound, and the refresh lock can be taken again", (t) => {
+test("a token's own token a breaker killed twice left is swept once past the bound, and the refresh lock can be taken again", (t) => {
   const lockName = "refresh.lock";
   const token = `${lockName}.${DEAD_GENERATION}`;
   const age = (dir, name, ms) => {
@@ -4035,10 +4035,10 @@ test("a token's token a breaker killed twice left is swept once past the bound, 
     age(d, token, 5 * 60 * 1000);
     age(d, young, 5 * 60 * 1000);
   });
-  assert.deepEqual([plan.storeStaged, went, stayed], [[young], [young], [token, lockName]], "the dead generation's own token is left to the protocol");
+  assert.deepEqual([plan.storeStaged, went, stayed], [[young], [young], [token, lockName]], "the dead generation's lock token is left to the protocol");
   const lock = join(dir, STORE, lockName);
   const taken = acquire(lock);
-  assert.ok(taken, "the next worker breaks the old token and the dead lock");
+  assert.ok(taken, "the next worker breaks the old lock token and the dead lock");
   assert.equal(readFileSync(lock, "utf8"), taken.content);
 });
 
