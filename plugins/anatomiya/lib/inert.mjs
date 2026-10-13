@@ -41,7 +41,8 @@ const LITERAL = {
 };
 const STRING = {
   oxc: { '"': /"(?:[^"\\]|\\.)*"/y, "'": /'(?:[^'\\]|\\.)*'/y, "`": /`(?:[^`\\$]|\\.)*`/y },
-  prism: { '"': /"(?:[^"\\#]|\\.)*"/y, "'": /'(?:[^'\\]|\\.)*'/y },
+  // An interpolation in single quotes is text in plain code and runs inside a literal spread over lines, which this does not track.
+  prism: { '"': /"(?:[^"\\#]|\\.)*"/y, "'": /'(?:[^'\\#]|\\.|#(?!\{))*'/y },
 };
 const NAME = { oxc: String.raw`(?:export\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*(?:\s*:\s*[\w$.<>[\]|&, ]+?)?`, prism: String.raw`[A-Za-z_]\w*` };
 const INERT = {
@@ -87,8 +88,9 @@ function reduce(engine, line) {
       break;
     }
     if (engine === "oxc" && c === "/" && line[i + 1] === "/") {
-      // A block comment this did not see open may end in it, with code after the end.
-      if (line.includes("*/", i)) return { code: null, open: null };
+      // A block comment this did not see open may end in it, with code after the end. And behind code it may
+      // stand inside a regex, where a template literal opened after it on the line would be lost.
+      if (line.includes("*/", i) || (out.trim() !== "" && line.includes("`", i))) return { code: null, open: null };
       break;
     }
     if (engine === "oxc" && c === "/" && line[i + 1] === "*") {

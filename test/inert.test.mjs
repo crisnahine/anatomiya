@@ -248,6 +248,20 @@ test("a line comment that holds the end of a block comment asks", async () => {
   assert.deepEqual(await asking("js", "foo(); /* a\nconst B = 1; // b */ function f() {}\nconst C = 1; // plain\n"), [1, 2]);
 });
 
+test("a `//` inside a regex does not hide a template literal opened after it on the line", async () => {
+  // Read as a line comment, the rest of the line was lost, and a `/*` on the template's next line opened a comment over the code below.
+  const source = 'const banner = url.replace(/^https?:\\/\\//, "") + `\n/*! ${name}\n`;\nexport function realDuplicate(a, b) {\n  return a + b;\n}\n/** doc */\nconst A = 1;\n';
+  const asked = await asking("js", source);
+  for (const line of [1, 2, 4, 5]) assert.ok(asked.includes(line), `line ${line} asks: ${asked}`);
+  // A comment after code that quotes a backtick asks too, which is the price; one on a line of its own does not.
+  assert.deepEqual(await asking("js", "const A = 1; // see `x`\n// see `x`\nconst B = 2;\n"), [1]);
+});
+
+test("a Ruby string in single quotes that holds an interpolation asks, since a literal spread over lines may hold the line", async () => {
+  assert.deepEqual(await asking("ruby", "sql = %(\n  name = '#{user_input}'\n)\n"), [1, 2]);
+  assert.deepEqual(await asking("ruby", "A = 'plain'\nB = 'a#b'\n"), []);
+});
+
 test("a Ruby comment line that holds an interpolation asks, since a literal spread over lines may hold it", async () => {
   // Inside a heredoc, an extended regex and a percent list the line is no comment and the interpolation runs.
   assert.deepEqual(await asking("ruby", "# note\nA = <<~SQL\n#{run}\n# text #{run}\nSQL\n# after\n"), [2, 3, 4, 5]);
