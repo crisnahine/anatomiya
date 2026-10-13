@@ -56,16 +56,21 @@ export function shippedBytes(path, most) {
 const missing = (message, extra = {}) => Object.assign(new Error(message), { missingParser: true }, extra);
 
 /** The runtime, loaded and initialised on first use, or a throw marked as the missing install it is. */
-export async function ensureRuntime() {
-  if (runtime) return runtime;
-  try {
-    const loaded = await import("web-tree-sitter");
-    await loaded.Parser.init();
-    runtime = loaded;
-  } catch (err) {
-    // The loader's own words, which quote what it read: encoded, since a scan and a check print them.
-    throw missing(`${DECLARED.module} is not installed: ${encode(err && err.message)}`);
-  }
+export function ensureRuntime() {
+  // One load, awaited by every caller that arrives while it runs: a second `init` under the first
+  // leaves the grammar loaded between them unusable ("Incompatible language version 0").
+  runtime ??= (async () => {
+    try {
+      const loaded = await import("web-tree-sitter");
+      await loaded.Parser.init();
+      return loaded;
+    } catch (err) {
+      // Tried again by the next caller, as a load that failed always was.
+      runtime = null;
+      // The loader's own words, which quote what it read: encoded, since a scan and a check print them.
+      throw missing(`${DECLARED.module} is not installed: ${encode(err && err.message)}`);
+    }
+  })();
   return runtime;
 }
 
@@ -76,8 +81,23 @@ export async function parserFor(grammar, dir, lang) {
   const key = `${dir}\0${grammar}`;
   const known = parsers.get(key);
   if (known instanceof Error) throw known;
+  // A parser, or the load of one that a caller before this one started.
   if (known) return known;
-  const { Language, Parser } = await ensureRuntime();
+  const loading = loadParser(key, grammar, dir, lang);
+  parsers.set(key, loading);
+  return loading;
+}
+
+async function loadParser(key, grammar, dir, lang) {
+  let runtimeLoaded;
+  try {
+    runtimeLoaded = await ensureRuntime();
+  } catch (err) {
+    // No grammar's loss: the next file asks for the runtime again.
+    parsers.delete(key);
+    throw err;
+  }
+  const { Language, Parser } = runtimeLoaded;
   let parser = null;
   // One language's loss, named as the language: every other grammar on this engine still reads its files.
   let lost = null;
