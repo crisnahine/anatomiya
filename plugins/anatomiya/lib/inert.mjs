@@ -78,6 +78,8 @@ function reduce(engine, line) {
     if (engine === "oxc" && c === "/" && line[i + 1] === "*") {
       const end = line.indexOf("*/", i + 2);
       if (end === -1) {
+        // After code it may be a regex's `/` and its quantifier, which opens nothing.
+        if (out.trim() !== "") return { code: null, open: null };
         open = "*/";
         break;
       }
