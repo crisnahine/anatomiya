@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { addedRanges, pendingPaths } from "./changeset.mjs";
 import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
-import { gitBuffered, operationUnfinished } from "./git.mjs";
+import { gitBuffered, operationUnfinished, Unasked } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
 import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
 import { embeddedIn, engineOf, language } from "./langs.mjs";
@@ -152,9 +152,14 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const [pending, gitdir, dropOf] = await Promise.all([
     pendingPaths(root, { timeout: REUSE_GIT_MS }),
     gitDir(root),
-    corpusDrop(root, { timeout: REUSE_GIT_MS }),
+    // The hook reads every checkout of a stop together: one whose attributes git could not be asked for
+    // asks nothing, as one whose status git would not give does, and the others are still read.
+    corpusDrop(root, { timeout: REUSE_GIT_MS }).catch((err) => {
+      if (err instanceof Unasked) return null;
+      throw err;
+    }),
   ]);
-  if (gitdir === null || operationUnfinished(gitdir) || pending === null) return null;
+  if (gitdir === null || operationUnfinished(gitdir) || pending === null || dropOf === null) return null;
   // One diff from before the turn's first commit to the tree reads what it
   // committed and what it left uncommitted together, so the reads in a row
   // stay two however many commits the turn made.
