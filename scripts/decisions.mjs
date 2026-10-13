@@ -28,17 +28,19 @@ const cellsOf = (line) => line.split(/(?<!\\)\|/).slice(1, -1);
 /**
  * Every row the index holds, in order: its id, the section heading above
  * it, its Decision cell as written (escapes and all), its short status, the
- * file its last cell links to, how many cells it has, and its line.
+ * file its last cell links to under the row's own id, how many cells it has,
+ * and its line.
  */
 export function indexRows(text) {
   const rows = [];
   let section = null;
   for (const [i, line] of text.split(/\r?\n/).entries()) {
-    section = /^## (.+)$/.exec(line)?.[1] ?? section;
+    section = /^## (.+)$/.exec(line)?.[1].trim() ?? section;
     const id = ROW.exec(line)?.[1];
     if (!id) continue;
     const cells = cellsOf(line).map((cell) => cell.trim());
-    const file = /^\[[^\]]*\]\(([^)]+)\)$/.exec(cells[3] ?? "")?.[1] ?? null;
+    const link = /^\[([^\]]*)\]\(([^)]+)\)$/.exec(cells[3] ?? "");
+    const file = link?.[1] === id ? link[2] : null;
     rows.push({ id, section, decision: cells[1] ?? "", status: cells[2] ?? "", file, cells: cells.length, line: i + 1 });
   }
   return rows;
@@ -113,7 +115,9 @@ export function rebuild(index, files) {
 /** The row files under a checkout, row id to text. */
 export function rowFiles(root) {
   const dir = join(root, DECISIONS_DIR);
-  return new Map(readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => [f.slice(0, -3), readFileSync(join(dir, f), "utf8")]));
+  // A directory named as a row file is no row: read, it threw past the gate's own answer.
+  const names = readdirSync(dir, { withFileTypes: true }).filter((f) => f.isFile() && f.name.endsWith(".md")).map((f) => f.name);
+  return new Map(names.map((f) => [f.slice(0, -3), readFileSync(join(dir, f), "utf8")]));
 }
 
 if (invokedAs(import.meta.url)) process.stdout.write(rebuild(readFileSync(join(ROOT, "DECISIONS.md"), "utf8"), rowFiles(ROOT)));

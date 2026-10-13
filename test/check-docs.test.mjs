@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { PROSE_NAMES, READS, avoidedWords, checkDocs, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedInCode, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, avoidedWords, checkDocs, citesRows, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedInCode, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
 import { DECISIONS_DIR, indexRows, readRowFile } from "../scripts/decisions.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
@@ -1058,7 +1058,13 @@ test("a row id a comment cites and no row carries is named with its file, whethe
 
   assert.deepEqual(rowsCitedInCode(ids, [["scripts/a.mjs", source]]), [{ rel: "scripts/a.mjs", cited: "B9" }, { rel: "scripts/a.mjs", cited: "H3" }]);
   assert.deepEqual(rowsCitedInCode(ids, [[`${REL.anatomiya}/lib/a.mjs`, "// (B9)"], [`${REL.anatomiya}/bin/a.mjs`, "// (B9)"]]).length, 2, "the library and the binary are read");
-  assert.deepEqual(rowsCitedInCode(ids, [["test/a.test.mjs", "// (B9)"], ["scripts/a.md", "(B9)"]]), [], "a test and a document are other checks' to read");
+  assert.deepEqual(["test/a.test.mjs", "scripts/a.md", "scripts/a.mjs"].map(citesRows), [false, false, true], "a test and a document are other checks' to read");
+});
+
+test("a file oxc cannot parse is read whole for the rows it cites, its strings with its comments", () => {
+  const source = ["const = ;", "// Bounded (B9).", 'export const said = "see (D4)";'].join("\n");
+
+  assert.deepEqual(rowsCitedInCode(new Set(["B1"]), [["scripts/a.mjs", source]]), [{ rel: "scripts/a.mjs", cited: "B9" }, { rel: "scripts/a.mjs", cited: "D4" }]);
 });
 
 test("a comment citing a row that does not exist fails the check", (t) => {
@@ -1129,6 +1135,29 @@ test("a file under another row's name, a file that is no row file, and a row lin
   assert.deepEqual(recordProblems(indexRows(INDEX.replace("[B2](docs/decisions/B2.md)", "[B2](docs/decisions/B1.md)")), files()), [
     { where: "DECISIONS.md", detail: "row B2 on line 6 does not link to its file: its last cell is `[B2](docs/decisions/B2.md)`" },
   ]);
+});
+
+test("a second index line for one row, a row under another letter's section, and a link labelled as another row are each named", () => {
+  assert.deepEqual(recordProblems(indexRows(`${INDEX}\n| B1 | One \`a \\| b\` site. | done | [B1](docs/decisions/B1.md) |`), files()), [
+    { where: "DECISIONS.md", detail: "row B1 on line 7 is a second line for the row on line 5: two rows share an id" },
+  ]);
+  assert.deepEqual(recordProblems(indexRows(INDEX.replace("| B2 | Two. | partial | [B2](docs/decisions/B2.md) |", "| C1 | Two. | partial | [C1](docs/decisions/C1.md) |")), files({ B2: null, C1: { ...FILES.B2, id: "C1" } })), [
+    { where: "DECISIONS.md", detail: 'row C1 on line 6 sits under "B. Engine", and a row is filed under the section of its letter' },
+  ]);
+  assert.deepEqual(recordProblems(indexRows(INDEX.replace("[B2](docs/decisions/B2.md)", "[B7](docs/decisions/B2.md)")), files()), [
+    { where: "DECISIONS.md", detail: "row B2 on line 6 does not link to its file: its last cell is `[B2](docs/decisions/B2.md)`" },
+  ]);
+});
+
+test("an index line written twice fails the check", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "DECISIONS.md"), (text) => text.replace(/^\| B1 \|.*$/m, (line) => `${line}\n${line}`));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.ok(output.includes("is a second line for the row on line"), output);
+  assert.ok(output.includes("two rows share an id"), output);
 });
 
 test("an index of no rows, and a directory of no row files, are each a fault said aloud and never a pass", () => {

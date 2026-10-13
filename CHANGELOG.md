@@ -51,16 +51,16 @@ no git version is needed that 0.15.1 did not need.
   the parts of a Python string, and none of the 34,075 holds a cgo preamble or a script in PHP
   markup.
 
-  The tree-sitter files of one stop share one second: the first load of the runtime and of each
-  grammar, every parse and every walk of a parsed tree. A file reached after it, one whose parse or
-  walk runs past it, and one the grammar rejects, is asked about whole; a file whose grammar or
-  runtime is missing is not asked about, as before. The walk searches a file once however deep its
-  bindings nest: 8,000 chained Python assignments, 32 KB, walk in 70 ms and 8,000 nested C# blocks
-  in 369 ms, at a load average of 45 to 48. Over those 200 commits the slowest file's parse and walk
-  took 179 ms on a quiet machine and 619 ms at a load average above 70. The three largest files per
-  language of the 25 language repositories, the largest 451 KiB, took 59 to 1,556 ms at the median
-  and 1,773 ms at most at a load average of 35 to 38, so a loaded machine asks about the largest
-  files unread. A load cannot be stopped part way. A stop that changed only JavaScript or Ruby loads
+  Every file a rule reads in one stop shares one second: the line rules over JavaScript, Ruby and
+  component script blocks, and for the tree-sitter files the first load of the runtime and of each
+  grammar, every parse and every walk of a parsed tree. A file reached after it, one whose read,
+  parse or walk runs past it, and one the grammar rejects, is asked about whole; a file whose
+  grammar or runtime is missing is not asked about, as before. The walk searches a file once however
+  deep its bindings nest: 8,000 chained Python assignments, 32 KB, walk in 70 ms and 8,000 nested C#
+  blocks in 369 ms, at a load average of 45 to 48. Parse plus walk of the three largest files of
+  each of the seven languages in the 25 language repositories, 21 files of 68 to 451 KiB, took 34
+  to 875 ms at the median and 1,018 ms at most at a load average of 34 to 35, so at that load the
+  largest file asks whole in one read of five. A load cannot be stopped part way. A stop that changed only JavaScript or Ruby loads
   no grammar. Not covered: a Python `x = 1` in a class whose metaclass runs code on assignment, and
   `var v = 1;` in C# where a type named `var` is in scope, are left out; a Rust doc comment that
   holds a doctest, and PHP markup that runs code with no `<script` tag, read as inert; and the rules
@@ -123,10 +123,24 @@ no git version is needed that 0.15.1 did not need.
 - An entry at the refresh lock's name that is no lock is told apart from a lock taken. A refresh
   removes an empty directory there and takes the lock. A directory holding entries is left whole,
   no refresh runs in that checkout while it stays, and a scan says so in one line,
-  `".claude/anatomiya/refresh.lock" is a directory holding entries, so the map is not refreshed in
-  the background in this checkout while it stays: remove it`, and under `lockBlocked` in its JSON.
+  `".claude/anatomiya/refresh.lock" is a directory holding entries, so no refresh of the map can
+  run in this checkout while it stays: remove it to clear this`. A directory holding entries at a
+  lock token's name or at the state's, `refresh.json`, stops a refresh the same way, before the
+  worker takes the lock or scans: it ends with the reason `lock-blocked` or `state-blocked` and the
+  path, the scan prints the line once per name, and its JSON lists the names under
+  `refreshBlocked`.
 
 ### Fixed
+
+- The reuse check's JavaScript and Ruby line rules read a run of whitespace as one character: 300
+  lines of `import` and a long run of spaces took 4,888 ms through the rule in its own test, and
+  four such loops take 15 ms together. A `/*` or a `=begin` that never closes asks about every
+  line from it that is not blank, a JavaScript string a backslash carries over lines asks on each
+  of its lines, and a `/*` under a line the rule did not read opens no comment. Over 144,292
+  JavaScript and TypeScript files and 66,132 Ruby files of the corpus that moves 910 lines in 82
+  files to asking and none the other way. Not covered: JSX text that starts a line with `/*` reads
+  as a comment down to the next `*/`, and a template literal holding a backtick behind a backslash
+  is opened or closed at the wrong line.
 
 - A git call that could not be asked was read as git saying no. A call that ended with no exit
   code, its clock run out, a signal sent to it or a start that failed, answered "the commit is gone"

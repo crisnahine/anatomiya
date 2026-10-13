@@ -495,10 +495,11 @@ export function rowsCitedMissing(rows) {
   );
 }
 
-const citesRows = (rel) => rel.endsWith(".mjs") && [`${REL.anatomiya}/lib/`, `${REL.anatomiya}/bin/`, "scripts/"].some((dir) => rel.startsWith(dir));
+/** Whether a file's comments are read for the rows they cite: the shipped code and the scripts. */
+export const citesRows = (rel) => rel.endsWith(".mjs") && [`${REL.anatomiya}/lib/`, `${REL.anatomiya}/bin/`, "scripts/"].some((dir) => rel.startsWith(dir));
 
 /**
- * Row ids the comments of the shipped code and the scripts cite that no row carries, by file.
+ * Row ids the comments of `files` cite that no row carries, by file. The caller hands it the files `citesRows` names.
  *
  * Every comment is read and nothing else: a comment is where CONTRIBUTING puts a citation, and a
  * string is a message or a fixture. An id outside parentheses counts, since a comment also writes
@@ -507,7 +508,6 @@ const citesRows = (rel) => rel.endsWith(".mjs") && [`${REL.anatomiya}/lib/`, `${
 export function rowsCitedInCode(ids, files) {
   const missing = [];
   for (const [rel, source] of files) {
-    if (!citesRows(rel)) continue;
     let comments = [source];
     try {
       const parsed = parseSync(rel, source);
@@ -538,9 +538,17 @@ export function recordProblems(rows, files) {
     say(DECISIONS_DIR, "holds no row file, so no decision was read");
     return problems;
   }
+  const first = new Map();
   for (const row of rows) {
     const rel = `${DECISIONS_DIR}/${row.id}.md`;
     const at = `row ${row.id} on line ${row.line}`;
+    // A row id appearing twice is a row nobody can cite.
+    if (first.has(row.id)) {
+      say("DECISIONS.md", `${at} is a second line for the row on line ${first.get(row.id)}: two rows share an id`);
+      continue;
+    }
+    first.set(row.id, row.line);
+    if (!row.section?.startsWith(`${row.id[0]}. `)) say("DECISIONS.md", `${at} sits under "${row.section}", and a row is filed under the section of its letter`);
     if (row.file !== rel) say("DECISIONS.md", `${at} does not link to its file: its last cell is \`[${row.id}](${rel})\``);
     if (!files.has(row.id)) {
       say("DECISIONS.md", `${at} has no file ${rel}`);
@@ -771,9 +779,6 @@ export function checkDocs() {
   for (const row of indexed) {
     claim("DECISIONS.md", row.cells === 4, `row ${row.id} on line ${row.line} has ${row.cells} cells, not 4: escape a \`|\` inside a code span as \`\\|\``);
   }
-
-  // A row id appearing twice is a row nobody can cite.
-  claim("DECISIONS.md", new Set(indexed.map((row) => row.id)).size === rows, "two rows share an id");
 
   // The index says a row exists and its file says what the row is, so the two
   // are held to each other before anything below reads a row.
