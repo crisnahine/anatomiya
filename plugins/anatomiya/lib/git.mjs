@@ -876,12 +876,13 @@ export async function headSha(root) {
 /**
  * The commit `ref` names, or null where git says it names none (exit code 1).
  * It throws where git could not be asked, or refused with any other exit code.
+ * `bounds` is the caller's own `maxBytes` and `timeout` for the call.
  */
-export async function commitAt(root, ref) {
+export async function commitAt(root, ref, bounds = {}) {
   if (!safeRef(ref)) return null;
   const args = ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`];
   const ask = async () => {
-    const r = yesOrNo(await gitBuffered(root, args), `which commit ${ref} names`);
+    const r = yesOrNo(await gitBuffered(root, args, bounds), `which commit ${ref} names`);
     const sha = r.ok ? r.stdout.trim() : "";
     return isSha(sha) ? sha : null;
   };

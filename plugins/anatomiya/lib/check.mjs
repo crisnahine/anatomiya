@@ -35,7 +35,7 @@ import { isTestPath, precedentFindings } from "./precedent.mjs";
 import { claimFor, CLASSES } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
-import { answered, gitBuffered, resolveBaseRef, mergeBase, filesAt, isSha, BASE_REFS, GIT } from "./git.mjs";
+import { answered, commitAt, gitBuffered, resolveBaseRef, mergeBase, filesAt, isSha, BASE_REFS, GIT } from "./git.mjs";
 import { addedRanges, changedFiles, onlyInHead, pendingPaths, renamesSkipped, resolvePendingBases, withPendingEdits } from "./changeset.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
@@ -476,13 +476,12 @@ async function resolveBase(root, baseRef, caveats) {
   const candidates = (baseRef ? [baseRef] : BASE_REFS).filter((c) => c && !c.startsWith("-"));
   const [isShallow, headAt] = await Promise.all([
     git(root, ["rev-parse", "--is-shallow-repository"]),
-    // Exit code 1 is a repository with no commit yet. Unasked is not one: read
-    // as one, a base somebody typed that names nothing passed at exit 0.
-    gitBuffered(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], { maxBytes: GIT.checkMaxBytes, timeout: GIT.checkTimeoutMs })
-      .then((r) => answered(r, "which commit HEAD names")),
+    // Null is a repository with no commit yet. A HEAD git could not be asked
+    // for throws: read as no commit, a typed base that names nothing passes at exit 0.
+    commitAt(root, "HEAD", bounds()),
   ]);
   const shallow = isShallow.out.trim() === "true";
-  const head = headAt.stdout.trim();
+  const head = headAt ?? "";
   // Resolved once and handed down by sha, so every later read asks about the
   // same commit and a question about two shas is one git can remember. A
   // branch with no commit yet has no sha, so its reads name HEAD.
@@ -521,11 +520,15 @@ async function resolveBase(root, baseRef, caveats) {
   // picked anyway.
   const ownTip = async (sha) => {
     if (!asked || sha !== head) return;
-    const named = (await git(root, ["rev-parse", "--symbolic-full-name", baseRef])).out.trim();
+    // Any exit code is git's answer, and a name no ref holds prints nothing. Unasked
+    // is no answer: read as "names no ref", HEAD's own id passes as a commit id.
+    const fullName = async (ref) =>
+      answered(await gitBuffered(root, ["rev-parse", "--symbolic-full-name", ref], bounds()), `which ref ${ref} names`).stdout.trim();
+    const named = await fullName(baseRef);
     // A commit id is known by naming no ref, never by its spelling: `7812` and
     // `facade` are branch names too.
     if (named === "" && /^[0-9a-f]{4,64}$/i.test(baseRef)) return;
-    const own = (await git(root, ["rev-parse", "--symbolic-full-name", "HEAD"])).out.trim();
+    const own = await fullName("HEAD");
     // A filesystem that folds case and Unicode form opens the loose ref under
     // any spelling, so `FEAT` names this branch while no ref of that name is listed.
     const fold = (ref) => ref.normalize("NFC").toLowerCase();
@@ -1583,6 +1586,9 @@ async function treeSource(root, path) {
  * Every git call made through this returns rather than throws. The check
  * reports what it could not determine; it does not refuse.
  */
+// The check's own bounds on a git call, read at the call: a test sets them.
+const bounds = () => ({ maxBytes: GIT.checkMaxBytes, timeout: GIT.checkTimeoutMs });
+
 async function git(root, args, maxBytes = GIT.checkMaxBytes, timeout = GIT.checkTimeoutMs) {
   const r = await gitBuffered(root, args, { maxBytes, timeout });
   return { ok: r.ok, out: r.stdout };
