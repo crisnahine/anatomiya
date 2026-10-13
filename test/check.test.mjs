@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsBatchZ, needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import { needsBatchZ, needsPathControl, needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, needsShebang, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
 import fs, { chmodSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -37,7 +37,7 @@ const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
  */
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-check-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q");

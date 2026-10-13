@@ -111,6 +111,26 @@ export const needsUnreadableDirs = WINDOWS
     ? { skip: "root traverses a mode-000 directory, so the denial this needs cannot happen" }
     : {};
 
+/**
+ * Remove a test's directory, waiting out a process that is still leaving it.
+ *
+ * Windows holds a directory open as a dying process's cwd, and a test that ends
+ * the git it started reaches its cleanup first: `EBUSY` from Node 22, `EPERM`
+ * from Node 24. The wait is the loop's own and not `rmSync`'s, which holds the
+ * loop while it retries. A directory still held after ten seconds is a child
+ * that never left, and that fails the test.
+ */
+export async function removeTree(dir) {
+  for (let tries = 100; ; tries--) {
+    try {
+      return rmSync(dir, { recursive: true, force: true });
+    } catch (err) {
+      if (tries === 0 || !["EBUSY", "ENOTEMPTY", "EPERM"].includes(err.code)) throw err;
+      await new Promise((done) => setTimeout(done, 100));
+    }
+  }
+}
+
 // Windows holds a lock on the directory a process is running in, so the state
 // this needs, a live process whose own cwd has been removed, cannot be reached
 // there at all.

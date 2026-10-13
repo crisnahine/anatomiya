@@ -2221,6 +2221,29 @@ test("a child ended for a reply nobody wanted is gone when its reader has closed
   assert.equal(gone(join(shim.bin, "pid")), true);
 });
 
+test("a git behind a launcher stops when the reply it is sending is refused", { ...needsShebang, ...PROMPT }, async (t) => {
+  const { dir, sha } = oneCommit(t);
+  // Git for Windows starts the real git as the child of a launcher, and a signal ends the launcher alone.
+  // The one behind it here answers a blob past the cap and never stops sending it.
+  const shim = gitShim(
+    t,
+    ({ bin }) => `exec 3<&0; (head -c 1 > /dev/null; printf '%040d blob ${MAX_FILE_BYTES + 1}\\000' 0; exec yes) <&3 & echo $! > '${bin}/behind'; wait; exit`
+  );
+  t.after(() => {
+    try {
+      process.kill(Number(readFileSync(join(shim.bin, "behind"), "utf8")), "SIGKILL");
+    } catch {
+      // Never started, or gone already.
+    }
+  });
+  const reader = blobReader(dir, sha, { env: shim.env, closeGrace: 30_000 });
+
+  assert.deepEqual(answerOf(await reader.read("a.ts")), { ok: false, reason: "over size cap" });
+  await reader.close();
+
+  await until(t, () => gone(join(shim.bin, "behind")));
+});
+
 test("a listing or a range git could not be asked for throws, and one git refused answers null", needsGitStub, async (t) => {
   const { dir, first, second } = twoCommits(t);
   const absent = "0".repeat(40);

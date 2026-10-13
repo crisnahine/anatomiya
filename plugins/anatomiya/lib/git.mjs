@@ -1019,6 +1019,9 @@ export function blobReader(
   const kill = () => {
     const proc = child;
     child = null;
+    // Git for Windows starts the real git as a launcher's child, and the signal ends the launcher alone:
+    // with its output shut, the one behind it stops at its next write.
+    proc?.stdout?.destroy();
     if (!signalChild(proc)) return;
     killed.add(proc);
     proc.once("exit", () => killed.delete(proc));
