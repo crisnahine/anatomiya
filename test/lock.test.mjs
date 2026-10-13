@@ -4,6 +4,7 @@ import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSy
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 import { createdAlone, mtimeAge, ownerAge, removeLeftTokens, takeDeadLock } from "../plugins/anatomiya/lib/lock.mjs";
 
@@ -195,4 +196,42 @@ test("a directory holding entries at a lock's name is left whole, and the refusa
       assert.deepEqual(readdirSync(dir), ["lock"], `${whose}: and no lock token is left`);
     }
   }
+});
+
+test("a regular file at a lock's name that the system will not unlink is thrown as refused, and is not named as blocked", (t) => {
+  // Windows refuses the unlink of a file a handle still holds open, which passes: the caller tries again.
+  for (const [whose, judge] of Object.entries(DEAD_JUDGES)) {
+    const dir = workspace(t);
+    const lock = join(dir, "lock");
+    writeFileSync(lock, "dead");
+
+    const thrown = (() => {
+      try {
+        stubbed("unlinkSync", (real, p) => {
+          if (p === lock) throw refused("EPERM", p);
+          return real(p);
+        }, () => takeDeadLock(lock, judge, "mine"));
+      } catch (err) {
+        return err;
+      }
+      return null;
+    })();
+
+    assert.equal(thrown?.code, "EPERM", whose);
+    assert.equal("blocked" in thrown, false, whose);
+    assert.equal(readFileSync(lock, "utf8"), "dead", whose);
+    assert.deepEqual(readdirSync(dir), ["lock"], `${whose}: and no lock token is left`);
+  }
+});
+
+test("a fifo at a lock's name that the system will not unlink is named as blocked", { skip: process.platform === "win32" ? "no mkfifo" : false }, (t) => {
+  const dir = workspace(t);
+  const lock = join(dir, "lock");
+  execFileSync("mkfifo", [lock]);
+
+  assert.throws(() => stubbed("unlinkSync", (real, p) => {
+    if (p === lock) throw refused("EPERM", p);
+    return real(p);
+  }, () => takeDeadLock(lock, DEAD_JUDGES["the worker's"], "mine")), (err) => err.code === "EPERM" && err.blocked === lock);
+  assert.deepEqual(readdirSync(dir), ["lock"], "and no lock token is left");
 });

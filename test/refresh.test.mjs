@@ -2097,6 +2097,20 @@ function stubbing(stubs, call) {
   }
 }
 
+test("a dead lock file the system will not unlink is a lock taken, so the refresh answers busy", (t) => {
+  const lock = join(lockDir(t), "refresh.lock");
+  writeFileSync(lock, deadLock());
+
+  const taken = stubbing({
+    unlinkSync: (real, p) => {
+      if (p === lock) throw Object.assign(new Error(`EPERM: unlink '${p}'`), { code: "EPERM" });
+      return real(p);
+    },
+  }, () => acquire(lock));
+
+  assert.equal(taken, null, "tried again by the next refresh, and nothing for a person to remove");
+});
+
 test("a worker that judged a lock dead before two others ran leaves one holder", (t) => {
   // B judges the lock dead. Before B's first change to it, A breaks it and takes its own; before B's
   // second, C runs whole. Renamed aside, B's move caught A's lock and C took the name before B could

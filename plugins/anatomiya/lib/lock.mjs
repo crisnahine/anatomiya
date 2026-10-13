@@ -118,22 +118,24 @@ const sameGeneration = (a, b) => (a.identity ?? a.generation) === (b.identity ??
 
 /**
  * Removes a dead lock. An empty directory at the name goes too, since a store that comes with the
- * repository can hold one. Anything else the system will not unlink is thrown with `blocked` naming it,
- * so the caller answers alone and can say which entry to remove: a directory holding entries is never
- * emptied here.
+ * repository can hold one. Any other entry that is no regular file and will not unlink is thrown with
+ * `blocked` naming it, so the caller answers alone and can say which entry to remove: a directory
+ * holding entries is never emptied here. A regular file the system refuses to unlink is thrown bare,
+ * since Windows refuses one a handle still holds open and the next call finds it free.
  */
 function removeDeadLock(lock) {
   try {
     unlinkSync(lock);
   } catch (err) {
     if (err?.code === "ENOENT") return;
+    const entry = lstatOf(lock);
     try {
       // Refuses a link and a directory holding entries, so nothing below the name is touched.
-      if (lstatOf(lock)?.isDirectory()) return rmdirSync(lock);
+      if (entry?.isDirectory()) return rmdirSync(lock);
     } catch {
       // Holding entries, or not ours to remove.
     }
-    throw Object.assign(err, { blocked: lock });
+    throw entry === null || entry.isFile() ? err : Object.assign(err, { blocked: lock });
   }
 }
 
