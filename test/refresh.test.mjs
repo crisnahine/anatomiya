@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs, { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,7 +21,7 @@ import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
 import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
-import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
 const needsTs = { skip: (await loadTypeScript()) ? false : "typescript is not installed" };
@@ -405,6 +405,36 @@ test("the entry a refresh answers as blocked is the one the scan's plan names", 
     assert.deepEqual(plan.refreshBlocked, [`.claude/anatomiya/${name}`]);
     assert.equal(answer.blocked, join(dir, plan.refreshBlocked[0]));
     assert.equal(answer.reason, name === "refresh.json" ? "state-blocked" : "lock-blocked");
+  }
+});
+
+test("a directory that cannot be listed at a name a refresh locks or records under stops the worker, is named by the plan and is never removed", needsUnreadableDirs, async (t) => {
+  // Read as empty, the plan said nothing, and at the state's name every trigger scanned and recorded nothing.
+  for (const name of ["refresh.lock", "refresh.json"]) {
+    for (const holds of [true, false]) {
+      const said = `${name}, ${holds ? "holding a file" : "empty"}`;
+      const dir = await scanned(t);
+      const entry = join(dir, ".claude", "anatomiya", name);
+      mkdirSync(entry);
+      if (holds) writeFileSync(join(entry, "kept"), "theirs");
+      chmodSync(entry, 0o000);
+      let scans = 0;
+      const scan = async (root) => {
+        scans++;
+        return runScan(root);
+      };
+      try {
+        const reason = name === "refresh.json" ? "state-blocked" : "lock-blocked";
+        assert.deepEqual(await refreshRepository(dir, { scan }), { reason, blocked: entry, pinned: false }, said);
+        assert.equal(scans, 0, said);
+        assert.deepEqual((await runScan(dir, { dryRun: true })).plan.refreshBlocked, [`.claude/anatomiya/${name}`], said);
+        await noteScan(dir);
+        assert.equal(lstatSync(entry).isDirectory(), true, `${said}: a scan run by hand leaves it too`);
+      } finally {
+        chmodSync(entry, 0o700);
+      }
+      assert.deepEqual(readdirSync(entry), holds ? ["kept"] : [], said);
+    }
   }
 });
 
