@@ -366,6 +366,48 @@ test("a link at the refresh state's name is replaced, never followed to the dire
   assert.equal(readFileSync(join(outside, "kept"), "utf8"), "theirs");
 });
 
+test("a directory holding a file at a lock token's name is named by the refresh, whatever its age", async (t) => {
+  // Answered as busy for a minute and as blocked after, and the scan's plan named neither.
+  const dir = await scanned(t);
+  const store = join(dir, ".claude", "anatomiya");
+  const nonce = "0123456789abcdef";
+  // No process has this pid, so the lock is dead and its lock token is the next name a refresh creates.
+  writeFileSync(join(store, "refresh.lock"), JSON.stringify({ pid: 2 ** 22 + 4321, at: Date.now() - 1000, nonce }));
+  const token = join(store, `refresh.lock.${nonce}`);
+  mkdirSync(token);
+  writeFileSync(join(token, "kept"), "theirs");
+  const before = readdirSync(store).sort();
+  let scans = 0;
+  const scan = async (root) => {
+    scans++;
+    return runScan(root);
+  };
+
+  for (const age of [0, 10 * 60 * 1000]) {
+    const then = new Date(Date.now() - age);
+    utimesSync(token, then, then);
+    assert.deepEqual(await refreshRepository(dir, { scan }), { reason: "lock-blocked", blocked: token, pinned: false }, `aged ${age} ms`);
+    assert.deepEqual(readdirSync(store).sort(), before, "nothing left and nothing taken");
+  }
+  assert.equal(scans, 0);
+  assert.equal(readFileSync(join(token, "kept"), "utf8"), "theirs");
+});
+
+test("the entry a refresh answers as blocked is the one the scan's plan names", async (t) => {
+  for (const name of ["refresh.lock", "refresh.lock.0123456789abcdef", "refresh.lock.0123456789abcdef.1760000000000", "refresh.json"]) {
+    const dir = await scanned(t);
+    mkdirSync(join(dir, ".claude", "anatomiya", name));
+    writeFileSync(join(dir, ".claude", "anatomiya", name, "kept"), "theirs");
+
+    const answer = await refreshRepository(dir);
+    const { plan } = await runScan(dir, { dryRun: true });
+
+    assert.deepEqual(plan.refreshBlocked, [`.claude/anatomiya/${name}`]);
+    assert.equal(answer.blocked, join(dir, plan.refreshBlocked[0]));
+    assert.equal(answer.reason, name === "refresh.json" ? "state-blocked" : "lock-blocked");
+  }
+});
+
 test("a refresh already running is not started twice", async (t) => {
   const dir = await scanned(t);
   // This process is alive, so its lock is live.

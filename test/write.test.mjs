@@ -4072,43 +4072,63 @@ test("a fifo at a temporary file's name in the store is never removed", needsPos
   nonFileAtAStoreName(t, (path) => execFileSync("mkfifo", [path]));
 });
 
-// A scanned workspace with `make` run on the refresh lock's name, and the plan of a dry run and of a scan after it.
-function plansOverLockName(t, make) {
+// The names in the store a refresh writes or locks under: the lock, a lock token, a token's own token and the state.
+const REFRESH_NAMES = ["refresh.lock", "refresh.lock.0123456789abcdef", "refresh.lock.0123456789abcdef.1760000000000", "refresh.json"];
+
+// A scanned workspace with `make` run on each of `names` in the store, and the plan of a dry run and of a scan after it.
+function plansOverStoreNames(t, names, make) {
   const dir = workspace(t);
   const a = area("src/services");
   writeMap(result(dir, [a]));
-  const lock = join(dir, STORE, "refresh.lock");
-  make(lock);
-  return { lock, plans: [writeMap(result(dir, [a]), { dryRun: true }), writeMap(result(dir, [a]))] };
+  const paths = names.map((name) => join(dir, STORE, name));
+  for (const path of paths) make(path);
+  return { paths, plans: [writeMap(result(dir, [a]), { dryRun: true }), writeMap(result(dir, [a]))] };
 }
 
-test("a directory holding a file at the refresh lock's name is carried by the plan and left whole", (t) => {
-  // No refresh takes the lock while it is there, and nothing but the scan is run by a person.
-  const { lock, plans } = plansOverLockName(t, (path) => {
-    mkdirSync(path);
-    writeFileSync(join(path, "kept"), "theirs");
-  });
+const holdingAFile = (path) => {
+  mkdirSync(path);
+  writeFileSync(join(path, "kept"), "theirs");
+};
 
-  for (const plan of plans) assert.equal(plan.lockBlocked, ".claude/anatomiya/refresh.lock");
-  assert.equal(readFileSync(join(lock, "kept"), "utf8"), "theirs", "the scan removes nothing there");
-});
+test("a directory holding a file at a name a refresh writes or locks under is carried by the plan and left whole", (t) => {
+  // No refresh runs while it is there, and nothing but the scan is run by a person.
+  for (const name of REFRESH_NAMES) {
+    const { paths, plans } = plansOverStoreNames(t, [name], holdingAFile);
 
-test("an empty directory and a lock file at the refresh lock's name are a refresh's to remove, so the plan says nothing", (t) => {
-  for (const make of [(path) => mkdirSync(path), (path) => writeFileSync(path, "{}")]) {
-    const { lock, plans } = plansOverLockName(t, make);
-    for (const plan of plans) assert.equal("lockBlocked" in plan, false);
-    assert.equal(existsSync(lock), true, "and the scan leaves it there");
+    for (const plan of plans) assert.deepEqual(plan.refreshBlocked, [`.claude/anatomiya/${name}`]);
+    assert.equal(readFileSync(join(paths[0], "kept"), "utf8"), "theirs", "the scan removes nothing there");
   }
-  assert.equal("lockBlocked" in writeMap(result(workspace(t), [area("src/services")])), false, "nor where the name is free");
 });
 
-test("a link at the refresh lock's name is not followed to the directory it leads to", needsSymlinks, (t) => {
-  // A refresh unlinks the link itself, so what it leads to holds nothing up.
+test("every such directory is carried at once: the lock, its lock tokens by name, then the state", (t) => {
+  const { plans } = plansOverStoreNames(t, [...REFRESH_NAMES].reverse(), holdingAFile);
+
+  for (const plan of plans) assert.deepEqual(plan.refreshBlocked, REFRESH_NAMES.map((name) => `.claude/anatomiya/${name}`));
+});
+
+test("a directory holding a file at any other name in the store is none of the plan's", (t) => {
+  // Shaped like a lock token of another lock, a staged file, and a lock token whose generation is not one this tool writes.
+  const { plans } = plansOverStoreNames(t, ["refresh.again", "facts.json.0123456789abcdef", "refresh.lock.tmp-1-0123456789abcdef", "refresh.lock.0123"], holdingAFile);
+
+  for (const plan of plans) assert.equal("refreshBlocked" in plan, false);
+});
+
+test("an empty directory and a file at those names are a refresh's to remove or replace, so the plan says nothing", (t) => {
+  for (const make of [(path) => mkdirSync(path), (path) => writeFileSync(path, "{}")]) {
+    const { paths, plans } = plansOverStoreNames(t, REFRESH_NAMES, make);
+    for (const plan of plans) assert.equal("refreshBlocked" in plan, false);
+    assert.equal(existsSync(paths[0]), true, "and the scan leaves the lock's name as it is");
+  }
+  assert.equal("refreshBlocked" in writeMap(result(workspace(t), [area("src/services")])), false, "nor where the names are free");
+});
+
+test("a link at one of those names is not followed to the directory it leads to", needsSymlinks, (t) => {
+  // A refresh unlinks or replaces the link itself, so what it leads to holds nothing up.
   const outside = elsewhere(t);
   writeFileSync(join(outside, "kept"), "theirs");
-  const { plans } = plansOverLockName(t, (path) => symlinkSync(outside, path));
+  const { plans } = plansOverStoreNames(t, REFRESH_NAMES, (path) => symlinkSync(outside, path));
 
-  for (const plan of plans) assert.equal("lockBlocked" in plan, false);
+  for (const plan of plans) assert.equal("refreshBlocked" in plan, false);
   assert.equal(readFileSync(join(outside, "kept"), "utf8"), "theirs");
 });
 
