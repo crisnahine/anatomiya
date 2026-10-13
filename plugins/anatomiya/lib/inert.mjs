@@ -110,7 +110,9 @@ function reduce(engine, line) {
     out += c;
     i++;
   }
-  let code = out.replace(LITERAL[engine], V).trim();
+  // One character per run of whitespace, so no pattern has a run to split between two of its parts.
+  // A run that held anything but spaces stays a tab: a type is read over spaces alone.
+  let code = out.replace(LITERAL[engine], V).trim().replace(/\s{2,}/g, (run) => (/[^ ]/.test(run) ? "\t" : " "));
   const { collection } = INERT[engine];
   for (let before = ""; before !== code; ) [before, code] = [code, code.replace(collection, V)];
   return { code, open: null };
