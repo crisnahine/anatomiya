@@ -609,10 +609,24 @@ export function gitStreamed(
       // An option Node refuses is thrown from the start itself.
       return reject(new Unasked(`git ${sub} failed: ${err.message}`));
     }
+    // Its pipes are shut with the signal: Git for Windows starts the real git as a launcher's child and
+    // the signal ends the launcher alone, so `close` would wait on all the git behind it still sends.
+    const end = (signal) => {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      signalChild(child, signal);
+    };
     // This clock and not spawn's own, which nothing stops for a child that
     // never started and which then holds the process open for the whole of
     // `timeout`. Unreferenced, so a clear that is missed holds nothing open either (B77).
-    const clock = timeout > 0 ? setTimeout(() => signalChild(child, "SIGTERM"), timeout) : null;
+    let expired = false;
+    const clock =
+      timeout > 0
+        ? setTimeout(() => {
+            expired = true;
+            end("SIGTERM");
+          }, timeout)
+        : null;
     clock?.unref();
     let rest = Buffer.alloc(0);
     let stderr = "";
@@ -625,7 +639,7 @@ export function gitStreamed(
     const stop = () => {
       stopped = true;
       rest = Buffer.alloc(0);
-      if (!child.killed) signalChild(child);
+      if (!child.killed) end();
     };
 
     const fail = (err) => {
@@ -692,6 +706,8 @@ export function gitStreamed(
       // A caller of a stream has already been handed part of the output, so
       // the only way to say "that was not the answer" is to refuse the whole
       // read (F13, F15).
+      // Past its clock the pipes were shut, so an exit in that same moment left no answer either, whatever its code.
+      if (expired) return fail(new Unasked(`git ${sub} exited SIGTERM: ${stderr.trim()}`));
       if (code !== 0) return fail(new (typeof code === "number" ? Error : Unasked)(`git ${sub} exited ${exitSignal || code}: ${stderr.trim()}`));
       // Whether a leftover is the final record or a cut-off one is a fact about
       // the command, not about the caller: `ls-files -z` terminates every entry
@@ -1161,8 +1177,10 @@ export function blobReader(
 /**
  * The merge base of two commits, with the three outcomes kept apart: found,
  * genuinely no common ancestor (exit 1, empty stdout, no stderr), and the
- * command failing with any other exit code. It throws where git gave no exit
- * code: git was never asked, and no caller may read that as "none" (F29).
+ * command failing over a name that is no commit. It throws where git gave no
+ * exit code, and where it failed with another exit code though both names are
+ * commits: git was not asked, or refused, and no caller may read either as
+ * "none" (F29).
  */
 export async function mergeBase(root, a, b) {
   if (!safeRef(a) || !safeRef(b)) return { found: false, failed: true, sha: null };
