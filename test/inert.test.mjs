@@ -250,7 +250,7 @@ test("a line comment that holds the end of a block comment asks", async () => {
 });
 
 test("a `//` inside a regex does not hide a template literal opened after it on the line", async () => {
-  // Read as a line comment, the rest of the line was lost, and a `/*` on the template's next line opened a comment over the code below.
+  // Read as a line comment, the rest of the line is lost, and a `/*` on the template's next line opens a comment over the code below.
   const source = 'const banner = url.replace(/^https?:\\/\\//, "") + `\n/*! ${name}\n`;\nexport function realDuplicate(a, b) {\n  return a + b;\n}\n/** doc */\nconst A = 1;\n';
   const asked = await asking("js", source);
   for (const line of [1, 2, 4, 5]) assert.ok(asked.includes(line), `line ${line} asks: ${asked}`);

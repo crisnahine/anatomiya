@@ -704,7 +704,7 @@ test("a tree too deep for the channel is answered as a crash, as the JavaScript 
 // reports this test and not a cancelled job.
 //
 // Not under the coverage collector: it keeps its records on the heaps this reads, and the child it
-// instruments ran past the bound on a slow runner. Every leg of the suite itself takes the reading.
+// instruments runs past the bound on a slow runner. Every leg of the suite itself takes the reading.
 const UNCOLLECTED = process.env.NODE_V8_COVERAGE ? { skip: "a memory reading under the coverage collector is no reading of the parser" } : {};
 test("five hundred large parses leave the child's memory where it started", { timeout: 12 * 60_000, ...UNCOLLECTED }, async (t) => {
   const dir = scratch(t, "anatomiya-ts-memory-");

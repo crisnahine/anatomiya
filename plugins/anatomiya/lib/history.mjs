@@ -299,11 +299,11 @@ async function readBesides(root, env) {
   const valueOf = (key) => configValue(config, key);
 
   const gitDir = resolve(root, common.stdout.replace(/\r?\n$/, ""));
-  // git for Windows makes its own HOME where none is set, from HOMEDRIVE and HOMEPATH before USERPROFILE
+  // Git for Windows makes its own HOME where none is set, from HOMEDRIVE and HOMEPATH before USERPROFILE
   // (`compat/mingw.c`). Where those name another directory than Node's, a file git reads there is not watched.
   const home = env.HOME ?? (process.platform === "win32" ? homedir() : undefined);
   // A file a key names, where git would look for it: null where the key is not set, false where the
-  // spelling (`~user`, `:(optional)`, `%(prefix)`, `~` with no HOME) is git's to expand, so the file is not one this can watch.
+  // spelling (`~user`, `:(optional)`, a leading `%(`, `~` with no HOME) is git's to expand, so the file is not one this can watch.
   const named = (key) => {
     const value = valueOf(key);
     if (value === undefined) return null;

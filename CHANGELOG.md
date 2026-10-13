@@ -165,6 +165,8 @@ no git version is needed that 0.15.1 did not need.
   could not be asked which files <sha> holds`, `what changed from <sha> to <ref>`, `which files
   differ from <sha>`, `for <path> at <sha>`, `whether this clone is shallow`, `which refs hold the
   name <base>`, `which parents HEAD's commit records` or `for the oldest commit this clone holds`.
+  A scan, a pin and a check stop the same way where the index's `.gitattributes` could not be asked
+  about, and the reuse check asks nothing about that checkout.
   A name git refuses with exit code 128 and no text, such as `HEAD@{9999}`, is a name that is not
   there: `check --base 'HEAD@{9999}'` says the base resolves to no commit.
 - Grammars asked for at once from a cold runtime could fail to load. A stop that read two
@@ -185,7 +187,8 @@ no git version is needed that 0.15.1 did not need.
 - `check` stops where the merge base could not be asked for. It printed `no merge base between
   <ref> and HEAD` and went on to exit 0, a sentence git had not said; the caveat is printed only
   where git ran and found none. A `--base` that looks like a commit id is taken for one only on
-  git's own answer that no ref has that name.
+  git's own answer that no ref has that name. A merge base git refuses for two commits it holds, with an
+  exit code other than 1, stops a scan and a check the same way, with git's own text.
 - The reuse check's line rule read a regex holding `/*`, as in `const trailing = /\/*$/;`, as the
   start of a block comment, so a function defined below it asked nothing until the next `*/`.
   0.15.1 shipped this. A block comment that is not closed on its line now opens only at the start
@@ -193,7 +196,7 @@ no git version is needed that 0.15.1 did not need.
   comment that holds `*/` asks, and so does a Ruby comment that holds `#{`, which inside a regex or
   a percent literal spread over lines is an interpolation that runs. A `//` behind code asks where a
   backtick follows it on the line, since inside a regex it would hide a template literal opened after
-  it, and a Ruby string in single quotes that holds `#{` asks. That costs false asks, counted
+  it, and a Ruby string in single quotes that holds `#{` asks; those two were not counted over the corpus. The rules before them cost false asks, counted
   over the corpus: 53 of 144,292 JavaScript and TypeScript files hold a comment opened after code
   that asks on each of its lines, 300 lines in 164 files ask for a `//` comment that quotes `*/`,
   and 525 lines in 273 of 66,132 Ruby files ask for a comment holding `#{`, 367 of them comments
@@ -224,6 +227,12 @@ no git version is needed that 0.15.1 did not need.
   directory that is not there, the process that sent the signal died of it. A scan already stopped
   when its checker was forked, and a parse pool closed in the tick its workers were forked, could
   reach it.
+- A git read past its clock, or one its caller stopped, did not end where git sits behind a
+  launcher, as Git for Windows installs it: the signal ended the launcher alone and the read
+  waited on the git behind it, read in the launcher's source and measured with a stand-in, on no
+  Windows machine beyond CI's two legs. The streamed reader and the batch reader shut the child's
+  pipes with the signal, so the read settles when the launcher has gone and a git still writing
+  stops at its next write. A read its clock ended is no answer whatever code git left.
 - The summary says `1 temporary file an earlier run left in .claude/anatomiya was removed`, where
   it said "an earlier scan left": a refresh, a pin and a lock create leave them too.
 

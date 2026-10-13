@@ -933,7 +933,7 @@ test("an attribute source this cannot read is the plain walk for the authors, an
   };
   const UNREAD = {
     "a directory where info/attributes should be": ({ dir }) => mkdirSync(join(dir, ".git", "info", "attributes")),
-    // git for Windows dies on every command under this spelling, so there is no plain walk to hold the answer to.
+    // Git for Windows dies on every command under this spelling, so there is no plain walk to hold the answer to.
     ...(process.platform === "win32" ? {} : { "a home directory only git can expand": ({ git }) => git("config", "core.attributesFile", "~nobody/attributes") }),
     "a path git expands from where it is installed": ({ git }) => git("config", "core.attributesFile", "%(prefix)/etc/gitattributes"),
     "a directory where the root's .gitattributes should be": ({ dir }) => mkdirSync(join(dir, ".gitattributes")),
