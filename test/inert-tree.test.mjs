@@ -492,3 +492,18 @@ test("a literal declared as a named type asks nothing where the language convert
 test("an annotation asks for the declaration it stands on, and not for the one that ends where it starts", async () => {
   assert.deepEqual(await asking("java", "class A {\n    int a =\n        1;@Inject\n    Foo b = null;\n}\n", [4]), [1, 3, 4]);
 });
+
+test("a string spread over lines asks on every row where it is an argument, whatever it holds, and on none where a name is bound to it", async () => {
+  // A row of text holds no token of its own where an escape splits the text around it.
+  assert.deepEqual(await asking("python", 'foo("""\nline \\n\nplain text line\nexec_me()\n""")\n'), [1, 2, 3, 4, 5]);
+  assert.deepEqual(await asking("python", 'foo("""\nline\nplain text line\nexec_me()\n""")\n'), [1, 2, 3, 4, 5]);
+  assert.deepEqual(await asking("python", 'X = """\nline \\n\nplain\n"""\n'), []);
+  assert.deepEqual(await asking("go", "package m\n\nvar x = run(`\na\nb\n`)\nconst B = `\na\nb\n`\n"), [3, 4, 5, 6]);
+  // The line that closes a call is a closing bracket alone.
+  assert.deepEqual(await asking("php", "<?php\nrun(<<<T\na\\n\nb\nT\n);\nrun(<<<'T'\na\nb\nT\n);\nconst A = <<<'T'\na\nb\nT;\n"), [2, 3, 4, 5, 7, 8, 9, 10]);
+  assert.deepEqual(await asking("java", 'class A {\n    Object x = run("""\n        a\\n\n        b\n        """);\n    String y = """\n        a\\n\n        b\n        """;\n}\n'), [1, 2, 3, 4, 5]);
+  const csharp = 'class A {\n    object x = Run(@"\na\nb\n");\n    object y = Run("""\n        a\n        b\n        """);\n    string z = @"\na\nb\n";\n    string w = """\n        a\n        b\n        """;\n}\n';
+  assert.deepEqual(await asking("csharp", csharp), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(await asking("rust", 'fn f() {\n    run(r#"\na\nb\n"#);\n    run("\na\\n\nb\n");\n}\nconst B: &str = r#"\na\nb\n"#;\nconst C: &str = "\na\\n\nb\n";\n'), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(await asking("kotlin", 'val x = run("""\n    a\n    b\n""")\nval c = """\n    a\n    b\n"""\n'), [1, 2, 3, 4]);
+});

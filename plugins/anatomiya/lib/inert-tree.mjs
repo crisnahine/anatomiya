@@ -270,6 +270,8 @@ function walked(tree, lines, lang, deadline) {
       if (!(candidate && inertNode(node, r, open.at(-1), open.at(-2)))) {
         const rows = rowsOf(cursor.startPosition, cursor.endPosition);
         const type = cursor.nodeType;
+        // A literal met here is under no inert node, and a row of its text may hold no token to ask for it.
+        if (r.literal.has(type)) mark(rows);
         if (cursor.gotoFirstChild()) {
           open.push({ rows, type, node, isNamed, sawNamed: false });
           continue;
