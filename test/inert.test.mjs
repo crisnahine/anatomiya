@@ -319,3 +319,17 @@ test("a Ruby =begin block that never ends was none, so every line from it asks",
   assert.deepEqual(await asking("ruby", "A = 1\n=begin\nnote\ndef old; end\n=end\nB = 2\n"), [], "ended, it asks nothing through its end");
   assert.deepEqual(await asking("ruby", "A = 1\n=begin\nnote\n\ndef real; end\n"), [2, 3, 5]);
 });
+
+test("a JavaScript string carried over a line by a backslash is read to its end, and a /* in it opens nothing", async () => {
+  assert.deepEqual(await asking("js", 'const s = "a \\\n/* b";\nexport function real(a, b) {\n  return a + b;\n}\n/** doc */\nconst A = 1;\n'), [1, 2, 3, 4]);
+  assert.deepEqual(await asking("js", "const s = 'x \\\n  y \\\n  /* glob';\nfunction real() {}\n/** doc */\n"), [1, 2, 3, 4]);
+  assert.deepEqual(await asking("js", 'const s = "a \\\r\n/* b";\r\nfunction real() {}\r\n/** doc */\r\n'), [1, 2, 3], "a line that ends in a carriage return");
+  assert.deepEqual(await asking("js", 'const s = "a \\" b \\\n/* c";\nfunction real() {}\n/** doc */\n'), [1, 2, 3], "an escaped quote before the backslash");
+  // A quote left open with no backslash carries nothing: the line is broken, and the next one is read as code.
+  assert.deepEqual(await asking("js", 'const s = "a\n/* b\nfunction old() {}\n*/\nconst A = 1;\n'), [1]);
+});
+
+test("a template literal and a Ruby string run on over lines with no backslash, and a comment marker in one is text", async () => {
+  assert.deepEqual(await asking("js", "const s = `a\n// note\n`;\n// after\n"), [1, 2, 3]);
+  assert.deepEqual(await asking("ruby", 'A = "a\n# note\nb"\n# after\n'), [1, 2, 3]);
+});

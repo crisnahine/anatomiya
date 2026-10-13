@@ -107,9 +107,10 @@ function reduce(engine, line) {
       const re = strings[c];
       re.lastIndex = i;
       if (!re.test(line)) {
-        // Odd quotes leave a string running on; a closed one this does not read is no literal.
-        const odd = line.slice(i).split(c).length % 2 === 0;
-        return { code: null, open: odd && (engine === "prism" || c === "`") ? c : null };
+        // A closed string this does not read is no literal. A JavaScript quote runs on only behind a
+        // backslash that ends the line; any other string does where its quotes are odd.
+        const runsOn = engine === "oxc" && c !== "`" ? /\\\r?$/.test(line) : line.slice(i).split(c).length % 2 === 0;
+        return { code: null, open: runsOn ? c : null };
       }
       out += V;
       i = re.lastIndex;
