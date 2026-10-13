@@ -2837,6 +2837,31 @@ test("a commit is held where git could not be asked who this clone commits as", 
   assert.equal(loadPin(dir).sha, pinned);
 });
 
+for (const [what, start, pattern] of [
+  ["which ref the remote's tip is", behindItsRemote, "*' rev-parse --symbolic-full-name '*"],
+  ["how the remote's branch last moved", behindItsRemote, "*' reflog show -n1 '*"],
+  ["how the clone was made", cloned, "*' reflog show '*' main-worktree/HEAD '*"],
+]) {
+  test(`a refresh that could not ask git ${what} holds the pin as unread, and says nothing git did not`, needsGitStub, async (t) => {
+    const { holdNotice } = await import("../plugins/anatomiya/lib/refresh.mjs");
+    const { dir } = await start(t);
+    const pinned = loadPin(dir)?.sha ?? null;
+    const calls = gitAhead(t, unasked(pattern));
+
+    const r = await refreshRepository(dir);
+    calls.restore();
+
+    assert.equal(r.pinned, false);
+    assert.equal(r.held?.reason, "unread");
+    assert.equal(loadPin(dir)?.sha ?? null, pinned);
+    assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held.reason, "unread", "the hold on record");
+    const said = holdNotice(dir);
+    assert.match(said, /git could not say/);
+    assert.doesNotMatch(said, /last moved by this clone|no reflog/);
+    assert.equal((await refreshRepository(dir)).pinned, true, "asked again and answered, the pin follows");
+  });
+}
+
 test("the detached worker ends with exit 1 where git could not be asked, and leaves its checkout as it found it", needsGitStub, async (t) => {
   const { dir } = await behindItsRemote(t);
   const before = claudeBytes(dir);
