@@ -473,8 +473,9 @@ const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.
  * one create after. A lock token a worker died holding names a generation that is gone
  * once this one holds the lock, so it is removed here.
  *
- * Answers `{ blocked }` where an entry that is no lock holds a name and could
- * not be removed: no worker lets go of that, so it is not a lock taken.
+ * Answers `{ blocked }` where an entry that is no regular file holds a name and
+ * could not be removed: no worker lets go of that, so it is not a lock taken. A
+ * lock file the system refuses to unlink is one, and answers null.
  */
 export function acquire(path) {
   const nonce = randomBytes(8).toString("hex");
