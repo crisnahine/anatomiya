@@ -702,7 +702,11 @@ test("a tree too deep for the channel is answered as a crash, as the JavaScript 
 
 // About 160 s on a loaded laptop. Bounded well inside the CI job's own 30 minutes, so a slow runner
 // reports this test and not a cancelled job.
-test("five hundred large parses leave the child's memory where it started", { timeout: 12 * 60_000 }, async (t) => {
+//
+// Not under the coverage collector: it keeps its records on the heaps this reads, and the child it
+// instruments ran past the bound on a slow runner. Every leg of the suite itself takes the reading.
+const UNCOLLECTED = process.env.NODE_V8_COVERAGE ? { skip: "a memory reading under the coverage collector is no reading of the parser" } : {};
+test("five hundred large parses leave the child's memory where it started", { timeout: 12 * 60_000, ...UNCOLLECTED }, async (t) => {
   const dir = scratch(t, "anatomiya-ts-memory-");
   const unit = SAMPLES.python.replace("from __future__ import annotations\n", "");
   const big = file(dir, "big.py", unit.repeat(Math.floor(990_000 / unit.length)), "python");
