@@ -238,6 +238,7 @@ export const SHAPES = {
     // struct that converts from a reference type.
     declared: "type",
     builtin: ["predefined_type", "implicit_type", "nullable_type", "array_type", "array_rank_specifier"],
+    // The one value no declared type converts with a function: the language makes `null` any reference type itself.
     nothing: ["null_literal"],
     // A directive that closes what another opened.
     closes: ["preproc_endregion"],

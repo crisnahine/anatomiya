@@ -9,9 +9,6 @@
  * nothing; null says no rule reads the file, and it is not asked about.
  */
 
-/** The engines a rule reads. A language routed anywhere else asks nothing. */
-export const INERT_ENGINES = ["oxc", "prism", "tree-sitter"];
-
 /**
  * How long the tree-sitter files of one stop may take, all of them together:
  * the first load of the runtime and of each grammar, every parse and every
@@ -177,15 +174,24 @@ function inertLines(engine, lines) {
   return inert;
 }
 
+const byLine = ({ engine, source }) => inertLines(engine, source.split("\n"));
+
+async function byTree({ lang, source, deadline, grammars }) {
+  const { treeInertLines } = await import("./inert-tree.mjs");
+  return treeInertLines(source, lang, deadline, { grammars });
+}
+
+const READERS = { oxc: byLine, prism: byLine, "tree-sitter": byTree };
+
+/** The engines a rule reads. A language routed anywhere else asks nothing. */
+export const INERT_ENGINES = Object.keys(READERS);
+
 /**
  * The lines of one file that define nothing callable, or null where no rule
  * reads it. `deadline` is the moment on `performance.now()`'s clock past
  * which a parse or a walk stops and its file asks; `grammars` is a test
  * override.
  */
-export async function inertLinesOf({ engine, lang, source, deadline, grammars }) {
-  if (engine in INERT) return inertLines(engine, source.split("\n"));
-  if (engine !== "tree-sitter") return null;
-  const { treeInertLines } = await import("./inert-tree.mjs");
-  return treeInertLines(source, lang, deadline, { grammars });
+export async function inertLinesOf(file) {
+  return Object.hasOwn(READERS, file.engine) ? READERS[file.engine](file) : null;
 }

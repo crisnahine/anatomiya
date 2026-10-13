@@ -191,7 +191,7 @@ export async function pendingChange(root, { since = null, turnStart = null, call
     const hunks = script === null ? added : clipped(added, script.spans);
     if (engine === "tree-sitter") parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
     const inert = script === null ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline }) : script.inert;
-    // A missing runtime or grammar reads nothing, and a file nothing read asks nothing, as before any rule.
+    // A missing runtime or grammar reads nothing, and a file nothing read asks nothing.
     if (inert === null) continue;
     // A line past the end of what was read is one nobody read, so its hunk asks.
     const read = lineCount(entry.head);

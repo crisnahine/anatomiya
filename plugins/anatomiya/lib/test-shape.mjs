@@ -288,7 +288,7 @@ export const underTestTree = (dir, family = null) =>
  * A directory named like a test is no test, `a.test.d/x.js` nor anything under
  * `__tests__`, which is an address and not a name.
  *
- * `read` says the caller's own reading of the file has been asked already and
+ * `parseAsked` says the caller's own reading of the file has been asked already and
  * did not call it a test, whether or not it parsed. The Ruby form is the one a
  * producer wears in earnest, `software_spec.rb` is Homebrew's `SoftwareSpec`
  * class, so such a caller asks a test tree to corroborate it (H35). A caller
@@ -301,10 +301,10 @@ export const underTestTree = (dir, family = null) =>
  * discourse writes 4,000 tests as `login-test.js` and no other signal in them
  * says so.
  */
-export function namesATestFile(rel, family, { read = false } = {}) {
+export function namesATestFile(rel, family, { parseAsked = false } = {}) {
   if (FAMILY_TEST_NAMES[family]) return namesATest(rel, family);
   const base = baseOf(rel);
-  return TEST_NAME.test(base) || (RUBY_TEST_NAME.test(base) && (!read || underTestTree(dirOf(rel))));
+  return TEST_NAME.test(base) || (RUBY_TEST_NAME.test(base) && (!parseAsked || underTestTree(dirOf(rel))));
 }
 
 /**
