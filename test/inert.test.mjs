@@ -255,3 +255,22 @@ test("a Ruby comment line that holds an interpolation asks, since a literal spre
   assert.deepEqual(await asking("ruby", "# note\nW = %W[\n#{run}\n# text #{run}\nplain\n]\n# after\n"), [2, 3, 4, 5]);
   assert.deepEqual(await asking("ruby", "A = 1 # the #{name} form\nB = 2 # plain\n"), [1]);
 });
+
+test("a run of spaces costs a line rule no more than one space does", async () => {
+  // 300 lines of each: the import, the re-export and the typed binding, cut short after a run as long as a line may be.
+  const run = " ".repeat(392);
+  for (const [lang, line] of [["js", `import${run}b`], ["js", `export${run}b`], ["js", `const a:${run}b`], ["ruby", `require${run}b`]]) {
+    const started = performance.now();
+    assert.equal((await asking(lang, `${line}\n`.repeat(300))).length, 300, line.slice(0, 8));
+    const took = performance.now() - started;
+    assert.ok(took < 1000, `${line.slice(0, 8)}: ${Math.round(took)} ms for 300 lines`);
+  }
+});
+
+test("a run of spaces or tabs reads as the one it stands for", async () => {
+  assert.deepEqual(await asking("js", 'import   a,  { b }    from   "m";\nexport  *   from  "m";\nconst  A  :  Map<string,   number>   =   1;\nexport\tconst\tB\t=\t[1,\t2];\n'), []);
+  // A tab inside a type is none of the characters a type is read from.
+  assert.deepEqual(await asking("js", "const A: Map<string,\tnumber> = 1;\nconst B: Map<string, \t number> = 1;\n"), [1, 2]);
+  assert.deepEqual(await asking("js", 'const s = "a    b";\nconst t = f("a    b");\n'), [2]);
+  assert.deepEqual(await asking("ruby", "require    'm'\nA   =   [1,    2].freeze\nB =\t{ a:   1 }\n"), []);
+});
