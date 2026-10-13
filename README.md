@@ -109,8 +109,10 @@ Then, in the repository you want mapped:
 ```
 
 It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
-`.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan
-without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
+`.claude/anatomiya/facts.json`, and `layout.json` beside it. It also keeps
+`history-authors.gz` and `history-cochange.gz` there: what it read of the history, so the next scan
+asks git only for the commits it has not seen. Deleting either costs one full read of the history.
+Pass `--dry-run` to see the plan without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
 as well, which is [Other tools](#other-tools). The one other file a scan can change is
 `.claude/settings.local.json`: where it still holds the hook entry versions 0.2.4 to 0.2.6 put
 there, the scan takes that entry out.
@@ -188,9 +190,11 @@ alone. What the four do:
   once per change, for one subagent to look for an existing function the new code could call
   instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
   such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
-  could be written with are not asked about. A file counts as the turn's work only when it was last
-  written during one of the session's own tool calls, so a file another session or an editor saved
-  in between is not asked about.
+  could be written with are not asked about. It reads ten languages: JavaScript, TypeScript and Ruby
+  by a rule over their lines, and Python, PHP, Go, Java, C#, Rust and Kotlin by the file's tree,
+  where an added comment, import or name bound to a literal asks nothing and any other added line
+  asks. A file counts as the turn's work only when it was last written during one of the session's
+  own tool calls, so a file another session or an editor saved in between is not asked about.
 
 > [!NOTE]
 > A session that is already running holds the overview it started with, and gets a changed one
@@ -676,7 +680,8 @@ spell)`. No other language gets one. With `scan --targets cursor,copilot`, Curso
 `*.go`, and Copilot gets no file for it, since VS Code matches such a pattern at every depth: the
 Copilot overview says `1 area has no pattern GitHub Copilot can be given, so no file here covers it:
 the repository root.` None of the seven gets the
-type checker, the "most imported from here" lines or the end-of-turn reuse check. The notice before
+type checker or the "most imported from here" lines. The end-of-turn reuse check asks about all
+seven, reading each changed file's tree in the hook's own process. The notice before
 a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of the seven. Neither says anything of a Go, Java,
 Kotlin or C# test that sits in the one place its language's tool reads it from. No `.rs` file is
 asked, since cargo collects by place and a Rust test has no name. A file of any other language is not read: "What lives where" counts it, and
@@ -776,7 +781,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 327 numbered decisions, a line each, and each
+- [DECISIONS.md](DECISIONS.md) is the build contract: 333 numbered decisions, a line each, and each
   links to its own file under [docs/decisions](docs/decisions) with the measurement or the review
   finding that forced it. Why a threshold is where it is, why the parser runs in child processes, why
   no hook carries the map on its own: that is where to look.

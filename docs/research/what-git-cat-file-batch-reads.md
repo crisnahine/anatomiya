@@ -294,3 +294,6 @@ So a `-Z` reader would be the first hard dependency on a specific git release (2
 older git `-Z` is an unknown switch and the child exits before reading anything. That outcome was
 not measured here, since no git older than 2.54 is installed. Whether to state 2.42 as a floor, or
 to fall back to the per-file read when the child dies at once, is a decision this note leaves open.
+
+It was decided since: the reader falls back to the per-file read, so no git version is a floor
+(`DECISIONS.md`, row E17).
