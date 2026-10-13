@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Tree } from "web-tree-sitter";
+import { Node, Tree } from "web-tree-sitter";
 
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { treeInertLines } from "../plugins/anatomiya/lib/inert-tree.mjs";
@@ -88,9 +88,10 @@ test("a walk that runs past the deadline asks about every non-blank line of that
 });
 
 test("the deadline holds inside one binding, however many names its type holds", async (t) => {
-  const source = `X: T[\n${"    a,\n".repeat(20000)}] = 1\n`;
-  const inert = await treeInertLines(source, "python", dueOnceWalked(t));
-  assert.deepEqual(inert.filter(Boolean).length, 1, "only the blank last line");
+  const source = `package m\n\nvar x T[\n${"\tint,\n".repeat(20000)}] = nil\n`;
+  assert.equal((await treeInertLines(source, "go", Infinity)).every(Boolean), true, "read in time, every line is inert");
+  const inert = await treeInertLines(source, "go", dueOnceWalked(t));
+  assert.deepEqual(inert.filter(Boolean).length, 2, "only the two blank lines");
 });
 
 test("a file of nested bindings the walk cannot finish in time asks about every non-blank line, and the call returns", async (t) => {
@@ -98,8 +99,8 @@ test("a file of nested bindings the walk cannot finish in time asks about every 
   assert.deepEqual(await treeInertLines(source, "python", dueOnceWalked(t)), [false, false, true]);
 });
 
-test("a search of a whole subtree counts against the clock as the nodes it reads", async (t) => {
-  // Each assignment holds the ones after it, so a search per assignment reads the clock far more often than once in 4,096 nodes.
+/** How often the walk of a file reads the clock: once in 4,096 nodes it reads or searches. */
+async function clockReads(t, source, lang) {
   const walk = Tree.prototype.walk;
   t.after(() => {
     Tree.prototype.walk = walk;
@@ -110,9 +111,68 @@ test("a search of a whole subtree counts against the clock as the nodes it reads
     walking = true;
     return walk.call(this);
   };
-  const deadline = { valueOf: () => (walking && reads++, Infinity) };
-  await treeInertLines(`${"a = ".repeat(1000)}f()\n`, "python", deadline);
-  assert.ok(reads >= 100, `${reads} reads of the clock`);
+  await treeInertLines(source, lang, { valueOf: () => (walking && reads++, Infinity) });
+  Tree.prototype.walk = walk;
+  return reads;
+}
+
+/** What one file's walk asks the tree for past the nodes it steps over: the nodes its subtree searches read, and the parents it asks for. */
+async function treeReads(t, source, lang) {
+  const search = Node.prototype.descendantsOfType;
+  const parent = Object.getOwnPropertyDescriptor(Node.prototype, "parent");
+  const restore = () => {
+    Node.prototype.descendantsOfType = search;
+    Object.defineProperty(Node.prototype, "parent", parent);
+  };
+  t.after(restore);
+  const reads = { searched: 0, parents: 0 };
+  Node.prototype.descendantsOfType = function (...args) {
+    reads.searched += this.descendantCount;
+    return search.apply(this, args);
+  };
+  Object.defineProperty(Node.prototype, "parent", {
+    configurable: true,
+    get() {
+      reads.parents++;
+      return parent.get.call(this);
+    },
+  });
+  await treeInertLines(source, lang, Infinity);
+  restore();
+  return reads;
+}
+
+test("the walk searches a file of nested bindings once, however deep they nest", async (t) => {
+  // Searched once per binding, each for what it holds, 4,000 chained assignments are 24 million nodes read.
+  for (const [lang, chained] of [
+    ["python", (n) => `${"a = ".repeat(n)}f()\n`],
+    ["php", (n) => `<?php\n${"$a = ".repeat(n)}f();\n`],
+    ["kotlin", (n) => `${"val a = run {\n".repeat(n)}1\n${"}\n".repeat(n)}`],
+  ]) {
+    const [small, large] = [await treeReads(t, chained(1000), lang), await treeReads(t, chained(2000), lang)];
+    assert.ok(small.searched > 0 && small.searched <= 1000 * 16 && large.searched <= small.searched * 2 + 16, `${lang}: ${small.searched} nodes searched at 1,000 and ${large.searched} at 2,000`);
+    assert.equal(large.parents, 0, lang);
+  }
+});
+
+test("the walk asks the tree for no parent, which the tree answers by reading down from its root", async (t) => {
+  const nested = `class A {\n    void M() {\n${"{ Money a = 5; int b = 1;\n".repeat(200)}${"}\n".repeat(200)}    }\n}\n`;
+  assert.equal((await treeReads(t, nested, "csharp")).parents, 0);
+});
+
+test("a search of a subtree larger than the clock's interval starts only after the clock is read", async (t) => {
+  const search = Node.prototype.descendantsOfType;
+  t.after(() => {
+    Node.prototype.descendantsOfType = search;
+  });
+  let searches = 0;
+  Node.prototype.descendantsOfType = function (...args) {
+    searches++;
+    return search.apply(this, args);
+  };
+  const source = `@d\ndef f():\n    pass\n${"X = 1\n".repeat(2000)}`;
+  assert.equal((await treeInertLines(source, "python", dueOnceWalked(t))).filter(Boolean).length, 1, "only the blank last line");
+  assert.equal(searches, 0);
 });
 
 test("a failure before the walk still deletes the tree", () => {
@@ -427,4 +487,8 @@ test("a literal declared as a named type asks nothing where the language convert
   assert.deepEqual(await asking("java", "class A {\n    Money a = 5;\n}\n"), [1]);
   assert.deepEqual(await asking("rust", "const A: Money = 5;\nfn f() {\n    let a: Money = 5;\n}\n"), [2]);
   assert.deepEqual(await asking("kotlin", "val a: Money = 5\n"), []);
+});
+
+test("an annotation asks for the declaration it stands on, and not for the one that ends where it starts", async () => {
+  assert.deepEqual(await asking("java", "class A {\n    int a =\n        1;@Inject\n    Foo b = null;\n}\n", [4]), [1, 3, 4]);
 });
