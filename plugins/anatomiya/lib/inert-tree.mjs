@@ -80,15 +80,16 @@ const rulesFor = (lang) => RULES.get(lang) ?? RULES.set(lang, rulesOf(lang)).get
 
 // The walk reads the clock once in this many nodes: a read costs more than a node does.
 const CLOCK_EVERY = 4096;
-// One walk runs at a time and never yields, so its clock is held here and not passed to every reader,
-// beside the file's root and where each of its annotations starts, searched for once.
-const clock = { deadline: Infinity, left: CLOCK_EVERY, root: null, annotations: null };
+// One walk runs at a time and never yields, so what it reads against is held here and not passed to
+// every reader: its deadline and the nodes left before the next read of the clock, the file's root and
+// where each of its annotations starts, searched for once.
+const walking = { deadline: Infinity, left: CLOCK_EVERY, root: null, annotations: null };
 
 /** Counts `nodes` read, and throws once the walk has run past its deadline. */
 function tick(nodes = 1) {
-  if ((clock.left -= nodes) > 0) return;
-  clock.left = CLOCK_EVERY;
-  if (performance.now() > clock.deadline) throw new Error("past the deadline");
+  if ((walking.left -= nodes) > 0) return;
+  walking.left = CLOCK_EVERY;
+  if (performance.now() > walking.deadline) throw new Error("past the deadline");
 }
 
 /** A search of a whole subtree, counted as the nodes it reads. */
@@ -138,7 +139,7 @@ function paired(node, operand, r) {
  */
 function annotated(node, r) {
   if (r.annotation.length === 0) return false;
-  const starts = (clock.annotations ??= within(clock.root, r.annotation).map((n) => n.startIndex));
+  const starts = (walking.annotations ??= within(walking.root, r.annotation).map((n) => n.startIndex));
   let [low, high] = [0, starts.length];
   while (low < high) {
     const mid = (low + high) >> 1;
@@ -165,14 +166,18 @@ const binds = (node, r) => r.bound.has(node.type) && named(node).every((n) => bi
 /**
  * Whether the type a literal is declared as may convert it with a function
  * somebody wrote, where the language has such conversions: any type but its
- * own, outside a constant. `parent` and `outer` are the two nodes that hold it.
+ * own, outside a constant. `parent` and `outer` are the two nodes that hold
+ * it, each with its node where it is one the rule reads: only a declaration
+ * holds `const`, and every declaration is one.
  */
 function converts(node, value, r, parent, outer) {
   if (r.s.declared === undefined || value === null || r.nothing.has(value.type)) return false;
-  const holder = parent?.node ?? node.parent;
+  const holder = parent?.node ?? null;
+  if (holder === null) return true;
   const type = holder.childForFieldName(r.s.declared);
   if (type !== null && plain(type, r.builtin, r)) return false;
-  return !named(outer?.node ?? holder.parent).some((n) => n.text === CONSTANT);
+  const declaration = outer?.node ?? null;
+  return declaration === null || !named(declaration).some((n) => n.text === CONSTANT);
 }
 
 /**
@@ -218,8 +223,8 @@ function inertNode(node, r, parent, outer) {
   // A group of imports that holds a comment and "C" is read inside, where the comment may stand on that import.
   if (r.preambleOf.has(type) && NAMES_C.test(node.text) && within(node, r.s.comment).length > 0) return false;
   if (r.whole.has(type)) return true;
-  // An annotation on a package is still an annotation, which may run something.
   if (r.markup.has(type) && SCRIPT.test(node.text)) return false;
+  // An annotation on a package is still an annotation, which may run something.
   if (r.header.has(type)) return !annotated(node, r);
   if (r.binding.has(type)) return inertBinding(node, r, parent, outer);
   if (r.declaration.has(type)) return inertDeclaration(node, r, parent);
@@ -266,7 +271,7 @@ function walked(tree, lines, lang, deadline) {
   try {
     const r = rulesFor(lang);
     cursor = tree.walk();
-    Object.assign(clock, { deadline, left: CLOCK_EVERY, root: tree.rootNode, annotations: null });
+    Object.assign(walking, { deadline, left: CLOCK_EVERY, root: tree.rootNode, annotations: null });
     // Each open node, with its type, the node itself where the rule read it, and whether a named
     // node was seen under it: a named node with none is a leaf.
     const open = [];
