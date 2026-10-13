@@ -16,7 +16,7 @@
  * cannot be checked is the full walk.
  */
 import { createHash } from "node:crypto";
-import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -300,13 +300,13 @@ async function readBesides(root, env) {
     return resolve(root, value.replace(/^~(?=\/|$)/, () => home));
   };
   const files = [
-    join(root, ".mailmap"),
-    named("mailmap.file"),
+    digestOf(join(root, ".mailmap"), IN_TREE),
+    digestOf(named("mailmap.file")),
     // The order a commit's rows are printed in, which is the order a reader meets them.
-    named("diff.orderFile"),
-    env.GIT_SHALLOW_FILE ? resolve(root, env.GIT_SHALLOW_FILE) : join(gitDir, "shallow"),
-    env.GIT_GRAFT_FILE ? resolve(root, env.GIT_GRAFT_FILE) : join(gitDir, "info", "grafts"),
-  ].map(digestOf);
+    digestOf(named("diff.orderFile")),
+    digestOf(env.GIT_SHALLOW_FILE ? resolve(root, env.GIT_SHALLOW_FILE) : join(gitDir, "shallow")),
+    digestOf(env.GIT_GRAFT_FILE ? resolve(root, env.GIT_GRAFT_FILE) : join(gitDir, "info", "grafts")),
+  ];
   if (files.includes(null)) return null;
 
   // The object a name stands for: "unset" where there is no name, "absent" where git says it is
@@ -325,17 +325,18 @@ async function readBesides(root, env) {
   if (blob === null) return null;
 
   const shared = [version.stdout, digest(config.filter((entry) => !NOT_STAMPED.test(entry)).join("\0")), files, blob, replaced.stdout, STAMPED_ENV.map((name) => env[name] ?? null)];
-  // Where git reads attributes from. Two sources are not here, and a store taken under either keeps
-  // its rename pairing until something else moves the stamp: a `.gitattributes` below the root that
-  // git does not track, which only a walk of the tree finds, and the system-wide file on a git that
-  // cannot name it (before 2.42).
+  // Where git reads attributes from. Three sources are not here, and a store taken under any of them
+  // keeps its rename pairing until something else moves the stamp: a `.gitattributes` below the root
+  // that git does not track, which only a walk of the tree finds; the system-wide file on a git that
+  // cannot name it (before 2.42); and, on Windows with no HOME, the user's file where git's home is
+  // not Node's.
   if (!attributeFiles.ok) return { shared, attributes: null };
   // `<mode> <blob> <stage>`, a tab, the path. Read off the disk as well: git reads the
   // working tree's file, and an edit that is not staged moves no index entry.
   const tracked = attributeFiles.stdout.split("\0").filter(Boolean).map((entry) => entry.slice(entry.indexOf("\t") + 1));
   if (tracked.length > HISTORY.mostAttributeFiles) return { shared, attributes: null };
   // The root's whether tracked or not: git reads one that was never added.
-  const onDisk = [...new Set([".gitattributes", ...tracked])].map((rel) => digestOf(join(root, rel)));
+  const onDisk = [...new Set([".gitattributes", ...tracked])].map((rel) => digestOf(join(root, rel), IN_TREE));
   // git reads `$XDG_CONFIG_HOME/git/attributes`, else `$HOME/.config/git/attributes` joined as text, else none.
   const fallback = env.XDG_CONFIG_HOME ? `${env.XDG_CONFIG_HOME}/git/attributes` : home === undefined ? null : `${home}/.config/git/attributes`;
   const own = named("core.attributesFile") ?? fallback;
@@ -349,12 +350,17 @@ async function readBesides(root, env) {
   return { shared, attributes: unread ? null : [digest(attributeFiles.stdout), read, env.GIT_ATTR_NOSYSTEM ?? null] };
 }
 
+// git follows no link at a `.mailmap` or a `.gitattributes` in the working tree, so the bytes
+// behind one are not what it read.
+const IN_TREE = { linked: false };
+
 // A digest of the file's bytes, "absent" where nothing is there, "unset" where no key names one, null where it cannot be read whole.
-function digestOf(path) {
+function digestOf(path, { linked = true } = {}) {
   if (path === null) return "unset";
   if (path === false) return null;
   let fd;
   try {
+    if (!linked && lstatSync(path).isSymbolicLink()) return null;
     fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     const stat = fstatSync(fd);
     return stat.isFile() && stat.size <= STAMPED_FILE_MOST ? digest(readFileSync(fd)) : null;
