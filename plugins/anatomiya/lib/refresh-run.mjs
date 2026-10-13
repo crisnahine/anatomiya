@@ -234,6 +234,7 @@ async function followPin(root, pin) {
   // Each hold names the pin it held, so a pin taken by hand since ends it.
   const hold = (reason, commit, by = null) => ({ accepted: null, held: { reason, commit, pin: current?.sha ?? null, ...(by ? { by } : {}) } });
   const moved = await fetchedHere(root, tip.ref, tip.sha);
+  if (moved === "unread") return hold("unread", head);
   if (moved !== "fetched") return hold(moved === "no-record" ? "no-record" : "not-fetched", head);
   // A pinned commit git no longer holds (its branch merged, deleted and
   // collected) bounds nothing, and the line is read as for a first pin.
@@ -392,7 +393,8 @@ async function remoteTip(root) {
 /**
  * How the remote-tracking ref last moved: `fetched` by a fetch or a pull,
  * `moved-here` by this clone (a push, a ref written by hand, a fetch naming its
- * own source), or `no-record` where git kept none to tell by.
+ * own source), `no-record` where git kept none to tell by, or `unread` where
+ * git could not be asked: no exit code is neither a push nor a missing reflog.
  *
  * Asked through `git reflog`, which reads every ref backend: the files backend
  * keeps `logs/refs/...`, reftable keeps none, and reading the file had a
@@ -403,18 +405,23 @@ async function remoteTip(root) {
  */
 async function fetchedHere(root, ref, sha) {
   const full = await gitBuffered(root, ["rev-parse", "--symbolic-full-name", ref]);
+  if (full.code === null) return "unread";
   const name = full.ok ? full.stdout.trim() : "";
   if (!name.startsWith("refs/remotes/")) return "moved-here";
   const last = await gitBuffered(root, ["reflog", "show", "-n1", "--format=%gs", name]);
+  if (last.code === null) return "unread";
   if (!last.ok) return "no-record";
   const message = last.stdout.trim();
   if (message !== "") return movedByRemote(message) ? "fetched" : "moved-here";
-  return (await clonedOnto(root, sha)) ? "fetched" : "no-record";
+  const cloned = await clonedOnto(root, sha);
+  if (cloned === null) return "unread";
+  return cloned ? "fetched" : "no-record";
 }
 
-/** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`. */
+/** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`, or null where git could not be asked. */
 async function clonedOnto(root, sha) {
   const log = await gitBuffered(root, ["reflog", "show", "--format=%H %gs", "main-worktree/HEAD"]);
+  if (log.code === null) return null;
   if (!log.ok) return false;
   const first = log.stdout.trimEnd().split("\n").pop() ?? "";
   return first.startsWith(`${sha} clone: `);
