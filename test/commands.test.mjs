@@ -171,15 +171,16 @@ test("a scan refused one rename after the record moved leaves the tree as the sc
   execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "pipe" });
   execFileSync("git", ["commit", "-qm", "lib"], { cwd: dir, stdio: "pipe" });
   const before = claudeTree(dir);
-  // The scan writes under the resolved root, which on macOS is under /private.
-  const resolved = realpathSync(dir);
+  // Told by what the path ends in: the scan's root is git's spelling of the directory, which on macOS is
+  // under /private and on Windows is the long name of a temp directory this process knows by its short one.
+  const under = (...parts) => new RegExp(`[\\\\/]${parts.join("[\\\\/]").replaceAll(".", "\\.")}`);
   const fs = (await import("node:fs")).default;
   const { syncBuiltinESMExports } = await import("node:module");
   const real = fs.renameSync;
   const renamed = [];
   let refused = false;
   fs.renameSync = (from, to) => {
-    if (!refused && String(to).startsWith(join(resolved, RULES))) {
+    if (!refused && under(".claude", "rules", "").test(String(to))) {
       refused = true;
       throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
     }
@@ -194,8 +195,8 @@ test("a scan refused one rename after the record moved leaves the tree as the sc
 
   await assert.rejects(runScan(dir), /could not be replaced \(EPERM\), so the scan stopped and put back what it had replaced/);
 
-  const record = join(resolved, ".claude", "anatomiya", "facts.json");
-  assert.ok(refused && renamed.indexOf(record) === 0, "the record was replaced before the refusal, and put back after it");
+  const record = new RegExp(`${under(".claude", "anatomiya", "facts.json").source}$`);
+  assert.ok(refused && renamed.findIndex((to) => record.test(to)) === 0, "the record was replaced before the refusal, and put back after it");
   const after = claudeTree(dir);
   const layout = join(".claude", "anatomiya", "layout.json");
   // The record put back is a new file with a new mtime, so its layout file alone is stamped again.

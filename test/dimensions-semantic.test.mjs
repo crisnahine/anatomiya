@@ -155,7 +155,7 @@ test("a wrapped chain is counted once, and a wrapped callee is still a link", ne
 test("a type-checked row that does not say where it has a site stops the module loading, by name", async (t) => {
   // Read by `siteStubs` on every file, where a row without it would leave no stub and say nothing.
   const source = readFileSync(fileURLToPath(new URL("../plugins/anatomiya/lib/dimensions-semantic.mjs", import.meta.url)), "utf8");
-  const without = source.replace(/^ *sited: .*\n/m, "");
+  const without = source.replace(/^ *sited: .*\r?\n/m, "");
   assert.notEqual(without, source, "the row's `sited` line was found");
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-sited-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
