@@ -36,7 +36,7 @@ const BOOLEAN = /^(?:true|false)$/;
 const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
 const NAMES_C = /["`]C["`]/;
 
-// What makes inline markup code in another language.
+// What makes a file's inline markup code in another language.
 const SCRIPT = /<script/i;
 
 // The modifier under which the compiler admits no conversion a user wrote.
@@ -83,7 +83,7 @@ const CLOCK_EVERY = 4096;
 // One walk runs at a time and never yields, so what it reads against is held here and not passed to
 // every reader: its deadline and the nodes left before the next read of the clock, the file's root and
 // where each of its annotations starts, searched for once.
-const walking = { deadline: Infinity, left: CLOCK_EVERY, root: null, annotations: null };
+const walking = { deadline: Infinity, left: CLOCK_EVERY, root: null, annotations: null, scripted: null };
 
 /** Counts `nodes` read, and throws once the walk has run past its deadline. */
 function tick(nodes = 1) {
@@ -223,7 +223,8 @@ function inertNode(node, r, parent, outer) {
   // A group of imports that holds a comment and "C" is read inside, where the comment may stand on that import.
   if (r.preambleOf.has(type) && NAMES_C.test(node.text) && within(node, r.s.comment).length > 0) return false;
   if (r.whole.has(type)) return true;
-  if (r.markup.has(type) && SCRIPT.test(node.text)) return false;
+  // Asked once of the file: an inline tag cuts a script into chunks of markup, and only the first holds the tag that opens it.
+  if (r.markup.has(type) && (walking.scripted ??= within(walking.root, [...r.markup]).some((m) => SCRIPT.test(m.text)))) return false;
   // An annotation on a package is still an annotation, which may run something.
   if (r.header.has(type)) return !annotated(node, r);
   if (r.binding.has(type)) return inertBinding(node, r, parent, outer);
@@ -271,7 +272,7 @@ function walked(tree, lines, lang, deadline) {
   try {
     const r = rulesFor(lang);
     cursor = tree.walk();
-    Object.assign(walking, { deadline, left: CLOCK_EVERY, root: tree.rootNode, annotations: null });
+    Object.assign(walking, { deadline, left: CLOCK_EVERY, root: tree.rootNode, annotations: null, scripted: null });
     // Each open node, with its type, the node itself where the rule read it, and whether a named
     // node was seen under it: a named node with none is a leaf.
     const open = [];
