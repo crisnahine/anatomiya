@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { encodePath } from "./encode.mjs";
 
 /**
- * The most of one file the store reads whole: what any command reads of a
+ * The most of one file this module reads whole: what any command reads of a
  * record, and what a scan reads to put a file back, so a scan reads whole no
  * more than any command reads (A113). Over six times the largest file a scan of
  * the corpus writes (9.7 MiB, vscode's facts.json).
@@ -52,14 +52,16 @@ export function stagedInStore(dir, names) {
   return entries
     .sort()
     .map((name) => ({ name, pid: stager(name, (staged) => names.includes(staged)) }))
-    .filter(({ name, pid }) => {
-      if (pid === null) return false;
-      try {
-        return lstatSync(join(dir, name)).isFile();
-      } catch {
-        return false;
-      }
-    });
+    .filter(({ name, pid }) => pid !== null && isFileAt(join(dir, name)));
+}
+
+/** Whether a regular file is at `path`, asked of the name itself: a link is not one, and neither is a name that will not stat. */
+export function isFileAt(path) {
+  try {
+    return lstatSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**

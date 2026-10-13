@@ -15,11 +15,11 @@
  * is a filename anyone can type; the frontmatter alone is a file an older build
  * wrote and this one knows nothing about.
  */
-import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { accessSync, closeSync, constants, fstatSync, lstatSync, opendirSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 
 import { GENERATOR, PREFIX, TARGETS, areaName, isClaude, overviewName } from "./targets.mjs";
-import { stager } from "./store.mjs";
+import { isFileAt, stager } from "./store.mjs";
 
 /**
  * A path resolved through every link and alias the OS keeps, or null where it
@@ -296,7 +296,7 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
   out.listed = true;
   out.entries = names;
   // Asked of the entry itself: a link, a directory or a fifo under such a name is somebody's.
-  out.staged = names.filter((n) => stagedBy(n, target) !== null && isPlainFile(join(dir, n))).sort();
+  out.staged = names.filter((n) => stagedBy(n, target) !== null && isFileAt(join(dir, n))).sort();
 
   const read = (n) => n.endsWith(target.ext) && (isClaude(target) || n.startsWith(PREFIX));
   const listed = new Set(names);
@@ -623,14 +623,6 @@ export function leafReplaceable(path) {
   }
 }
 
-function isPlainFile(path) {
-  try {
-    return lstatSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Whether the path is a symbolic link, false where even lstat is refused: a
  * directory this may not enter answers EACCES here as well as to realpath.
@@ -646,6 +638,22 @@ export function isLink(path) {
 function contains(base, target) {
   const rel = relative(base, target);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+/** The first `most` names a directory lists, in the order it lists them, or none where it will not list: one that comes with the repository is never read whole. */
+export function namesIn(dir, most) {
+  const names = [];
+  try {
+    const listing = opendirSync(dir);
+    try {
+      for (let entry; names.length < most && (entry = listing.readSync()) !== null; ) names.push(entry.name);
+    } finally {
+      listing.closeSync();
+    }
+  } catch {
+    return [];
+  }
+  return names;
 }
 
 /**

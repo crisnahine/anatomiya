@@ -87,9 +87,9 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   // fold below decides it again over the same files, stubs for hits.
   const partitioned = Promise.withResolvers();
   const degradedAlready = async (sited) => {
-    const { areas, capabilities } = await partitioned.promise;
+    const { areas, capabilities, frameworks, records } = await partitioned.promise;
     const withSites = (f) => {
-      const record = head.records.get(f.rel);
+      const record = records.get(f.rel);
       const stubs = sited.records.get(f.rel)?.hits;
       return record?.ok && stubs ? { ...record, hits: { ...record.hits, ...stubs } } : record;
     };
@@ -160,7 +160,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     });
     // Before the checker's answer is waited for, so its reader can ask while
     // the checker still walks.
-    partitioned.resolve({ areas, capabilities });
+    partitioned.resolve({ areas, capabilities, frameworks, records: head.records });
   } catch (err) {
     // Otherwise the process stays up until a checker nobody will read finishes.
     stopChecker.abort();

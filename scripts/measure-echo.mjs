@@ -51,7 +51,7 @@ export function replayEcho(lines, window = ECHO_WINDOW_BYTES) {
         else out.kept++;
       }
     }
-    // shortcut: a line that also carries a text the rule keeps stays whole, held copies included; rewrite its record if one shows up.
+    // A line that also carries a text the rule keeps stays whole, held copies included.
     if (dropped > 0 && dropped === event.length) continue;
     kept.push(`${line}\n`);
     sizes.push(Buffer.byteLength(kept.at(-1)));
@@ -66,7 +66,8 @@ function tailBefore(kept, sizes, total) {
   let bytes = 0;
   while (from > 0 && bytes < ECHO_READ_MOST) bytes += sizes[--from];
   const text = kept.slice(from).join("");
-  return { text: bytes > ECHO_READ_MOST ? Buffer.from(text).subarray(bytes - ECHO_READ_MOST).toString("utf8") : text, end: total };
+  const cut = bytes > ECHO_READ_MOST ? Buffer.from(text).subarray(bytes - ECHO_READ_MOST).toString("utf8") : text;
+  return { end: total, lines: () => cut.split("\n") };
 }
 
 /**

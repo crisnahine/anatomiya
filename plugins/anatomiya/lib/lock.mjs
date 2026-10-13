@@ -7,15 +7,15 @@
  *
  * A judge answers `null` where the lock is gone, `{ live: true }`, which may
  * name its `generation` too, or `{ live: false, generation, identity }`:
- * `generation` names the lock's token, and the lock is removed only while the
- * judge, asked again under that token, still answers it dead with the same
+ * `generation` names the lock token, and the lock is removed only while the
+ * judge, asked again under that lock token, still answers it dead with the same
  * `identity` (the generation where it gives none).
  */
 import { createHash } from "node:crypto";
-import { closeSync, linkSync, lstatSync, opendirSync, openSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, linkSync, lstatSync, openSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { readHead } from "./rules.mjs";
+import { namesIn, readHead } from "./rules.mjs";
 import { writeTemp } from "./store.mjs";
 
 /**
@@ -78,15 +78,15 @@ const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 /**
  * Breaks the lock where `judge` finds it dead, then makes the one create of it; true where this call holds it.
  *
- * The right to remove one dead generation goes to whichever call creates the token named by it, and that
- * call removes the lock only while it is still that generation. Every other call goes to the one create,
+ * The right to remove one dead generation goes to whichever call creates the lock token named by it, and
+ * that call removes the lock only while it is still that generation. Every other call goes to the one create,
  * and the losers stay out. Moving a dead lock aside instead freed the name for a third call while the
  * first holder still held it.
  *
- * A token older than any break could hold it was left by a call killed mid-break, and left in place it
- * turned every later call away from that dead lock for good. So a token is itself a lock, judged by its
+ * A lock token older than any break could hold it was left by a call killed mid-break, and left in place
+ * it turned every later call away from that dead lock for good. So a lock token is itself a lock, judged by its
  * mtime and broken by this same protocol, one level down and no further. Unlinked by age alone, two calls
- * finding one old token could both remove it, the second taking the first's fresh one. What is left: a
+ * finding one old lock token could both remove it, the second taking the first's fresh one. What is left: a
  * breaker suspended past the bound, which the next call takes for dead (A92 accepts the same of a holder);
  * and a breaker killed holding a token's own token, which nothing here breaks, so the lock stays taken
  * until a sweep clears it: the echo's day-old sweep, or for the refresh worker, which answers busy till
@@ -164,21 +164,27 @@ export const mtimeAge = ({ heldMostMs, slackMs, now = Date.now }) => (path) => {
 // A break takes microseconds; a minute, plus the 2 s a FAT mtime can be off by, is far past any live breaker.
 const TOKEN_AGE = mtimeAge({ heldMostMs: 60_000, slackMs: 2000 });
 
+// Bounded and typed, since the directory can come with the repository: a lock
+// planted as a link to `/dev/zero` read whole never returned. Ours is under 100 bytes.
+const lockEntry = (path) => readHead(path, 256);
+const contentOf = (entry) => (entry.kind === "file" ? entry.head : null);
+
+/** What the refresh worker's lock at `path` holds, or null where the entry is no regular file. */
+export const lockContent = (path) => contentOf(lockEntry(path));
+
 /**
  * The refresh worker's judge, over the lock's `{pid, at, nonce}`: dead where it does not parse, its pid is
  * not an integer or its `at` not a number, it is older than `staleMs` or stamped later than now, or its
  * process is gone. Its generation is its nonce, and what must still match is the kind of entry at the name
  * and at most its first 256 bytes; a lock with no nonce of ours is named by a digest of what was read, so
- * its token is still one name of ours.
+ * its lock token is still one name of ours.
  */
 export const ownerAge = ({ staleMs, now = Date.now, alive = processAlive }) => (path) => {
   if (lstatOf(path) === null) return null;
-  // Bounded and typed, since the directory can come with the repository: a lock
-  // planted as a link to `/dev/zero` read whole never returned. Ours is under 100 bytes.
-  const entry = readHead(path, 256);
-  const content = entry.kind === "file" ? entry.head : null;
+  const entry = lockEntry(path);
+  const content = contentOf(entry);
   const identity = `${entry.kind}:${content ?? ""}`;
-  // A live lock names its generation too, so the store sweep can tell its tokens from a gone one's.
+  // A live lock names its generation too, so the store sweep can tell its lock tokens from a gone one's.
   const generation = nonceOf(content) ?? createHash("sha256").update(identity).digest("hex").slice(0, 16);
   return ownerGone(content, staleMs, now, alive) ? { live: false, generation, identity } : { live: true, generation };
 };
@@ -190,7 +196,7 @@ export const ownerAge = ({ staleMs, now = Date.now, alive = processAlive }) => (
  */
 export const workerAge = ownerAge({ staleMs: 30 * 60 * 1000 });
 
-// What the refresh worker writes as a nonce, and so the one shape its tokens are named by.
+// What the refresh worker writes as a nonce, and so the one shape its lock tokens are named by.
 const GENERATION = /^[0-9a-f]{16}$/;
 
 function nonceOf(content) {
@@ -216,7 +222,8 @@ function ownerGone(content, staleMs, now, alive) {
   return !alive(held.pid);
 }
 
-function processAlive(pid) {
+/** Whether a process is there to be signalled. */
+export function processAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
@@ -238,34 +245,23 @@ function lstatOf(path) {
 // The store holds a handful of files; a directory past this is not ours to walk.
 const TOKENS_LISTED_MOST = 256;
 
-// A token's name past the lock's: its generation, and for a token's own token the token's mtime in ms.
+// A lock token's name past the lock's: its generation, and for a token's own token the mtime in ms of the lock token it breaks.
 const TOKEN = /^([0-9a-f]{16})(\.\d+)?$/;
 
-/** The tokens beside `lock` by name, each with the generation it names and whether it is a token's own token. */
+/** The lock tokens beside `lock` by name, each with the generation it names and whether it is a token's own token. */
 function tokensOf(lock) {
   const prefix = `${basename(lock)}.`;
-  const names = [];
-  try {
-    const listing = opendirSync(dirname(lock));
-    try {
-      for (let entry; names.length < TOKENS_LISTED_MOST && (entry = listing.readSync()) !== null; ) names.push(entry.name);
-    } finally {
-      listing.closeSync();
-    }
-  } catch {
-    return [];
-  }
-  return names.flatMap((name) => {
+  return namesIn(dirname(lock), TOKENS_LISTED_MOST).flatMap((name) => {
     const token = name.startsWith(prefix) ? TOKEN.exec(name.slice(prefix.length)) : null;
     return token === null ? [] : [{ name, generation: token[1], ofToken: token[2] !== undefined }];
   });
 }
 
 /**
- * Removes the tokens of `lock` that `ownerAge` names, but `live`'s. Called by the holder, so every other
- * generation is gone, and a token one names is a breaker's that died before removing it: left, it would
+ * Removes the lock tokens of `lock` that `ownerAge` names, but `live`'s. Called by the holder, so every other
+ * generation is gone, and a lock token one names is a breaker's that died before removing it: left, it would
  * turn away the break of a later lock that repeats its name. A breaker still running finds the lock is
- * not the generation it judged and leaves it, so taking its token from under it breaks nothing. A
+ * not the generation it judged and leaves it, so taking its lock token from under it breaks nothing. A
  * token's own token goes with it.
  */
 export function removeLeftTokens(lock, live) {
@@ -273,9 +269,9 @@ export function removeLeftTokens(lock, live) {
 }
 
 /**
- * The tokens of `lock` a breaker that died left, by name, as `judge` reads the lock now: every one of a
+ * The lock tokens of `lock` a breaker that died left, by name, as `judge` reads the lock now: every one of a
  * generation it does not name, and a token's own token of the dead generation it names once older than
- * any break holds one. Nothing breaks a token's token, so a breaker killed holding one left that lock
+ * any break holds one. Nothing breaks a token's own token, so a breaker killed holding one left that lock
  * unbreakable for good. Never a live lock's, and never an entry that is not a regular file.
  */
 export function leftTokens(lock, judge) {
