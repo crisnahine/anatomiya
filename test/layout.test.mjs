@@ -17,8 +17,8 @@ import {
   runnerOf,
   tally,
   testsLine,
-  underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
+import { underTestTree } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { roster } from "../plugins/anatomiya/lib/layout-scan.mjs";
 import { isTestPath } from "../plugins/anatomiya/lib/precedent.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";

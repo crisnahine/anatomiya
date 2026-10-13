@@ -338,12 +338,12 @@ test("a name that is all extension has itself for a stem, and names no test", ()
   assert.equal(stemOf("tests/.py"), ".py");
 });
 
-test("namesATestFile reads a Ruby spec outside a test tree as a test until the file is read", () => {
+test("a Ruby spec outside a test tree is a test by its name until its parse was asked", () => {
   assert.equal(namesATestFile("Library/Homebrew/software_spec.rb", "ruby"), true);
-  assert.equal(namesATestFile("Library/Homebrew/software_spec.rb", "ruby", { read: true }), false);
+  assert.equal(namesATestFile("Library/Homebrew/software_spec.rb", "ruby", { parseAsked: true }), false);
   assert.equal(namesATestFile("gems/x/spec_canvas/a_spec.rb", "ruby"), true);
   assert.equal(namesATestFile("spec/models/user_spec.rb", "ruby"), true);
-  assert.equal(namesATestFile("spec/models/user_spec.rb", "ruby", { read: true }), true);
+  assert.equal(namesATestFile("spec/models/user_spec.rb", "ruby", { parseAsked: true }), true);
 });
 
 test("a directory named like a test is no test", () => {

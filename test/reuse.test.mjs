@@ -1196,7 +1196,7 @@ async function stubbedAsync(name, stub, call) {
   }
 }
 
-test("runReuse reads the transcript twice", async (t) => {
+test("a recording stop reads the transcript's head once and its tail twice", async (t) => {
   // The head once, and the tail once before the change set and once after it,
   // where each reader once read a 64 MiB tail of its own. A recording stop runs
   // all four readers. The snapshot puts the transcript past the head's 64 KiB,

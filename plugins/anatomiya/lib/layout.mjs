@@ -23,8 +23,6 @@ import {
   underTestTree,
 } from "./test-shape.mjs";
 
-export { underTestTree };
-
 /**
  * The floor rises with the corpus, so a directory earns a line by holding a
  * share of the repository rather than a fixed number of files. Three is the
@@ -236,7 +234,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // language with a test name of its own answers by it or by the mirror, and
   // by nothing written for another: no dotted form, no `__tests__`.
   const family = familyOf(lang);
-  const named = namesATestFile(rel, family, { read: true });
+  const named = namesATestFile(rel, family, { parseAsked: true });
   if (named || FAMILY_TEST_NAMES[family]) return named || mirrored?.has(rel) === true;
   const dir = dirOf(rel);
   // Past its name, a read file is a test by its address only where nothing in
