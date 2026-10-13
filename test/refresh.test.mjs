@@ -2887,8 +2887,13 @@ for (const [what, pattern, said] of [
   ["HEAD", "*' rev-parse --verify --quiet HEAD^{commit} '*", /^Error: git could not be asked which commit HEAD names: /],
   ["the remote's tip", "*' rev-parse --verify --quiet origin/HEAD^{commit} '*", /^Error: git could not be asked which commit origin\/HEAD names: /],
   ["the pinned commit", ASKS_BY_ID, /^Error: git could not be asked whether commit [0-9a-f]{40} is still in this repository: /],
-  ["whether the map is committed", "*' ls-files -z -- '*anatomiya-overview.md*", /^Error: git would not say whether this repository commits its map: /],
+  ["whether the map is committed", "*' ls-files -z -- '*anatomiya-overview.md*", /^Error: git could not be asked whether this repository commits its map: /],
   ["whether the repository folds case", "*' --get core.ignorecase '*", /^Error: git could not be asked whether this repository folds case: /],
+  // The pin's own reads: a plain refusal of the pin is no pin, and the worker goes on to scan.
+  ["whether the index holds unmerged paths", "*' ls-files --unmerged '*", /^Error: git could not be asked whether the index holds unmerged paths: /],
+  ["whether a merge is in progress", "*' rev-parse --verify --quiet MERGE_HEAD '*", /^Error: git could not be asked whether a merge is in progress: /],
+  ["whether the tree is HEAD's", "*' status '*' --porcelain --untracked-files=no '*", /^Error: git could not be asked whether the working tree matches HEAD: /],
+  ["which files the pin would hold", "*' ls-files -z -- '", /^Error: git ls-files exited SIGTERM/],
 ]) {
   test(`a refresh that could not ask git for ${what} moves no pin, writes no map and records nothing`, needsGitStub, async (t) => {
     const { dir } = await behindItsRemote(t);
