@@ -6,6 +6,7 @@ import { basename, delimiter, join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsPathControl, needsPosixPaths, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { installLacking, installWithoutDependencies } from "./plugin-install.mjs";
@@ -1547,4 +1548,18 @@ test("an option cannot stand in for the command word", () => {
 
   assert.equal(status, 2);
   assert.match(stderr, /no command given, and an option cannot stand in for one: --format/, stderr);
+});
+
+test("a scan that could not ask git about its pin exits 1 with the question it could not ask", needsGitStub, (t) => {
+  const repo = repoWithSource(t);
+  const bin = join(ANATOMIYA, "bin", "anatomiya.mjs");
+  execFileSync(process.execPath, [bin, "pin", repo], { stdio: "pipe" });
+  gitAhead(t, unasked("*' cat-file -e '*"));
+
+  const r = spawnSync(process.execPath, [bin, "scan", repo], { encoding: "utf8" });
+
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /^anatomiya: git could not be asked whether commit [0-9a-f]{40} is still in this repository: /);
+  assert.equal(r.stdout, "");
+  assert.equal(existsSync(join(repo, ".claude", "rules")), false, "no map was written");
 });

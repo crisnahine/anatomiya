@@ -20,6 +20,7 @@ import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsFoldingFilesystem, needsSymlinks } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
@@ -2703,4 +2704,84 @@ test("a refresh that moves a pin taken at the plain ceiling gives the places bac
   assert.equal(back.areas.length, 120);
   assert.equal(back.corpus.orphaned, 0);
   assert.ok(back.areas.every((a) => a.baseline.status === "ok"));
+});
+
+/* --- a git that could not be asked ends the worker, and decides nothing --- */
+
+/** Every file under the checkout's `.claude`, by path, with its bytes: the pin, the map and what the worker records. */
+function claudeBytes(dir) {
+  return Object.fromEntries(
+    readdirSync(join(dir, ".claude"), { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name))
+      .sort()
+      .map((path) => [path, readFileSync(path, "hex")])
+  );
+}
+
+/** A clone pinned on the remote's tip, with a teammate's commit pulled since: the next refresh would pin it. */
+async function behindItsRemote(t) {
+  const { origin, dir } = await cloned(t);
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  source(origin, "lib/merged", 8);
+  commit(origin, "a teammate's merge");
+  git(dir, "pull", "-q", "--ff-only");
+  return { origin, dir };
+}
+
+for (const [what, pattern, said] of [
+  ["HEAD", "*' rev-parse --verify --quiet HEAD^{commit} '*", /^Error: git could not be asked which commit HEAD names: /],
+  ["the remote's tip", "*' rev-parse --verify --quiet origin/HEAD^{commit} '*", /^Error: git could not be asked which commit origin\/HEAD names: /],
+  ["the pinned commit", "*' cat-file -e '*", /^Error: git could not be asked whether commit [0-9a-f]{40} is still in this repository: /],
+  ["whether the map is committed", "*' ls-files -z -- '*anatomiya-overview.md*", /^Error: git would not say whether this repository commits its map: /],
+  ["whether the repository folds case", "*' --get core.ignorecase '*", /^Error: git could not be asked whether this repository folds case: /],
+]) {
+  test(`a refresh that could not ask git for ${what} moves no pin, writes no map and records nothing`, needsGitStub, async (t) => {
+    const { dir } = await behindItsRemote(t);
+    const before = claudeBytes(dir);
+    gitAhead(t, unasked(pattern));
+
+    await assert.rejects(() => refreshRepository(dir), said);
+
+    assert.deepEqual(claudeBytes(dir), before);
+  });
+}
+
+test("a pin is not moved back where git could not be asked whether it is the newer one", needsGitStub, async (t) => {
+  const { origin, dir } = await behindItsRemote(t);
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  const later = loadPin(dir).sha;
+  git(origin, "reset", "-q", "--hard", "HEAD~1");
+  git(dir, "fetch", "-q");
+  git(dir, "reset", "-q", "--hard", "origin/main");
+  const before = claudeBytes(dir);
+  gitAhead(t, unasked("*' merge-base --is-ancestor '*"));
+
+  await assert.rejects(() => refreshRepository(dir), new RegExp(`^Error: git could not be asked whether the pin at ${later} is newer than `));
+
+  assert.deepEqual(claudeBytes(dir), before);
+});
+
+test("a commit is held where git could not be asked who this clone commits as", needsGitStub, async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const pinned = loadPin(dir).sha;
+  gitAhead(t, unasked("*' var GIT_COMMITTER_IDENT '*"));
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.pinned, false);
+  assert.equal(r.held?.reason, "unread");
+  assert.equal(loadPin(dir).sha, pinned);
+});
+
+test("the detached worker ends with exit 1 where git could not be asked, and leaves its checkout as it found it", needsGitStub, async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const before = claudeBytes(dir);
+  gitAhead(t, unasked("*' rev-parse --verify --quiet HEAD^{commit} '*"));
+
+  const r = spawnSync(process.execPath, [BIN, "refresh-run", dir], { encoding: "utf8" });
+
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /^anatomiya: git could not be asked which commit HEAD names: /);
+  assert.deepEqual(claudeBytes(dir), before);
 });

@@ -12,7 +12,7 @@ import { runPin, runScan } from "./commands.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
 import { createdAlone, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
 import { atomic } from "./store.mjs";
-import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
+import { answered, BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
@@ -58,6 +58,10 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  *
  * `reason` is one of: scanned, current, failed, failed-before, busy, git-busy,
  * tracked, no-map, outside, no-head.
+ *
+ * It throws where git could not be asked for HEAD, the remote's tip, the
+ * pinned commit or whether the map is committed, with the lock let go, the pin
+ * and the map as they were and nothing recorded: unasked is no reason to act.
  *
  * `git` is a test seam with one use: it answers whether a target's overview
  * is committed, which only a git that fails on that question can prove.
@@ -235,7 +239,8 @@ async function followPin(root, pin) {
   if (from !== null) {
     // Newer than this checkout: the remote was rewound, or this clone is
     // behind the one that pinned. Either way the pin does not move backwards.
-    const newer = await gitBuffered(root, ["merge-base", "--is-ancestor", head, from]);
+    // Exit code 1 is git saying it is not. Unasked, the pin stays where it is.
+    const newer = answered(await gitBuffered(root, ["merge-base", "--is-ancestor", head, from]), `whether the pin at ${from} is newer than ${head}`);
     if (newer.ok) return none;
   }
   const made = await madeHereOnLine(root, from, head);
@@ -336,7 +341,8 @@ async function madeHereOnLine(root, from, to) {
  * committer holds, the safe direction.
  */
 async function committerEmail(root) {
-  const r = await gitBuffered(root, ["var", "GIT_COMMITTER_IDENT"]);
+  // Unasked is not a clone with no identity: the walk that called is then unread, and the pin held.
+  const r = answered(await gitBuffered(root, ["var", "GIT_COMMITTER_IDENT"]), "who this clone commits as");
   const email = r.ok ? /<([^>]*)>/.exec(r.stdout)?.[1]?.trim().toLowerCase() : "";
   return email ? email : null;
 }
@@ -421,7 +427,9 @@ async function clonedOnto(root, sha) {
 async function mapTracked(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
   const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`]);
-  return r.ok && r.stdout.length > 0;
+  // A listing git did not give is not an empty one, which would have the worker write over a committed map.
+  if (!r.ok) throw new Error(`git would not say whether this repository commits its map: ${String(r.error ?? "").trim()}`);
+  return r.stdout.length > 0;
 }
 
 /**

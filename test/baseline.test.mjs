@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -251,6 +252,21 @@ test("a squashed-away baseline commit drops every directive to counts", async (t
   const population = baselinePopulation(state, area("src/a", files));
   assert.equal(population.directive, false);
   assert.equal(population.status, "unreachable");
+});
+
+test("a pinned commit git could not be asked about is not read as gone", needsGitStub, async (t) => {
+  const files = ["src/a/x.ts", "src/a/y.ts"];
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    for (const rel of files) write(rel, CONFORMING);
+    sha = commit("init");
+  });
+  const pin = buildPin([area("src/a", files)], { sha });
+  assert.equal((await resolve(dir, { pin, baseRef: "main" })).status, "ok");
+
+  gitAhead(t, unasked("*' cat-file -e '*"));
+
+  await assert.rejects(() => resolve(dir, { pin, baseRef: "main" }), new RegExp(`git could not be asked whether commit ${sha} is still in this repository`));
 });
 
 test("the pin stores no counts, so there is nothing to fall back to", () => {

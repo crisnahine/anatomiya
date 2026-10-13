@@ -9,6 +9,7 @@ import { once } from "node:events";
 import { setTimeout as wait } from "node:timers/promises";
 import { promisify } from "node:util";
 
+import { exits, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsBatchZ, needsPosixPaths, needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
@@ -274,16 +275,15 @@ test("a streamed read that never returns is ended by its own timeout", needsSheb
   // command with a tiny budget races the machine.
   const { dir } = repo(t);
   const bin = scratch(t, "anatomiya-git-bin-");
-  writeFileSync(join(bin, "git"), "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+  // Only the listing hangs: the repository's config is read first, and a
+  // stall there is that read's to report.
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$1" in ls-files) exec sleep 30;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
 
-  await assert.rejects(
-    () =>
-      gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, {
-        timeout: 250,
-        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
-      }),
-    /exited SIG/
-  );
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  assert.equal((await gitBuffered(dir, ["rev-parse", "HEAD"], { env })).ok, true, "the config is read, on a clock of its own");
+
+  await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { timeout: 500, env }), /^Error: git ls-files exited SIGTERM/);
 });
 
 test("a record that never ends is refused before it reaches V8's string limit", needsShebang, async (t) => {
@@ -1270,11 +1270,73 @@ test("a read no git could be started for is asked again, never kept as the answe
   const { dir, second } = twoCommits(t);
   process.env.GIT_ANATOMIYA_PAD = "x".repeat(4_000_000);
   try {
-    assert.equal(await commitAt(dir, second), null);
+    await assert.rejects(() => commitAt(dir, second), /git could not be asked which commit [0-9a-f]{40} names: .*could not be started/s);
   } finally {
     delete process.env.GIT_ANATOMIYA_PAD;
   }
   assert.equal(await commitAt(dir, second), second);
+});
+
+/* --- a git that could not be asked is no answer --- */
+
+test("a commit is there, is not there, or git could not be asked, and only the first two are answers", needsGitStub, async (t) => {
+  // Measured on git 2.39.5 and 2.54: `cat-file -e` exits 128 for an object
+  // that is not there, and a git ended by a signal or a clock has no exit code.
+  const { dir, second } = twoCommits(t);
+  const absent = "f".repeat(40);
+  assert.equal(await shaReachable(dir, second), true);
+  assert.equal(await shaReachable(dir, absent), false, "git ran and said no");
+  assert.equal(await shaReachable(dir, "not a sha"), false, "no commit has this name, and git is not asked");
+
+  const calls = gitAhead(t, unasked("*' cat-file -e '*"));
+  await assert.rejects(
+    () => shaReachable(dir, second),
+    new RegExp(`^Error: git could not be asked whether commit ${second} is still in this repository: .*ended by SIGTERM`, "s")
+  );
+  calls.restore();
+  assert.equal(await shaReachable(dir, second), true, "asked again, and answered");
+});
+
+test("a ref names a commit, names none, or git could not be asked, and only the first two are answers", needsGitStub, async (t) => {
+  // Measured on git 2.39.5 and 2.54: `rev-parse --verify --quiet` exits 1 for
+  // a name or an object that is not there, and 128 outside a repository.
+  const { dir, second } = twoCommits(t);
+  assert.equal(await commitAt(dir, "HEAD"), second);
+  assert.equal(await commitAt(dir, "origin/nowhere"), null, "git ran and said no");
+  assert.equal(await commitAt(dir, "--upload-pack=x"), null, "no ref has this name, and git is not asked");
+  assert.equal(await commitAt(scratch(t, "anatomiya-no-repo-"), "HEAD"), null, "no repository holds no commit");
+
+  const calls = gitAhead(t, unasked("*' rev-parse --verify '*"));
+  await assert.rejects(() => commitAt(dir, "HEAD"), /^Error: git could not be asked which commit HEAD names: .*ended by SIGTERM/s);
+  await assert.rejects(() => headSha(dir), /git could not be asked which commit HEAD names/);
+  // A full sha is the one question the memory keeps an answer to.
+  await assert.rejects(() => commitAt(dir, second), /git could not be asked/);
+  calls.restore();
+  assert.equal(await commitAt(dir, second), second, "the refusal was not kept as the answer");
+  assert.equal(await commitAt(dir, "HEAD"), second);
+});
+
+test("the exit code git gave is the answer whatever it wrote, and no exit code is none", needsGitStub, async (t) => {
+  const { dir, second } = twoCommits(t);
+  const calls = gitAhead(t, [exits("*' cat-file -e '*", 3), exits("*' rev-parse --verify '*", 128)].join("\n"));
+  assert.equal(await shaReachable(dir, second), false);
+  assert.equal(await commitAt(dir, "HEAD"), null);
+  calls.restore();
+});
+
+test("the merge base of a commit with itself still answers where the commit could not be asked about", needsGitStub, async (t) => {
+  const { dir, second } = twoCommits(t);
+  gitAhead(t, unasked("*' rev-parse --verify '*"));
+  assert.deepEqual(await mergeBase(dir, second, second), { found: true, failed: false, sha: second }, "merge-base itself answered");
+});
+
+test("whether the repository folds case is yes, no, or a question git could not be asked", needsGitStub, async (t) => {
+  const { dir } = repo(t);
+  // `git init` writes the key on a volume that folds case.
+  spawnSync("git", ["config", "--unset-all", "core.ignorecase"], { cwd: dir });
+  assert.equal(await caseMagic(dir), "", "exit code 1 is git saying the key is not set");
+  gitAhead(t, unasked("*' --get core.ignorecase '*"));
+  await assert.rejects(() => caseMagic(dir), /^Error: git could not be asked whether this repository folds case: /);
 });
 
 test("the merge base of a commit with itself is the commit, with no merge-base spawned", needsShebang, async (t) => {
@@ -1824,6 +1886,54 @@ test("a reader with no descriptors left for a child answers as the per-call read
   });
 });
 
+test("a streamed read with no descriptors left for its git is rejected as a git that failed to start", { ...needsShebang, ...PROMPT }, async (t) => {
+  // Measured on Node 22: spawn then hands back a child with no pipes and
+  // queues its error, so a pipe read first is a TypeError and the error after
+  // it has no listener, which ends the process.
+  const { dir } = oneCommit(t);
+  const lib = new URL("../plugins/anatomiya/lib/git.mjs", import.meta.url).href;
+  const script = `
+    import { closeSync, openSync } from "node:fs";
+    import { gitBuffered, gitStreamed } from ${JSON.stringify(lib)};
+    const dir = ${JSON.stringify(dir)};
+    // The repository's config is read while a git can still be started.
+    const out = { warm: (await gitBuffered(dir, ["rev-parse", "HEAD"])).ok };
+    const held = [];
+    try {
+      for (;;) held.push(openSync("/dev/null", "r"));
+    } catch {
+      // Every descriptor this process may hold is open.
+    }
+    try {
+      out.read = await gitStreamed(dir, ["ls-files", "-z", "--"], () => {}).then(() => "resolved", (err) => "rejected: " + err.message);
+      out.fed = await gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { input: "x" }).then(() => "resolved", (err) => "rejected: " + err.message);
+      // A turn of the loop, for an error nobody listened to.
+      await new Promise(setImmediate);
+    } finally {
+      for (const fd of held) closeSync(fd);
+    }
+    process.stdout.write(JSON.stringify(out));
+  `;
+
+  // The limit is lowered for this one child, in a process group of its own, so
+  // the machine's own table is never the one that fills.
+  const starved = spawn("sh", ["-c", 'ulimit -n 64 && exec "$0" --input-type=module -e "$1"', process.execPath, script], {
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  starved.stdout.on("data", (chunk) => (stdout += chunk));
+  starved.stderr.on("data", (chunk) => (stderr += chunk));
+  const [code, signal] = await once(starved, "close");
+
+  assert.deepEqual({ code, signal }, { code: 0, signal: null }, stderr);
+  const out = JSON.parse(stdout);
+  assert.equal(out.warm, true);
+  assert.match(out.read, /^rejected: git ls-files failed: spawn git (EMFILE|ENFILE)/);
+  assert.match(out.fed, /^rejected: git ls-files failed: spawn git (EMFILE|ENFILE)/);
+});
+
 test("a child whose start throws hands every read to the per-call reader", async (t) => {
   const { dir, sha } = oneCommit(t);
   // Node refuses a NUL in an environment value before it starts anything, and
@@ -1837,6 +1947,11 @@ test("a child whose start throws hands every read to the per-call reader", async
   assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
   await reader.close();
   await reader.close();
+});
+
+test("a fault in building git's environment is thrown, not read as a configuration nobody could read", async (t) => {
+  const { dir } = oneCommit(t);
+  await assert.rejects(() => gitBuffered(dir, ["rev-parse", "HEAD"], { env: null }), TypeError);
 });
 
 test("an environment Node refuses is an answer where the repository's config is not yet read", async (t) => {
@@ -1938,10 +2053,12 @@ test("a header that arrives in two pieces is read as one", { ...needsShebang, ..
   t.after(() => reader.close());
 
   const read = reader.read("a.ts");
-  // The first piece is in the pipe before the file that says so exists. This
-  // loop sees the file from a timer, and the poll phase of that turn reads the
-  // piece before any later timer lets the second one be written.
+  // The first piece is in the pipe before the file that says so exists. The
+  // wait sees the file from a timer, and the check phase this resumes in comes
+  // after that turn's poll phase, which reads the piece: the second one is let
+  // through only then, with no clock.
   await until(t, () => existsSync(join(shim.bin, "half")));
+  await new Promise(setImmediate);
   writeFileSync(join(shim.bin, "go"), "");
 
   assert.deepEqual(answerOf(await read), A_TS);

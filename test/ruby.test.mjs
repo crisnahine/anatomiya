@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
 import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
-import { choosePrism, heldHeap, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize } from "../plugins/anatomiya/lib/ruby.mjs";
+import { choosePrism, heldHeap, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize, startFor } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
@@ -2502,4 +2503,68 @@ test("a record lost between a shard and the parent is charged rather than droppe
     ["a.rb", false, "its record never reached the parent", true, 1],
     ["b.rb", false, "x", false, 1],
   ]);
+});
+
+test("a child with no descriptors left to start on tells its thread, and every call the thread makes on it is safe", { ...needsShebang, timeout: 60_000 }, async () => {
+  // Measured on Node 22: spawn then hands back a child with no pipes and
+  // queues its error. The parent reads those pipes inside the thread's message
+  // handler, where a TypeError is an uncaught exception that ends the scan.
+  // Driven at the start itself: a thread to ask for it needs descriptors too.
+  const lib = new URL("../plugins/anatomiya/lib/ruby.mjs", import.meta.url).href;
+  const script = `
+    import { closeSync, openSync } from "node:fs";
+    import { startFor } from ${JSON.stringify(lib)};
+    const held = [];
+    try {
+      for (;;) held.push(openSync("/dev/null", "r"));
+    } catch {
+      // Every descriptor this process may hold is open.
+    }
+    const posted = [];
+    const out = {};
+    try {
+      const child = startFor({ postMessage: (msg) => posted.push(msg) }, { id: 7, spawn: [process.execPath, ["-e", ""], { stdio: ["pipe", "pipe", "pipe"] }] });
+      out.started = child.pid !== undefined;
+      // What a thread asks of its child: more output, and the end of its input.
+      child.read();
+      child.input("anything");
+      await new Promise(setImmediate);
+    } finally {
+      for (const fd of held) closeSync(fd);
+    }
+    out.posted = posted.map((msg) => ({ id: msg.id, error: msg.error?.code ?? null, close: msg.close ?? null }));
+    process.stdout.write(JSON.stringify(out));
+  `;
+
+  // The limit is lowered for this one process, in a process group of its own,
+  // so the machine's own table is never the one that fills.
+  const starved = spawn("sh", ["-c", 'ulimit -n 64 && exec "$0" --input-type=module -e "$1"', process.execPath, script], {
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  starved.stdout.on("data", (chunk) => (stdout += chunk));
+  starved.stderr.on("data", (chunk) => (stderr += chunk));
+  const [code, signal] = await once(starved, "close");
+
+  assert.deepEqual({ code, signal }, { code: 0, signal: null }, stderr);
+  const out = JSON.parse(stdout);
+  assert.equal(out.started, false);
+  // The error, then the close Node raises for a start that failed, its code the errno.
+  assert.equal(out.posted.length, 2, JSON.stringify(out.posted));
+  assert.deepEqual(out.posted.map((msg) => msg.id), [7, 7]);
+  assert.match(out.posted[0].error, /^(EMFILE|ENFILE)$/);
+  assert.ok(out.posted[1].close[0] < 0 && out.posted[1].close[1] === null, JSON.stringify(out.posted[1]));
+});
+
+test("a child whose command is not there tells its thread, and then closes", async () => {
+  const posted = [];
+  const closed = new Promise((resolve) => {
+    const worker = { postMessage: (msg) => (posted.push(msg), msg.close && resolve()) };
+    startFor(worker, { id: 3, spawn: [join(tmpdir(), "anatomiya-no-such-ruby"), [], { stdio: ["pipe", "pipe", "pipe"] }] });
+  });
+  await closed;
+
+  assert.deepEqual(posted.map((msg) => [msg.id, msg.error?.code ?? "close"]), [[3, "ENOENT"], [3, "close"]]);
 });

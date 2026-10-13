@@ -54,7 +54,8 @@ const getOrSet = (map, key, make) => {
 /**
  * Where the walk stops: the pin where it loads and is reachable, else HEAD's
  * fork point with the first base ref that resolves, else HEAD, or null with no
- * commit. A branch cannot make its own claim in the first two.
+ * commit. A branch cannot make its own claim in the first two. It throws where
+ * git could not be asked what a ref names.
  */
 export async function cochangeTip(root, state) {
   if (state?.status === "ok" && isSha(state.sha)) return { tip: state.sha, from: "pin" };
@@ -176,10 +177,19 @@ export async function walkCochange(root, tip, { signal, history = null } = {}) {
   return { changes, read, bulk, error: null };
 }
 
-/** The walk and the tip's tree, started together once the pin is known; `signal` stops both. */
+/**
+ * The walk and the tip's tree, started together once the pin is known; `signal` stops both.
+ * A tip git could not be asked for is a walk that failed, and never a repository with no commit.
+ */
 export async function startCochange(root, state, { signal, history = null } = {}) {
-  const at = await cochangeTip(root, state);
-  if (at === null) return { tip: null, from: null, walk: { changes: [], read: 0, bulk: 0, error: null }, tree: null };
+  const none = (error) => ({ tip: null, from: null, walk: { changes: [], read: 0, bulk: 0, error }, tree: null });
+  let at;
+  try {
+    at = await cochangeTip(root, state);
+  } catch (err) {
+    return none(String(err && err.message ? err.message : err));
+  }
+  if (at === null) return none(null);
   const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal, history }), filesAt(root, at.tip, { signal })]);
   return { ...at, walk, tree };
 }

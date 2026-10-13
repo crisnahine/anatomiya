@@ -380,6 +380,9 @@ function areaBlock(state, population, baseline) {
  *
  * `head` is HEAD's sha where the caller has already resolved it, so every
  * range here ends at the commit that caller is reading.
+ *
+ * It throws where git could not be asked whether the pinned commit is still
+ * here, or what a base ref names: neither is a pin past reach (C33).
  */
 export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {}) {
   // Read here unless handed in. A pin on disk that will not load drops to
