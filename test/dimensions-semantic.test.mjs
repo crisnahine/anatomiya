@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 import { runSemantic } from "../plugins/anatomiya/lib/semantic.mjs";
-import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
+import { SEMANTIC_DIMENSIONS, siteStubs } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 
 const loaded = await loadTypeScript();
 const needsTs = { skip: loaded ? false : "typescript is not installed" };
@@ -162,4 +162,10 @@ test("a type-checked row that does not say where it has a site stops the module 
   writeFileSync(join(dir, "dimensions-semantic.mjs"), without);
 
   await assert.rejects(import(pathToFileURL(join(dir, "dimensions-semantic.mjs")).href), /type-checked dimension law_of_demeter declares no sited\(ts, source\)/);
+});
+
+test("a row that throws while it looks for a site leaves no stub in that file, as its walk leaves no hit", () => {
+  // The walk drops a row's key for a file it throws on; a stub that failed the tier there would say more than the walk does.
+  const throwing = new Proxy({}, { get: () => { throw new Error("no such reading"); } });
+  assert.deepEqual(siteStubs(throwing, {}), {});
 });
