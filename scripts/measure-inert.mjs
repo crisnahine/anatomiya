@@ -181,6 +181,9 @@ export function oracleHits(tree, lang, added) {
   const computing = new Set(ORACLE[lang]);
   const literalish = new Set([...s.literal, ...s.unary, ...s.collection, ...(s.word ?? [])]);
   const onAddedRow = (row) => added.some(([from, to]) => row + 1 >= from && row + 1 <= to);
+  // Whether any chunk of the file's markup opens a script: a chunk after an inline tag is inside it and holds no tag of its own.
+  let scripts = null;
+  const scriptInMarkup = () => (scripts ??= tree.rootNode.descendantsOfType("text").some((chunk) => SCRIPT.test(chunk.text)));
   const containers = new Set(CONTAINERS[lang]);
   const charged = new Map();
   const quiet = new Set([...s.comment, ...s.literal]);
@@ -297,7 +300,7 @@ export function oracleHits(tree, lang, added) {
     if (FOREIGN[lang]?.includes(node.type)) {
       // Markup that ends with its line is on no row past it.
       const last = node.endPosition.row + (node.endPosition.column === 0 ? 0 : 1);
-      if (lang === "php" && SCRIPT.test(node.text) && added.some(([from, to]) => node.startPosition.row + 1 <= to && last >= from)) hit(node, "markup holding a script");
+      if (lang === "php" && scriptInMarkup() && added.some(([from, to]) => node.startPosition.row + 1 <= to && last >= from)) hit(node, "markup of a file that holds a script");
       if (lang === "go" && IMPORTS_C.test(node.text)) {
         let below = node;
         for (let c = node.previousSibling; c !== null && s.comment.includes(c.type) && c.endPosition.row >= below.startPosition.row - 1; c = c.previousSibling) {

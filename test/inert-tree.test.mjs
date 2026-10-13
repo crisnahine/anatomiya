@@ -527,7 +527,10 @@ test("a Go comment directly above an import of C asks, since cgo compiles it, an
   assert.deepEqual(await asking("go", group, [4, 6]), [4, 5, 6, 9]);
 });
 
-test("PHP inline markup that holds a script asks, in any letter case, and markup with none asks nothing", async () => {
+test("PHP inline markup asks wherever the file's markup holds a script, in any letter case, and a file with none asks nothing", async () => {
   const source = '<p>plain</p>\n<?php\n$a = 1;\n?>\n<script>function dup() {}</script>\n<?php\n$b = 2;\n?>\n<p>plain</p>\n<?php $c = 3; ?>\n<SCRIPT type="module">\nfunction two() {}\n</SCRIPT>\n';
-  assert.deepEqual(await asking("php", source), [5, 11, 12, 13]);
+  assert.deepEqual(await asking("php", source), [1, 5, 9, 11, 12, 13]);
+  assert.deepEqual(await asking("php", '<p>plain</p>\n<?php\n$a = 1;\n?>\n<p>more</p>\n'), []);
+  // An inline tag cuts the script in two, and the chunk after it holds no tag of its own.
+  assert.deepEqual(await asking("php", '<script>\nvar x = <?= $y ?>;\nfunction dup() {}\n</script>\n'), [1, 2, 3, 4]);
 });
