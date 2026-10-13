@@ -285,6 +285,76 @@ test("a streamed read that never returns is ended by its own timeout", needsSheb
   await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { timeout: 500, env }), /^Error: git ls-files exited SIGTERM/);
 });
 
+test("a listing whose git exits as its clock runs out is no answer, however it exited", needsShebang, async (t) => {
+  // The clock shuts the pipes, and a git that exited 0 in that moment has left part of its listing in them.
+  const { dir } = repo(t);
+  const bin = scratch(t, "anatomiya-git-bin-");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$1" in ls-files) printf 'a\\000'; sleep 0.2; printf 'b\\000c\\000'; exit 0;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  const seen = [];
+  const held = new Int32Array(new SharedArrayBuffer(4));
+
+  await assert.rejects(
+    () =>
+      gitStreamed(dir, ["ls-files", "-z", "--"], (f) => {
+        seen.push(f);
+        // Held past the clock and past git's own exit, so the clock is what the loop turns to first.
+        if (seen.length === 1) Atomics.wait(held, 0, 0, 1500);
+      }, { timeout: 600, env }),
+    /^Error: git ls-files exited SIGTERM/
+  );
+  assert.deepEqual(seen, ["a"]);
+});
+
+/**
+ * A `git` on PATH whose `ls-files` is a launcher: the listing is its child's, which writes its pid to
+ * `behind` first and outlives a signal to the launcher, as the real git does behind Git for Windows' own.
+ */
+function behindLauncher(t, listing) {
+  let behind = null;
+  // Ahead of the directory's own removal, which takes the pid with it.
+  t.after(() => {
+    try {
+      process.kill(Number(readFileSync(behind, "utf8")), "SIGKILL");
+    } catch {
+      // Never started, or gone already.
+    }
+  });
+  const bin = scratch(t, "anatomiya-git-bin-");
+  behind = join(bin, "behind");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh\ncase "$1" in ls-files) sh -c 'echo $$ > "$0"; ${listing}' '${behind}' & wait; exit;; esac\nexec '${real}' "$@"\n`,
+    { mode: 0o755 }
+  );
+  return { behind, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } };
+}
+
+test("a walk its caller ended does not wait on a git behind a launcher, and that git stops", { ...needsShebang, timeout: 60_000 }, async (t) => {
+  const { dir } = repo(t);
+  const { behind, env } = behindLauncher(t, `printf "a.ts\\000"; exec yes`);
+  const seen = [];
+
+  await gitStreamed(dir, ["ls-files", "-z", "--"], (f) => {
+    seen.push(f);
+    return false;
+  }, { env });
+
+  assert.deepEqual(seen, ["a.ts"]);
+  assert.equal(existsSync(behind), true, "a git was started behind the launcher, so there was one to stop");
+  await until(t, () => gone(behind));
+});
+
+test("a streamed read behind a launcher is ended by its own timeout too", { ...needsShebang, timeout: 60_000 }, async (t) => {
+  // The one behind writes nothing, so nothing ends it: what is held is that the read does not wait on it.
+  const { dir } = repo(t);
+  const { env } = behindLauncher(t, "exec sleep 300");
+
+  await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { timeout: 500, env }), /^Error: git ls-files exited SIGTERM/);
+});
+
 test("a record that never ends is refused before it reaches V8's string limit", needsShebang, async (t) => {
   // The cap F5 asks for. Both hand-rolled readers grew one buffer until a NUL
   // arrived, so output carrying none of them reached `Invalid string length`
@@ -1297,7 +1367,7 @@ test("a commit is there, is not there, or git could not be asked, and only the f
   assert.equal(await shaReachable(dir, second), true, "asked again, and answered");
 });
 
-test("a merge base git refuses for two commits it holds is no \"none\", and one for a name that is no commit still is", needsGitStub, async (t) => {
+test("a merge base git refuses for two commits it holds throws, and one for a name that is no commit is a failed one", needsGitStub, async (t) => {
   const { dir, first, second } = twoCommits(t);
   assert.deepEqual(await mergeBase(dir, first, "no-such-ref"), { found: false, failed: true, sha: null });
   gitAhead(t, `case " $* " in *' merge-base '*) echo 'fatal: refused' >&2; exit 128;; esac`);
@@ -2224,11 +2294,9 @@ test("a child ended for a reply nobody wanted is gone when its reader has closed
 test("a git behind a launcher stops when the reply it is sending is refused", { ...needsShebang, ...PROMPT }, async (t) => {
   const { dir, sha } = oneCommit(t);
   // Git for Windows starts the real git as the child of a launcher, and a signal ends the launcher alone.
-  // The one behind it here answers a blob past the cap and never stops sending it.
-  const shim = gitShim(
-    t,
-    ({ bin }) => `exec 3<&0; (head -c 1 > /dev/null; printf '%040d blob ${MAX_FILE_BYTES + 1}\\000' 0; exec yes) <&3 & echo $! > '${bin}/behind'; wait; exit`
-  );
+  // The one behind it here writes its pid, answers a blob past the cap and never stops sending it.
+  let shim = null;
+  // Ahead of the shim's own removal, which takes the pid with it.
   t.after(() => {
     try {
       process.kill(Number(readFileSync(join(shim.bin, "behind"), "utf8")), "SIGKILL");
@@ -2236,12 +2304,44 @@ test("a git behind a launcher stops when the reply it is sending is refused", { 
       // Never started, or gone already.
     }
   });
+  shim = gitShim(
+    t,
+    ({ bin }) =>
+      `exec 3<&0; sh -c 'echo $$ > "$0"; head -c 1 > /dev/null; printf "%040d blob ${MAX_FILE_BYTES + 1}\\000" 0; exec yes' '${bin}/behind' <&3 & wait; exit`
+  );
   const reader = blobReader(dir, sha, { env: shim.env, closeGrace: 30_000 });
 
   assert.deepEqual(answerOf(await reader.read("a.ts")), { ok: false, reason: "over size cap" });
   await reader.close();
 
+  assert.equal(existsSync(join(shim.bin, "behind")), true, "a git was started behind the launcher, so there was one to stop");
   await until(t, () => gone(join(shim.bin, "behind")));
+});
+
+// On Windows the reader's child is such a launcher. The loop is held from the read to the removal, so
+// nothing this process reads lets a git that is still sending finish: it has to stop for want of a reader.
+test("a repository is free to be removed once a reader that refused a reply has closed", { ...needsBatchZ, ...PROMPT }, async (t) => {
+  const { dir, sha } = withBigBlob(t);
+  const reader = blobReader(dir, sha, { closeGrace: 30_000 });
+
+  assert.deepEqual(answerOf(await reader.read("big.ts")), { ok: false, reason: "over size cap" });
+  await reader.close();
+
+  const refusal = () => {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return null;
+    } catch (err) {
+      return err.code;
+    }
+  };
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  let code = refusal();
+  for (let tries = 100; code !== null && tries > 0; tries--) {
+    Atomics.wait(nap, 0, 0, 100);
+    code = refusal();
+  }
+  assert.equal(code, null);
 });
 
 test("a listing or a range git could not be asked for throws, and one git refused answers null", needsGitStub, async (t) => {
