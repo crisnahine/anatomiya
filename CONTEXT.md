@@ -379,7 +379,7 @@ _Avoid_: block, freeze, lock
 
 **Could not be asked**:
 Said of a question put to git that git never answered: the call ended with no exit code, by a
-clock, a signal or a start that failed, or, for whether a commit is there, which commit a ref
+signal or a start that failed, or was ended by its clock whatever code git left, or, for whether a commit is there, which commit a ref
 names and the merge base of two commits git holds, with an exit code other than 0 and 1, a 128 with nothing printed aside for a ref's name. It is no answer and is never read as a no. A scan, a
 pin and a check stop on one that would decide what is written and print the question, and a refresh
 ends and asks again later. A git that ran and said no has
