@@ -12,6 +12,7 @@ import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, i
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 
 const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
 
@@ -163,6 +164,22 @@ test("collect follows a .claude/rules link to where git tracks the map, and nowh
 
   assert.deepEqual(await under(build(true)), ["agents/rules/team.md"]);
   assert.deepEqual(await under(build(false)), [...named, "agents/rules/team.md"].sort());
+});
+
+test("an index read of .gitattributes that could not be asked stops the corpus, and is not read as an index that marks nothing", needsGitStub, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", "gen.ts linguist-generated\n");
+    write("a.ts");
+    write("gen.ts");
+    git("add", "-A");
+  });
+  assert.ok((await collect(dir)).files.some((f) => f.rel === "a.ts"));
+
+  for (const pattern of ["*' cat-file blob :.gitattributes '*", "*' ls-files -v -z -- .gitattributes '*"]) {
+    const calls = gitAhead(t, unasked(pattern));
+    await assert.rejects(() => collect(dir), /git could not be asked .*\.gitattributes/, pattern);
+    calls.restore();
+  }
 });
 
 test("a tracked .env contributes nothing even though git lists it", async (t) => {

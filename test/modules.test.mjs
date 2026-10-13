@@ -153,7 +153,6 @@ const RAW_GIT_READS = {
   "check.mjs resolveBase": ["SAYS SO", "the shallow fetch: not fetched is the next candidate, then the same caveat"],
   "corpus.mjs gitRoot": ["STOP", "throws on every failure with git's own text"],
   "corpus.mjs lsFiles": ["STOP", "hands the stream's rejection to its caller, Unasked where git left no exit code"],
-  "corpus.mjs rootAttributes": ["OPEN", "falls back to the working tree's .gitattributes, which differs only where the index marks the file unchanged"],
   "history.mjs historyFields": ["SAYS SO", "rejects into the walk's error, which the summary and the record state"],
   "history.mjs isTracked": ["NOTHING DONE", "reads as tracked, so no store is written"],
   "history.mjs readBesides": ["NOTHING DONE", "no stamp, so nothing is replayed or kept and the plain walk answers"],
@@ -186,7 +185,7 @@ test("every read of a git result outside git.mjs goes through answered or is on 
   for (const [site, [verdict, why]] of Object.entries(RAW_GIT_READS)) {
     assert.ok(["SAYS SO", "NOTHING DONE", "STOP", "OPEN"].includes(verdict) && why.length > 0, site);
   }
-  assert.deepEqual(Object.keys(RAW_GIT_READS).filter((site) => RAW_GIT_READS[site][0] === "OPEN"), ["corpus.mjs rootAttributes"], "no read joins the list unruled");
+  assert.deepEqual(Object.keys(RAW_GIT_READS).filter((site) => RAW_GIT_READS[site][0] === "OPEN"), [], "no read joins the list unruled");
 });
 
 test("the writers do not reach the pipeline that produced the record", () => {

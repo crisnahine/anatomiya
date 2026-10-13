@@ -1,7 +1,7 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
-import { caseMagic, gitBuffered, gitStreamed } from "./git.mjs";
+import { answered, caseMagic, gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { placedTests } from "./layout.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
@@ -250,13 +250,13 @@ async function generatedAttrRules(root, { timeout } = {}) {
 /**
  * The root `.gitattributes`, from the index where the index marks it
  * skip-worktree or assume-unchanged: git then counts whatever the tree holds
- * there, a sparse checkout's absence included, as no change. Both reads start
- * together, so asking costs one git read in a row, not two.
+ * there, a sparse checkout's absence included, as no change.
  */
 async function rootAttributes(root, timeout) {
+  // Unasked is not an index that marks nothing: the working tree's file would then decide what counts as source (F29).
   const [listed, blob] = await Promise.all([
-    gitBuffered(root, ["ls-files", "-v", "-z", "--", ".gitattributes"], { timeout }),
-    gitBuffered(root, ["cat-file", "blob", ":.gitattributes"], { timeout }),
+    answered(await gitBuffered(root, ["ls-files", "-v", "-z", "--", ".gitattributes"], { timeout }), "how the index marks .gitattributes"),
+    answered(await gitBuffered(root, ["cat-file", "blob", ":.gitattributes"], { timeout }), "for the index's .gitattributes"),
   ]);
   if (listed.ok && blob.ok && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
   const abs = safeResolve(root, ".gitattributes");
