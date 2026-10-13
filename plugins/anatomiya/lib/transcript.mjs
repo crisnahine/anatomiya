@@ -30,17 +30,20 @@ export function parsed(line) {
 export const isCompactBoundary = (entry) => entry?.type === "system" && entry.subtype === "compact_boundary";
 
 /**
- * Either record a compaction writes, the boundary or the summary after it,
- * which the delivery measurement counts as one event whatever the record type (A17).
+ * Each record a compaction writes, the boundary and the summary after it: what its raw line holds, and
+ * the test of the record once parsed. One row carries both, so a reader that filters lines before it
+ * parses them never drops a shape the parsed test accepts.
  */
-export const isCompaction = (entry) => entry?.isCompactSummary === true || entry?.subtype === "compact_boundary";
+const COMPACTION_SHAPES = [
+  { holds: "compact_boundary", is: (entry) => entry?.subtype === "compact_boundary" },
+  { holds: '"isCompactSummary":true', is: (entry) => entry?.isCompactSummary === true },
+];
 
-/**
- * Whether a line can hold a record `isCompaction` accepts, asked before the
- * line is parsed. A shape added there is added here, or a reader that filters
- * first never counts it.
- */
-export const mayBeCompaction = (line) => line.includes("compact_boundary") || line.includes('"isCompactSummary":true');
+/** Either record a compaction writes, which the delivery measurement counts as one event whatever the record type (A17). */
+export const isCompaction = (entry) => COMPACTION_SHAPES.some((shape) => shape.is(entry));
+
+/** Whether a line can hold a record `isCompaction` accepts, asked before the line is parsed. */
+export const mayBeCompaction = (line) => COMPACTION_SHAPES.some((shape) => line.includes(shape.holds));
 
 /**
  * What one record says about the echo: "compact" for a compaction boundary,
