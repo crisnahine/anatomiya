@@ -52,6 +52,24 @@ test("an EPERM create is tried again", (t) => {
   }
 });
 
+test("a create refused with EPERM every time is thrown after eight tries", (t) => {
+  for (const content of [null, "held"]) {
+    const dir = workspace(t);
+    const lock = join(dir, "lock");
+    let tries = 0;
+    assert.throws(() => stubbed("openSync", (real, p, flags, ...rest) => {
+      // Past the bound the refusal changes, so a create that never gives up ends here and not in a hang.
+      if (p === lock && flags === "wx") throw refused(++tries > 9 ? "ELOOP" : "EPERM", p);
+      return real(p, flags, ...rest);
+    }, () => stubbed("linkSync", (_real, _from, to) => {
+      throw refused("EPERM", to);
+    }, () => createdAlone(lock, content))), { code: "EPERM" }, String(content));
+
+    assert.equal(tries, 8, String(content));
+    assert.deepEqual(readdirSync(dir), [], `${content}: nothing made and nothing staged left`);
+  }
+});
+
 test("a link EPERM falls through to the exclusive create without waiting", (t) => {
   const dir = workspace(t);
   const lock = join(dir, "lock");
