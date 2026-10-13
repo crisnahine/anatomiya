@@ -6,7 +6,7 @@ import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsPosixPermissions, needsShebang, needsSymlinks } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
@@ -1313,7 +1313,7 @@ test("a scan stops where git could not be asked whether the pinned commit is sti
   await runPin(dir);
   await runScan(dir);
   const before = claudeTree(dir);
-  gitAhead(t, unasked("*' cat-file -e '*"));
+  gitAhead(t, unasked(ASKS_BY_ID));
 
   await assert.rejects(() => runScan(dir), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
 
@@ -1361,7 +1361,7 @@ test("a check stops where git could not be asked about its base or about the pin
   await assert.rejects(() => runCheck(dir), /^Error: git could not be asked which commit origin\/HEAD names: /);
   calls.restore();
 
-  calls = gitAhead(t, unasked("*' cat-file -e '*"));
+  calls = gitAhead(t, unasked(ASKS_BY_ID));
   await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
   calls.restore();
 

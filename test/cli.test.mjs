@@ -6,7 +6,7 @@ import { basename, delimiter, join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsPathControl, needsPosixPaths, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { installLacking, installWithoutDependencies } from "./plugin-install.mjs";
@@ -1554,7 +1554,7 @@ test("a scan that could not ask git about its pin exits 1 with the question it c
   const repo = repoWithSource(t);
   const bin = join(ANATOMIYA, "bin", "anatomiya.mjs");
   execFileSync(process.execPath, [bin, "pin", repo], { stdio: "pipe" });
-  gitAhead(t, unasked("*' cat-file -e '*"));
+  gitAhead(t, unasked(ASKS_BY_ID));
 
   const r = spawnSync(process.execPath, [bin, "scan", repo], { encoding: "utf8" });
 

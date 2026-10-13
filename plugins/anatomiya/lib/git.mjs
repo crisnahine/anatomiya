@@ -538,6 +538,16 @@ export function answered(r, question) {
 }
 
 /**
+ * `r` where git said yes (exit code 0) or no (exit code 1). Any other exit
+ * code is git refusing the question, as 128 is for a directory it cannot open,
+ * and that decides nothing either.
+ */
+function yesOrNo(r, question) {
+  if (!answered(r, question).ok && r.code !== 1) throw new Unasked(`git could not be asked ${question}: ${failureOf(r)}`);
+  return r;
+}
+
+/**
  * Why a call failed, on one line: git's own text, or the signal and the clock
  * that ended it. Node heads its message with `Command failed: <argv>`, which
  * names no cause, and a printer that keeps one line of an error keeps that one.
@@ -844,15 +854,15 @@ function safeRef(ref) {
  * object that no longer exists. Every caller checks this before reading a blob,
  * and drops to counts-only when it fails (E3).
  *
- * `cat-file -e` exits 128 for a commit that is not there and for every other
- * refusal, so any exit code but 0 is git saying no. It throws where git could
- * not be asked: read as gone, a clock that ran out dropped the map to counts.
+ * Asked with `rev-parse --verify --quiet`, which exits 1 for a commit that is
+ * not there and 128 for a directory git cannot open, where `cat-file -e` exits
+ * 128 for both. It throws on anything but those two answers: a clock that ran
+ * out, read as a commit that is gone, drops the map to counts.
  */
 export async function shaReachable(root, sha) {
   if (!isSha(sha)) return false;
   // Never from memory: this exists to notice a commit that has gone away.
-  const r = answered(await gitBuffered(root, ["cat-file", "-e", `${sha}^{commit}`]), `whether commit ${sha} is still in this repository`);
-  return r.ok;
+  return yesOrNo(await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${sha}^{commit}`]), `whether commit ${sha} is still in this repository`).ok;
 }
 
 /**
@@ -864,14 +874,14 @@ export async function headSha(root) {
 }
 
 /**
- * The commit `ref` names, or null where git says it names none (exit code 1,
- * and 128 outside a repository). It throws where git could not be asked.
+ * The commit `ref` names, or null where git says it names none (exit code 1).
+ * It throws where git could not be asked, or refused with any other exit code.
  */
 export async function commitAt(root, ref) {
   if (!safeRef(ref)) return null;
   const args = ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`];
   const ask = async () => {
-    const r = answered(await gitBuffered(root, args), `which commit ${ref} names`);
+    const r = yesOrNo(await gitBuffered(root, args), `which commit ${ref} names`);
     const sha = r.ok ? r.stdout.trim() : "";
     return isSha(sha) ? sha : null;
   };

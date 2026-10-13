@@ -44,3 +44,6 @@ export const unasked = (pattern) => `case " $* " in ${pattern}) kill -TERM $$;; 
 
 /** The shell for a git that answers `pattern` with exit `code` and nothing else. */
 export const exits = (pattern, code) => `case " $* " in ${pattern}) exit ${code};; esac`;
+
+/** The `case` pattern of the call that asks whether a commit named by its id is there. */
+export const ASKS_BY_ID = `*' rev-parse --verify --quiet '${"[0-9a-f]".repeat(7)}*'^{commit} '*`;

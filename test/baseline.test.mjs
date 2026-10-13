@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -264,7 +264,7 @@ test("a pinned commit git could not be asked about is not read as gone", needsGi
   const pin = buildPin([area("src/a", files)], { sha });
   assert.equal((await resolve(dir, { pin, baseRef: "main" })).status, "ok");
 
-  gitAhead(t, unasked("*' cat-file -e '*"));
+  gitAhead(t, unasked(ASKS_BY_ID));
 
   await assert.rejects(() => resolve(dir, { pin, baseRef: "main" }), new RegExp(`git could not be asked whether commit ${sha} is still in this repository`));
 });

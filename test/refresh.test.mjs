@@ -20,7 +20,7 @@ import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
-import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsFoldingFilesystem, needsSymlinks } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
@@ -2795,7 +2795,7 @@ async function behindItsRemote(t) {
 for (const [what, pattern, said] of [
   ["HEAD", "*' rev-parse --verify --quiet HEAD^{commit} '*", /^Error: git could not be asked which commit HEAD names: /],
   ["the remote's tip", "*' rev-parse --verify --quiet origin/HEAD^{commit} '*", /^Error: git could not be asked which commit origin\/HEAD names: /],
-  ["the pinned commit", "*' cat-file -e '*", /^Error: git could not be asked whether commit [0-9a-f]{40} is still in this repository: /],
+  ["the pinned commit", ASKS_BY_ID, /^Error: git could not be asked whether commit [0-9a-f]{40} is still in this repository: /],
   ["whether the map is committed", "*' ls-files -z -- '*anatomiya-overview.md*", /^Error: git would not say whether this repository commits its map: /],
   ["whether the repository folds case", "*' --get core.ignorecase '*", /^Error: git could not be asked whether this repository folds case: /],
 ]) {

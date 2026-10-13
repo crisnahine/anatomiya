@@ -9,7 +9,7 @@ import { once } from "node:events";
 import { setTimeout as wait } from "node:timers/promises";
 import { promisify } from "node:util";
 
-import { exits, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { ASKS_BY_ID, exits, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsBatchZ, needsPosixPaths, needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
@@ -1203,8 +1203,9 @@ test("a question about full commit shas spawns git once however often it is aske
   assert.deepEqual(answers.slice(5), answers.slice(0, 5), "the second asking answers the same");
   const spawned = (sub) => calls.filter((c) => c.startsWith(`${sub} `)).length;
   assert.deepEqual(
-    ["merge-base", "rev-parse", "cat-file", "ls-tree", "diff"].map((sub) => [sub, spawned(sub)]),
-    [["merge-base", 1], ["rev-parse", 1], ["cat-file", 2], ["ls-tree", 1], ["diff", 1]],
+    ["merge-base", "rev-parse", "ls-tree", "diff"].map((sub) => [sub, spawned(sub)]),
+    // One `rev-parse` for the commit a sha names, and one each time it is asked whether the commit is still there.
+    [["merge-base", 1], ["rev-parse", 3], ["ls-tree", 1], ["diff", 1]],
     calls.join("\n")
   );
 });
@@ -1280,34 +1281,37 @@ test("a read no git could be started for is asked again, never kept as the answe
 /* --- a git that could not be asked is no answer --- */
 
 test("a commit is there, is not there, or git could not be asked, and only the first two are answers", needsGitStub, async (t) => {
-  // Measured on git 2.39.5 and 2.54: `cat-file -e` exits 128 for an object
-  // that is not there, and a git ended by a signal or a clock has no exit code.
-  const { dir, second } = twoCommits(t);
+  // Measured on git 2.39.5 and 2.54: `rev-parse --verify --quiet` exits 1 for
+  // a commit that is not there and 128 for a directory git cannot open, where
+  // `cat-file -e` exits 128 for both. A git ended by a signal or a clock has no exit code.
+  const { dir, second, git } = twoCommits(t);
   const absent = "f".repeat(40);
   assert.equal(await shaReachable(dir, second), true);
   assert.equal(await shaReachable(dir, absent), false, "git ran and said no");
+  assert.equal(await shaReachable(dir, git("rev-parse", "HEAD^{tree}").toString().trim()), false, "a tree is no commit");
   assert.equal(await shaReachable(dir, "not a sha"), false, "no commit has this name, and git is not asked");
 
-  const calls = gitAhead(t, unasked("*' cat-file -e '*"));
+  const calls = gitAhead(t, unasked(ASKS_BY_ID));
   await assert.rejects(
     () => shaReachable(dir, second),
-    new RegExp(`^Error: git could not be asked whether commit ${second} is still in this repository: .*ended by SIGTERM`, "s")
+    new RegExp(`^Error: git could not be asked whether commit ${second} is still in this repository: git was ended by SIGTERM`)
   );
   calls.restore();
   assert.equal(await shaReachable(dir, second), true, "asked again, and answered");
 });
 
 test("a ref names a commit, names none, or git could not be asked, and only the first two are answers", needsGitStub, async (t) => {
-  // Measured on git 2.39.5 and 2.54: `rev-parse --verify --quiet` exits 1 for
-  // a name or an object that is not there, and 128 outside a repository.
   const { dir, second } = twoCommits(t);
   assert.equal(await commitAt(dir, "HEAD"), second);
   assert.equal(await commitAt(dir, "origin/nowhere"), null, "git ran and said no");
+  assert.equal(await commitAt(dir, "HEAD^{tree}"), null, "a tree is no commit");
   assert.equal(await commitAt(dir, "--upload-pack=x"), null, "no ref has this name, and git is not asked");
-  assert.equal(await commitAt(scratch(t, "anatomiya-no-repo-"), "HEAD"), null, "no repository holds no commit");
+  const empty = scratch(t, "anatomiya-no-commit-");
+  execFileSync("git", ["init", "-q"], { cwd: empty, stdio: "pipe" });
+  assert.equal(await commitAt(empty, "HEAD"), null, "a repository with no commit");
 
   const calls = gitAhead(t, unasked("*' rev-parse --verify '*"));
-  await assert.rejects(() => commitAt(dir, "HEAD"), /^Error: git could not be asked which commit HEAD names: .*ended by SIGTERM/s);
+  await assert.rejects(() => commitAt(dir, "HEAD"), /^Error: git could not be asked which commit HEAD names: git was ended by SIGTERM/);
   await assert.rejects(() => headSha(dir), /git could not be asked which commit HEAD names/);
   // A full sha is the one question the memory keeps an answer to.
   await assert.rejects(() => commitAt(dir, second), /git could not be asked/);
@@ -1316,12 +1320,24 @@ test("a ref names a commit, names none, or git could not be asked, and only the 
   assert.equal(await commitAt(dir, "HEAD"), second);
 });
 
-test("the exit code git gave is the answer whatever it wrote, and no exit code is none", needsGitStub, async (t) => {
+test("a git that refused is not a git that said no: only exit code 1 is", needsGitStub, async (t) => {
+  // Exit code 128 is a directory git cannot open, whatever it holds.
   const { dir, second } = twoCommits(t);
-  const calls = gitAhead(t, [exits("*' cat-file -e '*", 3), exits("*' rev-parse --verify '*", 128)].join("\n"));
-  assert.equal(await shaReachable(dir, second), false);
+  const nowhere = scratch(t, "anatomiya-no-repo-");
+  await assert.rejects(() => shaReachable(nowhere, second), new RegExp(`^Error: git could not be asked whether commit ${second} is still in this repository: fatal: not a git repository`));
+  await assert.rejects(() => commitAt(nowhere, "HEAD"), /^Error: git could not be asked which commit HEAD names: fatal: not a git repository/);
+  await assert.rejects(() => commitAt(nowhere, second), /^Error: git could not be asked which commit [0-9a-f]{40} names: fatal: not a git repository/);
+
+  let calls = gitAhead(t, exits("*' rev-parse --verify '*", 3));
+  await assert.rejects(() => shaReachable(dir, second), /is still in this repository: git exited 3$/);
+  await assert.rejects(() => commitAt(dir, "HEAD"), /which commit HEAD names: git exited 3$/);
+  calls.restore();
+
+  calls = gitAhead(t, exits("*' rev-parse --verify '*", 1));
+  assert.equal(await shaReachable(dir, second), false, "the exit code is the answer, whatever is there");
   assert.equal(await commitAt(dir, "HEAD"), null);
   calls.restore();
+  assert.equal(await commitAt(dir, second), second, "and a refusal was never kept as the answer");
 });
 
 test("the merge base of a commit with itself still answers where the commit could not be asked about", needsGitStub, async (t) => {
