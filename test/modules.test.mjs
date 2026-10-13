@@ -153,6 +153,7 @@ const RAW_GIT_READS = {
   "check.mjs resolveBase": ["SAYS SO", "the shallow fetch: not fetched is the next candidate, then the same caveat"],
   "corpus.mjs gitRoot": ["STOP", "throws on every failure with git's own text"],
   "corpus.mjs lsFiles": ["STOP", "hands the stream's rejection to its caller, Unasked where git left no exit code"],
+  "corpus.mjs rootAttributes": ["STOP", "both reads go through answered(), started together so a stop counts one read in a row"],
   "history.mjs historyFields": ["SAYS SO", "rejects into the walk's error, which the summary and the record state"],
   "history.mjs isTracked": ["NOTHING DONE", "reads as tracked, so no store is written"],
   "history.mjs readBesides": ["NOTHING DONE", "no stamp, so nothing is replayed or kept and the plain walk answers"],
