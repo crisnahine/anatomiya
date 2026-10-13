@@ -459,11 +459,12 @@ export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {})
  * branch having removed anything. Read as missing, each one closed its whole
  * area as a population change on a branch that deleted nothing. A path the
  * branch did hold at the fork and no longer holds is still missing. Empty when
- * the pin is in HEAD's history, and when git will not say, which is the
- * direction that suppresses rather than states.
+ * the pin is in HEAD's history, and when git ran and named no commit the two
+ * share. A fork git could not be asked for is no answer, and stops the read (F29).
  */
 async function laterOnBase(root, pin, head) {
   const fork = await mergeBase(root, pin.sha, head);
+  if (fork.unasked) throw fork.unasked;
   if (!fork.found || fork.sha === pin.sha) return new Set();
   const atFork = await filesAt(root, fork.sha);
   if (!atFork) return new Set();
@@ -475,6 +476,8 @@ async function laterOnBase(root, pin, head) {
 /** The paths the base moved since the pin and the shared commit both, or null. */
 async function driftRange(root, pinSha, baseSha) {
   const shared = await mergeBase(root, pinSha, baseSha);
+  // Read from the pin in its place, the range is the symmetric one and takes the branch's own commits for the base's (F29).
+  if (shared.unasked) throw shared.unasked;
   const since = await diffRange(root, shared.found ? shared.sha : pinSha, baseSha);
   if (!since || !shared.found) return since;
   const differs = await diffRange(root, pinSha, baseSha);

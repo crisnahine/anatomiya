@@ -269,6 +269,27 @@ test("a pinned commit git could not be asked about is not read as gone", needsGi
   await assert.rejects(() => resolve(dir, { pin, baseRef: "main" }), new RegExp(`git could not be asked whether commit ${sha} is still in this repository`));
 });
 
+for (const [what, asks] of [
+  ["the commit the pin and HEAD share", (pinned) => `*' merge-base ${pinned} HEAD '*`],
+  ["the commit the pin and the base share", (pinned, tip) => `*' merge-base ${pinned} ${tip} '*`],
+]) {
+  test(`${what}, where git could not be asked for it, stops the baseline and is not read as none`, needsGitStub, async (t) => {
+    const files = ["src/a/x.ts", "src/a/y.ts"];
+    let pinned, tip;
+    const dir = repo(t, (d, { write, commit }) => {
+      for (const rel of files) write(rel, CONFORMING);
+      pinned = commit("init");
+      write("src/a/z.ts", CONFORMING);
+      tip = commit("later");
+    });
+    const pin = buildPin([area("src/a", files)], { sha: pinned });
+
+    gitAhead(t, unasked(asks(pinned, tip)));
+
+    await assert.rejects(() => resolve(dir, { pin, baseRef: "main" }), /git could not be asked for the merge base of/);
+  });
+}
+
 test("the pin stores no counts, so there is nothing to fall back to", () => {
   const pin = buildPin([area("src/a", ["src/a/x.ts"])], { sha: "a".repeat(40) });
   const text = JSON.stringify(pin);
