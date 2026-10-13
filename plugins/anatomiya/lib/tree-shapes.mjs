@@ -67,7 +67,9 @@ export const SHAPES = {
     property: ["scoped_property_access_expression", "property_element"],
     base: ["base_clause"],
     // What a file holds outside any code: the tags, and the markup around them.
-    header: ["php_tag", "text", "text_interpolation"],
+    header: ["php_tag", "php_end_tag", "text", "text_interpolation"],
+    // The markup, which is code in another language where it holds a script.
+    markup: ["text", "text_interpolation"],
     tokensOf: [],
     name: "name",
     returnType: "return_type",
@@ -111,6 +113,8 @@ export const SHAPES = {
     import: ["import_declaration"],
     annotation: [],
     header: ["package_clause"],
+    // What a comment directly above is C code for cgo to compile, where it imports "C" and nothing else.
+    preambleOf: ["import_declaration", "import_spec"],
     receiverType: ["type_identifier"],
     tokensOf: [],
     name: "name",

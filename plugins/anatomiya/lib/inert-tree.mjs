@@ -34,6 +34,13 @@ const SIGNS = { "-": "signed", "+": "signed", "~": "inverted", "!": "negated" };
 const UNSIGNED = /(?:u|ul|lu)$/i;
 const BOOLEAN = /^(?:true|false)$/;
 
+// An import of "C" alone, which makes the comment directly above it C code that cgo compiles.
+const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
+const NAMES_C = /["`]C["`]/;
+
+// What makes inline markup code in another language.
+const SCRIPT = /<script/i;
+
 // The modifier under which the compiler admits no conversion a user wrote.
 const CONSTANT = "const";
 
@@ -45,6 +52,8 @@ function rulesOf(lang) {
     s,
     whole: new Set([...s.comment, ...s.import, ...(s.closes ?? [])]),
     header: new Set(s.header ?? []),
+    markup: new Set(s.markup ?? []),
+    preambleOf: new Set(s.preambleOf ?? []),
     binding: new Set(s.binding),
     declaration: new Set(s.declaration ?? []),
     docstring: docstring.length > 0 ? { statement: docstring[0], strings: new Set(docstring.slice(1)) } : null,
@@ -208,8 +217,11 @@ function inertDeclaration(node, r, parent) {
 
 function inertNode(node, r, parent, outer) {
   const type = node.type;
+  // A group of imports that holds a comment and "C" is read inside, where the comment may stand on that import.
+  if (r.preambleOf.has(type) && NAMES_C.test(node.text) && within(node, r.s.comment).length > 0) return false;
   if (r.whole.has(type)) return true;
   // An annotation on a package is still an annotation, which may run something.
+  if (r.markup.has(type) && SCRIPT.test(node.text)) return false;
   if (r.header.has(type)) return !annotated(node, r);
   if (r.binding.has(type)) return inertBinding(node, r, parent, outer);
   if (r.declaration.has(type)) return inertDeclaration(node, r, parent);
@@ -260,9 +272,19 @@ function walked(tree, lines, lang, deadline) {
     // Each open node, with its type, the node itself where the rule read it, and whether a named
     // node was seen under it: a named node with none is a leaf.
     const open = [];
+    // The rows of the comments just read, where no line stands between them or after them.
+    let comments = null;
     for (;;) {
       tick();
       const isNamed = cursor.nodeIsNamed;
+      if (r.preambleOf.size > 0) {
+        const [from, to] = rowsOf(cursor.startPosition, cursor.endPosition);
+        if (r.comment.has(cursor.nodeType)) comments = comments !== null && from <= comments[1] + 1 ? [comments[0], to] : [from, to];
+        else {
+          if (comments !== null && from === comments[1] + 1 && r.preambleOf.has(cursor.nodeType) && IMPORTS_C.test(cursor.nodeText)) mark(comments);
+          comments = null;
+        }
+      }
       if (isNamed && open.length > 0) open[open.length - 1].sawNamed = true;
       const candidate = isNamed && (r.whole.has(cursor.nodeType) || r.header.has(cursor.nodeType) || r.binding.has(cursor.nodeType) || r.declaration.has(cursor.nodeType) || cursor.nodeType === r.docstring?.statement);
       // An inert node's leaves are not read: none of them asks.
