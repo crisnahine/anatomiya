@@ -1163,12 +1163,18 @@ export function blobReader(
 export async function mergeBase(root, a, b) {
   if (!safeRef(a) || !safeRef(b)) return { found: false, failed: true, sha: null };
   const ask = async () => {
-    const r = answered(await gitBuffered(root, ["merge-base", a, b]), `for the merge base of ${a} and ${b}`);
+    const question = `for the merge base of ${a} and ${b}`;
+    const r = answered(await gitBuffered(root, ["merge-base", a, b]), question);
     if (r.ok) {
       const sha = r.stdout.trim();
       return { found: sha.length > 0, failed: false, sha: sha || null };
     }
-    return { found: false, failed: r.code !== 1, sha: null };
+    // Exit code 1 is git finding no commit the two share.
+    if (r.code === 1) return { found: false, failed: false, sha: null };
+    // Any other code is the same for a name that is no commit and for a question git refuses:
+    // where both names are commits, it refused, and that is no "none".
+    if ((await commitAt(root, a)) !== null && (await commitAt(root, b)) !== null) throw new Unasked(`git could not be asked ${question}: ${failureOf(r)}`);
+    return { found: false, failed: true, sha: null };
   };
   // A commit is its own merge base, so verifying it answers the whole question.
   if (a === b && isFullSha(a)) {
