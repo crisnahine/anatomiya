@@ -4,7 +4,7 @@ import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
 import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -2582,6 +2582,35 @@ test("a child's pipe that fails tells its thread, and the failure ends no proces
     assert.deepEqual(posted.map((msg) => [msg.id, msg.error?.message ?? "close"]), [[4, "read EIO"], [4, "close"]], pipe);
     assert.equal(posted[1].close[1], "SIGKILL", "a child nobody can read is ended");
   }
+});
+
+// What a thread's stand-in for its child raises where the parent's start found
+// no descriptor left: the error, then the close Node raises with the errno.
+function unstarted(code) {
+  const child = new EventEmitter();
+  const stream = () => Object.assign(new EventEmitter(), { setEncoding: () => {} });
+  Object.assign(child, { stdout: stream(), stderr: stream(), stdin: { end: () => {}, on: () => {} }, kill: () => {} });
+  setImmediate(() => {
+    child.emit("error", Object.assign(new Error(`spawn ruby ${code}`), { code }));
+    child.emit("close", -24, null);
+  });
+  return child;
+}
+
+test("the files of a batch whose child had no descriptors to start on are charged, as they are for one that could not start", async () => {
+  const batch = (spawner) => {
+    const results = [];
+    return parseBatch(pair, { ruby: "ruby", guards: RUBY_GUARDS, rubyScript: "", load: [], dimensions: [], onResult: (r) => results.push(r), spawner }).then((out) => ({ out, results }));
+  };
+  const charge = (error) => pair.map(({ rel }) => ({ rel, ok: false, error, crashed: true, attempts: 1 }));
+
+  const starved = await batch(() => unstarted("EMFILE"));
+  assert.equal(starved.out.error, "spawn ruby EMFILE");
+  assert.equal(starved.out.missingParser, null, "a full descriptor table is no missing interpreter");
+  assert.deepEqual(starved.results, charge("spawn ruby EMFILE"));
+
+  const absent = await batch(() => unstarted("ENOENT"));
+  assert.deepEqual(absent.results, charge("spawn ruby ENOENT").map((r) => ({ ...r, missingParser: true })));
 });
 
 test("a batch with nothing to start its child on the parent is refused", async () => {
