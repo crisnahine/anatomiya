@@ -101,14 +101,17 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
   let pinned = false;
   for (;;) {
     let round;
+    let more;
     try {
       round = await passes(root, store, { scan, pin, git });
     } finally {
       release(lock);
+      // Taken where the round threw too: left, it costs a later worker a pass nobody asked for.
+      more = takeWord(again);
     }
     result = result !== null && round.reason === "current" ? { ...round, reason: result.reason } : round;
     pinned ||= round.pinned;
-    if (!takeWord(again)) return { ...result, pinned };
+    if (!more) return { ...result, pinned };
     lock = acquire(lockPath);
     if (!lock || lock.blocked) return { ...result, pinned };
   }

@@ -382,7 +382,8 @@ function areaBlock(state, population, baseline) {
  * range here ends at the commit that caller is reading.
  *
  * It throws where git could not be asked whether the pinned commit is still
- * here, or what a base ref names: neither is a pin past reach (C33).
+ * here, what a base ref names, or for its merge base: none of the three is a
+ * pin past reach (F29).
  */
 export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {}) {
   // Read here unless handed in. A pin on disk that will not load drops to

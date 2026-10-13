@@ -1551,7 +1551,7 @@ test("an option cannot stand in for the command word", () => {
 });
 
 test("a check that could not ask git for the merge base exits 1 with the question, and prints no report", needsGitStub, (t) => {
-  // Read as no merge base, this was 0 findings at exit 0.
+  // Read as no merge base, an unasked one is 0 findings at exit 0.
   const repo = repoWithSource(t);
   const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
   git("branch", "-M", "main");
