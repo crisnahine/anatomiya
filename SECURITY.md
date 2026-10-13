@@ -106,8 +106,10 @@ The rules that came out of that:
   entries.
 - Never a shell. `execFile`, `spawn` and `fork` only, always with an argument array.
 
-Where a path still has to reach git, it goes inside a revision argument after a validated sha
-(`git cat-file blob <sha>:<path>`), so it cannot present as an option. Shas are validated against
+Where a path still has to reach git, it goes after a validated sha: as `<sha>:<path>` and a NUL on
+the stdin of the one `git cat-file --batch -Z` child that answers a revision's blob reads, or, where
+that child cannot answer, inside a revision argument (`git cat-file blob <sha>:<path>`). Either way
+it cannot present as an option, and a path holding a NUL never reaches the child's stdin. Shas are validated against
 `/^[0-9a-f]{7,64}$/` before use (64 because a SHA-256 repository names its commits in 64 hex
 digits), because the pin file that carries them is a repository-controlled
 input like any other, and a ref is rejected if it starts with `-`.
@@ -129,6 +131,14 @@ digits, `.`, `_` and `-`, so a file whose name spells anything else is in no cla
 back from a record that names anything else is no claim. Every path a claim prints, in an area file,
 the notice or `check`, goes through the path encoder. A git older than 2.31 refuses `--diff-merges`;
 the walk then states nothing, the summary says so, and the scan goes on.
+
+Where a scan may keep a history store, that walk and the authors walk print each commit's name
+before the address (`--format=\x1e%H %aE`), and a later scan asks git for less: `git rev-list` with
+the walk's own arguments for the order of the commits, and `git log --no-walk=unsorted --stdin` for
+the commits the store lacks. What is written to that stdin is commit names git printed a moment
+before, and the order is used only where every line of it is 40 or 64 hex digits, since `--stdin`
+would read an option off a line as readily as a commit. Both run under the same clock, field cap and
+`GIT_NO_LAZY_FETCH` as the walk they stand in for.
 
 ### Everything rendered goes through one allowlist encoder
 
@@ -306,11 +316,11 @@ removed, and neither is a file under any other name, keyed or not. So the most a
 removed is a file it shipped under this tool's own name carrying this tool's own key, or a regular
 file it shipped under such a name plus the suffix a staged file carries, `.tmp-<pid>-<16 hex>`:
 that one is removed with no key asked, where no process of that id is running, by a scan that
-writes or removes in the directory. `.claude/anatomiya` is swept the same way for five names: a regular
-file there named `facts.json`, `layout.json`, `refresh.json`, `baseline.json` or `refresh.lock`
-plus that suffix, whose stager is not running, is removed by a scan that writes, and the summary
-counts them (`3 temporary
-files an earlier scan left in .claude/anatomiya were removed`). The same sweep takes what a killed
+writes or removes in the directory. `.claude/anatomiya` is swept the same way for seven names: a regular
+file there named `facts.json`, `layout.json`, `refresh.json`, `baseline.json`, `refresh.lock`,
+`history-authors.gz` or `history-cochange.gz` plus that suffix, whose stager is not running, is
+removed by a scan that writes, and the summary counts them (`3 temporary files an earlier run left
+in .claude/anatomiya were removed`). The same sweep takes what a killed
 breaker of the refresh lock left: a lock token, `refresh.lock.<16 hex>`, or a token's own token,
 `refresh.lock.<16 hex>.<digits>`, of a generation the lock does not name, which is all of them
 where the lock is gone, a token's own token of the dead generation the lock names whose own mtime
@@ -319,7 +329,7 @@ moved aside, where no process of that id is running. A lock token of the generat
 is never removed, nor a token's own token of the generation a live lock names, nor a link, a
 directory or a fifo at any of these names, nor a file under any other name. A dry run removes none and says how many a scan would. No temporary file is opened before it
 is removed. One whose removal fails, whatever the removal answers, is left where it is and stops
-nothing: the scan writes the map and counts it (`1 temporary file an earlier scan left in
+nothing: the scan writes the map and counts it (`1 temporary file an earlier run left in
 .claude/anatomiya could not be removed, so it was left as it is`, `stagedLeft` and
 `storeStagedLeft` in `--format json`, and in a Cursor or Copilot directory that directory's count
 of entries the scan neither wrote nor removed). In a Cursor or Copilot directory whose target is
@@ -360,7 +370,7 @@ scan again`, and no path of a temporary file is printed. In a Cursor or Copilot 
 did not name, the temporary files already created there are removed, the record is written once,
 naming for that directory the files it held before, and the scan says `.cursor/rules could not be
 written (a file could not be created in .cursor/rules (EACCES)), so nothing there was written or
-removed: fix its permissions, then scan again`. A temporary file an earlier scan left there, removed
+removed: fix its permissions, then scan again`. A temporary file an earlier run left there, removed
 before the locked file was met, stays removed. Where the put-back or the second record write fails,
 the scan refuses whole and everything is put back. A dry run renames nothing, so past a locked file
 it says `would write`. The second record write comes before the put-back, so a process killed while
@@ -395,7 +405,7 @@ on a handle typed before the read. A team's own rule files there are never opene
 
 One read is whole, up to 64 MiB, the bound every command reads a record to. Before its first rename,
 a scan that writes reads whole every file it is about to replace or remove, through `O_NOFOLLOW`, so
-it can put that file back if a later step fails. A temporary file an earlier scan left is the
+it can put that file back if a later step fails. A temporary file an earlier run left is the
 exception: it is removed without being opened, and is not put back. Those files are `facts.json`
 and `layout.json` in `.claude/anatomiya`; in `.claude/rules`, every file at a name the scan writes,
 with the key or without it, and every file it removes; and in `.cursor/rules` and
@@ -438,8 +448,8 @@ than 7 seconds from the clock, either way, was left by a call that died holding 
 clock than that: the right to remove a dead one goes to the call that creates its lock token,
 `<batch claim>.lock.<its mtime in ms>`, with an exclusive create, which removes the lock only while
 it is still the one it found dead, then removes that lock token. Every call then tries the one
-create of the lock, and those that lose it deliver nothing. A lock token last written more than 62
-seconds ago was left by a call killed while it broke the lock, and is broken the same way under a
+create of the lock, and those that lose it deliver nothing. A lock token whose mtime is more than 62
+seconds from the clock, either way, was left by a call killed while it broke the lock, and is broken the same way under a
 lock token of its own, `<batch claim>.lock.<mtime in ms>.<the token's mtime in ms>`, one level down and
 no further. A lock token the system refuses to
 remove is left for the sweep, and a dead lock it refuses to remove makes the call answer alone. An
@@ -479,6 +489,34 @@ unreadable, as any malformed field does, so a hand-edited pin cannot lift the ma
 A co-change claim read back is held to the shapes the walk writes, and no reader takes more than the
 first 100 of each kind.
 
+### The history stores hold what git printed
+
+A scan keeps two more files in `.claude/anatomiya`, `history-authors.gz` and `history-cochange.gz`
+(D15). Each holds, for the commits git already holds, what one history walk read of them: the
+author's address after the mailmap, and the paths the commit changed with their status letters.
+Nothing else of a commit is kept, no message and no content. They are written only by a scan, a
+person's or the refresh's, never by a dry run, and the exclude lines in the README keep the directory out of git. A repository that
+commits the directory without them commits those addresses, as its own history already does.
+
+A store that came with a clone is never read: one git tracks, under any letter case, is passed
+over, and so is one git will not answer about. A store is read only as a regular file inside the
+repository's own `.claude`, through `O_NOFOLLOW` where the system has it, at most 64 MiB packed
+and 256 MiB inflated, refused past that before the bytes are held. It must open with a stamp, a
+digest of everything a commit's record depends on besides the commit, and with a digest of its
+records, and be records end to end, one per commit. Only the digest of the configuration is kept,
+since the configuration names paths and can hold a token. The stamp reads at most 1,024 tracked
+`.gitattributes` files and at most 8 MiB of any one file, and past either the walk reads the log
+whole and keeps no store. A store that fails any of this is the full walk and never an error.
+
+The digest stops a hand edit and not a forger. Someone who can write the file can copy the stamp
+from the store that is there and seal records of their own, and so choose which addresses touched
+which path, which moves a file's author count and the repository's, and which paths each change
+added and touched, which moves which co-change claims are mined. They cannot put a path into the
+map that git does not hold: a co-change claim's files are checked against the tree at the walk's
+tip, and authors are asked for by corpus path alone. That is no more than writing `facts.json`
+allows, which sits in the same directory and holds the stated claims and the author counts
+themselves.
+
 ### Parser crashes are contained by a process boundary
 
 `oxc` can take an uncatchable `SIGSEGV` from inside `parseSync` at sufficient nesting depth. A worker
@@ -496,6 +534,14 @@ frees each tree before it answers, which held its resident size under 435 MB ove
 parses in each of two runs, and a worker that traps anyway is replaced before it is handed another file. A grammar can
 also be slow on input built for it: a 195 KB Kotlin file of 4,000 `<` comparisons, each `a < 0`, took
 6.4 seconds to parse. The 5s clock kills that parse and charges that one file.
+
+One place parses a grammar outside that pool: the end-of-turn reuse check reads a changed file of
+those seven languages in the hook's own process (B73). It reads only a file under the same 1 MB
+cap, and every tree-sitter parse of one stop shares one second, asked through the runtime's
+progress callback while a parse runs, so a parse that runs past it is cancelled and its file asked
+about whole. Each tree is freed before the answer, a parse or a walk that throws is caught and its file
+asked about whole, and anything past that reaches the hook's own boundary, which answers `{}`. The
+most a file can cost a stop is that second and one question.
 
 This is availability, not confidentiality. A repository can still make a scan slow.
 

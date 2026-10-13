@@ -496,8 +496,16 @@ _Avoid_: token (alone, but for that one phrase), lock (alone: that is the file i
 
 **Store**:
 The directory a scan keeps its own files in, `.claude/anatomiya`: the **facts**, the **layout
-file**, the **pin**, and what the refresh leaves there. The **map** is not in it.
+file**, the **pin**, the two **history stores**, and what the refresh leaves there. The **map** is
+not in it.
 _Avoid_: cache, data directory (that is the plugin's own, outside the repository)
+
+**History store**:
+What one history walk read of each commit, kept in the **store** so the next scan asks git only for
+the commits it has not seen. There are two, one for the walk that counts **authors** and one for
+the walk behind the **co-change claims**. It is a copy of what git printed, and one that cannot be
+checked is not used.
+_Avoid_: history cache, commit cache, log cache
 
 **Facts**:
 The machine record of every slot, gated or not, including which side was stated. The map is derivable from

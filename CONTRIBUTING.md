@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 327 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 333 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -259,14 +259,15 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
 
-Four modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
-lock is taken, what a transcript record says or when the echo delivers goes in the one that owns it:
+Eight modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+lock is taken, what a transcript record says, when the echo delivers, which added lines the reuse check asks
+about or how a history walk is fed goes in the one that owns it:
 
 - `plugins/anatomiya/lib/store.mjs` how a file this tool writes reaches the disk: the staged name
   and its reading, `writeTemp` and `atomic`, the 64 MiB bound on a read, `putBack`, and
   `replaceAll`, which replaces a set of files and puts every one back when one fails. It imports
-  only the path encoder, so the record, the map, the pin and the refresh state write through it
-  without importing one another to write (A115)
+  only the path encoder, so the pin and the refresh state are written through it without importing
+  the record's module to write (A115)
 - `plugins/anatomiya/lib/lock.mjs` the one lock the echo and the refresh worker take: an exclusive
   create, and a dead lock broken through a lock token. What makes a lock dead is a judge the caller
   passes, `mtimeAge` or `ownerAge` (A117)
@@ -275,6 +276,27 @@ lock is taken, what a transcript record says or when the echo delivers goes in t
 - `plugins/anatomiya/lib/echo.mjs` whether the echo delivers on a call: `echoDue` over a digest, a
   transcript and the plugin's data directory, and `heldIn`, the walk of the window that
   `scripts/measure-echo.mjs` replays through (A119, A92)
+- `plugins/anatomiya/lib/inert.mjs` which of a file's lines define nothing callable, the one question
+  the end-of-turn reuse check asks: `inertLinesOf`, the line rules of oxc and prism, and the stop's
+  parse budget, `REUSE_PARSE_MS` (A91, B73)
+- `plugins/anatomiya/lib/inert-tree.mjs` the same answer for the seven tree-sitter languages, read
+  off the file's tree with the kinds `tree-shapes.mjs` lists. Loaded on the first such file a stop
+  reaches (B68, B74)
+- `plugins/anatomiya/lib/tree-sitter-runtime.mjs` the tree-sitter runtime and one parser per grammar,
+  loaded once per process for the scan's worker and for the reuse check. It imports no walker and no
+  dimension, which is what lets the Stop hook parse (B73)
+- `plugins/anatomiya/lib/history.mjs` the two history walks' feed: `historyFields`, which replays a
+  history store's commits and asks git for the rest, the stamp a store is used under, and
+  `saveHistory` (D15)
+
+To change which lines the reuse check asks about in one of the seven languages, write the case in
+`test/inert-tree.test.mjs` through its `asking` helper, which puts every line of the case to the
+oracle of `scripts/measure-inert.mjs` as well: a line the rule leaves out and the oracle names fails,
+and so does a line that asks and the oracle does not name, unless the case lists it as unproven. A
+kind added to `tree-shapes.mjs` needs a sample holding it in `test/tree-samples.mjs`. Then run
+`node scripts/measure-inert.mjs --commits 200 <repository> ...` over the 21 repositories of the seven
+languages from a frozen copy of the tree: the oracle's count must stay at zero, and a hunk that
+moved from asked to left out is read before the change is kept (B75).
 
 The shape:
 
