@@ -1,4 +1,4 @@
-export const SEMANTIC_DIMENSIONS = [
+export const SEMANTIC_DIMENSIONS = assertSited([
   {
     key: "law_of_demeter",
     claim: "a call chain stays inside one type",
@@ -24,7 +24,21 @@ export const SEMANTIC_DIMENSIONS = [
       });
     },
   },
-];
+]);
+
+/**
+ * A type-checked row says where it has a site with no checker, or it does not
+ * ship: `siteStubs` asks every row on every file, and a row with no answer
+ * failed the tier inside a scan. Checked at load, as a row's predicate is.
+ */
+function assertSited(rows) {
+  for (const d of rows) {
+    if (typeof d.sited !== "function") {
+      throw new Error(`type-checked dimension ${d.key} declares no sited(ts, source): say whether a file holds a site of it, read off the tree alone`);
+    }
+  }
+  return rows;
+}
 
 /**
  * What each row would be credited in a file by a checker nobody believes: one

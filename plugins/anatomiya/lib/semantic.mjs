@@ -319,7 +319,7 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
     // only `idleMs` armed the build window with nothing.
     const guards = guardsOver(SEMANTIC_GUARDS, given, "checker");
     const records = new Map();
-    const sited = new Map();
+    const siteRecords = new Map();
     let config = null;
     let built = false;
     let done = false;
@@ -380,7 +380,7 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
       if (typeof msg.rel === "string") {
         const resolution = msg.resolution ?? null;
         records.set(msg.rel, { hits: msg.hits || {}, resolution });
-        if (msg.sites) sited.set(msg.rel, { hits: msg.sites, resolution });
+        if (msg.sites) siteRecords.set(msg.rel, { hits: msg.sites, resolution });
         return arm(guards.idleMs);
       }
       if (msg.sited && stopWhen && !asked) {
@@ -388,10 +388,10 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
         // The job walks on while this is decided, so the clock is fed by its
         // answers and not by the reader. A reader that throws stops nothing:
         // the scan's own fold runs the same reduction and throws for itself.
-        Promise.resolve({ records: sited, config })
+        Promise.resolve({ records: siteRecords, config })
           .then(stopWhen)
           .then((yes) => {
-            if (yes) settle({ ...measured(sited), stopped: true });
+            if (yes) settle({ ...measured(siteRecords), stopped: true });
           })
           .catch(() => {});
       }

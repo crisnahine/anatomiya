@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 import { runSemantic } from "../plugins/anatomiya/lib/semantic.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
@@ -149,4 +150,16 @@ test("a wrapped chain is counted once, and a wrapped callee is still a link", ne
 
   const callee = await counts(`${decls}\nexport function f(c: C) { return c.go!().end() }`);
   assert.deepEqual(callee, { candidates: 1, conforming: 0 }, "a wrapped callee dropped the chain");
+});
+
+test("a type-checked row that does not say where it has a site stops the module loading, by name", async (t) => {
+  // Read by `siteStubs` on every file, so a row without it failed the tier inside the first scan to reach it.
+  const source = readFileSync(fileURLToPath(new URL("../plugins/anatomiya/lib/dimensions-semantic.mjs", import.meta.url)), "utf8");
+  const without = source.replace(/^ *sited: .*\n/m, "");
+  assert.notEqual(without, source, "the row's `sited` line was found");
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-sited-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "dimensions-semantic.mjs"), without);
+
+  await assert.rejects(import(pathToFileURL(join(dir, "dimensions-semantic.mjs")).href), /type-checked dimension law_of_demeter declares no sited\(ts, source\)/);
 });
