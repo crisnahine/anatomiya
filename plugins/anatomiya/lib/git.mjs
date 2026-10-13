@@ -882,7 +882,8 @@ export async function headSha(root) {
 
 /**
  * The commit `ref` names, or null where git says it names none (exit code 1).
- * It throws where git could not be asked, or refused with any other exit code.
+ * It throws where git could not be asked, or refused with its reason. A refusal with nothing printed
+ * (exit code 128 for a reflog entry past the log's end) is a name that names none.
  * `bounds` is the caller's own `maxBytes` and `timeout` for the call.
  */
 export async function commitAt(root, ref, bounds = {}) {

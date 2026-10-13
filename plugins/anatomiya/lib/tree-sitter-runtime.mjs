@@ -65,7 +65,7 @@ export function ensureRuntime() {
       await loaded.Parser.init();
       return loaded;
     } catch (err) {
-      // Tried again by the next caller, as a load that failed always was.
+      // Not kept: the next caller tries the load again.
       runtime = null;
       // The loader's own words, which quote what it read: encoded, since a scan and a check print them.
       throw missing(`${DECLARED.module} is not installed: ${encode(err && err.message)}`);

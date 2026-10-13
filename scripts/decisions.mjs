@@ -120,4 +120,10 @@ export function rowFiles(root) {
   return new Map(names.map((f) => [f.slice(0, -3), readFileSync(join(dir, f), "utf8")]));
 }
 
-if (invokedAs(import.meta.url)) process.stdout.write(rebuild(readFileSync(join(ROOT, "DECISIONS.md"), "utf8"), rowFiles(ROOT)));
+if (invokedAs(import.meta.url)) {
+  // A reader that closes early (`| head`) is no error of this script's.
+  process.stdout.on("error", (err) => {
+    if (err.code !== "EPIPE") throw err;
+  });
+  process.stdout.write(rebuild(readFileSync(join(ROOT, "DECISIONS.md"), "utf8"), rowFiles(ROOT)));
+}

@@ -1031,7 +1031,7 @@ clock, a signal or a start that failed, answered nothing, so the scan stops ther
 and prints the question with what ended git at exit 1: `anatomiya: git could not be asked whether
 commit <sha> is still in this repository: git was ended by SIGTERM after 120000 ms`. It stops the
 same way on `which commit <ref> names`, `for the merge base of <a> and <b>` and `whether this
-repository folds case`, and so do `pin` and `check`. A scan and a check stop the same way on what the
+repository folds case`, and so do `pin` and `check`. A scan stops the same way on what the
 baseline reads: `which files <sha> holds`, `what changed from <sha> to <ref>`, `which files differ
 from <sha>` and `for <path> at <sha>`, a pinned file that could not be read being no file that is
 absent. A pin stops on `whether the index holds unmerged paths`, `whether a merge is in progress`

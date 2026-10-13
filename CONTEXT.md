@@ -477,8 +477,8 @@ The summary says so with a remedy, `--format json` carries `unwritable` on that 
 refresh lists the directory under `stopped` in `refresh.json` and comes due again on its retry clock
 while it stays so. A scan that names the target refuses whole.
 A second sense, in the code and the decision rows only: a stopped run is a checker run the scan
-ended once its answer could only be a degraded verdict (`stopped: true` from `runSemantic`). It is
-never printed and does not reach the record.
+ended once its answer could only be a degraded verdict. It is never printed and does not reach the
+record.
 _Avoid_: left alone (for a stopped file), locked, skipped, failed
 
 **Main checkout**:

@@ -285,7 +285,8 @@ about or how a history walk is fed goes in the one that owns it:
   `scripts/measure-echo.mjs` replays through (A119, A92)
 - `plugins/anatomiya/lib/inert.mjs` which of a file's lines define nothing callable, the one question
   the end-of-turn reuse check asks: `inertLinesOf`, the line rules of oxc and prism, and
-  `REUSE_PARSE_MS`, the second one stop's tree-sitter files share for their loads, parses and walks
+  `REUSE_PARSE_MS`, the second every file of one stop shares: the line rules' reads, and the
+  tree-sitter loads, parses and walks
   (A91, B73)
 - `plugins/anatomiya/lib/inert-tree.mjs` the same answer for the seven tree-sitter languages, read
   off the file's tree with the kinds `tree-shapes.mjs` lists, in a walk that reads the stop's clock.

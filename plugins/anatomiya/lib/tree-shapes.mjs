@@ -68,7 +68,7 @@ export const SHAPES = {
     base: ["base_clause"],
     // What a file holds outside any code: the tags, and the markup around them.
     header: ["php_tag", "php_end_tag", "text", "text_interpolation"],
-    // The markup, which is code in another language where it holds a script.
+    // The markup, which is code in another language where any of the file's markup holds a script.
     markup: ["text", "text_interpolation"],
     tokensOf: [],
     name: "name",
