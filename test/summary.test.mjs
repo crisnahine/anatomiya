@@ -392,7 +392,7 @@ test("a temporary file that could not be removed is counted as left, apart from 
 
 test("each directory holding entries that stops a refresh is said in a line of its own, the same in a dry run, and absent where there is none", () => {
   const blocked = [".claude/anatomiya/refresh.lock", ".claude/anatomiya/refresh.lock.0123456789abcdef", ".claude/anatomiya/refresh.json"];
-  const said = blocked.map((path) => `"${path}" is a directory holding entries, so the map is not refreshed in the background in this checkout while it stays: remove it`);
+  const said = blocked.map((path) => `"${path}" is a directory holding entries, so no refresh of the map can run in this checkout while it stays: remove it to clear this`);
   for (const dryRun of [false, true]) {
     const summary = scanSummary(result(), plan({ refreshBlocked: blocked }), { dryRun });
     assert.deepEqual(scanLines(summary).filter((line) => line.includes("refresh.")), said);
@@ -400,7 +400,8 @@ test("each directory holding entries that stops a refresh is said in a line of i
   }
   // The path goes through the encoder, as every path the summary prints does.
   const forged = scanLines(scanSummary(result(), plan({ refreshBlocked: ["a\nb"] })));
-  assert.equal(forged.some((line) => line === "b" || line.startsWith("b ")), false, forged.join("\n"));
+  assert.equal(forged.some((line) => line.includes("\n")), false, forged.join("\n"));
+  assert.equal(forged.some((line) => line.startsWith('"a b" is a directory holding entries')), true, forged.join("\n"));
   for (const none of [plan(), plan({ refreshBlocked: [] })]) {
     assert.equal("refreshBlocked" in scanSummary(result(), none), false);
     assert.equal(scanLines(scanSummary(result(), none)).some((line) => line.includes("refresh.")), false);
