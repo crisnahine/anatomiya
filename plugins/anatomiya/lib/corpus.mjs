@@ -250,13 +250,15 @@ async function generatedAttrRules(root, { timeout } = {}) {
 /**
  * The root `.gitattributes`, from the index where the index marks it
  * skip-worktree or assume-unchanged: git then counts whatever the tree holds
- * there, a sparse checkout's absence included, as no change.
+ * there, a sparse checkout's absence included, as no change. Both reads start
+ * together, so asking costs one git read in a row, not two.
  */
 async function rootAttributes(root, timeout) {
   // Unasked is not an index that marks nothing: the working tree's file would then decide what counts as source (F29).
+  const ask = (args, question) => gitBuffered(root, args, { timeout }).then((r) => answered(r, question));
   const [listed, blob] = await Promise.all([
-    answered(await gitBuffered(root, ["ls-files", "-v", "-z", "--", ".gitattributes"], { timeout }), "how the index marks .gitattributes"),
-    answered(await gitBuffered(root, ["cat-file", "blob", ":.gitattributes"], { timeout }), "for the index's .gitattributes"),
+    ask(["ls-files", "-v", "-z", "--", ".gitattributes"], "how the index marks .gitattributes"),
+    ask(["cat-file", "blob", ":.gitattributes"], "for the index's .gitattributes"),
   ]);
   if (listed.ok && blob.ok && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
   const abs = safeResolve(root, ".gitattributes");
