@@ -12,7 +12,7 @@ import { runPin, runScan } from "./commands.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
 import { createdAlone, lockContent, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
 import { atomic } from "./store.mjs";
-import { answered, BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
+import { answered, BASE_REFS, caseMagic, commitAt, failureOf, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
@@ -430,7 +430,7 @@ async function mapTracked(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
   const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`]);
   // A listing git did not give is not an empty one, which would have the worker write over a committed map.
-  if (!r.ok) throw new Error(`git would not say whether this repository commits its map: ${String(r.error ?? "").trim()}`);
+  if (!r.ok) throw new Error(`git would not say whether this repository commits its map: ${failureOf(r)}`);
   return r.stdout.length > 0;
 }
 

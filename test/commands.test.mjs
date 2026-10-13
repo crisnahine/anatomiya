@@ -1320,6 +1320,19 @@ test("a scan stops where git could not be asked whether the pinned commit is sti
   assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
 });
 
+test("the summary's line for a walk git could not be asked for carries the question and what ended git", needsGitStub, async (t) => {
+  const dir = repo(t);
+  gitAhead(t, unasked("*' rev-parse --verify --quiet origin/HEAD^{commit} '*"));
+
+  const lines = scanLines((await runScan(dir, { dryRun: true })).summary);
+
+  // One line is all the summary prints of an error, so the cause is on the first.
+  assert.deepEqual(
+    lines.filter((line) => line.startsWith("what ships together")),
+    ["what ships together could not be read, so no co-change claim was stated: git could not be asked which commit origin/HEAD names: git was ended by SIGTERM"]
+  );
+});
+
 test("a pin stops where git could not be asked for HEAD, before the list is read or after it", needsGitStub, async (t) => {
   const dir = repo(t);
   const head = "*' rev-parse --verify --quiet HEAD^{commit} '*";

@@ -533,8 +533,18 @@ export class Unasked extends Error {}
  * read) was never an answer to `question`, and decides nothing (C33).
  */
 export function answered(r, question) {
-  if (r.code === null) throw new Unasked(`git could not be asked ${question}: ${String(r.error ?? "").trim().slice(0, STDERR_CAP)}`);
+  if (r.code === null) throw new Unasked(`git could not be asked ${question}: ${failureOf(r)}`);
   return r;
+}
+
+/**
+ * Why a call failed, on one line: git's own text, or the signal and the clock
+ * that ended it. Node heads its message with `Command failed: <argv>`, which
+ * names no cause, and a printer that keeps one line of an error keeps that one.
+ */
+export function failureOf(r) {
+  const said = String(r.error ?? "").replace(/^Command failed:[^\n]*\n?/, "").split("\n").map((line) => line.trim()).filter(Boolean).join(" ");
+  return (said || (r.code === null ? "git did not run" : `git exited ${r.code}`)).slice(0, STDERR_CAP);
 }
 
 /**

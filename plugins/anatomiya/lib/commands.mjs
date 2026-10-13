@@ -9,7 +9,7 @@ import { check } from "./check.mjs";
 import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
-import { caseMagic, gitBuffered, headSha } from "./git.mjs";
+import { caseMagic, failureOf, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
@@ -169,7 +169,7 @@ async function refuseUnlikeHead(root) {
   // corpus larger than the tree, and the corpus fixes the area floor for every
   // scan after.
   const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
-  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${firstLine(unmerged.error ?? "")}`);
+  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${failureOf(unmerged)}`);
   const merging = (await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"])).ok;
   const inMerge = "a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin";
   if (unmerged.stdout.length > 0) {
@@ -187,7 +187,7 @@ async function refuseUnlikeHead(root) {
   const exclude = `:(${["exclude", await caseMagic(root)].filter(Boolean).join(",")})`;
   const own = [...(rules === RULES_DIR ? [] : [`${rules}/${PREFIX}*.md`]), ...EXCLUDE_LINES].map((line) => `${exclude}${line}`);
   const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]);
-  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
+  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${failureOf(dirty)}`);
   if (dirty.stdout.length > 0) {
     // Stashing a merge in progress drops the merge.
     throw new Error(merging ? inMerge : "tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
