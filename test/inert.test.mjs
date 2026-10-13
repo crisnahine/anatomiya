@@ -274,3 +274,33 @@ test("a run of spaces or tabs reads as the one it stands for", async () => {
   assert.deepEqual(await asking("js", 'const s = "a    b";\nconst t = f("a    b");\n'), [2]);
   assert.deepEqual(await asking("ruby", "require    'm'\nA   =   [1,    2].freeze\nB =\t{ a:   1 }\n"), []);
 });
+
+/** A deadline that comes due after it was read `reads` times, and counts its reads. */
+function dueAfter(reads) {
+  const clock = { read: 0, valueOf: () => (clock.read++ < reads ? Infinity : -Infinity) };
+  return clock;
+}
+
+test("a line rule reached after the stop's deadline asks about every non-blank line", async () => {
+  assert.deepEqual(await asking("js", "// note\n\nconst A = 1;\n", { deadline: -Infinity }), [1, 3]);
+  assert.deepEqual(await asking("ruby", "# note\n\nA = 1\n", { deadline: -Infinity }), [1, 3]);
+  assert.deepEqual(await asking("js", "// note\n\nconst A = 1;\n", { deadline: dueAfter(1) }), [], "a file read before the clock is read again is read in time");
+});
+
+test("a line rule reads the clock as it goes, and a file it runs out on asks about every non-blank line", async () => {
+  for (const [lang, note] of [["js", "// note"], ["ruby", "# note"]]) {
+    const source = `${note}\n\n`.repeat(5000);
+    const all = Array.from({ length: 5000 }, (_, i) => 2 * i + 1);
+    const never = dueAfter(Infinity);
+    assert.deepEqual(await asking(lang, source, { deadline: never }), [], "read in time, every line is inert");
+    assert.ok(never.read >= 10 && never.read <= 1000, `${never.read} reads of the clock over 10,001 lines`);
+    for (const reads of [1, never.read - 1]) assert.deepEqual(await asking(lang, source, { deadline: dueAfter(reads) }), all, `due after ${reads} reads`);
+  }
+});
+
+test("a braced import the rule reads ahead over does not carry it past the clock", async () => {
+  const block = `import {\n${"  a,\n".repeat(200)}} from "m";\n`;
+  const clock = dueAfter(Infinity);
+  assert.deepEqual(await asking("js", block.repeat(20), { deadline: clock }), []);
+  assert.ok(clock.read >= 10, `${clock.read} reads of the clock over 4,040 lines`);
+});

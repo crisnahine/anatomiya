@@ -71,7 +71,7 @@ export const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)d
  * Each block is read with the file blanked around it, since markup that opens
  * a comment would carry it into the script below.
  */
-async function componentScript(engine, lang, source, kind) {
+async function componentScript(engine, lang, source, kind, deadline) {
   const { blocks, unterminated } = scriptBlocks(source, kind);
   const lineAt = (offset) => source.slice(0, offset).split("\n").length;
   const spans = (unterminated ? [] : blocks).flatMap((b) => {
@@ -79,7 +79,7 @@ async function componentScript(engine, lang, source, kind) {
     if (body.trim() === "") return [];
     return [{ from: lineAt(b.end - body.trimStart().length), to: lineAt(b.start + body.trimEnd().length) }];
   });
-  const views = await Promise.all(blocks.map((b) => inertLinesOf({ engine, lang, source: blankOutside(source, b.start, b.end) })));
+  const views = await Promise.all(blocks.map((b) => inertLinesOf({ engine, lang, source: blankOutside(source, b.start, b.end), deadline })));
   return { spans, inert: views[0]?.map((_, i) => views.every((view) => view[i])) ?? [] };
 }
 
@@ -132,8 +132,8 @@ export function reuseRecord(files) {
  * out, and so is a hunk whose every added line provably defines nothing
  * callable.
  *
- * `parsing` holds the deadline the stop's tree-sitter parses share, set at the
- * first such file: the hook reads every checkout of a stop against one budget.
+ * `parsing` holds the deadline every file a rule reads in the stop shares, set
+ * at the first one: the hook reads every checkout of a stop against one budget.
  *
  * `turnStart` adds what this turn committed: a turn told to write and commit
  * leaves the tree clean, and read against HEAD alone its work was never asked
@@ -187,9 +187,9 @@ export async function pendingChange(root, { since = null, turnStart = null, call
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
     const kind = embeddedIn(lang);
-    const script = kind === null ? null : await componentScript(engine, lang, entry.head, kind);
+    parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
+    const script = kind === null ? null : await componentScript(engine, lang, entry.head, kind, parsing.deadline);
     const hunks = script === null ? added : clipped(added, script.spans);
-    if (engine === "tree-sitter") parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
     const inert = script === null ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline }) : script.inert;
     // A missing runtime or grammar reads nothing, and a file nothing read asks nothing.
     if (inert === null) continue;
