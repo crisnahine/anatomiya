@@ -29,7 +29,7 @@ export const SEMANTIC_DIMENSIONS = assertSited([
 /**
  * A type-checked row says where it has a site with no checker, or it does not
  * ship: `siteStubs` asks every row on every file, and a row with no answer
- * failed the tier inside a scan. Checked at load, as a row's predicate is.
+ * would leave no stub anywhere and say nothing. Checked at load, as a row's predicate is.
  */
 function assertSited(rows) {
   for (const d of rows) {
