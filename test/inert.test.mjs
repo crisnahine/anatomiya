@@ -227,3 +227,17 @@ test("a block comment opens only at the start of its line, and one opened after 
   // Nothing tells a comment opened after code from a regex, so its later lines are read as code.
   assert.deepEqual(await asking("js", "const a = 1; /* note\nfunction f() {}\n*/\nfunction g() {}\n"), [1, 2, 3, 4]);
 });
+
+test("a JSX comment spread over lines asks nothing through its end, and the line after it asks", async () => {
+  assert.deepEqual(await asking("js", "<div>\n  {/* note\n  function old() {}\n  */}\n  <span />\n</div>\n"), [1, 5, 6]);
+  assert.deepEqual(await asking("js", " { /* a\nb\n*/ }\nfunction g() {}\n"), [4]);
+  // Code after the brace that ends it asks, and so does a second brace before it.
+  assert.deepEqual(await asking("js", "{/* a\n*/} run();\n"), [2]);
+  assert.deepEqual(await asking("js", "{{/* a\nfunction f() {}\n*/}}\n"), [1, 2, 3]);
+  // The closing brace ends the literal it stands in, so the line after is no member of it.
+  assert.deepEqual(await asking("js", "const A = {\n  a: 1,\n  /* note\n  */ }\nb: 1,\n"), [5]);
+});
+
+test("a regex holding /* after a brace opens no comment", async () => {
+  assert.deepEqual(await asking("js", "{ /\\/*$/.test(x) }\nfunction f() {}\n/** doc */\nfunction g() {}\n"), [1, 2, 4]);
+});

@@ -71,17 +71,16 @@ const BLOCK_NAME = /^$|^(?:type\s+)?[\w$]+(?:\s+as\s+[\w$]+)?\s*,?$/;
 function reduce(engine, line) {
   const strings = STRING[engine];
   let out = "";
-  let open = null;
   for (let i = 0; i < line.length; ) {
     const c = line[i];
     if ((engine === "prism" && c === "#") || (engine === "oxc" && c === "/" && line[i + 1] === "/")) break;
     if (engine === "oxc" && c === "/" && line[i + 1] === "*") {
       const end = line.indexOf("*/", i + 2);
       if (end === -1) {
-        // After code it may be a regex's `/` and its quantifier, which opens nothing.
-        if (out.trim() !== "") return { code: null, open: null };
-        open = "*/";
-        break;
+        // After code it may be a regex's `/` and its quantifier, which opens nothing. One `{` alone
+        // starts no regex, and JSX opens its comments behind one.
+        if (!/^\s*\{?\s*$/.test(out)) return { code: null, open: null };
+        return { code: "", open: "*/" };
       }
       i = end + 2;
       out += " ";
@@ -105,7 +104,7 @@ function reduce(engine, line) {
   let code = out.replace(LITERAL[engine], V).trim();
   const { collection } = INERT[engine];
   for (let before = ""; before !== code; ) [before, code] = [code, code.replace(collection, V)];
-  return { code, open };
+  return { code, open: null };
 }
 
 /** Which of a file's lines provably define nothing callable, blank ones included. */
@@ -120,7 +119,12 @@ function inertLines(engine, lines) {
       // Inside a comment is inert; inside a string or a heredoc is not a literal this reads.
       const comment = open === "*/" || open === "=end";
       const closed = open === "=end" ? line.startsWith("=end") : open.startsWith("<<") ? line.trim() === open.slice(2) : line.includes(open);
-      if (comment) inert[i] = !closed || line.slice(line.indexOf(open) + open.length).trim() === "";
+      if (comment) {
+        // The brace that ends a JSX comment reads as it does on a line of its own.
+        const after = closed ? line.slice(line.indexOf(open) + open.length).trim() : "";
+        inert[i] = after === "" || after === "}";
+        if (after === "}") depth = Math.max(0, depth - 1);
+      }
       if (closed) open = null;
       continue;
     }
