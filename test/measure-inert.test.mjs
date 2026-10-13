@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Language } from "web-tree-sitter";
 
-import { ACCESS, CONTAINERS, COUNTED, FIELDS, FOREIGN, measure, ORACLE, oracleHits, tally, UNION } from "../scripts/measure-inert.mjs";
+import { ACCESS, CONTAINERS, COUNTED, FIELDS, FOREIGN, measure, NAMING, ORACLE, oracleHits, STRINGISH, tally, UNION } from "../scripts/measure-inert.mjs";
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
@@ -317,6 +317,38 @@ test("every node type the oracle names is one its grammar knows", async () => {
   for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l), ...(ACCESS[l] ?? []), ...(FOREIGN[l] ?? []), ...Object.values(UNION[l] ?? {})]])) {
     const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
     assert.deepEqual(types.filter((type) => language.idForNodeType(type, true) === null), [], lang);
+  }
+});
+
+// Every named node type of each grammar that the oracle's two patterns match, as the grammars spell
+// them today. Held whole and not by sample: a string or a name a grammar renames leaves its list, and
+// a type a grammar adds under either spelling joins one, and the oracle reads both without a word.
+const STRINGS_OF = {
+  python: ["concatenated_string", "string", "string_content", "string_end", "string_start"],
+  php: ["encapsed_string", "heredoc", "heredoc_body", "heredoc_end", "heredoc_start", "nowdoc", "nowdoc_body", "nowdoc_string", "string", "string_content"],
+  go: ["interpreted_string_literal", "interpreted_string_literal_content", "raw_string_literal", "raw_string_literal_content"],
+  java: ["multiline_string_fragment", "string_fragment", "string_interpolation", "string_literal"],
+  csharp: ["interpolated_string_expression", "raw_string_content", "raw_string_end", "raw_string_literal", "raw_string_start", "string_content", "string_literal", "string_literal_content", "string_literal_encoding", "verbatim_string_literal"],
+  rust: ["raw_string_literal", "string_content", "string_literal"],
+  kotlin: ["multiline_string_literal", "string_content", "string_literal"],
+};
+const NAMES_OF = {
+  python: ["as_pattern", "case_pattern", "class_pattern", "complex_pattern", "constrained_type", "dict_pattern", "dictionary_splat_pattern", "dotted_name", "format_specifier", "generic_type", "identifier", "keyword_pattern", "list_pattern", "list_splat_pattern", "member_type", "splat_pattern", "splat_type", "tuple_pattern", "type", "type_parameter", "union_pattern", "union_type"],
+  php: ["abstract_modifier", "bottom_type", "cast_type", "disjunctive_normal_form_type", "dynamic_variable_name", "final_modifier", "intersection_type", "name", "named_type", "namespace_name", "optional_type", "primitive_type", "qualified_name", "readonly_modifier", "reference_modifier", "relative_name", "relative_scope", "static_modifier", "union_type", "var_modifier", "variable_name", "visibility_modifier"],
+  go: ["array_type", "blank_identifier", "channel_type", "field_identifier", "function_type", "generic_type", "identifier", "implicit_length_array_type", "interface_type", "label_name", "map_type", "negated_type", "package_identifier", "parenthesized_type", "pointer_type", "qualified_type", "slice_type", "struct_type", "type_arguments", "type_elem", "type_identifier"],
+  java: ["annotated_type", "array_type", "boolean_type", "catch_type", "dimensions", "floating_point_type", "generic_type", "identifier", "integral_type", "modifiers", "pattern", "record_pattern", "requires_modifier", "scoped_identifier", "scoped_type_identifier", "super", "type_arguments", "type_identifier", "type_parameter", "type_pattern", "underscore_pattern", "void_type", "wildcard"],
+  csharp: ["alias_qualified_name", "and_pattern", "array_rank_specifier", "array_type", "attribute_target_specifier", "constant_pattern", "declaration_pattern", "explicit_interface_specifier", "function_pointer_type", "generic_name", "identifier", "implicit_type", "list_pattern", "modifier", "negated_pattern", "nullable_type", "or_pattern", "parenthesized_pattern", "pointer_type", "predefined_type", "primary_constructor_base_type", "qualified_name", "recursive_pattern", "ref_type", "relational_pattern", "scoped_type", "tuple_pattern", "tuple_type", "type_argument_list", "type_parameter", "type_pattern", "var_pattern", "variable_declaration"],
+  rust: ["abstract_type", "array_type", "associated_type", "bounded_type", "bracketed_type", "captured_pattern", "crate", "dynamic_type", "extern_modifier", "field_identifier", "field_pattern", "fragment_specifier", "function_modifiers", "function_type", "generic_pattern", "generic_type", "identifier", "lifetime", "match_pattern", "mut_pattern", "mutable_specifier", "never_type", "or_pattern", "pointer_type", "primitive_type", "qualified_type", "range_pattern", "ref_pattern", "reference_pattern", "reference_type", "remaining_field_pattern", "scoped_identifier", "scoped_type_identifier", "self", "shorthand_field_identifier", "slice_pattern", "struct_pattern", "super", "token_binding_pattern", "token_repetition_pattern", "token_tree_pattern", "tuple_pattern", "tuple_struct_pattern", "tuple_type", "type_arguments", "type_identifier", "type_parameter", "unit_type", "use_wildcard", "visibility_modifier"],
+  kotlin: ["class_modifier", "delegation_specifier", "function_modifier", "function_type", "identifier", "inheritance_modifier", "member_modifier", "modifiers", "multi_variable_declaration", "non_nullable_type", "nullable_type", "parameter_modifier", "parameter_modifiers", "parenthesized_type", "platform_modifier", "property_modifier", "qualified_identifier", "reification_modifier", "type_arguments", "type_modifiers", "type_parameter", "type_parameter_modifiers", "type_projection", "user_type", "variable_declaration", "variance_modifier", "visibility_modifier"],
+};
+
+test("the two patterns the oracle tells a string and a name by match these node types of each grammar and no other", async () => {
+  for (const lang of Object.keys(CONTAINERS)) {
+    const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
+    const types = new Set();
+    for (let id = 0; id < language.nodeTypeCount; id++) if (language.nodeTypeIsNamed(id) && language.nodeTypeIsVisible(id)) types.add(language.nodeTypeForId(id));
+    assert.deepEqual([...types].filter((type) => STRINGISH.test(type)).sort(), STRINGS_OF[lang], `${lang}: strings`);
+    assert.deepEqual([...types].filter((type) => NAMING.test(type)).sort(), NAMES_OF[lang], `${lang}: names`);
   }
 });
 

@@ -99,12 +99,12 @@ const OWN_TYPE = { csharp: /^(?:bool|s?byte|char|decimal|double|float|n?u?int|u?
 
 // How the seven grammars spell a name, a type, a modifier and a pattern of names. Every node under one
 // is read too, and nothing that calls or runs is spelt this way.
-const NAMING =
+export const NAMING =
   /(?:^|_)(?:identifier|name|type|modifiers?|specifier|lifetime|dimensions|wildcard|scope|pattern)$|^(?:type_arguments|type_argument_list|type_parameter|type_projection|type_elem|variable_declaration|multi_variable_declaration|crate|self|super)$/;
 
 // How the seven grammars spell a string and the parts of one. A string spread over lines is on every
 // row it reaches but a blank one, a row of its text that holds no token included.
-const STRINGISH = /string|heredoc|nowdoc/;
+export const STRINGISH = /string|heredoc|nowdoc/;
 
 // Code in another language: the comment cgo compiles, which stands directly above an import of "C"
 // alone, and inline markup that holds a script.
