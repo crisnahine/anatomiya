@@ -304,3 +304,18 @@ test("a braced import the rule reads ahead over does not carry it past the clock
   assert.deepEqual(await asking("js", block.repeat(20), { deadline: clock }), []);
   assert.ok(clock.read >= 10, `${clock.read} reads of the clock over 4,040 lines`);
 });
+
+test("a block comment that never closes was none, so every line from its opening asks", async () => {
+  assert.deepEqual(await asking("js", "// ok\nconst A = 1;\n/* note\nfunction old() {}\n*/\nconst B = 2;\n"), [], "closed, it asks nothing through its end");
+  assert.deepEqual(await asking("js", "// ok\nconst A = 1;\n/* note\nfunction real() {}\n\nconst B = 2;\n"), [3, 4, 6]);
+  assert.deepEqual(await asking("js", "/* a */\n{/* note\nconst B = 2;\n"), [2, 3]);
+  // JSX text that starts a line with the opening: nothing under it closes one.
+  assert.deepEqual(await asking("js", "const C = () => (\n  <p>\n    /* note\n    {items.map((i) => <b>{i}</b>)}\n  </p>\n);\nfunction real() {}\n"), [1, 2, 3, 4, 5, 6, 7]);
+  // No line rule tells that text from a comment, so the lines down to the next end of one are given up.
+  assert.deepEqual(await asking("js", "<p>\n  /* note\n</p>\nfunction lost() {}\n/** doc */\nfunction after() {}\n"), [1, 6]);
+});
+
+test("a Ruby =begin block that never ends was none, so every line from it asks", async () => {
+  assert.deepEqual(await asking("ruby", "A = 1\n=begin\nnote\ndef old; end\n=end\nB = 2\n"), [], "ended, it asks nothing through its end");
+  assert.deepEqual(await asking("ruby", "A = 1\n=begin\nnote\n\ndef real; end\n"), [2, 3, 5]);
+});

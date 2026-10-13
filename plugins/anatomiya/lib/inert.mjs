@@ -135,6 +135,7 @@ function inertLines(engine, lines, deadline) {
   const unread = () => lines.map((line) => line.trim() === "");
   const inert = unread();
   let open = null;
+  let opened = 0;
   let depth = 0;
   let due = 0;
   for (let i = 0; i < lines.length; i++) {
@@ -164,7 +165,7 @@ function inertLines(engine, lines, deadline) {
     }
     if (engine === "prism") {
       if (line.startsWith("=begin")) {
-        [inert[i], open] = [true, "=end"];
+        [inert[i], open, opened] = [true, "=end", i];
         continue;
       }
       const heredoc = /<<[~-]?(["'`]?)([A-Za-z_]\w*)\1/.exec(line);
@@ -174,7 +175,7 @@ function inertLines(engine, lines, deadline) {
       }
     }
     const { code, open: left } = reduce(engine, line);
-    open = left;
+    [open, opened] = [left, i];
     if (code === null) {
       depth = 0;
       continue;
@@ -202,6 +203,8 @@ function inertLines(engine, lines, deadline) {
       }
     }
   }
+  // A comment that never closes was none: text that began like one, with code this did not read under it.
+  if (open === "*/" || open === "=end") for (let k = opened; k < lines.length; k++) inert[k] = lines[k].trim() === "";
   return inert;
 }
 
