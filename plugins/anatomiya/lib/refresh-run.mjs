@@ -57,7 +57,8 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  * checkout, and say what it did.
  *
  * `reason` is one of: scanned, current, failed, failed-before, busy, git-busy,
- * tracked, no-map, outside, no-head.
+ * tracked, no-map, outside, no-head, lock-blocked. The last comes with
+ * `blocked`, the entry at a lock's name that has to be removed by hand.
  *
  * It throws where git could not be asked for HEAD, the remote's tip, the
  * pinned commit or whether the map is committed, with the lock let go, the pin
@@ -89,6 +90,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
     lock = acquire(lockPath);
     if (!lock) return { reason: "busy", pinned: false };
   }
+  if (lock.blocked) return { reason: "lock-blocked", blocked: lock.blocked, pinned: false };
   let result = null;
   let pinned = false;
   for (;;) {
@@ -102,7 +104,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
     pinned ||= round.pinned;
     if (!takeWord(again)) return { ...result, pinned };
     lock = acquire(lockPath);
-    if (!lock) return { ...result, pinned };
+    if (!lock || lock.blocked) return { ...result, pinned };
   }
 }
 
@@ -470,14 +472,17 @@ const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.
  * holding the token named by its nonce (`takeDeadLock`), and taken by the one
  * create after. A token a worker died holding names a generation that is gone
  * once this one holds the lock, so it is removed here.
+ *
+ * Answers `{ blocked }` where an entry that is no lock holds a name and could
+ * not be removed: no worker lets go of that, so it is not a lock taken.
  */
 export function acquire(path) {
   const nonce = randomBytes(8).toString("hex");
   const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce });
   try {
     if (!createdAlone(path, content) && !takeDeadLock(path, workerAge, content)) return null;
-  } catch {
-    return null;
+  } catch (err) {
+    return typeof err?.blocked === "string" ? { blocked: err.blocked } : null;
   }
   removeLeftTokens(path, nonce);
   return { path, content };

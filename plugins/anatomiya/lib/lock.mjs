@@ -12,7 +12,7 @@
  * `identity` (the generation where it gives none).
  */
 import { createHash } from "node:crypto";
-import { closeSync, linkSync, lstatSync, opendirSync, openSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, linkSync, lstatSync, opendirSync, openSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { readHead } from "./rules.mjs";
@@ -116,12 +116,24 @@ function broken(lock, judge, content, levels) {
 // Each judge derives the generation from its identity, so the identity alone decides.
 const sameGeneration = (a, b) => (a.identity ?? a.generation) === (b.identity ?? b.generation);
 
-/** Removes a dead lock; one the system will not let go of is thrown, so the caller answers alone rather than wait on it for good. */
+/**
+ * Removes a dead lock. An empty directory at the name goes too, since a store that comes with the
+ * repository can hold one. Anything else the system will not unlink is thrown with `blocked` naming it,
+ * so the caller answers alone and can say which entry to remove: a directory holding entries is never
+ * emptied here.
+ */
 function removeDeadLock(lock) {
   try {
     unlinkSync(lock);
   } catch (err) {
-    if (err?.code !== "ENOENT") throw err;
+    if (err?.code === "ENOENT") return;
+    try {
+      // Refuses a link and a directory holding entries, so nothing below the name is touched.
+      if (lstatOf(lock)?.isDirectory()) return rmdirSync(lock);
+    } catch {
+      // Holding entries, or not ours to remove.
+    }
+    throw Object.assign(err, { blocked: lock });
   }
 }
 
