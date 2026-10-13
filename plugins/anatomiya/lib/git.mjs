@@ -568,14 +568,22 @@ export function gitStreamed(
     if (call.unread) return reject(new Error(`git ${sub}: ${unreadConfig(call)}`));
     if (signal?.aborted) return reject(new Error(`git ${sub} stopped by its caller`));
 
-    const child = spawn("git", call.args, {
-      cwd: root,
-      stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
-      env: call.env,
-    });
+    let child;
+    try {
+      child = spawn("git", call.args, {
+        cwd: root,
+        stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
+        env: call.env,
+      });
+    } catch (err) {
+      // An option Node refuses is thrown from the start itself.
+      return reject(new Error(`git ${sub} failed: ${err.message}`));
+    }
     // This clock and not spawn's own, which nothing stops for a child that
-    // never started: it held the process open for the whole of `timeout`.
+    // never started and which then holds the process open for the whole of
+    // `timeout`. Unreferenced, so a clear that is missed holds nothing open either.
     const clock = timeout > 0 ? setTimeout(() => signalChild(child, "SIGTERM"), timeout) : null;
+    clock?.unref();
     // A git that exits before it has read `input` closes the pipe, and its exit code is what says so.
     child.stdin?.on("error", () => {});
     child.stdin?.end(input);
@@ -634,6 +642,11 @@ export function gitStreamed(
       }
       rest = buf;
     });
+
+    // A pipe that fails says so on the stream, and with nobody listening that
+    // ends the process. Half of stdout is not the answer; stderr only words a failure.
+    child.stdout?.on("error", (err) => fail(new Error(`git ${sub} failed: ${err.message}`)));
+    child.stderr?.on("error", () => {});
 
     signal?.addEventListener("abort", () => fail(new Error(`git ${sub} stopped by its caller`)), { once: true });
 

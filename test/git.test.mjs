@@ -1949,6 +1949,44 @@ test("a streamed read with no descriptors left for its git is rejected as a git 
   assert.match(out.fed, /^rejected: git ls-files failed: spawn git (EMFILE|ENFILE)/);
 });
 
+test("a streamed read whose pipe fails is rejected, and the failure ends no process", PROMPT, async (t) => {
+  // A stream's `error` with no listener is an uncaught exception. No real git
+  // breaks its own pipe on request, so the pipes are found as they are listened
+  // to and failed by hand, in a process of its own.
+  const { dir } = oneCommit(t);
+  const lib = new URL("../plugins/anatomiya/lib/git.mjs", import.meta.url).href;
+  const script = `
+    import { Socket } from "node:net";
+    import { gitBuffered, gitStreamed } from ${JSON.stringify(lib)};
+    const dir = ${JSON.stringify(dir)};
+    const out = { warm: (await gitBuffered(dir, ["rev-parse", "HEAD"])).ok };
+    const on = Socket.prototype.on;
+    const failing = (count) => {
+      const pipes = new Set();
+      Socket.prototype.on = function (event, ...rest) {
+        if (event === "data" && !pipes.has(this) && pipes.add(this).size === count) queueMicrotask(() => this.destroy(new Error("read EIO")));
+        return on.call(this, event, ...rest);
+      };
+      return gitStreamed(dir, ["ls-files", "-z", "--"], () => {}).then(() => "resolved", (err) => "rejected: " + err.message).finally(() => (Socket.prototype.on = on));
+    };
+    // The order the runner listens in: stderr, then stdout.
+    out.stderr = await failing(1);
+    out.stdout = await failing(2);
+    await new Promise(setImmediate);
+    process.stdout.write(JSON.stringify(out));
+  `;
+  const run = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  let stderr = "";
+  run.stdout.on("data", (chunk) => (stdout += chunk));
+  run.stderr.on("data", (chunk) => (stderr += chunk));
+  const [code, signal] = await once(run, "close");
+
+  assert.deepEqual({ code, signal }, { code: 0, signal: null }, stderr);
+  // What git wrote to stderr only words a failure, so losing it fails nothing.
+  assert.deepEqual(JSON.parse(stdout), { warm: true, stderr: "resolved", stdout: "rejected: git ls-files failed: read EIO" });
+});
+
 test("a child whose start throws hands every read to the per-call reader", async (t) => {
   const { dir, sha } = oneCommit(t);
   // Node refuses a NUL in an environment value before it starts anything, and
@@ -1962,6 +2000,13 @@ test("a child whose start throws hands every read to the per-call reader", async
   assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
   await reader.close();
   await reader.close();
+});
+
+test("a streamed read whose start throws is rejected as a git that failed to start", async (t) => {
+  const { dir } = oneCommit(t);
+  assert.equal((await gitBuffered(dir, ["rev-parse", "HEAD"])).ok, true, "the repository's config is read");
+  const env = { ...process.env, ANATOMIYA_NUL: "a\0b" };
+  await assert.rejects(gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { env }), /^Error: git ls-files failed: .*null bytes/);
 });
 
 test("a fault in building git's environment is thrown, not read as a configuration nobody could read", async (t) => {
