@@ -13,6 +13,7 @@ import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
 import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { GIT } from "../plugins/anatomiya/lib/git.mjs";
 
 const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
 
@@ -180,6 +181,20 @@ test("an index read of .gitattributes that could not be asked stops the corpus, 
     await assert.rejects(() => collect(dir), /git could not be asked .*\.gitattributes/, pattern);
     calls.restore();
   }
+});
+
+test("an index copy of .gitattributes past the bound of the read leaves the working tree's file to decide", needsGitStub, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", "gen.ts linguist-generated\n");
+    write("a.ts");
+    write("gen.ts");
+    git("add", "-A");
+  });
+  // git did answer, with more than is read: that is no git that could not be asked.
+  gitAhead(t, `case " $* " in *' cat-file blob :.gitattributes '*) head -c ${GIT.maxBytes + 1} /dev/zero; exit 0;; esac`);
+
+  const rels = (await collect(dir)).files.map((f) => f.rel);
+  assert.ok(rels.includes("a.ts") && !rels.includes("gen.ts"), JSON.stringify(rels));
 });
 
 test("a tracked .env contributes nothing even though git lists it", async (t) => {
