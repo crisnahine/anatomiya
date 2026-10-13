@@ -73,8 +73,9 @@ const rulesFor = (lang) => RULES.get(lang) ?? RULES.set(lang, rulesOf(lang)).get
 
 // The walk reads the clock once in this many nodes: a read costs more than a node does.
 const CLOCK_EVERY = 4096;
-// One walk runs at a time and never yields, so its clock is held here and not passed to every reader.
-const clock = { deadline: Infinity, left: CLOCK_EVERY };
+// One walk runs at a time and never yields, so its clock is held here and not passed to every reader,
+// beside the file's root and where each of its annotations starts, searched for once.
+const clock = { deadline: Infinity, left: CLOCK_EVERY, root: null, annotations: null };
 
 /** Counts `nodes` read, and throws once the walk has run past its deadline. */
 function tick(nodes = 1) {
@@ -123,7 +124,22 @@ function paired(node, operand, r) {
   return list === "negated" ? BOOLEAN.test(operand.text) : list !== "signed" || !UNSIGNED.test(operand.text);
 }
 
-const annotated = (node, r) => r.annotation.length > 0 && within(node, r.annotation).length > 0;
+/**
+ * Whether a node holds an annotation: whether one starts inside it. The file is
+ * searched once for all of them, since bindings nest and a search under each
+ * reads a deep file once per level.
+ */
+function annotated(node, r) {
+  if (r.annotation.length === 0) return false;
+  const starts = (clock.annotations ??= within(clock.root, r.annotation).map((n) => n.startIndex));
+  let [low, high] = [0, starts.length];
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (starts[mid] < node.startIndex) low = mid + 1;
+    else high = mid;
+  }
+  return low < starts.length && starts[low] < node.endIndex;
+}
 
 /**
  * Whether every named node of a subtree is a literal or one of `types`, a kind
@@ -142,13 +158,14 @@ const binds = (node, r) => r.bound.has(node.type) && named(node).every((n) => bi
 /**
  * Whether the type a literal is declared as may convert it with a function
  * somebody wrote, where the language has such conversions: any type but its
- * own, outside a constant.
+ * own, outside a constant. `parent` and `outer` are the two nodes that hold it.
  */
-function converts(node, value, r) {
+function converts(node, value, r, parent, outer) {
   if (r.s.declared === undefined || value === null || r.nothing.has(value.type)) return false;
-  const type = node.parent.childForFieldName(r.s.declared);
+  const holder = parent?.node ?? node.parent;
+  const type = holder.childForFieldName(r.s.declared);
   if (type !== null && plain(type, r.builtin, r)) return false;
-  return !named(node.parent.parent).some((n) => n.text === CONSTANT);
+  return !named(outer?.node ?? holder.parent).some((n) => n.text === CONSTANT);
 }
 
 /**
@@ -160,39 +177,42 @@ function converts(node, value, r) {
  * annotation, one that carries a block to run when it does not match, an
  * assignment that is part of a larger expression, and one whose target is
  * anything but names: a write through a member or a subscript may run a setter.
+ * `parent` and `outer` are the node that holds it and the one that holds that,
+ * each as `{ type, node }`: handed down, since the tree answers for a parent
+ * by reading down from its root.
  */
-function inertBinding(node, r) {
+function inertBinding(node, r, parent, outer) {
   if (annotated(node, r)) return false;
-  const parent = node.parent?.type;
-  if (r.statement.size > 0 && !r.statement.has(parent) && !r.declaration.has(parent)) return false;
+  if (r.statement.size > 0 && !r.statement.has(parent?.type) && !r.declaration.has(parent?.type)) return false;
   if (r.s.alternative && node.childForFieldName(r.s.alternative) !== null) return false;
   const own = r.s.value ? node.childForFieldName(r.s.value) : null;
   const counted = r.counted.has(node.type);
   const value = own ?? (counted ? null : node.lastNamedChild);
   if (value === null ? !counted : !(counted ? plain(value, r.countedPart, r) : isLiteral(value, r))) return false;
-  if (converts(node, value, r)) return false;
+  if (converts(node, value, r, parent, outer)) return false;
   const target = r.s.target ? node.childForFieldName(r.s.target) : null;
   if (target !== null && !binds(target, r)) return false;
   return named(node).every((n) => n.id === value?.id || n.id === target?.id || r.comment.has(n.type) || plain(n, r.part, r));
 }
 
 /** Bindings, every one of them inert, beside modifiers and a type that compute nothing, and no other node. */
-function inertDeclaration(node, r) {
+function inertDeclaration(node, r, parent) {
   if (annotated(node, r)) return false;
+  const self = { type: node.type, node };
   return named(node).every((child) => {
-    if (r.binding.has(child.type)) return inertBinding(child, r);
-    if (r.declaration.has(child.type)) return inertDeclaration(child, r);
+    if (r.binding.has(child.type)) return inertBinding(child, r, self, parent);
+    if (r.declaration.has(child.type)) return inertDeclaration(child, r, self);
     return r.comment.has(child.type) || plain(child, r.part, r);
   });
 }
 
-function inertNode(node, r) {
+function inertNode(node, r, parent, outer) {
   const type = node.type;
   if (r.whole.has(type)) return true;
   // An annotation on a package is still an annotation, which may run something.
   if (r.header.has(type)) return !annotated(node, r);
-  if (r.binding.has(type)) return inertBinding(node, r);
-  if (r.declaration.has(type)) return inertDeclaration(node, r);
+  if (r.binding.has(type)) return inertBinding(node, r, parent, outer);
+  if (r.declaration.has(type)) return inertDeclaration(node, r, parent);
   if (r.docstring !== null && type === r.docstring.statement) {
     const parts = named(node);
     return parts.length === 1 && r.docstring.strings.has(parts[0].type) && isLiteral(parts[0], r);
@@ -236,8 +256,9 @@ function walked(tree, lines, lang, deadline) {
   try {
     const r = rulesFor(lang);
     cursor = tree.walk();
-    [clock.deadline, clock.left] = [deadline, CLOCK_EVERY];
-    // Each open node, and whether a named node was seen under it: a named node with none is a leaf.
+    Object.assign(clock, { deadline, left: CLOCK_EVERY, root: tree.rootNode, annotations: null });
+    // Each open node, with its type, the node itself where the rule read it, and whether a named
+    // node was seen under it: a named node with none is a leaf.
     const open = [];
     for (;;) {
       tick();
@@ -245,10 +266,12 @@ function walked(tree, lines, lang, deadline) {
       if (isNamed && open.length > 0) open[open.length - 1].sawNamed = true;
       const candidate = isNamed && (r.whole.has(cursor.nodeType) || r.header.has(cursor.nodeType) || r.binding.has(cursor.nodeType) || r.declaration.has(cursor.nodeType) || cursor.nodeType === r.docstring?.statement);
       // An inert node's leaves are not read: none of them asks.
-      if (!(candidate && inertNode(cursor.currentNode, r))) {
+      const node = candidate ? cursor.currentNode : null;
+      if (!(candidate && inertNode(node, r, open.at(-1), open.at(-2)))) {
         const rows = rowsOf(cursor.startPosition, cursor.endPosition);
+        const type = cursor.nodeType;
         if (cursor.gotoFirstChild()) {
-          open.push({ rows, isNamed, sawNamed: false });
+          open.push({ rows, type, node, isNamed, sawNamed: false });
           continue;
         }
         if (isNamed || !CLOSER.test(cursor.nodeType)) mark(rows);
