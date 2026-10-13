@@ -38,6 +38,9 @@ function nameStatusRows(out) {
  * any budget worth waiting for. What is under test is the walk, so a `rmdir`
  * that will not land must not fail a test that passed. This is the temporary
  * directory, and nothing else in the suite reads it.
+ *
+ * Never `removeTree` of `test/platform.mjs`, which fails a test on a directory
+ * still held: these tests leave children behind on purpose.
  */
 function scratch(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -300,11 +303,46 @@ test("a listing whose git exits as its clock runs out is no answer, however it e
       gitStreamed(dir, ["ls-files", "-z", "--"], (f) => {
         seen.push(f);
         // Held past the clock and past git's own exit, so the clock is what the loop turns to first.
-        if (seen.length === 1) Atomics.wait(held, 0, 0, 1500);
-      }, { timeout: 600, env }),
+        if (seen.length === 1) Atomics.wait(held, 0, 0, 4500);
+      }, { timeout: 3000, env }),
     /^Error: git ls-files exited SIGTERM/
   );
   assert.deepEqual(seen, ["a"]);
+});
+
+test("a buffered read whose git exits as its clock runs out is no answer either", needsShebang, async (t) => {
+  // Node shuts the pipes at the clock and still calls a git that exited 0 a success, with what it had read.
+  const { dir } = repo(t);
+  const bin = scratch(t, "anatomiya-git-bin-");
+  const started = join(bin, "started");
+  const go = join(bin, "go");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  // The rest of the listing waits for this test's word, so no machine is fast enough to finish it first.
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh\ncase "$1" in ls-files) : > '${started}'; printf 'a\\000'; while [ ! -e '${go}' ]; do sleep 0.05; done; printf 'b\\000c\\000'; exit 0;; esac\nexec '${real}' "$@"\n`,
+    { mode: 0o755 }
+  );
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  const held = new Int32Array(new SharedArrayBuffer(4));
+
+  const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
+  await until(t, () => existsSync(started));
+  writeFileSync(go, "");
+  // Held past the clock and past git's own exit, and from the loop's check phase, so the loop turns to its
+  // timers, the clock among them, before it reads the pipe again.
+  await new Promise((done) => {
+    setImmediate(() => {
+      Atomics.wait(held, 0, 0, 4500);
+      done();
+    });
+  });
+  const r = await reading;
+
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.stdout, "");
+  assert.equal(r.code, null);
+  assert.match(String(r.error), /git was ended by SIGTERM after 3000 ms/);
 });
 
 /**
@@ -350,7 +388,7 @@ test("a walk its caller ended does not wait on a git behind a launcher, and that
 test("a streamed read behind a launcher is ended by its own timeout too", { ...needsShebang, timeout: 60_000 }, async (t) => {
   // The one behind writes nothing, so nothing ends it: what is held is that the read does not wait on it.
   const { dir } = repo(t);
-  const { env } = behindLauncher(t, "exec sleep 300");
+  const { env } = behindLauncher(t, "exec sleep 30");
 
   await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { timeout: 500, env }), /^Error: git ls-files exited SIGTERM/);
 });
@@ -2318,14 +2356,14 @@ test("a git behind a launcher stops when the reply it is sending is refused", { 
   await until(t, () => gone(join(shim.bin, "behind")));
 });
 
-// On Windows the reader's child is such a launcher. The loop is held from the read to the removal, so
-// nothing this process reads lets a git that is still sending finish: it has to stop for want of a reader.
-test("a repository is free to be removed once a reader that refused a reply has closed", { ...needsBatchZ, ...PROMPT }, async (t) => {
+// On Windows the reader's child is such a launcher. The loop is held from the read's answer to the removal,
+// so nothing this process reads lets a git that is still sending finish: it has to stop for want of a reader.
+test("a repository is free to be removed once its reader has refused a reply", { ...needsBatchZ, ...PROMPT }, async (t) => {
   const { dir, sha } = withBigBlob(t);
   const reader = blobReader(dir, sha, { closeGrace: 30_000 });
+  t.after(() => reader.close());
 
   assert.deepEqual(answerOf(await reader.read("big.ts")), { ok: false, reason: "over size cap" });
-  await reader.close();
 
   const refusal = () => {
     try {
