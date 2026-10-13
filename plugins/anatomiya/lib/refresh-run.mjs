@@ -10,7 +10,7 @@ import { basename, join } from "node:path";
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
-import { createdAlone, holdsEntries, lockContent, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
+import { createdAlone, lockContent, refreshBlockers, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
 import { atomic } from "./store.mjs";
 import { answered, BASE_REFS, Unasked, caseMagic, commitAt, failureOf, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
@@ -58,9 +58,10 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  *
  * `reason` is one of: scanned, current, failed, failed-before, busy, git-busy,
  * tracked, no-map, outside, no-head, lock-blocked, state-blocked. The last
- * two come with `blocked`, the directory holding entries that has to be removed
- * by hand: at a lock's name, or at the state's, where a refresh that cannot
- * record what it did does not run.
+ * two come with `blocked`, the entry that has to be removed by hand, and are
+ * answered before the lock is taken where `refreshBlockers` names one: a
+ * directory holding entries at the lock's name or a lock token's, or at the
+ * state's, where a refresh that cannot record what it did does not run.
  *
  * A question git could not be asked before the stamp is read throws out of
  * here, with the lock let go, the pin and the map as they were and nothing
@@ -89,8 +90,8 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
   if (await gitBusy(root)) return { reason: "git-busy", pinned: false };
 
   // Before the lock and the scan: a scan nothing could record ran again on every trigger.
-  const statePath = join(store, basename(REFRESH_STATE));
-  if (holdsEntries(statePath)) return { reason: "state-blocked", blocked: statePath, pinned: false };
+  const [blocked] = refreshBlockers(store);
+  if (blocked !== undefined) return { reason: blocked === basename(REFRESH_STATE) ? "state-blocked" : "lock-blocked", blocked: join(store, blocked), pinned: false };
 
   const lockPath = join(store, basename(REFRESH_LOCK));
   const again = join(store, AGAIN_FILE);

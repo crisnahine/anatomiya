@@ -390,18 +390,21 @@ test("a temporary file that could not be removed is counted as left, apart from 
   assert.equal(scanLines(scanSummary(result(), plan({ staged: ["a"] }))).some((line) => line.includes("could not be removed")), false);
 });
 
-test("a directory holding entries at the refresh lock's name is said in one line, the same in a dry run, and absent where there is none", () => {
-  const said = `".claude/anatomiya/refresh.lock" is a directory holding entries, so the map is not refreshed in the background in this checkout while it stays: remove it`;
+test("each directory holding entries that stops a refresh is said in a line of its own, the same in a dry run, and absent where there is none", () => {
+  const blocked = [".claude/anatomiya/refresh.lock", ".claude/anatomiya/refresh.lock.0123456789abcdef", ".claude/anatomiya/refresh.json"];
+  const said = blocked.map((path) => `"${path}" is a directory holding entries, so the map is not refreshed in the background in this checkout while it stays: remove it`);
   for (const dryRun of [false, true]) {
-    const summary = scanSummary(result(), plan({ lockBlocked: ".claude/anatomiya/refresh.lock" }), { dryRun });
-    assert.equal(scanLines(summary).filter((line) => line.includes("refresh.lock")).join("\n"), said);
-    assert.equal(JSON.parse(scanJson(summary)).lockBlocked, ".claude/anatomiya/refresh.lock");
+    const summary = scanSummary(result(), plan({ refreshBlocked: blocked }), { dryRun });
+    assert.deepEqual(scanLines(summary).filter((line) => line.includes("refresh.")), said);
+    assert.deepEqual(JSON.parse(scanJson(summary)).refreshBlocked, blocked);
   }
   // The path goes through the encoder, as every path the summary prints does.
-  const forged = scanLines(scanSummary(result(), plan({ lockBlocked: "a\nb" })));
+  const forged = scanLines(scanSummary(result(), plan({ refreshBlocked: ["a\nb"] })));
   assert.equal(forged.some((line) => line === "b" || line.startsWith("b ")), false, forged.join("\n"));
-  assert.equal("lockBlocked" in scanSummary(result(), plan()), false);
-  assert.equal(scanLines(scanSummary(result(), plan())).some((line) => line.includes("refresh.lock")), false);
+  for (const none of [plan(), plan({ refreshBlocked: [] })]) {
+    assert.equal("refreshBlocked" in scanSummary(result(), none), false);
+    assert.equal(scanLines(scanSummary(result(), none)).some((line) => line.includes("refresh.")), false);
+  }
 });
 
 test("one removed area file and one default-matching claim read at one", () => {

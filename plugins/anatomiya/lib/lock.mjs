@@ -15,7 +15,7 @@ import { createHash } from "node:crypto";
 import { closeSync, linkSync, lstatSync, openSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { namesIn, readHead } from "./rules.mjs";
+import { namesIn, readHead, REFRESH_LOCK, REFRESH_STATE } from "./rules.mjs";
 import { writeTemp } from "./store.mjs";
 
 /**
@@ -244,12 +244,6 @@ function lstatOf(path) {
   }
 }
 
-/**
- * Whether a directory holding entries is at `path`: the one entry at a name of this tool's own that is
- * never removed for it. An empty directory goes with `rmdir`, and a link there is never followed.
- */
-export const holdsEntries = (path) => lstatOf(path)?.isDirectory() === true && namesIn(path, 1).length > 0;
-
 // The store holds a handful of files; a directory past this is not ours to walk.
 const TOKENS_LISTED_MOST = 256;
 
@@ -292,4 +286,19 @@ export function leftTokens(lock, judge) {
       return ofToken && !now.live && TOKEN_AGE(path)?.live === false;
     })
     .map(({ name }) => name);
+}
+
+// Never removed for this tool: an empty directory at a name of its own goes with `rmdir`, and a link there is never followed.
+const holdsEntries = (path) => lstatOf(path)?.isDirectory() === true && namesIn(path, 1).length > 0;
+
+/**
+ * The names in the store `dir` that stop every refresh, each a directory holding entries where the refresh
+ * worker locks or records: the lock's name, its lock tokens' by name, then the state's. The worker asks
+ * before it starts and the scan's plan asks to say so, so neither names an entry the other does not. The
+ * lock tokens are read from the bounded listing the store sweep reads.
+ */
+export function refreshBlockers(dir) {
+  const lock = join(dir, basename(REFRESH_LOCK));
+  const tokens = tokensOf(lock).map(({ name }) => name).sort();
+  return [basename(lock), ...tokens, basename(REFRESH_STATE)].filter((name) => holdsEntries(join(dir, name)));
 }
