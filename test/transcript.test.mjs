@@ -48,6 +48,8 @@ test("the record readers over a transcript's text name its start, its last promp
   assert.equal(sessionStart(path), at, "the path reader reads the same head");
   assert.equal(sessionStartIn(text), at, "the first record carrying a timestamp");
   assert.equal(turnStartIn(text), at + MINUTE, "the last prompt, past a block reason and a result");
+  const blocked = `${text}${JSON.stringify({ type: "user", isMeta: true, timestamp: new Date(at + MINUTE + 5000).toISOString(), message: { role: "user", content: "Stop hook feedback:\nnot yet" } })}\n`;
+  assert.equal(turnStartIn(blocked), at + MINUTE, "a hook's block reason written after the prompt, with a time of its own, is no prompt");
   assert.deepEqual(toolCallsIn(text), [
     { from: at + 1000, to: at + 2000 },
     { from: at + 3000, to: at + 9000 },
