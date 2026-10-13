@@ -84,12 +84,7 @@ export function guardedChild({
     idle = null;
   };
 
-  // A child whose start failed has no pid, and until Node's next tick a kill of
-  // it signals pid 0: the whole process group of whoever asked. What `spawner`
-  // hands back stands in for a child held elsewhere, and sends its own.
-  const end = () => {
-    if (child.pid !== undefined || !(child instanceof ChildProcess)) child.kill("SIGKILL");
-  };
+  const end = () => signalChild(child);
 
   const kill = (reason) => {
     killedBy = reason;
@@ -118,6 +113,20 @@ export function guardedChild({
   }
 
   return { child, stderr: () => whole(text), touch, kill, killedBy: () => killedBy, settle };
+}
+
+/**
+ * Send `signal` to `child` where it started, and answer whether it was sent.
+ * Every signal this tool sends a child goes through here.
+ *
+ * A child whose start failed has no pid, and until Node's next tick a kill of
+ * it signals pid 0: the whole process group of whoever asked. What a `spawner`
+ * hands back is no `ChildProcess`: it stands in for a child held elsewhere,
+ * and sends its own.
+ */
+export function signalChild(child, signal = "SIGKILL") {
+  if (!child || (child instanceof ChildProcess && !child.pid)) return false;
+  return child.kill(signal);
 }
 
 /**

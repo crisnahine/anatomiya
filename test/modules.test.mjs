@@ -117,6 +117,23 @@ test("every bridge that runs a child takes the guards from the one supervisor", 
   assert.equal(reachedFrom("parse-worker.mjs", edges).has("child.mjs"), false);
 });
 
+test("a signal goes to a child from the one function that sends it only where the child started", () => {
+  // A kill of a child with no pid signals this process's own group, and a
+  // guard written by hand at each site is one a new site forgets.
+  // Not a signal to a child of this tool's: a probe of whether a pid is alive
+  // (signal 0), and the handle `guardedChild` gives, whose `kill(reason)`
+  // takes a reason and sends through the one function.
+  const NOT_A_CHILD_SIGNAL = [/\bprocess\.kill\(pid, 0\)/g, /\bsup\.kill\(/g];
+  const sites = [];
+  for (const file of readdirSync(LIB).filter((f) => f.endsWith(".mjs"))) {
+    for (const [i, line] of readFileSync(join(LIB, file), "utf8").split("\n").entries()) {
+      if (NOT_A_CHILD_SIGNAL.reduce((left, allowed) => left.replace(allowed, ""), line).includes(".kill(")) sites.push(`${file}:${i + 1}`);
+    }
+  }
+  assert.equal(sites.length, 1, `a kill outside signalChild: ${sites.join(", ")}`);
+  assert.match(sites[0], /^child\.mjs:/);
+});
+
 test("the writers do not reach the pipeline that produced the record", () => {
   // Three of the four readers of the old module wanted a writer or the caveat
   // table and paid a parser, a git runner and the whole registry for it. The

@@ -1,4 +1,4 @@
-import { guardedChild, absentInterpreter } from "./child.mjs";
+import { guardedChild, absentInterpreter, signalChild } from "./child.mjs";
 import { collectHits } from "./walk.mjs";
 import { walkRuby } from "./ruby-walk.mjs";
 import { rubyFacets } from "./facets.mjs";
@@ -524,8 +524,7 @@ function onThread(files, job, resourceLimits) {
       else if (msg.out) resolve({ ...msg.out, results: charged(files, results, "its record never reached the parent") });
       else if (msg.spawn) children.set(msg.id, startFor(worker, msg));
       else if (msg.read) children.get(msg.id)?.read();
-      // Only a child that started: a kill of one with no pid signals this process's own group.
-      else if (msg.kill && children.get(msg.id)?.pid) children.get(msg.id).kill("SIGKILL");
+      else if (msg.kill) signalChild(children.get(msg.id));
       else if (msg.stdin !== undefined) children.get(msg.id)?.input(msg.stdin);
     });
     worker.once("error", (err) => {
@@ -601,7 +600,7 @@ function killAndReap(child) {
   return new Promise((resolve) => {
     if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return resolve();
     child.once("exit", () => resolve());
-    child.kill("SIGKILL");
+    signalChild(child);
   });
 }
 

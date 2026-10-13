@@ -4,7 +4,7 @@ import { readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import { promisify } from "node:util";
 
-import { guardedChild, retryOnce } from "./child.mjs";
+import { guardedChild, retryOnce, signalChild } from "./child.mjs";
 import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 
@@ -316,12 +316,11 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
       workers.splice(0).map(
         (w) =>
           new Promise((resolve) => {
-            // A worker that never started has no exit to wait for, and a kill
-            // of one in the tick of its fork signals this process's own group.
+            // A worker that never started has no exit to wait for.
             if (w.child.pid === undefined || w.child.exitCode !== null || w.child.signalCode !== null) return resolve();
             w.child.once("exit", resolve);
-            w.child.kill();
-            const hard = setTimeout(() => w.child.kill("SIGKILL"), 1_000);
+            signalChild(w.child, "SIGTERM");
+            const hard = setTimeout(() => signalChild(w.child), 1_000);
             hard.unref?.();
             w.child.once("exit", () => clearTimeout(hard));
           }),
