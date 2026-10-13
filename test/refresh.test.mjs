@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs, { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -313,6 +313,57 @@ test("a moved HEAD is scanned again, and the map on disk is the new one", async 
   assert.equal(r.reason, "scanned");
   assert.notEqual(readFileSync(join(dir, OVERVIEW), "utf8"), before);
   assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), /lib\/services/);
+});
+
+test("a directory holding a file at the refresh state's name stops every refresh before it scans", async (t) => {
+  // Each refresh scanned, threw on the write and recorded nothing, so the next one scanned again.
+  const dir = await scanned(t);
+  const state = join(dir, REFRESH_STATE);
+  mkdirSync(state);
+  writeFileSync(join(state, "kept"), "theirs");
+  let scans = 0;
+  const scan = async (root) => {
+    scans++;
+    return runScan(root);
+  };
+
+  for (let run = 0; run < 3; run++) {
+    assert.deepEqual(await refreshRepository(dir, { scan }), { reason: "state-blocked", blocked: state, pinned: false }, `run ${run}`);
+  }
+  assert.equal(scans, 0);
+  assert.equal(readFileSync(join(state, "kept"), "utf8"), "theirs");
+  assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.lock")), false, "and the lock is not left taken");
+});
+
+test("an empty directory at the refresh state's name is removed, and the refresh records its scan", async (t) => {
+  const dir = await scanned(t);
+  mkdirSync(join(dir, REFRESH_STATE));
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+  assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).ok, true);
+  assert.equal((await refreshRepository(dir)).reason, "current");
+});
+
+test("a scan run by hand records itself over an empty directory at the refresh state's name", async (t) => {
+  const dir = await scanned(t);
+  mkdirSync(join(dir, REFRESH_STATE));
+
+  await noteScan(dir);
+
+  assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).ok, true);
+});
+
+test("a link at the refresh state's name is replaced, never followed to the directory it leads to", needsSymlinks, async (t) => {
+  const dir = await scanned(t);
+  const outside = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-outside-")));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  writeFileSync(join(outside, "kept"), "theirs");
+  symlinkSync(outside, join(dir, REFRESH_STATE));
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+  assert.equal(lstatSync(join(dir, REFRESH_STATE)).isFile(), true);
+  assert.deepEqual(readdirSync(outside), ["kept"]);
+  assert.equal(readFileSync(join(outside, "kept"), "utf8"), "theirs");
 });
 
 test("a refresh already running is not started twice", async (t) => {

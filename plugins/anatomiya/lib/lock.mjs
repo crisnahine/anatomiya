@@ -244,6 +244,12 @@ function lstatOf(path) {
   }
 }
 
+/**
+ * Whether a directory holding entries is at `path`: the one entry at a name of this tool's own that is
+ * never removed for it. An empty directory goes with `rmdir`, and a link there is never followed.
+ */
+export const holdsEntries = (path) => lstatOf(path)?.isDirectory() === true && namesIn(path, 1).length > 0;
+
 // The store holds a handful of files; a directory past this is not ours to walk.
 const TOKENS_LISTED_MOST = 256;
 

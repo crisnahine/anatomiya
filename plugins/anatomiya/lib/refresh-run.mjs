@@ -4,13 +4,13 @@
  * the scan to answer with a watch list.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, lstatSync, openSync, unlinkSync } from "node:fs";
+import { closeSync, lstatSync, openSync, rmdirSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
-import { createdAlone, lockContent, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
+import { createdAlone, holdsEntries, lockContent, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
 import { atomic } from "./store.mjs";
 import { answered, BASE_REFS, Unasked, caseMagic, commitAt, failureOf, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
@@ -57,8 +57,10 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  * checkout, and say what it did.
  *
  * `reason` is one of: scanned, current, failed, failed-before, busy, git-busy,
- * tracked, no-map, outside, no-head, lock-blocked. The last comes with
- * `blocked`, the entry at a lock's name that has to be removed by hand.
+ * tracked, no-map, outside, no-head, lock-blocked, state-blocked. The last
+ * two come with `blocked`, the directory holding entries that has to be removed
+ * by hand: at a lock's name, or at the state's, where a refresh that cannot
+ * record what it did does not run.
  *
  * A question git could not be asked before the stamp is read throws out of
  * here, with the lock let go, the pin and the map as they were and nothing
@@ -85,6 +87,10 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
   if (!facts) return { reason: "no-map", pinned: false };
   if (await mapTracked(root)) return { reason: "tracked", pinned: false };
   if (await gitBusy(root)) return { reason: "git-busy", pinned: false };
+
+  // Before the lock and the scan: a scan nothing could record ran again on every trigger.
+  const statePath = join(store, basename(REFRESH_STATE));
+  if (holdsEntries(statePath)) return { reason: "state-blocked", blocked: statePath, pinned: false };
 
   const lockPath = join(store, basename(REFRESH_LOCK));
   const again = join(store, AGAIN_FILE);
@@ -479,7 +485,14 @@ async function gitBusy(root) {
 
 function writeState(store, { stamp, ok, error, pinned = null, held = null, stopped = [], at = new Date().toISOString() }) {
   const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}), ...(stopped?.length > 0 ? { stopped } : {}) };
-  atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
+  const path = join(store, basename(REFRESH_STATE));
+  try {
+    // A rename replaces a file or a link at the name, never a directory. Refuses a link and a directory holding entries.
+    rmdirSync(path);
+  } catch {
+    // No directory there, or one holding entries, which the rename then names.
+  }
+  atomic(path, JSON.stringify(record, null, 2) + "\n");
 }
 
 const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.[key] ?? null) === (b?.[key] ?? null));
