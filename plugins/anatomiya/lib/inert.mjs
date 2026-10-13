@@ -8,6 +8,7 @@
  * Every answer is a list with one entry per line, true where the line asks
  * nothing; null says no rule reads the file, and it is not asked about.
  */
+import { LINE_READ } from "./limits.mjs";
 
 /**
  * How long the tree-sitter files of one stop may take, all of them together:
@@ -61,9 +62,6 @@ for (const [engine, rule] of Object.entries(INERT)) {
 
 // A name inside a braced import or re-export, or a blank line between them.
 const BLOCK_NAME = /^$|^(?:type\s+)?[\w$]+(?:\s+as\s+[\w$]+)?\s*,?$/;
-
-// Past this a line asks unread, which bounds what each search costs.
-const LINE_READ = 400;
 
 /**
  * A line with its strings, numbers and literal collections each read as one
