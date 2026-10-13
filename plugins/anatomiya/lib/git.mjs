@@ -547,14 +547,16 @@ function yesOrNo(r, question) {
   return r;
 }
 
+/** What a failed call said, on one line, less the header Node puts in front; empty where git ended without a word. */
+const saidOf = (r) => String(r.error ?? "").replace(/^Command failed:[^\n]*\n?/, "").split("\n").map((line) => line.trim()).filter(Boolean).join(" ");
+
 /**
  * Why a call failed, on one line: git's own text, or the signal and the clock
  * that ended it. Node heads its message with `Command failed: <argv>`, which
  * names no cause, and a printer that keeps one line of an error keeps that one.
  */
 export function failureOf(r) {
-  const said = String(r.error ?? "").replace(/^Command failed:[^\n]*\n?/, "").split("\n").map((line) => line.trim()).filter(Boolean).join(" ");
-  return (said || (r.code === null ? "git did not run" : `git exited ${r.code}`)).slice(0, STDERR_CAP);
+  return (saidOf(r) || (r.code === null ? "git did not run" : `git exited ${r.code}`)).slice(0, STDERR_CAP);
 }
 
 /**
@@ -887,7 +889,11 @@ export async function commitAt(root, ref, bounds = {}) {
   if (!safeRef(ref)) return null;
   const args = ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`];
   const ask = async () => {
-    const r = yesOrNo(await gitBuffered(root, args, bounds), `which commit ${ref} names`);
+    const asked = await gitBuffered(root, args, bounds);
+    // git refuses a reflog entry past the log's end with 128 and not a word, where a directory it
+    // cannot open says why: a name that is not there, as exit code 1 says of any other.
+    if (asked.code === 128 && saidOf(asked) === "") return null;
+    const r = yesOrNo(asked, `which commit ${ref} names`);
     const sha = r.ok ? r.stdout.trim() : "";
     return isSha(sha) ? sha : null;
   };
