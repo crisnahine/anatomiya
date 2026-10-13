@@ -1,5 +1,5 @@
 /**
- * The two history walks, fed from a store of per-commit records where one can
+ * The two history walks, fed from a history store of per-commit records where one can
  * be trusted and from `git log` where none can.
  *
  * Read whole, the authors walk is every commit, 63,000 on discourse, and the

@@ -134,7 +134,7 @@ export function changeReader(onChange, own = () => false) {
  * clock and field cap. `--no-renames` and `--name-status` read trees only, so a
  * blobless clone answers offline and a treeless one fails rather than fetching.
  * A git older than 2.31 refuses `--diff-merges`, which is an error and states nothing.
- * `history` is one scan's: with it the changes a store already holds are
+ * `history` is one scan's: with it the changes a history store already holds are
  * replayed and only the rest are asked of git (`history.mjs`).
  */
 export async function walkCochange(root, tip, { signal, history = null } = {}) {

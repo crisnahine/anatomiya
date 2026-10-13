@@ -51,7 +51,7 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * are the checker's, and none is kept from a run that measures the tier degraded.
  * A failed run's verdict is carried from its second failure under one stamp
  * (`standsIn`): handed the first, the checker runs and the scan records the count.
- * `history` is what the two history walks read their stores through and leave
+ * `history` is what the two history walks read their history stores through and leave
  * for `saveHistory` to write: a scan itself writes nothing.
  */
 export async function scan(cwd, options = {}) {
