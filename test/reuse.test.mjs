@@ -203,6 +203,38 @@ test("the parse budget starts at the first tree-sitter file and is shared by eve
   assert.equal(parsing.deadline, started, "a later file reads against the same deadline");
 });
 
+test("a hunk whose added lines reach past the end of what was read is asked about", async (t) => {
+  // The file shrank between the diff and the read: lines nobody read are no evidence that they define nothing.
+  const { dir, git, write } = repo(t);
+  write("src/b.ts", "export const b = 1;\n");
+  git("add", "-A");
+  git("commit", "-qm", "b");
+  write("src/b.ts", "export const b = 1;\n// one\n// two\n");
+  assert.equal(await pendingChange(dir), null, "read whole, two comments ask nothing");
+
+  const target = join(dir, "src/b.ts");
+  const opened = new Set();
+  const short = (keep) =>
+    stubbedAsync(
+      "openSync",
+      (real, path, ...rest) => {
+        const fd = real(path, ...rest);
+        if (path === target) opened.add(fd);
+        else opened.delete(fd);
+        return fd;
+      },
+      () =>
+        stubbedAsync(
+          "readSync",
+          (real, fd, buf, offset, length, position) => (opened.has(fd) ? (position >= keep ? 0 : real(fd, buf, offset, Math.min(length, keep - position), position)) : real(fd, buf, offset, length, position)),
+          () => pendingChange(dir)
+        )
+    );
+
+  assert.deepEqual(hunksOf(await short("export const b = 1;\n// one\n".length)), [["src/b.ts", [{ from: 2, to: 3, created: false }]]], "the last line was not read");
+  assert.deepEqual(hunksOf(await short("export const b = 1;\n".length)), [["src/b.ts", [{ from: 2, to: 3, created: false }]]], "neither line was read");
+});
+
 test("a change that adds no source line has nothing to check", async (t) => {
   // A markdown edit started a subagent search for nothing in the measured runs,
   // at $1.05 against $0.48, and a deletion adds no function to compare.

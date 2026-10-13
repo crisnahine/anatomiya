@@ -193,7 +193,9 @@ export async function pendingChange(root, { since = null, turnStart = null, call
     const inert = script === null ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline }) : script.inert;
     // A missing runtime or grammar reads nothing, and a file nothing read asks nothing, as before any rule.
     if (inert === null) continue;
-    const defining = hunks.filter((h) => !inert.slice(h.from - 1, h.to).every(Boolean));
+    // A line past the end of what was read is one nobody read, so its hunk asks.
+    const read = lineCount(entry.head);
+    const defining = hunks.filter((h) => h.to > read || !inert.slice(h.from - 1, h.to).every(Boolean));
     if (defining.length === 0) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
     const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);
