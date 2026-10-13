@@ -379,11 +379,12 @@ _Avoid_: block, freeze, lock
 
 **Could not be asked**:
 Said of a question put to git that git never answered: the call ended with no exit code, by a
-clock, a signal or a start that failed, or, where the answer is a yes or a no, with an exit code
-that is neither. It is no answer and is never read as a no. A scan, a pin and a check stop on one
-and print the question, and a refresh ends and asks again later. A git that ran and said no has
+clock, a signal or a start that failed, or, for whether a commit is there and which commit a ref
+names, with an exit code other than 0 and 1. It is no answer and is never read as a no. A scan, a
+pin and a check stop on one that would decide what is written and print the question, and a refresh
+ends and asks again later. A git that ran and said no has
 answered.
-_Avoid_: failed (alone: a git that ran and refused has answered), unread (for a git call: that is a grammar's file), unanswerable
+_Avoid_: failed (alone: a git that ran and refused has answered), unread (for a call that stops a command; a hold's reason and a history keep the word), unanswerable
 
 **Population**:
 One area's slice of the pin: the files it held at the pinned commit, followed through renames to the names

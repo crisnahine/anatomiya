@@ -13,7 +13,7 @@ place of `docs/adr/`.
   `docs/adr/`; every decision that would be an ADR elsewhere is a row here. Read the sections that touch
   the area you are about to work in.
 - **`docs/decisions/<id>.md`**, one file per row, holding the row's full text. Open the files of the
-  rows your work touches. Do not read the directory whole: it is about 720 KB.
+  rows your work touches. Do not read the directory whole: it is about 800 KB.
 - **`docs/how-it-works.md`**, the mechanical walkthrough of the pipeline. Useful when a decision row's
   `Why` assumes you know the stage it names.
 

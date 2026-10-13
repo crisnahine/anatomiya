@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { indexRows, readRowFile, rebuild, shortStatus } from "../scripts/decisions.mjs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { DECISIONS_DIR, indexRows, readRowFile, rebuild, rowFiles, shortStatus } from "../scripts/decisions.mjs";
 
 const B2 = [
   "# B2",
@@ -133,6 +137,23 @@ test("an index row reads to its id, the section it sits under, its decision as w
   ];
   assert.deepEqual(indexRows(INDEX), read);
   assert.deepEqual(indexRows(INDEX.replaceAll("\n", "\r\n")), read, "and a CRLF checkout reads the same");
+});
+
+test("a section heading is read without the spaces that trail it", () => {
+  assert.equal(indexRows(INDEX.replace("## B. Engine", "## B. Engine "))[0].section, "B. Engine");
+});
+
+test("an index row whose link is labelled as another row names no file", () => {
+  assert.equal(indexRows(INDEX.replace("[B1](docs/decisions/B1.md)", "[B7](docs/decisions/B1.md)"))[0].file, null);
+});
+
+test("only a regular file under the row directory is a row file", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "anatomiya-rows-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, DECISIONS_DIR, "B1.md"), { recursive: true });
+  writeFileSync(join(root, DECISIONS_DIR, "B2.md"), B2);
+
+  assert.deepEqual([...rowFiles(root).keys()], ["B2"]);
 });
 
 test("an index row whose last cell is no link names no file, and one split by a bare pipe counts the cells it has", () => {

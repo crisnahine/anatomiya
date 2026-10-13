@@ -543,10 +543,11 @@ also be slow on input built for it: a 195 KB Kotlin file of 4,000 `<` comparison
 
 One place parses a grammar outside that pool: the end-of-turn reuse check reads a changed file of
 those seven languages in the hook's own process (B73). It reads only a file under the same 1 MB
-cap, and the tree-sitter files of one stop share one second: every parse, asked through the
-runtime's progress callback while it runs, and every walk of a parsed tree, which reads the clock
-once in 4,096 nodes it counts. A parse or a walk that runs past the second ends, and its file is
-asked about whole. A load of the runtime or of a grammar counts against the second and cannot be
+cap, and every file a rule reads in one stop shares one second: the line rules over JavaScript,
+Ruby and component script blocks, which read the clock once in 64 lines, every parse, asked through
+the runtime's progress callback while it runs, and every walk of a parsed tree, which reads the
+clock once in 4,096 nodes it counts. A read, a parse or a walk that runs past the second ends, and
+its file is asked about whole. A load of the runtime or of a grammar counts against the second and cannot be
 stopped part way. Each tree is freed before the answer, a parse or a walk that throws is caught and
 its file asked about whole, and anything past that reaches the hook's own boundary, which answers
 `{}`. A 32 KB Python file of 8,000 chained assignments took 72.9 s to walk before the walk had a
@@ -571,9 +572,10 @@ worker's word to the lock's holder to run once more; and, while it breaks a lock
 gone, a lock token, `refresh.lock.<16 hex>`, or that name and `.<digits>`. A lock token is empty, made with an exclusive create that refuses any entry already at
 the name, a link included, and removed by the worker that made it; one a killed worker left is
 removed by the next worker to take the lock, or by a scan. A worker also removes an empty directory
-at `refresh.lock`, which a repository can ship, with `rmdir`: no link is followed and nothing that
-holds an entry is removed. A directory holding entries there is left whole, no refresh runs in that
-checkout while it stays, and a scan's summary says so.
+at `refresh.lock`, at a lock token's name or at `refresh.json`, which a repository can ship, with
+`rmdir`: no link is followed and nothing that holds an entry is removed. A directory holding entries
+at any of them is left whole and stops the worker before it takes the lock or scans, no refresh runs
+in that checkout while it stays, and a scan's summary names each one.
 
 `npm` runs from `anatomiya setup` and from nothing else. `scan`, `check` and `pin` never call it,
 which is the whole reason the install is a command of its own rather than something a scan does on

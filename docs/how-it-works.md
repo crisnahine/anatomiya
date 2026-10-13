@@ -1166,15 +1166,16 @@ name on their line. Three more ask because they hold what the tree does not show
 row of a string spread over lines that is not bound to a name, a Go comment directly above
 `import "C"`, which cgo compiles, and PHP markup that holds a `<script`.
 
-The tree-sitter files of one stop share one second, started at the first such file and shared by
-every checkout the stop reads: the first load of the runtime and of each grammar, every parse and
-every walk of a parsed tree. A file reached after it, one whose parse or walk runs past it, one the
-grammar rejects and one the runtime fails on are asked about whole. A load cannot be stopped part
-way, so it alone can outlast the second (B73). A file whose grammar or runtime is missing is not
-asked about. Over the last 200 commits of 21 repositories of the seven languages the slowest file's
-parse and walk took 179 ms on a quiet machine and 619 ms at a load average above 70; the three
-largest files per language of the language corpus, the largest 451 KiB, took 59 to 1,556 ms at the
-median at a load average of 35 to 38, so on a machine that loaded the largest files ask unread.
+Every file a rule reads in one stop shares one second, started at the first such file and shared by
+every checkout the stop reads: the line rules over JavaScript, Ruby and component script blocks,
+and for the tree-sitter files the first load of the runtime and of each grammar, every parse and
+every walk of a parsed tree. A file reached after it, one whose read, parse or walk runs past it,
+one the grammar rejects and one the runtime fails on are asked about whole. A load cannot be stopped
+part way, so it alone can outlast the second (B73). A file whose grammar or runtime is missing is not
+asked about. One run stands behind the second: parse plus walk of the three largest files of each
+of the seven languages in the 25 repositories of the language corpus, 21 files of 68 to 451 KiB,
+each read once to warm and then timed five times, took 34 to 875 ms at the median and 1,018 ms at
+most at a load average of 34 to 35, so at that load the largest file asks whole in one read of five.
 Over those commits the rule asks about 26,545 of 34,075 added hunks and leaves out 7,530, and an oracle written apart from the rule, which re-parses every file holding a left-out
 hunk, named nothing callable, built or computed in any of them (`scripts/measure-inert.mjs`, B75).
 What that costs is false asks, one search each: 21 hunks ask only because of a write through an
@@ -1760,9 +1761,9 @@ written, the remedy being
 what the text line tells a person to do, and `unwritable` where its directory could not be written.
 `stagedRemoved` counts the temporary files an earlier run left in `.claude/rules` that this one
 removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. `stagedLeft` and
-`storeStagedLeft` count the ones it could not remove. Each is absent at none. `lockBlocked` holds
-`.claude/anatomiya/refresh.lock` where a directory holding entries is at that name, and is absent
-otherwise.
+`storeStagedLeft` count the ones it could not remove. Each is absent at none. `refreshBlocked` lists
+the names in `.claude/anatomiya` that stop every refresh, each a directory holding entries: the
+lock's, a lock token's, the state's. It is absent where there is none.
 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
@@ -1839,10 +1840,13 @@ leaves a dead lock no worker breaks, every refresh of that checkout then leaves 
 scans nothing, and the map there stays as it was until a scan run by hand sweeps the token's own token
 (A118). Neither `doctor`, the summary nor the delivered map says the refresh is stuck meanwhile. An
 entry at the lock's name that is no lock is told apart: the worker removes an empty directory there
-and takes the lock, and a directory holding entries, which it never empties, ends it with the reason
-`lock-blocked`. Nobody reads a worker's reason, so a scan run by hand says it in its summary:
-`".claude/anatomiya/refresh.lock" is a directory holding entries, so the map is not refreshed in the
-background in this checkout while it stays: remove it`. It stamps what a scan depends on (HEAD, the index as
+and takes the lock. A directory holding entries at the lock's name, at a lock token's or at the
+state's, `refresh.json`, is never emptied and stops every refresh in the checkout: the worker asks
+`refreshBlockers` before it takes the lock or scans, and ends with the reason `lock-blocked`, or
+`state-blocked` for the state's, and the path. Nobody reads a worker's reason, so a scan run by hand
+says it in its summary, one line per name:
+`".claude/anatomiya/refresh.lock" is a directory holding entries, so no refresh of the map can run
+in this checkout while it stays: remove it to clear this`. It stamps what a scan depends on (HEAD, the index as
 `ls-files -s`, the pin's bytes, the plugin version, whether the repository holds packages and where
 `typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
 map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
