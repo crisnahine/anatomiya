@@ -103,7 +103,7 @@ const NAMING =
   /(?:^|_)(?:identifier|name|type|modifiers?|specifier|lifetime|dimensions|wildcard|scope|pattern)$|^(?:type_arguments|type_argument_list|type_parameter|type_projection|type_elem|variable_declaration|multi_variable_declaration|crate|self|super)$/;
 
 // How the seven grammars spell a string and the parts of one. A string spread over lines is on every
-// row it reaches, a row of its text that holds no token included.
+// row it reaches but a blank one, a row of its text that holds no token included.
 const STRINGISH = /string|heredoc|nowdoc/;
 
 // Code in another language: the comment cgo compiles, which stands directly above an import of "C"
@@ -189,9 +189,11 @@ export function oracleHits(tree, lang, added) {
   const opening = new Set();
   for (const todo = [[tree.rootNode, false]]; todo.length > 0; ) {
     const [node, inside] = todo.pop();
-    if (STRINGISH.test(node.type)) {
+    if (STRINGISH.test(node.type) && node.endPosition.row > node.startPosition.row) {
+      const text = node.text.split("\n");
       for (let row = node.startPosition.row + 1; row <= node.endPosition.row; row++) {
-        if (!onAddedRow(row)) continue;
+        // A blank line holds nothing, inside a string as outside one.
+        if (!onAddedRow(row) || text[row - node.startPosition.row].trim() === "") continue;
         opening.add(row);
         tokens.push([node, row]);
       }

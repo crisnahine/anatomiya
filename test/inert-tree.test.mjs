@@ -499,6 +499,8 @@ test("a string spread over lines asks on every row where it is an argument, what
   assert.deepEqual(await asking("python", 'foo("""\nline\nplain text line\nexec_me()\n""")\n'), [1, 2, 3, 4, 5]);
   assert.deepEqual(await asking("python", 'X = """\nline \\n\nplain\n"""\n'), []);
   assert.deepEqual(await asking("go", "package m\n\nvar x = run(`\na\nb\n`)\nconst B = `\na\nb\n`\n"), [3, 4, 5, 6]);
+  // A blank line asks nothing wherever it stands, inside a string too.
+  assert.deepEqual(await asking("go", "package m\n\nvar x = run(`\na\n\n\t\nb\n`)\n"), [3, 4, 7, 8]);
   // The line that closes a call is a closing bracket alone.
   assert.deepEqual(await asking("php", "<?php\nrun(<<<T\na\\n\nb\nT\n);\nrun(<<<'T'\na\nb\nT\n);\nconst A = <<<'T'\na\nb\nT;\n"), [2, 3, 4, 5, 7, 8, 9, 10]);
   assert.deepEqual(await asking("java", 'class A {\n    Object x = run("""\n        a\\n\n        b\n        """);\n    String y = """\n        a\\n\n        b\n        """;\n}\n'), [1, 2, 3, 4, 5]);
