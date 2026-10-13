@@ -247,3 +247,11 @@ test("a line comment that holds the end of a block comment asks", async () => {
   assert.deepEqual(await asking("js", "foo(); /* a\n// b */ function f() {}\n// plain\n"), [1, 2]);
   assert.deepEqual(await asking("js", "foo(); /* a\nconst B = 1; // b */ function f() {}\nconst C = 1; // plain\n"), [1, 2]);
 });
+
+test("a Ruby comment line that holds an interpolation asks, since a literal spread over lines may hold it", async () => {
+  // Inside a heredoc, an extended regex and a percent list the line is no comment and the interpolation runs.
+  assert.deepEqual(await asking("ruby", "# note\nA = <<~SQL\n#{run}\n# text #{run}\nSQL\n# after\n"), [2, 3, 4, 5]);
+  assert.deepEqual(await asking("ruby", "# note\nH = /a\n#{run}\n# text #{run}\n# plain\nb/x\n"), [2, 3, 4, 6]);
+  assert.deepEqual(await asking("ruby", "# note\nW = %W[\n#{run}\n# text #{run}\nplain\n]\n# after\n"), [2, 3, 4, 5]);
+  assert.deepEqual(await asking("ruby", "A = 1 # the #{name} form\nB = 2 # plain\n"), [1]);
+});

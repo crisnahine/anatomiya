@@ -73,7 +73,11 @@ function reduce(engine, line) {
   let out = "";
   for (let i = 0; i < line.length; ) {
     const c = line[i];
-    if (engine === "prism" && c === "#") break;
+    if (engine === "prism" && c === "#") {
+      // Inside a regex or a percent literal spread over lines it is no comment, and an interpolation runs.
+      if (line.includes("#{", i)) return { code: null, open: null };
+      break;
+    }
     if (engine === "oxc" && c === "/" && line[i + 1] === "/") {
       // A block comment this did not see open may end in it, with code after the end.
       if (line.includes("*/", i)) return { code: null, open: null };
