@@ -128,6 +128,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // And the ones that would not go: a file somebody holds, or made read-only.
     ...(plan.stagedLeft?.length ? { stagedLeft: plan.stagedLeft.length } : {}),
     ...(plan.storeStagedLeft?.length ? { storeStagedLeft: plan.storeStagedLeft.length } : {}),
+    ...(plan.lockBlocked ? { lockBlocked: plan.lockBlocked } : {}),
     ...(plan.oversized?.length ? { oversized: plan.oversized } : {}),
     wrote: plan.write.length,
     // A language read no file of is one of two facts, told apart by whether
@@ -321,6 +322,8 @@ export function scanLines(s) {
   for (const [n, dir] of [[s.stagedLeft, RULES_DIR], [s.storeStagedLeft, STORE_DIR]]) {
     if (n) lines.push(`${plural(n, "temporary file")} an earlier run left in ${dir} could not be removed, so ${n === 1 ? "it was left as it is" : "they were left as they are"}`);
   }
+  // The same in a dry run: the scan leaves it either way.
+  if (s.lockBlocked) lines.push(`${encodePath(s.lockBlocked)} is a directory holding entries, so the map is not refreshed in the background in this checkout while it stays: remove it`);
   for (const record of s.oversized ?? []) lines.push(oversizedSentence(record, s.dryRun));
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.
