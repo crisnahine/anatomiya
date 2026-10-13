@@ -187,18 +187,34 @@ test("a tree-sitter file whose grammar will not load asks nothing", async (t) =>
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/Total.kt", [{ from: 1, to: 3, created: true }]]], "with the grammar there, the file asks");
 });
 
-test("the parse budget starts at the first tree-sitter file and is shared by every checkout of the stop", async (t) => {
+test("a JavaScript, Ruby or component file reached after the stop's budget is asked about whole", async (t) => {
   const { dir, write } = repo(t);
-  write("src/b.ts", NEW_B);
+  write("src/note.ts", "// A note.\n");
+  write("lib/note.rb", "# A note.\n");
+  write("src/Note.vue", "<template>\n  <p />\n</template>\n<script>\n// A note.\n</script>\n");
+
+  assert.equal(await pendingChange(dir), null, "read in time, a comment asks nothing");
+  assert.deepEqual(hunksOf(await pendingChange(dir, { parsing: { deadline: -Infinity } })), [
+    ["lib/note.rb", [{ from: 1, to: 1, created: true }]],
+    ["src/Note.vue", [{ from: 5, to: 5, created: true }]],
+    ["src/note.ts", [{ from: 1, to: 1, created: true }]],
+  ]);
+});
+
+test("the budget starts at the first file a rule reads and is shared by every checkout of the stop", async (t) => {
+  const { dir, write } = repo(t);
+  write("db/migrate/20260101000000_add_notes.rb", "class AddNotes < ActiveRecord::Migration[7.1]\nend\n");
+  write("notes.txt", "A note.\n");
   const parsing = { deadline: null };
   await pendingChange(dir, { parsing });
-  assert.equal(parsing.deadline, null, "a stop with no tree-sitter file starts no clock");
+  assert.equal(parsing.deadline, null, "a stop with no file a rule reads starts no clock");
 
-  write("svc/note.py", "# A note.\n");
+  write("src/b.ts", NEW_B);
   const before = performance.now();
   await pendingChange(dir, { parsing });
   assert.ok(parsing.deadline >= before + REUSE_PARSE_MS && parsing.deadline <= performance.now() + REUSE_PARSE_MS, String(parsing.deadline));
   const started = parsing.deadline;
+  write("svc/note.py", "# A note.\n");
   await pendingChange(dir, { parsing });
   assert.equal(parsing.deadline, started, "a later file reads against the same deadline");
 });
@@ -1299,7 +1315,7 @@ test("the hook is silent wherever it has nothing to ask", async (t) => {
 
 test("the git reads fit inside the time the hook asks Claude Code for", () => {
   // A hook killed at its timeout answers nothing at all. The payload wait, both
-  // git reads and the stop's tree-sitter parses have to end first, with a
+  // git reads and the stop's reading of its files have to end first, with a
   // second to spare for the rest.
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks.Stop[0].hooks[0].timeout;
 

@@ -11,16 +11,21 @@
 import { LINE_READ } from "./limits.mjs";
 
 /**
- * How long the tree-sitter files of one stop may take, all of them together:
- * the first load of the runtime and of each grammar, every parse and every
- * walk of a parsed tree. A file that does not fit asks about every line.
+ * How long reading the changed files of one stop may take, all of them
+ * together: the line rules over its JavaScript and Ruby files, and for its
+ * tree-sitter files the first load of the runtime and of each grammar, every
+ * parse and every walk of a parsed tree. A file that does not fit asks about
+ * every line.
  *
- * The largest file of the 25 repositories of the language corpus is 451 KiB.
- * Parse plus walk of the three largest files per language took 39 to 628 ms at
- * the median and 790 ms at most at a load average of 27 to 34, and 61 to
- * 1,196 ms at the median and 1,783 ms at most at 38 to 44. Over 200 commits of
- * 21 repositories the slowest file took 179 ms on a quiet machine and 619 ms
- * at a load average above 70.
+ * A line rule costs microseconds a line, so it meets the deadline only on a
+ * file built to be slow.
+ *
+ * One run stands behind the number: parse plus walk of the three largest
+ * files of each of the seven tree-sitter languages in the 25 repositories of
+ * the language corpus, 21 files of 68 to 451 KiB, each read once to warm and
+ * then timed five times. They took 34 to 875 ms at the median and 1,018 ms at
+ * most, at a load average of 34 to 35: at that load the largest file ran out
+ * the budget in one read of five, and asks whole when it does.
  */
 export const REUSE_PARSE_MS = 1000;
 
@@ -59,6 +64,9 @@ for (const [engine, rule] of Object.entries(INERT)) {
   rule.collection = new RegExp(String.raw`\[${list}\]|\{${list}\}`, "g");
   rule.member = new RegExp(String.raw`^(?:[\]}]+\s*,\s*)?(?:${KEY[engine]})?(?:\0|[[{])\s*,?$`);
 }
+
+// A line rule reads the clock once in this many lines: a line costs microseconds.
+const CLOCK_LINES = 64;
 
 // A name inside a braced import or re-export, or a blank line between them.
 const BLOCK_NAME = /^$|^(?:type\s+)?[\w$]+(?:\s+as\s+[\w$]+)?\s*,?$/;
@@ -118,13 +126,23 @@ function reduce(engine, line) {
   return { code, open: null };
 }
 
-/** Which of a file's lines provably define nothing callable, blank ones included. */
-function inertLines(engine, lines) {
+/**
+ * Which of a file's lines provably define nothing callable, blank ones
+ * included. A file not read by `deadline` asks about every other line.
+ */
+function inertLines(engine, lines, deadline) {
   const rule = INERT[engine];
-  const inert = lines.map((line) => line.trim() === "");
+  const unread = () => lines.map((line) => line.trim() === "");
+  const inert = unread();
   let open = null;
   let depth = 0;
+  let due = 0;
   for (let i = 0; i < lines.length; i++) {
+    // By line number and not by count, since a braced import moves `i` on by its length.
+    if (i >= due) {
+      if (performance.now() > deadline) return unread();
+      due = i + CLOCK_LINES;
+    }
     const line = lines[i];
     if (open !== null) {
       // Inside a comment is inert; inside a string or a heredoc is not a literal this reads.
@@ -187,7 +205,7 @@ function inertLines(engine, lines) {
   return inert;
 }
 
-const byLine = ({ engine, source }) => inertLines(engine, source.split("\n"));
+const byLine = ({ engine, source, deadline }) => inertLines(engine, source.split("\n"), deadline);
 
 async function byTree({ lang, source, deadline, grammars }) {
   const { treeInertLines } = await import("./inert-tree.mjs");
@@ -202,8 +220,8 @@ export const INERT_ENGINES = Object.keys(READERS);
 /**
  * The lines of one file that define nothing callable, or null where no rule
  * reads it. `deadline` is the moment on `performance.now()`'s clock past
- * which a parse or a walk stops and its file asks; `grammars` is a test
- * override.
+ * which a line rule, a parse or a walk stops and its file asks; `grammars` is
+ * a test override.
  */
 export async function inertLinesOf(file) {
   return Object.hasOwn(READERS, file.engine) ? READERS[file.engine](file) : null;
