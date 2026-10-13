@@ -21,7 +21,7 @@ import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
 import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
-import { needsFoldingFilesystem, needsSymlinks } from "./platform.mjs";
+import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
 const needsTs = { skip: (await loadTypeScript()) ? false : "typescript is not installed" };
@@ -439,6 +439,43 @@ test("a directory holding a file at the refresh lock's name is named by the refr
     assert.equal(readFileSync(join(lock, "kept"), "utf8"), "theirs");
     assert.deepEqual(readdirSync(store).sort(), before, "no lock token and no word for a holder left");
   }
+});
+
+test("an entry at the refresh lock's name that only the take finds it cannot remove ends the worker, and nothing is scanned without the lock", needsPosixSpecialFiles, async (t) => {
+  // A fifo is no directory holding entries, so nothing names it before the take.
+  const dir = await scanned(t);
+  const store = join(dir, ".claude", "anatomiya");
+  const lock = join(store, "refresh.lock");
+  execFileSync("mkfifo", [lock]);
+  const real = fs.unlinkSync;
+  fs.unlinkSync = (p) => {
+    if (String(p) === lock) throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${p}'`), { code: "EPERM" });
+    return real(p);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.unlinkSync = real;
+    syncBuiltinESMExports();
+  });
+  const held = () => [readdirSync(store).sort(), readFileSync(join(store, "facts.json"), "utf8"), readFileSync(join(dir, OVERVIEW), "utf8")];
+  const before = held();
+  let scans = 0;
+  let pins = 0;
+  const scan = async (root) => {
+    scans++;
+    return runScan(root);
+  };
+  const pin = async (root, options) => {
+    pins++;
+    return runPin(root, options);
+  };
+
+  for (let run = 0; run < 2; run++) {
+    assert.deepEqual(await refreshRepository(dir, { scan, pin }), { reason: "lock-blocked", blocked: lock, pinned: false }, `run ${run}`);
+    assert.deepEqual(held(), before, "no lock token, no state and no word for a holder left, and the map as it was");
+  }
+  assert.equal(scans, 0);
+  assert.equal(pins, 0);
 });
 
 test("a directory that takes the refresh lock's name during a scan ends the worker, and nothing is scanned without the lock", async (t) => {
