@@ -22,7 +22,7 @@ const STORE = ".claude/anatomiya";
 
 function workspace(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-write-"));
-  t?.after(() => rmSync(dir, { recursive: true, force: true }));
+  t?.after(() => removeTree(dir));
   return dir;
 }
 

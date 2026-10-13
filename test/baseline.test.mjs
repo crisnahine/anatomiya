@@ -1179,7 +1179,7 @@ test("a linked worktree with no pin of its own reads its main checkout's, and it
   const main = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
   writePin(dir, main);
   const wt = join(mkdtempSync(join(tmpdir(), "anatomiya-baseline-wt-")), "wt");
-  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(wt, "..")));
   execFileSync("git", ["worktree", "add", "-q", wt], { cwd: dir, stdio: "pipe" });
 
   assert.deepEqual(loadPin(wt), main, "borrowed from the main checkout");

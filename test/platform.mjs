@@ -122,7 +122,7 @@ export const needsUnreadableDirs = WINDOWS
  * process has gone, and a git a test's reader ended can still be going when the
  * cleanup runs: `EBUSY` from Node 22, `EPERM` from Node 24. The wait is the
  * loop's own and not `rmSync`'s, which holds the loop while it retries. A
- * directory still held after a hundred tries, ten seconds at the wait a test
+ * directory still held after a hundred waits, ten seconds at the wait a test
  * takes, is a child that never left, and that fails the test.
  */
 export async function removeTree(dir, wait = 100) {

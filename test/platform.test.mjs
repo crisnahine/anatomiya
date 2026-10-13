@@ -108,7 +108,7 @@ test("a directory a leaving process still holds is asked for again, and any othe
   assert.deepEqual(asked.slice(3), ["denied"]);
 });
 
-test("a directory still held after a hundred tries fails the cleanup", async (t) => {
+test("a directory still held after a hundred waits fails the cleanup", async (t) => {
   const asked = refusing(t, () => "EBUSY");
 
   await assert.rejects(removeTree("held", 1), { code: "EBUSY" });

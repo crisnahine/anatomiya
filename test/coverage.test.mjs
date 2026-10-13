@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -233,7 +233,7 @@ test("a run writes the summary where it was asked to, shortfalls and all", (t) =
   // The job prints this file and nothing else, so a shortfall that only ever
   // reached stderr was invisible to the reader it was written for.
   const at = join(mkdtempSync(join(tmpdir(), "anatomiya-coverage-said-")), "cov.txt");
-  t.after(() => rmSync(join(at, ".."), { recursive: true, force: true }));
+  t.after(() => removeTree(join(at, "..")));
   const loads = new URL("../scripts/entry.mjs", import.meta.url).href;
   const { status } = measured(t, `import { test } from "node:test";\nimport ${JSON.stringify(loads)};\ntest("t", () => {});\n`, [
     SUMMARY_FLAG,
