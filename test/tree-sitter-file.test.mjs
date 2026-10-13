@@ -88,6 +88,26 @@ for (const decl of HOSTED) {
   });
 }
 
+test("grammars asked for at once from a cold runtime all load: a stop that reads two checkouts starts them together", () => {
+  // In a process of its own, since the runtime loads once per process and this one's is warm.
+  const script = `
+    const { parserFor, GRAMMARS } = await import(${JSON.stringify(pathToFileURL(RUNTIME).href)});
+    const { grammarFor } = await import(${JSON.stringify(pathToFileURL(join(ANATOMIYA, "lib", "langs.mjs")).href)});
+    const asks = [["python", "a.py", "x = 1\\n"], ["go", "a.go", "package a\\n"], ["python", "b.py", "y = 2\\n"]];
+    const out = await Promise.allSettled(asks.map(async ([lang, rel, source]) => {
+      const parser = await parserFor(grammarFor(lang, rel), GRAMMARS, lang);
+      const tree = parser.parse(source);
+      const read = tree.rootNode.hasError ? "rejected" : "parsed";
+      tree.delete();
+      return lang + " " + read;
+    }));
+    console.log(JSON.stringify(out.map((o) => (o.status === "fulfilled" ? o.value : "threw " + o.reason?.message))));
+  `;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60_000 });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout), ["python parsed", "go parsed", "python parsed"]);
+});
+
 test("a broken file counts every ERROR and MISSING node it holds", async () => {
   const two = await parseTreeFile("class A { int x = 1 }\nclass B { int y = 2 }\n", "src/A.java", "java");
   assert.equal(two.errors, 2);
