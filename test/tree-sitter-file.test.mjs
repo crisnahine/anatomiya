@@ -700,7 +700,7 @@ test("a tree too deep for the channel is answered as a crash, as the JavaScript 
   }
 });
 
-// About 160 s on a loaded laptop. Bounded well inside the CI job's own 30 minutes, so a slow runner
+// About 160 s on a loaded laptop. Bounded well inside the CI job's own 45 minutes, so a slow runner
 // reports this test and not a cancelled job.
 //
 // Not under the coverage collector: it keeps its records on the heaps this reads, and the child it
