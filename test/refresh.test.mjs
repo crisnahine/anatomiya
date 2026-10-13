@@ -323,6 +323,55 @@ test("a refresh already running is not started twice", async (t) => {
   assert.equal((await refreshRepository(dir)).reason, "busy");
 });
 
+test("an empty directory at the refresh lock's name is removed, and that refresh takes the lock", async (t) => {
+  const dir = await scanned(t);
+  const lock = join(dir, ".claude", "anatomiya", "refresh.lock");
+  mkdirSync(lock);
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+  assert.equal(existsSync(lock), false, "taken, and given back");
+});
+
+test("a directory holding a file at the refresh lock's name is named by the refresh and left whole", async (t) => {
+  // Answered as busy, nothing said which entry a person has to remove, and every refresh after answered the same.
+  const dir = await scanned(t);
+  const store = join(dir, ".claude", "anatomiya");
+  const lock = join(store, "refresh.lock");
+  mkdirSync(lock);
+  writeFileSync(join(lock, "kept"), "theirs");
+  const before = readdirSync(store).sort();
+
+  for (let run = 0; run < 2; run++) {
+    assert.deepEqual(await refreshRepository(dir), { reason: "lock-blocked", blocked: lock, pinned: false }, `run ${run}`);
+    assert.equal(readFileSync(join(lock, "kept"), "utf8"), "theirs");
+    assert.deepEqual(readdirSync(store).sort(), before, "no lock token and no word for a holder left");
+  }
+});
+
+test("a directory that takes the refresh lock's name during a scan ends the worker, and nothing is scanned without the lock", async (t) => {
+  const dir = await scanned(t);
+  const store = join(dir, ".claude", "anatomiya");
+  const lock = join(store, "refresh.lock");
+  let scans = 0;
+  const scan = async (root, opts) => {
+    scans++;
+    await runScan(root, opts);
+    // HEAD moves under every pass the worker has, so a round after them has a scan to run.
+    source(dir, `lib/m${scans}`, 8);
+    commit(dir, `move ${scans}`);
+    if (scans !== 3) return;
+    // A worker turned away leaves its word, and the name is a directory by the time the holder reads it.
+    writeFileSync(join(store, "refresh.again"), "");
+    rmSync(lock);
+    mkdirSync(lock);
+    writeFileSync(join(lock, "kept"), "theirs");
+  };
+
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+  assert.equal(scans, 3);
+  assert.equal(readFileSync(join(lock, "kept"), "utf8"), "theirs");
+});
+
 test("a lock left behind by a process that is gone is taken over", async (t) => {
   const dir = await scanned(t);
   writeFileSync(join(dir, ".claude", "anatomiya", "refresh.lock"), JSON.stringify({ pid: 2 ** 22 + 7, at: Date.now() }));

@@ -492,6 +492,46 @@ test("a dead lock the system will not remove answers as the transcript alone doe
   assert.deepEqual(readdirSync(join(data, "echo")), [name]);
 });
 
+test("an empty directory a minute old at the lock's name is removed, and the call takes the lock", (t) => {
+  const data = dataDir(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => lockEnds(() => due(path, data));
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const claim = join(data, "echo", name);
+  const lock = `${claim}.lock`;
+  writeFileSync(claim, "0\n");
+  mkdirSync(lock);
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  assert.equal(call(), true);
+  assert.deepEqual(readdirSync(join(data, "echo")), [name], "the directory and its lock token both gone");
+  assert.notEqual(readFileSync(claim, "utf8"), "0\n", "and the batch claim written under the lock");
+});
+
+test("a directory holding a file at the lock's name is left whole, and each call answers as the transcript alone does", (t) => {
+  const data = dataDir(t);
+  const path = transcript(t, [filler(300 * 1024)]);
+  const call = () => due(path, data);
+  call();
+  const [name] = readdirSync(join(data, "echo"));
+  const claim = join(data, "echo", name);
+  const lock = `${claim}.lock`;
+  writeFileSync(claim, "0\n");
+  mkdirSync(lock);
+  writeFileSync(join(lock, "kept"), "theirs");
+  const dead = new Date(Date.now() - 60_000);
+  utimesSync(lock, dead, dead);
+
+  for (let n = 0; n < 2; n++) {
+    assert.equal(call(), true, `call ${n}`);
+    assert.equal(readFileSync(join(lock, "kept"), "utf8"), "theirs");
+    assert.deepEqual(readdirSync(join(data, "echo")).sort(), [name, `${name}.lock`], "and no lock token");
+    assert.equal(readFileSync(claim, "utf8"), "0\n", "no batch claim written by a call that answered alone");
+  }
+});
+
 test("a lock create refused for any reason but a deletion is not tried again", (t) => {
   const data = dataDir(t);
   const path = transcript(t, [filler(300 * 1024)]);

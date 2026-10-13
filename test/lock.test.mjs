@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs, { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -165,4 +165,34 @@ test("a token left by a breaker that died is removed, and the live generation's 
   removeLeftTokens(lock, "aaaaaaaaaaaaaaaa");
 
   assert.deepEqual(readdirSync(dir).sort(), keep.sort());
+});
+
+// Each judge over an entry it reads as dead: the refresh worker's by what the entry holds, the echo's by its age.
+const DEAD_JUDGES = { "the worker's": ownerAge({ staleMs: 30 * 60 * 1000 }), "the echo's": mtimeAge({ heldMostMs: 5000, slackMs: 2000, now: () => Date.now() + 60_000 }) };
+
+test("an empty directory at a lock's name is removed, and the lock is taken on that call", (t) => {
+  for (const [whose, judge] of Object.entries(DEAD_JUDGES)) {
+    const dir = workspace(t);
+    const lock = join(dir, "lock");
+    mkdirSync(lock);
+
+    assert.equal(takeDeadLock(lock, judge, "mine"), true, whose);
+    assert.equal(readFileSync(lock, "utf8"), "mine", whose);
+    assert.deepEqual(readdirSync(dir), ["lock"], `${whose}: and its lock token is gone`);
+  }
+});
+
+test("a directory holding entries at a lock's name is left whole, and the refusal names it", (t) => {
+  for (const [whose, judge] of Object.entries(DEAD_JUDGES)) {
+    const dir = workspace(t);
+    const lock = join(dir, "lock");
+    mkdirSync(join(lock, "kept"), { recursive: true });
+    writeFileSync(join(lock, "kept", "file"), "theirs");
+
+    for (let call = 0; call < 2; call++) {
+      assert.throws(() => takeDeadLock(lock, judge, "mine"), (err) => err.blocked === lock, `${whose}, call ${call}`);
+      assert.equal(readFileSync(join(lock, "kept", "file"), "utf8"), "theirs", whose);
+      assert.deepEqual(readdirSync(dir), ["lock"], `${whose}: and no lock token is left`);
+    }
+  }
 });
