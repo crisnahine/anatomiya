@@ -1362,6 +1362,17 @@ test("a check stops where git could not be asked for the merge base, and keeps i
   assert.ok(report.caveats.some((c) => c.message === "no merge base between main and HEAD"), JSON.stringify(report.caveats));
 });
 
+test("a check stops where git could not be asked whether a base that looks like a commit id names a ref", needsGitStub, async (t) => {
+  // Unasked read as "names no ref", so HEAD's own id, or a branch named in hex at HEAD, passed as a commit id.
+  const dir = repo(t);
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
+  writeFileSync(join(dir, "src", "f0.ts"), "export const edited = 1\n");
+  assert.equal((await runCheck(dir, { baseRef: head })).report.base.sha, head, "a commit id at HEAD is a base for uncommitted work");
+
+  gitAhead(t, unasked("*' rev-parse --symbolic-full-name '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: head }), new RegExp(`^Error: git could not be asked which ref ${head} names: git was ended by SIGTERM`));
+});
+
 test("a pin stops where git could not be asked for HEAD, before the list is read or after it", needsGitStub, async (t) => {
   const dir = repo(t);
   const head = "*' rev-parse --verify --quiet HEAD^{commit} '*";
