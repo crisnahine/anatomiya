@@ -130,6 +130,28 @@ test("a replay equals the full walk", async (t) => {
   assert.equal(readFileSync(storeOf(dir, "authors")).length > 0, true);
 });
 
+test("a store that lacks more than half the history is passed over for the plain walk, which streams what a replay would hold", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("a.txt");
+    commit("one");
+    write("b.txt");
+    commit("two");
+  });
+  assert.deepEqual((await authorsWith(dir)).said, { stored: 0, walked: 2, wrote: true });
+  const { write, commit } = tools(dir);
+  for (const n of [3, 4, 5]) {
+    write(`f${n}.txt`);
+    commit(`c${n}`);
+  }
+  const after = await authorsWith(dir);
+  assert.deepEqual(flat(after.map), flat(await authorsByFile(dir)));
+  assert.deepEqual(after.said, { stored: 0, walked: 5, wrote: true });
+  // One commit more on a store that holds five is a replay again.
+  write("g.txt");
+  commit("c6");
+  assert.deepEqual((await authorsWith(dir)).said, { stored: 5, walked: 1, wrote: true });
+});
+
 test("a changed .mailmap refuses the store", async (t) => {
   const dir = repo(t, storied);
   await authorsWith(dir);

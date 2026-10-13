@@ -425,6 +425,9 @@ async function replayable(root, walk, store, run) {
   const missing = order.filter((sha) => !store.at.has(sha));
   const read = new Map();
   if (missing.length === 0) return { order, read };
+  // What the store lacks is read whole onto the heap, where the plain walk streams: past half the
+  // history the plain walk is the cheaper read and the bounded one.
+  if (missing.length > order.length / 2) return null;
   let twice = false;
   const split = splitter(walk.renames, () => {}, (sha, fields) => {
     if (read.has(sha)) twice = true;
