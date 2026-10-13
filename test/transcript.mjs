@@ -19,7 +19,7 @@ export function transcript(t, entries = []) {
 /**
  * The entry Claude Code writes for a hook's `additionalContext`. Every build
  * from 2.1.263 on adds `rendered`, which makes it count in the window; it is
- * asked for, so the byte counts of tests written before it do not move.
+ * asked for, so a test chooses whether its entry adds to the window's bytes.
  */
 export const delivered = (text, { rendered = false } = {}) => ({
   type: "attachment",

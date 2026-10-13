@@ -47,7 +47,7 @@ test("both shapes of a compaction boundary are one event", () => {
   assert.deepEqual(eventOf({ isCompactSummary: true, type: "user" }), { kind: "compact" });
 });
 
-test("a transcript's compactions are counted in either shape, with the lines between never parsed for one", async (t) => {
+test("a transcript's compactions are counted in either shape", async (t) => {
   const path = transcript(t, [delivery(LIB), filler(64), compact(), { isCompactSummary: true, type: "user" }, filler(64)]);
 
   assert.deepEqual((await eventsIn(path, null)).map((event) => event.kind), ["delivery", "compact", "compact"]);
