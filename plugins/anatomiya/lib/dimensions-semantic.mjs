@@ -49,7 +49,11 @@ function assertSited(rows) {
 export function siteStubs(ts, source) {
   const hits = {};
   for (const dim of SEMANTIC_DIMENSIONS) {
-    if (dim.sited(ts, source)) hits[dim.key] = [{ conforming: true, where: null }];
+    try {
+      if (dim.sited(ts, source)) hits[dim.key] = [{ conforming: true, where: null }];
+    } catch {
+      // A row that threw has no stub in this file, as its walk has no hit there: one file's throw is not the tier's.
+    }
   }
   return hits;
 }
