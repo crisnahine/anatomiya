@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
-import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
+import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, removeTree } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +20,7 @@ import {
 // never runs.
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-baseline-test-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
@@ -390,7 +390,7 @@ test("a .claude symlinked outside the repository refuses the pin write", async (
     sha = commit("init");
   });
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   symlinkSync(outside, join(dir, ".claude"));
 
   const pin = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
@@ -409,7 +409,7 @@ test("a pin read through a .claude symlinked outside the repository is no pin", 
     sha = commit("init");
   });
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const planted = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
   mkdirSync(join(outside, "anatomiya"), { recursive: true });
   writeFileSync(join(outside, "anatomiya", "baseline.json"), JSON.stringify(planted));
@@ -1153,7 +1153,7 @@ test("a pin path holding a fifo reads as no pin, rather than waiting on it", nee
   // scan and every check. Driven in a child with a bound, because a hung read
   // holds this process too.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-fifo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   execFileSync("mkfifo", [join(dir, PIN_PATH)]);
 
@@ -1254,7 +1254,7 @@ test("a baseline.json linked out of the repository is no pin", async (t) => {
     sha = commit("init");
   });
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const planted = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
   writeFileSync(join(outside, "baseline.json"), JSON.stringify(planted));
   mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });

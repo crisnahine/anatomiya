@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { FLOORS, SUMMARY, SUMMARY_FLAG, parseLcov, shortfalls } from "../scripts/coverage.mjs";
 import { REL } from "../scripts/plugins.mjs";
+import { removeTree } from "./platform.mjs";
 
 const SCRIPT = fileURLToPath(new URL("../scripts/coverage.mjs", import.meta.url));
 
@@ -151,7 +152,7 @@ test("this repository's own floors are the measured ones", () => {
 /** `coverage.mjs` as CI runs it, over one throwaway test file. */
 function measured(t, body, options = []) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-coverage-run-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const spec = join(dir, "one.test.mjs");
   writeFileSync(spec, body);
 
@@ -250,7 +251,7 @@ test("a single-dash typo is not a path the summary is written to", (t) => {
   // The guard knew two dashes. `-x` was taken as the path, and the file the
   // reader meant was never written while a dash-named one appeared beside it.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-coverage-dash-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const run = spawnSync(process.execPath, [SCRIPT, SUMMARY_FLAG, "-x", "one.test.mjs"], { cwd: dir, encoding: "utf8", timeout: 60_000 });
 

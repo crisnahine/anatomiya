@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { echoDue, heldIn } from "../plugins/anatomiya/lib/echo.mjs";
+import { removeTree } from "./platform.mjs";
 
 const DIGEST = "a1b2c3d4e5f6";
 
@@ -88,7 +89,7 @@ test("heldIn holds a batch claim at an offset inside the window", () => {
 /** The plugin's data directory, for one test. */
 function dataDir(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-plugin-data-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
@@ -118,7 +119,7 @@ test("the calls of one batch deliver one copy between them, before any of them i
 /** A repository with a map already written, the state a scan leaves behind. */
 function mapped(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-echo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude", "rules"), { recursive: true });
   writeFileSync(join(dir, ".claude", "rules", "anatomiya-overview.md"), "---\ngenerator: anatomiya\n---\n\n# Repository map\n\n- lib: 3 .mjs\n");
   return dir;
@@ -165,7 +166,7 @@ test("the echo hook prints the map on every call where its data directory is rel
   const dir = mapped(t);
   const path = transcript(t, [filler(300 * 1024)]);
   const relative = `anatomiya-relative-${process.pid}`;
-  t.after(() => rmSync(relative, { recursive: true, force: true }));
+  t.after(() => removeTree(relative));
   const twice = async (data) => [await batch(dir, data, path, 1), await batch(dir, data, path, 1)];
 
   assert.deepEqual(await twice(dataDir(t)), [1, 0], "an absolute one keeps the second call silent");
@@ -696,7 +697,7 @@ test("with nowhere to keep a batch claim, every call of a batch answers as it wo
   writeFileSync(blocked, "");
 
   const relative = `anatomiya-relative-${process.pid}`;
-  t.after(() => rmSync(relative, { recursive: true, force: true }));
+  t.after(() => removeTree(relative));
   for (const [what, data] of [["unset", null], ["relative", relative], ["a file", blocked], ["below a file", join(blocked, "x")]]) {
     for (let i = 0; i < 2; i++) assert.equal(due(path, data), true, what);
   }

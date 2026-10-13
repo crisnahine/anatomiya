@@ -108,17 +108,9 @@ test("a directory a leaving process still holds is asked for again, and any othe
   assert.deepEqual(asked.slice(3), ["denied"]);
 });
 
-test("a directory still held after ten seconds fails the cleanup", async (t) => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+test("a directory still held after a hundred tries fails the cleanup", async (t) => {
   const asked = refusing(t, () => "EBUSY");
 
-  const left = removeTree("held").then(() => null, (err) => err.code);
-  for (let waited = 0; waited < 10_000; waited += 100) {
-    // The cleanup reaches its next wait on a turn of the loop this does not own.
-    await new Promise(setImmediate);
-    t.mock.timers.tick(100);
-  }
-
-  assert.equal(await left, "EBUSY");
+  await assert.rejects(removeTree("held", 1), { code: "EBUSY" });
   assert.equal(asked.length, 101);
 });

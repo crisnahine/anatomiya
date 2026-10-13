@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { needsSymlinks } from "./platform.mjs";
+import { needsSymlinks, removeTree } from "./platform.mjs";
 import { REL } from "../scripts/plugins.mjs";
 import { checkOutput, invokedAs, readArgv, selectRepos } from "../scripts/entry.mjs";
 
@@ -44,7 +44,7 @@ test("a script whose own file has gone is still the file being run", (t) => {
   // and the answer flips, which is a fact about the temp directory rather than
   // about the guard.
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-entry-gone-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const script = join(dir, "gone.mjs");
   writeFileSync(
     script,
@@ -65,7 +65,7 @@ test("a gate reached through a symlinked path answers what it answers directly",
   // guarded, so a guard that answers no leaves a gate that ran everything and
   // said nothing. Exit 0 either way; the difference is whether it spoke.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-entry-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   symlinkSync(ROOT, join(dir, "repo"));
 
   const direct = spawnSync(process.execPath, [join(ROOT, "scripts", "check-docs.mjs")], { encoding: "utf8" });
@@ -132,7 +132,7 @@ test("the guard recognises a file run as itself", (t) => {
   // guard answering no for its own file leaves a script that runs nothing and
   // exits 0.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-entry-direct-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const name = `${GUARD.replace(/\W/g, "-")}.mjs`;
   writeFileSync(
@@ -153,7 +153,7 @@ test("the guard answers yes through a symlinked path", needsSymlinks, (t) => {
   // happens when argv[1] is set and holds a link, so a case that never sets it
   // passes whatever the comparison is.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-entry-both-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const real = join(dir, "real");
   mkdirSync(real);
   symlinkSync(real, join(dir, "link"));

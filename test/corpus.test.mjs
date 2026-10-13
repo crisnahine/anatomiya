@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
@@ -22,7 +22,7 @@ const glob = (dir, langs) => globText(globEntry(dir, langs));
 /** A temp directory removed by the runner, so a failed assertion still cleans up. */
 function tmp(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 

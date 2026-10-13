@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
-import { needsFoldingFilesystem, needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks } from "./platform.mjs";
+import { needsFoldingFilesystem, needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 
 import { authorsByFile } from "../plugins/anatomiya/lib/authors.mjs";
 import { walkCochange } from "../plugins/anatomiya/lib/cochange-walk.mjs";
@@ -20,7 +20,7 @@ import { READ_MOST } from "../plugins/anatomiya/lib/store.mjs";
 /** A repository with the store's directory in place and excluded, as a scan leaves one. */
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-history-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const make = tools(dir);
   make.git("init", "-q", "-b", "main");
   make.author("first@t.test");
@@ -452,7 +452,7 @@ test("another git refuses the store", { ...needsShebang, ...needsPathControl }, 
   const dir = repo(t, storied);
   await authorsWith(dir);
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-history-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   writeFileSync(join(bin, "git"), `#!/bin/sh\nif [ "$1" = version ]; then echo "git version 0.0.1"; exit 0; fi\nexec '${real}' "$@"\n`, { mode: 0o755 });
   const path = process.env.PATH;
@@ -468,7 +468,7 @@ test("another git refuses the store", { ...needsShebang, ...needsPathControl }, 
 async function otherBuild(t, { version = "0.0.1", edit = (source) => source } = {}) {
   const lib = fileURLToPath(new URL("../plugins/anatomiya/lib", import.meta.url));
   const root = mkdtempSync(join(tmpdir(), "anatomiya-history-build-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => removeTree(root));
   cpSync(lib, join(root, "lib"), { recursive: true });
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "anatomiya", version, type: "module" }));
   const source = readFileSync(join(lib, "history.mjs"), "utf8");
@@ -603,7 +603,7 @@ test("a store that is a link is not read, and the next one replaces the link", n
   const dir = repo(t, storied);
   await authorsWith(dir);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-history-elsewhere-"));
-  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  t.after(() => removeTree(elsewhere));
   const real = join(elsewhere, "store.gz");
   renameSync(storeOf(dir, "authors"), real);
   symlinkSync(real, storeOf(dir, "authors"));
@@ -618,7 +618,7 @@ test("a store directory that leads out of the repository's own .claude is neithe
   const dir = repo(t, storied);
   await authorsWith(dir);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-history-elsewhere-"));
-  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  t.after(() => removeTree(elsewhere));
   renameSync(join(dir, STORE_DIR), join(elsewhere, "anatomiya"));
   symlinkSync(join(elsewhere, "anatomiya"), join(dir, STORE_DIR));
   const before = readFileSync(join(elsewhere, "anatomiya", HISTORY_FILES.authors));
@@ -812,7 +812,7 @@ function gitInFront(t, script) {
 
 test("unreadable history still says so (F13)", async (t) => {
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-history-nogit-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const unread = await authorsWith(outside);
   assert.equal(unread.map.size, 0);
   assert.match(unread.map.error, /not a git repository/);

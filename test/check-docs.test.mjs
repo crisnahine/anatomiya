@@ -11,6 +11,7 @@ import { DECISIONS_DIR, indexRows, readRowFile } from "../scripts/decisions.mjs"
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
+import { removeTree } from "./platform.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -130,7 +131,7 @@ function repoCopy(t) {
 /** The copy as files alone, which is no tree the gate can ask git about. */
 function copyWithNoRepository(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-check-docs-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const filter = REPOSITORY_FILES ? isRepositoryFile : undefined;
   // `test` whole: a status cell names a test by its bare file name, and the gate holds it to the tree.

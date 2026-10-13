@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPathControl, needsPosixPaths, needsShebang, needsSymlinks } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -31,8 +31,8 @@ import { needsRuby } from "./ruby-available.mjs";
 // still cleans up instead of leaving a repository in the temporary directory.
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-scan-"));
-  // Retried because a scan's history read can still hold the directory open on Windows.
-  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
+  // A scan that failed can leave a history read behind it, which holds the directory open on Windows.
+  t.after(() => removeTree(dir));
 
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q");
@@ -225,7 +225,7 @@ test("a repository with no history produces no authors and still scans", async (
 
 test("scanning a directory outside any repository fails loudly", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-scan-nogit-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   await assert.rejects(() => scan(dir), /not a git repository/);
 });
@@ -943,7 +943,7 @@ function typedRepo(t, { deps = "dir", pinned = false, areas = ["src/models"], br
     if (deps === "dir") write("node_modules/left-pad/index.js", "");
     if (deps === "link") {
       const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-deps-"));
-      t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+      t.after(() => removeTree(elsewhere));
       symlinkSync(elsewhere, join(d, "node_modules"), "dir");
     }
     git("add", "-A");
@@ -1133,7 +1133,7 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
   // resolution, and both stated semantic claims anyway, because the tier's
   // state reached the record and never reached the verdict.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-degraded-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
   // A tsconfig that does not parse, so the tier is degraded by rule whatever
@@ -2417,7 +2417,7 @@ test("a pinned scan walks from the pin, and two scans of one history write one m
 test("a scan that fails while the co-change walk runs stops the walk's git", { ...needsShebang, ...needsPathControl }, async (t) => {
   const dir = shippingHistory(t);
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-walk-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const pidFile = join(bin, "pid");
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *--diff-merges*) echo $$ > '${pidFile}'; exec sleep 60;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });

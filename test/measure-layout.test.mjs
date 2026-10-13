@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { needsColonInNames } from "./platform.mjs";
+import { needsColonInNames, removeTree } from "./platform.mjs";
 
 import {
   LEARNED_ROWS,
@@ -317,7 +317,7 @@ const script = fileURLToPath(new URL("../scripts/measure-layout.mjs", import.met
 /** The script run over a corpus of one committed repository holding these files. */
 function recountOf(t, files) {
   const tmp = mkdtempSync(join(tmpdir(), "anatomiya-recount-"));
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  t.after(() => removeTree(tmp));
   const corpus = join(tmp, "corpus");
   const dir = join(corpus, "one");
   for (const [rel, body] of Object.entries(files)) {

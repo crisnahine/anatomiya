@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { installedVersion, manifestVersion, olderThan } from "../plugins/anatomiya/lib/version.mjs";
 import { ROOT } from "../scripts/plugins.mjs";
+import { removeTree } from "./platform.mjs";
 
 test("a prerelease of the floor version is older than the floor", () => {
   // Measured: `1.0.0.rc1` and `1.0.0-rc.1` both met a 1.0.0 floor. Split on the
@@ -31,7 +32,7 @@ test("a prerelease of the floor version is older than the floor", () => {
 
 test("a manifest's version is read for the package it names, and null for another's, a missing one or one that cannot be parsed", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-manifest-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const write = (text) => writeFileSync(join(dir, "package.json"), text);
 
   assert.equal(manifestVersion(dir, "tree-sitter-go"), null, "no manifest");

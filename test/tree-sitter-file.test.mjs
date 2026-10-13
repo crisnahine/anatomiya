@@ -15,7 +15,7 @@ import { TREE_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-tree.mjs";
 import { dimensionsFor } from "../plugins/anatomiya/lib/walk.mjs";
 import { walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { ANATOMIYA, ROOT } from "../scripts/plugins.mjs";
-import { needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
 import { BROKEN } from "./tree-broken.mjs";
 
@@ -27,7 +27,7 @@ const GRAMMARS = join(ANATOMIYA, "grammars");
 
 function scratch(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 

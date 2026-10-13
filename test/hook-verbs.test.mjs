@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -11,6 +11,7 @@ import { addWorktree, scratch } from "./git-worktrees.mjs";
 import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
 import { runEcho, runNotice, runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
+import { removeTree } from "./platform.mjs";
 
 const RULES = join(".claude", "rules");
 
@@ -25,7 +26,7 @@ const RULES = join(".claude", "rules");
  */
 async function railsish(t) {
   const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-hookcmd-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   execFileSync("git", ["init", "-q"], { cwd: dir });
   for (const n of ["admin", "user", "hubspot", "cim_share"]) {
     mkdirSync(join(dir, "app/mailers"), { recursive: true });
@@ -54,7 +55,7 @@ const write = (dir, rel) => ({
 /** Two checkouts side by side under a parent that is not itself a repository. */
 async function siblings(t) {
   const parent = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-siblings-"));
-  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  t.after(() => removeTree(parent));
   for (const [name, dir, files] of [
     ["alpha", "src/core", ["a", "b", "c", "d", "e", "f"]],
     ["beta", "lib/widgets", ["one", "two", "three", "four", "five", "six"]],
@@ -301,7 +302,7 @@ test("the notice answers with an empty object for everything it cannot decide", 
 
 test("a repository nobody has scanned is answered with an empty object by both hooks", async (t) => {
   const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-nomap-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   assert.deepEqual(await runNotice(dir, write(dir, "spec/mailers/x_spec.rb")), {});
   assert.deepEqual(runEcho(dir, { hook_event_name: "UserPromptSubmit" }), {});

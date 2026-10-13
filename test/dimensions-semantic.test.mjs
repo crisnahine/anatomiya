@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 import { runSemantic } from "../plugins/anatomiya/lib/semantic.mjs";
 import { SEMANTIC_DIMENSIONS, siteStubs } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
+import { removeTree } from "./platform.mjs";
 
 const loaded = await loadTypeScript();
 const needsTs = { skip: loaded ? false : "typescript is not installed" };
@@ -158,7 +159,7 @@ test("a type-checked row that does not say where it has a site stops the module 
   const without = source.replace(/^ *sited: .*\r?\n/m, "");
   assert.notEqual(without, source, "the row's `sited` line was found");
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-sited-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "dimensions-semantic.mjs"), without);
 
   await assert.rejects(import(pathToFileURL(join(dir, "dimensions-semantic.mjs")).href), /type-checked dimension law_of_demeter declares no sited\(ts, source\)/);

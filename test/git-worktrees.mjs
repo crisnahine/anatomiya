@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { removeTree } from "./platform.mjs";
 
 /** Git in a directory, with an identity so a commit works on a bare runner. */
 export const git = (cwd, ...args) =>
@@ -17,7 +18,7 @@ export const git = (cwd, ...args) =>
  */
 export function scratch(t, prefix = "anatomiya-wt-") {
   const dir = mkdtempSync(join(realpathSync.native(tmpdir()), prefix));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 

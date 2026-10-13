@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { atomic, putBack, replaceAll, stagedPath, writeTemp } from "../plugins/anatomiya/lib/store.mjs";
 import { stagedBy } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
+import { removeTree } from "./platform.mjs";
 
 /**
  * The store's file mechanics: a file replaced whole or not at all, and the
@@ -14,7 +15,7 @@ import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/target
  */
 function workspace(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-store-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
-import { needsPathControl, needsShebang } from "./platform.mjs";
+import { needsPathControl, needsShebang, removeTree } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -20,7 +20,7 @@ import { gitStreamed } from "../plugins/anatomiya/lib/git.mjs";
 
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cochange-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q", "-b", "main");
   author("a@t.test");
@@ -472,7 +472,7 @@ test("a git that refuses --diff-merges is an error that states nothing", { ...ne
     commit("two");
   });
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-cochange-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *--diff-merges*) echo "fatal: unrecognized argument" >&2; exit 128;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
   const path = process.env.PATH;
@@ -514,7 +514,7 @@ test("a shallow clone's walk reads the window it holds, its grafted boundary as 
     }
   });
   const clone = mkdtempSync(join(tmpdir(), "anatomiya-cochange-shallow-"));
-  t.after(() => rmSync(clone, { recursive: true, force: true }));
+  t.after(() => removeTree(clone));
   execFileSync("git", ["clone", "-q", "--depth", "3", `file://${source}`, clone], { stdio: "pipe" });
 
   const walk = await walkCochange(clone, sha(clone));

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { execFileSync, fork } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,7 @@ import { once } from "node:events";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { needsSymlinks } from "./platform.mjs";
+import { needsSymlinks, removeTree } from "./platform.mjs";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 import { installLacking } from "./plugin-install.mjs";
 
@@ -24,7 +24,7 @@ import { MAX_FILE_BYTES, rawTransferAllowed } from "../plugins/anatomiya/lib/lim
 
 function dir(t) {
   const d = mkdtempSync(join(tmpdir(), "anatomiya-parse-"));
-  t.after(() => rmSync(d, { recursive: true, force: true }));
+  t.after(() => removeTree(d));
   return d;
 }
 
@@ -639,7 +639,7 @@ test("a scan whose node_modules predates the stripper says which dependency is m
   const home = installWithoutStripper(t);
 
   const repo = mkdtempSync(join(tmpdir(), "anatomiya-flowrepo-"));
-  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  t.after(() => removeTree(repo));
   const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
   mkdirSync(join(repo, "src"), { recursive: true });
   for (let i = 0; i < 10; i++) {

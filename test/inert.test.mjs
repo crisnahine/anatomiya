@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "../plugins/anatomiya/lib/inert.mjs";
 import { engineOf, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
+import { removeTree } from "./platform.mjs";
 
 /** The lines of a file that may define something callable, numbered from one. */
 async function asking(lang, source, options = {}) {
@@ -199,7 +200,7 @@ test("a string spread over lines in a call asks on every line it covers", async 
 
 test("a missing grammar skips the file", async (t) => {
   const empty = mkdtempSync(join(tmpdir(), "anatomiya-inert-"));
-  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  t.after(() => removeTree(empty));
   assert.equal(await inertLinesOf({ engine: "tree-sitter", lang: "python", source: "X = 1\n", deadline: Infinity, grammars: empty }), null);
 });
 

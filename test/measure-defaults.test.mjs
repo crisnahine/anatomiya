@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { countSides, decideDefault, mergeTable } from "../scripts/measure-defaults.mjs";
-import { needsShebang } from "./platform.mjs";
+import { needsShebang, removeTree } from "./platform.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -167,7 +167,7 @@ test("a batch whose effort nobody recorded never merges with one that did", asyn
  */
 function measuring(t, held = {}) {
   const base = mkdtempSync(join(tmpdir(), "anatomiya-measuring-"));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
+  t.after(() => removeTree(base));
   const bin = join(base, "bin");
   mkdirSync(bin);
   const stub = join(bin, "claude");

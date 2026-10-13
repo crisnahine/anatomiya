@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { LOCK_ARGV, seedFor } from "../scripts/plugin-lock.mjs";
 import { REL, ROOT } from "../scripts/plugins.mjs";
-import { needsPathControl, needsShebang, needsSpawnableNpm } from "./platform.mjs";
+import { needsPathControl, needsShebang, needsSpawnableNpm, removeTree } from "./platform.mjs";
 
 const MANIFEST = {
   name: "anatomiya",
@@ -166,7 +166,7 @@ function check(root, env = {}) {
 /** This marketplace's own tracked files, copied where a case may take one away. */
 function marketplace(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-lock-root-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   cpSync(join(ROOT, "package-lock.json"), join(dir, "package-lock.json"));
   cpSync(join(ROOT, REL.anatomiya), join(dir, REL.anatomiya), { recursive: true });
   return dir;
@@ -225,7 +225,7 @@ test("a refusal reaches the runner as an annotation", needsSpawnableNpm, () => {
 // ran the write it exists to keep off the lockfile.
 test("an option this does not know is refused before anything is run or written", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-plugin-lock-typo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   for (const typo of ["--chek", "-c", "--help"]) {
     const run = spawnSync(process.execPath, [join(ROOT, "scripts", "plugin-lock.mjs"), typo, dir], { encoding: "utf8", timeout: 60_000 });
@@ -261,7 +261,7 @@ test("on Windows the gate says why it did not run, rather than failing on npm", 
 test("the npm the gate runs is handed the list, offline under --check and online for a write", { ...needsShebang, ...needsPathControl }, (t) => {
   const dir = marketplace(t);
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-lock-npm-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const seen = join(bin, "argv.txt");
   writeFileSync(join(bin, "npm"), `#!/bin/sh\nprintf '%s\\n' "$@" > ${seen}\n`, { mode: 0o755 });
   const env = { PATH: `${bin}:${process.env.PATH}` };

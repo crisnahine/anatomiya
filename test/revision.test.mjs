@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -129,7 +129,7 @@ test("a read that throws before it answers leaves no temporary tree behind", asy
   // A temporary root of its own, so what is left behind is countable rather
   // than one directory among everything else the machine put there.
   const home = mkdtempSync(join(tmpdir(), "anatomiya-revision-home-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  t.after(() => removeTree(home));
   const held = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP };
   t.after(() => {
     for (const [k, v] of Object.entries(held)) {
@@ -273,7 +273,7 @@ test("every file at a revision is read by one child, and it is gone when the rea
   });
   // The reader takes no environment, so the shim goes on this process's own PATH.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-revision-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   writeFileSync(
     join(bin, "git"),
@@ -307,7 +307,7 @@ test("a git that never answers is given up on at the caller's clock", { ...needs
     sha = commit("first");
   });
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-revision-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   writeFileSync(
     join(bin, "git"),

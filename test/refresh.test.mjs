@@ -21,7 +21,7 @@ import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
 import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
-import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
+import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
 const needsTs = { skip: (await loadTypeScript()) ? false : "typescript is not installed" };
@@ -61,7 +61,7 @@ function commit(dir, message) {
 /** A committed repository with one area, already scanned: a map of its own. */
 async function scanned(t) {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   source(dir, "src", 8);
   commit(dir, "init");
@@ -107,7 +107,7 @@ test("a directory with no map of its own is answered with nothing, and nothing i
   // A plugin hook runs in every session for every directory, so its scoping is
   // its own (A24): a repository nobody scanned is never scanned behind its back.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-none-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   source(dir, "src", 8);
   commit(dir, "init");
@@ -181,7 +181,7 @@ test("a linked worktree with a map of its own watches its own HEAD", async (t) =
 /** A directory that is not a repository, holding checkouts side by side, the way a project split into repositories is opened. */
 function parentOf(t) {
   const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-parent-")));
-  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  t.after(() => removeTree(parent));
   return parent;
 }
 
@@ -356,7 +356,7 @@ test("a scan run by hand records itself over an empty directory at the refresh s
 test("a link at the refresh state's name is replaced, never followed to the directory it leads to", needsSymlinks, async (t) => {
   const dir = await scanned(t);
   const outside = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-outside-")));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   writeFileSync(join(outside, "kept"), "theirs");
   symlinkSync(outside, join(dir, REFRESH_STATE));
 
@@ -873,7 +873,7 @@ test("a map committed through a linked rules directory is tracked too", needsSym
   // Git matches no pathspec past a symlink, so the map it stores under
   // `agents/rules/` read as untracked and every move of HEAD rewrote it.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   source(dir, "src", 8);
   mkdirSync(join(dir, "agents", "rules"), { recursive: true });
@@ -894,7 +894,7 @@ test("a link spelled in another case than the directory it names still finds the
   // A case-insensitive filesystem follows `../Agents/Rules` to `agents/rules`,
   // and git matches pathspecs case-sensitively whatever core.ignorecase says.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "agents", "rules"), { recursive: true });
   if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
   init(dir);
@@ -915,7 +915,7 @@ test("a link spelled in another case than the directory it names still finds the
 test("a directory renamed in case outside git still finds the map the index holds under the old case", needsSymlinks, async (t) => {
   // The index keeps `Agents/Rules` after a rename git never saw, while the disk says `agents`.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "Agents", "Rules"), { recursive: true });
   if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
   init(dir);
@@ -1005,7 +1005,7 @@ const TRIMS = "(s: string) {\n  return s.trim().toLowerCase()\n}\n";
 /** A committed TypeScript repository with its packages on disk and one root config (none where `config` is null), scanned by hand. */
 async function typed(t, { name = "tsconfig.json", config = BROKEN, body = TRIMS } = {}) {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-typed-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   writeFileSync(join(dir, ".gitignore"), "node_modules\n");
   if (config !== null) writeFileSync(join(dir, name), config);
@@ -2122,7 +2122,7 @@ test("a linked worktree on reftable watches the shared table list", async (t) =>
   const dir = await scanned(t);
   const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
   rmSync(wt, { recursive: true, force: true });
-  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  t.after(() => removeTree(wt));
   git(dir, "worktree", "add", "-q", "--detach", wt);
   mkdirSync(join(dir, ".git", "reftable"));
 
@@ -2240,7 +2240,7 @@ const deadLock = () => JSON.stringify({ pid: process.pid, at: Date.now() - 31 * 
 
 function lockDir(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-lock-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
@@ -2534,7 +2534,7 @@ test("a worktree made on a teammate's commit creates nothing, and the pin follow
   git(dir, "fetch", "-q");
   for (const args of [["--detach"], ["-b", "feat"]]) {
     const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
-    t.after(() => rmSync(wt, { recursive: true, force: true }));
+    t.after(() => removeTree(wt));
     rmSync(wt, { recursive: true, force: true });
     git(dir, "worktree", "add", "-q", ...args, wt, "origin/main");
   }
@@ -2555,7 +2555,7 @@ test("a worktree made on a teammate's commit and refreshed from inside creates n
   const teammate = commit(origin, "a teammate's commit");
   git(dir, "fetch", "-q");
   const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
-  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  t.after(() => removeTree(wt));
   rmSync(wt, { recursive: true, force: true });
   git(dir, "worktree", "add", "-q", "--detach", wt, "origin/main");
   await runScan(wt);
@@ -2617,7 +2617,7 @@ test("a record below its checkout's root refreshes nothing, and nothing is writt
   // A copied project's `.claude/` inside a repository that never opted in.
   const dir = await scanned(t);
   const outer = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-outer-")));
-  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  t.after(() => removeTree(outer));
   init(outer);
   source(outer, "src", 8);
   commit(outer, "init");
@@ -2635,7 +2635,7 @@ test("the index changing after a first commit moved the watch still refreshes, a
   // Scanned before any commit, the watch names the index; the first commit
   // writes `logs/HEAD` and the watch moves there.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-first-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   init(dir);
   source(dir, "src", 8);
   git(dir, "add", "-A");

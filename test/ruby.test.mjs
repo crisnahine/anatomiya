@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsShebang } from "./platform.mjs";
+import { needsPosixPaths, needsShebang, removeTree } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
 import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
@@ -63,7 +63,7 @@ test("the listing names a prism installed in a gem path, by version and absolute
   // Asked of RubyGems rather than of prism, so it answers on any interpreter,
   // including one whose own prism is the 0.x this cannot read.
   const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-"));
-  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  t.after(() => removeTree(gems));
   mkdirSync(join(gems, "specifications"), { recursive: true });
   mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
   writeFileSync(join(gems, "gems", "prism-1.99.0", "lib", "prism.rb"), "module Prism; VERSION = \"1.99.0\"; end\n");
@@ -90,7 +90,7 @@ test("the listing finds a --user-install under XDG_DATA_HOME", needsRubyInterpre
   // ~/.local/share instead: `gem install --user-install prism` was installed
   // and invisible, and doctor went on naming the remedy just run.
   const home = mkdtempSync(join(tmpdir(), "anatomiya-home-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  t.after(() => removeTree(home));
   const api = execFileSync("ruby", ["-e", 'print RbConfig::CONFIG["ruby_version"]'], { encoding: "utf8" });
   const gems = join(home, "xdg", "gem", "ruby", api);
   mkdirSync(join(gems, "specifications"), { recursive: true });
@@ -113,7 +113,7 @@ test("the listing loads no installed gem's library, so a newer json cannot silen
   // With RubyGems enabled, `require "json"` activated the newest installed
   // json gem; one that raised (or merely printed) cost every prism choice.
   const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-json-"));
-  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  t.after(() => removeTree(gems));
   mkdirSync(join(gems, "specifications"), { recursive: true });
   mkdirSync(join(gems, "gems", "json-99.0.0", "lib"), { recursive: true });
   writeFileSync(join(gems, "gems", "json-99.0.0", "lib", "json.rb"), 'print "GEM CODE RAN"\nraise "planted json"\n');
@@ -133,7 +133,7 @@ test("a listed prism that raises on load is never put on the load path", needsRu
   // the way an extension linked to another libruby does is newest here, so
   // the choice has to be proved to load before the parser is handed it.
   const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-broken-"));
-  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  t.after(() => removeTree(gems));
   mkdirSync(join(gems, "specifications"), { recursive: true });
   mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
   writeFileSync(join(gems, "gems", "prism-1.99.0", "lib", "prism.rb"), 'raise LoadError, "incompatible library version"\n');
@@ -156,7 +156,7 @@ test("the parser loads the prism the listing chose, and says which", needsSheban
   // answers the version question on that path, which is how the choice is
   // proved to load before the parser is handed it.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stub-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -186,11 +186,11 @@ test("a version file in the repository chooses no interpreter: the listing, the 
   // keeps the three of them on one interpreter. The stub logs where it started,
   // spelled into its own body because the environment it gets is only PATH.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-where-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const log = join(bin, "started-in");
   writeFileSync(join(bin, "ruby"), `#!/bin/sh\npwd >> '${log}'\ncat >/dev/null\nexit 1\n`, { mode: 0o755 });
   const repo = mkdtempSync(join(tmpdir(), "anatomiya-ruby-pinned-"));
-  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  t.after(() => removeTree(repo));
   writeFileSync(join(repo, ".ruby-version"), "3.4.9\n");
   writeFileSync(join(repo, ".tool-versions"), "ruby path:./vendor/ruby\n");
   writeFileSync(join(repo, "a.rb"), "class A\nend\n");
@@ -224,11 +224,11 @@ test("a ruby planted in the temp directory never answers for an empty PATH entry
   // child starts in the temp directory, which anyone can write. The stub
   // stands in for the planted one and logs that it ran.
   const shared = mkdtempSync(join(tmpdir(), "anatomiya-ruby-shared-"));
-  t.after(() => rmSync(shared, { recursive: true, force: true }));
+  t.after(() => removeTree(shared));
   const log = join(shared, "planted-ran");
   writeFileSync(join(shared, "ruby"), `#!/bin/sh\necho "$*" >> '${log}'\ncat >/dev/null\nexit 1\n`, { mode: 0o755 });
   const empty = mkdtempSync(join(tmpdir(), "anatomiya-ruby-nobin-"));
-  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  t.after(() => removeTree(empty));
   const file = join(empty, "a.rb");
   writeFileSync(file, "class A\nend\n");
   const saved = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR };
@@ -259,7 +259,7 @@ test("a prism too old to read is a missing parser, never a repository of crashed
   // exit 0 and no remedy, and withheld the whole map; the scan and the check
   // name the remedy only for a missing parser.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-old-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -282,7 +282,7 @@ test("a ruby our clock stopped before its ready line is a stall, not a missing i
   // No version came back, which alone reads as an install to fix. The idle
   // window killed it both times, so what failed was the machine's time.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stall-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -307,7 +307,7 @@ test("one stalled child beside one that answered is files charged, not a stall",
   // A single child that said ready and then went silent reports a version and
   // no stall. Split across children, the run has to answer the same way.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-half-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(
     join(bin, "ruby"),
     `#!/bin/sh
@@ -1065,7 +1065,7 @@ test("a Ruby with no prism at all is a missing parser, not a file that crashed i
   // raised before it could say why, so every file read as crashing the parser,
   // check reported nothing found and scan wrote nothing, with no remedy.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-noprism-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(join(bin, "prism.rb"), 'raise LoadError, "cannot load such file -- prism"\n');
   const stub = join(bin, "ruby");
   writeFileSync(

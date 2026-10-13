@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { execFileSync, spawnSync } from "node:child_process";
-import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
+import { needsPosixPermissions, needsPosixSpecialFiles, removeTree } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -22,7 +22,7 @@ import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
  */
 function root(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-facts-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
@@ -409,7 +409,7 @@ test("a stored dimension carries the tier the check filters on", async (t) => {
   // planted `tier` into facts.json by hand, which is a shape the writer cannot
   // produce, so it passed while the product was broken.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-tierfield-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < 14; i++) {
@@ -688,7 +688,7 @@ test("a record path holding a fifo reads as no record, rather than waiting on it
   // scan and every check. Driven in a child with a bound, because a hung read
   // holds this process too.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-fifo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   execFileSync("mkfifo", [join(dir, FACTS_PATH)]);
 
@@ -705,7 +705,7 @@ test("a record past the size cap is named as unread, not taken for a repository 
   // Nothing this tool writes comes near the cap, so a file past it is one it
   // did not write, and the check says so rather than reading it as no map.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(64 * 1024 * 1024 + 1, 0x20));
 
@@ -731,7 +731,7 @@ test("a record of exactly the size cap is read, and one byte more is not", (t) =
 test("a record past the size cap is told by its size before a byte of it is read", (t) => {
   // Every hook reads a record, so one committed past the cap cost each tool call a 64 MiB read.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), "");
   truncateSync(join(dir, FACTS_PATH), 600 * 1024 * 1024);
@@ -756,7 +756,7 @@ test("a record is measured by its bytes on disk, not by its decoded length", (t)
   // A byte that is not UTF-8 decodes to three, and 22 MB of them read as a
   // record past the 64 MiB cap in a sentence that named a size nobody measured.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-odd-record-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(22 * 1024 * 1024, 0xff));
 

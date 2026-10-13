@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { caseSensitiveDir, needsBindableSocketPath, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { caseSensitiveDir, needsBindableSocketPath, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync, truncateSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -28,7 +28,7 @@ function workspace(t) {
 
 function elsewhere(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 
@@ -275,7 +275,7 @@ const roster = (root) => ({
 
 test("a scan writes the layout file beside the record, holding the record's layout", (t) => {
   const dir = workspace();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const layout = roster("src/services");
 
   writeMap({ ...result(dir, [area("src/services")]), layout });
@@ -289,7 +289,7 @@ test("a scan writes the layout file beside the record, holding the record's layo
 test("a replace that fails part way puts the previous layout file back with the record", async (t) => {
   // Staged with the record, so the two always describe the same scan.
   const dir = workspace();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
   const before = snapshot(dir);
   await failNth(t, "renameSync", 3);
@@ -307,7 +307,7 @@ test("a layout file put back keeps the schema it was written under", async (t) =
   // The record put back was written by that scan, so the layout file is restamped
   // under that scan's schema, not this build's.
   const dir = workspace();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
   const layoutPath = join(dir, STORE, "layout.json");
   const older = { ...JSON.parse(readFileSync(layoutPath, "utf8")), schema: FACTS_SCHEMA - 1 };
@@ -324,7 +324,7 @@ test("a record that could not be read before the replace is not written back", n
   // Its bytes are unknown, so there is nothing to put back, and the layout file
   // beside it still answers for the old record and must not be restamped from nothing.
   const dir = workspace();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
   const record = join(dir, STORE, "facts.json");
   const fs = (await import("node:fs")).default;
