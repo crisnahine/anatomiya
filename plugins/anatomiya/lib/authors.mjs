@@ -1,4 +1,4 @@
-import { gitBuffered } from "./git.mjs";
+import { Unasked, answered, gitBuffered } from "./git.mjs";
 import { SEP, historyFields } from "./history.mjs";
 
 /**
@@ -36,10 +36,11 @@ import { SEP, historyFields } from "./history.mjs";
 export async function authorsByFile(root, { history = null } = {}) {
   // Asked before the log rather than after it: the map carries the answer
   // however the log goes, a repository with nothing committed included.
-  const shallow = await shallowHistory(root);
+  let shallow = null;
   let reader = authorsReader();
   let error;
   try {
+    shallow = await shallowHistory(root);
     // A read given up part way starts over, and the reader with it.
     await logStream(root, () => (reader = authorsReader()).onField, history);
   } catch (err) {
@@ -48,7 +49,8 @@ export async function authorsByFile(root, { history = null } = {}) {
     // told apart by asking whether HEAD resolves rather than by reading git's
     // message, which is translated. Anything else travels with the map: unread
     // history and empty history both state nothing, and only one is an answer.
-    if ((await headState(root)) !== "no-commits") error = String(err && err.message ? err.message : err);
+    // A question git could not be asked is unread history whatever HEAD says.
+    if (err instanceof Unasked || (await headState(root)) !== "no-commits") error = String(err && err.message ? err.message : err);
   }
   const { map } = reader;
   map.shallow = shallow;
@@ -158,9 +160,10 @@ async function headState(root) {
  * is what `actions/checkout` does by default, held one author, dropped the
  * author bar to one and stated 484 claims where the full clone states 465.
  *
- * Null where the clone is whole, and null where the question cannot be
- * answered: a call that fails reads as not shallow, which costs a caveat rather
- * than a wrong answer (F15).
+ * Null where the clone is whole, and where git ran and gave any other answer.
+ * It throws where git could not be asked: read as whole, a window states the
+ * claims above, so the history is unread. A count or a root that could not be
+ * read leaves the clone shallow with that part unknown.
  *
  * The boundary is the grafted root, which is the oldest commit the clone holds.
  * A shallow cut across a merge can graft more than one, and `log` orders by
@@ -168,7 +171,7 @@ async function headState(root) {
  * whichever line git printed last.
  */
 async function shallowHistory(root) {
-  const asked = await gitBuffered(root, ["rev-parse", "--is-shallow-repository"]);
+  const asked = answered(await gitBuffered(root, ["rev-parse", "--is-shallow-repository"]), "whether this clone holds its whole history");
   if (!asked.ok || asked.stdout.trim() !== "true") return null;
   const counted = await gitBuffered(root, ["rev-list", "--count", "HEAD"]);
   const commits = counted.ok ? Number.parseInt(counted.stdout.trim(), 10) : Number.NaN;

@@ -524,13 +524,16 @@ export async function gitBuffered(
   }
 }
 
+/** A question git could not be asked. What a caller catches as "no" lets this one through. */
+export class Unasked extends Error {}
+
 /**
  * `r` where git ran, whatever it answered. A call with no exit code (a clock, a
  * signal, a start that failed, a refused argument, a configuration nobody could
  * read) was never an answer to `question`, and decides nothing (C33).
  */
 export function answered(r, question) {
-  if (r.code === null) throw new Error(`git could not be asked ${question}: ${String(r.error ?? "").trim().slice(0, STDERR_CAP)}`);
+  if (r.code === null) throw new Unasked(`git could not be asked ${question}: ${String(r.error ?? "").trim().slice(0, STDERR_CAP)}`);
   return r;
 }
 

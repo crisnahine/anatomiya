@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
+import { exits, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { authorsByFile, repoAuthorCount } from "../plugins/anatomiya/lib/authors.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 import * as scan from "../plugins/anatomiya/lib/scan.mjs";
@@ -464,6 +465,32 @@ test("a clone that holds only a window of history says so, and a whole one says 
   const window = (await authorsByFile(shallow)).shallow;
   assert.equal(window.commits, 1, "one commit is what a depth-1 checkout holds");
   assert.match(window.oldest, /^\d{4}-\d{2}-\d{2}T/, "and the moment its history begins");
+});
+
+test("a clone git could not be asked the depth of is unread history, and one git answered about is read", needsGitStub, async (t) => {
+  // Read as whole, a depth-1 checkout states claims its full clone does not.
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    commit("a");
+  });
+  const probe = `*" rev-parse --is-shallow-repository "*`;
+
+  const calls = gitAhead(t, unasked(probe));
+  const unread = await authorsByFile(dir);
+  assert.match(unread.error, /^git could not be asked whether this clone holds its whole history: /);
+  assert.equal(unread.size, 0);
+  assert.equal(unread.shallow, null);
+  assert.deepEqual(calls().filter((call) => call.includes(" log ")), [], "no walk is read under an answer nobody gave");
+  // Nothing committed is an answer only where git gave it.
+  assert.match((await authorsByFile(repo(t, () => {}))).error, /^git could not be asked whether this clone holds/);
+  calls.restore();
+
+  // Any exit code is git's own answer, as before: one that says nothing reads as whole.
+  gitAhead(t, exits(probe, 129));
+  const read = await authorsByFile(dir);
+  assert.equal(read.error, undefined);
+  assert.equal(read.shallow, null);
+  assert.deepEqual([...read.keys()], ["src/a.ts"]);
 });
 
 test("the boundary of a window is its oldest root, whatever order git prints them", async (t) => {
