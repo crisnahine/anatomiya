@@ -13,6 +13,7 @@ import { scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH, readPin } from "../plugins/anatomiya/lib/baseline.mjs";
+import { Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
@@ -1406,4 +1407,56 @@ test("a check stops where git could not be asked about its base or about the pin
   // Read as a repository with no commit, an unasked HEAD lets a base that names nothing through at exit 0.
   gitAhead(t, unasked("*' rev-parse --verify --quiet HEAD^{commit} '*"));
   await assert.rejects(() => runCheck(dir, { baseRef: "no-such-branch" }), /^Error: git could not be asked which commit HEAD names: /);
+});
+
+test("a pinned scan stops where git could not be asked what the fork held, and writes nothing", needsGitStub, async (t) => {
+  // A branch cut before the pin: read as a fork that held none of the pinned paths,
+  // the files the base added since close the area as a population change.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("branch", "-M", "main");
+  git("branch", "feat");
+  for (const n of [8, 9, 10]) writeFileSync(join(dir, "src", `f${n}.ts`), `const a${n} = 1\nexport { a${n} }\n`);
+  git("add", "-A");
+  git("commit", "-qm", "the base moves on");
+  await runPin(dir);
+  await runScan(dir);
+  git("checkout", "-q", "feat");
+  const before = claudeTree(dir);
+  gitAhead(t, unasked("*' ls-tree '*"));
+
+  await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked which files [0-9a-f]{40} holds: git ls-tree exited SIGTERM/.test(err.message));
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+test("a pinned scan stops where git could not be asked what changed since the pin, and writes nothing", needsGitStub, async (t) => {
+  // Read as nothing renamed, an area the branch moved is one made after the pin.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  await runPin(dir);
+  await runScan(dir);
+  git("mv", "src", "lib");
+  git("commit", "-qm", "moved");
+  const before = claudeTree(dir);
+  gitAhead(t, unasked("*' diff '*'..'*"));
+
+  await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked what changed from [0-9a-f]{40} to \S+: git diff exited SIGTERM/.test(err.message));
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+test("a pinned scan stops where git could not be asked for a pinned blob, and writes nothing", needsGitStub, async (t) => {
+  // Read as absent, the file closes its area as a population change.
+  const dir = repo(t);
+  await runPin(dir);
+  await runScan(dir);
+  writeFileSync(join(dir, "src", "f0.ts"), "const a0 = 2\nexport { a0 }\n");
+  const before = claudeTree(dir);
+  // The one child and the per-call read behind it, and no other `cat-file`.
+  gitAhead(t, unasked(`*' cat-file --batch '*|*' cat-file blob '[0-9a-f]*`));
+
+  await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked for src\/f0\.ts at [0-9a-f]{40}: git was ended by SIGTERM/.test(err.message));
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
 });
