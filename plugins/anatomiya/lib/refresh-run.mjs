@@ -60,8 +60,9 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  * tracked, no-map, outside, no-head, lock-blocked, state-blocked. The last
  * two come with `blocked`, the entry that has to be removed by hand, and are
  * answered before the lock is taken where `refreshBlockers` names one: a
- * directory holding entries at the lock's name or a lock token's, or at the
- * state's, where a refresh that cannot record what it did does not run.
+ * directory holding entries, or one that cannot be listed, at the lock's name
+ * or a lock token's, or at the state's, where a refresh that cannot record
+ * what it did does not run.
  *
  * A question git could not be asked before the stamp is read throws out of
  * here, with the lock let go, the pin and the map as they were and nothing
@@ -177,6 +178,8 @@ export async function noteScan(root) {
   try {
     const store = resolveInside(root, STORE_DIR);
     if (store === null) return;
+    // Not this scan's to remove: an empty directory that cannot be listed goes with `rmdir` all the same.
+    if (refreshBlockers(store).includes(basename(REFRESH_STATE))) return;
     const stamp = await stampOf(root);
     if (stamp === null) return;
     const previous = readRecord(join(store, basename(REFRESH_STATE))).record;

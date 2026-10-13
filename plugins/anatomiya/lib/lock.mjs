@@ -12,7 +12,7 @@
  * `identity` (the generation where it gives none).
  */
 import { createHash } from "node:crypto";
-import { closeSync, linkSync, lstatSync, openSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, linkSync, lstatSync, opendirSync, openSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { namesIn, readHead, REFRESH_LOCK, REFRESH_STATE } from "./rules.mjs";
@@ -289,11 +289,25 @@ export function leftTokens(lock, judge) {
 }
 
 // Never removed for this tool: an empty directory at a name of its own goes with `rmdir`, and a link there is never followed.
-const holdsEntries = (path) => lstatOf(path)?.isDirectory() === true && namesIn(path, 1).length > 0;
+function holdsEntries(path) {
+  if (lstatOf(path)?.isDirectory() !== true) return false;
+  try {
+    const listing = opendirSync(path);
+    try {
+      return listing.readSync() !== null;
+    } finally {
+      listing.closeSync();
+    }
+  } catch (err) {
+    // One that will not list holds entries as far as anyone can tell; one gone since holds none.
+    return err?.code !== "ENOENT" && err?.code !== "ENOTDIR";
+  }
+}
 
 /**
- * The names in the store `dir` that stop every refresh, each a directory holding entries where the refresh
- * worker locks or records: the lock's name, its lock tokens' by name, then the state's. The worker asks
+ * The names in the store `dir` that stop every refresh, each a directory holding entries, or one that
+ * cannot be listed, where the refresh worker locks or records: the lock's name, its lock tokens' by name,
+ * then the state's. The worker asks
  * before it starts and the scan's plan asks to say so, so neither names an entry the other does not. The
  * lock tokens are read from the bounded listing the store sweep reads.
  */
