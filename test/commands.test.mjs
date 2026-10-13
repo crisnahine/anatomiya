@@ -1460,3 +1460,43 @@ test("a pinned scan stops where git could not be asked for a pinned blob, and wr
 
   assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
 });
+
+/** A `case` arm that ends git on the `nth` call matching `pattern`, and on no other. */
+function unaskedOn(t, pattern, nth) {
+  const count = join(scratch(t, "anatomiya-check-count-"), "n");
+  return `case " $* " in ${pattern}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -eq ${nth} ] && kill -TERM $$;; esac`;
+}
+
+// Each was read as an answer: not shallow, not ambiguous, a first commit, no test tracked.
+for (const [what, stub, said] of [
+  ["whether the clone is shallow", () => unasked("*' rev-parse --is-shallow-repository '*"), /^git could not be asked whether this clone is shallow: git was ended by SIGTERM/],
+  ["which refs hold a typed base's name", () => unasked("*' for-each-ref '*"), /^git could not be asked which refs hold the name main: git was ended by SIGTERM/],
+  ["for the oldest commit it holds", () => `${exits("*' merge-base '*", 1)}\n${unasked("*' rev-list --max-parents=0 '*")}`, /^git could not be asked for the oldest commit this clone holds: git was ended by SIGTERM/],
+  ["which tests are tracked", (t) => unaskedOn(t, "*' ls-files -z -- '", 1), /^git ls-files exited SIGTERM/],
+]) {
+  test(`a check stops where git could not be asked ${what}`, needsGitStub, async (t) => {
+    const dir = repoWithBranch(t);
+    gitAhead(t, stub(t));
+    await assert.rejects(() => runCheck(dir, { baseRef: "main" }), (err) => err instanceof Unasked && said.test(err.message));
+  });
+}
+
+test("a shallow check stops where git could not be asked which parents HEAD records", needsGitStub, async (t) => {
+  const origin = repoWithBranch(t);
+  const dir = scratch(t, "anatomiya-check-shallow-");
+  // Both tips arrive grafted as roots, so no merge base is reached and the commit object is read.
+  execFileSync("git", ["clone", "-q", "--depth=1", "--no-single-branch", `file://${origin}`, dir], { stdio: "pipe" });
+  gitAhead(t, unasked("*' cat-file commit HEAD '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "origin/main" }), (err) => err instanceof Unasked && /^git could not be asked which parents HEAD's commit records: git was ended by SIGTERM/.test(err.message));
+});
+
+test("a check says which file it could not read where git could not be asked for its blob, and finds nothing in it", needsGitStub, async (t) => {
+  const dir = repoWithBranch(t);
+  await runScan(dir);
+  gitAhead(t, unasked(`*' cat-file --batch '*|*' cat-file blob '[0-9a-f]*`));
+
+  const { report } = await runCheck(dir, { baseRef: "main" });
+
+  assert.deepEqual(report.caveats.filter((c) => c.code === CAVEATS.HEAD_UNREADABLE).map((c) => c.message), ["could not read src/f8.ts at HEAD"]);
+  assert.deepEqual(report.findings.filter((f) => f.path === "src/f8.ts"), []);
+});

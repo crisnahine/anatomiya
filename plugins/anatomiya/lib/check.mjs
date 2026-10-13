@@ -35,7 +35,7 @@ import { isTestPath, precedentFindings } from "./precedent.mjs";
 import { claimFor, CLASSES } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
-import { answered, commitAt, gitBuffered, resolveBaseRef, mergeBase, filesAt, isSha, BASE_REFS, GIT } from "./git.mjs";
+import { Unasked, answered, commitAt, gitBuffered, resolveBaseRef, mergeBase, filesAt, isSha, BASE_REFS, GIT } from "./git.mjs";
 import { addedRanges, changedFiles, onlyInHead, pendingPaths, renamesSkipped, resolvePendingBases, withPendingEdits } from "./changeset.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
@@ -475,12 +475,13 @@ async function storedOrCollected(root, facts, field, derive, caveats, code, refu
 async function resolveBase(root, baseRef, caveats) {
   const candidates = (baseRef ? [baseRef] : BASE_REFS).filter((c) => c && !c.startsWith("-"));
   const [isShallow, headAt] = await Promise.all([
-    git(root, ["rev-parse", "--is-shallow-repository"]),
+    // Unasked is not a whole clone: read as one, a shallow clone is told its base resolves to no commit.
+    askGit(root, ["rev-parse", "--is-shallow-repository"], "whether this clone is shallow"),
     // Null is a repository with no commit yet. A HEAD git could not be asked
     // for throws: read as no commit, a typed base that names nothing passes at exit 0.
     commitAt(root, "HEAD", bounds()),
   ]);
-  const shallow = isShallow.out.trim() === "true";
+  const shallow = isShallow.stdout.trim() === "true";
   const head = headAt ?? "";
   // Resolved once and handed down by sha, so every later read asks about the
   // same commit and a question about two shas is one git can remember. A
@@ -522,8 +523,7 @@ async function resolveBase(root, baseRef, caveats) {
     if (!asked || sha !== head) return;
     // Any exit code is git's answer, and a name no ref holds prints nothing. Unasked
     // is no answer: read as "names no ref", HEAD's own id passes as a commit id.
-    const fullName = async (ref) =>
-      answered(await gitBuffered(root, ["rev-parse", "--symbolic-full-name", ref], bounds()), `which ref ${ref} names`).stdout.trim();
+    const fullName = async (ref) => (await askGit(root, ["rev-parse", "--symbolic-full-name", ref], `which ref ${ref} names`)).stdout.trim();
     const named = await fullName(baseRef);
     // A commit id is known by naming no ref, never by its spelling: `7812` and
     // `facade` are branch names too.
@@ -568,7 +568,8 @@ async function resolveBase(root, baseRef, caveats) {
     for (const c of candidates) {
       const remote = await remoteSha(root, c);
       if (!remote) continue;
-      const fetched = await git(root, ["fetch", "--depth=1", "origin", remote]);
+      // A fetch that did not happen, for whatever reason, is the next candidate and then the caveat that says so.
+      const fetched = await gitBuffered(root, ["fetch", "--depth=1", "origin", remote], bounds());
       if (!fetched.ok) continue;
       const mb = await mergeBase(root, remote, "HEAD");
       // A depth-1 checkout grafts HEAD as a root, so `merge-base` cannot see
@@ -624,7 +625,8 @@ function shallowNoHistory(caveats) {
  */
 async function refsNamed(root, name) {
   const rules = [name, `refs/${name}`, `refs/tags/${name}`, `refs/heads/${name}`, `refs/remotes/${name}`, `refs/remotes/${name}/HEAD`];
-  const listed = new Set((await git(root, ["for-each-ref", "--format=%(refname)", ...rules])).out.split("\n"));
+  // Unasked is not "one ref holds it": the name would then go to git's own precedence unseen.
+  const listed = new Set((await askGit(root, ["for-each-ref", "--format=%(refname)", ...rules], `which refs hold the name ${name}`)).stdout.split("\n"));
   return rules.filter((r) => listed.has(r));
 }
 
@@ -655,8 +657,9 @@ function refusal(ref, shallow, { own = false } = {}) {
 async function remoteSha(root, ref) {
   const branch = ref.replace(/^origin\//, "");
   const wanted = branch === "HEAD" ? "HEAD" : `refs/heads/${branch}`;
-  const ls = await git(root, ["ls-remote", "origin", wanted]);
-  for (const line of ls.out.split("\n")) {
+  // A remote that did not answer names no commit to fetch, which the caller's caveat says.
+  const ls = await gitBuffered(root, ["ls-remote", "origin", wanted], bounds());
+  for (const line of ls.stdout.split("\n")) {
     const [sha, name] = line.split("\t");
     if (name === wanted && isSha(sha)) return sha;
   }
@@ -669,11 +672,11 @@ async function remoteSha(root, ref) {
  * reads a shallow clone's graft instead and answers that HEAD has none.
  */
 async function recordedParents(root) {
-  const r = await git(root, ["cat-file", "commit", "HEAD"]);
+  const r = await askGit(root, ["cat-file", "commit", "HEAD"], "which parents HEAD's commit records");
   if (!r.ok) return [];
   // The header ends at the first blank line, and a message can hold a line
   // that reads like one of its fields.
-  const header = r.out.split("\n\n")[0];
+  const header = r.stdout.split("\n\n")[0];
   return [...header.matchAll(/^parent ([0-9a-f]+)$/gm)].map((m) => m[1]);
 }
 
@@ -683,8 +686,9 @@ async function recordedParents(root) {
  * ancestor of HEAD, which is what makes diffing against it legitimate.
  */
 async function boundary(root, head) {
-  const r = await git(root, ["rev-list", "--max-parents=0", head]);
-  const first = r.out.trim().split("\n").filter(Boolean).pop();
+  // Unasked is not a clone holding one commit, which the report would word as nothing earlier to compare against.
+  const r = await askGit(root, ["rev-list", "--max-parents=0", head], "for the oldest commit this clone holds");
+  const first = r.stdout.trim().split("\n").filter(Boolean).pop();
   if (!first) return null;
   return first === head ? null : first;
 }
@@ -696,13 +700,14 @@ async function boundary(root, head) {
 const REVISION_READ = { withSource: true, timeout: GIT.checkTimeoutMs };
 
 /**
- * Every test file git tracks, or null where the listing failed.
+ * Every test file git tracks, or null where git refused the listing.
  *
  * Null rather than an empty list, and the caller reads it as "there is one":
-  * an index this cannot read says nothing about what a directory holds, and
+ * an index this cannot read says nothing about what a directory holds, and
  * every other reader in this file that meets an unlistable corpus drops the
- * claims it cannot support rather than printing them anyway (C33). Nothing here
- * may throw either, since a rule that does takes the whole run with it.
+ * claims it cannot support rather than printing them anyway (C33). A listing
+ * git could not be asked for throws: a report with no placement finding and
+ * no word of why would read as a run that looked (F29).
  */
 async function trackedTests(root) {
   const found = [];
@@ -710,7 +715,8 @@ async function trackedTests(root) {
     await lsFiles(root, (rel) => {
       if (isTestPath(rel)) found.push(rel);
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof Unasked) throw err;
     return null;
   }
   return found;
@@ -760,14 +766,16 @@ async function absentAt(root, mergeBase, dirs) {
  * asked of everything git tracks beside them, the way a scan asks it.
  *
  * Empty where no examined language has such a tool, which costs no listing,
- * and where the listing failed: the file is then read by what it holds alone.
+ * and where git refused the listing: the file is then read by what it holds
+ * alone. It throws where git could not be asked.
  */
 async function placedAmong(root, examined) {
   if (!examined.some((c) => placeTestsOf(language(c.path)) !== null)) return new Set();
   const listed = examined.map((c) => ({ rel: c.path, lang: language(c.path) }));
   try {
     await lsFiles(root, (rel) => listed.push({ rel, lang: language(rel) }));
-  } catch {
+  } catch (err) {
+    if (err instanceof Unasked) throw err;
     return new Set();
   }
   return placedTests(listed);
@@ -1584,17 +1592,15 @@ async function treeSource(root, path) {
   }
 }
 
-/**
- * Every git call made through this returns rather than throws. The check
- * reports what it could not determine; it does not refuse.
- */
 // The check's own bounds on a git call, read at the call: a test sets them.
 const bounds = () => ({ maxBytes: GIT.checkMaxBytes, timeout: GIT.checkTimeoutMs });
 
-async function git(root, args, maxBytes = GIT.checkMaxBytes, timeout = GIT.checkTimeoutMs) {
-  const r = await gitBuffered(root, args, { maxBytes, timeout });
-  return { ok: r.ok, out: r.stdout };
-}
+/**
+ * What git answered `question` with under the check's bounds, whatever its
+ * exit code: the check reports what git would not determine. It throws
+ * `Unasked` where git gave no exit code, which is no answer to report (F29).
+ */
+const askGit = async (root, args, question) => answered(await gitBuffered(root, args, bounds()), question);
 
 function tally(findings) {
   const counts = { "MUST-FIX": 0, FIX: 0, NIT: 0 };
