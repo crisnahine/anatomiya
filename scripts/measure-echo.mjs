@@ -47,12 +47,11 @@ export function replayEcho(lines, window = ECHO_WINDOW_BYTES) {
         out.made++;
         if (body === previous) out.repeats++;
         previous = body;
-        if (heldIn(tail, (t) => OPENING.test(t) && t.replace(OPENING, "") === body, { window })) dropped++;
+        if (heldIn(tail, (t) => t.replace(OPENING, "") === body, { window })) dropped++;
         else out.kept++;
       }
     }
-    // A line that also carries a text the rule keeps stays whole, held copies included.
-    if (dropped > 0 && dropped === event.length) continue;
+    if (dropped > 0) continue;
     kept.push(`${line}\n`);
     sizes.push(Buffer.byteLength(kept.at(-1)));
     total += sizes.at(-1);
