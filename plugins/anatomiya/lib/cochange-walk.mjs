@@ -190,7 +190,8 @@ export async function startCochange(root, state, { signal, history = null } = {}
     return none(String(err && err.message ? err.message : err));
   }
   if (at === null) return none(null);
-  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal, history }), filesAt(root, at.tip, { signal })]);
+  // A tree git could not be asked for is null like one it refused: the record then says the tree could not be read.
+  const [walk, tree] = await Promise.all([walkCochange(root, at.tip, { signal, history }), filesAt(root, at.tip, { signal }).catch(() => null)]);
   return { ...at, walk, tree };
 }
 

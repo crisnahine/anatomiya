@@ -14,7 +14,8 @@
  *
  * A path that will not come back is reported rather than thrown on: the caller
  * decides what one missing file means, and for both of them it is one file
- * rather than the whole set.
+ * rather than the whole set. One git could not be asked for is `unasked` with
+ * its `error`, never `absent`, and the caller decides that too (F29).
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join, dirname, resolve as resolvePath, sep } from "node:path";
@@ -50,7 +51,7 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
       if (!abs) return void missing.push({ rel: f?.rel ?? null, reason: "unsafe path" });
 
       const blob = await reader.read(f.rel);
-      if (!blob.ok) return void missing.push({ rel: f.rel, reason: blob.reason });
+      if (!blob.ok) return void missing.push({ rel: f.rel, reason: blob.reason, ...(blob.error ? { error: blob.error } : {}) });
 
       // A file the temporary directory will not take is one path this run did
       // not get, reported like any other. Throwing here would lose the whole set.

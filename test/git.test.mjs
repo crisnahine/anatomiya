@@ -14,7 +14,7 @@ import { needsBatchZ, needsPosixPaths, needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
 import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
-import { blobReader, caseMagic, changedSinceWorktree, commitAt, diffRange, filesAt, gitBuffered, gitStreamed, headSha, isSha, mergeBase, nameStatusReader, parsePorcelainRows, shaReachable, showBlob, resolveBaseRef } from "../plugins/anatomiya/lib/git.mjs";
+import { Unasked, blobReader, caseMagic, changedSinceWorktree, commitAt, diffRange, filesAt, gitBuffered, gitStreamed, headSha, isSha, mergeBase, nameStatusReader, parsePorcelainRows, shaReachable, showBlob, resolveBaseRef } from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -1338,9 +1338,8 @@ test("a git that refused is not a git that said no: only exit code 1 is", needsG
 test("a merge base git could not be asked for is kept apart from one git says is not there", needsGitStub, async (t) => {
   const { dir, first, second } = twoCommits(t);
   const calls = gitAhead(t, unasked("*' merge-base '*"));
-  const base = await mergeBase(dir, first, second);
-  assert.deepEqual([base.found, base.failed, base.sha], [false, true, null]);
-  assert.match(String(base.unasked), new RegExp(`^Error: git could not be asked for the merge base of ${first} and ${second}: git was ended by SIGTERM`));
+  await assert.rejects(() => mergeBase(dir, first, second), (err) => err instanceof Unasked &&
+    new RegExp(`^git could not be asked for the merge base of ${first} and ${second}: git was ended by SIGTERM`).test(err.message));
   // Read as no fork point, the drift and the check's range run to the ref's tip.
   await assert.rejects(() => resolveBaseRef(dir, first), new RegExp(`^Error: git could not be asked for the merge base of HEAD and ${first}: git was ended by SIGTERM`));
   calls.restore();
@@ -1438,7 +1437,7 @@ test("a listing read under one caller's bounds does not answer a caller with tig
   process.env.PATH = `${bin}:${path}`;
   try {
     assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"]);
-    assert.equal(await filesAt(dir, second, { timeout: 1 }), null, "the tighter bound is asked, and git outlasts it");
+    await assert.rejects(() => filesAt(dir, second, { timeout: 1 }), /git could not be asked which files [0-9a-f]{40} holds: git ls-tree exited SIGTERM/, "the tighter bound is asked, and git outlasts it");
   } finally {
     process.env.PATH = path;
   }
@@ -1549,6 +1548,8 @@ function gitShim(t, batch = null, perCall = null) {
 
 const A_TS = { ok: true, bytes: Buffer.from("export const a = 1\n").toString("hex") };
 const ABSENT = { ok: false, reason: "absent" };
+// What a read answers where git left no exit code: never the same as a path git says is not there.
+const UNASKED = { ok: false, reason: "unasked" };
 
 function oneCommit(t) {
   const { dir, git } = repo(t);
@@ -1739,7 +1740,7 @@ test("a git that cannot be started hands the read to the per-call reader", needs
   const reader = blobReader(dir, sha, { env: { ...process.env, PATH: bin } });
   t.after(() => reader.close());
 
-  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT, "what the per-call reader says with no git to run");
+  assert.deepEqual(answerOf(await reader.read("a.ts")), UNASKED, "what the per-call reader says with no git to run");
   assert.equal(existsSync(join(bin, "git")), false, "the config was read, so the child was the call that failed");
 });
 
@@ -1755,7 +1756,7 @@ test("a repository whose config cannot be read starts no child", needsShebang, a
     await reader.close();
   });
 
-  assert.deepEqual(answerOf(answer), ABSENT, "as the per-call reader answers it");
+  assert.deepEqual(answerOf(answer), UNASKED, "as the per-call reader answers it");
   assert.deepEqual(calls, [], "nothing but the two reads of the config");
 });
 
@@ -1794,8 +1795,8 @@ test("a reader that has handed over still fetches, and still gives up on its cal
   const slow = gitShim(t, refusesZ, ({ bin }) => `echo $$ > '${bin}/pid'; exec sleep 300`);
   const stalled = blobReader(dir, head, { timeout: 10_000, env: slow.env });
   t.after(() => stalled.close());
-  assert.deepEqual(answerOf(await stalled.read("a.ts")), ABSENT);
-  // A config read that ran out of time answers absent too, with no per-call read started.
+  assert.deepEqual(answerOf(await stalled.read("a.ts")), UNASKED);
+  // A config read that ran out of time answers unasked too, with no per-call read started.
   assert.equal(existsSync(join(slow.bin, "pid")), true, "the per-call read was running");
   assert.equal(gone(join(slow.bin, "pid")), true, "and the caller's clock ended it");
 });
@@ -1919,11 +1920,16 @@ test("a reader with no descriptors left for a child answers as the per-call read
   const [code, signal] = await once(starved, "close");
 
   assert.deepEqual({ code, signal }, { code: 0, signal: null });
-  assert.deepEqual(JSON.parse(stdout), {
+  const got = JSON.parse(stdout);
+  for (const read of ["perCall", "first", "second"]) {
+    assert.match(got[read].error, /^git could not be asked for a\.ts at [0-9a-f]{40}: spawn git EMFILE/, read);
+    got[read] = answerOf(got[read]);
+  }
+  assert.deepEqual(got, {
     warm: true,
-    perCall: ABSENT,
-    first: ABSENT,
-    second: ABSENT,
+    perCall: UNASKED,
+    first: UNASKED,
+    second: UNASKED,
     closed: "resolved",
     again: "resolved",
   });
@@ -2023,9 +2029,9 @@ test("a child whose start throws hands every read to the per-call reader", async
   assert.deepEqual(answerOf(await showBlob(dir, sha, "a.ts")), A_TS);
   const reader = blobReader(dir, sha, { env });
 
-  assert.deepEqual(answerOf(await showBlob(dir, sha, "a.ts", { env })), ABSENT, "what the per-call reader says");
-  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
-  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
+  assert.deepEqual(answerOf(await showBlob(dir, sha, "a.ts", { env })), UNASKED, "what the per-call reader says");
+  assert.deepEqual(answerOf(await reader.read("a.ts")), UNASKED);
+  assert.deepEqual(answerOf(await reader.read("a.ts")), UNASKED);
   await reader.close();
   await reader.close();
 });
@@ -2049,7 +2055,7 @@ test("an environment Node refuses is an answer where the repository's config is 
   const fresh = () => oneCommit(t);
 
   let { dir, sha } = fresh();
-  assert.deepEqual(await said(showBlob(dir, sha, "a.ts", { env })), ABSENT, "the per-call reader");
+  assert.deepEqual(answerOf(await said(showBlob(dir, sha, "a.ts", { env }))), UNASKED, "the per-call reader");
 
   ({ dir, sha } = fresh());
   const buffered = await said(gitBuffered(dir, ["rev-parse", "HEAD"], { env }));
@@ -2065,8 +2071,8 @@ test("an environment Node refuses is an answer where the repository's config is 
 
   ({ dir, sha } = fresh());
   const reader = blobReader(dir, sha, { env });
-  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
-  assert.deepEqual(answerOf(await reader.read("a.ts")), ABSENT);
+  assert.deepEqual(answerOf(await reader.read("a.ts")), UNASKED);
+  assert.deepEqual(answerOf(await reader.read("a.ts")), UNASKED);
   await reader.close();
 });
 
@@ -2197,4 +2203,53 @@ test("a child ended for a reply nobody wanted is gone when its reader has closed
 
   assert.equal(existsSync(join(shim.bin, "pid")), true, "a child was started, so there was one to end");
   assert.equal(gone(join(shim.bin, "pid")), true);
+});
+
+test("a listing or a range git could not be asked for throws, and one git refused answers null", needsGitStub, async (t) => {
+  const { dir, first, second } = twoCommits(t);
+  const absent = "0".repeat(40);
+  assert.equal(await filesAt(dir, absent), null, "git ran and refused: exit code 128");
+  assert.equal(await diffRange(dir, absent, second), null);
+  assert.equal(await changedSinceWorktree(dir, absent), null);
+
+  const calls = gitAhead(t, unasked("*' ls-tree '*|*' diff '*"));
+  await assert.rejects(() => filesAt(dir, second), new RegExp(`^Error: git could not be asked which files ${second} holds: git ls-tree exited SIGTERM`));
+  await assert.rejects(() => diffRange(dir, first, second), new RegExp(`^Error: git could not be asked what changed from ${first} to ${second}: git diff exited SIGTERM`));
+  await assert.rejects(() => changedSinceWorktree(dir, second), new RegExp(`^Error: git could not be asked which files differ from ${second}: git diff exited SIGTERM`));
+  for (const read of [() => filesAt(dir, second), () => diffRange(dir, first, second)]) {
+    await assert.rejects(read, (err) => err instanceof Unasked);
+  }
+  calls.restore();
+  assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"], "asked again, and answered");
+  assert.deepEqual([...(await diffRange(dir, first, second)).changed], ["b.ts"]);
+});
+
+test("a streamed read rejects as unasked where git left no exit code, and as refused where it left one", needsGitStub, async (t) => {
+  const { dir } = twoCommits(t);
+  const read = () => gitStreamed(dir, ["ls-files", "-z"], () => true);
+  await assert.rejects(() => gitStreamed(dir, ["ls-files", "--no-such-flag"], () => true), (err) => err instanceof Unasked, "an argument this tool refuses");
+  let calls = gitAhead(t, exits("*' ls-files '*", 3));
+  await assert.rejects(read, (err) => !(err instanceof Unasked) && /git ls-files exited 3/.test(err.message));
+  calls.restore();
+  calls = gitAhead(t, unasked("*' ls-files '*"));
+  await assert.rejects(read, (err) => err instanceof Unasked && /git ls-files exited SIGTERM/.test(err.message));
+  calls.restore();
+  const stopped = new AbortController();
+  stopped.abort();
+  await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z"], () => true, { signal: stopped.signal }), (err) => !(err instanceof Unasked), "a read its caller stopped is the caller's own");
+});
+
+test("a blob git could not be asked for is unasked, never absent, through either reader", needsGitStub, async (t) => {
+  const { dir, second } = twoCommits(t);
+  assert.deepEqual(await showBlob(dir, second, "nowhere.ts"), { ok: false, reason: "absent" });
+
+  gitAhead(t, unasked("*' cat-file '*"));
+  const one = await showBlob(dir, second, "a.ts");
+  assert.deepEqual([one.ok, one.reason], [false, "unasked"]);
+  assert.match(one.error, new RegExp(`^git could not be asked for a.ts at ${second}: git was ended by SIGTERM`));
+  // The batch child dies too, and its read falls to the per-call reader, which could not ask either.
+  const reader = blobReader(dir, second);
+  t.after(() => reader.close());
+  const batched = await reader.read("a.ts");
+  assert.deepEqual([batched.ok, batched.reason], [false, "unasked"]);
 });
