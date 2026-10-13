@@ -13,11 +13,16 @@
 export const INERT_ENGINES = ["oxc", "prism", "tree-sitter"];
 
 /**
- * How long the tree-sitter parses of one stop may take, all of them together.
+ * How long the tree-sitter files of one stop may take, all of them together:
+ * the first load of the runtime and of each grammar, every parse and every
+ * walk of a parsed tree. A file that does not fit asks about every line.
  *
- * The largest files under the size the parser reads parse in 350 to 450 ms, so
- * one such file fits, and the stop still answers inside the timeout the hook
- * declares. A file reached after it is asked about unread.
+ * The largest file of the 25 repositories of the language corpus is 451 KiB.
+ * Parse plus walk of the three largest files per language took 39 to 628 ms at
+ * the median and 790 ms at most at a load average of 27 to 34, and 61 to
+ * 1,196 ms at the median and 1,783 ms at most at 38 to 44. Over 200 commits of
+ * 21 repositories the slowest file took 179 ms on a quiet machine and 619 ms
+ * at a load average above 70.
  */
 export const REUSE_PARSE_MS = 1000;
 
@@ -175,7 +180,8 @@ function inertLines(engine, lines) {
 /**
  * The lines of one file that define nothing callable, or null where no rule
  * reads it. `deadline` is the moment on `performance.now()`'s clock past
- * which a parse stops and its file asks; `grammars` is a test override.
+ * which a parse or a walk stops and its file asks; `grammars` is a test
+ * override.
  */
 export async function inertLinesOf({ engine, lang, source, deadline, grammars }) {
   if (engine in INERT) return inertLines(engine, source.split("\n"));

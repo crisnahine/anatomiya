@@ -71,11 +71,32 @@ function rulesOf(lang) {
 const RULES = new Map();
 const rulesFor = (lang) => RULES.get(lang) ?? RULES.set(lang, rulesOf(lang)).get(lang);
 
-const named = (node) => node.namedChildren.filter(Boolean);
+// The walk reads the clock once in this many nodes: a read costs more than a node does.
+const CLOCK_EVERY = 4096;
+// One walk runs at a time and never yields, so its clock is held here and not passed to every reader.
+const clock = { deadline: Infinity, left: CLOCK_EVERY };
+
+/** Counts `nodes` read, and throws once the walk has run past its deadline. */
+function tick(nodes = 1) {
+  if ((clock.left -= nodes) > 0) return;
+  clock.left = CLOCK_EVERY;
+  if (performance.now() > clock.deadline) throw new Error("past the deadline");
+}
+
+/** A search of a whole subtree, counted as the nodes it reads. */
+function within(node, types) {
+  tick(node.descendantCount);
+  return node.descendantsOfType(types);
+}
+
+function named(node) {
+  tick();
+  return node.namedChildren.filter(Boolean);
+}
 
 function interpolates(node, r) {
-  if (r.interpolation.length > 0 && node.descendantsOfType(r.interpolation).length > 0) return true;
-  return r.bare.length > 0 && node.descendantsOfType(r.bare).some((n) => n.text === "$");
+  if (r.interpolation.length > 0 && within(node, r.interpolation).length > 0) return true;
+  return r.bare.length > 0 && within(node, r.bare).some((n) => n.text === "$");
 }
 
 /** Whether a literal holds its own text and nothing else: an interpolation, however it is spelt, is no part of one. */
@@ -102,7 +123,7 @@ function paired(node, operand, r) {
   return list === "negated" ? BOOLEAN.test(operand.text) : list !== "signed" || !UNSIGNED.test(operand.text);
 }
 
-const annotated = (node, r) => r.annotation.length > 0 && node.descendantsOfType(r.annotation).length > 0;
+const annotated = (node, r) => r.annotation.length > 0 && within(node, r.annotation).length > 0;
 
 /**
  * Whether every named node of a subtree is a literal or one of `types`, a kind
@@ -186,9 +207,9 @@ function rowsOf(start, end) {
 
 /**
  * Which of a file's lines define nothing callable, or null where no grammar or
- * runtime reads it. A file the grammar rejects, one whose parse ran past
- * `deadline` and one the runtime failed on ask about every line but the blank
- * ones.
+ * runtime reads it. A file the grammar rejects, one whose parse or walk ran
+ * past `deadline` and one the runtime failed on ask about every line but the
+ * blank ones.
  */
 export async function treeInertLines(source, lang, deadline, { grammars } = {}) {
   const lines = source.split("\n");
@@ -196,16 +217,17 @@ export async function treeInertLines(source, lang, deadline, { grammars } = {}) 
   try {
     const parsed = await parseForLines(source, lang, { cancel: () => performance.now() > deadline, ...(grammars ? { grammars } : {}) });
     if (parsed === null) return null;
-    return parsed.tree ? walked(parsed.tree, lines, lang) : unread();
+    return parsed.tree ? walked(parsed.tree, lines, lang, deadline) : unread();
   } catch {
-    // A trap or a heap at its cap, in the parse or the walk: nothing here can say what the file
-    // holds, and a throw past here reaches the hook's boundary, which answers nothing for the stop.
+    // A trap or a heap at its cap, in the parse or the walk, or a walk past the deadline: nothing here
+    // can say what the file holds, and a throw past here reaches the hook's boundary, which answers
+    // nothing for the stop.
     return unread();
   }
 }
 
-/** The line rule over a parsed tree, which it deletes. */
-function walked(tree, lines, lang) {
+/** The line rule over a parsed tree, which it deletes. It throws where the walk runs past `deadline`. */
+function walked(tree, lines, lang, deadline) {
   const asks = new Array(lines.length).fill(false);
   const mark = ([from, to]) => {
     for (let row = from; row <= to; row++) asks[row] = true;
@@ -214,9 +236,11 @@ function walked(tree, lines, lang) {
   try {
     const r = rulesFor(lang);
     cursor = tree.walk();
+    [clock.deadline, clock.left] = [deadline, CLOCK_EVERY];
     // Each open node, and whether a named node was seen under it: a named node with none is a leaf.
     const open = [];
     for (;;) {
+      tick();
       const isNamed = cursor.nodeIsNamed;
       if (isNamed && open.length > 0) open[open.length - 1].sawNamed = true;
       const candidate = isNamed && (r.whole.has(cursor.nodeType) || r.header.has(cursor.nodeType) || r.binding.has(cursor.nodeType) || r.declaration.has(cursor.nodeType) || cursor.nodeType === r.docstring?.statement);

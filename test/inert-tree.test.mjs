@@ -66,6 +66,55 @@ test("a failure while the tree is walked asks about every non-blank line of that
   }
 });
 
+/** A deadline that is not due while the file is parsed and is due from the moment its tree is walked. */
+function dueOnceWalked(t) {
+  const walk = Tree.prototype.walk;
+  let walking = false;
+  Tree.prototype.walk = function () {
+    walking = true;
+    return walk.call(this);
+  };
+  t.after(() => {
+    Tree.prototype.walk = walk;
+  });
+  return { valueOf: () => (walking ? -Infinity : Infinity) };
+}
+
+test("a walk that runs past the deadline asks about every non-blank line of that file", async (t) => {
+  const source = "# note\n\n".repeat(5000);
+  assert.deepEqual(await treeInertLines(source, "python", Infinity), source.split("\n").map(() => true), "read in time, every line is inert");
+  const inert = await treeInertLines(source, "python", dueOnceWalked(t));
+  assert.deepEqual(inert, source.split("\n").map((line) => line === ""));
+});
+
+test("the deadline holds inside one binding, however many names its type holds", async (t) => {
+  const source = `X: T[\n${"    a,\n".repeat(20000)}] = 1\n`;
+  const inert = await treeInertLines(source, "python", dueOnceWalked(t));
+  assert.deepEqual(inert.filter(Boolean).length, 1, "only the blank last line");
+});
+
+test("a file of nested bindings the walk cannot finish in time asks about every non-blank line, and the call returns", async (t) => {
+  const source = `# note\n${"a = ".repeat(4000)}f()\n`;
+  assert.deepEqual(await treeInertLines(source, "python", dueOnceWalked(t)), [false, false, true]);
+});
+
+test("a search of a whole subtree counts against the clock as the nodes it reads", async (t) => {
+  // Each assignment holds the ones after it, so a search per assignment reads the clock far more often than once in 4,096 nodes.
+  const walk = Tree.prototype.walk;
+  t.after(() => {
+    Tree.prototype.walk = walk;
+  });
+  let reads = 0;
+  let walking = false;
+  Tree.prototype.walk = function () {
+    walking = true;
+    return walk.call(this);
+  };
+  const deadline = { valueOf: () => (walking && reads++, Infinity) };
+  await treeInertLines(`${"a = ".repeat(1000)}f()\n`, "python", deadline);
+  assert.ok(reads >= 100, `${reads} reads of the clock`);
+});
+
 test("a failure before the walk still deletes the tree", () => {
   // A language's rules are built on its first file and kept, so the failure needs a process that has read none.
   const lib = (name) => JSON.stringify(new URL(`../plugins/anatomiya/lib/${name}.mjs`, import.meta.url).href);
