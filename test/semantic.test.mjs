@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { repo } from "./ts-repo.mjs";
-import { needsPosixPermissions, needsSymlinks } from "./platform.mjs";
+import { needsPosixPermissions, needsSymlinks, removeTree } from "./platform.mjs";
 import { scratch } from "./git-worktrees.mjs";
 import {
   loadTypeScript,
@@ -185,7 +185,7 @@ test("a checker outside major 5 is refused, because 7 has no JS API", async (t) 
   // into a silent no-op the day it publishes. Refusing here is what makes doctor
   // name it rather than the scan quietly leaving it off.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsver-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   assert.equal(await loadTypeScript({ specifier: typescriptStub(dir, "7.0.0") }), null, "the Go port is refused");
   assert.equal(await loadTypeScript({ specifier: typescriptStub(dir, "6.1.2") }), null, "so is anything else off major 5");
@@ -332,7 +332,7 @@ test("a checker that dies partway through is a failure, not a clean partial answ
   // measured over a fraction of it with nothing saying so. That is the silent
   // partial answer B8 exists to refuse.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-halfdead-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const worker = join(dir, "half-dead.mjs");
   writeFileSync(
     worker,
@@ -355,7 +355,7 @@ test("a checker that dies partway through is a failure, not a clean partial answ
 /** A worker that answers what it is told to and then never speaks again. */
 function stallingWorker(t, name, says) {
   const dir = mkdtempSync(join(tmpdir(), `anatomiya-${name}-`));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const worker = join(dir, `${name}.mjs`);
   writeFileSync(
     worker,
@@ -434,7 +434,7 @@ test("a checker that built its program and then stalled is killed by the shorter
  */
 function sitedWorker(t, name, then) {
   const dir = mkdtempSync(join(tmpdir(), `anatomiya-${name}-`));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const worker = join(dir, `${name}.mjs`);
   writeFileSync(
     worker,
@@ -582,7 +582,7 @@ test("a checker that cannot start degrades the tier instead of crashing the scan
   // unhandled 'error' event became an uncaughtException and took the whole
   // scan down, losing the syntactic pass that had already finished.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-nostart-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
     workerPath: join(dir, "does-not-exist.mjs"),
@@ -600,7 +600,7 @@ test("a checker that cannot be spawned degrades the tier instead of crashing the
   // syntactic pass that already finished. A missing cwd is the reachable
   // version of the same failure: a missing script exits instead.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-nospawn-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
     cwd: join(dir, "not-a-directory"),

@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { DECISIONS_DIR, indexRows, readRowFile, rebuild, rowFiles, shortStatus } from "../scripts/decisions.mjs";
+import { removeTree } from "./platform.mjs";
 
 const B2 = [
   "# B2",
@@ -149,7 +150,7 @@ test("an index row whose link is labelled as another row names no file", () => {
 
 test("only a regular file under the row directory is a row file", (t) => {
   const root = mkdtempSync(join(tmpdir(), "anatomiya-rows-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => removeTree(root));
   mkdirSync(join(root, DECISIONS_DIR, "B1.md"), { recursive: true });
   writeFileSync(join(root, DECISIONS_DIR, "B2.md"), B2);
 

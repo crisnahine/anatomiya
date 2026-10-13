@@ -5,6 +5,10 @@
  * fixtures cannot be written there at all. The defence still matters on the
  * systems where the input is possible, and a test that cannot create its own
  * input proves nothing about the code either way.
+ *
+ * Beside the skips, the two things a test does another way by platform: a
+ * directory that tells case apart (`caseSensitiveDir`), and one removed once
+ * the process started in it has gone (`removeTree`).
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -114,19 +118,20 @@ export const needsUnreadableDirs = WINDOWS
 /**
  * Remove a test's directory, waiting out a process that is still leaving it.
  *
- * Windows holds a directory open as a dying process's cwd, and a test that ends
- * the git it started reaches its cleanup first: `EBUSY` from Node 22, `EPERM`
- * from Node 24. The wait is the loop's own and not `rmSync`'s, which holds the
- * loop while it retries. A directory still held after ten seconds is a child
- * that never left, and that fails the test.
+ * Windows will not remove a directory a process was started in until that
+ * process has gone, and a git a test's reader ended can still be going when the
+ * cleanup runs: `EBUSY` from Node 22, `EPERM` from Node 24. The wait is the
+ * loop's own and not `rmSync`'s, which holds the loop while it retries. A
+ * directory still held after a hundred tries, ten seconds at the wait a test
+ * takes, is a child that never left, and that fails the test.
  */
-export async function removeTree(dir) {
+export async function removeTree(dir, wait = 100) {
   for (let tries = 100; ; tries--) {
     try {
       return rmSync(dir, { recursive: true, force: true });
     } catch (err) {
-      if (tries === 0 || !["EBUSY", "ENOTEMPTY", "EPERM"].includes(err.code)) throw err;
-      await new Promise((done) => setTimeout(done, 100));
+      if (tries === 0 || !["EBUSY", "EPERM"].includes(err.code)) throw err;
+      await new Promise((done) => setTimeout(done, wait));
     }
   }
 }
@@ -201,7 +206,7 @@ export const needsCaseSensitiveFilesystem = folds
 export function caseSensitiveDir(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-case-"));
   if (!folds) {
-    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    t.after(() => removeTree(dir));
     return { dir };
   }
   const image = join(dir, "volume.dmg");

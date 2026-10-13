@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Language } from "web-tree-sitter";
@@ -10,10 +10,11 @@ import { ACCESS, CONTAINERS, COUNTED, FIELDS, FOREIGN, measure, NAMING, ORACLE, 
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
+import { removeTree } from "./platform.mjs";
 
 function repo(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-measure-inert-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q");
   git("config", "user.email", "t@t.test");

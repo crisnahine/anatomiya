@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { needsShebang, needsSymlinks } from "./platform.mjs";
+import { needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { installWithoutStripper } from "./no-stripper.mjs";
 import { installLacking, installWithoutDependencies } from "./plugin-install.mjs";
 import { ANATOMIYA, BINARY, REL, ROOT, installed } from "../scripts/plugins.mjs";
@@ -19,7 +19,7 @@ import { olderThan } from "../plugins/anatomiya/lib/version.mjs";
 /** A directory on PATH holding one stub interpreter, so a probe meets a Ruby that is not this one. */
 function stubInterpreter(t, body) {
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-readiness-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(join(bin, "ruby"), body, { mode: 0o755 });
   return { PATH: bin };
 }
@@ -532,7 +532,7 @@ test("a checker the scan would not load is not ok, and setup counts it as needed
   // because the loader holds it to major 5 and the probe only imported it.
   // Probed out of process: module resolution is what is under test.
   const above = mkdtempSync(join(tmpdir(), "anatomiya-oldts-"));
-  t.after(() => rmSync(above, { recursive: true, force: true }));
+  t.after(() => removeTree(above));
   mkdirSync(join(above, "node_modules", "typescript"), { recursive: true });
   writeFileSync(join(above, "node_modules", "typescript", "package.json"), `{"name":"typescript","version":"4.9.5","main":"index.js"}`);
   writeFileSync(join(above, "node_modules", "typescript", "index.js"), `module.exports = { version: "4.9.5", createProgram() {} };`);
@@ -565,7 +565,7 @@ test("an engine fixed after a failed load reads as fixed only to a node that nev
   // which probes before npm runs, would read an install that fixed it as still
   // absent. The re-probe asks a fresh node, and this is why.
   const home = mkdtempSync(join(tmpdir(), "anatomiya-afresh-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  t.after(() => removeTree(home));
   for (const part of ["lib", "bin"]) cpSync(join(ANATOMIYA, part), join(home, part), { recursive: true });
   cpSync(join(ANATOMIYA, "package.json"), join(home, "package.json"));
   // Copied rather than linked: a linked package resolves what it requires from
@@ -687,7 +687,7 @@ test("packages installed above the plugin are still installed, which is this che
   // whether anything on the way up serves this plugin, which is where node's
   // own resolver would have looked.
   const above = mkdtempSync(join(tmpdir(), "anatomiya-hoisted-"));
-  t.after(() => rmSync(above, { recursive: true, force: true }));
+  t.after(() => removeTree(above));
   mkdirSync(join(above, "node_modules"), { recursive: true });
   mkdirSync(join(above, REL.anatomiya), { recursive: true });
   const absent = [{ engine: "oxc", extra: null, present: false, ok: false, reason: "oxc-parser did not load" }];
@@ -702,7 +702,7 @@ test("an install that ran and stopped short is left to the rows that say which e
   // the engine that did not load. Driven with the directory there, since that
   // is the branch: with it absent the first guard has already answered.
   const half = mkdtempSync(join(tmpdir(), "anatomiya-halfinstall-"));
-  t.after(() => rmSync(half, { recursive: true, force: true }));
+  t.after(() => removeTree(half));
   mkdirSync(join(half, "node_modules"), { recursive: true });
   const absent = [{ engine: "oxc", extra: null, present: false, ok: false, reason: "oxc-parser did not load" }];
 
@@ -711,7 +711,7 @@ test("an install that ran and stopped short is left to the rows that say which e
   // served by the same `node_modules` and answers the same way. A tree with
   // none anywhere above it is what the lead line is about.
   const bare = mkdtempSync(join(tmpdir(), "anatomiya-nothing-"));
-  t.after(() => rmSync(bare, { recursive: true, force: true }));
+  t.after(() => removeTree(bare));
 
   assert.match(installProblem(absent, join(bare, "deep", "deeper")) ?? "", /nothing is installed/, "and a tree with none still answers");
 });
@@ -740,7 +740,7 @@ function onOldNode(args, { input = "" } = {}) {
 /** A committed repository of plain source, scanned, so every hook has a map to answer from. */
 async function mapped(t) {
   const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-oldnode-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "src"), { recursive: true });
   for (const f of ["a", "b", "c", "d", "e", "f"]) writeFileSync(join(dir, "src", `${f}.js`), `export const ${f} = (x) => x\n`);
   execFileSync("git", ["init", "-q"], { cwd: dir });
@@ -768,7 +768,7 @@ test("a node under the floor is refused by every command that works, before any 
   // A directory that is no repository, so a command that got past the gate
   // answers about the directory instead, and the case can tell the two apart.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-oldnode-bare-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   for (const args of [["scan", dir], ["scan", "--dry-run", dir], ["check", dir], ["pin", dir], ["setup", "--dry-run"], ["refresh-run", dir]]) {
     const { code, stderr } = onOldNode(args);

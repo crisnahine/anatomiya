@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { createdAlone, mtimeAge, ownerAge, removeLeftTokens, takeDeadLock } from "../plugins/anatomiya/lib/lock.mjs";
+import { removeTree } from "./platform.mjs";
 
 /**
  * The lock both hooks take: one exclusive create, a dead lock broken by the one
@@ -14,7 +15,7 @@ import { createdAlone, mtimeAge, ownerAge, removeLeftTokens, takeDeadLock } from
  */
 function workspace(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-lock-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 

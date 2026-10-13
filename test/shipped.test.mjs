@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { needsPathControl, needsShebang, needsSpawnableNpm, needsSymlinks, needsWindows } from "./platform.mjs";
+import { needsPathControl, needsShebang, needsSpawnableNpm, needsSymlinks, needsWindows, removeTree } from "./platform.mjs";
 import { PACK_ARGV, pluginRootsIn, reachableFrom, shipped } from "../scripts/shipped.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
@@ -24,7 +24,7 @@ function packaged(t, { files, extra = () => {} } = {}) {
   // writes inside what this removes: one did, under a fixed name in the shared
   // temp root, where it survived every run and two runs collided on it.
   const held = mkdtempSync(join(tmpdir(), "anatomiya-shipped-"));
-  t.after(() => rmSync(held, { recursive: true, force: true }));
+  t.after(() => removeTree(held));
   const dir = join(held, "plugin");
   mkdirSync(dir, { recursive: true });
 
@@ -138,7 +138,7 @@ test("a package npm cannot read is named, not passed over", needsSpawnableNpm, (
   // shape the marketplace allows. One that has a list npm chokes on is not the
   // same thing, and it is the one that has to be said out loud.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-nopkg-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "package.json"), "{not json");
 
   const problems = shipped(dir);
@@ -269,7 +269,7 @@ test("the pack is read offline, so the gate reaches no registry", () => {
 test("and the npm the gate runs is handed that list, not one spelled at the call site", { ...needsShebang, ...needsPathControl }, (t) => {
   const dir = packaged(t, { files: [".claude-plugin/plugin.json", "hooks/", "bin/", "lib/"] });
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-shipped-npm-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const seen = join(bin, "argv.txt");
   writeFileSync(join(bin, "npm"), `#!/bin/sh\nprintf '%s\\n' "$@" > ${seen}\nprintf 'not json'\n`, { mode: 0o755 });
 
@@ -673,7 +673,7 @@ test("every plugin the marketplace lists is one this gate answers about", needsS
 /** A marketplace listing one plugin that has no package of its own. */
 function packageless(t, extra = () => {}) {
   const held = mkdtempSync(join(tmpdir(), "anatomiya-shipped-"));
-  t.after(() => rmSync(held, { recursive: true, force: true }));
+  t.after(() => removeTree(held));
   mkdirSync(join(held, ".claude-plugin"), { recursive: true });
   writeFileSync(
     join(held, ".claude-plugin", "marketplace.json"),

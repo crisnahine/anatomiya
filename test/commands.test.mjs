@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { ASKS_BY_ID, gitAhead, needsGitStub, unasked, exits } from "./git-stub.mjs";
-import { needsPosixPermissions, needsShebang, needsSymlinks } from "./platform.mjs";
+import { needsPosixPermissions, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
@@ -30,7 +30,7 @@ const needsTs = (await loadTypeScript()) ? {} : { skip: "typescript is not insta
 /** A committed repository with one area's worth of source in it. */
 function repo(t, files = 8) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < files; i++) {
@@ -64,7 +64,7 @@ function repoWithBranch(t) {
  */
 function repoWithGemfile(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-gemfile-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   for (const sub of ["utils", "components"]) mkdirSync(join(dir, "src", sub), { recursive: true });
   for (let i = 0; i < 6; i++) {
@@ -84,7 +84,7 @@ function repoWithGemfile(t) {
 /** A repository written in Ruby and nothing else, so no file of it can be read without an interpreter. */
 function repoOnlyRuby(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-ruby-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   mkdirSync(join(dir, "app", "models"), { recursive: true });
   for (let i = 0; i < 8; i++) {
@@ -107,7 +107,7 @@ function repoOnlyRuby(t) {
  */
 function withoutRuby(t) {
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-commands-path-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   const git = (process.env.PATH ?? "")
     .split(delimiter)
     .map((d) => join(d, "git"))
@@ -321,7 +321,7 @@ test("a path inside the repository is widened to the root the scan reports", asy
 
 test("a scan of a directory that is not a repository refuses rather than reporting nothing", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-bare-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   await assert.rejects(() => runScan(dir, { dryRun: true }), /not a git repository/);
 });
@@ -350,7 +350,7 @@ test("a checked scan measures resolution over area files, so a bundle in no area
   // own code resolved at 100% down to 3% and printed it as low-resolution,
   // which points the reader at the tsconfig and the dependencies.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-bundle-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   mkdirSync(join(dir, "src"), { recursive: true });
   mkdirSync(join(dir, "public", "assets"), { recursive: true });
   mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
@@ -537,7 +537,7 @@ test("a pin whose store is linked outside the repository refuses, dry run includ
   // for.
   const dir = repo(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   symlinkSync(outside, join(dir, ".claude"));
 
   for (const dryRun of [true, false]) {
@@ -728,7 +728,7 @@ test("a pin over no tracked source refuses, and counts the source still untracke
   // then made read postdates-baseline and stated nothing until somebody
   // re-pinned, with no line anywhere saying why.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-empty-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q");
   git("config", "user.email", "t@t.test");
@@ -1014,7 +1014,7 @@ test("a pin over one this build cannot read says it is replacing it, not pinning
 
 test("a repository with no commit cannot be pinned", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-fresh-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
 
   await assert.rejects(() => runPin(dir), /no commit to pin/);
@@ -1174,7 +1174,7 @@ test("a doctor counts a target's files where the clone holds them and no record"
 
 test("a doctor run outside any repository answers about the installation alone", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-none-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   assert.deepEqual((await runDoctor({ cwd: dir })).lines, (await runDoctor()).lines);
 });

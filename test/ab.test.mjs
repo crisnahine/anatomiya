@@ -10,7 +10,7 @@ import { rankAreas } from "../scripts/ab/pick.mjs";
 import { scoreFile } from "../scripts/ab/score.mjs";
 import { readingFor } from "../scripts/ab/read.mjs";
 import { repoLabel } from "../scripts/ab/label.mjs";
-import { needsPathControl, needsPosixPermissions, needsShebang } from "./platform.mjs";
+import { needsPathControl, needsPosixPermissions, needsShebang, removeTree } from "./platform.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -23,7 +23,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
  */
 function stubClaude(t, script) {
   const base = mkdtempSync(join(tmpdir(), "anatomiya-stub-"));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
+  t.after(() => removeTree(base));
   const bin = join(base, "bin");
   const arm = join(base, "arm");
   mkdirSync(bin);
@@ -120,7 +120,7 @@ test("a trial is handed its tools and no others, the arm's own settings and the 
 /** A committed repository holding a settings file, with an untracked map beside it. */
 function armSource(t) {
   const repo = mkdtempSync(join(tmpdir(), "anatomiya-ab-arms-"));
-  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  t.after(() => removeTree(repo));
   const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: "pipe" });
   git("init", "-q");
   mkdirSync(join(repo, "src"));
@@ -746,7 +746,7 @@ test("an arm cannot set the engine that measures it", needsShebang, async (t) =>
   // The map lives in .claude/rules/ and is left exactly where it is.
   const { dropSettings } = await import("../scripts/ab/arms.mjs");
   const arm = mkdtempSync(join(tmpdir(), "anatomiya-arm-"));
-  t.after(() => rmSync(arm, { recursive: true, force: true }));
+  t.after(() => removeTree(arm));
   mkdirSync(join(arm, ".claude", "rules"), { recursive: true });
   writeFileSync(join(arm, ".claude", "settings.json"), '{"env":{"CLAUDE_CODE_EFFORT_LEVEL":"xhigh"}}');
   writeFileSync(join(arm, ".claude", "settings.local.json"), '{"env":{"CLAUDE_CODE_EFFORT_LEVEL":"low"}}');
@@ -1077,7 +1077,7 @@ test("a substituted engine is named in the document beside the one that served",
  */
 function measurable(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-ab-repo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe", encoding: "utf8" });
   const write = (rel, body) => {
     mkdirSync(dirname(join(dir, rel)), { recursive: true });
@@ -1130,7 +1130,7 @@ test("the harness completes a run from an empty state and writes the document", 
   const out = join(mkdtempSync(join(tmpdir(), "anatomiya-ab-out-")), "result.md");
   t.after(() => rmSync(dirname(out), { recursive: true, force: true }));
   const config = mkdtempSync(join(tmpdir(), "anatomiya-ab-config-"));
-  t.after(() => rmSync(config, { recursive: true, force: true }));
+  t.after(() => removeTree(config));
   // An engine in the operator's own settings is no reason to refuse: a trial
   // loads only the project and local sources, so it never reaches one.
   writeFileSync(join(config, "settings.json"), '{"env":{"CLAUDE_CODE_EFFORT_LEVEL":"xhigh"}}\n');

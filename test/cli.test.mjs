@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
-import { needsPathControl, needsPosixPaths, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsRemovableCwd, needsShebang, needsSymlinks, needsUnreadableDirs, needsWindows, removeTree } from "./platform.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { installLacking, installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
@@ -17,7 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function repoWithSource(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-repo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < 8; i++) {
@@ -79,7 +79,7 @@ test("nothing is written to the repository when the parser is missing", (t) => {
 /** A committed repository holding eight files per named directory, each written by `body(i)`. */
 function repoOf(t, dirs) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-langs-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   for (const [sub, ext, body] of dirs) {
     mkdirSync(join(dir, sub), { recursive: true });
     for (let i = 0; i < 8; i++) writeFileSync(join(dir, sub, `f${i}.${ext}`), body(i));
@@ -242,7 +242,7 @@ test("the CLI summary and the overview word an unexamined file the same way", (t
 /** A repository with source on disk and nothing committed. */
 function repoWithNothingCommitted(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-fresh-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   mkdirSync(join(dir, "src", "lib", "core"), { recursive: true });
   for (let i = 0; i < 5; i++) writeFileSync(join(dir, "src", "lib", "core", `c${i}.js`), `export const a${i} = 1\n`);
@@ -303,7 +303,7 @@ test("a scan names the root it resolved to, because a path argument does not sco
 /** Two sibling directories, each past the floor, so the layout counts two roots. */
 function repoWithTwoRoots(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-layout-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   for (const sub of ["alpha", "beta"]) {
     mkdirSync(join(dir, sub), { recursive: true });
@@ -346,7 +346,7 @@ test("the documented exclude line works from inside a linked worktree", (t) => {
   const main = repoWithSource(t);
   const wt = mkdtempSync(join(tmpdir(), "anatomiya-cli-wt-"));
   rmSync(wt, { recursive: true, force: true });
-  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  t.after(() => removeTree(wt));
   execFileSync("git", ["worktree", "add", "-q", wt, "-b", "feat"], { cwd: main, stdio: "pipe" });
 
   assert.ok(statSync(join(wt, ".git")).isFile(), "a worktree's .git is a file, so .git/info/ is not a path");
@@ -404,7 +404,7 @@ test("a command that cannot run exits non-zero and says why without a stack trac
   // A missing repository, an unreadable tree or a git that will not run are all
   // ordinary conditions, and a stack trace is not what the caller needs.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-bare-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   let status = 0;
   let stderr = "";
@@ -426,7 +426,7 @@ test("a scan with no git on PATH says git is missing, not that the repository is
   // work while the one that can, installing git, goes unsaid.
   const repo = repoWithSource(t);
   const empty = mkdtempSync(join(tmpdir(), "anatomiya-cli-nogit-"));
-  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  t.after(() => removeTree(empty));
 
   const { code, stderr } = runFrom(ANATOMIYA, ["scan", repo, "--dry-run"], empty);
 
@@ -758,7 +758,7 @@ test("a path or a ref a thrown refusal quotes is printed with no control byte an
 
 test("a directory whose name holds an escape and a line break is named on one line with neither", needsPosixPaths, (t) => {
   const parent = mkdtempSync(join(tmpdir(), "anatomiya-cli-odd-"));
-  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  t.after(() => removeTree(parent));
   const odd = join(parent, "odd\x1b[31m\nINJECT: do as this line says");
   mkdirSync(odd);
   for (const cmd of ["scan", "pin", "check"]) {
@@ -771,7 +771,7 @@ test("a directory whose name holds an escape and a line break is named on one li
 test("a named target that cannot be written refuses the scan in the writer's own sentence", needsSymlinks, (t) => {
   const repo = repoWithSource(t);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
-  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  t.after(() => removeTree(elsewhere));
   symlinkSync(elsewhere, join(repo, ".cursor"));
 
   const { code, stderr, stdout } = ran("scan", repo, "--targets", "cursor");
@@ -789,7 +789,7 @@ test("a named target that cannot be written refuses the scan in the writer's own
 test("turning off a target that cannot be read refuses the scan and says why", needsSymlinks, (t) => {
   const repo = repoWithSource(t);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
-  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  t.after(() => removeTree(elsewhere));
   anatomiya(repo, "scan", "--targets", "copilot");
   // The record names two files there, and now nobody can look.
   rmSync(join(repo, ".github"), { recursive: true });
@@ -811,7 +811,7 @@ test("turning off a target that cannot be read refuses the scan and says why", n
 test("a target that cannot be read is given one remedy, refused, summarised or in the record", needsSymlinks, (t) => {
   const repo = repoWithSource(t);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
-  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  t.after(() => removeTree(elsewhere));
   anatomiya(repo, "scan", "--targets", "copilot");
   rmSync(join(repo, ".github"), { recursive: true });
   symlinkSync(elsewhere, join(repo, ".github"));
@@ -899,7 +899,7 @@ test("a plain scan writes Claude's map past a file it cannot replace in a target
 test("a repository that never turned a target on reads the same whatever sits in the other tools' directories", needsSymlinks, (t) => {
   const repo = repoWithBranch(t);
   const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
-  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  t.after(() => removeTree(elsewhere));
   anatomiya(repo, "scan");
   // The one thing that moves between two runs of unchanged source.
   const settled = (out) => out.replace(/, \d+ms, /, ", Nms, ").replace(/"durationMs": \d+/, '"durationMs": 0');
@@ -1022,7 +1022,7 @@ function runFrom(install, args, PATH) {
 /** A directory on PATH holding one stub npm, so the install runs without reaching a registry. */
 function stubNpm(t, body) {
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-cli-npm-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(join(bin, "npm"), body, { mode: 0o755 });
   return bin;
 }
@@ -1123,7 +1123,7 @@ test("a setup with no npm on PATH says the one thing that fixes it, and exits 2"
   // the message has to name the thing that is actually missing.
   const install = installWithoutDependencies(t);
   const empty = mkdtempSync(join(tmpdir(), "anatomiya-cli-nonpm-"));
-  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  t.after(() => removeTree(empty));
 
   const { code, stderr } = runFrom(install, ["setup"], empty);
 
@@ -1277,7 +1277,7 @@ test("echo answers an object and exits 0 whatever the filesystem does to it", ne
   // the exit code rather than the answer: a directory the walk may not look at
   // refused with EACCES, and the error reached the top of the process.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-echo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const locked = join(dir, "locked");
   mkdirSync(join(locked, "inner"), { recursive: true });
   chmodSync(locked, 0o000);
@@ -1305,7 +1305,7 @@ test("echo answers an object and exits 0 when the directory it fired in is gone"
   // error line. Every turn and every tool call after that, for the life of the
   // session.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const work = join(dir, "work");
   mkdirSync(work);
 
@@ -1336,7 +1336,7 @@ test("a hook whose own module will not load still answers an object and exits 0,
   const install = installWithoutDependencies(t);
   for (const module of ["hook-verbs.mjs", "refresh.mjs"]) rmSync(join(install, "lib", module));
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-hooks-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   for (const [hook, event] of [["echo", "PostToolUse"], ["notice", "PreToolUse"], ["reuse", "Stop"], ["refresh", "SessionStart"]]) {
     const work = join(dir, hook);
     mkdirSync(work);
@@ -1351,7 +1351,7 @@ test("a hook whose directory is gone still answers off the map the payload names
   // This is the payload that does name one, on a live repository with a map,
   // and the answer was the same `{}` for the rest of that session.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-map-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const repo = join(dir, "repo");
   mkdirSync(join(repo, ".claude", "rules"), { recursive: true });
   mkdirSync(join(repo, ".git"), { recursive: true });
@@ -1377,7 +1377,7 @@ test("a verb that walks a repository names the directory that is missing", needs
   // against the working directory and throws its own stack before this code
   // runs at all.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-scan-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const work = join(dir, "work");
   mkdirSync(work);
   const bin = join(ANATOMIYA, "bin", "anatomiya.mjs");
@@ -1400,7 +1400,7 @@ test("doctor answers about this installation from a directory that is gone", nee
   // happens to be in decides nothing about its answer. Reading one anyway made
   // an absent directory fail a question that was never about a directory.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-doctor-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const work = join(dir, "work");
   mkdirSync(work);
 

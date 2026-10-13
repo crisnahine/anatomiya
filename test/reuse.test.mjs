@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, removeTree } from "./platform.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
 import { askedMarksIn, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
@@ -25,7 +25,7 @@ import { corpusDrop } from "../plugins/anatomiya/lib/corpus.mjs";
  */
 function repo(t, { scanned = true, commit = true, refFormat = null, at = null } = {}) {
   const dir = at ?? mkdtempSync(join(tmpdir(), "anatomiya-reuse-"));
-  if (at === null) t.after(() => rmSync(dir, { recursive: true, force: true }));
+  if (at === null) t.after(() => removeTree(dir));
   else mkdirSync(dir);
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q", ...(refFormat ? [`--ref-format=${refFormat}`] : []));
@@ -598,7 +598,7 @@ test("a record copied below the checkout's root has no change to read", async (t
 
 test("a directory that is not a repository has no change to read", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-nogit-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   writeFileSync(join(dir, "a.ts"), "export const a = 1;\n");
 
   assert.equal(await pendingChange(dir), null);
@@ -668,7 +668,7 @@ test("a diff driver the repository configures is never run", needsShebang, async
   // at the end of every turn in any scanned repository.
   const { dir, git, write } = repo(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-reuse-driver-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const marker = join(outside, "ran");
   const driver = join(outside, "driver.sh");
   writeFileSync(driver, `#!/bin/sh\ntouch "${marker}"\n`);
@@ -685,7 +685,7 @@ test("a diff driver the repository configures is never run", needsShebang, async
 test("a text conversion the repository configures is never run", needsShebang, async (t) => {
   const { dir, git, write } = repo(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-reuse-textconv-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
   const marker = join(outside, "ran");
   const conv = join(outside, "conv.sh");
   writeFileSync(conv, `#!/bin/sh\ntouch "${marker}"\ncat "$1"\n`);
@@ -730,7 +730,7 @@ test("a transcript's text names the marks it holds and whether its last block wa
 test("a transcript that cannot be read has covered nothing", (t) => {
   // Unreadable is not evidence: the worst it costs is one more search.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-transcript-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
 
   for (const path of [join(dir, "missing.jsonl"), dir, undefined, 42, ""]) {
     assert.equal(askedMarksIn(transcriptTail(path, TRANSCRIPT_MOST)?.text ?? null).size, 0, String(path));
@@ -741,7 +741,7 @@ test("a named pipe at the transcript's path answers nothing rather than blocking
   // Run as a process with a budget, because a read that never returns cannot be
   // failed from inside this one.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-fifo-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const fifo = join(dir, "session.jsonl");
   execFileSync("mkfifo", [fifo]);
   const module = new URL("../plugins/anatomiya/lib/transcript.mjs", import.meta.url).href;
@@ -771,7 +771,7 @@ test("a session started above its checkouts is asked about each one's change, na
   // A Stop payload names no file, so its directory is the session's, which
   // holds no map when the project is split into sibling repositories.
   const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-reuse-parent-")));
-  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  t.after(() => removeTree(parent));
   const api = repo(t, { at: join(parent, "api") });
   const client = repo(t, { at: join(parent, "client") });
   const unscanned = repo(t, { at: join(parent, "docs"), scanned: false });
@@ -898,7 +898,7 @@ test("a turn that commits everything is still asked about where the reflog is no
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
   const recorded = execFileSync(real, ["log", "-g", "--max-count=256", "--date=unix", "--format=%H %gd %gs", "HEAD"], { cwd: r.dir });
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-reftable-git-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  t.after(() => removeTree(bin));
   writeFileSync(join(bin, "reflog.txt"), recorded);
   writeFileSync(
     join(bin, "git"),
@@ -1337,7 +1337,7 @@ test("a deletion in the tree adds no git read to the two the budget allows", { .
   // together overlap however fast this machine runs a small one.
   const HELD_MS = 300;
   const slow = mkdtempSync(join(tmpdir(), "anatomiya-slow-git-"));
-  t.after(() => rmSync(slow, { recursive: true, force: true }));
+  t.after(() => removeTree(slow));
   const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
   writeFileSync(join(slow, "git"), `#!/bin/sh\n'${real}' "$@"\ncode=$?\nsleep ${HELD_MS / 1000}\nexit $code\n`);
   chmodSync(join(slow, "git"), 0o755);

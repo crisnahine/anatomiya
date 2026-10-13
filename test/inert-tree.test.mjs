@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs"
 import { treeInertLines } from "../plugins/anatomiya/lib/inert-tree.mjs";
 import { oracleHits } from "../scripts/measure-inert.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
+import { removeTree } from "./platform.mjs";
 
 const never = () => false;
 
@@ -49,7 +50,7 @@ test("a cancel already due reads nothing", async () => {
 
 test("a grammar that is not there is no parse at all", async (t) => {
   const empty = mkdtempSync(join(tmpdir(), "anatomiya-inert-tree-"));
-  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  t.after(() => removeTree(empty));
   assert.equal(await parseForLines("X = 1\n", "python", { cancel: never, grammars: empty }), null);
 });
 

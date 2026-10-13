@@ -3,14 +3,15 @@
  * readers look at, as Claude Code 2.1.296 writes them
  * (`docs/research/what-a-2-1-296-transcript-holds.md`).
  */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { removeTree } from "./platform.mjs";
 
 /** A session transcript outside any repository, one JSON entry per line, removed after the test. */
 export function transcript(t, entries = []) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-session-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const path = join(dir, "session.jsonl");
   writeFileSync(path, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
   return path;

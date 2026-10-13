@@ -22,7 +22,7 @@ import {
   opened,
 } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
-import { needsSymlinks } from "./platform.mjs";
+import { needsSymlinks, removeTree } from "./platform.mjs";
 
 const loaded = await loadTypeScript();
 const ts = loaded?.ts;
@@ -334,7 +334,7 @@ function sys(files = {}) {
 /** A real directory, resolved, since containment is asked of the filesystem. */
 function tree(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-tsconfig-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   return dir;
 }
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPathControl, needsPosixPaths, needsShebang } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsShebang, removeTree } from "./platform.mjs";
 import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -28,7 +28,7 @@ function repo(t, build) {
   // site is one somebody forgets, and two here did, which is where the 915
   // directories one machine had piled up came from.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-authors-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q", "-b", "main");
   git("config", "user.email", "first@t.test");
@@ -459,7 +459,7 @@ test("a clone that holds only a window of history says so, and a whole one says 
   assert.equal((await authorsByFile(dir)).shallow, null, "a whole history is not a window");
 
   const shallow = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
-  t.after(() => rmSync(shallow, { recursive: true, force: true }));
+  t.after(() => removeTree(shallow));
   execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, shallow], { stdio: "pipe" });
 
   const window = (await authorsByFile(shallow)).shallow;
@@ -514,7 +514,7 @@ test("the boundary of a window is its oldest root, whatever order git prints the
   });
 
   const window = mkdtempSync(join(tmpdir(), "anatomiya-roots-"));
-  t.after(() => rmSync(window, { recursive: true, force: true }));
+  t.after(() => removeTree(window));
   execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, window], { stdio: "pipe" });
 
   const { shallow } = await authorsByFile(window);
@@ -547,7 +547,7 @@ test("the scan hands the gate the window it read, not just the author count", as
   assert.equal((await scan.scan(dir)).authors.shallow, null, "a whole clone read the whole history");
 
   const window = mkdtempSync(join(tmpdir(), "anatomiya-window-"));
-  t.after(() => rmSync(window, { recursive: true, force: true }));
+  t.after(() => removeTree(window));
   execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, window], { stdio: "pipe" });
 
   const truncated = await scan.scan(window);
@@ -686,7 +686,7 @@ test("history git could not read is distinguished from history that is empty", a
   // dimension. Buffering the log put an oversize repository in the same silent
   // branch as a repository with no commits: no authors, no claims, no reason.
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-nogit-"));
-  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  t.after(() => removeTree(outside));
 
   const unread = await authorsByFile(outside);
   assert.equal(unread.size, 0);
