@@ -352,3 +352,9 @@ test("after a line the JavaScript rule did not read, a /* on the next line asks 
   assert.deepEqual(await asking("js", "x(`${a}`);\n\n/* note\nfunction old() {}\n*/\nconst A = 1;\n"), [1]);
   assert.deepEqual(await asking("js", "x(`${a}`);\nconst A = 1;\n/* note\nfunction old() {}\n*/\n"), [1]);
 });
+
+test("a template literal left open runs to its closing backtick, and a /* among its lines opens nothing", async () => {
+  assert.deepEqual(await asking("js", "const s = `a\nplain\n/* text\n${run()}\n`;\nfunction real() {}\n/** doc */\n"), [1, 2, 3, 4, 5, 6]);
+  // Closed on its line, an escaped backtick in it leaves nothing open.
+  assert.deepEqual(await asking("js", "const s = `a \\` b`;\n/** doc */\nconst A = 1;\n"), []);
+});
