@@ -1550,6 +1550,24 @@ test("an option cannot stand in for the command word", () => {
   assert.match(stderr, /no command given, and an option cannot stand in for one: --format/, stderr);
 });
 
+test("a check that could not ask git for the merge base exits 1 with the question, and prints no report", needsGitStub, (t) => {
+  // Read as no merge base, this was 0 findings at exit 0.
+  const repo = repoWithSource(t);
+  const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
+  git("branch", "-M", "main");
+  git("checkout", "-q", "-b", "feat");
+  writeFileSync(join(repo, "src", "late.ts"), "export const late = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "late");
+  gitAhead(t, unasked("*' merge-base '*"));
+
+  const r = spawnSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "check", repo, "--base", "main"], { encoding: "utf8" });
+
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^anatomiya: git could not be asked for the merge base of [0-9a-f]{40} and [0-9a-f]{40}: git was ended by SIGTERM/);
+  assert.equal(r.stdout, "");
+});
+
 test("a scan that could not ask git about its pin exits 1 with the question it could not ask", needsGitStub, (t) => {
   const repo = repoWithSource(t);
   const bin = join(ANATOMIYA, "bin", "anatomiya.mjs");
