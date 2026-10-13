@@ -6,6 +6,7 @@ import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsPosixPermissions, needsShebang, needsSymlinks } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
@@ -1303,4 +1304,55 @@ test("setup is the only command that runs npm, so a scan, a check and a pin inst
     d.body.includes("npm") || npmish.some((n) => !d.names.includes(n) && new RegExp(`\\b${n}\\b`).test(d.body));
 
   assert.deepEqual(decls.filter((d) => d.exported && reaches(d)).flatMap((d) => d.names), ["runSetup"]);
+});
+
+/* --- a git that could not be asked stops the command, and nothing is written --- */
+
+test("a scan stops where git could not be asked whether the pinned commit is still there, and writes nothing", needsGitStub, async (t) => {
+  const dir = repo(t);
+  await runPin(dir);
+  await runScan(dir);
+  const before = claudeTree(dir);
+  gitAhead(t, unasked("*' cat-file -e '*"));
+
+  await assert.rejects(() => runScan(dir), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+test("a pin stops where git could not be asked for HEAD, before the list is read or after it", needsGitStub, async (t) => {
+  const dir = repo(t);
+  const head = "*' rev-parse --verify --quiet HEAD^{commit} '*";
+  const calls = gitAhead(t, unasked(head));
+  await assert.rejects(() => runPin(dir), /^Error: git could not be asked which commit HEAD names: /);
+  calls.restore();
+
+  // Answered once, for the commit to pin, and not when it is asked again.
+  const count = join(scratch(t, "anatomiya-pin-count-"), "n");
+  gitAhead(t, `case " $* " in ${head}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -gt 1 ] && kill -TERM $$;; esac`);
+  await assert.rejects(() => runPin(dir), /^Error: git could not be asked which commit HEAD names: /);
+
+  assert.equal(existsSync(join(dir, PIN_PATH)), false, "no pin was written");
+});
+
+test("a check stops where git could not be asked about its base or about the pinned commit", needsGitStub, async (t) => {
+  const dir = repoWithBranch(t);
+  await runPin(dir);
+  await runScan(dir);
+
+  let calls = gitAhead(t, unasked("*' rev-parse --verify --quiet main^{commit} '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /^Error: git could not be asked which commit main names: /);
+  calls.restore();
+
+  calls = gitAhead(t, unasked("*' rev-parse --verify --quiet origin/HEAD^{commit} '*"));
+  await assert.rejects(() => runCheck(dir), /^Error: git could not be asked which commit origin\/HEAD names: /);
+  calls.restore();
+
+  calls = gitAhead(t, unasked("*' cat-file -e '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
+  calls.restore();
+
+  // Read as a repository with no commit, a base that names nothing was let through at exit 0.
+  gitAhead(t, unasked("*' rev-parse --verify --quiet HEAD^{commit} '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "no-such-branch" }), /^Error: git could not be asked which commit HEAD names: /);
 });

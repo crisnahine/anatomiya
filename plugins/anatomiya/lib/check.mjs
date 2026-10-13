@@ -35,7 +35,7 @@ import { isTestPath, precedentFindings } from "./precedent.mjs";
 import { claimFor, CLASSES } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
-import { gitBuffered, resolveBaseRef, mergeBase, filesAt, isSha, BASE_REFS, GIT } from "./git.mjs";
+import { answered, gitBuffered, resolveBaseRef, mergeBase, filesAt, isSha, BASE_REFS, GIT } from "./git.mjs";
 import { addedRanges, changedFiles, onlyInHead, pendingPaths, renamesSkipped, resolvePendingBases, withPendingEdits } from "./changeset.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
@@ -476,10 +476,13 @@ async function resolveBase(root, baseRef, caveats) {
   const candidates = (baseRef ? [baseRef] : BASE_REFS).filter((c) => c && !c.startsWith("-"));
   const [isShallow, headAt] = await Promise.all([
     git(root, ["rev-parse", "--is-shallow-repository"]),
-    git(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]),
+    // Exit code 1 is a repository with no commit yet. Unasked is not one: read
+    // as one, a base somebody typed that names nothing passed at exit 0.
+    gitBuffered(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], { maxBytes: GIT.checkMaxBytes, timeout: GIT.checkTimeoutMs })
+      .then((r) => answered(r, "which commit HEAD names")),
   ]);
   const shallow = isShallow.out.trim() === "true";
-  const head = headAt.out.trim();
+  const head = headAt.stdout.trim();
   // Resolved once and handed down by sha, so every later read asks about the
   // same commit and a question about two shas is one git can remember. A
   // branch with no commit yet has no sha, so its reads name HEAD.
@@ -1576,8 +1579,8 @@ async function treeSource(root, path) {
 }
 
 /**
- * Every git call returns rather than throws. The check reports what it could
- * not determine; it does not refuse.
+ * Every git call made through this returns rather than throws. The check
+ * reports what it could not determine; it does not refuse.
  */
 async function git(root, args, maxBytes = GIT.checkMaxBytes, timeout = GIT.checkTimeoutMs) {
   const r = await gitBuffered(root, args, { maxBytes, timeout });

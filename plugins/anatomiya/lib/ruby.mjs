@@ -526,7 +526,7 @@ function onThread(files, job, resourceLimits) {
       else if (msg.read) children.get(msg.id)?.read();
       // Only a child that started: a kill of one with no pid signals this process's own group.
       else if (msg.kill && children.get(msg.id)?.pid) children.get(msg.id).kill("SIGKILL");
-      else if (msg.stdin !== undefined) children.get(msg.id)?.stdin.end(msg.stdin);
+      else if (msg.stdin !== undefined) children.get(msg.id)?.input(msg.stdin);
     });
     worker.once("error", (err) => {
       failure = err;
@@ -558,7 +558,7 @@ function charged(files, results, error) {
 const IN_FLIGHT = 4;
 
 /** A child started for a thread, every event it raises sent back to that thread in order. */
-function startFor(worker, { id, spawn: [command, args, options] }) {
+export function startFor(worker, { id, spawn: [command, args, options] }) {
   const send = (msg, moved) => worker.postMessage({ id, ...msg }, moved);
   let child;
   try {
@@ -567,8 +567,12 @@ function startFor(worker, { id, spawn: [command, args, options] }) {
     send({ error: { message: String(err?.message ?? err), code: err?.code } });
     return null;
   }
+  // Before any pipe is read: with no descriptor left, spawn hands back a child
+  // that has none and queues its error.
+  child.on("error", (err) => send({ error: { message: String(err?.message ?? err), code: err?.code } }));
+  child.on("close", (code, signal) => send({ close: [code, signal] }));
   let unread = 0;
-  child.stdout.on("data", (bytes) => {
+  child.stdout?.on("data", (bytes) => {
     // Moved rather than copied where the chunk owns its memory: a copy left
     // the parent holding every chunk it had read until its own next collection.
     const owned = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
@@ -576,14 +580,13 @@ function startFor(worker, { id, spawn: [command, args, options] }) {
     if (++unread >= IN_FLIGHT) child.stdout.pause();
   });
   child.read = () => {
-    if (--unread < IN_FLIGHT) child.stdout.resume();
+    if (--unread < IN_FLIGHT) child.stdout?.resume();
   };
-  child.stderr.on("data", (bytes) => send({ stderr: bytes }));
-  child.stdin.on("error", () => {
+  child.input = (text) => child.stdin?.end(text);
+  child.stderr?.on("data", (bytes) => send({ stderr: bytes }));
+  child.stdin?.on("error", () => {
     /* the child died first; its exit is what reports the failure */
   });
-  child.on("error", (err) => send({ error: { message: String(err?.message ?? err), code: err?.code } }));
-  child.on("close", (code, signal) => send({ close: [code, signal] }));
   return child;
 }
 

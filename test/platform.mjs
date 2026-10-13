@@ -134,12 +134,23 @@ export const needsSpawnableNpm = WINDOWS
 
 // `cat-file -Z` came with git 2.42. An older git hands every read to the
 // per-call reader, so a case that counts on the one child answering cannot be
-// set up there. Which git a run finds is the run's to choose.
-const [gitMajor, gitMinor] = /(\d+)\.(\d+)/.exec(execFileSync("git", ["--version"]).toString()).slice(1).map(Number);
-export const needsBatchZ =
-  gitMajor > 2 || (gitMajor === 2 && gitMinor >= 42)
+// set up there. Which git a run finds is the run's to choose, and so is a run
+// that finds none, or one whose version cannot be read.
+const gitVersion = (() => {
+  let said;
+  try {
+    said = execFileSync("git", ["--version"], { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch (err) {
+    return { unread: `\`git --version\` could not be run (${err.code ?? `exit ${err.status}`})` };
+  }
+  const read = /(\d+)\.(\d+)/.exec(said);
+  return read ? { major: Number(read[1]), minor: Number(read[2]) } : { unread: `\`git --version\` answered ${JSON.stringify(said.slice(0, 80))}, which names no version` };
+})();
+export const needsBatchZ = gitVersion.unread
+  ? avoidable("needsBatchZ", `${gitVersion.unread}, so whether a child answers a read is unknown: run with git 2.42 or newer first on PATH`)
+  : gitVersion.major > 2 || (gitVersion.major === 2 && gitVersion.minor >= 42)
     ? {}
-    : avoidable("needsBatchZ", `git ${gitMajor}.${gitMinor} is older than 2.42, so no child answers a read: run with a newer git first on PATH`);
+    : avoidable("needsBatchZ", `git ${gitVersion.major}.${gitVersion.minor} is older than 2.42, so no child answers a read: run with a newer git first on PATH`);
 
 // Asked of the temp directory the fixtures live in, since folding belongs to the
 // filesystem: APFS and NTFS fold case by default, ext4 and a case-sensitive

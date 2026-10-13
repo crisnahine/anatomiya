@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsPathControl, needsShebang } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -553,4 +554,20 @@ test("the map a scan wrote is no part of a change, so a repository that commits 
   });
   const walk = await walkCochange(dir, sha(dir));
   assert.deepEqual(walk.changes.map((c) => c.touched), [[".claude/rules/house-style.md", "lib/cops/a.rb"]]);
+});
+
+test("a tip git could not be asked for is a walk that failed, and states nothing", needsGitStub, async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("a.rb");
+    commit("one");
+  });
+  gitAhead(t, unasked("*' rev-parse --verify '*"));
+
+  const started = await startCochange(dir, { status: "unpinned" });
+
+  assert.deepEqual([started.tip, started.from, started.tree], [null, null, null]);
+  assert.match(started.walk.error, /^git could not be asked which commit origin\/HEAD names: /);
+  const record = cochangeRecord(started);
+  assert.equal(record.error, started.walk.error, "the record says the read failed");
+  assert.deepEqual(record.claims, []);
 });

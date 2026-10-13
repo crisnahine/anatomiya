@@ -386,23 +386,20 @@ function repositoryCommands(root, env, timeout) {
   const key = `${resolve(root)}\0${configSources(env)}`;
   const known = repositoryCache.get(key);
   if (known) return known;
+  // Built here, so a fault in the environment is this tool's own and not a config that went unread.
+  const options = { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024, timeout, env: gitEnv(env) };
   // Started inside the chain: Node throws from the call itself over an
   // environment it refuses, and that is one more way the config went unread.
-  const asked = Promise.resolve().then(() => run("git", ["config", "--show-scope", "--null", "--get-regexp", REPOSITORY_COMMANDS], {
-    cwd: root,
-    encoding: "utf8",
-    maxBuffer: 1024 * 1024,
-    timeout,
-    env: gitEnv(env),
-  })).then(
+  const asked = Promise.resolve().then(() => run("git", ["config", "--show-scope", "--null", "--get-regexp", REPOSITORY_COMMANDS], options)).then(
     ({ stdout }) => replacementsFor(parseScopedConfig(stdout), env),
     // Exit 1 is no key matched. Anything else is kept as what went wrong, so
     // the call it stopped can say so.
     (err) => {
       if (err && err.code === 1 && !err.killed) return NO_REPOSITORY_COMMANDS;
-      const how = err && (err.signal || err.code);
       const said = String(err?.stderr || err?.message || "").trim().slice(0, STDERR_CAP);
-      return { unread: `git config exited ${how ?? "abnormally"}: ${said}` };
+      // A child that ran left a signal, an exit code or more output than is read. Any other failure is of the start.
+      const how = err?.signal || (typeof err?.code === "number" || err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ? err.code : null);
+      return { unread: how === null ? `git config could not be started: ${said}` : `git config exited ${how}: ${said}` };
     }
   ).then((answer) => {
     if (answer.unread) repositoryCache.delete(key);
@@ -509,11 +506,15 @@ export async function gitBuffered(
     });
     return { ok: true, code: 0, oversize: false, stdout, error: null };
   } catch (err) {
-    const message = String((err && err.message) || err);
+    const failed = String((err && err.message) || err);
+    const oversize = /maxBuffer/.test(failed);
+    // Node's message for a git it ended names the command and nothing else.
+    const ended = err?.signal ? `git was ended by ${err.signal}${err.killed && !oversize ? ` after ${timeout} ms` : ""}` : "";
+    const message = ended ? `${failed.trimEnd()}\n${ended}` : failed;
     return {
       ok: false,
       code: err && typeof err.code === "number" ? err.code : null,
-      oversize: /maxBuffer/.test(message),
+      oversize,
       // A call that failed answered part of a question at best, and the whole
       // point of reporting `ok` is that the part is never read as the answer.
       stdout: encoding === "buffer" ? Buffer.alloc(0) : "",
@@ -523,11 +524,22 @@ export async function gitBuffered(
 }
 
 /**
+ * `r` where git ran, whatever it answered. A call with no exit code (a clock, a
+ * signal, a start that failed, a refused argument, a configuration nobody could
+ * read) was never an answer to `question`, and decides nothing (C33).
+ */
+export function answered(r, question) {
+  if (r.code === null) throw new Error(`git could not be asked ${question}: ${String(r.error ?? "").trim().slice(0, STDERR_CAP)}`);
+  return r;
+}
+
+/**
  * The magic a pathspec needs to match as this repository folds case: git keeps
  * the index spelling and matches pathspecs case-sensitively even under core.ignorecase.
  */
 export async function caseMagic(root) {
-  const r = await gitBuffered(root, ["config", "--type=bool", "--get", "core.ignorecase"]);
+  // Exit code 1 is git saying the key is not set.
+  const r = answered(await gitBuffered(root, ["config", "--type=bool", "--get", "core.ignorecase"]), "whether this repository folds case");
   return r.ok && r.stdout.trim() === "true" ? "icase" : "";
 }
 
@@ -558,9 +570,11 @@ export function gitStreamed(
     const child = spawn("git", call.args, {
       cwd: root,
       stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
-      timeout,
       env: call.env,
     });
+    // This clock and not spawn's own, which nothing stops for a child that
+    // never started: it held the process open for the whole of `timeout`.
+    const clock = timeout > 0 ? setTimeout(() => child.pid && child.kill("SIGTERM"), timeout) : null;
     // A git that exits before it has read `input` closes the pipe, and its exit code is what says so.
     child.stdin?.on("error", () => {});
     child.stdin?.end(input);
@@ -579,19 +593,24 @@ export function gitStreamed(
     };
 
     const fail = (err) => {
+      clearTimeout(clock);
       if (settled) return;
       settled = true;
       stop();
       reject(err);
     };
 
+    // Before any pipe is read: with no descriptor left, spawn hands back a
+    // child that has none and queues this error.
+    child.on("error", (err) => fail(new Error(`git ${sub} failed: ${err.message}`)));
+
     // Capped, because stderr grows with the repository the same way stdout
     // does and the message only has to name the failure.
-    child.stderr.on("data", (chunk) => {
+    child.stderr?.on("data", (chunk) => {
       if (stderr.length < STDERR_CAP) stderr += chunk.toString("utf8");
     });
 
-    child.stdout.on("data", (chunk) => {
+    child.stdout?.on("data", (chunk) => {
       if (stopped) return;
       let buf = rest.length ? Buffer.concat([rest, chunk]) : chunk;
       try {
@@ -615,10 +634,10 @@ export function gitStreamed(
       rest = buf;
     });
 
-    child.on("error", (err) => fail(new Error(`git ${sub} failed: ${err.message}`)));
     signal?.addEventListener("abort", () => fail(new Error(`git ${sub} stopped by its caller`)), { once: true });
 
     child.on("close", (code, exitSignal) => {
+      clearTimeout(clock);
       if (settled) return;
       // A walk this caller ended is not a walk that failed, however the killed
       // child exits.
@@ -797,11 +816,15 @@ function safeRef(ref) {
  * commits never land, and after the branch is deleted the pinned sha names an
  * object that no longer exists. Every caller checks this before reading a blob,
  * and drops to counts-only when it fails (E3).
+ *
+ * `cat-file -e` exits 128 for a commit that is not there and for every other
+ * refusal, so any exit code but 0 is git saying no. It throws where git could
+ * not be asked: read as gone, a clock that ran out dropped the map to counts.
  */
 export async function shaReachable(root, sha) {
   if (!isSha(sha)) return false;
   // Never from memory: this exists to notice a commit that has gone away.
-  const r = await gitBuffered(root, ["cat-file", "-e", `${sha}^{commit}`]);
+  const r = answered(await gitBuffered(root, ["cat-file", "-e", `${sha}^{commit}`]), `whether commit ${sha} is still in this repository`);
   return r.ok;
 }
 
@@ -813,11 +836,15 @@ export async function headSha(root) {
   return commitAt(root, "HEAD");
 }
 
-/** The commit `ref` names, or null where it names none. */
+/**
+ * The commit `ref` names, or null where git says it names none (exit code 1,
+ * and 128 outside a repository). It throws where git could not be asked.
+ */
 export async function commitAt(root, ref) {
+  if (!safeRef(ref)) return null;
   const args = ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`];
   const ask = async () => {
-    const r = await gitBuffered(root, args);
+    const r = answered(await gitBuffered(root, args), `which commit ${ref} names`);
     const sha = r.ok ? r.stdout.trim() : "";
     return isSha(sha) ? sha : null;
   };
@@ -1084,7 +1111,8 @@ export async function mergeBase(root, a, b) {
   };
   // A commit is its own merge base, so verifying it answers the whole question.
   if (a === b && isFullSha(a)) {
-    const sha = await commitAt(root, a);
+    // Where that could not be asked, `merge-base` is, and says so itself.
+    const sha = await commitAt(root, a).catch(() => null);
     if (sha !== null) return { found: true, failed: false, sha };
   }
   // "No common ancestor" is not kept either: a fetch can give the two one.
