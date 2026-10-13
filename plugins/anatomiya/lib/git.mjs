@@ -25,6 +25,7 @@ import { devNull } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { signalChild } from "./child.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 
 const run = promisify(execFile);
@@ -574,7 +575,7 @@ export function gitStreamed(
     });
     // This clock and not spawn's own, which nothing stops for a child that
     // never started: it held the process open for the whole of `timeout`.
-    const clock = timeout > 0 ? setTimeout(() => child.pid && child.kill("SIGTERM"), timeout) : null;
+    const clock = timeout > 0 ? setTimeout(() => signalChild(child, "SIGTERM"), timeout) : null;
     // A git that exits before it has read `input` closes the pipe, and its exit code is what says so.
     child.stdin?.on("error", () => {});
     child.stdin?.end(input);
@@ -589,7 +590,7 @@ export function gitStreamed(
     const stop = () => {
       stopped = true;
       rest = Buffer.alloc(0);
-      if (child.pid && !child.killed) child.kill("SIGKILL");
+      if (!child.killed) signalChild(child);
     };
 
     const fail = (err) => {
@@ -961,9 +962,7 @@ export function blobReader(
   const kill = () => {
     const proc = child;
     child = null;
-    // A child that never started has no pid, and Node sends the signal for one
-    // to pid 0, which is this process's whole group.
-    if (!proc?.pid || !proc.kill("SIGKILL")) return;
+    if (!signalChild(proc)) return;
     killed.add(proc);
     proc.once("exit", () => killed.delete(proc));
   };
