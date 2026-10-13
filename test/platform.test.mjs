@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import fs, { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { AVOIDABLE, needsPathControl, needsShebang, needsTmpdirVariable } from "./platform.mjs";
+import { AVOIDABLE, needsPathControl, needsShebang, needsTmpdirVariable, removeTree } from "./platform.mjs";
 
 const HERE = fileURLToPath(import.meta.url);
 
@@ -77,4 +78,47 @@ test("a run with no git, or one whose version cannot be read, says which guard t
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+/** `rmSync` answering each code of `answers` in turn, and counting what it was asked. */
+function refusing(t, answers) {
+  const real = fs.rmSync;
+  t.after(() => {
+    fs.rmSync = real;
+    syncBuiltinESMExports();
+  });
+  const asked = [];
+  fs.rmSync = (path) => {
+    asked.push(path);
+    const code = answers(asked.length);
+    if (code) throw Object.assign(new Error(code), { code });
+  };
+  syncBuiltinESMExports();
+  return asked;
+}
+
+// The refusal is Windows' own, so it is played here through the `rmSync` the cleanup calls.
+test("a directory a leaving process still holds is asked for again, and any other refusal is thrown at once", async (t) => {
+  const asked = refusing(t, (n) => [null, "EBUSY", "EPERM", null, "EACCES"][n]);
+
+  await removeTree("held");
+  assert.deepEqual(asked, ["held", "held", "held"]);
+
+  await assert.rejects(removeTree("denied"), { code: "EACCES" });
+  assert.deepEqual(asked.slice(3), ["denied"]);
+});
+
+test("a directory still held after ten seconds fails the cleanup", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const asked = refusing(t, () => "EBUSY");
+
+  const left = removeTree("held").then(() => null, (err) => err.code);
+  for (let waited = 0; waited < 10_000; waited += 100) {
+    // The cleanup reaches its next wait on a turn of the loop this does not own.
+    await new Promise(setImmediate);
+    t.mock.timers.tick(100);
+  }
+
+  assert.equal(await left, "EBUSY");
+  assert.equal(asked.length, 101);
 });

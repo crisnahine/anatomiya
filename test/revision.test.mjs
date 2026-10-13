@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { needsBatchZ, needsShebang } from "./platform.mjs";
+import { needsBatchZ, needsShebang, removeTree } from "./platform.mjs";
 import { readAtRevision } from "../plugins/anatomiya/lib/revision.mjs";
 import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
 
@@ -13,7 +13,7 @@ import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
 // failing assertion throws, and a cleanup line below it never runs.
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-revision-test-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => removeTree(dir));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
