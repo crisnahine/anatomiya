@@ -109,7 +109,7 @@ export const NAMING =
 export const STRINGISH = /string|heredoc|nowdoc/;
 
 // Code in another language: the comment cgo compiles, which stands directly above an import of "C"
-// alone, and inline markup that holds a script.
+// alone, and the inline markup of a file where any of it holds a script.
 export const FOREIGN = { go: ["import_declaration", "import_spec"], php: ["text"] };
 const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
 const SCRIPT = /<script/i;
@@ -174,8 +174,8 @@ export const FIELDS = {
  * declared type is not one `OWN_TYPE` spells, outside a `const`.
  *
  * A comment counts where it is one of those with no line between them that
- * end on the line above an import of "C" alone, and inline markup where it
- * holds a script, each on any added line it spans.
+ * end on the line above an import of "C" alone, and inline markup where any
+ * of the file's markup holds a script, each on any added line it spans.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];

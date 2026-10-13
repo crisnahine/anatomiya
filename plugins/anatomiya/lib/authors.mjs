@@ -30,7 +30,7 @@ import { SEP, historyFields } from "./history.mjs";
  * Returns a Map of path to a Set of emails, carrying `error` when git itself
  * failed, so a scan can tell an empty history from an unread one.
  *
- * `history` is one scan's: with it the commits a store already holds are
+ * `history` is one scan's: with it the commits a history store already holds are
  * replayed and only the rest are asked of git (`history.mjs`).
  */
 export async function authorsByFile(root, { history = null } = {}) {

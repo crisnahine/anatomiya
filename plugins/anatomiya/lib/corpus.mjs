@@ -255,7 +255,8 @@ async function generatedAttrRules(root, { timeout } = {}) {
  */
 async function rootAttributes(root, timeout) {
   // Unasked is not an index that marks nothing: the working tree's file would then decide what counts as source (F29).
-  const ask = (args, question) => gitBuffered(root, args, { timeout }).then((r) => answered(r, question));
+  // Past the bound git did answer, with more than is read: the working tree's file decides, as it did.
+  const ask = (args, question) => gitBuffered(root, args, { timeout }).then((r) => (r.oversize ? r : answered(r, question)));
   const [listed, blob] = await Promise.all([
     ask(["ls-files", "-v", "-z", "--", ".gitattributes"], "how the index marks .gitattributes"),
     ask(["cat-file", "blob", ":.gitattributes"], "for the index's .gitattributes"),
