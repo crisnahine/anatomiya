@@ -191,7 +191,9 @@ no git version is needed that 0.15.1 did not need.
   0.15.1 shipped this. A block comment that is not closed on its line now opens only at the start
   of its line or behind one `{`, as JSX writes it, and after anything else the line asks. A line
   comment that holds `*/` asks, and so does a Ruby comment that holds `#{`, which inside a regex or
-  a percent literal spread over lines is an interpolation that runs. That costs false asks, counted
+  a percent literal spread over lines is an interpolation that runs. A `//` behind code asks where a
+  backtick follows it on the line, since inside a regex it would hide a template literal opened after
+  it, and a Ruby string in single quotes that holds `#{` asks. That costs false asks, counted
   over the corpus: 53 of 144,292 JavaScript and TypeScript files hold a comment opened after code
   that asks on each of its lines, 300 lines in 164 files ask for a `//` comment that quotes `*/`,
   and 525 lines in 273 of 66,132 Ruby files ask for a comment holding `#{`, 367 of them comments
