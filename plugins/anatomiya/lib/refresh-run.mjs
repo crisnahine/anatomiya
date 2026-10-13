@@ -12,7 +12,7 @@ import { runPin, runScan } from "./commands.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
 import { createdAlone, lockContent, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
 import { atomic } from "./store.mjs";
-import { answered, BASE_REFS, caseMagic, commitAt, failureOf, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
+import { answered, BASE_REFS, Unasked, caseMagic, commitAt, failureOf, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
@@ -60,9 +60,15 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  * tracked, no-map, outside, no-head, lock-blocked. The last comes with
  * `blocked`, the entry at a lock's name that has to be removed by hand.
  *
- * It throws where git could not be asked for HEAD, the remote's tip, the
- * pinned commit or whether the map is committed, with the lock let go, the pin
- * and the map as they were and nothing recorded: unasked is no reason to act.
+ * A question git could not be asked before the stamp is read throws out of
+ * here, with the lock let go, the pin and the map as they were and nothing
+ * recorded, so the next trigger tries again. Those are: whether the map is
+ * committed and how the repository folds case for that, HEAD, the remote's
+ * tip, whether the pinned commit is still here, whether the pin is newer than
+ * HEAD, and any read the pin itself makes. How the remote's branch last moved
+ * and who this clone commits as are held as `unread` instead. A failure after
+ * the stamp is read, a could-not-ask included, is a failed refresh of that
+ * stamp: it is recorded with its text and waits out the retry clock.
  *
  * `git` is a test seam with one use: it answers whether a target's overview
  * is committed, which only a git that fails on that question can prove.
@@ -260,7 +266,9 @@ async function followPin(root, pin) {
       accepted: { from: current?.sha ?? null, to: head, addedFiles: delta.addedFiles, removedFiles: delta.removedFiles },
       held: null,
     };
-  } catch {
+  } catch (err) {
+    // A pin that could not ask git refused nothing: the worker ends, and the scan after it is not run on a guess.
+    if (err instanceof Unasked) throw err;
     return none;
   }
 }
@@ -446,7 +454,9 @@ async function mapTracked(root) {
  * id. A scan here leaves those files as the commit has them, for the reason
  * above, and still writes the map nobody commits: a repository that commits
  * only the copy another tool reads from the remote has no other way to keep
- * the local one current. A question git could not answer leaves the target alone.
+ * the local one current. A listing git would not give leaves the target alone.
+ * How the repository folds case is asked first and throws where it could not
+ * be: that is after the stamp, so it is a failed refresh of that stamp.
  */
 async function committedTargets(root, git) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
