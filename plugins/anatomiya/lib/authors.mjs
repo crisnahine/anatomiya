@@ -3,7 +3,7 @@ import { SEP, historyFields } from "./history.mjs";
 
 /**
  * Distinct authors per file, from one read of history in git's order: one
- * `git log` pass, or the same commits replayed from a store (`history.mjs`).
+ * `git log` pass, or the same commits replayed from a history store (`history.mjs`).
  *
  * Measured: one `git log` pass is 0.03s to 0.84s regardless of file count,
  * against 103s for per-file calls on an eight-year repository, and the two

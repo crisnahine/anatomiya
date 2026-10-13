@@ -1031,7 +1031,14 @@ clock, a signal or a start that failed, answered nothing, so the scan stops ther
 and prints the question with what ended git at exit 1: `anatomiya: git could not be asked whether
 commit <sha> is still in this repository: git was ended by SIGTERM after 120000 ms`. It stops the
 same way on `which commit <ref> names`, `for the merge base of <a> and <b>` and `whether this
-repository folds case`, and so do `pin` and `check`. Read as git saying no, each of those said
+repository folds case`, and so do `pin` and `check`. A scan and a check stop the same way on what the
+baseline reads: `which files <sha> holds`, `what changed from <sha> to <ref>`, `which files differ
+from <sha>` and `for <path> at <sha>`, a pinned file that could not be read being no file that is
+absent. A pin stops on `whether the index holds unmerged paths`, `whether a merge is in progress`
+and `whether the working tree matches HEAD`. A check stops on `whether this clone is shallow`,
+`which refs hold the name <base>`, `which parents HEAD's commit records` and `for the oldest commit
+this clone holds`. A refresh says `whether this repository commits its map`. A listing of the index
+that was cut short carries no question: `git ls-files exited SIGTERM`. Read as git saying no, each of those said
 something git never did: a map dropped to counts over a commit that was still there, or drift
 measured to a ref's tip (F29).
 
@@ -1164,7 +1171,8 @@ attribute or a subscript in Python and PHP (`self.x = 0`, `$a['k'] = 1;`, which 
 and any token that is not a closer, since `get`, `func` and a lambda's `{` open a callable with no
 name on their line. Three more ask because they hold what the tree does not show as code: every
 row of a string spread over lines that is not bound to a name, a Go comment directly above
-`import "C"`, which cgo compiles, and PHP markup that holds a `<script`.
+`import "C"`, which cgo compiles, and PHP markup in a file where any chunk of markup holds a `<script`, since an inline
+tag cuts a script into chunks and only the first holds the opening tag.
 
 Every file a rule reads in one stop shares one second, started at the first such file and shared by
 every checkout the stop reads: the line rules over JavaScript, Ruby and component script blocks,
@@ -1762,8 +1770,8 @@ what the text line tells a person to do, and `unwritable` where its directory co
 `stagedRemoved` counts the temporary files an earlier run left in `.claude/rules` that this one
 removed, and `storeStagedRemoved` the ones in `.claude/anatomiya`. `stagedLeft` and
 `storeStagedLeft` count the ones it could not remove. Each is absent at none. `refreshBlocked` lists
-the names in `.claude/anatomiya` that stop every refresh, each a directory holding entries: the
-lock's, a lock token's, the state's. It is absent where there is none.
+the names in `.claude/anatomiya` that stop every refresh, each a directory holding entries, or one
+that cannot be listed, which counts as holding them: the lock's, a lock token's, the state's. It is absent where there is none.
 
 A target that was off and stays off prints nothing, whatever its directory holds, so a repository
 that never names one reads as it did. `doctor`, run inside a repository, prints one line per target
@@ -1841,7 +1849,7 @@ scans nothing, and the map there stays as it was until a scan run by hand sweeps
 (A118). Neither `doctor`, the summary nor the delivered map says the refresh is stuck meanwhile. An
 entry at the lock's name that is no lock is told apart: the worker removes an empty directory there
 and takes the lock. A directory holding entries at the lock's name, at a lock token's or at the
-state's, `refresh.json`, is never emptied and stops every refresh in the checkout: the worker asks
+state's, `refresh.json`, or one there that cannot be listed, is never emptied and stops every refresh in the checkout: the worker asks
 `refreshBlockers` before it takes the lock or scans, and ends with the reason `lock-blocked`, or
 `state-blocked` for the state's, and the path. Nobody reads a worker's reason, so a scan run by hand
 says it in its summary, one line per name:

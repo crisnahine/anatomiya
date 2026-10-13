@@ -776,8 +776,11 @@ no claim, so most repositories state none: 51 of 60 measured.
 clock run out on a loaded machine or a signal sent to it, `scan`, `pin` and `check` stop, write
 nothing and print the question at exit 1: `anatomiya: git could not be asked whether commit <sha> is
 still in this repository: git was ended by SIGTERM after 120000 ms`, or the same for `which commit
-<ref> names`, `for the merge base of <a> and <b>` and `whether this repository folds case`. Run it
-again. Read as git saying no, the first of those dropped a map to counts over a commit that was
+<ref> names`, `for the merge base of <a> and <b>` and `whether this repository folds case`. The same holds for a
+listing, a range or a pinned file: `which files <sha> holds`, `what changed from <sha> to <ref>`,
+`which files differ from <sha>`, `for <path> at <sha>`, and for `check`, `whether this clone is
+shallow`, `which refs hold the name <base>`, `which parents HEAD's commit records` and `for the
+oldest commit this clone holds`. Run it again. Read as git saying no, the first of those dropped a map to counts over a commit that was
 still there. A repository git itself cannot open stops them the same way, with git's own text.
 
 **Who gets the most out of it**: repositories where a meaningful share of pull requests are

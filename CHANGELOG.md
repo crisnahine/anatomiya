@@ -46,7 +46,8 @@ no git version is needed that 0.15.1 did not need.
   Three more kinds ask because they hold what the tree does not show as code: every row of a
   string spread over lines and passed to a call, the rows that open and close a raw string among
   them, where the same string bound to a name asks nothing; a Go comment directly above
-  `import "C"`, which cgo compiles; and PHP markup outside the tags that holds a `<script`. Three
+  `import "C"`, which cgo compiles; and PHP markup outside the tags, in a file where any chunk of that markup holds a
+  `<script`, since an inline tag cuts a script into chunks and only the first holds the opening tag. Three
   of the 34,075 hunks moved to asking for it, two rows of a Rust raw string and a comment between
   the parts of a Python string, and none of the 34,075 holds a cgo preamble or a script in PHP
   markup.
@@ -158,6 +159,26 @@ no git version is needed that 0.15.1 did not need.
   with `git rev-parse --verify --quiet`, which exits 1 for a commit that is not there and 128 for a
   repository it cannot open, the same on git 2.39.5 and 2.54.0, where `git cat-file -e` exits 128
   for both. So a repository git cannot open now stops these commands with git's own text.
+  The reads behind the baseline and the check stop the same way: a listing, a range or a pinned file
+  that could not be asked for stopped nothing before, so an area was written as postdating its
+  baseline or as a population change, and a check read a shallow clone as whole. They print `git
+  could not be asked which files <sha> holds`, `what changed from <sha> to <ref>`, `which files
+  differ from <sha>`, `for <path> at <sha>`, `whether this clone is shallow`, `which refs hold the
+  name <base>`, `which parents HEAD's commit records` or `for the oldest commit this clone holds`.
+  A name git refuses with exit code 128 and no text, such as `HEAD@{9999}`, is a name that is not
+  there: `check --base 'HEAD@{9999}'` says the base resolves to no commit.
+- Grammars asked for at once from a cold runtime could fail to load. A stop that read two
+  checkouts started the tree-sitter runtime twice, the second start under the first left a grammar
+  unusable ("Incompatible language version 0"), and that checkout's files asked nothing: a grammar
+  or two of the three asked for failed in each of 4 cold runs. The runtime's load and each grammar's are one
+  promise that later callers await.
+- A row of the type-checked tier that throws while it looks for a site in a file leaves no stub
+  there, where the throw failed the tier.
+- A history store that lacks more than half of the history's commits is passed over and the plain
+  walk answers: a replay read what the store lacks onto the heap, about 3.4 KB a commit measured at
+  1,271 commits.
+- A directory that cannot be listed at the refresh lock's name, a lock token's or the state's
+  counts as holding entries: it stops every refresh, the scan names it, and it is never removed.
 - A clone git could not be asked the depth of is history that could not be read. It was read as a
   whole clone, and a window read as the whole history lowers the author bar: at depth 1 the
   repository D11 measured stated 484 claims where its full clone states 465.

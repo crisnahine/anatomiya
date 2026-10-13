@@ -380,7 +380,7 @@ _Avoid_: block, freeze, lock
 **Could not be asked**:
 Said of a question put to git that git never answered: the call ended with no exit code, by a
 clock, a signal or a start that failed, or, for whether a commit is there and which commit a ref
-names, with an exit code other than 0 and 1. It is no answer and is never read as a no. A scan, a
+names, with an exit code other than 0 and 1, a 128 with nothing printed aside for a ref's name. It is no answer and is never read as a no. A scan, a
 pin and a check stop on one that would decide what is written and print the question, and a refresh
 ends and asks again later. A git that ran and said no has
 answered.
@@ -476,6 +476,9 @@ or created. Nothing there is written or removed by that scan, and the rest of th
 The summary says so with a remedy, `--format json` carries `unwritable` on that target, and a
 refresh lists the directory under `stopped` in `refresh.json` and comes due again on its retry clock
 while it stays so. A scan that names the target refuses whole.
+A second sense, in the code and the decision rows only: a stopped run is a checker run the scan
+ended once its answer could only be a degraded verdict (`stopped: true` from `runSemantic`). It is
+never printed and does not reach the record.
 _Avoid_: left alone (for a stopped file), locked, skipped, failed
 
 **Main checkout**:
