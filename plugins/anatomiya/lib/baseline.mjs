@@ -1,5 +1,5 @@
 import {
-  changedSinceWorktree, diffRange, filesAt, isSha, mergeBase, resolveBaseRef, shaReachable,
+  Unasked, changedSinceWorktree, diffRange, filesAt, isSha, mergeBase, resolveBaseRef, shaReachable,
 } from "./git.mjs";
 import { existsSync, mkdirSync } from "node:fs";
 import { basename, join, dirname } from "node:path";
@@ -653,6 +653,9 @@ async function countAtPin(root, state, areas, populations, { headParsed = null, 
       // A blob that will not come back is a population problem rather than a
       // parse problem, so `missing` suppresses the way a population change does.
       blobs = await readAtRevision(root, state.sha, stale);
+      // A blob git could not be asked for is not one the pin lacks, and closes no area (F29).
+      const unasked = blobs.missing.find((m) => m.reason === "unasked");
+      if (unasked) throw new Unasked(unasked.error);
       const reparsed = await parse(blobs.files);
       for (const [rel, r] of reparsed.records) parsed.set(rel, r);
       // The baseline is a second corpus read, and F7 is about corpus reads
