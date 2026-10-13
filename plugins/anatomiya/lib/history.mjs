@@ -100,7 +100,7 @@ export async function historyFields(root, walk, open, { history = null, signal =
   const said = (history[walk.kind] = { stored: 0, walked: null, wrote: false });
   const store = await openStore(root, walk, history);
   if (store === null) return plain();
-  const leave = (records) => scanOf(history).pending.push({ kind: walk.kind, stamp: store.stamp, records });
+  const leave = (records) => scanOf(history).pending.push({ walk, stamp: store.stamp, records });
 
   if (store.at !== null) {
     const replay = await replayable(root, walk, store, run).catch(() => null);
@@ -146,11 +146,22 @@ export async function historyFields(root, walk, open, { history = null, signal =
 /**
  * Write what each walk of one scan left to be kept, or with `write` false drop
  * it. A store that cannot be written is the full walk next time.
+ *
+ * The stamp is taken again here, from git and the files and never from what the
+ * walk read: a `.mailmap`, an attributes file or the configuration that changed
+ * while the walk ran leaves records the earlier stamp does not describe, and
+ * sealed under it they would be replayed once the change is undone. Where the
+ * two differ nothing is written and the file that was there stays.
  */
 export async function saveHistory(root, history, { write = true } = {}) {
   const pending = scanOf(history).pending.splice(0);
   if (!write) return;
-  for (const { kind, stamp, records } of pending) {
+  // Read once per environment, which is once: the two walks of a scan share theirs.
+  const besides = new Map();
+  for (const { walk, stamp, records } of pending) {
+    const { kind, env } = walk;
+    if (!besides.has(env)) besides.set(env, await readBesides(root, env));
+    if (stampOf(walk, besides.get(env)) !== stamp) continue;
     try {
       // Resolved again: the walk asked before the map was written. The directory is the map's
       // to make, so where a scan made none the write fails and no history is kept either.
@@ -183,7 +194,9 @@ const outOfMemory = (err) => (err instanceof RangeError && err.code === undefine
 async function openStore(root, walk, history) {
   const dir = resolveInside(root, STORE_DIR);
   if (dir === null) return null;
-  const [stamp, tracked] = await Promise.all([stampOf(root, walk, history), isTracked(root, walk)]);
+  // Read once for the two walks of one scan.
+  const [besides, tracked] = await Promise.all([(scanOf(history).besides ??= readBesides(root, walk.env)), isTracked(root, walk)]);
+  const stamp = stampOf(walk, besides);
   if (stamp === null || tracked) return null;
   const none = { stamp, body: null, at: null };
   const packed = recordBytes(join(dir, HISTORY_FILES[walk.kind]));
@@ -223,9 +236,7 @@ async function isTracked(root, walk) {
  * Only the digest is stored. The configuration it covers names paths and can
  * hold a token, and the store sits in a directory a repository may commit.
  */
-async function stampOf(root, walk, history) {
-  // Read once for the two walks of one scan.
-  const besides = await (scanOf(history).besides ??= readBesides(root, walk.env));
+function stampOf(walk, besides) {
   if (besides === null) return null;
   // An attribute says whether a file is text, and a rename is scored on that reading: only a walk that pairs renames depends on one.
   const attributes = walk.renames ? besides.attributes : "unread";
