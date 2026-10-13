@@ -127,6 +127,14 @@ const NAMES = { python: targets("[\\s(\\[*]", NAME), php: targets("\\s|\\[|list\
 // The node that joins types where it stands under `within`, read by its operator: any but `|` computes.
 export const UNION = { python: { node: "binary_operator", within: "type" } };
 
+// The fields the oracle reads by name, each with the node it is read from per language. A field a
+// grammar renamed reads as null, which passes every write, declared type and operator.
+export const FIELDS = {
+  operator: { field: "operator", of: { python: "binary_operator" } },
+  declared: { field: "type", of: { csharp: "variable_declaration" } },
+  target: { field: "left", of: { python: "assignment", php: "assignment_expression" } },
+};
+
 /**
  * Every node that may add something callable and holds a token on an added
  * line, as `{ line, type, text }`: a definition, a call, a lambda, a
@@ -227,7 +235,7 @@ export function oracleHits(tree, lang, added) {
   };
   const access = new Set(ACCESS[lang] ?? []);
   const joinsTypes = (n) => {
-    if (n.type !== UNION[lang]?.node || n.childForFieldName("operator")?.type !== "|") return false;
+    if (n.type !== UNION[lang]?.node || n.childForFieldName(FIELDS.operator.field)?.type !== "|") return false;
     for (let up = n.parent; up !== null; up = up.parent) if (up.type === UNION[lang].within) return true;
     return false;
   };
@@ -273,7 +281,7 @@ export function oracleHits(tree, lang, added) {
   // The declared type of a literal that is not `null`, where it is no type of the language's own and the declaration no `const`.
   const convertedBy = (node, value) => {
     if (!OWN_TYPE[lang] || value === null || value.text === "null") return null;
-    const type = node.parent.childForFieldName("type")?.text ?? "";
+    const type = node.parent.childForFieldName(FIELDS.declared.field)?.text ?? "";
     return OWN_TYPE[lang].test(type) || node.parent.parent.children.some((n) => n?.text === "const") ? null : type;
   };
   const hit = (node, why) => hits.push({ line: node.startPosition.row + 1, type: why, text: node.text.split("\n")[0].slice(0, 120) });
@@ -307,7 +315,7 @@ export function oracleHits(tree, lang, added) {
         const value = own ?? (counter ? null : node.lastNamedChild);
         const odd = value === null ? null : counter ? oddLeaf(value, counter) : firstOdd(value);
         const declared = odd === null ? convertedBy(node, value) : null;
-        const target = NAMES[lang] ? node.childForFieldName("left") : null;
+        const target = NAMES[lang] ? node.childForFieldName(FIELDS.target.field) : null;
         if (target !== null && !NAMES[lang].test(target.text)) hit(node, `write to ${target.type}`);
         if (odd !== null) hit(node, `binding to ${odd.type}`);
         else if (s.alternative && node.childForFieldName(s.alternative) !== null) hit(node, "binding with an alternative");

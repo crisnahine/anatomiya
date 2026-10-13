@@ -6,9 +6,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Language } from "web-tree-sitter";
 
-import { ACCESS, CONTAINERS, COUNTED, FOREIGN, measure, ORACLE, oracleHits, tally, UNION } from "../scripts/measure-inert.mjs";
+import { ACCESS, CONTAINERS, COUNTED, FIELDS, FOREIGN, measure, ORACLE, oracleHits, tally, UNION } from "../scripts/measure-inert.mjs";
 import { parseForLines } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
+import * as SAMPLES from "./tree-samples.mjs";
 
 function repo(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-measure-inert-"));
@@ -316,5 +317,23 @@ test("every node type the oracle names is one its grammar knows", async () => {
   for (const [lang, types] of Object.entries(CONTAINERS).map(([l, c]) => [l, [...ORACLE[l], ...c, ...counted(l), ...(ACCESS[l] ?? []), ...(FOREIGN[l] ?? []), ...Object.values(UNION[l] ?? {})]])) {
     const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
     assert.deepEqual(types.filter((type) => language.idForNodeType(type, true) === null), [], lang);
+  }
+});
+
+test("every field the oracle reads is one its grammar knows, filled on the node it is read from in an ordinary file", async () => {
+  // A grammar that renames one leaves the oracle reading null, which passes every write, every declared type and every operator.
+  assert.deepEqual(Object.keys(FIELDS).sort(), ["declared", "operator", "target"]);
+  for (const { field, of } of Object.values(FIELDS)) {
+    for (const [lang, type] of Object.entries(of)) {
+      const language = await Language.load(join(ANATOMIYA, "grammars", `${lang}.wasm`));
+      assert.notEqual(language.fieldIdForName(field), null, `${lang}: ${field}`);
+      assert.notEqual(language.idForNodeType(type, true), null, `${lang}: ${type}`);
+      const parsed = await parseForLines(SAMPLES[lang], lang, { cancel: () => false });
+      try {
+        assert.ok(parsed.tree.rootNode.descendantsOfType(type).some((node) => node.childForFieldName(field) !== null), `${lang}: no ${type} of the sample fills ${field}`);
+      } finally {
+        parsed.tree.delete();
+      }
+    }
   }
 });
