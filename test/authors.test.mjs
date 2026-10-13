@@ -485,7 +485,7 @@ test("a clone git could not be asked the depth of is unread history, and one git
   assert.match((await authorsByFile(repo(t, () => {}))).error, /^git could not be asked whether this clone holds/);
   calls.restore();
 
-  // Any exit code is git's own answer, as before: one that says nothing reads as whole.
+  // Any exit code is git's own answer: one that says nothing reads as whole.
   gitAhead(t, exits(probe, 129));
   const read = await authorsByFile(dir);
   assert.equal(read.error, undefined);
