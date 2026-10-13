@@ -9,7 +9,7 @@ import { check } from "./check.mjs";
 import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
-import { caseMagic, failureOf, gitBuffered, headSha } from "./git.mjs";
+import { answered, caseMagic, failureOf, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
@@ -168,9 +168,10 @@ async function refuseUnlikeHead(root) {
   // listed once per stage, so a pin taken mid-merge holds it three times and a
   // corpus larger than the tree, and the corpus fixes the area floor for every
   // scan after.
-  const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
+  // Each of the three throws `Unasked` where git gave no exit code, which the refresh worker tells from a refusal (F29).
+  const unmerged = answered(await gitBuffered(root, ["ls-files", "--unmerged", "-z"]), "whether the index holds unmerged paths");
   if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${failureOf(unmerged)}`);
-  const merging = (await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"])).ok;
+  const merging = answered(await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]), "whether a merge is in progress").ok;
   const inMerge = "a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin";
   if (unmerged.stdout.length > 0) {
     // A rebase, cherry-pick, revert, am or stash pop leaves them too, with no merge to abort.
@@ -186,7 +187,7 @@ async function refuseUnlikeHead(root) {
   const rules = trackedRulesDir(root);
   const exclude = `:(${["exclude", await caseMagic(root)].filter(Boolean).join(",")})`;
   const own = [...(rules === RULES_DIR ? [] : [`${rules}/${PREFIX}*.md`]), ...EXCLUDE_LINES].map((line) => `${exclude}${line}`);
-  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]);
+  const dirty = answered(await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]), "whether the working tree matches HEAD");
   if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${failureOf(dirty)}`);
   if (dirty.stdout.length > 0) {
     // Stashing a merge in progress drops the merge.

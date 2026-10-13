@@ -249,8 +249,14 @@ async function followPin(root, pin) {
   if (current?.sha === head) return none;
   // Each hold names the pin it held, so a pin taken by hand since ends it.
   const hold = (reason, commit, by = null) => ({ accepted: null, held: { reason, commit, pin: current?.sha ?? null, ...(by ? { by } : {}) } });
-  const moved = await fetchedHere(root, tip.ref, tip.sha);
-  if (moved === "unread") return hold("unread", head);
+  let moved;
+  try {
+    moved = await fetchedHere(root, tip.ref, tip.sha);
+  } catch (err) {
+    // No exit code is neither a push nor a missing reflog: the pin is held, and the hold says git could not say.
+    if (!(err instanceof Unasked)) throw err;
+    return hold("unread", head);
+  }
   if (moved !== "fetched") return hold(moved === "no-record" ? "no-record" : "not-fetched", head);
   // A pinned commit git no longer holds (its branch merged, deleted and
   // collected) bounds nothing, and the line is read as for a first pin.
@@ -259,7 +265,7 @@ async function followPin(root, pin) {
     // Newer than this checkout: the remote was rewound, or this clone is
     // behind the one that pinned. Either way the pin does not move backwards.
     // Exit code 1 is git saying it is not. Unasked, the pin stays where it is.
-    const newer = answered(await gitBuffered(root, ["merge-base", "--is-ancestor", head, from]), `whether the pin at ${from} is newer than ${head}`);
+    const newer = await asked(root, ["merge-base", "--is-ancestor", head, from], `whether the pin at ${from} is newer than ${head}`);
     if (newer.ok) return none;
   }
   const made = await madeHereOnLine(root, from, head);
@@ -282,6 +288,9 @@ async function followPin(root, pin) {
     return none;
   }
 }
+
+/** What git answered `question` with, whatever its exit code. It throws `Unasked` where git gave none (F29). */
+const asked = async (root, args, question) => answered(await gitBuffered(root, args), question);
 
 // Reflog entries that create no commit; every other entry is a commit made
 // here, since a list of what creates commits missed each spelling git gives a
@@ -363,7 +372,7 @@ async function madeHereOnLine(root, from, to) {
  */
 async function committerEmail(root) {
   // Unasked is not a clone with no identity: the walk that called is then unread, and the pin held.
-  const r = answered(await gitBuffered(root, ["var", "GIT_COMMITTER_IDENT"]), "who this clone commits as");
+  const r = await asked(root, ["var", "GIT_COMMITTER_IDENT"], "who this clone commits as");
   const email = r.ok ? /<([^>]*)>/.exec(r.stdout)?.[1]?.trim().toLowerCase() : "";
   return email ? email : null;
 }
@@ -384,7 +393,8 @@ async function clonedAt(root) {
   } catch {
     // No such file, which a clone made without templates leaves.
   }
-  const log = await gitBuffered(root, ["reflog", "show", "--date=unix", "--format=%gd", "main-worktree/HEAD"]);
+  // Unasked, the walk that called is unread, as for the identity.
+  const log = await asked(root, ["reflog", "show", "--date=unix", "--format=%gd", "main-worktree/HEAD"], "when this clone's oldest reflog entry was written");
   const oldest = log.ok ? (log.stdout.trimEnd().split("\n").pop() ?? "") : "";
   const at = /@\{(\d+)\}$/.exec(oldest)?.[1];
   if (at !== undefined) times.push(Number(at));
@@ -411,7 +421,7 @@ async function remoteTip(root) {
 /**
  * How the remote-tracking ref last moved: `fetched` by a fetch or a pull,
  * `moved-here` by this clone (a push, a ref written by hand, a fetch naming its
- * own source), `no-record` where git kept none to tell by, or `unread` where
+ * own source), or `no-record` where git kept none to tell by. It throws where
  * git could not be asked: no exit code is neither a push nor a missing reflog.
  *
  * Asked through `git reflog`, which reads every ref backend: the files backend
@@ -422,24 +432,19 @@ async function remoteTip(root) {
  * onto this same commit; anything else with no record is refused.
  */
 async function fetchedHere(root, ref, sha) {
-  const full = await gitBuffered(root, ["rev-parse", "--symbolic-full-name", ref]);
-  if (full.code === null) return "unread";
+  const full = await asked(root, ["rev-parse", "--symbolic-full-name", ref], `which ref ${ref} names`);
   const name = full.ok ? full.stdout.trim() : "";
   if (!name.startsWith("refs/remotes/")) return "moved-here";
-  const last = await gitBuffered(root, ["reflog", "show", "-n1", "--format=%gs", name]);
-  if (last.code === null) return "unread";
+  const last = await asked(root, ["reflog", "show", "-n1", "--format=%gs", name], `how ${name} last moved`);
   if (!last.ok) return "no-record";
   const message = last.stdout.trim();
   if (message !== "") return movedByRemote(message) ? "fetched" : "moved-here";
-  const cloned = await clonedOnto(root, sha);
-  if (cloned === null) return "unread";
-  return cloned ? "fetched" : "no-record";
+  return (await clonedOnto(root, sha)) ? "fetched" : "no-record";
 }
 
-/** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`, or null where git could not be asked. */
+/** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`. It throws where git could not be asked. */
 async function clonedOnto(root, sha) {
-  const log = await gitBuffered(root, ["reflog", "show", "--format=%H %gs", "main-worktree/HEAD"]);
-  if (log.code === null) return null;
+  const log = await asked(root, ["reflog", "show", "--format=%H %gs", "main-worktree/HEAD"], "how this clone was made");
   if (!log.ok) return false;
   const first = log.stdout.trimEnd().split("\n").pop() ?? "";
   return first.startsWith(`${sha} clone: `);
@@ -453,7 +458,7 @@ async function clonedOnto(root, sha) {
  */
 async function mapTracked(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
-  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`]);
+  const r = await asked(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`], "whether this repository commits its map");
   // A listing git did not give is not an empty one, which would have the worker write over a committed map.
   if (!r.ok) throw new Error(`git would not say whether this repository commits its map: ${failureOf(r)}`);
   return r.stdout.length > 0;
