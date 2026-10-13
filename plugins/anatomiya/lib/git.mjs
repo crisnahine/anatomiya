@@ -498,13 +498,19 @@ export async function gitBuffered(
     return { ok: false, code: null, oversize: false, stdout: encoding === "buffer" ? Buffer.alloc(0) : "", error: unreadConfig(call) };
   }
   try {
-    const { stdout } = await run("git", call.args, {
+    const running = run("git", call.args, {
       cwd: root,
       encoding,
       maxBuffer: maxBytes,
       timeout,
       env: call.env,
     });
+    const { stdout } = await running;
+    // Node shuts the pipes at the clock and still calls a git that exited 0 in that moment a success,
+    // with the part of its answer it had read.
+    if (running.child.killed) {
+      return { ok: false, code: null, oversize: false, stdout: encoding === "buffer" ? Buffer.alloc(0) : "", error: `git was ended by SIGTERM after ${timeout} ms` };
+    }
     return { ok: true, code: 0, oversize: false, stdout, error: null };
   } catch (err) {
     const failed = String((err && err.message) || err);
@@ -580,10 +586,11 @@ function subcommandAt(args) {
  * The other entry point: output read off the stream, one NUL-delimited field at
  * a time (F6). `delimiter` is the byte that ends a field where git prints no NUL.
  *
- * It rejects with `Unasked` where git left no exit code: an argument refused, a
- * configuration nobody could read, a start that failed, a signal, a clock, a
- * pipe that broke, a record past its bound. A git that exited with a code
- * rejects with a plain error, and so does a read its caller stopped (F29).
+ * It rejects with `Unasked` where git left no exit code, and where its clock
+ * ended the read whatever code git left: an argument refused, a configuration
+ * nobody could read, a start that failed, a signal, a clock, a pipe that broke,
+ * a record past its bound. Any other git that exited with a code rejects with a
+ * plain error, and so does a read its caller stopped (F29).
  */
 export function gitStreamed(
   root,
@@ -611,10 +618,10 @@ export function gitStreamed(
     }
     // Its pipes are shut with the signal: Git for Windows starts the real git as a launcher's child and
     // the signal ends the launcher alone, so `close` would wait on all the git behind it still sends.
-    const end = (signal) => {
+    const end = (how) => {
       child.stdout?.destroy();
       child.stderr?.destroy();
-      signalChild(child, signal);
+      signalChild(child, how);
     };
     // This clock and not spawn's own, which nothing stops for a child that
     // never started and which then holds the process open for the whole of
