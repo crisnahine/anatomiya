@@ -241,3 +241,9 @@ test("a JSX comment spread over lines asks nothing through its end, and the line
 test("a regex holding /* after a brace opens no comment", async () => {
   assert.deepEqual(await asking("js", "{ /\\/*$/.test(x) }\nfunction f() {}\n/** doc */\nfunction g() {}\n"), [1, 2, 4]);
 });
+
+test("a line comment that holds the end of a block comment asks", async () => {
+  // The comment opened after code carries no state, so the code after its end stands on a line read as a comment.
+  assert.deepEqual(await asking("js", "foo(); /* a\n// b */ function f() {}\n// plain\n"), [1, 2]);
+  assert.deepEqual(await asking("js", "foo(); /* a\nconst B = 1; // b */ function f() {}\nconst C = 1; // plain\n"), [1, 2]);
+});
