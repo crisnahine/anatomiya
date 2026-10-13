@@ -366,11 +366,36 @@ for (const { name, needs = {}, before = () => {}, change, answers = PAIRED } of 
     const after = await authorsWith(dir);
     assert.deepEqual(flat(after.map), flat(expected));
     assert.deepEqual(after.said, { stored: 0, walked: taken.said.walked, wrote: true });
-    assert.equal((await authorsWith(dir)).said.stored, taken.said.walked, "and the store taken under the new stamp is read");
+    assert.equal((await authorsWith(dir)).said.stored, taken.said.walked, "and the store taken under that stamp is read");
     // That walk reads no content, so no attribute reaches it.
     assert.equal((await changesWith(dir)).said.stored, taken.said.walked);
   });
 }
+
+test("a working-tree .gitattributes that is a link is the plain walk for the authors: git reads no attribute through one", needsSymlinks, async (t) => {
+  // The link leads to the bytes the file held, so the name is all that changed.
+  const dir = repo(t, scored);
+  tools(dir).write(".gitattributes", "*.txt -diff\n");
+  assert.deepEqual(flat((await authorsWith(dir)).map), PAIRED);
+  const written = readFileSync(storeOf(dir, "authors"));
+
+  renameSync(join(dir, ".gitattributes"), join(dir, "attributes.real"));
+  symlinkSync("attributes.real", join(dir, ".gitattributes"));
+  assert.deepEqual(flat(await authorsByFile(dir)), UNPAIRED);
+  await leftAlone(dir, written, "a link at the root");
+});
+
+test("a working-tree .mailmap that is a link is the plain walk: git maps no address through one", needsSymlinks, async (t) => {
+  const dir = repo(t, storied);
+  const mapped = await authorsWith(dir);
+  assert.equal(mapped.map.get("src/a.ts").has("uno@t.test"), false);
+  const written = readFileSync(storeOf(dir, "authors"));
+
+  renameSync(join(dir, ".mailmap"), join(dir, "mailmap.real"));
+  symlinkSync("mailmap.real", join(dir, ".mailmap"));
+  assert.equal((await authorsByFile(dir)).get("src/a.ts").has("uno@t.test"), true);
+  await leftAlone(dir, written, "a link at the root");
+});
 
 test("another git refuses the store", { ...needsShebang, ...needsPathControl }, async (t) => {
   const dir = repo(t, storied);
