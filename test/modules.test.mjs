@@ -134,6 +134,61 @@ test("a signal goes to a child from the one function that sends it only where th
   assert.match(sites[0], /^child\.mjs:/);
 });
 
+/**
+ * Every read of a git result outside `git.mjs` that does not go through
+ * `answered`, by file and function, with what a git that could not be asked
+ * does there (F29). SAYS SO: the caller degrades and its output says the read
+ * could not be made. NOTHING DONE: nothing is written, moved or stated. STOP:
+ * the function throws on every failure, in its own words. OPEN: not ruled yet.
+ */
+const RAW_GIT_READS = {
+  "authors.mjs headState": ["SAYS SO", "asked after the log failed; anything but exit code 1 keeps the history error on the map"],
+  "authors.mjs isPartialClone": ["SAYS SO", "throws unless exit code 1, and the history error travels with the map"],
+  "authors.mjs shallowHistory": ["SAYS SO", "a count or a root not read leaves the clone shallow with that part null"],
+  "changeset.mjs addedRanges": ["SAYS SO", "null, which the check words as ranges that could not be read and the stop hook reads as nothing to ask"],
+  "changeset.mjs changedFiles": ["SAYS SO", "not ok, and the check says the diff could not be read"],
+  "changeset.mjs pendingPaths": ["SAYS SO", "null, which the check words as pending edits it could not list and the stop hook reads as nothing to ask"],
+  "check.mjs absentAt": ["SAYS SO", "null, and the placement finding is declined with a caveat"],
+  "check.mjs remoteSha": ["SAYS SO", "no commit to fetch, then the caveat that the base could not be fetched"],
+  "check.mjs resolveBase": ["SAYS SO", "the shallow fetch: not fetched is the next candidate, then the same caveat"],
+  "corpus.mjs gitRoot": ["STOP", "throws on every failure with git's own text"],
+  "corpus.mjs lsFiles": ["STOP", "hands the stream's rejection to its caller, Unasked where git left no exit code"],
+  "corpus.mjs rootAttributes": ["OPEN", "falls back to the working tree's .gitattributes, which differs only where the index marks the file unchanged"],
+  "history.mjs historyFields": ["SAYS SO", "rejects into the walk's error, which the summary and the record state"],
+  "history.mjs isTracked": ["NOTHING DONE", "reads as tracked, so no store is written"],
+  "history.mjs readBesides": ["NOTHING DONE", "no stamp, so nothing is replayed or kept and the plain walk answers"],
+  "refresh-run.mjs gitBusy": ["NOTHING DONE", "reads as busy, and the worker leaves"],
+  "refresh-run.mjs madeHereOnLine": ["SAYS SO", "the walk is unread and the pin is held as unread"],
+  "refresh-run.mjs refreshRepository": ["NOTHING DONE", "reads as outside a checkout's root, and the worker leaves"],
+  "refresh-run.mjs remoteTip": ["NOTHING DONE", "no remote named, so fewer candidates and no pin"],
+  "refresh-run.mjs stampOf": ["NOTHING DONE", "no stamp, so no scan and no record"],
+  "reuse.mjs gitDir": ["NOTHING DONE", "no git directory, so the stop asks nothing"],
+  "reuse.mjs headMovesFromGit": ["NOTHING DONE", "no moves read, so no commit is charged to the turn"],
+};
+
+test("every read of a git result outside git.mjs goes through answered or is on the list of what it does unasked", () => {
+  const found = new Set();
+  for (const file of readdirSync(LIB).filter((name) => name.endsWith(".mjs") && name !== "git.mjs")) {
+    let fn = null;
+    for (const line of readFileSync(join(LIB, file), "utf8").split("\n")) {
+      const named = /^(?:export )?(?:async )?function\*? (\w+)|^(?:export )?const (\w+) = /.exec(line);
+      if (named) fn = named[1] ?? named[2];
+      if (/^\s*(?:\/\/|\*|import )/.test(line) || !/\bgit(?:Buffered|Streamed)\(/.test(line)) continue;
+      if (!/answered\(await gitBuffered\(/.test(line)) found.add(`${file} ${fn}`);
+    }
+  }
+  const unlisted = [...found].filter((site) => !(site in RAW_GIT_READS));
+  assert.deepEqual(unlisted, [],
+    `${unlisted.join(", ")}: a git call with no exit code was never an answer (F29). Either ask through answered(), so the could-not-ask ` +
+    "stops the command with nothing written, or add the function to RAW_GIT_READS as SAYS SO (the output says the read could not be made) " +
+    "or NOTHING DONE (nothing is written, moved or stated). Anything else states or writes what git did not say.");
+  assert.deepEqual(Object.keys(RAW_GIT_READS).filter((site) => !found.has(site)), [], "listed, and no such read is left");
+  for (const [site, [verdict, why]] of Object.entries(RAW_GIT_READS)) {
+    assert.ok(["SAYS SO", "NOTHING DONE", "STOP", "OPEN"].includes(verdict) && why.length > 0, site);
+  }
+  assert.deepEqual(Object.keys(RAW_GIT_READS).filter((site) => RAW_GIT_READS[site][0] === "OPEN"), ["corpus.mjs rootAttributes"], "no read joins the list unruled");
+});
+
 test("the writers do not reach the pipeline that produced the record", () => {
   // Three of the four readers of the old module wanted a writer or the caveat
   // table and paid a parser, a git runner and the whole registry for it. The
