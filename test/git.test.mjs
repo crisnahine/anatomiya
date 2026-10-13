@@ -14,10 +14,7 @@ import { needsBatchZ, needsPosixPaths, needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
 import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
-import {
-  blobReader, caseMagic, changedSinceWorktree, commitAt, diffRange, filesAt, gitBuffered, gitStreamed, headSha, isSha, mergeBase,
-  nameStatusReader, parsePorcelainRows, shaReachable, showBlob,
-} from "../plugins/anatomiya/lib/git.mjs";
+import { blobReader, caseMagic, changedSinceWorktree, commitAt, diffRange, filesAt, gitBuffered, gitStreamed, headSha, isSha, mergeBase, nameStatusReader, parsePorcelainRows, shaReachable, showBlob, resolveBaseRef } from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -1338,6 +1335,23 @@ test("a git that refused is not a git that said no: only exit code 1 is", needsG
   assert.equal(await commitAt(dir, "HEAD"), null);
   calls.restore();
   assert.equal(await commitAt(dir, second), second, "and a refusal was never kept as the answer");
+});
+
+test("a merge base git could not be asked for is kept apart from one git says is not there", needsGitStub, async (t) => {
+  const { dir, first, second } = twoCommits(t);
+  const calls = gitAhead(t, unasked("*' merge-base '*"));
+  const base = await mergeBase(dir, first, second);
+  assert.deepEqual([base.found, base.failed, base.sha], [false, true, null]);
+  assert.match(String(base.unasked), new RegExp(`^Error: git could not be asked for the merge base of ${first} and ${second}: git was ended by SIGTERM`));
+  // Read as no fork point, the drift and the check's range run to the ref's tip.
+  await assert.rejects(() => resolveBaseRef(dir, first), new RegExp(`^Error: git could not be asked for the merge base of HEAD and ${first}: git was ended by SIGTERM`));
+  calls.restore();
+
+  // Exit code 1 with nothing printed is git saying the two share no commit.
+  gitAhead(t, exits("*' merge-base '*", 1));
+  const none = await mergeBase(dir, first, second);
+  assert.deepEqual(none, { found: false, failed: false, sha: null });
+  assert.deepEqual(await resolveBaseRef(dir, first), { ok: true, ref: first, sha: first, tip: first, forkPoint: false });
 });
 
 test("the merge base of a commit with itself still answers where the commit could not be asked about", needsGitStub, async (t) => {

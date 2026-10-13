@@ -568,6 +568,7 @@ async function resolveBase(root, baseRef, caveats) {
       const fetched = await git(root, ["fetch", "--depth=1", "origin", remote]);
       if (!fetched.ok) continue;
       const mb = await mergeBase(root, remote, "HEAD");
+      if (mb.unasked) throw mb.unasked;
       // A depth-1 checkout grafts HEAD as a root, so `merge-base` cannot see
       // past it, not even to the commit just fetched. The commit object still
       // records its parents, and a parent of HEAD is its own merge base with

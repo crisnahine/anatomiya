@@ -1137,7 +1137,9 @@ export function blobReader(
 /**
  * The merge base of two commits, with the three outcomes kept apart: found,
  * genuinely no common ancestor (exit 1, empty stdout, no stderr), and the
- * command failing for some other reason.
+ * command failing for some other reason. Where it failed with no exit code git
+ * was never asked, and `unasked` is the error for a caller that must not read
+ * that as "none".
  */
 export async function mergeBase(root, a, b) {
   if (!safeRef(a) || !safeRef(b)) return { found: false, failed: true, sha: null };
@@ -1147,7 +1149,8 @@ export async function mergeBase(root, a, b) {
       const sha = r.stdout.trim();
       return { found: sha.length > 0, failed: false, sha: sha || null };
     }
-    return { found: false, failed: r.code !== 1, sha: null };
+    if (r.code !== null) return { found: false, failed: r.code !== 1, sha: null };
+    return { found: false, failed: true, sha: null, unasked: new Unasked(`git could not be asked for the merge base of ${a} and ${b}: ${failureOf(r)}`) };
   };
   // A commit is its own merge base, so verifying it answers the whole question.
   if (a === b && isFullSha(a)) {
@@ -1193,6 +1196,9 @@ export const BASE_REFS = ["origin/HEAD", "origin/main", "origin/master", "main",
  *
  * This is the only base resolver: scan and check measuring drift against
  * different refs is two different answers to one question.
+ *
+ * It throws where git could not be asked what a candidate names or for its
+ * merge base: read as no fork point, the range runs to the ref's tip.
  */
 export async function resolveBaseRef(root, ref = null, { head = "HEAD" } = {}) {
   if (ref === "HEAD" || ref === "@") {
@@ -1212,6 +1218,7 @@ export async function resolveBaseRef(root, ref = null, { head = "HEAD" } = {}) {
     // `head` is HEAD's own sha where the caller resolved it, so the question
     // is about two commits and asked once per process.
     const base = await mergeBase(root, head, sha);
+    if (base.unasked) throw base.unasked;
     return { ok: true, ref: candidate, sha: base.found ? base.sha : sha, tip: sha, forkPoint: base.found };
   }
   return { ok: false, reason: ref ? `cannot resolve ${ref}` : "no base branch found" };

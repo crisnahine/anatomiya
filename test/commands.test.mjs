@@ -6,7 +6,7 @@ import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { ASKS_BY_ID, gitAhead, needsGitStub, unasked, exits } from "./git-stub.mjs";
 import { needsPosixPermissions, needsShebang, needsSymlinks } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
@@ -1331,6 +1331,35 @@ test("the summary's line for a walk git could not be asked for carries the quest
     lines.filter((line) => line.startsWith("what ships together")),
     ["what ships together could not be read, so no co-change claim was stated: git could not be asked which commit origin/HEAD names: git was ended by SIGTERM"]
   );
+});
+
+test("a pinned scan stops where git could not be asked what the base ref names, or for its merge base, and writes nothing", needsGitStub, async (t) => {
+  const dir = repoWithBranch(t);
+  await runPin(dir);
+  await runScan(dir);
+  const before = claudeTree(dir);
+
+  let calls = gitAhead(t, unasked("*' rev-parse --verify --quiet main^{commit} '*"));
+  await assert.rejects(() => runScan(dir), /^Error: git could not be asked which commit main names: /);
+  calls.restore();
+
+  // Read as no fork point, the drift is measured to the ref's tip.
+  calls = gitAhead(t, unasked("*' merge-base '*"));
+  await assert.rejects(() => runScan(dir), /^Error: git could not be asked for the merge base of HEAD and [0-9a-f]{40}: git was ended by SIGTERM/);
+  calls.restore();
+
+  assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
+});
+
+test("a check stops where git could not be asked for the merge base, and keeps its caveat where git found none", needsGitStub, async (t) => {
+  const dir = repoWithBranch(t);
+  let calls = gitAhead(t, unasked("*' merge-base '*"));
+  await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /^Error: git could not be asked for the merge base of [0-9a-f]{40} and [0-9a-f]{40}: git was ended by SIGTERM/);
+  calls.restore();
+
+  calls = gitAhead(t, exits("*' merge-base '*", 1));
+  const { report } = await runCheck(dir, { baseRef: "main" });
+  assert.ok(report.caveats.some((c) => c.message === "no merge base between main and HEAD"), JSON.stringify(report.caveats));
 });
 
 test("a pin stops where git could not be asked for HEAD, before the list is read or after it", needsGitStub, async (t) => {
