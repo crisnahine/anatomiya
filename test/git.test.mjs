@@ -310,40 +310,43 @@ test("a listing whose git exits as its clock runs out is no answer, however it e
   assert.deepEqual(seen, ["a"]);
 });
 
-test("a buffered read whose git exits as its clock runs out is no answer either", needsShebang, async (t) => {
-  // Node shuts the pipes at the clock and still calls a git that exited 0 a success, with what it had read.
-  const { dir } = repo(t);
-  const bin = scratch(t, "anatomiya-git-bin-");
-  const started = join(bin, "started");
-  const go = join(bin, "go");
-  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
-  // The rest of the listing waits for this test's word, so no machine is fast enough to finish it first.
-  writeFileSync(
-    join(bin, "git"),
-    `#!/bin/sh\ncase "$1" in ls-files) : > '${started}'; printf 'a\\000'; while [ ! -e '${go}' ]; do sleep 0.05; done; printf 'b\\000c\\000'; exit 0;; esac\nexec '${real}' "$@"\n`,
-    { mode: 0o755 }
-  );
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
-  const held = new Int32Array(new SharedArrayBuffer(4));
+// Node shuts the pipes at the clock and still answers with the code a git left in that moment: 0 read as a
+// whole answer with part of it, 1 read as git saying no.
+for (const exit of [0, 1]) {
+  test(`a buffered read whose git exits ${exit} as its clock runs out is no answer either`, { ...needsShebang, timeout: 60_000 }, async (t) => {
+    const { dir } = repo(t);
+    const bin = scratch(t, "anatomiya-git-bin-");
+    const started = join(bin, "started");
+    const go = join(bin, "go");
+    const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+    // The rest of the listing waits for this test's word, so no machine is fast enough to finish it first.
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/sh\ncase "$1" in ls-files) : > '${started}'; printf 'a\\000'; while [ ! -e '${go}' ]; do sleep 0.05; done; printf 'b\\000c\\000'; exit ${exit};; esac\nexec '${real}' "$@"\n`,
+      { mode: 0o755 }
+    );
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+    const cell = new Int32Array(new SharedArrayBuffer(4));
 
-  const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
-  await until(t, () => existsSync(started));
-  writeFileSync(go, "");
-  // Held past the clock and past git's own exit, and from the loop's check phase, so the loop turns to its
-  // timers, the clock among them, before it reads the pipe again.
-  await new Promise((done) => {
-    setImmediate(() => {
-      Atomics.wait(held, 0, 0, 4500);
-      done();
+    const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
+    await until(t, () => existsSync(started));
+    writeFileSync(go, "");
+    // Held past the clock and past git's own exit, and from the loop's check phase, so the loop turns to its
+    // timers, the clock among them, before it reads the pipe again.
+    await new Promise((done) => {
+      setImmediate(() => {
+        Atomics.wait(cell, 0, 0, 4500);
+        done();
+      });
     });
-  });
-  const r = await reading;
+    const r = await reading;
 
-  assert.equal(r.ok, false, JSON.stringify(r));
-  assert.equal(r.stdout, "");
-  assert.equal(r.code, null);
-  assert.match(String(r.error), /git was ended by SIGTERM after 3000 ms/);
-});
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.stdout, "");
+    assert.equal(r.code, null, JSON.stringify(r));
+    assert.match(String(r.error), /git was ended by SIGTERM after 3000 ms/);
+  });
+}
 
 /**
  * A `git` on PATH whose `ls-files` is a launcher: the listing is its child's, which writes its pid to
@@ -389,8 +392,40 @@ test("a streamed read behind a launcher is ended by its own timeout too", { ...n
   // The one behind writes nothing, so nothing ends it: what is held is that the read does not wait on it.
   const { dir } = repo(t);
   const { env } = behindLauncher(t, "exec sleep 30");
+  const started = performance.now();
 
-  await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { timeout: 500, env }), /^Error: git ls-files exited SIGTERM/);
+  // Room for a stand-in written a moment ago to start: about half a second on a loaded Mac.
+  await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { timeout: 2000, env }), /^Error: git ls-files exited SIGTERM/);
+  // Waiting on the pipes, the read would settle only when the stand-in's 30 s were up.
+  assert.ok(performance.now() - started < 15_000, `settled after ${Math.round(performance.now() - started)} ms`);
+});
+
+// The case the stand-in launcher above holds, on whatever git this machine runs: Git for Windows starts the real
+// git as a launcher's child. Measured there with the pipes left open, a 300 ms clock settled after 1632 and 2032 ms.
+test("a long walk its clock ends settles near the clock, whatever starts git", { timeout: 180_000 }, async (t) => {
+  const dir = scratch(t, "anatomiya-git-long-");
+  execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
+  const commits = [];
+  for (let i = 1; i <= 80_000; i++) {
+    commits.push(`commit refs/heads/long\nmark :${i}\ncommitter T <t@t.test> ${1_700_000_000 + i} +0000\ndata 1\nc\n${i > 1 ? `from :${i - 1}\n` : ""}M 100644 inline f${i % 50}.txt\ndata ${String(i).length + 1}\n${i}\n\n`);
+  }
+  execFileSync("git", ["fast-import", "--quiet"], { cwd: dir, input: commits.join(""), stdio: ["pipe", "pipe", "pipe"] });
+  execFileSync("git", ["symbolic-ref", "HEAD", "refs/heads/long"], { cwd: dir, stdio: "pipe" });
+  const walk = (timeout) => gitStreamed(dir, ["log", "-z", "--name-status", "--format=%H", "--"], () => {}, { timeout, terminated: false });
+  const CLOCK = 200;
+
+  let started = performance.now();
+  await walk(0);
+  const whole = performance.now() - started;
+  started = performance.now();
+  await assert.rejects(walk(CLOCK), /^Error: git log exited SIGTERM/);
+  const clocked = performance.now() - started;
+
+  t.diagnostic(`whole walk ${Math.round(whole)} ms, with a ${CLOCK} ms clock ${Math.round(clocked)} ms`);
+  // On Windows the walk must be long enough to tell from the clock, or the case this is for goes unheld.
+  if (process.platform === "win32") assert.ok(whole > 4 * CLOCK, `the whole walk took ${Math.round(whole)} ms, too short to tell from a ${CLOCK} ms clock`);
+  // Elsewhere only the rejection is held where it is not.
+  if (whole > 4 * CLOCK) assert.ok(clocked < Math.min(whole / 2, CLOCK + 700), `settled after ${Math.round(clocked)} ms, against ${Math.round(whole)} ms for the whole walk`);
 });
 
 test("a record that never ends is refused before it reaches V8's string limit", needsShebang, async (t) => {

@@ -7,6 +7,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-10-14
+
+A git question that ran past its clock is never answered with the code git left in that moment.
+
+### Fixed
+
+- A buffered git read whose git exited as its clock ran out still answered with that exit code:
+  1 read as git saying no, and 0 as a whole answer with part of it. 0.15.2 caught the second only
+  where the signal reached a live git, which a git already reaped, or one Windows calls already
+  dead, does not. The read keeps a clock of its own that starts before Node's, and a read it ended
+  is no answer whatever code git left: `git could not be asked ...: git was ended by SIGTERM after
+  <n> ms`, as for any other git past its clock.
+
+### Fixed in the tests themselves
+
+- The test of a streamed read behind a launcher passed without the change it holds, since the
+  stand-in it waited on ended inside the test's own bound. It asserts the read settles inside 15 s, where
+  the stand-in runs for 30 s.
+- The launcher case of 0.15.2 is measured on Windows by the suite itself: a test walks 80,000
+  generated commits with real git, and on Git for Windows a read its 300 ms clock ended settled after
+  305 and 309 ms, where with the pipes left open it waited 2032 and 1632 ms for the git behind the
+  launcher.
+- Tests that put this clone's commit on the remote and then fetched it no longer depend on the git
+  version: git 2.56 moves the tracking branch of a remote whose URL a push names, so the fetch moved
+  nothing, and two such tests were held as pushed where they mean to hold the commit as made here.
+
 ## [0.15.2] - 2026-10-13
 
 The end-of-turn reuse check asks about seven more languages, `check` reads a revision's files
@@ -166,7 +192,7 @@ no git version is needed that 0.15.1 did not need.
   differ from <sha>`, `for <path> at <sha>`, `whether this clone is shallow`, `which refs hold the
   name <base>`, `which parents HEAD's commit records` or `for the oldest commit this clone holds`.
   A scan, a pin and a check stop the same way where the index's `.gitattributes` could not be asked
-  about, and the reuse check asks nothing about a checkout where it could not.
+  about, and the reuse check asks nothing about a checkout where it could not be asked.
   A name git refuses with exit code 128 and no text, such as `HEAD@{9999}`, is a name that is not
   there: `check --base 'HEAD@{9999}'` says the base resolves to no commit.
 - Grammars asked for at once from a cold runtime could fail to load. A stop that read two
@@ -4742,7 +4768,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.3...HEAD
+[0.15.3]: https://github.com/crisnahine/anatomiya/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/crisnahine/anatomiya/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/crisnahine/anatomiya/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/crisnahine/anatomiya/compare/v0.14.0...v0.15.0

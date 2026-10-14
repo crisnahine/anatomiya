@@ -483,50 +483,41 @@ export async function gitBuffered(
   args,
   { encoding = "utf8", maxBytes = GIT.maxBytes, timeout = GIT.timeoutMs, env = process.env, lazyFetch = false } = {}
 ) {
+  // A call that failed answered part of a question at best, and the whole point of reporting `ok` is
+  // that the part is never read as the answer.
+  const noAnswer = { ok: false, code: null, oversize: false, stdout: encoding === "buffer" ? Buffer.alloc(0) : "", error: null };
   const refused = refuse(args);
-  if (refused) {
-    return {
-      ok: false,
-      code: null,
-      oversize: false,
-      stdout: encoding === "buffer" ? Buffer.alloc(0) : "",
-      error: refused,
-    };
-  }
+  if (refused) return { ...noAnswer, error: refused };
   const call = await prepared(root, args, env, { lazyFetch, timeout });
-  if (call.unread) {
-    return { ok: false, code: null, oversize: false, stdout: encoding === "buffer" ? Buffer.alloc(0) : "", error: unreadConfig(call) };
-  }
+  if (call.unread) return { ...noAnswer, error: unreadConfig(call) };
+  // Node shuts the pipes at its timeout and still answers with the code git left in that moment. This
+  // clock starts first, so it has run before Node's and before anything Node's could settle.
+  let expired = false;
+  const clock = timeout > 0 ? setTimeout(() => (expired = true), timeout) : null;
   try {
-    const running = run("git", call.args, {
+    const { stdout } = await run("git", call.args, {
       cwd: root,
       encoding,
       maxBuffer: maxBytes,
       timeout,
       env: call.env,
     });
-    const { stdout } = await running;
-    // Node shuts the pipes at the clock and still calls a git that exited 0 in that moment a success,
-    // with the part of its answer it had read.
-    if (running.child.killed) {
-      return { ok: false, code: null, oversize: false, stdout: encoding === "buffer" ? Buffer.alloc(0) : "", error: `git was ended by SIGTERM after ${timeout} ms` };
-    }
+    if (expired) return { ...noAnswer, error: `git was ended by SIGTERM after ${timeout} ms` };
     return { ok: true, code: 0, oversize: false, stdout, error: null };
   } catch (err) {
     const failed = String((err && err.message) || err);
     const oversize = /maxBuffer/.test(failed);
+    const clocked = expired && !oversize;
     // Node's message for a git it ended names the command and nothing else.
-    const ended = err?.signal ? `git was ended by ${err.signal}${err.killed && !oversize ? ` after ${timeout} ms` : ""}` : "";
-    const message = ended ? `${failed.trimEnd()}\n${ended}` : failed;
+    const ended = clocked ? `git was ended by SIGTERM after ${timeout} ms` : err?.signal ? `git was ended by ${err.signal}` : "";
     return {
-      ok: false,
-      code: err && typeof err.code === "number" ? err.code : null,
+      ...noAnswer,
+      code: !clocked && err && typeof err.code === "number" ? err.code : null,
       oversize,
-      // A call that failed answered part of a question at best, and the whole
-      // point of reporting `ok` is that the part is never read as the answer.
-      stdout: encoding === "buffer" ? Buffer.alloc(0) : "",
-      error: message,
+      error: ended ? `${failed.trimEnd()}\n${ended}` : failed,
     };
+  } finally {
+    clearTimeout(clock);
   }
 }
 
@@ -586,11 +577,11 @@ function subcommandAt(args) {
  * The other entry point: output read off the stream, one NUL-delimited field at
  * a time (F6). `delimiter` is the byte that ends a field where git prints no NUL.
  *
- * It rejects with `Unasked` where git left no exit code, and where its clock
- * ended the read whatever code git left: an argument refused, a configuration
- * nobody could read, a start that failed, a signal, a clock, a pipe that broke,
- * a record past its bound. Any other git that exited with a code rejects with a
- * plain error, and so does a read its caller stopped (F29).
+ * It rejects with `Unasked` where git left no exit code (an argument refused, a
+ * configuration nobody could read, a start that failed, a signal, a pipe that
+ * broke, a record past its bound) and where its clock ended the read, whatever
+ * code git left. Any other git that exited with a code rejects with a plain
+ * error, and so does a read its caller stopped (F29).
  */
 export function gitStreamed(
   root,

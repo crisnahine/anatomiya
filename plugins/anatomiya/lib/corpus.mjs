@@ -258,13 +258,13 @@ async function rootAttributes(root, timeout) {
   // Past the bound git did answer, with more than is read: the working tree's file decides.
   const ask = (args, question) => gitBuffered(root, args, { timeout }).then((r) => (r.oversize ? r : answered(r, question)));
   // Both are awaited to their end before a throw is passed on, so no git is left running behind it.
-  const ended = await Promise.allSettled([
+  const settled = await Promise.allSettled([
     ask(["ls-files", "-v", "-z", "--", ".gitattributes"], "how the index marks .gitattributes"),
     ask(["cat-file", "blob", ":.gitattributes"], "for the index's .gitattributes"),
   ]);
-  const unasked = ended.find((read) => read.status === "rejected");
-  if (unasked) throw unasked.reason;
-  const [listed, blob] = ended.map((read) => read.value);
+  const rejected = settled.find((read) => read.status === "rejected");
+  if (rejected) throw rejected.reason;
+  const [listed, blob] = settled.map((read) => read.value);
   if (listed.ok && blob.ok && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
   const abs = safeResolve(root, ".gitattributes");
   const file = abs ? readHead(abs, ATTR_FILE_BYTES) : null;

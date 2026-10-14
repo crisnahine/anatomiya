@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, isAbsolute, sep } from "node:path";
+import { basename, join, isAbsolute, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { Worker } from "node:worker_threads";
@@ -190,7 +190,7 @@ test("the corpus stops on an index read that could not be asked only once the re
     write("a.ts");
     git("add", "-A");
   });
-  const ended = join(dir, "..", `${dir.split(sep).pop()}.ended`);
+  const ended = join(dir, "..", `${basename(dir)}.ended`);
   t.after(() => rmSync(ended, { force: true }));
   gitAhead(t, `case " $* " in *' cat-file blob :.gitattributes '*) kill -TERM $$;; *' ls-files -v -z -- .gitattributes '*) sleep 0.5; : > '${ended}';; esac`);
 
