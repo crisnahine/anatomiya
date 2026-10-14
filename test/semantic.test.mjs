@@ -1,7 +1,7 @@
 // test/semantic.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -105,7 +105,7 @@ test("a partial guard bag keeps the checker's other default", needsTs, async () 
     assert.equal(r.error, null);
     assert.equal(r.status, "ok");
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -122,7 +122,7 @@ test("the tier answers a real file and reports a resolution rate", needsTs, asyn
     // Nobody asked it to stop, so the answer kept is the walk's and not the stub before it.
     assert.deepEqual(r.records.get("a.ts").hits, { law_of_demeter: [{ conforming: false, where: "go" }] });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -143,7 +143,7 @@ test("a repository with no root tsconfig is judged on what resolved, not on the 
     assert.equal(r.status, "ok");
     assert.equal(r.reason, null);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -167,7 +167,7 @@ test("a solution-style root tsconfig is read through the project it references",
     assert.equal(r.typedResolutionRate, 1);
     assert.equal(r.status, "ok");
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 

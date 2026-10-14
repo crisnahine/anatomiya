@@ -906,7 +906,7 @@ test("a turn that commits everything is still asked about where the reflog is no
     `#!/bin/sh\nif [ "$1" = log ] && [ "$2" = -g ]; then cat '${join(bin, "reflog.txt")}'; exit 0; fi\nexec '${real}' "$@"\n`,
     { mode: 0o755 }
   );
-  rmSync(join(r.dir, ".git", "logs"), { recursive: true, force: true });
+  await removeTree(join(r.dir, ".git", "logs"));
   const path = process.env.PATH;
   process.env.PATH = `${bin}:${path}`;
   t.after(() => {

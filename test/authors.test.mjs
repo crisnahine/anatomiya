@@ -89,7 +89,7 @@ test("distinct authors per file come from one pass and match per-file git log", 
   for (const path of ["src/a.ts", "src/b.ts", "src/c.ts"]) {
     assert.deepEqual(sorted(map.get(path)), sorted(perFileAuthors(dir, path)), path);
   }
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("a renamed file keeps the authors of its earlier name", async (t) => {
@@ -112,7 +112,7 @@ test("a renamed file keeps the authors of its earlier name", async (t) => {
     ["first@t.test", "second@t.test"],
     "the author of the file under its old name still counts"
   );
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("a file renamed twice keeps the authors of every earlier name", async (t) => {
@@ -138,7 +138,7 @@ test("a file renamed twice keeps the authors of every earlier name", async (t) =
   ]);
   assert.equal(map.has("src/old.ts"), false, "an earlier name is not a key of its own");
   assert.equal(map.has("src/mid.ts"), false, "an earlier name is not a key of its own");
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("a path holding a newline keys the map by the path on disk", needsPosixPaths, async (t) => {
@@ -160,7 +160,7 @@ test("a path holding a newline keys the map by the path on disk", needsPosixPath
   for (const key of map.keys()) {
     assert.ok(!key.startsWith('"'), `${JSON.stringify(key)} came back C-quoted`);
   }
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("a blobless clone answers without reaching for the network", async (t) => {
@@ -188,7 +188,7 @@ test("a blobless clone answers without reaching for the network", async (t) => {
     await removeTree(origin);
   });
   execFileSync("git", ["clone", "-q", "--filter=blob:none", `file://${origin}`, clone], { stdio: "pipe" });
-  rmSync(origin, { recursive: true, force: true });
+  await removeTree(origin);
 
   const map = await authorsByFile(clone);
 
@@ -219,7 +219,7 @@ test("a blobless clone whose remote is not called origin still answers offline",
   execFileSync("git", ["clone", "-q", "-o", "upstream", "--filter=blob:none", `file://${origin}`, clone], {
     stdio: "pipe",
   });
-  rmSync(origin, { recursive: true, force: true });
+  await removeTree(origin);
 
   const map = await authorsByFile(clone);
 
@@ -368,7 +368,7 @@ test("a repository with no commits yields an empty map instead of losing the sca
   const map = await authorsByFile(dir);
 
   assert.equal(map.size, 0);
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("a directory that is not a repository yields an empty map", async () => {
@@ -378,7 +378,7 @@ test("a directory that is not a repository yields an empty map", async () => {
   const map = await authorsByFile(dir);
 
   assert.equal(map.size, 0);
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("one commit is one author, and that author's practice is the repository's convention", async (t) => {
@@ -409,7 +409,7 @@ test("one commit is one author, and that author's practice is the repository's c
   assert.equal(gated.authorsRequired, 1);
   assert.equal(gated.directive, true);
   assert.equal(gated.gate, null);
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("a second person in the repository restores the two-author requirement", async (t) => {
@@ -441,7 +441,7 @@ test("a second person in the repository restores the two-author requirement", as
   assert.equal(gated.authorsRequired, 2);
   assert.equal(gated.directive, false);
   assert.equal(gated.gate, "authors");
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("a clone that holds only a window of history says so, and a whole one says nothing", async (t) => {
@@ -678,7 +678,7 @@ test("a merge commit does not add an author", async (t) => {
   for (const [path, set] of map) {
     assert.ok(!set.has("merger@t.test"), `${path} counts the merge author`);
   }
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("history git could not read is distinguished from history that is empty", async (t) => {

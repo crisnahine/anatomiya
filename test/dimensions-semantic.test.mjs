@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -21,7 +21,7 @@ async function counts(src) {
     const hits = r.records.get("a.ts")?.hits?.law_of_demeter ?? [];
     return { candidates: hits.length, conforming: hits.filter((h) => h.conforming).length };
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 }
 
@@ -111,7 +111,7 @@ test("a chain through a dependency's types is resolved, not read as one type", n
     assert.equal(hits.length, 1);
     assert.equal(hits[0].conforming, false, "Thing, Inner and string are three types");
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
