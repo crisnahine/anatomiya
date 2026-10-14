@@ -313,7 +313,7 @@ test("a listing whose git exits as its clock runs out is no answer, however it e
 // Node shuts the pipes at the clock and still answers with the code a git left in that moment: 0 read as a
 // whole answer with part of it, 1 read as git saying no.
 for (const exit of [0, 1]) {
-  test(`a buffered read whose git exits ${exit} as its clock runs out is no answer either`, needsShebang, async (t) => {
+  test(`a buffered read whose git exits ${exit} as its clock runs out is no answer either`, { ...needsShebang, timeout: 60_000 }, async (t) => {
     const { dir } = repo(t);
     const bin = scratch(t, "anatomiya-git-bin-");
     const started = join(bin, "started");

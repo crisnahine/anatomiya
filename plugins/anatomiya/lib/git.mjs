@@ -490,9 +490,8 @@ export async function gitBuffered(
   if (refused) return { ...noAnswer, error: refused };
   const call = await prepared(root, args, env, { lazyFetch, timeout });
   if (call.unread) return { ...noAnswer, error: unreadConfig(call) };
-  // Node shuts the pipes at its timeout and still answers with whatever code git left in that moment: an
-  // exit 0 read as the whole answer with part of it, an exit 1 read as git saying no. This clock starts
-  // first, so it has run before Node's and before anything Node's could settle.
+  // Node shuts the pipes at its timeout and still answers with the code git left in that moment. This
+  // clock starts first, so it has run before Node's and before anything Node's could settle.
   let expired = false;
   const clock = timeout > 0 ? setTimeout(() => (expired = true), timeout) : null;
   try {

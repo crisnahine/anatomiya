@@ -184,7 +184,7 @@ no git version is needed that 0.15.1 did not need.
   differ from <sha>`, `for <path> at <sha>`, `whether this clone is shallow`, `which refs hold the
   name <base>`, `which parents HEAD's commit records` or `for the oldest commit this clone holds`.
   A scan, a pin and a check stop the same way where the index's `.gitattributes` could not be asked
-  about, and the reuse check asks nothing about a checkout where it could not.
+  about, and the reuse check asks nothing about a checkout where it could not be asked.
   A name git refuses with exit code 128 and no text, such as `HEAD@{9999}`, is a name that is not
   there: `check --base 'HEAD@{9999}'` says the base resolves to no commit.
 - Grammars asked for at once from a cold runtime could fail to load. A stop that read two

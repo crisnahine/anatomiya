@@ -262,8 +262,8 @@ async function rootAttributes(root, timeout) {
     ask(["ls-files", "-v", "-z", "--", ".gitattributes"], "how the index marks .gitattributes"),
     ask(["cat-file", "blob", ":.gitattributes"], "for the index's .gitattributes"),
   ]);
-  const failed = settled.find((read) => read.status === "rejected");
-  if (failed) throw failed.reason;
+  const rejected = settled.find((read) => read.status === "rejected");
+  if (rejected) throw rejected.reason;
   const [listed, blob] = settled.map((read) => read.value);
   if (listed.ok && blob.ok && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
   const abs = safeResolve(root, ".gitattributes");
