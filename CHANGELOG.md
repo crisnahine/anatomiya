@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- A git read given a timeout past 2^31 - 1 ms (about 24.8 days) is refused. Node cut such a timer
+  to 1 ms, so the read ended at once as no answer.
+
 ## [0.15.4] - 2026-10-14
 
 The read of which commands a repository's config names is never answered with part of its list, and
