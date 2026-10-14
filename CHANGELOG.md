@@ -7,6 +7,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-10-14
+
+A git read given a timeout past Node's timer limit is refused, and the tests end a stand-in by its pid
+only when the pid names a process.
+
+### Fixed
+
+- A git read given a timeout past 2^31 - 1 ms (about 24.9 days) is refused. Node cut such a timer
+  to 1 ms, so the read ended at once as no answer.
+
+### Fixed in the tests themselves
+
+- Six test cleanups sent SIGKILL to the pid a stand-in shell wrote to a file. Read before the shell
+  wrote it, the empty file read as 0, and a kill of 0 is the test runner's own process group. They
+  kill only a pid above 0.
+- The comment on the test of five hundred large parses gives the range CI measured: 173 to 436 s on
+  a Linux runner and 256 s to past 720 s on a Windows runner.
+
 ## [0.15.4] - 2026-10-14
 
 The read of which commands a repository's config names is never answered with part of its list, and
@@ -37,7 +55,7 @@ it shares one clock with every buffered git read.
 - Two git tests left a `sleep 300` running for five minutes after each run: one stub ran it under a
   shell that the clock's signal ended alone, and one test killed its holder only after the directory
   that named its pid was gone.
-- The test of five hundred large parses took 396 to 683 s of its 720 s on a Windows runner, and once
+- The test of five hundred large parses took up to 683 s of its 720 s on a Windows runner, and once
   ran past it. Its bound is 18 minutes, still inside the CI job's 45.
 
 ## [0.15.3] - 2026-10-14
@@ -4801,7 +4819,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.4...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.5...HEAD
+[0.15.5]: https://github.com/crisnahine/anatomiya/compare/v0.15.4...v0.15.5
 [0.15.4]: https://github.com/crisnahine/anatomiya/compare/v0.15.3...v0.15.4
 [0.15.3]: https://github.com/crisnahine/anatomiya/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/crisnahine/anatomiya/compare/v0.15.1...v0.15.2
