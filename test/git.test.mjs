@@ -399,6 +399,31 @@ test("a streamed read behind a launcher is ended by its own timeout too", { ...n
   assert.ok(performance.now() - started < 15_000, `settled after ${Math.round(performance.now() - started)} ms`);
 });
 
+// The case the stand-in launcher above holds, on whatever git this machine runs: Git for Windows starts the real
+// git as a launcher's child. Where the whole walk is too short to tell from the clock, only the rejection is held.
+test("a long walk its clock ends settles near the clock, whatever starts git", { timeout: 180_000 }, async (t) => {
+  const dir = scratch(t, "anatomiya-git-long-");
+  execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
+  const commits = [];
+  for (let i = 1; i <= 80_000; i++) {
+    commits.push(`commit refs/heads/long\nmark :${i}\ncommitter T <t@t.test> ${1_700_000_000 + i} +0000\ndata 1\nc\n${i > 1 ? `from :${i - 1}\n` : ""}M 100644 inline f${i % 50}.txt\ndata ${String(i).length + 1}\n${i}\n\n`);
+  }
+  execFileSync("git", ["fast-import", "--quiet"], { cwd: dir, input: commits.join(""), stdio: ["pipe", "pipe", "pipe"] });
+  execFileSync("git", ["symbolic-ref", "HEAD", "refs/heads/long"], { cwd: dir, stdio: "pipe" });
+  const walk = (timeout) => gitStreamed(dir, ["log", "-z", "--name-status", "--format=%H", "--"], () => {}, { timeout, terminated: false });
+  const CLOCK = 300;
+
+  let started = performance.now();
+  await walk(0);
+  const whole = performance.now() - started;
+  started = performance.now();
+  await assert.rejects(walk(CLOCK), /^Error: git log exited SIGTERM/);
+  const clocked = performance.now() - started;
+
+  t.diagnostic(`whole walk ${Math.round(whole)} ms, with a ${CLOCK} ms clock ${Math.round(clocked)} ms`);
+  if (whole > 4 * CLOCK) assert.ok(clocked < whole / 2, `settled after ${Math.round(clocked)} ms, against ${Math.round(whole)} ms for the whole walk`);
+});
+
 test("a record that never ends is refused before it reaches V8's string limit", needsShebang, async (t) => {
   // The cap F5 asks for. Both hand-rolled readers grew one buffer until a NUL
   // arrived, so output carrying none of them reached `Invalid string length`
