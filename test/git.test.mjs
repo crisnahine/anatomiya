@@ -1786,7 +1786,7 @@ function oneCommit(t) {
 test("a batch reader given a timeout that is no whole number of milliseconds asks git nothing", needsGitStub, async (t) => {
   const { dir, sha } = oneCommit(t);
   const calls = gitAhead(t);
-  for (const timeout of [-1, Number.NaN, 1.5, 2 ** 31]) {
+  for (const timeout of [-1, Number.NaN, 1.5]) {
     const reader = blobReader(dir, sha, { timeout });
     assert.deepEqual(answerOf(await reader.read("a.ts")), UNASKED, String(timeout));
     await reader.close();

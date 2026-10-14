@@ -125,6 +125,17 @@ export const needsUnreadableDirs = WINDOWS
  * directory still held after a hundred waits, ten seconds at the wait a test
  * takes, is a child that never left, and that fails the test.
  */
+export async function removeTree(dir, wait = 100) {
+  for (let tries = 100; ; tries--) {
+    try {
+      return rmSync(dir, { recursive: true, force: true });
+    } catch (err) {
+      if (tries === 0 || !["EBUSY", "EPERM"].includes(err.code)) throw err;
+      await new Promise((done) => setTimeout(done, wait));
+    }
+  }
+}
+
 /**
  * SIGKILL to the pid a shell wrote to `file`, if it wrote one. A file the shell has opened and not yet
  * written reads as 0, and a kill of 0 is this process's own group.
@@ -135,17 +146,6 @@ export function killPidIn(file) {
     if (pid > 0) process.kill(pid, "SIGKILL");
   } catch {
     // Never started, or gone already.
-  }
-}
-
-export async function removeTree(dir, wait = 100) {
-  for (let tries = 100; ; tries--) {
-    try {
-      return rmSync(dir, { recursive: true, force: true });
-    } catch (err) {
-      if (tries === 0 || !["EBUSY", "EPERM"].includes(err.code)) throw err;
-      await new Promise((done) => setTimeout(done, wait));
-    }
   }
 }
 
