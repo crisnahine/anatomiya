@@ -1,0 +1,1 @@
+Correction: "every" in this title and in the 0.15.4 changelog means every forced recursive removal an async test can await. Two stay one rmSync: refresh.test.mjs in a sync callback, and git.test.mjs where the removal is the test's own step. The count, 42 in 10 files, holds.
