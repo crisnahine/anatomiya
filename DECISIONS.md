@@ -167,7 +167,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | B74 | The tree rule of the reuse check (B68) asks wherever it cannot prove that nothing runs, and six kinds of line ask by choice: a binding that holds anything but names, types and literals outside its value, a string holding more than its own text, a sign the language does not define for the literal after it, a C# literal declared as a named type, a write through a member or a subscript in Python and PHP, and any token that is not a closer | done | [B74](docs/decisions/B74.md) |
 | B75 | The reuse check's tree rule (B68) is measured by `scripts/measure-inert.mjs` against an oracle written apart from the rule's walk, which names what an added line of a left-out hunk may define, build or compute. The oracle tells a name, a type, a string's parts, a sign, a predefined type and a target by how the grammars spell them and by a node's own text, and every case of the rule's test is put to it line by line | done | [B75](docs/decisions/B75.md) |
 | B76 | No kill in the library is sent to a child that has no pid | done | [B76](docs/decisions/B76.md) |
-| B77 | A child is listened to before its pipes are read, and the streamed read keeps its own clock | done | [B77](docs/decisions/B77.md) |
+| B77 | A child is listened to before its pipes are read, and the git reads keep their own clock | done | [B77](docs/decisions/B77.md) |
 
 ## C. The counted-claim model
 

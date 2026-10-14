@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, removeTree } from "./platform.mjs";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -1209,7 +1209,7 @@ test("a pin that cannot be written there is refused by name, before a dry run an
     [".claude/anatomiya", "link", ".claude/anatomiya is a link to .claude/notes.md, which is not a directory, so no pin is written there: replace the link with a directory and pin again"],
   ];
   for (const [at, shape, message] of cases) {
-    rmSync(join(dir, ".claude"), { recursive: true, force: true });
+    await removeTree(join(dir, ".claude"));
     mkdirSync(join(dir, at, ".."), { recursive: true });
     if (shape === "file") writeFileSync(join(dir, at), "occupied\n");
     if (shape === "dir") mkdirSync(join(dir, at));

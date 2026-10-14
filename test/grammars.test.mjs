@@ -9,7 +9,7 @@ import { Language, Parser } from "web-tree-sitter";
 
 import { GRAMMARS, check, vendor } from "../scripts/grammars.mjs";
 import { ANATOMIYA, REL, ROOT } from "../scripts/plugins.mjs";
-import { needsSymlinks } from "./platform.mjs";
+import { needsSymlinks, removeTree } from "./platform.mjs";
 
 const IDS = ["python", "php", "go", "java", "csharp", "rust", "kotlin"];
 const VENDORED = join(ANATOMIYA, "grammars");
@@ -36,7 +36,7 @@ async function withCopy(run) {
     }
     return await run(root, join(root, REL.anatomiya, "grammars"));
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    await removeTree(root);
   }
 }
 
