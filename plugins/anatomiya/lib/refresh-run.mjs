@@ -310,9 +310,9 @@ const CREATES_NOTHING = new RegExp(
 
 /**
  * Whether a commit this clone created sits on the first-parent line the pin
- * would move along. A fetched tip is not enough: `git push <url>` moves no
- * tracking ref, so the fetch after it is ordinary, and brings this clone's own
- * commit back as if the team had. The line is first-parent only because that is
+ * would move along. A fetched tip is not enough: a push from another clone, or
+ * one by URL before git 2.56, moves no tracking ref here, so the fetch after it
+ * is ordinary, and brings this clone's own commit back as if the team had. The line is first-parent only because that is
  * what a direct push writes; a branch merged on the remote with a merge commit
  * sits behind its second parent, the merge being its review, and counting it
  * stalled the pin for every merge-commit workflow. Branch reflogs are shared by
