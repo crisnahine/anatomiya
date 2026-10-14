@@ -127,7 +127,9 @@ test("a pid file not yet written kills nothing, and one that names a child kills
   const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore" });
   const pidFile = join(dir, "pid");
   writeFileSync(pidFile, String(child.pid));
-  const exit = new Promise((done) => child.on("exit", (code, signal) => done(signal)));
+  const exit = new Promise((done) => child.on("exit", (code, signal) => done({ code, signal })));
   killPidIn(pidFile);
-  assert.equal(await exit, "SIGKILL");
+  // Windows ends a process killed by its pid with exit code 1 and no signal; POSIX names the signal.
+  const { code, signal } = await exit;
+  assert.ok(signal === "SIGKILL" || (process.platform === "win32" && code === 1), `ended with code ${code}, signal ${signal}`);
 });
