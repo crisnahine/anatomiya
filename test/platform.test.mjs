@@ -98,23 +98,6 @@ function refusing(t, answers) {
 }
 
 // The refusal is Windows' own, so it is played here through the `rmSync` the cleanup calls.
-test("a pid file not yet written kills nothing, and one that names a child kills it", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-pid-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const empty = join(dir, "empty");
-  writeFileSync(empty, "");
-  // Read as 0, this would be a SIGKILL to this test's own process group.
-  killPidIn(empty);
-  killPidIn(join(dir, "never-written"));
-
-  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore" });
-  const pidFile = join(dir, "pid");
-  writeFileSync(pidFile, String(child.pid));
-  const exit = new Promise((done) => child.on("exit", (code, signal) => done(signal)));
-  killPidIn(pidFile);
-  assert.equal(await exit, "SIGKILL");
-});
-
 test("a directory a leaving process still holds is asked for again, and any other refusal is thrown at once", async (t) => {
   const asked = refusing(t, (n) => [null, "EBUSY", "EPERM", null, "EACCES"][n]);
 
@@ -130,4 +113,21 @@ test("a directory still held after a hundred waits fails the cleanup", async (t)
 
   await assert.rejects(removeTree("held", 1), { code: "EBUSY" });
   assert.equal(asked.length, 101);
+});
+
+test("a pid file not yet written kills nothing, and one that names a child kills it", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-pid-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const empty = join(dir, "empty");
+  writeFileSync(empty, "");
+  // Read as 0, this would be a SIGKILL to this test's own process group.
+  killPidIn(empty);
+  killPidIn(join(dir, "never-written"));
+
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore" });
+  const pidFile = join(dir, "pid");
+  writeFileSync(pidFile, String(child.pid));
+  const exit = new Promise((done) => child.on("exit", (code, signal) => done(signal)));
+  killPidIn(pidFile);
+  assert.equal(await exit, "SIGKILL");
 });
