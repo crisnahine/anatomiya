@@ -29,7 +29,7 @@ export function gitAhead(t, script = "") {
     if (restored) return;
     restored = true;
     process.env.PATH = path;
-    // Retried: a read left behind a throw can still be writing its call down here.
+    // A git some other call leaves running behind its throw can still be appending to the log here.
     rmSync(bin, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   };
   t.after(calls.restore);
