@@ -221,7 +221,7 @@ test("a replace that fails part way puts back every file it had already replaced
 
   assert.deepEqual(unstamped(snapshot(dir)), unstamped(before), "the previous map, whole, and no temporary file beside it");
   assert.notEqual(readLayout(dir), null, "and its layout file answers for the record put back");
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("a removal that fails puts back what the scan had written", async (t) => {
@@ -235,7 +235,7 @@ test("a removal that fails puts back what the scan had written", async (t) => {
 
   assert.deepEqual(unstamped(snapshot(dir)), unstamped(before));
   assert.notEqual(readLayout(dir), null);
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 test("every file being replaced is read before the first one is renamed", async (t) => {
@@ -259,7 +259,7 @@ test("every file being replaced is read before the first one is renamed", async 
   const firstRename = calls.indexOf("renameSync");
   assert.ok(firstRename > 0, "the replace renamed");
   assert.equal(calls.lastIndexOf("readFileSync") < firstRename, true, "no read after the first rename");
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
 });
 
 /** A roster with one root, the shape the overview renders from. */
@@ -1232,7 +1232,7 @@ test("a socket in the rules directory is a shape on every platform, not an unrea
     assert.deepEqual(plan.unreadableRules, [], "and it is not a file this tool failed to read");
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 

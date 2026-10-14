@@ -94,7 +94,7 @@ async function cloned(t, before = () => {}) {
   source(origin, "src", 8);
   commit(origin, "init");
   before(origin);
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
   execFileSync("git", ["clone", "-q", origin, dir], { stdio: "pipe" });
   // Somebody other than the teammate committing on the remote, as in any team:
   // the pin reads who made a commit as well as the reflog.
@@ -251,7 +251,7 @@ test("a copied map with no checkout under it, or a checkout two levels down, is 
   mkdirSync(join(parent, "copy", ".claude"), { recursive: true });
   const api = await scannedIn(parent, "api");
   execFileSync("cp", ["-R", join(api, ".claude"), join(parent, "copy")]);
-  rmSync(api, { recursive: true, force: true });
+  await removeTree(api);
   const { started, start } = recorder();
 
   assert.deepEqual(runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent }, { start }), {});
@@ -2131,7 +2131,7 @@ test("a linked worktree on reftable watches the shared table list", async (t) =>
   const { watchTargets } = await import("../plugins/anatomiya/lib/refresh.mjs");
   const dir = await scanned(t);
   const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
-  rmSync(wt, { recursive: true, force: true });
+  await removeTree(wt);
   t.after(() => removeTree(wt));
   git(dir, "worktree", "add", "-q", "--detach", wt);
   mkdirSync(join(dir, ".git", "reftable"));
@@ -2460,7 +2460,7 @@ test("a worker whose lock was taken over leaves the new holder's lock in place",
 
 test("a clone that kept no reflog is held, and the line says git kept no record rather than blaming a push", async (t) => {
   const { dir } = await cloned(t);
-  rmSync(join(dir, ".git", "logs"), { recursive: true, force: true });
+  await removeTree(join(dir, ".git", "logs"));
 
   const r = await refreshRepository(dir);
 
@@ -2545,7 +2545,7 @@ test("a worktree made on a teammate's commit creates nothing, and the pin follow
   for (const args of [["--detach"], ["-b", "feat"]]) {
     const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
     t.after(() => removeTree(wt));
-    rmSync(wt, { recursive: true, force: true });
+    await removeTree(wt);
     git(dir, "worktree", "add", "-q", ...args, wt, "origin/main");
   }
   git(dir, "pull", "-q", "--ff-only");
@@ -2566,7 +2566,7 @@ test("a worktree made on a teammate's commit and refreshed from inside creates n
   git(dir, "fetch", "-q");
   const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
   t.after(() => removeTree(wt));
-  rmSync(wt, { recursive: true, force: true });
+  await removeTree(wt);
   git(dir, "worktree", "add", "-q", "--detach", wt, "origin/main");
   await runScan(wt);
 
@@ -2708,7 +2708,7 @@ test("a reftable clone pins its tip, follows a teammate's fetch, and holds its o
   git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
   source(origin, "src", 8);
   commit(origin, "init");
-  rmSync(dir, { recursive: true, force: true });
+  await removeTree(dir);
   execFileSync("git", ["clone", "-q", "--ref-format=reftable", origin, dir], { stdio: "pipe" });
   git(dir, "config", "user.email", "me@clone.test");
   git(dir, "config", "user.name", "Me");
