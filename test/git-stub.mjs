@@ -7,7 +7,7 @@
  * and the answer is the calls made so far.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,8 +29,11 @@ export function gitAhead(t, script = "") {
     if (restored) return;
     restored = true;
     process.env.PATH = path;
-    // A git some other call leaves running behind its throw can still be appending to the log here.
-    rmSync(bin, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    // A git some other call leaves running behind its throw can still append to the log, and an append
+    // between a removal's emptying and its rmdir fails it; moved first, the directory is out of its reach.
+    const gone = `${bin}-gone`;
+    renameSync(bin, gone);
+    rmSync(gone, { recursive: true, force: true });
   };
   t.after(calls.restore);
   return calls;

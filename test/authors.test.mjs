@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsPosixPaths, needsShebang, removeTree } from "./platform.mjs";
-import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -227,27 +227,6 @@ test("a blobless clone whose remote is not called origin still answers offline",
   assert.deepEqual(sorted(map.get("src/b.ts")), ["second@t.test"]);
 });
 
-/**
- * A `git` ahead of the real one on PATH for this test, which writes each call's
- * arguments down and then runs `script`, with `$real` the git it stands in front of.
- * Answers with the calls made so far, and `restore` takes it off PATH before the test ends.
- */
-function gitWatched(t, script = "") {
-  const bin = mkdtempSync(join(tmpdir(), "anatomiya-authors-bin-"));
-  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
-  writeFileSync(join(bin, "calls"), "");
-  writeFileSync(join(bin, "git"), `#!/bin/sh\nreal='${real}'\necho " $* " >> '${join(bin, "calls")}'\n${script}\nexec "$real" "$@"\n`, { mode: 0o755 });
-  const path = process.env.PATH;
-  process.env.PATH = `${bin}:${path}`;
-  const calls = () => readFileSync(join(bin, "calls"), "utf8").split("\n").filter(Boolean);
-  calls.restore = () => {
-    process.env.PATH = path;
-    rmSync(bin, { recursive: true, force: true });
-  };
-  t.after(calls.restore);
-  return calls;
-}
-
 /** A rename with an edit, which `-M` follows and `-M100%` does not. */
 function renamedWithEdit(d, { git, write, author, commit }) {
   write("src/a.ts", "export const a = 1\nexport const b = 2\n");
@@ -263,7 +242,7 @@ const logsOf = (calls) => calls.filter((call) => / log .*--name-status /.test(ca
 
 test("a clone whose partial keys are not set is walked with -M, on one question", { ...needsShebang, ...needsPathControl }, async (t) => {
   const dir = repo(t, renamedWithEdit);
-  const calls = gitWatched(t);
+  const calls = gitAhead(t);
 
   const map = await authorsByFile(dir);
 
@@ -291,7 +270,7 @@ test("a clone is partial where the extension names a promisor or a remote's flag
   for (const [flag, cases] of [["-M100%", PARTIAL], ["-M", WHOLE]]) {
     for (const [name, set] of Object.entries(cases)) {
       const dir = repo(t, (d, { git }) => set(d, git));
-      const calls = gitWatched(t);
+      const calls = gitAhead(t);
       await authorsByFile(dir);
       const logs = logsOf(calls());
       calls.restore();
@@ -312,7 +291,7 @@ test("a promisor flag git refuses as a boolean is unread history, as the log git
       renamedWithEdit(d, tools);
       set(d);
     });
-    const calls = gitWatched(t);
+    const calls = gitAhead(t);
     const map = await authorsByFile(dir);
     const made = calls();
     calls.restore();
@@ -331,7 +310,7 @@ test("a git that cannot be asked whether the clone is partial is unread history,
   };
   for (const [name, how] of Object.entries(NO_ANSWER)) {
     const dir = repo(t, renamedWithEdit);
-    const calls = gitWatched(t, `case " $* " in *" config "*promisor*) ${how};; esac`);
+    const calls = gitAhead(t, `case " $* " in *" config "*promisor*) ${how};; esac`);
 
     const map = await authorsByFile(dir);
 
