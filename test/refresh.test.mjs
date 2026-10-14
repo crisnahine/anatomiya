@@ -31,6 +31,16 @@ function git(dir, ...args) {
   return execFileSync("git", args, { cwd: dir, stdio: "pipe" }).toString().trim();
 }
 
+/**
+ * This clone's commit put on the remote with the next fetch left to move the tracking branch, as after a push made
+ * from elsewhere. Git 2.56 moves the tracking branch of a remote whose URL a push names; before it, nothing moved.
+ */
+function pushedElsewhere(from, origin, refspec) {
+  const before = git(from, "rev-parse", "refs/remotes/origin/main");
+  git(from, "-c", "push.negotiate=false", "push", "-q", origin, refspec);
+  git(from, "update-ref", "refs/remotes/origin/main", before);
+}
+
 // The README's own exclude lines, so the map stays out of every commit the way
 // it does in a repository set up as documented.
 function exclude(dir) {
@@ -1603,7 +1613,7 @@ test("a commit this clone made is not pinned when it reached the remote's first-
   git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
   source(dir, "lib/agent", 8);
   commit(dir, "the agent's own work");
-  git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+  pushedElsewhere(dir, origin, "HEAD:main");
   git(dir, "fetch", "-q");
 
   assert.equal((await refreshRepository(dir)).pinned, false);
@@ -1656,7 +1666,7 @@ test("a local commit rebased by `git pull` and pushed is not pinned once a teamm
   source(origin, "lib/t1", 8);
   commit(origin, "a teammate's first commit");
   git(dir, "-c", "pull.rebase=true", "pull", "-q");
-  git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+  pushedElsewhere(dir, origin, "HEAD:main");
   source(origin, "lib/t2", 8);
   commit(origin, "a teammate's second commit");
   git(dir, "pull", "-q", "--ff-only");
@@ -1706,7 +1716,7 @@ test("however this clone made a commit, pushing it straight onto the default bra
     const first = loadPin(dir).sha;
     git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
     make(dir, origin);
-    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    pushedElsewhere(dir, origin, "HEAD:main");
     source(origin, "lib/t2", 8);
     commit(origin, "a teammate's commit on top");
     git(dir, "pull", "-q", "--ff-only");
@@ -1725,7 +1735,7 @@ test("a commit whose subject names a scope like a rebase step's is still this cl
     git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
     source(dir, "lib/agent", 8);
     commit(dir, subject);
-    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    pushedElsewhere(dir, origin, "HEAD:main");
     source(origin, "lib/t2", 8);
     commit(origin, "a teammate's commit on top");
     git(dir, "pull", "-q", "--ff-only");
@@ -2157,7 +2167,7 @@ test("a pin held by this clone's own commit is recorded, and said to the person 
   git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
   source(dir, "lib/agent", 8);
   const agent = commit(dir, "the agent's own work");
-  git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+  pushedElsewhere(dir, origin, "HEAD:main");
   git(dir, "fetch", "-q");
 
   const r = await refreshRepository(dir);
@@ -2488,7 +2498,7 @@ test("a pick whose subject begins like a fast-forward is still a commit made her
     git(dir, "checkout", "-q", "main");
     execFileSync("git", ["cherry-pick", "fix"], { cwd: dir, stdio: "pipe", env: { ...process.env, GIT_COMMITTER_DATE: "2030-01-01T00:00:00Z" } });
     git(dir, "branch", "-q", "-D", "fix");
-    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    pushedElsewhere(dir, origin, "HEAD:main");
   });
   assert.equal((await refreshRepository(dir)).pinned, false);
   assert.equal(loadPin(dir).sha, first);
@@ -2501,7 +2511,7 @@ test("a merge of a branch named with parentheses is still a merge commit made he
     commit(dir, "work in progress");
     git(dir, "checkout", "-q", "main");
     git(dir, "merge", "-q", "--no-ff", "-m", "merge it", "wip(start)");
-    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    pushedElsewhere(dir, origin, "HEAD:main");
   });
   assert.equal((await refreshRepository(dir)).pinned, false);
   assert.equal(loadPin(dir).sha, first);
@@ -2516,7 +2526,7 @@ test("a commit from a linked worktree since removed, its branch deleted, is stil
     git(dir, "worktree", "add", "-q", "-b", "feat2", wt, "main");
     source(wt, "lib/agent", 8);
     commit(wt, "agent work in a worktree");
-    git(wt, "-c", "push.negotiate=false", "push", "-q", origin, "feat2:main");
+    pushedElsewhere(wt, origin, "feat2:main");
     git(dir, "worktree", "remove", "--force", wt);
     git(dir, "branch", "-q", "-D", "feat2");
   });
@@ -2591,7 +2601,7 @@ test("a commit made here is still held after its reflog entries expire", async (
   const { dir, first } = await pushedAndBuiltOn(t, (dir, origin) => {
     source(dir, "lib/agent", 8);
     commit(dir, "mine");
-    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    pushedElsewhere(dir, origin, "HEAD:main");
     git(dir, "reflog", "expire", "--expire=now", "--all");
   });
   assert.equal((await refreshRepository(dir)).pinned, false);
@@ -2605,7 +2615,7 @@ test("a commit made here is held once its reflog entries are gone, however old i
     source(dir, "lib/agent", 8);
     git(dir, "add", "-A");
     execFileSync("git", ["commit", "-qm", "mine, long ago"], { cwd: dir, stdio: "pipe", env: { ...process.env, GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" } });
-    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    pushedElsewhere(dir, origin, "HEAD:main");
     git(dir, "reflog", "delete", "HEAD@{0}");
     git(dir, "reflog", "delete", "main@{0}");
   });
