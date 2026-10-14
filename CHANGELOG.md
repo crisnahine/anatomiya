@@ -37,7 +37,7 @@ it shares one clock with every buffered git read.
 - Two git tests left a `sleep 300` running for five minutes after each run: one stub ran it under a
   shell that the clock's signal ended alone, and one test killed its holder only after the directory
   that named its pid was gone.
-- The test of five hundred large parses took 396 to 683 s of its 720 s on a Windows runner, and once
+- The test of five hundred large parses took up to 683 s of its 720 s on a Windows runner, and once
   ran past it. Its bound is 18 minutes, still inside the CI job's 45.
 
 ## [0.15.3] - 2026-10-14
