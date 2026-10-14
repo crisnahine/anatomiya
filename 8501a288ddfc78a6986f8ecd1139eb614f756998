@@ -1,0 +1,1 @@
+Correction: "with no timeout of Node's, only this clock sets it" is not quite so. Node's own kill at maxBuffer sets killed too. That error's code is a string, never 1, so dropping the check reads no such read as no key matched.
