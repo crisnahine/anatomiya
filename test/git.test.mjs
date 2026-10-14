@@ -150,12 +150,12 @@ test("a call that outruns its timeout answers instead of hanging", { timeout: 60
 test("a timeout that is no whole number of milliseconds is refused rather than run with no clock", async (t) => {
   // A directory of its own, so no config read cached by an earlier test stands in for the refusal.
   const dir = scratch(t, "anatomiya-git-timeout-");
-  for (const timeout of [-1, Number.NaN, 1.5]) {
+  for (const timeout of [-1, Number.NaN, 1.5, 2 ** 31]) {
     const r = await gitBuffered(dir, ["version"], { timeout });
 
     assert.equal(r.ok, false, String(timeout));
-    assert.match(String(r.error), /^timeout must be a whole number of ms, 0 or more/, String(timeout));
-    await assert.rejects(gitStreamed(dir, ["version"], () => {}, { timeout }), /^Error: timeout must be a whole number of ms, 0 or more/, String(timeout));
+    assert.match(String(r.error), /^timeout must be a whole number of ms from 0 to 2147483647/, String(timeout));
+    await assert.rejects(gitStreamed(dir, ["version"], () => {}, { timeout }), /^Error: timeout must be a whole number of ms from 0 to 2147483647/, String(timeout));
   }
 });
 
@@ -1798,7 +1798,7 @@ function oneCommit(t) {
 test("a batch reader given a timeout that is no whole number of milliseconds asks git nothing", needsGitStub, async (t) => {
   const { dir, sha } = oneCommit(t);
   const calls = gitAhead(t);
-  for (const timeout of [-1, Number.NaN, 1.5]) {
+  for (const timeout of [-1, Number.NaN, 1.5, 2 ** 31]) {
     const reader = blobReader(dir, sha, { timeout });
     assert.deepEqual(answerOf(await reader.read("a.ts")), UNASKED, String(timeout));
     await reader.close();

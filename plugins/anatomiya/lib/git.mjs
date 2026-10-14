@@ -174,9 +174,13 @@ function refuse(args) {
   return null;
 }
 
-// Taken as no clock, a timeout below 0 or NaN would leave a git that never answers waiting for good.
+const TIMER_MOST_MS = 2 ** 31 - 1;
+
+// Taken as no clock, a timeout below 0 or NaN would leave a git that never answers waiting for good, and
+// Node cuts one past its timer's limit to 1 ms.
 function timeoutRefused(timeout) {
-  return timeout == null || (Number.isInteger(timeout) && timeout >= 0) ? null : `timeout must be a whole number of ms, 0 or more: ${timeout}`;
+  const kept = timeout == null || (Number.isInteger(timeout) && timeout >= 0 && timeout <= TIMER_MOST_MS);
+  return kept ? null : `timeout must be a whole number of ms from 0 to ${TIMER_MOST_MS}: ${timeout}`;
 }
 
 /**
