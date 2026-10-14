@@ -310,40 +310,43 @@ test("a listing whose git exits as its clock runs out is no answer, however it e
   assert.deepEqual(seen, ["a"]);
 });
 
-test("a buffered read whose git exits as its clock runs out is no answer either", needsShebang, async (t) => {
-  // Node shuts the pipes at the clock and still calls a git that exited 0 a success, with what it had read.
-  const { dir } = repo(t);
-  const bin = scratch(t, "anatomiya-git-bin-");
-  const started = join(bin, "started");
-  const go = join(bin, "go");
-  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
-  // The rest of the listing waits for this test's word, so no machine is fast enough to finish it first.
-  writeFileSync(
-    join(bin, "git"),
-    `#!/bin/sh\ncase "$1" in ls-files) : > '${started}'; printf 'a\\000'; while [ ! -e '${go}' ]; do sleep 0.05; done; printf 'b\\000c\\000'; exit 0;; esac\nexec '${real}' "$@"\n`,
-    { mode: 0o755 }
-  );
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
-  const held = new Int32Array(new SharedArrayBuffer(4));
+// Node shuts the pipes at the clock and still answers with the code a git left in that moment: 0 read as a
+// whole answer with part of it, 1 read as git saying no.
+for (const exit of [0, 1]) {
+  test(`a buffered read whose git exits ${exit} as its clock runs out is no answer either`, needsShebang, async (t) => {
+    const { dir } = repo(t);
+    const bin = scratch(t, "anatomiya-git-bin-");
+    const started = join(bin, "started");
+    const go = join(bin, "go");
+    const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+    // The rest of the listing waits for this test's word, so no machine is fast enough to finish it first.
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/sh\ncase "$1" in ls-files) : > '${started}'; printf 'a\\000'; while [ ! -e '${go}' ]; do sleep 0.05; done; printf 'b\\000c\\000'; exit ${exit};; esac\nexec '${real}' "$@"\n`,
+      { mode: 0o755 }
+    );
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+    const held = new Int32Array(new SharedArrayBuffer(4));
 
-  const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
-  await until(t, () => existsSync(started));
-  writeFileSync(go, "");
-  // Held past the clock and past git's own exit, and from the loop's check phase, so the loop turns to its
-  // timers, the clock among them, before it reads the pipe again.
-  await new Promise((done) => {
-    setImmediate(() => {
-      Atomics.wait(held, 0, 0, 4500);
-      done();
+    const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
+    await until(t, () => existsSync(started));
+    writeFileSync(go, "");
+    // Held past the clock and past git's own exit, and from the loop's check phase, so the loop turns to its
+    // timers, the clock among them, before it reads the pipe again.
+    await new Promise((done) => {
+      setImmediate(() => {
+        Atomics.wait(held, 0, 0, 4500);
+        done();
+      });
     });
-  });
-  const r = await reading;
+    const r = await reading;
 
-  assert.equal(r.ok, false, JSON.stringify(r));
-  assert.equal(r.stdout, "");
-  assert.equal(r.code, null);
-  assert.match(String(r.error), /git was ended by SIGTERM after 3000 ms/);
-});
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.stdout, "");
+    assert.equal(r.code, null, JSON.stringify(r));
+    assert.match(String(r.error), /git was ended by SIGTERM after 3000 ms/);
+  });
+}
 
 /**
  * A `git` on PATH whose `ls-files` is a launcher: the listing is its child's, which writes its pid to
@@ -389,8 +392,11 @@ test("a streamed read behind a launcher is ended by its own timeout too", { ...n
   // The one behind writes nothing, so nothing ends it: what is held is that the read does not wait on it.
   const { dir } = repo(t);
   const { env } = behindLauncher(t, "exec sleep 30");
+  const started = performance.now();
 
-  await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { timeout: 500, env }), /^Error: git ls-files exited SIGTERM/);
+  await assert.rejects(() => gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, { timeout: 2000, env }), /^Error: git ls-files exited SIGTERM/);
+  // Waiting on the pipes, the read would settle only when the stand-in's 30 s were up.
+  assert.ok(performance.now() - started < 15_000, `settled after ${Math.round(performance.now() - started)} ms`);
 });
 
 test("a record that never ends is refused before it reaches V8's string limit", needsShebang, async (t) => {
