@@ -7,6 +7,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-10-14
+
+The read of which commands a repository's config names is never answered with part of its list, and
+it shares one clock with every buffered git read.
+
+### Fixed
+
+- The read of which commands a repository's config names went through Node's `timeout`, which
+  answers with the code git left as it shuts the pipes: a git that exited 0 as the clock ran out
+  gave part of the list, read as the whole, and a command the cut-off part named was left with
+  nothing to keep it from running. That read and a buffered git read share one clock of their own,
+  which shuts the pipes and sends `SIGTERM`, and a read it ended is no answer whatever code git
+  left. 0.15.3's buffered read kept a second timer beside Node's instead, which rested on Node
+  running two timers of one duration in the order they were made.
+- A git read given a timeout that is no whole number of milliseconds is refused, as Node refused it
+  for the buffered one: one below 0 or NaN ran with no clock.
+
+### Fixed in the tests themselves
+
+- Every removal an async test makes with `recursive: true, force: true` goes through `removeTree`,
+  42 in 10 files, so it waits out a directory Windows still holds. The removals left in async tests
+  are of single files, and eight of directories without `force`, where a missing directory fails
+  the test.
+- The stub git tests put on PATH could fail to remove its directory: a git a test left running
+  wrote to the stub's log between `rmSync` emptying the directory and removing it, and `rmSync`
+  retries only the removal. One test failed so in 1 of 12 runs under load. The stub moves its
+  directory first, out of reach of that write, and the author tests use it in place of a copy.
+- Two git tests left a `sleep 300` running for five minutes after each run: one stub ran it under a
+  shell that the clock's signal ended alone, and one test killed its holder only after the directory
+  that named its pid was gone.
+- The test of five hundred large parses took 396 to 683 s of its 720 s on a Windows runner, and once
+  ran past it. Its bound is 18 minutes, still inside the CI job's 45.
+
 ## [0.15.3] - 2026-10-14
 
 A git question that ran past its clock is never answered with the code git left in that moment.
@@ -4768,7 +4801,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.3...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.4...HEAD
+[0.15.4]: https://github.com/crisnahine/anatomiya/compare/v0.15.3...v0.15.4
 [0.15.3]: https://github.com/crisnahine/anatomiya/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/crisnahine/anatomiya/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/crisnahine/anatomiya/compare/v0.15.0...v0.15.1
