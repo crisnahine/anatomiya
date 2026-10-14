@@ -1,0 +1,1 @@
+Correction to this message: two hooks restore a mode first (test/ab.test.mjs, test/semantic.test.mjs) and two restore the environment first (test/history.test.mjs, test/scan.test.mjs), where it says one and three.
