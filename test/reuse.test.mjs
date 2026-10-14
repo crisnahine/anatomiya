@@ -1325,13 +1325,13 @@ test("the git reads fit inside the time the hook asks Claude Code for", () => {
 
 test("a checkout whose attributes git could not be asked for asks nothing, and the next one is still asked about", needsGitStub, async (t) => {
   // The hook reads every checkout of a stop together, so a read that throws in one would end them all.
-  const held = repo(t);
-  held.write("src/b.ts", NEW_B);
+  const unaskable = repo(t);
+  unaskable.write("src/b.ts", NEW_B);
   const other = repo(t);
   other.write("src/b.ts", NEW_B);
-  gitAhead(t, `case "$PWD" in *'/${basename(held.dir)}') ${unasked("*' cat-file blob :.gitattributes '*")};; esac`);
+  gitAhead(t, `case "$PWD" in *'/${basename(unaskable.dir)}') ${unasked("*' cat-file blob :.gitattributes '*")};; esac`);
 
-  assert.equal(await pendingChange(held.dir), null);
+  assert.equal(await pendingChange(unaskable.dir), null);
   assert.deepEqual((await pendingChange(other.dir)).map((f) => f.path), ["src/b.ts"]);
 });
 

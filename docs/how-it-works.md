@@ -1915,8 +1915,8 @@ Asking git rather than reading `logs/` works on the reftable backend too, and a 
 reflog never pins.
 
 A commit this clone made never joins the pin while it sits on the first-parent line from the pin to
-the tip, however it reached the remote: a push by URL moves no tracking ref, and a teammate's commit
-on top reviews nothing beneath it. Made here is every commit a reflog entry names except the entries
+the tip, however it reached the remote: a push from another clone, or one by URL before git 2.56,
+moves no tracking ref here, and a teammate's commit on top reviews nothing beneath it. Made here is every commit a reflog entry names except the entries
 that create none (a clone, a checkout, a reset, a branch, a fetch, a push, the remote's HEAD named,
 a fast-forward, a rebase's start and finish, and the empty entry `git worktree add` writes on the new
 worktree's HEAD, which reads as plain `HEAD` from inside that worktree, each matched as git writes the

@@ -2369,10 +2369,10 @@ test("a revision tree does not outlive a check that threw", async (t) => {
     return out;
   };
   syncBuiltinESMExports();
-  t.after(() => {
+  t.after(async () => {
     fs.mkdtempSync = real;
     syncBuiltinESMExports();
-    for (const path of made) rmSync(path, { recursive: true, force: true });
+    for (const path of made) await removeTree(path);
   });
 
   await assert.rejects(() => check(dir, { baseRef: "main" }), /no space left on device/);
