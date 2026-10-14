@@ -646,7 +646,7 @@ test("a blob read gives up on the clock its caller set, not the scan's", needsSh
   // only settle if that bound was honoured.
   const { dir } = repo(t);
   const bin = scratch(t, "anatomiya-git-bin-");
-  writeFileSync(join(bin, "git"), "#!/bin/sh\nsleep 300\n", { mode: 0o755 });
+  writeFileSync(join(bin, "git"), "#!/bin/sh\nexec sleep 300\n", { mode: 0o755 });
 
   const blob = await showBlob(dir, "a".repeat(40), "a.ts", {
     timeout: 250,
@@ -2424,14 +2424,17 @@ test("closing a reader whose child has already exited does not wait for it", { .
   // The shell leaves and a process it started keeps the pipes: an exited
   // child whose streams have not closed, so the reader has not heard of it.
   const { dir, sha } = oneCommit(t);
-  const shim = gitShim(t, ({ bin }) => `sleep 300 & echo $! > '${bin}/holder'; echo $$ > '${bin}/pid'; exit 0`);
+  let holder = null;
+  // Ahead of the shim directory's own removal, which takes the pid with it.
   t.after(() => {
     try {
-      process.kill(Number(readFileSync(join(shim.bin, "holder"), "utf8")), "SIGKILL");
+      process.kill(Number(readFileSync(holder, "utf8")), "SIGKILL");
     } catch {
       // Never started, or gone already.
     }
   });
+  const shim = gitShim(t, ({ bin }) => `sleep 300 & echo $! > '${bin}/holder'; echo $$ > '${bin}/pid'; exit 0`);
+  holder = join(shim.bin, "holder");
   // A grace past this test's own bound, so a close that waits it out fails.
   const reader = blobReader(dir, sha, { env: shim.env, closeGrace: 600_000 });
 
