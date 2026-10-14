@@ -11,7 +11,7 @@
  * the process started in it has gone (`removeTree`).
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -125,6 +125,19 @@ export const needsUnreadableDirs = WINDOWS
  * directory still held after a hundred waits, ten seconds at the wait a test
  * takes, is a child that never left, and that fails the test.
  */
+/**
+ * SIGKILL to the pid a shell wrote to `file`, if it wrote one. A file the shell has opened and not yet
+ * written reads as 0, and a kill of 0 is this process's own group.
+ */
+export function killPidIn(file) {
+  try {
+    const pid = Number(readFileSync(file, "utf8"));
+    if (pid > 0) process.kill(pid, "SIGKILL");
+  } catch {
+    // Never started, or gone already.
+  }
+}
+
 export async function removeTree(dir, wait = 100) {
   for (let tries = 100; ; tries--) {
     try {
