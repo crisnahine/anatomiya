@@ -10,7 +10,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import { promisify } from "node:util";
 
 import { ASKS_BY_ID, exits, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
-import { needsBatchZ, needsPosixPaths, needsShebang } from "./platform.mjs";
+import { killPidIn, needsBatchZ, needsPosixPaths, needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
 import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
@@ -398,13 +398,7 @@ test("a configuration read whose git was reaped before its clock ran out is unas
   const { dir } = repo(t);
   let holder = null;
   // Ahead of the directory's own removal, which takes the pid with it.
-  t.after(() => {
-    try {
-      process.kill(Number(readFileSync(holder, "utf8")), "SIGKILL");
-    } catch {
-      // Never started, or gone already.
-    }
-  });
+  t.after(() => killPidIn(holder));
   const bin = scratch(t, "anatomiya-git-bin-");
   holder = join(bin, "holder");
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
@@ -435,13 +429,7 @@ test("a buffered read behind a launcher is ended by its own clock too", { ...nee
 function behindLauncher(t, listing) {
   let behind = null;
   // Ahead of the directory's own removal, which takes the pid with it.
-  t.after(() => {
-    try {
-      process.kill(Number(readFileSync(behind, "utf8")), "SIGKILL");
-    } catch {
-      // Never started, or gone already.
-    }
-  });
+  t.after(() => killPidIn(behind));
   const bin = scratch(t, "anatomiya-git-bin-");
   behind = join(bin, "behind");
   const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
@@ -2426,13 +2414,7 @@ test("closing a reader whose child has already exited does not wait for it", { .
   const { dir, sha } = oneCommit(t);
   let holder = null;
   // Ahead of the shim directory's own removal, which takes the pid with it.
-  t.after(() => {
-    try {
-      process.kill(Number(readFileSync(holder, "utf8")), "SIGKILL");
-    } catch {
-      // Never started, or gone already.
-    }
-  });
+  t.after(() => killPidIn(holder));
   const shim = gitShim(t, ({ bin }) => `sleep 300 & echo $! > '${bin}/holder'; echo $$ > '${bin}/pid'; exit 0`);
   holder = join(shim.bin, "holder");
   // A grace past this test's own bound, so a close that waits it out fails.
@@ -2464,13 +2446,7 @@ test("a git behind a launcher stops when the reply it is sending is refused", { 
   // The one behind it here writes its pid, answers a blob past the cap and never stops sending it.
   let shim = null;
   // Ahead of the shim's own removal, which takes the pid with it.
-  t.after(() => {
-    try {
-      process.kill(Number(readFileSync(join(shim.bin, "behind"), "utf8")), "SIGKILL");
-    } catch {
-      // Never started, or gone already.
-    }
-  });
+  t.after(() => killPidIn(join(shim.bin, "behind")));
   shim = gitShim(
     t,
     ({ bin }) =>

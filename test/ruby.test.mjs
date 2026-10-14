@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsShebang, removeTree } from "./platform.mjs";
+import { killPidIn, needsPosixPaths, needsShebang, removeTree } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
 import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
@@ -2380,11 +2380,7 @@ test("a shard whose thread dies while a stalled child's stdout is held open ends
     assert.equal(out.results[1].error, out.results[0].error);
     assert.equal(exists(Number(readFileSync(log, "utf8"))), false, "the child is gone, not running and not a zombie");
   } finally {
-    try {
-      process.kill(Number(readFileSync(holder, "utf8")), "SIGKILL");
-    } catch {
-      // never started, or already gone
-    }
+    killPidIn(holder);
   }
 });
 
@@ -2436,11 +2432,7 @@ process.stdout.write(JSON.stringify(out.results.map((r) => [r.rel, Boolean(r.cra
     while (exists(pid) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
     assert.equal(exists(pid), false, "the writer died on the closed pipe");
   } finally {
-    try {
-      process.kill(Number(readFileSync(writer, "utf8")), "SIGKILL");
-    } catch {
-      // never started, or already gone
-    }
+    killPidIn(writer);
   }
 });
 
