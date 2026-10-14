@@ -1,11 +1,11 @@
 // test/semantic-job.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { repo } from "./ts-repo.mjs";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 import { measureResolution, runJob } from "../plugins/anatomiya/lib/semantic-job.mjs";
+import { removeTree } from "./platform.mjs";
 
 const loaded = await loadTypeScript();
 const needsTs = { skip: loaded ? false : "typescript is not installed" };
@@ -42,7 +42,7 @@ test("the job answers built, each file's sites, each file's hits and done, in th
     assert.deepEqual(out[1].resolution, { resolved: 2, total: 2 });
     assert.ok(out[1].hits && typeof out[1].hits === "object");
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -52,7 +52,7 @@ test("a file is answered with the one type-checked row there is", needsTs, async
     const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] });
     assert.deepEqual(Object.keys(answered(out)["a.ts"]), ["law_of_demeter"]);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -66,7 +66,7 @@ test("resolution counts every property access and credits only the typed ones", 
     const files = [{ rel: "a.ts", abs: join(dir, "a.ts") }, { rel: "gone.ts", abs: join(dir, "gone.ts") }];
     assert.deepEqual(measureResolution(ts, program, program.getTypeChecker(), files), { resolved: 2, total: 4 });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -84,7 +84,7 @@ test("each file carries its own resolution, so the reader can take the rate over
     const byRel = Object.fromEntries((await sent({ root: dir, files })).filter((m) => m.rel).map((m) => [m.rel, m.resolution]));
     assert.deepEqual(byRel, { "a.ts": { resolved: 2, total: 2 }, "game.min.js": { resolved: 0, total: 6 } });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -114,7 +114,7 @@ test("a .js file handed to the job is held by the program whatever the tsconfig 
     assert.deepEqual(Object.keys(b.hits), ["law_of_demeter"]);
     assert.deepEqual(b.resolution, { resolved: 2, total: 2 }, "the .js file's accesses are measured too");
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -142,7 +142,7 @@ test("a row that throws on a file drops its own key there, and the file is still
     assert.deepEqual(out.findLast((m) => m.rel).resolution, { resolved: 2, total: 2 });
     assert.deepEqual(out.at(-1), { done: true });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -162,7 +162,7 @@ test("a refused config sends site stubs and no checker hits", needsTs, async () 
     assert.deepEqual(answered(out), { "a.ts": { law_of_demeter: [{ conforming: true, where: null }] }, "b.ts": {} });
     assert.deepEqual(out.map((m) => Object.keys(m)[0]), ["built", "rel", "rel", "done"]);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -184,6 +184,6 @@ test("every file's resolution and sites are answered before any row is walked", 
       { rel: "b.ts", hits: {}, resolution: { resolved: 0, total: 0 } },
     ]);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });

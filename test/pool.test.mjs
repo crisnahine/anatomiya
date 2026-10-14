@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsPosixPaths, needsShebang, needsTmpdirVariable, removeTree } from "./platform.mjs";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPool, defaultPoolSize, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
@@ -24,7 +24,7 @@ async function withPool(opts, body) {
     await body(pool, dir);
   } finally {
     await pool.close();
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 }
 
@@ -363,7 +363,7 @@ test("closing with work outstanding resolves every caller", async () => {
 
     await pool.close();
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
@@ -584,7 +584,7 @@ test("a ps that will not return costs the poll its timeout, not the run", needsS
     assert.equal(out.size, 0, "a ps that answered nothing reports nothing");
     assert.ok(elapsed < 10_000, `waited ${elapsed}ms on a ps that never returns`);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTree(dir);
   }
 });
 
