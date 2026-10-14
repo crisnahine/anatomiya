@@ -700,7 +700,7 @@ test("a tree too deep for the channel is answered as a crash, as the JavaScript 
   }
 });
 
-// About 160 s on a laptop, 255 to 431 s on a Linux runner, and 396 s to past 720 s on a Windows runner.
+// About 180 s on a laptop, 173 to 436 s on a Linux runner, and 256 s to past 720 s on a Windows runner.
 // Bounded inside the CI job's own 45 minutes, so a slow runner reports this test and not a cancelled job.
 //
 // Not under the coverage collector: it keeps its records on the heaps this reads, and the child it

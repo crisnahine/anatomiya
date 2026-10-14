@@ -8,10 +8,11 @@
  *
  * Beside the skips, the two things a test does another way by platform: a
  * directory that tells case apart (`caseSensitiveDir`), and one removed once
- * the process started in it has gone (`removeTree`).
+ * the process started in it has gone (`removeTree`). And `killPidIn`, which
+ * ends a stand-in by the pid it wrote to a file.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -133,6 +134,19 @@ export async function removeTree(dir, wait = 100) {
       if (tries === 0 || !["EBUSY", "EPERM"].includes(err.code)) throw err;
       await new Promise((done) => setTimeout(done, wait));
     }
+  }
+}
+
+/**
+ * SIGKILL to the pid a shell wrote to `file`, if it wrote one. A file the shell has opened and not yet
+ * written reads as 0, and a kill of 0 is this process's own group.
+ */
+export function killPidIn(file) {
+  try {
+    const pid = Number(readFileSync(file, "utf8"));
+    if (pid > 0) process.kill(pid, "SIGKILL");
+  } catch {
+    // Never started, or gone already.
   }
 }
 
