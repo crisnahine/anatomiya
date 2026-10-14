@@ -1604,8 +1604,8 @@ test("a push is not followed where git keeps no reflog for the remote ref", asyn
 });
 
 test("a commit this clone made is not pinned when it reached the remote's first-parent line another way", async (t) => {
-  // `git push <url>` moves no tracking ref, so the fetch after it is an
-  // ordinary fetch; the commit it brings back is still this clone's own,
+  // A push from elsewhere moves no tracking ref here, so the fetch after it is
+  // an ordinary fetch; the commit it brings back is still this clone's own,
   // unreviewed work, written straight onto the shared branch.
   const { origin, dir } = await cloned(t);
   await refreshRepository(dir);
