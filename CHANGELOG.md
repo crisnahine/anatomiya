@@ -7,6 +7,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-10-14
+
+A git question that ran past its clock is never answered with the code git left in that moment.
+
+### Fixed
+
+- A buffered git read whose git exited as its clock ran out still answered with that exit code:
+  1 read as git saying no, and 0 as a whole answer with part of it. 0.15.2 caught the second only
+  where the signal reached a live git, which a git already reaped, or one Windows calls already
+  dead, does not. The read keeps a clock of its own that starts before Node's, and a read it ended
+  is no answer whatever code git left: `git could not be asked ...: git was ended by SIGTERM after
+  <n> ms`, as for any other git past its clock.
+
+### Fixed in the tests themselves
+
+- The test of a streamed read behind a launcher passed without the change it holds, since the
+  stand-in it waited on ended inside the test's own bound. It asserts the read settled long before.
+
 ## [0.15.2] - 2026-10-13
 
 The end-of-turn reuse check asks about seven more languages, `check` reads a revision's files
@@ -4742,7 +4760,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.3...HEAD
+[0.15.3]: https://github.com/crisnahine/anatomiya/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/crisnahine/anatomiya/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/crisnahine/anatomiya/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/crisnahine/anatomiya/compare/v0.14.0...v0.15.0
