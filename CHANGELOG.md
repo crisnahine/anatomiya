@@ -23,7 +23,15 @@ A git question that ran past its clock is never answered with the code git left 
 ### Fixed in the tests themselves
 
 - The test of a streamed read behind a launcher passed without the change it holds, since the
-  stand-in it waited on ended inside the test's own bound. It asserts the read settled long before.
+  stand-in it waited on ended inside the test's own bound. It asserts the read settles inside 15 s, where
+  the stand-in runs for 30 s.
+- The launcher case of 0.15.2 is measured on Windows by the suite itself: a test walks 80,000
+  generated commits with real git, and on Git for Windows a read its clock ended settled after 305
+  and 309 ms, where with the pipes left open it waited 2032 and 1632 ms for the git behind the
+  launcher.
+- Tests that put this clone's commit on the remote and then fetched it no longer depend on the git
+  version: git 2.56 moves the tracking branch of a remote whose URL a push names, so the fetch moved
+  nothing, and the commit was held as pushed where the tests meant to hold it as made here.
 
 ## [0.15.2] - 2026-10-13
 
