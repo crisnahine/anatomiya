@@ -8,7 +8,8 @@
  *
  * Beside the skips, the two things a test does another way by platform: a
  * directory that tells case apart (`caseSensitiveDir`), and one removed once
- * the process started in it has gone (`removeTree`).
+ * the process started in it has gone (`removeTree`). And `killPidIn`, which
+ * ends a stand-in by the pid it wrote to a file.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
