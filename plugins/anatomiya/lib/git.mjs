@@ -174,6 +174,11 @@ function refuse(args) {
   return null;
 }
 
+// Taken as no clock, a timeout below 0 or NaN would leave a git that never answers waiting for good.
+function timeoutRefused(timeout) {
+  return timeout == null || (Number.isInteger(timeout) && timeout >= 0) ? null : `timeout must be a whole number of ms, 0 or more: ${timeout}`;
+}
+
 /**
  * The environment every git call runs in.
  *
@@ -388,21 +393,19 @@ function repositoryCommands(root, env, timeout) {
   const known = repositoryCache.get(key);
   if (known) return known;
   // Built here, so a fault in the environment is this tool's own and not a config that went unread.
-  const options = { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024, timeout, env: gitEnv(env) };
-  // Started inside the chain: Node throws from the call itself over an
-  // environment it refuses, and that is one more way the config went unread.
-  const asked = Promise.resolve().then(() => run("git", ["config", "--show-scope", "--null", "--get-regexp", REPOSITORY_COMMANDS], options)).then(
-    ({ stdout }) => replacementsFor(parseScopedConfig(stdout), env),
+  const options = { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024, env: gitEnv(env) };
+  const asked = runOnClock(["config", "--show-scope", "--null", "--get-regexp", REPOSITORY_COMMANDS], options, timeout).then(({ ok, stdout, err, expired }) => {
+    // A part of this answer is no answer: read as the whole, it lets a command the cut-off part names run.
+    if (expired) return { unread: `git config was ended by SIGTERM after ${timeout} ms` };
+    if (ok) return replacementsFor(parseScopedConfig(stdout), env);
     // Exit 1 is no key matched. Anything else is kept as what went wrong, so
     // the call it stopped can say so.
-    (err) => {
-      if (err && err.code === 1 && !err.killed) return NO_REPOSITORY_COMMANDS;
-      const said = String(err?.stderr || err?.message || "").trim().slice(0, STDERR_CAP);
-      // A child that ran left a signal, an exit code or more output than is read. Any other failure is of the start.
-      const how = err?.signal || (typeof err?.code === "number" || err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ? err.code : null);
-      return { unread: how === null ? `git config could not be started: ${said}` : `git config exited ${how}: ${said}` };
-    }
-  ).then((answer) => {
+    if (err?.code === 1) return NO_REPOSITORY_COMMANDS;
+    const said = String(err?.stderr || err?.message || "").trim().slice(0, STDERR_CAP);
+    // A child that ran left a signal, an exit code or more output than is read. Any other failure is of the start.
+    const how = err?.signal || (typeof err?.code === "number" || err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ? err.code : null);
+    return { unread: how === null ? `git config could not be started: ${said}` : `git config exited ${how}: ${said}` };
+  }).then((answer) => {
     if (answer.unread) repositoryCache.delete(key);
     return answer;
   });
@@ -486,39 +489,57 @@ export async function gitBuffered(
   // A call that failed answered part of a question at best, and the whole point of reporting `ok` is
   // that the part is never read as the answer.
   const noAnswer = { ok: false, code: null, oversize: false, stdout: encoding === "buffer" ? Buffer.alloc(0) : "", error: null };
-  const refused = refuse(args);
+  const refused = refuse(args) ?? timeoutRefused(timeout);
   if (refused) return { ...noAnswer, error: refused };
   const call = await prepared(root, args, env, { lazyFetch, timeout });
   if (call.unread) return { ...noAnswer, error: unreadConfig(call) };
-  // Node shuts the pipes at its timeout and still answers with the code git left in that moment. This
-  // clock starts first, so it has run before Node's and before anything Node's could settle.
+  const { ok, stdout, err, expired } = await runOnClock(call.args, { cwd: root, encoding, maxBuffer: maxBytes, env: call.env }, timeout);
+  if (ok && !expired) return { ok: true, code: 0, oversize: false, stdout, error: null };
+  const atClock = `git was ended by SIGTERM after ${timeout} ms`;
+  if (ok) return { ...noAnswer, error: atClock };
+  const failed = String((err && err.message) || err);
+  const oversize = /maxBuffer/.test(failed);
+  const clocked = expired && !oversize;
+  // Node's message for a git it ended names the command and nothing else.
+  const ended = clocked ? atClock : err?.signal ? `git was ended by ${err.signal}` : "";
+  return {
+    ...noAnswer,
+    code: !clocked && err && typeof err.code === "number" ? err.code : null,
+    oversize,
+    error: ended ? `${failed.trimEnd()}\n${ended}` : failed,
+  };
+}
+
+/**
+ * `execFile` of git on a clock that shuts the pipes and sends SIGTERM, with `expired` set where it fired.
+ * Node's own `timeout` is never passed, since it answers with the code git left as Node shut the pipes.
+ */
+async function runOnClock(args, options, timeout) {
   let expired = false;
-  const clock = timeout > 0 ? setTimeout(() => (expired = true), timeout) : null;
+  let clock = null;
   try {
-    const { stdout } = await run("git", call.args, {
-      cwd: root,
-      encoding,
-      maxBuffer: maxBytes,
-      timeout,
-      env: call.env,
-    });
-    if (expired) return { ...noAnswer, error: `git was ended by SIGTERM after ${timeout} ms` };
-    return { ok: true, code: 0, oversize: false, stdout, error: null };
+    const reading = run("git", args, options);
+    if (timeout > 0) {
+      clock = setTimeout(() => {
+        expired = true;
+        endChild(reading.child, "SIGTERM");
+      }, timeout);
+    }
+    const { stdout } = await reading;
+    return { ok: true, stdout, expired };
   } catch (err) {
-    const failed = String((err && err.message) || err);
-    const oversize = /maxBuffer/.test(failed);
-    const clocked = expired && !oversize;
-    // Node's message for a git it ended names the command and nothing else.
-    const ended = clocked ? `git was ended by SIGTERM after ${timeout} ms` : err?.signal ? `git was ended by ${err.signal}` : "";
-    return {
-      ...noAnswer,
-      code: !clocked && err && typeof err.code === "number" ? err.code : null,
-      oversize,
-      error: ended ? `${failed.trimEnd()}\n${ended}` : failed,
-    };
+    return { ok: false, err, expired };
   } finally {
     clearTimeout(clock);
   }
+}
+
+// Git for Windows starts the real git as a launcher's child and a signal ends the launcher alone, so
+// the pipes are shut with it: `close` would otherwise wait on all the git behind it still sends.
+function endChild(child, signal) {
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  signalChild(child, signal);
 }
 
 /** A question git could not be asked. What a caller catches as "no" lets this one through. */
@@ -589,7 +610,7 @@ export function gitStreamed(
   onField,
   { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false, signal = null, input = null, delimiter = 0 } = {}
 ) {
-  const refused = refuse(args);
+  const refused = refuse(args) ?? timeoutRefused(timeout);
   if (refused) return Promise.reject(new Unasked(refused));
   const sub = args[subcommandAt(args)];
   return prepared(root, args, env, { lazyFetch, timeout }).then((call) => new Promise((fulfil, reject) => {
@@ -607,13 +628,6 @@ export function gitStreamed(
       // An option Node refuses is thrown from the start itself.
       return reject(new Unasked(`git ${sub} failed: ${err.message}`));
     }
-    // Its pipes are shut with the signal: Git for Windows starts the real git as a launcher's child and
-    // the signal ends the launcher alone, so `close` would wait on all the git behind it still sends.
-    const end = (how) => {
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      signalChild(child, how);
-    };
     // This clock and not spawn's own, which nothing stops for a child that
     // never started and which then holds the process open for the whole of
     // `timeout`. Unreferenced, so a clear that is missed holds nothing open either (B77).
@@ -622,7 +636,7 @@ export function gitStreamed(
       timeout > 0
         ? setTimeout(() => {
             expired = true;
-            end("SIGTERM");
+            endChild(child, "SIGTERM");
           }, timeout)
         : null;
     clock?.unref();
@@ -637,7 +651,7 @@ export function gitStreamed(
     const stop = () => {
       stopped = true;
       rest = Buffer.alloc(0);
-      if (!child.killed) end();
+      if (!child.killed) endChild(child);
     };
 
     const fail = (err) => {
@@ -1017,7 +1031,7 @@ export function blobReader(
   { timeout = GIT.timeoutMs, env = process.env, lazyFetch = false, closeGrace = CLOSE_GRACE_MS } = {}
 ) {
   const perCall = (path) => showBlob(root, sha, path, { timeout, env, lazyFetch });
-  let fallen = !isSha(sha) || refuse(BATCH) !== null;
+  let fallen = !isSha(sha) || refuse(BATCH) !== null || timeoutRefused(timeout) !== null;
   let child = null;
   let pending = null;
   let last = Promise.resolve();

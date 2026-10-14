@@ -127,7 +127,7 @@ test("a truncated record is dropped rather than completed with a guess", () => {
   ]);
 });
 
-test("a call that outruns its timeout answers instead of hanging", async () => {
+test("a call that outruns its timeout answers instead of hanging", { timeout: 60_000 }, async () => {
   // The baseline's runner passed no timeout, so a git that never returns took
   // the scan with it.
   //
@@ -145,6 +145,18 @@ test("a call that outruns its timeout answers instead of hanging", async () => {
   assert.equal(r.stdout, "", "and it reports no output it did not receive");
   assert.equal(r.code, null, "and it has no exit code to read as an answer");
   assert.match(String(r.error), /git was ended by SIG[A-Z]+ after 250 ms/, "and its error says what ended it and when");
+});
+
+test("a timeout that is no whole number of milliseconds is refused rather than run with no clock", async (t) => {
+  // A directory of its own, so no config read cached by an earlier test stands in for the refusal.
+  const dir = scratch(t, "anatomiya-git-timeout-");
+  for (const timeout of [-1, Number.NaN, 1.5]) {
+    const r = await gitBuffered(dir, ["version"], { timeout });
+
+    assert.equal(r.ok, false, String(timeout));
+    assert.match(String(r.error), /^timeout must be a whole number of ms, 0 or more/, String(timeout));
+    await assert.rejects(gitStreamed(dir, ["version"], () => {}, { timeout }), /^Error: timeout must be a whole number of ms, 0 or more/, String(timeout));
+  }
 });
 
 test("a non-zero exit is reported rather than read as an empty answer", async (t) => {
@@ -310,8 +322,8 @@ test("a listing whose git exits as its clock runs out is no answer, however it e
   assert.deepEqual(seen, ["a"]);
 });
 
-// Node shuts the pipes at the clock and still answers with the code a git left in that moment: 0 read as a
-// whole answer with part of it, 1 read as git saying no.
+// A git that exits as its clock runs out leaves a code beside part of its answer: 0 would read as the whole
+// answer, 1 as git saying no.
 for (const exit of [0, 1]) {
   test(`a buffered read whose git exits ${exit} as its clock runs out is no answer either`, { ...needsShebang, timeout: 60_000 }, async (t) => {
     const { dir } = repo(t);
@@ -347,6 +359,74 @@ for (const exit of [0, 1]) {
     assert.match(String(r.error), /git was ended by SIGTERM after 3000 ms/);
   });
 }
+
+// What the config read leaves out is a command this repository names that nothing keeps from running.
+for (const exit of [0, 1]) {
+  test(`a configuration read whose git exits ${exit} as its clock runs out leaves the call unasked`, { ...needsShebang, timeout: 60_000 }, async (t) => {
+    const { dir } = repo(t);
+    const bin = scratch(t, "anatomiya-git-bin-");
+    const started = join(bin, "started");
+    const go = join(bin, "go");
+    const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/sh\ncase "$1" in config) : > '${started}'; while [ ! -e '${go}' ]; do sleep 0.05; done; exit ${exit};; esac\nexec '${real}' "$@"\n`,
+      { mode: 0o755 }
+    );
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+    const cell = new Int32Array(new SharedArrayBuffer(4));
+
+    const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
+    await until(t, () => existsSync(started));
+    writeFileSync(go, "");
+    await new Promise((done) => {
+      setImmediate(() => {
+        Atomics.wait(cell, 0, 0, 4500);
+        done();
+      });
+    });
+    const r = await reading;
+
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.match(String(r.error), /git config was ended by SIGTERM after 3000 ms/);
+  });
+}
+
+test("a configuration read whose git was reaped before its clock ran out is unasked too", { ...needsShebang, timeout: 60_000 }, async (t) => {
+  // A process git started keeps its stdout, so Node has heard git exit 1 and still waits on the pipe: the clock
+  // signals no live git, and only the clock says the list was cut off.
+  const { dir } = repo(t);
+  let holder = null;
+  // Ahead of the directory's own removal, which takes the pid with it.
+  t.after(() => {
+    try {
+      process.kill(Number(readFileSync(holder, "utf8")), "SIGKILL");
+    } catch {
+      // Never started, or gone already.
+    }
+  });
+  const bin = scratch(t, "anatomiya-git-bin-");
+  holder = join(bin, "holder");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$1" in config) sleep 30 & echo $! > '${holder}'; exit 1;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+
+  const r = await gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 1000, env });
+
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.match(String(r.error), /git config was ended by SIGTERM after 1000 ms/);
+});
+
+test("a buffered read behind a launcher is ended by its own clock too", { ...needsShebang, timeout: 60_000 }, async (t) => {
+  const { dir } = repo(t);
+  const { env } = behindLauncher(t, "exec sleep 30");
+  const started = performance.now();
+
+  const r = await gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 2000, env });
+  assert.match(String(r.error), /git was ended by SIGTERM after 2000 ms/);
+  // Waiting on the pipes, the read would settle only when the stand-in's 30 s were up.
+  assert.ok(performance.now() - started < 15_000, `settled after ${Math.round(performance.now() - started)} ms`);
+});
 
 /**
  * A `git` on PATH whose `ls-files` is a launcher: the listing is its child's, which writes its pid to
@@ -1714,6 +1794,17 @@ function oneCommit(t) {
   const { dir, git } = repo(t);
   return { dir, git, sha: git("rev-parse", "HEAD").toString().trim() };
 }
+
+test("a batch reader given a timeout that is no whole number of milliseconds asks git nothing", needsGitStub, async (t) => {
+  const { dir, sha } = oneCommit(t);
+  const calls = gitAhead(t);
+  for (const timeout of [-1, Number.NaN, 1.5]) {
+    const reader = blobReader(dir, sha, { timeout });
+    assert.deepEqual(answerOf(await reader.read("a.ts")), UNASKED, String(timeout));
+    await reader.close();
+  }
+  assert.deepEqual(calls(), []);
+});
 
 // Stops with the test, so a wait that never ends cannot outlive a timeout.
 async function until(t, seen) {
