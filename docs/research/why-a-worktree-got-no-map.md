@@ -17,7 +17,7 @@ Written 2026-09-23 against the code of that day. Code is named by function, and
    not CLAUDE.md, not arbitrary files.
 3. `.worktreeinclude` is the documented first-party route, and it does reach `.claude/rules/...`
    and `.claude/anatomiya/facts.json`. Its limit is that it only runs for worktrees Claude Code
-   creates with git. Four of ef-client's five live worktrees were made by hand, so it would not
+   creates with git. Four of the front end's five live worktrees were made by hand, so it would not
    have covered them. It is worth recommending alongside the hook fix, not instead of it.
 4. Plugin hooks do fire inside subagents, with `cwd` following the subagent into its own
    worktree. That is the "sometimes": the same session, the same plugin, silence only on the
@@ -26,7 +26,7 @@ Written 2026-09-23 against the code of that day. Code is named by function, and
    (measured). It disagrees with git in two places, both named below; one is deliberate and
    documented in its own comment, one is not.
 6. The precedent rule's silence on `src/components` is real and reproduced. When this was
-   written the case against raising the floor was that `__tests__` is the shape ef-client's few
+   written the case against raising the floor was that `__tests__` is the shape the front end's few
    unit tests take; section 4 ends with the corpus measurement taken afterwards, and the floor
    was raised on it.
 
@@ -91,7 +91,7 @@ Source: https://code.claude.com/docs/en/worktrees, "Start Claude in a worktree"
 Without `X8e`, walking up from `.claude/worktrees/foo` would reach the main checkout root and
 load its rules. `X8e` is what stops that. So the answer to "does it ever read them from the
 main checkout" is no, and the no is deliberate. For a worktree placed *outside* the repository
-(ef-client's `.worktrees/` siblings and the scratchpad ones, listed in section 2), the main
+(the front end's `.worktrees/` siblings and the scratchpad ones, listed in section 2), the main
 checkout is not an ancestor at all, so it is never a candidate.
 
 ### What is shared
@@ -128,7 +128,7 @@ the docs say so plainly:
 
 Source: https://code.claude.com/docs/en/worktrees, "Copy gitignored files into worktrees"
 
-It reaches inside a wholly ignored directory, which is exactly ef-client's case
+It reaches inside a wholly ignored directory, which is exactly the front end's case
 (`.gitignore:56` is `/.claude`):
 
 > If you write a pattern that starts with `**/` and the files you want are inside a directory
@@ -154,7 +154,7 @@ Two limits before recommending it:
   checkout's tree at the moment the worktree was made, with no label saying so, which is the
   thing `echoContext`'s borrowed stamp exists to say (`plugins/anatomiya/lib/hook.mjs`).
 
-ef-client has no `.worktreeinclude` today (`ls -a ~/Documents/Projects/empire-flippers/client`
+The front end has no `.worktreeinclude` today (`ls -a` in the front end's checkout
 matches nothing containing "worktree"). Four of its five worktrees were not created by Claude
 Code with git, so adding one would cover future `--worktree` and `isolation: worktree` sessions
 and nothing that exists now. Recommend it as a complement: it gives the worktree its own
@@ -220,15 +220,15 @@ error and nothing in the transcript to explain the difference. Reproduced direct
 `git worktree add`ed checkout of a repository whose `.claude` is gitignored, the `notice` hook
 answered `{}` and `echoContext` answered `null` (fixture in section 3).
 
-ef-client is living this. `git worktree list` in
-`~/Documents/Projects/empire-flippers/client` today:
+The front end is living this. `git worktree list` in
+the front end's checkout today:
 
 ```
-/Users/crisn/Documents/Projects/empire-flippers/client                          [production]
-/private/tmp/claude-502/.../scratchpad/stg-client                                 [stg-7642-cypress]
-/private/tmp/claude-502/.../scratchpad/wt-client                                  [EF-7642-implement-an-loi-builder]
-/Users/crisn/Documents/Projects/empire-flippers/.worktrees/client-7768          [EF-7768-account-lookup-add-recaptcha]
-/Users/crisn/Documents/Projects/empire-flippers/.worktrees/client-staging-7768  [staging]
+~/front-end                                              [main]
+/private/tmp/.../scratchpad/stg-client                   [staging-e2e]
+/private/tmp/.../scratchpad/wt-client                    [feature-a]
+~/.worktrees/front-end-feature-b                         [feature-b]
+~/.worktrees/front-end-staging-b                         [staging]
 ```
 
 Four linked worktrees, all outside the repository, none with a `.claude/` of its own, all of
@@ -372,9 +372,9 @@ single namesake pair anywhere is a repository with test precedent everywhere.
 `testFilesHeld(covered) >= PRECEDENT_FLOOR` (a root holding 3+ tests that pair with nothing is a
 root whose habit is simply not namesakes). Neither floor was applied to `with`.
 
-### Reproduced on ef-client
+### Reproduced on the front end
 
-Called against `~/Documents/Projects/empire-flippers/client/.claude/anatomiya/facts.json`
+Called against `~/front-end/.claude/anatomiya/facts.json`
 (schema 18, 7 roots) with no code changes:
 
 ```
@@ -398,7 +398,7 @@ The roots:
 | `src/hooks` | no | 0 / 47 | none |
 | `src/layouts` | no | 0 / 42 | none |
 
-So `src/components` is the only root in ef-client with `0 < with < 3`, and it holds 517 files.
+So `src/components` is the only root in the front end with `0 < with < 3`, and it holds 517 files.
 That is the silence the investigation found, confirmed.
 
 ### What a threshold would change
@@ -408,7 +408,7 @@ Changing that line to `r.companions.with >= PRECEDENT_FLOOR` flips exactly the r
 
 | repository | eligible roots | `with == 0` | `with` 1 or 2 | `with >= 3` | files in the flipping roots |
 | --- | --- | --- | --- | --- | --- |
-| ef-client | 6 | 4 | **1** (`src/components` 1/517) | 1 | 517 |
+| the front end | 6 | 4 | **1** (`src/components` 1/517) | 1 | 517 |
 | microsoft/vscode (corpus) | 3 | 1 | 0 | 2 | 0 |
 | anatomiya itself | 2 | 0 | 0 | 2 (46/57, 15/25) | 0 |
 
@@ -430,7 +430,7 @@ the corpus would be the way to widen it, and that is a corpus run, not a reading
 ### The finding that argues against changing it
 
 The report says agents create `__tests__` directories against house style. anatomiya's counts
-say `__tests__` **is** the house style in ef-client's `src/`:
+say `__tests__` **is** the house style in the front end's `src/`:
 
 ```
 src/components/Calendar/__tests__/Store.test.ts
@@ -448,7 +448,7 @@ in `forms/utils/tests/` and `deepmerge.test.ts` beside its source. `src/utils` h
 facts, which is anatomiya saying so itself. The single namesake that silences `src/components`
 is `Store.test.ts` beside `Store.ts`, and it is inside `Calendar/__tests__`.
 
-So on ef-client, raising the floor would make the notice fire on writes that follow what the
+So on the front end, raising the floor would make the notice fire on writes that follow what the
 repository already does, in the largest root it has. The notice already fires on `src/pages`,
 where the counts line honestly reports "2 vitest specs under `__tests__`" and the closing
 sentence then says "Put it where the siblings put theirs", which, read against those two specs,
@@ -456,7 +456,7 @@ is where the agent was already putting it.
 
 Three things follow, in order of what I would do:
 
-1. Ask the ef-client team what they actually saw. The report and the counts disagree, and the
+1. Ask the front end's team what they actually saw. The report and the counts disagree, and the
    counts are checkable. It may be the api repo (Rails, `spec/`), or co-location that a person
    wants and the tree does not yet show.
 2. The `src/components` silence is a real gap in the rule and worth fixing on its own merits,
@@ -473,8 +473,8 @@ Neither the rule nor the floor was changed while writing this.
 The corpus caveat above was closed by scanning all 35 corpus repositories in memory from a frozen
 copy of the plugin and asking the rule about every test file each one already tracks, 40,701 in
 all. A mature repository put its tests where it meant to, so every hit is a candidate false
-positive. With `some(with > 0)` the rule fired on 2, both in ef-client's `src/pages`. With a floor
-of three namesakes it fired on 5: those 2, the 2 tests in ef-client's `src/components`, and
+positive. With `some(with > 0)` the rule fired on 2, both in the front end's `src/pages`. With a floor
+of three namesakes it fired on 5: those 2, the 2 tests in the front end's `src/components`, and
 `features/support/govuk_test.rb` in alphagov/whitehall, a Cucumber support file whose name reads
 as a test. Thirteen roots in eleven repositories flipped, and no other existing test was touched.
 
@@ -500,5 +500,5 @@ already reports. The closing sentence the notice prints is unchanged: it is meas
   clone, `core.worktree` redirect; `echoContext` / `ownLayout` / `noticeFor` called directly
 - `plugins/anatomiya/lib/worktree.mjs` (`mainCheckoutOf`), `plugins/anatomiya/lib/hook.mjs` (`ownMap`, `ownLayout`, `echoContext`,
   `windowOf`), `plugins/anatomiya/lib/precedent.mjs`, `DECISIONS.md` row A24
-- `~/Documents/Projects/empire-flippers/client/.claude/anatomiya/facts.json`,
+- `~/front-end/.claude/anatomiya/facts.json`,
   `~/Documents/Projects/anatomiya-corpus/microsoft__vscode/.claude/anatomiya/facts.json`

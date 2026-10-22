@@ -10,6 +10,7 @@ import { REACT_HOOKS } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
 import { COLUMN_TYPE, DATA_CALLS, FRAMEWORK } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
 import { EFFECT_HOOKS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
 import { RUBY_ERROR } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
+import { ROUTER_MODULES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 
 /**
  * One witness pair per dimension: the sources the declared predicate says are
@@ -350,6 +351,30 @@ container = document.createElement("div")`,
     inapplicable: [`export interface IFoo { a: string }`, `export type TEFLogonStep = 1`],
   },
 
+  url_segment_case: {
+    lang: "jsx",
+    // Each form the walker reads apart: a route object's path in a file that
+    // imports a router or is named for its routes, and a Route element's path.
+    applicable: [
+      `import { Route } from "react-router-dom"\nexport const routes = [{ path: "/support-tickets/:id?", element: null }]`,
+      `import { Route } from "react-router-dom"\nexport const routes = [{ path: \`/saved_cards\`, component: Page }]`,
+      { source: `export const routes = [{ path: "/user-dashboard", children: [] }]`, rel: "src/routes.tsx" },
+      `export const page = <PrivateRoute path="/contact-us/:slug" />`,
+    ],
+    // A path key outside a router file, a link, a parameter, a single word, a
+    // path built at run time, and a path on a non-route element.
+    inapplicable: [
+      `export const files = [{ path: "/user-data/x" }]`,
+      `import { Route } from "react-router-dom"\nexport const upload = { path: "/upload-dir", cookie: { path: "/session-scope" } }`,
+      `export const c = <Link to="/user-dashboard" />`,
+      `export const d = <a href="/my-account">x</a>`,
+      `import { Route } from "react-router-dom"\nexport const r = [{ path: "/:user_id/*" }]`,
+      `import { Route } from "react-router-dom"\nexport const r = [{ path: "/members/roster" }]`,
+      `import { Route } from "react-router-dom"\nconst id = 1\nexport const r = [{ path: \`/item-list/\${id}\` }]`,
+      `export const e = <Tab path="/some-tab" />`,
+    ],
+  },
+
   // --- dimensions-jsx.mjs ---
   hook_call_style: {
     lang: "jsx",
@@ -523,6 +548,53 @@ container = document.createElement("div")`,
       `RestClient::Exceptions::Timeout.new`,
       `redis_client.get(id)`,
       `pg_client.execute(sql)`,
+    ],
+  },
+  strong_params_style: {
+    lang: "ruby",
+    // The three calls a filter starts from, bare or off a local named params.
+    applicable: [
+      `class C\n  def a\n    params.require(:x).permit(:y)\n  end\nend`,
+      `class C\n  def a\n    params.permit(:y)\n  end\nend`,
+      `class C\n  def a\n    params.expect(x: [:y])\n  end\nend`,
+      `def a(params)\n  params.permit(:y)\nend`,
+    ],
+    // A read filters nothing, and permit off another receiver is not params.
+    inapplicable: [
+      `class C\n  def a\n    params[:id]\n    params.fetch(:page, 1)\n  end\nend`,
+      `class C\n  def a\n    other.permit(:y)\n    Gem.require(:z)\n  end\nend`,
+    ],
+  },
+  spec_type_declared: {
+    lang: "ruby",
+    applicable: [
+      { source: `RSpec.describe Article, type: :model do\nend`, rel: "spec/models/article_spec.rb" },
+      { source: `describe ArticlesController do\nend`, rel: "spec/controllers/articles_spec.rb" },
+      // A describe inside another is part of the outer one's site.
+      { source: `RSpec.describe Article, type: :model do\n  describe "#a" do\n  end\nend`, rel: "spec/models/a_spec.rb", sites: 1 },
+    ],
+    // One with no block, and a describe outside a spec file.
+    inapplicable: [
+      { source: `describe "x"`, rel: "spec/models/b_spec.rb" },
+      { source: `RSpec.describe Article do\nend`, rel: "app/models/article.rb" },
+    ],
+  },
+  route_segment_case: {
+    lang: "ruby",
+    applicable: [
+      `Rails.application.routes.draw do\n  get "saved-searches/:id" => "s#show"\nend`,
+      `Rails.application.routes.draw do\n  get "user-dashboard", to: "d#show"\nend`,
+      `Rails.application.routes.draw do\n  namespace :team_tools\nend`,
+      `Rails.application.routes.draw do\n  scope "staff-tools" do\n  end\nend`,
+      `Rails.application.routes.draw do\n  resources :audit_logs\nend`,
+      `Rails.application.routes.draw do\n  resource :credit_card, path: "credit-card"\nend`,
+    ],
+    // A route call outside a draw block, a scope naming a module, and a
+    // parameter or a single word, none of which is a segment anybody named.
+    inapplicable: [
+      `class C\n  def x\n    get "user-list"\n  end\nend`,
+      `Rails.application.routes.draw do\n  scope module: "admin_tools" do\n  end\nend`,
+      `Rails.application.routes.draw do\n  get ":user_id/*rest"\n  resources :users\nend`,
     ],
   },
   class_base: {
@@ -766,7 +838,11 @@ const treeKeys = keysFor("tree-sitter");
 // read `<button` as a type assertion, and report five broken predicates.
 const listed = (v) => (Array.isArray(v) ? v : [v]);
 const langOf = (key, w) => (typeof w === "object" && w.lang) || WITNESSES[key].lang;
-const rel = (key, half, i = 0) => `${key}.${half}.${i}.${declOf(langOf(key, listed(WITNESSES[key][half])[i])).scratchExt}`;
+// A witness whose row reads the path names its own; every other is named for its slot.
+const rel = (key, half, i = 0) => {
+  const w = listed(WITNESSES[key][half])[i];
+  return (typeof w === "object" && w.rel) || `${key}.${half}.${i}.${declOf(langOf(key, w)).scratchExt}`;
+};
 
 async function hitsFor(keys) {
   const files = keys.flatMap((key) => {
@@ -915,6 +991,17 @@ test("every obligation counts its producer, and asks nothing of a repository wit
  * belongs. One direction alone lets a table grow with nobody looking.
  */
 const TABLES = [
+  {
+    what: "the router modules a route object's path is read in",
+    key: "url_segment_case",
+    lang: "jsx",
+    members: [
+      "react-router", "react-router-dom", "react-router-native", "vue-router", "@angular/router",
+      "@tanstack/react-router", "@tanstack/vue-router", "@tanstack/solid-router", "@reach/router",
+      "wouter", "preact-router", "svelte-spa-router", "@solidjs/router",
+    ],
+    source: (m) => `import { x } from "${m}"\nexport const routes = [{ path: "/some-page", element: null }]`,
+  },
   {
     what: "the test-runner modifiers",
     key: "test_call_style",
@@ -1191,6 +1278,7 @@ test("no table grew a member this list has not seen", () => {
     migration_schema_only: FRAMEWORK,
     migration_reversible: DATA_CALLS,
     absent_is_null: EFFECT_HOOKS,
+    url_segment_case: ROUTER_MODULES,
   };
   for (const [key, table] of Object.entries(shipped)) {
     const listed = TABLES.filter((t) => t.key === key && t.members.length === table.size);

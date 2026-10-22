@@ -1673,6 +1673,7 @@ A claim states how many sites conform out of how many were eligible; "no convent
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
 When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.
+Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.
 
 ## Areas (2)
 
@@ -1683,7 +1684,7 @@ When a change is asked for, follow what this repository already does and carry i
 
 - 8 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)
 - 12 source files sit in a directory nothing was counted in
-- memory, GC and I/O behaviour: runtime only, nothing static to count
+- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not
 
 Generated files: 2 under .claude/rules/anatomiya-*.md
 Any other file there was not written by this tool.

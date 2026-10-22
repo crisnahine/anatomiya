@@ -25,6 +25,9 @@ export const ELIGIBLE = [
   // The annotation is optional in Python and PHP, and leaving it off is a project's rule where it is
   // one: django types 0 of 8,744 functions and laravel 1,409 of 13,711, against Slim's 312 of 329.
   "declared_return_type",
+  // Rails infers a spec's type from its directory where a repository turns that on, so leaving
+  // the option off is a choice: mastodon types 5 of 1,088 spec files and errbit 83 of 101.
+  "spec_type_declared",
 ];
 
 /** Rows whose other side is a defect rather than a style anyone picked. */
@@ -52,7 +55,7 @@ export const REFUSED = [
   // already picks; a hand-written inverse would fight it.
   "function_naming_case", "exported_symbol_case", "exported_class_case", "exported_type_case", "file_naming_case",
   "extends_base", "class_base", "module_include",
-  "interface_prefix", "type_alias_prefix",
+  "interface_prefix", "type_alias_prefix", "url_segment_case", "route_segment_case", "strong_params_style",
   // "This repository logs to the console on purpose" is a repository with no
   // wrapper, and there the row is not offered at all (C8): a counter would
   // only ever state where a wrapper exists and is ignored, which is a defect.

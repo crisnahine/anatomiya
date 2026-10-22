@@ -417,17 +417,17 @@ test("every registry count is read in words as well as digits", (t) => {
   const dir = repoCopy(t);
   const swaps = {
     "docs/how-it-works.md": [
-      ["52 ship", "twenty ship"],
-      ["28 for JavaScript", "twenty for JavaScript"],
-      ["33\nreachable in JSX", "twenty\nreachable in JSX"],
-      ["16 that speak Ruby", "twenty that speak Ruby"],
+      ["56 ship", "twenty ship"],
+      ["29 for JavaScript", "twenty for JavaScript"],
+      ["34\nreachable in JSX", "twenty\nreachable in JSX"],
+      ["19 that speak Ruby", "twenty that speak Ruby"],
       ["9 file-to-file obligations", "twenty file-to-file obligations"],
-      ["25 for Ruby", "twenty for Ruby"],
-      ["24\nfor Vue", "twenty\nfor Vue"],
-      ["24 for Svelte", "twenty for Svelte"],
-      ["JSX total 33 rather than 28", "JSX total twenty rather than 28"],
+      ["28 for Ruby", "twenty for Ruby"],
+      ["25\nfor Vue", "twenty\nfor Vue"],
+      ["25 for Svelte", "twenty for Svelte"],
+      ["JSX total 34 rather than 29", "JSX total twenty rather than 29"],
     ],
-    "README.md": [["One of the 61", "One of the twenty"], [/\d+ numbered decisions/, "twenty numbered decisions"]],
+    "README.md": [["One of the 65", "One of the twenty"], [/\d+ numbered decisions/, "twenty numbered decisions"]],
   };
   for (const [rel, pairs] of Object.entries(swaps)) {
     edit(join(dir, ...rel.split("/")), (text) => pairs.reduce((out, [from, to]) => out.replace(from, to), text));
@@ -436,30 +436,30 @@ test("every registry count is read in words as well as digits", (t) => {
   const { status, output } = check(dir);
 
   assert.equal(status, 1);
-  for (const said of ["twenty ship", "twenty for JavaScript", "twenty reachable in JSX", "twenty that speak Ruby", "twenty file-to-file obligations", "twenty for Ruby", "twenty for Vue", "twenty for Svelte", "JSX total twenty rather than 28", "One of the twenty", "twenty numbered"]) {
+  for (const said of ["twenty ship", "twenty for JavaScript", "twenty reachable in JSX", "twenty that speak Ruby", "twenty file-to-file obligations", "twenty for Ruby", "twenty for Vue", "twenty for Svelte", "JSX total twenty rather than 29", "One of the twenty", "twenty numbered"]) {
     assert.ok(output.includes(`says "${said}"`), `${said}: ${output}`);
   }
 });
 
 test("a compound count reads as the whole compound, in any case and spelled with a space", (t) => {
   for (const said of ["Twenty-One for JavaScript", "Ninety-Nine for JavaScript", "twenty one for JavaScript"]) {
-    const { status, output } = miscount(t, "docs/how-it-works.md", "28 for JavaScript", said);
+    const { status, output } = miscount(t, "docs/how-it-works.md", "29 for JavaScript", said);
 
     assert.equal(status, 1, said);
-    assert.ok(output.includes(`says "${said}", the registry holds 28`), output);
+    assert.ok(output.includes(`says "${said}", the registry holds 29`), output);
   }
-  for (const said of ["Twenty-Eight for JavaScript", "twenty eight for JavaScript"]) {
-    const { output } = miscount(t, "docs/how-it-works.md", "28 for JavaScript", said);
+  for (const said of ["Twenty-Nine for JavaScript", "twenty nine for JavaScript"]) {
+    const { output } = miscount(t, "docs/how-it-works.md", "29 for JavaScript", said);
 
     assert.ok(!output.includes("for JavaScript\", the registry"), `${said}: ${output}`);
   }
 });
 
 test("a count for JavaScript is read whatever follows it", (t) => {
-  const { status, output } = miscount(t, "docs/how-it-works.md", "28 for JavaScript", "twenty-two for JavaScript and three engines");
+  const { status, output } = miscount(t, "docs/how-it-works.md", "29 for JavaScript", "twenty-two for JavaScript and three engines");
 
   assert.equal(status, 1);
-  assert.ok(output.includes(`says "twenty-two for JavaScript", the registry holds 28`), output);
+  assert.ok(output.includes(`says "twenty-two for JavaScript", the registry holds 29`), output);
 });
 
 test("a count word past thirteen is still a count", (t) => {
@@ -510,13 +510,13 @@ test("a hyphenated count word is read whole, so its last word is never the count
   // Read as "three", the sentence below would pass against a manifest declaring three.
   const dir = repoCopy(t);
   edit(join(dir, "SECURITY.md"), (text) => text.replace(/three runtime dependencies/i, "twenty-three runtime dependencies"));
-  edit(join(dir, "docs", "how-it-works.md"), (text) => text.replace("28 for JavaScript", "twenty-eight for JavaScript"));
+  edit(join(dir, "docs", "how-it-works.md"), (text) => text.replace("29 for JavaScript", "twenty-nine for JavaScript"));
 
   const { status, output } = check(dir);
 
   assert.equal(status, 1);
   assert.ok(output.includes(`SECURITY.md: says "twenty-three runtime dependencies", the plugin's manifest declares 3`), output);
-  assert.ok(!output.includes("twenty-eight"), output);
+  assert.ok(!output.includes("twenty-nine"), output);
 });
 
 test("a count word stands for its number, to ninety-nine", () => {

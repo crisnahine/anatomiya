@@ -46,7 +46,7 @@ spelling the plural, so babel's true `1 of 95 has a namesake test` read back as 
 comes off the renderer now.
 
 Re-run again after the mixin fix and the CommonJS one: 35 of 35, and the only column that moved is
-`module_include`, on discourse, empire-flippers/api and forem (changes 13 and 14 below). The 35
+`module_include`, on discourse, a measured Rails API and forem (changes 13 and 14 below). The 35
 rendered sections were byte-identical to the previous run's.
 
 Re-run again after the vote-unit fix: 35 of 35, no counted number in the table moved, the five
@@ -94,8 +94,8 @@ are how many areas printed each roster line.
 | decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 21.3 |
 | diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 5.1 |
 | discourse__discourse | 23263 | 7 | 5 | 6 | 1 | 1 | 3 | 2 | 0 | 0 | 75 | 12 | 64.4 |
-| empire-flippers__api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 3 | 0 | 0 | 0 | 0 | 18.7 |
-| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 5.1 |
+| rails-api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 3 | 0 | 0 | 0 | 0 | 18.7 |
+| react-front-end | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 5.1 |
 | errbit__errbit | 529 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1.1 |
 | eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 4.4 |
 | fastlane__fastlane | 2136 | 7 | 7 | 2 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 6.9 |
@@ -148,7 +148,7 @@ rest as `and k other`, the shape the extension clause already has.
 
 whitehall's `test/` holds 766 files of which 538 are minitest specs, so the root line said 766 and
 the tests line four lines below it said 538. The same disagreement on chef (1122 against 696),
-empire-flippers/api (1469 against 1334), typeorm (2757 against 2080), webpack (12645 against
+a measured Rails API (1469 against 1334), typeorm (2757 against 2080), webpack (12645 against
 10667) and eleven more. One directory, one always-loaded section, two numbers.
 
 ### 3. A descent that names nothing keeps the directory
@@ -162,7 +162,7 @@ Now a directory that is descended into and produces no root gets its own line. I
 where descent worked, and it bought: webpack `lib` (651 .js, 8 of them with a namesake test),
 supabase `packages/ui-patterns/src` and `packages/ui`, backstage `packages/core-app-api/src`,
 canvas-lms `lib` (463 of 808 with a namesake test under spec/lib), mastodon `app/lib` (119 of
-167), empire-flippers/api `app/mcp/mcp` (41 of 93), eslint `lib/languages/js`.
+167), a measured Rails API `app/mcp/mcp` (41 of 93), eslint `lib/languages/js`.
 
 ### 4. A directory named after tests does not make its files tests
 
@@ -173,14 +173,14 @@ basename (`.test.`, `.spec.`, `.cy.`, `_spec.rb`, `_test.rb`), and a `__tests__`
 
 A repository keeps its factories, fixtures, page objects and support code in the same tree as its
 specs, so the directory fallback charged all of it to the runner and the roster's own denominator
-went wrong: `136 test files under spec/factories` on empire-flippers/api, `spec/support: 22 test
+went wrong: `136 test files under spec/factories` on a measured Rails API, `spec/support: 22 test
 files` on rubocop, `20 test files` on Homebrew where 5 exist, 1,979 fixture modules under
 webpack's `test/cases`, 337 parser inputs under babel's `packages/*/test`. `__tests__` stays
 because nothing but a test is ever put in one.
 
 It also moves the namesake denominators the other way, which is the same correction seen from the
 other side: chef's `lib/chef` reads 499 of 797 where it read 494 of 792, canvas-lms `lib` 463 of
-808, empire-flippers/api `app/services` 1046 of 1575.
+808, a measured Rails API `app/services` 1046 of 1575.
 
 ### 5. `def test_*` needs the class or the file to agree
 
@@ -188,7 +188,7 @@ Was: a method named `test_*` inside any class made the file minitest. Now it cou
 class inherits a minitest base, or the file is `_test.rb` or sits under a `test` directory.
 
 `def test_connection` is ordinary Ruby: a service exposes one, a client pings with one. It printed
-`app/services: 6 minitest specs` on empire-flippers/api and `lib (files at this level): 3 minitest
+`app/services: 6 minitest specs` on a measured Rails API and `lib (files at this level): 3 minitest
 specs` on discourse, in directories holding no test at all. `rubyFacets` takes the path as a second
 argument for it, from the record `ruby.mjs` already has.
 
@@ -339,16 +339,16 @@ one superclass per class and stays per site.
 
 This is the issue the audit section below named, and it is what a threshold that fails closed looks
 like. A Rails worker includes `Sidekiq::Worker` and one more module, so per constant the row could
-not pass 0.5 whatever the directory did: empire-flippers/api `app/workers/workers` read 125 of 234
+not pass 0.5 whatever the directory did: a measured Rails API `app/workers/workers` read 125 of 234
 and `app/workers/cronjobs` 70 of 140, which is exactly one half. Grouped they read 125 of 125 and
 70 of 70, and both state.
 
 Seven areas of four repositories state the row where two of two did before: three of
-empire-flippers/api's worker directories, discourse's `plugins/chat/app/services/chat` (46 of 46)
+a measured Rails API's worker directories, discourse's `plugins/chat/app/services/chat` (46 of 46)
 and `plugins/discourse-workflows/app/services/discourse_workflows` (45 of 45), forem's `app/workers`
 (88 of 88), and fastlane's `spaceship/lib/spaceship/connect_api/models`, which already did. In the
 table at the top of this file `module_include` moves on discourse (1 to 2),
-empire-flippers/api (0 to 3) and forem (0 to 1). Nothing else in the table moves, and no rendered
+a measured Rails API (0 to 3) and forem (0 to 1). Nothing else in the table moves, and no rendered
 section moves at all: this row is a directive, not a layout count.
 
 ### 14. A CommonJS file's exports are read off its assignments
@@ -389,7 +389,7 @@ and now reads `1 of 51 has a namesake test`.
 | babel | `packages/babel-types` | 1 of 95 | `packages/babel-types/test` |
 | babel | `packages/babel-traverse` | 1 of 35 | `packages/babel-traverse/test` |
 | babel | `eslint` | 1 of 34 | `eslint/babel-eslint-parser/test` |
-| empire-flippers/client | `src/components` | 1 of 504 | `cypress/integration/components` |
+| a measured React front end | `src/components` | 1 of 504 | `cypress/integration/components` |
 | eslint | `lib/languages/js` | 1 of 17 | `tests/lib/languages/js` |
 | huginn | `config` | 1 of 35 | `spec` |
 | mastodon | `app/javascript` | 1 of 429 | `app/javascript/mastodon/components/__tests__` |
@@ -553,9 +553,9 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | discourse__discourse | frontend/discourse/app/routes | 100 | 105 | 103 | 77 | 0.748 | DiscourseRoute | no (ratio) |
 | discourse__discourse | frontend/discourse/admin/controllers | 74 | 74 | 74 | 60 | 0.811 | Controller | no (ratio) |
 | discourse__discourse | frontend/discourse/tests/unit/lib/blocks | 5 | 13 | 73 | 64 | 0.877 | Component | no (ratio) |
-| empire-flippers__client | src/components | 1 | 148 | 1 | 1 | 1.000 | React.Component | no (evidence) |
-| empire-flippers__client | src/components/base | 1 | 122 | 1 | 1 | 1.000 | React.Component | no (evidence) |
-| empire-flippers__client | src/router | 1 | 8 | 1 | 1 | 1.000 | React.Component | no (evidence) |
+| react-front-end | src/components | 1 | 148 | 1 | 1 | 1.000 | React.Component | no (evidence) |
+| react-front-end | src/components/base | 1 | 122 | 1 | 1 | 1.000 | React.Component | no (evidence) |
+| react-front-end | src/router | 1 | 8 | 1 | 1 | 1.000 | React.Component | no (evidence) |
 | eslint__eslint | lib/languages/js/source-code/token-store | 9 | 13 | 9 | 5 | 0.556 | Cursor | no (ratio) |
 | eslint__eslint | lib/config | 3 | 5 | 6 | 5 | 0.833 | Error | no (ratio) |
 | eslint__eslint | lib/linter/code-path-analysis | 1 | 7 | 5 | 5 | 1.000 | LoopContextBase | no (evidence) |
@@ -664,11 +664,11 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | discourse__discourse | lib | 99 | 384 | 155 | 48 | 0.310 | StandardError | no (ratio) |
 | discourse__discourse | app/jobs/scheduled | 107 | 107 | 107 | 107 | 1.000 | Jobs::Scheduled | yes |
 | discourse__discourse | spec/system/page_objects/pages | 94 | 95 | 106 | 81 | 0.764 | PageObjects::Pages::Base | no (ratio) |
-| empire-flippers__api | app/models | 129 | 129 | 130 | 124 | 0.954 | ApplicationRecord | yes |
-| empire-flippers__api | app/services/models/listings | 122 | 150 | 122 | 122 | 1.000 | ActiveInteraction::Base | yes |
-| empire-flippers__api | app/services/models | 116 | 143 | 116 | 116 | 1.000 | ActiveInteraction::Base | yes |
-| empire-flippers__api | app/services/api/v1 | 79 | 81 | 79 | 79 | 1.000 | ActiveInteraction::Base | yes |
-| empire-flippers__api | app/controllers/api/v1 | 65 | 65 | 65 | 55 | 0.846 | Api::V1::BaseController | no (ratio) |
+| rails-api | app/models | 129 | 129 | 130 | 124 | 0.954 | ApplicationRecord | yes |
+| rails-api | app/services/models/listings | 122 | 150 | 122 | 122 | 1.000 | ActiveInteraction::Base | yes |
+| rails-api | app/services/models | 116 | 143 | 116 | 116 | 1.000 | ActiveInteraction::Base | yes |
+| rails-api | app/services/api/v1 | 79 | 81 | 79 | 79 | 1.000 | ActiveInteraction::Base | yes |
+| rails-api | app/controllers/api/v1 | 65 | 65 | 65 | 55 | 0.846 | Api::V1::BaseController | no (ratio) |
 | errbit__errbit | app/controllers | 12 | 13 | 13 | 9 | 0.692 | ApplicationController | no (ratio) |
 | errbit__errbit | app/decorators | 8 | 8 | 8 | 8 | 1.000 | Draper::Decorator | no (evidence) |
 | errbit__errbit | app/models/notification_services | 6 | 6 | 6 | 6 | 1.000 | NotificationService | no (evidence) |
@@ -765,11 +765,11 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | discourse__discourse | plugins/chat/app/services/chat | 46 | 54 | 46 | 46 | 1.000 | Service::Base | yes |
 | discourse__discourse | plugins/discourse-workflows/app/services/discourse_workflows | 45 | 53 | 45 | 45 | 1.000 | Service::Base | yes |
 | discourse__discourse | app/services | 44 | 127 | 44 | 38 | 0.864 | Service::Base | no (ratio) |
-| empire-flippers__api | app/workers/workers | 125 | 125 | 125 | 125 | 1.000 | Sidekiq::Worker | yes |
-| empire-flippers__api | app/workers/cronjobs | 70 | 70 | 70 | 70 | 1.000 | Sidekiq::Worker | yes |
-| empire-flippers__api | app/workers/workers/listings | 38 | 38 | 38 | 38 | 1.000 | Sidekiq::Worker | yes |
-| empire-flippers__api | app/models | 31 | 129 | 31 | 20 | 0.645 | ActiveModel::Dirty | no (ratio) |
-| empire-flippers__api | app/workers/workers/amazon_sp | 25 | 25 | 25 | 25 | 1.000 | Sidekiq::Worker | no (evidence) |
+| rails-api | app/workers/workers | 125 | 125 | 125 | 125 | 1.000 | Sidekiq::Worker | yes |
+| rails-api | app/workers/cronjobs | 70 | 70 | 70 | 70 | 1.000 | Sidekiq::Worker | yes |
+| rails-api | app/workers/workers/listings | 38 | 38 | 38 | 38 | 1.000 | Sidekiq::Worker | yes |
+| rails-api | app/models | 31 | 129 | 31 | 20 | 0.645 | ActiveModel::Dirty | no (ratio) |
+| rails-api | app/workers/workers/vendor_sync | 25 | 25 | 25 | 25 | 1.000 | Sidekiq::Worker | no (evidence) |
 | errbit__errbit | app/models | 13 | 14 | 13 | 12 | 0.923 | Mongoid::Document | no (evidence) |
 | errbit__errbit | app/controllers | 3 | 13 | 3 | 2 | 0.667 | ProblemsSearcher | no (ratio) |
 | fastlane__fastlane | spaceship/lib/spaceship/connect_api/models | 71 | 71 | 71 | 71 | 1.000 | Spaceship::ConnectAPI::Model | yes |
@@ -862,11 +862,11 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | discourse__discourse | frontend/discourse/float-kit | 5 | 16 | 11 | 11 | 1.000 | none | no (evidence) |
 | discourse__discourse | frontend/discourse/app/blocks/conditions | 7 | 8 | 10 | 10 | 1.000 | none | no (evidence) |
 | discourse__discourse | frontend/discourse/app/static | 2 | 26 | 9 | 9 | 1.000 | none | no (evidence) |
-| empire-flippers__client | src/queries | 138 | 141 | 276 | 274 | 0.993 | I | yes |
-| empire-flippers__client | src/components | 102 | 148 | 167 | 156 | 0.934 | I | no (evidence) |
-| empire-flippers__client | src/queries/admin | 68 | 70 | 133 | 133 | 1.000 | I | yes |
-| empire-flippers__client | src/components/TaskList/tasks | 64 | 75 | 122 | 122 | 1.000 | I | yes |
-| empire-flippers__client | src/components/base | 64 | 122 | 92 | 91 | 0.989 | I | yes |
+| react-front-end | src/queries | 138 | 141 | 276 | 274 | 0.993 | I | yes |
+| react-front-end | src/components | 102 | 148 | 167 | 156 | 0.934 | I | no (evidence) |
+| react-front-end | src/queries/admin | 68 | 70 | 133 | 133 | 1.000 | I | yes |
+| react-front-end | src/components/TaskList/tasks | 64 | 75 | 122 | 122 | 1.000 | I | yes |
+| react-front-end | src/components/base | 64 | 122 | 92 | 91 | 0.989 | I | yes |
 | eslint__eslint | lib/types | 2 | 4 | 50 | 50 | 1.000 | none | no (concentration) |
 | eslint__eslint | tests/lib | 1 | 19 | 2 | 2 | 1.000 | none | no (evidence) |
 | instructure__canvas-lms | ui/features | 169 | 966 | 306 | 304 | 0.993 | none | no (applicability) |
@@ -962,11 +962,11 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | discourse__discourse | frontend/discourse/float-kit | 3 | 16 | 9 | 9 | 1.000 | none | no (evidence) |
 | discourse__discourse | frontend/discourse/app/blocks/conditions | 2 | 8 | 3 | 3 | 1.000 | none | no (evidence) |
 | discourse__discourse | frontend/discourse/app/static | 2 | 26 | 2 | 2 | 1.000 | none | no (evidence) |
-| empire-flippers__client | src/components/base | 10 | 122 | 18 | 17 | 0.944 | T | no (evidence) |
-| empire-flippers__client | src/components | 11 | 148 | 13 | 9 | 0.692 | T | no (ratio) |
-| empire-flippers__client | src/types | 5 | 39 | 12 | 9 | 0.750 | T | no (ratio) |
-| empire-flippers__client | src/components/Calendar | 1 | 12 | 8 | 7 | 0.875 | T | no (ratio) |
-| empire-flippers__client | src/hooks | 5 | 51 | 7 | 4 | 0.571 | T | no (ratio) |
+| react-front-end | src/components/base | 10 | 122 | 18 | 17 | 0.944 | T | no (evidence) |
+| react-front-end | src/components | 11 | 148 | 13 | 9 | 0.692 | T | no (ratio) |
+| react-front-end | src/types | 5 | 39 | 12 | 9 | 0.750 | T | no (ratio) |
+| react-front-end | src/components/Calendar | 1 | 12 | 8 | 7 | 0.875 | T | no (ratio) |
+| react-front-end | src/hooks | 5 | 51 | 7 | 4 | 0.571 | T | no (ratio) |
 | eslint__eslint | lib/types | 2 | 4 | 62 | 62 | 1.000 | none | no (concentration) |
 | eslint__eslint | tests/lib | 1 | 19 | 1 | 1 | 1.000 | none | no (evidence) |
 | instructure__canvas-lms | ui/features | 106 | 966 | 213 | 213 | 1.000 | none | no (applicability) |
@@ -1030,9 +1030,9 @@ so the 0.90 in each sentence is the gate the ratio has to clear before any inter
 - **extends_base** spreads from 0.071 to 1.000 over 111 areas of 24 repositories, 73 of them under
   0.90, and it states on one area each of Ghost, discourse, react, typeorm and next.js.
 - **class_base** spreads from 0.109 to 1.000 over 96 areas of 20 repositories, 65 of them under
-  0.90, and it states on 19 areas of nine Ruby repositories, seven of those empire-flippers/api's.
+  0.90, and it states on 19 areas of nine Ruby repositories, seven of those a measured Rails API's.
 - **module_include** spreads from 0.150 to 1.000 over 92 areas of 19 repositories, 66 of them under
-  0.90, and it states on 7 areas of four repositories: three of empire-flippers/api's worker
+  0.90, and it states on 7 areas of four repositories: three of a measured Rails API's worker
   directories, two of discourse's service directories, forem's `app/workers` and fastlane's
   `spaceship` models. Before change 13 it stated on two, for the reason that change records.
 - **interface_prefix** spreads from 0.527 to 1.000 over 95 areas of 20 repositories, 9 of them
@@ -1047,7 +1047,7 @@ type alias is rare, `none` is the model default for the row, and a repository th
 prints counts instead of a sentence nobody needs.
 
 `module_include` was the finding this audit was for, and change 13 above is what came of it. The row
-counted include sites rather than class bodies, so on empire-flippers/api, where every worker
+counted include sites rather than class bodies, so on a measured Rails API, where every worker
 includes `Sidekiq::Worker` and one more module, `app/workers/workers` scored 125 of 234 and
 `app/workers/cronjobs` exactly one half. Two includes per class pinned it there whatever the
 repository did. The counts line kept printing throughout, which is what made the threshold
@@ -1071,7 +1071,7 @@ this repository, `app/models` at `ApplicationRecord` 124 of 130 and `app/service
 
 ## The PR 4096 probe
 
-Read-only on the corpus copy of empire-flippers/client, at the commit it is checked out at. No
+Read-only on the corpus copy of a measured React front end, at the commit it is checked out at. No
 branch, no patch: the corpus repositories are read-only for this harness, so the brief's
 branch-apply-check step was not run, and what the spec's acceptance asks for, the overview section
 carrying the Cypress-against-vitest denominator and the `src/components` helper facet, is met by
@@ -1086,8 +1086,8 @@ The overview section:
 - src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test; 66 sibling modules named index/schema/types; 117 files inline a helper
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
-- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/payoutContext/schema; 6 files inline a helper
-- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/balanceTransaction/buyerProfileValidation; 0 files inline a helper
+- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/ledgerContext/schema; 6 files inline a helper
+- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/ledgerEntry/profileValidation; 0 files inline a helper
 - src/layouts: 42 .tsx (JSX), 11 .jpg and 21 other; 0 of 42 have a namesake test; 6 sibling modules named constants/utils/hooks; 4 files inline a helper
 - and 3 more directories holding 434 files
 - tests: 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test
@@ -1403,7 +1403,7 @@ Match sibling test shape; skip tests where siblings have none.
 Match sibling test shape; skip tests where siblings have none.
 ```
 
-## empire-flippers__api
+## rails-api
 
 ```
 ## What lives where
@@ -1421,7 +1421,7 @@ Match sibling test shape; skip tests where siblings have none.
 Match sibling test shape; skip tests where siblings have none.
 ```
 
-## empire-flippers__client
+## react-front-end
 
 ```
 ## What lives where
@@ -1430,8 +1430,8 @@ Match sibling test shape; skip tests where siblings have none.
 - src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test; 66 sibling modules named index/schema/types; 117 files inline a helper
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
-- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/payoutContext/schema; 6 files inline a helper
-- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/balanceTransaction/buyerProfileValidation; 0 files inline a helper
+- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/ledgerContext/schema; 6 files inline a helper
+- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/ledgerEntry/profileValidation; 0 files inline a helper
 - src/layouts: 42 .tsx (JSX), 11 .jpg and 21 other; 0 of 42 have a namesake test; 6 sibling modules named constants/utils/hooks; 4 files inline a helper
 - and 3 more directories holding 434 files
 - tests: 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test
