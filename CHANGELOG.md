@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.15.6] - 2026-10-22
+
 A route table, a server's route declarations and a Rails routes file are read for the words of
 their URL paths, a Rails controller's parameter filter and a spec's `type:` are counted, and the
 overview says what the map never reads.
@@ -4887,7 +4889,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.5...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.6...HEAD
+[0.15.6]: https://github.com/crisnahine/anatomiya/compare/v0.15.5...v0.15.6
 [0.15.5]: https://github.com/crisnahine/anatomiya/compare/v0.15.4...v0.15.5
 [0.15.4]: https://github.com/crisnahine/anatomiya/compare/v0.15.3...v0.15.4
 [0.15.3]: https://github.com/crisnahine/anatomiya/compare/v0.15.2...v0.15.3
