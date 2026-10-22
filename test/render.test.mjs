@@ -28,6 +28,8 @@ import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { TARGETS, isClaude } from "../plugins/anatomiya/lib/targets.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
 
+const HOUSE_RULES_LINE = "Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.";
+
 const dim = (o = {}) => ({
   key: "swallowed_error",
   claim: "catch blocks use the error they caught",
@@ -644,6 +646,13 @@ test("the overview tells the agent to follow this repository's own practice and 
     lines[at - 1],
     "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify."
   );
+});
+
+test("the overview says how comments and pull request titles are written, closing the block of behavioural lines", () => {
+  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const at = lines.indexOf(HOUSE_RULES_LINE);
+  assert.ok(at > 0, "the sentence is in the overview");
+  assert.equal(lines[at - 1], "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.");
   assert.equal(lines[at + 1], "", "it closes the block of behavioural lines");
 });
 
@@ -656,6 +665,7 @@ test("a truncated scan still tells the agent how to work, because the head is no
   assert.match(out, /^Read a file before editing it: /m);
   assert.match(out, /^When unsure what this code does, /m);
   assert.match(out, /^When a change is asked for, /m);
+  assert.ok(out.split("\n").includes(HOUSE_RULES_LINE));
   assert.match(out, /^The scan was truncated, so no directive is stated\. Counts only\.$/m);
 });
 
@@ -764,11 +774,11 @@ test("the overview reports what the parser could not read", () => {
   );
 
   assert.match(out, /^- 12 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m);
-  assert.match(out, /^- 5 files could not be parsed$/m);
+  assert.match(out, /(?:^- |; )5 files could not be parsed(?:;|$)/m);
   // The parser answering "not valid syntax" is the repository's own code, and
   // the reader's next move is to go and look at those files.
-  assert.match(out, /^- 9 files hold syntax the parser rejected$/m);
-  assert.match(out, /^- 3 files exceeded the size cap$/m);
+  assert.match(out, /(?:^- |; )9 files hold syntax the parser rejected(?:;|$)/m);
+  assert.match(out, /(?:^- |; )3 files exceeded the size cap(?:;|$)/m);
 });
 
 test("no extension a declared language owns is counted as a language this map does not read", () => {
@@ -1394,6 +1404,9 @@ test("the overview holds its bound over every section that can grow, not just th
           { parsed: 8 },
           { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5 },
           { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5, missingStripper: true },
+          { parsed: 8, skipped: 2, failed: 4, syntaxErrors: 5, rejections: { grammar: 2, syntax: 3 }, missingStripper: true, unreadable: ["ruby", "python"], engines: {} },
+          // The worst shape a parse reports: every kind at once, four languages unread and a grammar missing.
+          { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5, rejections: { grammar: 2, syntax: 3 }, missingStripper: true, oneBranch: 3, unreadable: ["ruby", "python", "php", "go"], missingGrammars: ["go"], engines: {} },
         ]) {
         for (const untracked of [0, 4]) {
         for (const layout of [null, clientLayout(), clientLayout({ principles: [] }), clientLayout({ roots: [unreadFirst, ...clientLayout().roots] }), clientLayout({ roots: [underFloor, ...clientLayout().roots] }), truncatedLayout()]) {
@@ -1405,7 +1418,7 @@ test("the overview holds its bound over every section that can grow, not just th
               durationMs: 1,
               // The optional head lines, together and apart: truncated and
               // one author always, untracked on half the sweep.
-              corpus: { files: 900, truncated: true, untracked, dropped: {} },
+              corpus: { files: 900, truncated: true, untracked, dropped: { generated: 2 }, otherExts: [[".swift", 4], [".json", 3]], scriptOnly: [[".vue", 3]] },
               parse,
               suppressAll: true,
               semantic: { ran: true, status: "degraded", reason: "no tsconfig", typedResolutionRate: null },
@@ -1566,18 +1579,18 @@ test("the overview says the same of a grammar's unread files, on the line that c
   assert.doesNotMatch(serilog, /syntax the parser rejected/);
 
   const older = tail({ syntaxErrors: 9 });
-  assert.match(older, /^- 9 files hold syntax the parser rejected$/m);
+  assert.match(older, /(?:^- |; )9 files hold syntax the parser rejected(?:;|$)/m);
   assert.doesNotMatch(older, /grammar/);
 
   const mixed = tail({ syntaxErrors: 3, rejections: { grammar: 2, syntax: 1 } });
-  assert.match(mixed, new RegExp(`^- 1 file holds syntax the parser rejected\\n- 2 files could not be read by this tool's grammar\\. ${note}$`, "m"));
+  assert.match(mixed, new RegExp(`^- 1 file holds syntax the parser rejected; 2 files could not be read by this tool's grammar\\. ${note}$`, "m"));
 });
 
-test("files read with one branch of their conditionals are counted on a line of their own, on the summary and in the overview", () => {
-  const many = "17 files were read with one branch of each #if; the other branches were not read";
+test("files read with one branch of their conditionals are counted on the summary and in the overview", () => {
+  const many = "17 files were read with one branch of each #if, not the others";
   assert.deepEqual(unexaminedLines({ oneBranch: 17 }), [many]);
   assert.deepEqual(unexaminedLines({ oneBranch: 17 }, { stable: true }), [many], "a fact about the tree, so the overview carries it");
-  assert.deepEqual(unexaminedLines({ oneBranch: 1 }), ["1 file was read with one branch of each #if; the other branches were not read"]);
+  assert.deepEqual(unexaminedLines({ oneBranch: 1 }), ["1 file was read with one branch of each #if, not the others"]);
   assert.deepEqual(unexaminedLines({ oneBranch: 0 }), []);
   assert.deepEqual(unexaminedLines({ syntaxErrors: 1, rejections: { grammar: 1 }, oneBranch: 2 }).length, 2);
 
@@ -2172,13 +2185,33 @@ test("component files are counted under the one part of them that is read, by th
 
   assert.match(
     overview([[".vue", 9], [".svelte", 8]]),
-    /^- of 17 \.vue and \.svelte files only the script block is read; the template is not$/m
+    /^- of 17 \.vue and \.svelte files only the script block is read, not the template$/m
   );
-  assert.match(overview([[".svelte", 12]]), /^- of 12 \.svelte files only the script block is read; the template is not$/m);
-  assert.match(overview([[".vue", 1]]), /^- of 1 \.vue file only the script block is read; the template is not$/m);
+  assert.match(overview([[".svelte", 12]]), /^- of 12 \.svelte files only the script block is read, not the template$/m);
+  assert.match(overview([[".vue", 1]]), /^- of 1 \.vue file only the script block is read, not the template$/m);
   assert.doesNotMatch(overview([[".vue", 9], [".svelte", 8]]), /files? (is|are) read for/, "no file is said to have been read");
   assert.doesNotMatch(overview(null), /script block|template/, "a repository with no component says nothing of one");
   assert.equal(overview([[".vue", 9]]), overview([[".vue", 9]]), "and the line is the same between two scans");
+});
+
+test("configuration, data and prose files are said to go unopened, apart from the languages", () => {
+  // 34% of the measured corpus's tracked files are never parsed, and a map
+  // silent about them reads as one that checked them.
+  const corpus = { files: 90, truncated: false, dropped: {}, otherExts: [[".md", 40], [".json", 9], [".yml", 4], [".toml", 1], [".gjs", 3]] };
+  const out = renderOverview(result({ corpus }), { uncovered: 0 });
+
+  // One line for both, so the overview's bound holds with every other line on.
+  assert.match(out, /^- 3 files hold a language this map does not read \(3 \.gjs\); 54 configuration, data or prose files are counted by extension, and no row reads them \(\.md, \.json, \.yml\)$/m);
+  const one = renderOverview(result({ corpus: { ...corpus, otherExts: [[".json", 1]] } }), { uncovered: 0 });
+  assert.match(one, /^- 1 configuration, data or prose file is counted by extension, and no row reads it \(\.json\)$/m);
+  const none = renderOverview(result({ corpus: { ...corpus, otherExts: [] } }), { uncovered: 0 });
+  assert.doesNotMatch(none, /no row reads/);
+});
+
+test("the overview says which strings a row reads, whatever the repository holds", () => {
+  const out = renderOverview(result({ corpus: { files: 1, truncated: false, dropped: {}, otherExts: [] } }), { uncovered: 0 });
+  const line = "- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not";
+  assert.ok(out.split("\n").includes(line), out);
 });
 
 test("a template, a stylesheet and a shell script are named among what this map does not read", () => {
@@ -2186,7 +2219,7 @@ test("a template, a stylesheet and a shell script are named among what this map 
   const corpus = { files: 90, truncated: false, dropped: {}, otherExts: [[".md", 40], [".json", 9], [".css", 6], [".erb", 6], [".sh", 2]] };
   const out = renderOverview(result({ corpus }), { uncovered: 0 });
 
-  assert.match(out, /^- 14 files hold a language this map does not read \(6 \.css, 6 \.erb, 2 \.sh\)$/m);
+  assert.match(out, /^- 14 files hold a language this map does not read \(6 \.css, 6 \.erb, 2 \.sh\); 49 configuration, data or prose files /m);
   assert.deepEqual(
     unreadLanguageFiles({ corpus: { otherExts: [".c", ".h", ".cpp", ".swift", ".scala", ".m", ".ex", ".pl"].map((e) => [e, 1]) } }).length,
     8,
@@ -2792,9 +2825,9 @@ test("the overview keeps the three causes that are facts about the tree", () => 
     { uncovered: 30 }
   );
 
-  assert.match(out, /^- 3 files could not be parsed$/m, out);
-  assert.match(out, /^- 2 files hold syntax the parser rejected$/m);
-  assert.match(out, /^- 1 file exceeded the size cap$/m);
+  assert.match(out, /(?:^- |; )3 files could not be parsed(?:;|$)/m, out);
+  assert.match(out, /(?:^- |; )2 files hold syntax the parser rejected(?:;|$)/m);
+  assert.match(out, /(?:^- |; )1 file exceeded the size cap(?:;|$)/m);
   assert.doesNotMatch(out, /crashed the parser/);
 });
 
@@ -2961,7 +2994,7 @@ test("a stated slot the model writes by default is reported dropped when its cou
 });
 
 test("the tests line says how many of the specs are under the directory it names", () => {
-  // rails-api: the roster's own `- spec:` line said 1332 RSpec specs
+  // a measured Rails API: the roster's own `- spec:` line said 1332 RSpec specs
   // and the tests line under it said 1333 under spec, in one generated file.
   // Both were right about their own population and a reader could only read
   // them as one claim. `majorityDir` names the directory four fifths of them
@@ -3527,8 +3560,7 @@ test("a count of one agrees with its verb on every Not covered line", () => {
     { uncovered: 0 }
   );
 
-  assert.match(out, /^- 1 file holds a language this map does not read \(1 \.swift\)$/m);
-  assert.match(out, /^- 1 file says a generator wrote it, so nothing here is counted from it$/m);
+  assert.match(out, /^- 1 file holds a language this map does not read \(1 \.swift\); 1 file says a generator wrote it, so nothing here is counted from it$/m);
 });
 
 test("one foreign rule file the budget cannot name is one file", () => {
@@ -3907,6 +3939,7 @@ const CLAUDE_OVERVIEW = [
   "Read a file before editing it: these notes load when you read, not when you grep.",
   "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.",
   "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.",
+  "Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.",
   "",
   "The scan was truncated, so no directive is stated. Counts only.",
   "",
@@ -3921,11 +3954,9 @@ const CLAUDE_OVERVIEW = [
   "",
   "- 12 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)",
   "- 18 source files sit in a directory nothing was counted in",
-  "- 3 files hold a language this map does not read (3 .swift)",
-  "- 2 files say a generator wrote them, so nothing here is counted from them",
-  "- memory, GC and I/O behaviour: runtime only, nothing static to count",
-  "- 2 files hold syntax the parser rejected",
-  "- 1 file exceeded the size cap",
+  "- 3 files hold a language this map does not read (3 .swift); 2 files say a generator wrote them, so nothing here is counted from them",
+  "- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not",
+  "- 2 files hold syntax the parser rejected; 1 file exceeded the size cap",
   "",
   "Generated files: 3 under .claude/rules/anatomiya-*.md",
   "Any other file there was not written by this tool:",
@@ -3989,8 +4020,8 @@ const overviewFor = (key, reads, listed, generated) => {
   expected.splice(2, 0, key);
   expected.splice(7, 0, WROTE);
   expected[11] = reads;
-  expected[22] = `- and 1 more area in its own file, ${listed}`;
-  expected[34] = `Generated files: 3 under ${generated}`;
+  expected[23] = `- and 1 more area in its own file, ${listed}`;
+  expected[33] = `Generated files: 3 under ${generated}`;
   return expected;
 };
 
@@ -4169,14 +4200,14 @@ const toggled = (on, { unfiled = false, others = true, layout = false, n = 1, un
   const scan = result({
     suppressAll: b.suppressAll,
     layout: layout ? clientLayout() : null,
-    corpus: { files: 90, untracked, dropped: { generated: b.generated ? 3 : 0 }, ...(b.otherExts ? { otherExts: [[".swift", 4]] } : {}) },
+    corpus: { files: 90, untracked, dropped: { generated: b.generated ? 3 : 0 }, ...(b.otherExts ? { otherExts: [[".swift", 4], [".json", 2]], scriptOnly: [[".vue", 3]] } : {}) },
     parse: {
       parsed: 90,
       failed: b.failed ? 2 : 0,
       syntaxErrors: b.syntaxErrors ? 2 : 0,
       skipped: b.skipped ? 2 : 0,
       missingStripper: b.missingStripper,
-      unreadable: b.unread ? ["ruby"] : [],
+      unreadable: b.unread ? ["ruby", "python"] : [],
       engines: {},
     },
     authors: { repo: 5, shallow: b.shallow ? { commits: 1 } : null },
@@ -4696,4 +4727,11 @@ test("a model-default slot's counts line can give way to a co-change block, and 
   assert.equal(droppedSlots(plain).has("dflt"), false);
   assert.equal(droppedSlots(plain, claims).has("dflt"), true);
   assert.doesNotMatch(renderArea(plain, TARGETS.claude, claims), /a default: /);
+});
+
+test("a joined Not covered line keeps a note's own sentence at its end", () => {
+  const out = renderOverview(result({ parse: { parsed: 90, crashed: 0, failed: 0, skipped: 2, syntaxErrors: 5, rejections: { grammar: 2, syntax: 3 } } }), { uncovered: 0 });
+  const line = out.split("\n").find((l) => l.includes("could not be read by this tool's grammar"));
+  assert.ok(line.endsWith("the files may be fine."), line);
+  assert.ok(!line.includes(".;"), line);
 });

@@ -312,6 +312,13 @@ A named condition a slot must clear before it may state anything. The first one 
 recorded and printed.
 _Avoid_: threshold, check, filter, guard
 
+**Section**:
+The declaration a candidate sits in, on a row whose construct lives in one file by design: a route
+in a route table, never a route, a namespace or a scope around it. Where a slot's candidates carry
+sections, the gates that ask how many places the evidence comes from count sections in place of
+files (D16).
+_Avoid_: group, bucket, chunk
+
 **Scope clause**:
 The words on a claim line that name the files it was counted over, `, in .rb files`. It prints
 where the area holds three or more source files of languages the dimension is never asked of, and

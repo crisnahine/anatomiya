@@ -38,7 +38,7 @@ README's "its overview or area files did on 24 of 60", come from this run.
   colon): 0.14.0 printed `React's hooks are called by their bare name, not through React.: no
   convention.` in 650 area files of 18 repositories, supabase 122, canvas-lms 99, appsmith 97,
   backstage 82, next.js 81, Ghost 54, cal.diy 36, storybook 35, react 12, forem 9,
-  react-front-end 8, mastodon 7, prisma 3, and element-plus, vscode, openproject, plots2 and
+  a measured React front end 8, mastodon 7, prisma 3, and element-plus, vscode, openproject, plots2 and
   typeorm 1 each. 649 print `not through React: no convention.`; in one canvas-lms area,
   `ui/features/eportfolio/react`, the give-back states the claim instead. It is the only claim the
   form reached. plots2 and typeorm move for this alone. Two of next.js's three added areas print the
@@ -51,7 +51,7 @@ README's "its overview or area files did on 24 of 60", come from this run.
 - Support files under a test tree (H53): whitehall, appsmith, cal.diy, discourse, element-plus,
   forem, canvas-lms, openproject, prisma, react, rubocop, storybook, vitepress.
 - The sibling-module count over producers (H54): Ghost, angular, appsmith, backstage, cal.diy,
-  element-plus, react-front-end, vscode, prisma, react, storybook, supabase, next.js,
+  element-plus, a measured React front end, vscode, prisma, react, storybook, supabase, next.js,
   webpack. next.js's `test` root loses its whole helper clause, `2767 sibling modules ...; 736 of
   6989 JSX files inline a helper`, since no producer module is left there.
 - The seven dotted test kinds (H56): vscode, webpack.

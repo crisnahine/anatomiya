@@ -759,7 +759,7 @@ test("a grammar's unread files reach the summary and its JSON under the grammar'
 
 test("files read with one branch of their conditionals reach the summary and its JSON", () => {
   const s = scanSummary(result({ parse: { crashed: 0, failed: 0, skipped: 0, syntaxErrors: 0, oneBranch: 7 } }), plan());
-  const line = "7 files were read with one branch of each #if; the other branches were not read";
+  const line = "7 files were read with one branch of each #if, not the others";
 
   assert.deepEqual(s.unexamined, [line]);
   assert.ok(scanLines(s).includes(line));

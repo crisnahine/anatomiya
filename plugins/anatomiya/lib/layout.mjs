@@ -222,7 +222,7 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // A file the parse read and found no statement in declares nothing at all, so
   // there is nothing in it for a runner to collect and the three claims below
   // are about its name or its address rather than about the file.
-  // rails-api commented one spec out top to bottom and it still made
+  // a measured Rails API commented one spec out top to bottom and it still made
   // the service beside it read as covered.
   //
   // The empty program is the whole test, not the absence of a case: a spec that

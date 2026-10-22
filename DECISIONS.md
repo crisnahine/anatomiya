@@ -88,6 +88,8 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | A117 | The echo and the refresh worker take their locks through one module, `lock.mjs`: an exclusive create, and a dead lock broken one generation at a time by the call that wins the exclusive create of the lock token that generation names. What makes a lock dead is a judge each caller passes: the echo's reads the lock's mtime against the hook timeout (A92), the refresh worker's reads the pid and the age the lock holds (A95). A lock token whose mtime is more than 62 s from the clock is a dead lock itself, broken the same way one level down and no further | done | [A117](docs/decisions/A117.md) |
 | A118 | A scan's sweep of `.claude/anatomiya` removes what a killed pin, a killed create of the refresh lock or a killed breaker of it left there: a staged file of `baseline.json` or `refresh.lock` whose stager is not running, every lock token and token's own token of a generation the refresh lock does not name, which is all of them where the lock is gone, a token's own token of the dead generation the lock names whose own mtime is more than 62 s from the clock, and a `refresh.lock.stale-<pid>-<16 hex>` an older build moved aside, where that process is not running. It never removes a lock token of the generation the lock names, a token's own token of the generation a live lock names, or an entry that is not a regular file | done | [A118](docs/decisions/A118.md) |
 | A119 | Whether the echo delivers on a call is decided in its own module, `echo.mjs`: `echoDue` answers from the map's digest, the window's transcript and the plugin's data directory, and `heldIn` is the walk of the window. The delivery measurement replays kept transcripts through `heldIn`, the walk the hook runs | done | [A119](docs/decisions/A119.md) |
+| A120 | The overview's Not covered section names what no row opens or reads: a clause counting the configuration, data and prose files by extension beside the languages it does not read, the template and component formats among those languages, and a clause, the same on every repository, saying which strings a row reads: an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments and a declared URL path. Each clause shares a line the section already prints, so the overview keeps its forty lines | done | [A120](docs/decisions/A120.md) |
+| A121 | The overview head carries a fourth fixed sentence, a house rule rather than a count: `Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE` | done | [A121](docs/decisions/A121.md) |
 
 ## B. Engine
 
@@ -168,6 +170,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | B75 | The reuse check's tree rule (B68) is measured by `scripts/measure-inert.mjs` against an oracle written apart from the rule's walk, which names what an added line of a left-out hunk may define, build or compute. The oracle tells a name, a type, a string's parts, a sign, a predefined type and a target by how the grammars spell them and by a node's own text, and every case of the rule's test is put to it line by line | done | [B75](docs/decisions/B75.md) |
 | B76 | No kill in the library is sent to a child that has no pid | done | [B76](docs/decisions/B76.md) |
 | B77 | A child is listened to before its pipes are read, and the git reads keep their own clock | done | [B77](docs/decisions/B77.md) |
+| B78 | The OpenSSF Scorecard checks are met where code can meet them: the overview's bound and a URL path's words are fuzzed with fast-check, and the checker smoke installs with `npm ci` from a repository whose tag pins its packages by hash. The checks that code cannot meet are dismissed with their reason | done | [B78](docs/decisions/B78.md) |
 
 ## C. The counted-claim model
 
@@ -231,6 +234,9 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | C56 | A file's class is its directory plus its suffix, from the first dot past any segment starting with a digit, with Ruby's `_spec.rb` and `_test.rb` kept whole, and the same suffix one directory up. A suffix of anything but ASCII letters, digits, `.`, `_` and `-` is no class, and a test's class is neither side of a claim | done | [C56](docs/decisions/C56.md) |
 | C57 | A NIT on a slot no gate stated prints the line the area file prints for that slot, through the same function: its sentence, its scope clause, `: no convention.`, its count and its gate, never the majority side's sentence alone. Such a finding carries `toldInClaim`, and the text and GitHub writers say the gate once. A slot whose scope names the kinds it was counted over raises nothing, at any severity, on a file of another kind, since the claim was never counted over that file | done | [C57](docs/decisions/C57.md) |
 | C58 | The scan's claims line counts a stated co-change claim an area file carries as stated, in the stated count and in the total, and so does the overview's `N stated`; one no area file carries counts in neither. Its last clause says what is left: nothing past none, `, the other prints as a count` for one beside a stated or default-matching claim, `, it prints as a count` where that one is the only claim, `, the rest print as counts` for more, and `, they print as counts` where nothing else was stated or matched | done | [C58](docs/decisions/C58.md) |
+| C59 | A URL path's words are a learned naming row: `url_segment_case` over a route's own definition in JavaScript, a route table's or a server's, and `route_segment_case` over a Rails routes file. Each word of two or more words that spells a naming class is a site, a parameter and a single word are not, and a path built at run time is the predicate's blind spot | done | [C59](docs/decisions/C59.md) |
+| C60 | `strong_params_style` learns which call a Rails controller's parameter filter starts from, `require`, `permit` or `expect` on `params`, one site per chain | done | [C60](docs/decisions/C60.md) |
+| C61 | `spec_type_declared` asks of a `_spec.rb` file's outermost `describe` whether its options name `type:`, and states either side: `specs declare their type: metadata` or `specs leave their type to the directory they sit in` | done | [C61](docs/decisions/C61.md) |
 
 ## D. Gates
 
@@ -252,6 +258,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | D13 | A line names the author count of the side it prints, stated or not, and every tally of author-gated claims counts the printed side's gate | done | [D13](docs/decisions/D13.md) |
 | D14 | A co-change claim passes D1's ratio and Wilson bound with no borrowing, the D4 author bar over its conforming candidates, and three gates of its own: the companion is touched at twice its base rate or more, the companion and a producer exist at the tip, and the newest fifth of the candidates, at least 5, conforms at 0.90. A parent class passes only where its candidates came from at least two child directories and at least half of them from child directories that still hold a producer at the tip. One statement per pair: the directory's own class over its parent unless the parent covers a tenth more candidates, and the larger side where both directions clear | done | [D14](docs/decisions/D14.md) |
 | D15 | The authors walk (D5) and the co-change walk (F27) replay each commit's record from a history store, `.claude/anatomiya/history-authors.gz` and `history-cochange.gz`, and ask git only for the order of the commits and for the commits the store lacks. A store is used only under a stamp of everything a commit's record depends on besides the commit, and a store or a stamp that cannot be checked is the full walk, never an error | done | [D15](docs/decisions/D15.md) |
+| D16 | A site may carry the section it belongs to, the declaration it sits in. Where a slot's sites do, `concentration` counts sections in place of files and leaves out the largest section, `applicability` holds the count of sections to the floor a count of files is held to, and `directories` counts each section as a directory of its own. A route's section is its own declaration, the route object, element or server call in JavaScript and the route call in Rails, never a route, a namespace or a scope around it. In such a slot a file holding any conforming site is no exception to it | done | [D16](docs/decisions/D16.md) |
 
 ## E. Baseline and drift
 
@@ -403,4 +410,21 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
   of their pairs over the bar. `docs/measurements/2026-08-16-layering-probe.md` has the numbers
   and the revisit conditions.
 - **No restating what the linter already enforces.**
+- **No row yet for the unread classes that hold less.** Measured across the corpus and recorded in
+  `docs/research/what-no-row-reads.md`, ranks 2 to 15 of its table. A directory's name, a test's
+  title, a module constant's case and an object key's case are answered by the sibling an agent
+  lists or opens before it writes. The YAML extension, Markdown and data file names, CSS classes and
+  locale key parity have no area to stand in, because areas are built from source files. Rails
+  views' lazy i18n keys sit in templates no parser reads. i18n key case splits 6 holders to 1 and
+  the TODO form 7 to 1, and i18n key shape and a message's final period hold one side only; none
+  was measured against the bar's spread of 0.15. #242 tracks measuring them. Ember's `this.route`
+  map, file-router directories and request paths are the parts of the URL class left unread, for
+  the reasons C59 gives (#240). The URL
+  rows speak JavaScript and Ruby only: the seven tree-sitter languages declare routes too (Django's
+  `path()`, Laravel's `Route::get`, gin's `r.GET`, ASP.NET's `[Route]`, Ktor's `get("/x")`), but the
+  language corpus holds frameworks and libraries, and outside their tests, docs, examples and
+  fixtures it declares 0 routes in django, 29 in fastapi, 9 in flask, 3 in laravel, 3 in gin and 0
+  in ktor, against 413 in jellyfin, the one application (the command is in
+  `docs/research/what-no-row-reads.md`). Two repositories that differ, the bar a row must clear,
+  cannot be found there (#239).
 - **No "catches bugs earlier" claim.** Measured: 1 of 317 defect comments across ten repositories was preventable by a conventions map. Nine of ten repositories scored zero.

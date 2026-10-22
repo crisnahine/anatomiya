@@ -36,6 +36,9 @@ export const MAX_FILE_BYTES = 1024 * 1024;
 /** Past this a line of the reuse check's rules asks unread, which bounds what each search costs. */
 export const LINE_READ = 400;
 
+/** The characters of a string the Ruby tree keeps: past it a string is cut, and its last word may be part of one. */
+export const RUBY_STRING_CAP = 40;
+
 /**
  * Whether the raw parser transfer may be asked for on this platform.
  *

@@ -50,7 +50,7 @@ export const NAMESAKE_SUFFIXES = ["_spec", "_test", ".test", ".spec", ".cy"];
  *
  * Measured over the 35-repository corpus, per companion root. Five spellings
  * clear the floor of three: openfoodnetwork's `_rake_spec` at 5 of 15 and
- * rails-api's `_model_spec` at 52 of 166, both real, and three
+ * a measured Rails API's `_model_spec` at 52 of 166, both real, and three
  * readings of openproject's `_integration_spec`, the largest 28 of 479. A fifth
  * admits the two and the nearest thing it refuses sits under a sixteenth, and
  * that one is a different file's spec caught by its own name, `user.rb` beside
@@ -80,7 +80,7 @@ export const startsAtSeparator = (extra) => /^[._-]/.test(extra);
  * element-plus's 167. A `spec` or `cypress` tree holds the factories, fixtures,
  * page objects and support code beside its specs, and charging those to the
  * runner is the roster's own denominator going wrong: `136 test files under
- * spec/factories` on rails-api, `spec/support: 22 test files` on
+ * spec/factories` on a measured Rails API, `spec/support: 22 test files` on
  * rubocop, 1,979 fixture modules under webpack's `test/cases`.
  */
 export const TEST_DIRS = new Set(["__tests__"]);

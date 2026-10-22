@@ -351,6 +351,20 @@ function write(name, src) {
  * nothing about it.
  */
 const SRC = {
+  // The two Rails rows read a controller's params and a spec file's outer describe.
+  params_filter: `
+class ArticlesController < ApplicationController
+  def article_params
+    params.require(:article).permit(:name)
+  end
+end
+`,
+  article_spec: `
+RSpec.describe Article, type: :model do
+  describe "#price" do
+  end
+end
+`,
   rescue_swallowed: `
     begin
       a
@@ -1438,6 +1452,7 @@ test("a dimension only ever calls add with what the reducer reads", needsRuby, (
   for (const d of RUBY_DIMENSIONS) {
     let fired = 0;
     for (const name of programs.keys()) {
+      // The path the shared walk is handed too, since a row may read it.
       d.run(programs.get(name).program, (h) => {
         fired++;
         const at = `${d.key} on ${name}`;
@@ -1458,7 +1473,7 @@ test("a dimension only ever calls add with what the reducer reads", needsRuby, (
         if (typeof h.node.name === "string") {
           assert.notEqual(siteIdentity("app/w.rb", d.key, h.node, ""), siteIdentity("app/w.rb", d.key, { ...h.node, name: `${h.node.name}X` }, ""), at);
         }
-      });
+      }, { rel: `${name}.rb` });
     }
     assert.ok(fired > 0, `${d.key} never fired, so no fixture holds it to this shape`);
   }
@@ -1975,7 +1990,7 @@ test("the Ruby site and argument readers live in the leaf both registries import
 
 test("shards are balanced by bytes, the largest file first into the lightest shard", () => {
   // Contiguous batches put the heavy end of a Rails tree in one child: on
-  // rails-api the last of four took 3.1s against 1.2s for the first.
+  // a measured Rails API the last of four took 3.1s against 1.2s for the first.
   assert.deepEqual(shardsBySize([9, 1, 1, 1, 1, 1, 1, 1, 1], 2), [[0], [1, 2, 3, 4, 5, 6, 7, 8]]);
   // Equal sizes keep input order, and an equal load goes to the shard holding fewer files.
   assert.deepEqual(shardsBySize([3, 3, 3, 3], 2), [[0, 2], [1, 3]]);
@@ -2002,7 +2017,7 @@ async function linesParsedHere(parse) {
 }
 
 test("the parent reads no line of the stream: trees are parsed and walked off its thread", needsRuby, async () => {
-  // The trees for rails-api are 75 MB of JSON, and reading and
+  // The trees for a measured Rails API are 75 MB of JSON, and reading and
   // walking them here was 2.28s of a 3.45s parse phase on one core.
   const files = Object.keys(SRC).map((name) => ({ rel: `${name}.rb`, abs: join(dir, `${name}.rb`) }));
   const { out, lines } = await linesParsedHere(() => parseRuby(files, { dimensions: RUBY_DIMENSIONS, shards: 2 }));
@@ -2607,4 +2622,71 @@ test("the files of a batch whose child had no descriptors to start on are charge
 
 test("a batch with nothing to start its child on the parent is refused", async () => {
   await assert.rejects(parseBatch(pair, { ruby: "ruby", guards: RUBY_GUARDS, rubyScript: "", load: [], dimensions: [], onResult: () => {} }), /parseBatch needs a spawner/);
+});
+
+// --- strong_params_style and spec_type_declared ---
+
+async function rubyHits(rel, source, key) {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const { records } = await parseAll([{ rel, source, lang: "ruby" }], { frameworks: ["rails"] });
+  return (records.get(rel).hits[key] ?? []).map(({ conforming, where, class: cls }) => ({ conforming, where, cls }));
+}
+
+test("a strong parameter read votes with the method it starts from, once per chain", needsRuby, async () => {
+  const source = [
+    `class ArticlesController < ApplicationController`,
+    `  def article_params`,
+    `    params.require(:article).permit(:name, :price)`,
+    `  end`,
+    `  def filter_params`,
+    `    params.permit(:q, :page)`,
+    `  end`,
+    `  def user_params`,
+    `    params.expect(user: [:email])`,
+    `  end`,
+    `  def show`,
+    `    @id = params[:id]`,
+    `    @slug = params.require(:slug)`,
+    `    other.permit(params.require(:a))`,
+    `    params(:x).permit(:y)`,
+    `    foo.params.permit(:y)`,
+    `    @n = params.require(:id).to_i`,
+    `    @page = params.fetch(:page, 1)`,
+    `    other.permit(:x)`,
+    `  end`,
+    `end`,
+  ].join("\n");
+  assert.deepEqual(await rubyHits("app/controllers/articles_controller.rb", source, "strong_params_style"), [
+    { conforming: false, where: "ArticlesController#article_params", cls: "require" },
+    { conforming: false, where: "ArticlesController#filter_params", cls: "permit" },
+    { conforming: false, where: "ArticlesController#user_params", cls: "expect" },
+  ]);
+});
+
+test("a spec file's outermost describe is one site, typed where it names type:", needsRuby, async () => {
+  const typed = `require "rails_helper"\nRSpec.describe Article, type: :model do\n  describe "#price" do\n  end\nend\n`;
+  const untyped = `RSpec.describe ArticlesController do\n  context "x" do\n  end\nend\n`;
+  assert.deepEqual(await rubyHits("spec/models/article_spec.rb", typed, "spec_type_declared"), [
+    { conforming: true, where: "Article", cls: undefined },
+  ]);
+  assert.deepEqual(await rubyHits("spec/controllers/articles_spec.rb", untyped, "spec_type_declared"), [
+    { conforming: false, where: "ArticlesController", cls: undefined },
+  ]);
+  assert.deepEqual(await rubyHits("app/models/article.rb", typed, "spec_type_declared"), [], "only a spec file is asked");
+  // A local named params filters the same hash a controller's params does.
+  assert.deepEqual(await rubyHits("app/controllers/a_controller.rb", `def a(params)\n  params.permit(:y)\nend\n`, "strong_params_style"), [
+    { conforming: false, where: "a", cls: "permit" },
+  ]);
+  // A describe on another receiver, and one with no block, are not RSpec's example group.
+  assert.deepEqual(await rubyHits("spec/models/other_spec.rb", `Foo.describe Article do\nend\ndescribe "x"\n`, "spec_type_declared"), []);
+  // Options that cannot be read cannot say whether they name a type, so the site is not counted.
+  assert.deepEqual(await rubyHits("spec/models/meta_spec.rb", `RSpec.describe Article, **meta do\nend\n`, "spec_type_declared"), []);
+  // A shared group takes its type from the spec that includes it, and only RSpec's is one.
+  assert.deepEqual(await rubyHits("spec/support/for_spec.rb", `shared_examples_for "listed" do\n  describe "inner" do\n  end\nend\nFoo.shared_examples "z" do\n  describe "c" do\n  end\nend\n`, "spec_type_declared"), [{ conforming: false, where: "c", cls: undefined }]);
+  assert.deepEqual(await rubyHits("spec/support/shared_spec.rb", `RSpec.shared_examples "listed" do\n  describe "inner" do\n  end\nend\nshared_context "x" do\n  describe "y" do\n  end\nend\n`, "spec_type_declared"), []);
+  // The unreadable one is dropped and the readable one beside it still counts.
+  assert.deepEqual(
+    await rubyHits("spec/models/two_spec.rb", `RSpec.describe A, **meta do\nend\nRSpec.describe B, type: :model do\nend\n`, "spec_type_declared"),
+    [{ conforming: true, where: "B", cls: undefined }]
+  );
 });

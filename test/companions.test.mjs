@@ -581,7 +581,7 @@ test("a package answers the same whichever root above it is evaluated", () => {
 });
 
 test("a spec in a sibling namespace does not answer this one's file", () => {
-  // rails-api: app/services/payments/reports/generate.rb has no spec.
+  // a measured Rails API: app/services/payments/reports/generate.rb has no spec.
   // Counted against the area's own tail, `reports`, every directory of specs
   // ending in `/reports` answered it, and the shipping spec was credited to
   // Stripe. The kinds line then said 15 where the pairing claim said 13.
@@ -618,7 +618,7 @@ test("a spec in a sibling namespace does not answer this one's file", () => {
 });
 
 test("a directory that spells its specs with a longer suffix is counted on that spelling", () => {
-  // rails-api writes 52 of its 166 models as `<name>_model_spec.rb`
+  // a measured Rails API writes 52 of its 166 models as `<name>_model_spec.rb`
   // and 46 on the bare suffix. Read on the bare one alone the overview said
   // `46 of 166 have a namesake test`, which is a repository that specs its
   // models at 57% reading as one that does it at 28%.

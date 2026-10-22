@@ -46,7 +46,7 @@ spelling the plural, so babel's true `1 of 95 has a namesake test` read back as 
 comes off the renderer now.
 
 Re-run again after the mixin fix and the CommonJS one: 35 of 35, and the only column that moved is
-`module_include`, on discourse, rails-api and forem (changes 13 and 14 below). The 35
+`module_include`, on discourse, a measured Rails API and forem (changes 13 and 14 below). The 35
 rendered sections were byte-identical to the previous run's.
 
 Re-run again after the vote-unit fix: 35 of 35, no counted number in the table moved, the five
@@ -148,7 +148,7 @@ rest as `and k other`, the shape the extension clause already has.
 
 whitehall's `test/` holds 766 files of which 538 are minitest specs, so the root line said 766 and
 the tests line four lines below it said 538. The same disagreement on chef (1122 against 696),
-rails-api (1469 against 1334), typeorm (2757 against 2080), webpack (12645 against
+a measured Rails API (1469 against 1334), typeorm (2757 against 2080), webpack (12645 against
 10667) and eleven more. One directory, one always-loaded section, two numbers.
 
 ### 3. A descent that names nothing keeps the directory
@@ -162,7 +162,7 @@ Now a directory that is descended into and produces no root gets its own line. I
 where descent worked, and it bought: webpack `lib` (651 .js, 8 of them with a namesake test),
 supabase `packages/ui-patterns/src` and `packages/ui`, backstage `packages/core-app-api/src`,
 canvas-lms `lib` (463 of 808 with a namesake test under spec/lib), mastodon `app/lib` (119 of
-167), rails-api `app/widgets/widgets` (41 of 93), eslint `lib/languages/js`.
+167), a measured Rails API `app/widgets/widgets` (41 of 93), eslint `lib/languages/js`.
 
 ### 4. A directory named after tests does not make its files tests
 
@@ -173,14 +173,14 @@ basename (`.test.`, `.spec.`, `.cy.`, `_spec.rb`, `_test.rb`), and a `__tests__`
 
 A repository keeps its factories, fixtures, page objects and support code in the same tree as its
 specs, so the directory fallback charged all of it to the runner and the roster's own denominator
-went wrong: `136 test files under spec/factories` on rails-api, `spec/support: 22 test
+went wrong: `136 test files under spec/factories` on a measured Rails API, `spec/support: 22 test
 files` on rubocop, `20 test files` on Homebrew where 5 exist, 1,979 fixture modules under
 webpack's `test/cases`, 337 parser inputs under babel's `packages/*/test`. `__tests__` stays
 because nothing but a test is ever put in one.
 
 It also moves the namesake denominators the other way, which is the same correction seen from the
 other side: chef's `lib/chef` reads 499 of 797 where it read 494 of 792, canvas-lms `lib` 463 of
-808, rails-api `app/services` 1046 of 1575.
+808, a measured Rails API `app/services` 1046 of 1575.
 
 ### 5. `def test_*` needs the class or the file to agree
 
@@ -188,7 +188,7 @@ Was: a method named `test_*` inside any class made the file minitest. Now it cou
 class inherits a minitest base, or the file is `_test.rb` or sits under a `test` directory.
 
 `def test_connection` is ordinary Ruby: a service exposes one, a client pings with one. It printed
-`app/services: 6 minitest specs` on rails-api and `lib (files at this level): 3 minitest
+`app/services: 6 minitest specs` on a measured Rails API and `lib (files at this level): 3 minitest
 specs` on discourse, in directories holding no test at all. `rubyFacets` takes the path as a second
 argument for it, from the record `ruby.mjs` already has.
 
@@ -339,16 +339,16 @@ one superclass per class and stays per site.
 
 This is the issue the audit section below named, and it is what a threshold that fails closed looks
 like. A Rails worker includes `Sidekiq::Worker` and one more module, so per constant the row could
-not pass 0.5 whatever the directory did: rails-api `app/workers/workers` read 125 of 234
+not pass 0.5 whatever the directory did: a measured Rails API `app/workers/workers` read 125 of 234
 and `app/workers/cronjobs` 70 of 140, which is exactly one half. Grouped they read 125 of 125 and
 70 of 70, and both state.
 
 Seven areas of four repositories state the row where two of two did before: three of
-rails-api's worker directories, discourse's `plugins/chat/app/services/chat` (46 of 46)
+a measured Rails API's worker directories, discourse's `plugins/chat/app/services/chat` (46 of 46)
 and `plugins/discourse-workflows/app/services/discourse_workflows` (45 of 45), forem's `app/workers`
 (88 of 88), and fastlane's `spaceship/lib/spaceship/connect_api/models`, which already did. In the
 table at the top of this file `module_include` moves on discourse (1 to 2),
-rails-api (0 to 3) and forem (0 to 1). Nothing else in the table moves, and no rendered
+a measured Rails API (0 to 3) and forem (0 to 1). Nothing else in the table moves, and no rendered
 section moves at all: this row is a directive, not a layout count.
 
 ### 14. A CommonJS file's exports are read off its assignments
@@ -389,7 +389,7 @@ and now reads `1 of 51 has a namesake test`.
 | babel | `packages/babel-types` | 1 of 95 | `packages/babel-types/test` |
 | babel | `packages/babel-traverse` | 1 of 35 | `packages/babel-traverse/test` |
 | babel | `eslint` | 1 of 34 | `eslint/babel-eslint-parser/test` |
-| react-front-end | `src/components` | 1 of 504 | `cypress/integration/components` |
+| a measured React front end | `src/components` | 1 of 504 | `cypress/integration/components` |
 | eslint | `lib/languages/js` | 1 of 17 | `tests/lib/languages/js` |
 | huginn | `config` | 1 of 35 | `spec` |
 | mastodon | `app/javascript` | 1 of 429 | `app/javascript/mastodon/components/__tests__` |
@@ -769,7 +769,7 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | rails-api | app/workers/cronjobs | 70 | 70 | 70 | 70 | 1.000 | Sidekiq::Worker | yes |
 | rails-api | app/workers/workers/orders | 38 | 38 | 38 | 38 | 1.000 | Sidekiq::Worker | yes |
 | rails-api | app/models | 31 | 129 | 31 | 20 | 0.645 | ActiveModel::Dirty | no (ratio) |
-| rails-api | app/workers/workers/vendor_api | 25 | 25 | 25 | 25 | 1.000 | Sidekiq::Worker | no (evidence) |
+| rails-api | app/workers/workers/data_sync | 25 | 25 | 25 | 25 | 1.000 | Sidekiq::Worker | no (evidence) |
 | errbit__errbit | app/models | 13 | 14 | 13 | 12 | 0.923 | Mongoid::Document | no (evidence) |
 | errbit__errbit | app/controllers | 3 | 13 | 3 | 2 | 0.667 | ProblemsSearcher | no (ratio) |
 | fastlane__fastlane | spaceship/lib/spaceship/connect_api/models | 71 | 71 | 71 | 71 | 1.000 | Spaceship::ConnectAPI::Model | yes |
@@ -1030,9 +1030,9 @@ so the 0.90 in each sentence is the gate the ratio has to clear before any inter
 - **extends_base** spreads from 0.071 to 1.000 over 111 areas of 24 repositories, 73 of them under
   0.90, and it states on one area each of Ghost, discourse, react, typeorm and next.js.
 - **class_base** spreads from 0.109 to 1.000 over 96 areas of 20 repositories, 65 of them under
-  0.90, and it states on 19 areas of nine Ruby repositories, seven of those rails-api's.
+  0.90, and it states on 19 areas of nine Ruby repositories, seven of those a measured Rails API's.
 - **module_include** spreads from 0.150 to 1.000 over 92 areas of 19 repositories, 66 of them under
-  0.90, and it states on 7 areas of four repositories: three of rails-api's worker
+  0.90, and it states on 7 areas of four repositories: three of a measured Rails API's worker
   directories, two of discourse's service directories, forem's `app/workers` and fastlane's
   `spaceship` models. Before change 13 it stated on two, for the reason that change records.
 - **interface_prefix** spreads from 0.527 to 1.000 over 95 areas of 20 repositories, 9 of them
@@ -1047,7 +1047,7 @@ type alias is rare, `none` is the model default for the row, and a repository th
 prints counts instead of a sentence nobody needs.
 
 `module_include` was the finding this audit was for, and change 13 above is what came of it. The row
-counted include sites rather than class bodies, so on rails-api, where every worker
+counted include sites rather than class bodies, so on a measured Rails API, where every worker
 includes `Sidekiq::Worker` and one more module, `app/workers/workers` scored 125 of 234 and
 `app/workers/cronjobs` exactly one half. Two includes per class pinned it there whatever the
 repository did. The counts line kept printing throughout, which is what made the threshold
@@ -1071,7 +1071,7 @@ this repository, `app/models` at `ApplicationRecord` 124 of 130 and `app/service
 
 ## The PR 4096 probe
 
-Read-only on the corpus copy of react-front-end, at the commit it is checked out at. No
+Read-only on the corpus copy of a measured React front end, at the commit it is checked out at. No
 branch, no patch: the corpus repositories are read-only for this harness, so the brief's
 branch-apply-check step was not run, and what the spec's acceptance asks for, the overview section
 carrying the Cypress-against-vitest denominator and the `src/components` helper facet, is met by
@@ -1086,8 +1086,8 @@ The overview section:
 - src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test; 66 sibling modules named index/schema/types; 117 files inline a helper
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
-- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/summaryContext/schema; 6 files inline a helper
-- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/ledgerEntry/memberProfileValidation; 0 files inline a helper
+- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/ledgerContext/schema; 6 files inline a helper
+- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/ledgerEntry/profileValidation; 0 files inline a helper
 - src/layouts: 42 .tsx (JSX), 11 .jpg and 21 other; 0 of 42 have a namesake test; 6 sibling modules named constants/utils/hooks; 4 files inline a helper
 - and 3 more directories holding 434 files
 - tests: 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test
@@ -1430,8 +1430,8 @@ Match sibling test shape; skip tests where siblings have none.
 - src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test; 66 sibling modules named index/schema/types; 117 files inline a helper
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
-- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/summaryContext/schema; 6 files inline a helper
-- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/ledgerEntry/memberProfileValidation; 0 files inline a helper
+- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/ledgerContext/schema; 6 files inline a helper
+- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/ledgerEntry/profileValidation; 0 files inline a helper
 - src/layouts: 42 .tsx (JSX), 11 .jpg and 21 other; 0 of 42 have a namesake test; 6 sibling modules named constants/utils/hooks; 4 files inline a helper
 - and 3 more directories holding 434 files
 - tests: 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test

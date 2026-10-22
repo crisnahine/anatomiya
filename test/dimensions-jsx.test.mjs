@@ -37,7 +37,7 @@ export const C = () => {
 
 test("a library hook is not a candidate for the React namespace claim, because it can only be written one way", () => {
   // Without the closed list every use[A-Z] identifier counts and this file reads
-  // 1 of 2 conforming. On react-front-end the open predicate reports
+  // 1 of 2 conforming. On a measured React front end the open predicate reports
   // 2362/3650 = 0.647 and the closed one 5/1293 = 0.004: the first is a
   // different question wearing this claim's name, and it hides that the
   // repository reaches every React hook through the namespace.
