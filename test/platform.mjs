@@ -124,14 +124,16 @@ export const needsUnreadableDirs = WINDOWS
  * cleanup runs: `EBUSY` from Node 22, `EPERM` from Node 24. The wait is the
  * loop's own and not `rmSync`'s, which holds the loop while it retries. A
  * directory still held after a hundred waits, ten seconds at the wait a test
- * takes, is a child that never left, and that fails the test.
+ * takes, is a child that never left, and that fails the test. Elsewhere such a
+ * git can write into the tree after `rmSync` emptied it, `ENOTEMPTY`, and the
+ * next try empties it again.
  */
 export async function removeTree(dir, wait = 100) {
   for (let tries = 100; ; tries--) {
     try {
       return rmSync(dir, { recursive: true, force: true });
     } catch (err) {
-      if (tries === 0 || !["EBUSY", "EPERM"].includes(err.code)) throw err;
+      if (tries === 0 || !["EBUSY", "EPERM", "ENOTEMPTY"].includes(err.code)) throw err;
       await new Promise((done) => setTimeout(done, wait));
     }
   }

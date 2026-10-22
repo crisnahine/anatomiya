@@ -381,7 +381,7 @@ export function unexaminedLines(parse, { stable = false } = {}) {
   }
   // Read, and not whole: a count over these files is a count over the branch that was kept.
   if (parse.oneBranch) {
-    lines.push(`${plural(parse.oneBranch, "file")} ${parse.oneBranch === 1 ? "was" : "were"} read with one branch of each #if; the other branches were not read`);
+    lines.push(`${plural(parse.oneBranch, "file")} ${parse.oneBranch === 1 ? "was" : "were"} read with one branch of each #if, not the others`);
   }
   return lines;
 }
@@ -395,7 +395,31 @@ const OTHER_LANGUAGE_EXTS = new Set([
   ".swift", ".scala", ".m", ".mm", ".ex", ".exs", ".pl", ".pm",
   ".erb", ".haml", ".slim", ".css", ".scss", ".sass", ".less", ".html", ".htm", ".sh", ".bash", ".sql",
   ".lua", ".dart", ".r", ".jl", ".zig", ".hs", ".clj", ".erl", ".fs", ".vb", ".groovy", ".astro",
+  // Templates and component formats, which hold code this map never parses.
+  ".gjs", ".gts", ".coffee", ".hbs", ".handlebars", ".mustache", ".ejs", ".liquid", ".twig", ".njk",
+  ".pug", ".mdx", ".styl", ".graphql", ".gql", ".prisma", ".proto", ".tf",
 ]);
+
+// Configuration, data and prose, which the roster counts by extension and no
+// row ever opens. Named apart from the languages above, since a reader's next
+// move differs: these hold no code to be read.
+const DATA_EXTS = new Set([".json", ".yml", ".yaml", ".toml", ".xml", ".ini", ".md", ".rst", ".txt", ".csv"]);
+
+/** The data and prose files the corpus tallied, most first, or none where it kept no tally. */
+function unopenedDataFiles(result) {
+  return (result?.corpus?.otherExts ?? []).filter(([ext]) => DATA_EXTS.has(ext));
+}
+
+/**
+ * What a row reads a string's value for, said once: everything else a string
+ * spells is outside the map, and an agent told nothing reads a silent map as
+ * one that checked.
+ */
+const STRINGS_NOT_READ =
+  "a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not";
+
+const HOUSE_RULES =
+  "Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.";
 
 /**
  * Files this repository tracks that this map has no language for at all.
@@ -931,6 +955,9 @@ function overviewHead(result, target) {
     // scope guard is measured to move the out-of-scope rate by double digits
     // (docs/research/one-line-that-finishes-in-house-style.md).
     "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.",
+    // A house rule set for every map rather than counted: a ticket number in a
+    // comment goes stale where the commit keeps it.
+    HOUSE_RULES,
     "",
   ];
 
@@ -1039,11 +1066,20 @@ function overviewTail(result, filed, files, target) {
   const source = (n) => `${n} source file${n === 1 ? "" : "s"} sit${n === 1 ? "s" : ""}`;
   if (orphaned) lines.push(`- ${source(orphaned)} in no area (${ORPHAN_CAUSES})`);
   if (barren) lines.push(`- ${source(barren)} in a directory nothing was counted in`);
+  // One line for every kind of unread file, or each clause would take a line
+  // the overview's bound has no room for with every other line on.
+  const unreadClauses = [];
   const unread = unreadLanguageFiles(result);
   if (unread.length) {
     const total = unread.reduce((n, [, count]) => n + count, 0);
     const named = unread.map(([ext, count]) => `${count} ${ext}`).join(", ");
-    lines.push(`- ${plural(total, "file")} ${total === 1 ? "holds" : "hold"} a language this map does not read (${named})`);
+    unreadClauses.push(`${plural(total, "file")} ${total === 1 ? "holds" : "hold"} a language this map does not read (${named})`);
+  }
+  const data = unopenedDataFiles(result);
+  if (data.length) {
+    const total = data.reduce((n, [, count]) => n + count, 0);
+    const top = data.slice(0, 3).map(([ext]) => ext).join(", ");
+    unreadClauses.push(`${plural(total, "configuration, data or prose file")} ${total === 1 ? "is" : "are"} counted by extension, and no row reads ${total === 1 ? "it" : "them"} (${top})`);
   }
   // A count over a component's script reads as a count over the component.
   // The count is every component in the corpus, a rejected one included, so
@@ -1051,29 +1087,38 @@ function overviewTail(result, filed, files, target) {
   const scripts = result.corpus?.scriptOnly ?? [];
   if (scripts.length) {
     const total = scripts.reduce((n, [, count]) => n + count, 0);
-    lines.push(`- of ${total} ${series(scripts.map(([ext]) => ext))} ${total === 1 ? "file" : "files"} only the script block is read; the template is not`);
+    unreadClauses.push(`of ${total} ${series(scripts.map(([ext]) => ext))} ${total === 1 ? "file" : "files"} only the script block is read, not the template`);
   }
-  // Dropped in `collect`, before anything counts, so without this row nothing
+  // Dropped in `collect`, before anything counts, so without this clause nothing
   // anywhere says they exist: a reader who knows the directory is there sees a
   // map that has never heard of it.
   const generated = result.corpus?.dropped?.generated ?? 0;
   if (generated) {
-    lines.push(
+    unreadClauses.push(
       generated === 1
-        ? "- 1 file says a generator wrote it, so nothing here is counted from it"
-        : `- ${generated} files say a generator wrote them, so nothing here is counted from them`
+        ? "1 file says a generator wrote it, so nothing here is counted from it"
+        : `${generated} files say a generator wrote them, so nothing here is counted from them`
     );
   }
-  lines.push("- memory, GC and I/O behaviour: runtime only, nothing static to count");
+  if (unreadClauses.length) lines.push(`- ${unreadClauses.join("; ")}`);
+  // One line for both: the overview's bound holds every optional line at once.
+  lines.push(`- memory, GC and I/O behaviour: runtime only, nothing static to count; ${STRINGS_NOT_READ}`);
   // Stable only: this file is read on every turn and is paid for on a cached
   // read, so a count that moves with machine load may not reach it (A5). The
   // summary prints all four, and the summary is not cached.
-  for (const line of unexaminedLines(result.parse, { stable: true })) lines.push(`- ${line}`);
+  // One line for every file the parse could not read, as the unread kinds share
+  // one above: apart, they pushed "What lives where" out of a truncated scan's
+  // overview with every other line on.
+  // A clause carrying a note of its own goes last, so the note's sentence ends the line.
+  const unexamined = unexaminedLines(result.parse, { stable: true });
+  const noted = (clause) => clause.includes(". ");
+  if (unexamined.length) lines.push(`- ${[...unexamined.filter((c) => !noted(c)), ...unexamined.filter(noted)].join("; ")}`);
   // A language this run read no file of, where it read another (B41). Nothing
   // above counts it, since a crash is left off this file, and the areas holding
   // one are the last scan's. This file is what a background refresh leaves for
   // anyone to read, so it says which language, why, and what to do.
-  for (const line of unreadLines(result.parse)) lines.push(`- ${line}`);
+  const unreadEngines = unreadLines(result.parse);
+  if (unreadEngines.length) lines.push(`- ${unreadEngines.join("; ")}`);
   // Only when it ran and only when it ran badly. A clean tier is the tier
   // working, and the always-loaded file is paid for on every turn.
   const degraded = degradedSemanticSentence(result.semantic);

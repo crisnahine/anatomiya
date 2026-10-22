@@ -597,7 +597,7 @@ test("the base is not a site on either side, so the scan and the check agree abo
 });
 
 test("a repository writing its specs with a longer suffix is counted on the suffix it writes", () => {
-  // empire-flippers/api spells the majority of spec/models as
+  // a measured Rails API spells the majority of spec/models as
   // `<name>_model_spec.rb`: 52 of 166 models against 46 on the bare suffix.
   // Read on the bare one alone the row said 44 of 129 and the map told an
   // agent this repository does not spec its models, at half the real rate.
@@ -653,7 +653,7 @@ test("a learned spelling begins at a separator, not inside the producer's name",
 const SERVICE_SPEC = { from: "app/services", to: "spec/services", ext: ".rb", companionSuffix: "_spec.rb" };
 
 test("a spec for another class of the same basename is not this producer's namesake elsewhere", () => {
-  // empire-flippers/api summed 185 namesakes elsewhere and 2 were specs of the
+  // a measured Rails API summed 185 namesakes elsewhere and 2 were specs of the
   // same class: `create_spec.rb` alone matched 54 producers on its basename.
   const corpus = new Set([
     "app/services/users/create.rb",

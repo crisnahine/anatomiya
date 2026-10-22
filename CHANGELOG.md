@@ -7,6 +7,74 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+A route table, a server's route declarations and a Rails routes file are read for the words of
+their URL paths, a Rails controller's parameter filter and a spec's `type:` are counted, and the
+overview says what the map never reads.
+
+### Added
+
+- Two learned rows read a URL path's words (#238): `url_segment_case` over a route object's `path`
+  in a file importing a router module, named for its routes or under a `router` or `routes`
+  directory, a `Route` element's `path`, and a server's `router.get("/path", handler)`, outside
+  test files and test trees, and
+  `route_segment_case` over `config/routes.rb`, `config/routes/` and a `routes.draw` block, a
+  `resources` symbol included. Each word of two or more words is a site; a parameter, a single word
+  and what sits under `.well-known` are not. On a measured React front end the route table states
+  `URL path segments here are kebab-case`, and a branch adding `/members/support_tickets/create/:id?`
+  is a FIX on that line.
+- `strong_params_style` learns which call a controller's parameter filter starts from:
+  `params.require(...).permit`, `params.permit` or `params.expect`.
+- `spec_type_declared` asks whether a spec file's outermost `describe` names `type:`, and may state
+  either side.
+- The overview's Not covered section counts the configuration, data and prose files no row opens,
+  names `.gjs`, `.coffee`, `.hbs` and other template and component formats among the languages it
+  does not read, and says once which strings a row reads.
+- The overview's 40-line bound and a URL path's words are property-tested with fast-check over
+  generated parses, corpora, rosters, areas and co-change claims (`test/fuzz.test.mjs`), and the CI
+  checker smoke runs on class-validator v0.15.1 with `npm ci`, so it installs what that tag's
+  lockfile pins (B78).
+- The overview head carries a house rule for every map: code comments stay short and carry no
+  ticket or issue number, and a pull request takes its ticket's title, opening with the part it
+  changes, such as BE or FE, where one ticket needs several. Not covered's string line shares the
+  memory line, so the overview keeps its forty lines.
+- `docs/research/what-no-row-reads.md`: what the map never reads, measured over the 35-repository
+  corpus, and which of those classes hold a convention.
+
+### Changed
+
+- A slot whose sites carry a section is spread over its sections rather than its files:
+  `concentration`, `applicability` and `directories` count a route table's declarations, so a
+  table that is one file by design can state a claim, and only a file whose every site breaks the
+  claim is named its exception, so the table is never named the exception to its own claim. No
+  other row's sites carry a section, so no other slot moves.
+- The overview's Not covered section puts every kind of unread file on one line and every file the
+  parse could not read on another, each a clause. Apart they pushed "What lives where" out of a
+  truncated scan's overview whenever a repository held components, generated files and unread
+  languages at once.
+- A map changes on its first scan with this version: every overview gains the comment and pull
+  request line in its head and the string clause in Not covered, and
+  the new rows add claims where a repository holds a route table, Rails routes, controllers or specs.
+
+### Fixed
+
+- The reuse check asked about a JavaScript change that only added members to a literal opened as
+  a call's argument, `new Set([`, `Object.freeze({` or `describe.each([`, and named each member an
+  added function. The member lines ask nothing now, and the line that calls still asks. A list
+  closed with `] as const);` asks nothing either.
+
+### Fixed in the tests themselves
+
+- A test's cleanup waits out a git that writes into the test's directory after the removal emptied
+  it (`ENOTEMPTY`), as it already waited out one Windows still held: a check test whose git was
+  ended by its stub failed so once under load.
+- The measurement harness takes `CLAUDE_CODE_CLIENT_DATA_URL` and `CLAUDE_CODE_ALLOW_OTHER_MODELS`
+  out of a trial's environment: Claude Code 2.1.303 applies a fetched document's per-model client
+  data to a run, and the switch starts on a model the document has no entry for.
+- `test/ab.test.mjs` rules on the two names Claude Code 2.1.306 adds to its string table with the
+  next entry's length byte on the end, `CLAUDE_CODE_ALWAYS_ENABLE_EFFORTC` and
+  `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENTE`. The harness already scrubs both names
+  without it.
+
 ## [0.15.5] - 2026-10-14
 
 A git read given a timeout past Node's timer limit is refused, and the tests end a stand-in by its pid
@@ -407,7 +475,7 @@ by this version, with times and build digests masked
   are called by their bare name, not through React: no convention.` where 0.14.0 printed `through
   React.: no convention.` 0.14.0 printed that line in 650 area files of 18 repositories: supabase
   122, canvas-lms 99, appsmith 97, backstage 82, next.js 81, Ghost 54, cal.diy 36, storybook 35,
-  react 12, forem 9, empire-flippers/client 8, mastodon 7, prisma 3, and element-plus, vscode,
+  react 12, forem 9, a measured React front end 8, mastodon 7, prisma 3, and element-plus, vscode,
   openproject, plots2 and typeorm 1 each. 649 print the new form, and in one canvas-lms area the
   give-back states the claim instead. In 623 of the 650 nothing else moves, and plots2 and typeorm
   change for this alone. Two of next.js's three added areas print the new form too.
@@ -415,7 +483,7 @@ by this version, with times and build digests masked
   cal.diy, discourse, element-plus, forem, canvas-lms, openproject, prisma, react, rubocop,
   storybook and vitepress.
 - The sibling-module count moves in 14: Ghost, angular, appsmith, backstage, cal.diy, element-plus,
-  empire-flippers/client, vscode, prisma, react, storybook, supabase, next.js and webpack. next.js's
+  a measured React front end, vscode, prisma, react, storybook, supabase, next.js and webpack. next.js's
   `test` root loses its whole helper clause, `2767 sibling modules ...; 736 of 6989 JSX files
   inline a helper`, since no module there is one a test could be written for.
 - The seven dotted test kinds move vscode and webpack.
@@ -3863,7 +3931,7 @@ asked there now.
   absorbs an older one's finding, and the report names a class the branch never touched. A body that
   prepends or extends a constant, and a reopening of a class that declares a mixin elsewhere in the
   file, both declared one by another route and are not sites either. Measured over
-  twelve Ruby repositories: eleven do not move and empire-flippers/api is identical row for row.
+  twelve Ruby repositories: eleven do not move and a measured Rails API is identical row for row.
   Decision H16, issue #46.
 
 ### Changed

@@ -297,7 +297,7 @@ test("the scan counts the files it read with one branch of their conditionals, a
   const after = await scan(dir);
   assert.equal(after.parse.syntaxErrors, 0);
   assert.equal(after.parse.oneBranch, 1);
-  assert.match(renderOverview(after, { uncovered: 0 }), /^- 1 file was read with one branch of each #if; the other branches were not read$/m);
+  assert.match(renderOverview(after, { uncovered: 0 }), /^- 1 file was read with one branch of each #if, not the others$/m);
 });
 
 test("a file the parser could not read costs that one file", async (t) => {
@@ -1687,7 +1687,7 @@ test("a directory of components becomes an area that counts its scripts and its 
   const lines = [...scanLines(scanSummary(result, planMap(result))), renderOverview(result, { uncovered: 0 })].join("\n");
   assert.doesNotMatch(lines, /nothing was counted in/);
   assert.deepEqual(result.corpus.scriptOnly, [[".vue", 9], [".svelte", 8]]);
-  assert.match(lines, /^- of 17 \.vue and \.svelte files only the script block is read; the template is not$/m);
+  assert.match(lines, /^- of 17 \.vue and \.svelte files only the script block is read, not the template$/m);
 });
 
 test("a claim counted over a Gemfile names it, not the label the kinds line gives a file with no extension", async (t) => {

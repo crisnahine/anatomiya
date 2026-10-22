@@ -494,7 +494,7 @@ test("the compiler host answers for the root it was given, and writes nothing", 
 
 test("the compiler host asks the disk once per path and question for one build", (t) => {
   // Module resolution probes the same candidates from every importing file:
-  // on empire-flippers client 107,928 stats landed on 24,737 paths.
+  // on a measured React front end 107,928 stats landed on 24,737 paths.
   const dir = tree(t);
   const inside = join(dir, "a.ts");
   const missing = join(dir, "gone.ts");
@@ -520,7 +520,7 @@ test("the compiler host asks the disk once per path and question for one build",
 
 test("the containment walk resolves each directory once, not once per path under it", async (t) => {
   // `realpathSync` lstats every directory above its argument again, and the
-  // walk asks it of every directory it enters: 20,816 calls on ef-client.
+  // walk asks it of every directory it enters: 20,816 calls on a measured React front end.
   const dir = tree(t);
   const deep = join(dir, "a", "b", "c");
   mkdirSync(deep, { recursive: true });

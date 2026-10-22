@@ -49,10 +49,12 @@ const INERT = {
   oxc: {
     bind: new RegExp(String.raw`^${NAME.oxc}\s*=\s*(?:\0(?:\s+as\s+const)?\s*;?|([[{]))$`),
     other: new RegExp(
-      String.raw`^(?:import\s+(?:type\s+)?(?:[\w$\s,{}*\0]+?\s+from\s+)?\0|export\s+(?:type\s+)?[\w$\s,{}*]+?\s+from\s+\0|(?:(?:const|let|var)\s+(?:[\w$]+|\{[\w$\s,:]*\})\s*=\s*)?require\(\0\)(?:\.[\w$]+)?|\0|[\]})]+(?:\s*as\s+const)?\s*[,;]?)\s*;?$`
+      String.raw`^(?:import\s+(?:type\s+)?(?:[\w$\s,{}*\0]+?\s+from\s+)?\0|export\s+(?:type\s+)?[\w$\s,{}*]+?\s+from\s+\0|(?:(?:const|let|var)\s+(?:[\w$]+|\{[\w$\s,:]*\})\s*=\s*)?require\(\0\)(?:\.[\w$]+)?|\0|[\]})]+(?:\s*as\s+const[\])]*)?\s*[,;]?)\s*;?$`
     ),
     block: /^(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{$/,
     blockEnd: /^\}\s*from\s+\0\s*;?$/,
+    // A list or an object opened as an argument, after `(` or `,`: the line calls and asks, its members are data.
+    call: /[(,]\s*((?:[[{]\s*)+)$/,
   },
   prism: {
     bind: new RegExp(String.raw`^${NAME.prism}\s*=\s*(?:\0(?:\.freeze)?|([[{]))$`),
@@ -140,6 +142,8 @@ function inertLines(engine, lines, deadline) {
   let open = null;
   let opened = 0;
   let depth = 0;
+  // Whether the literal open at `depth` is an argument, where a member may follow a value the line above left callable.
+  let called = false;
   // Whether the line before is one this did not read, so what it left open is not known.
   let unseen = false;
   let due = 0;
@@ -191,7 +195,8 @@ function inertLines(engine, lines, deadline) {
       continue;
     }
     if (code === "") inert[i] = true;
-    else if (depth > 0 && rule.member.test(code)) {
+    // In an argument a template on its own line may be tagged by the line above, which calls.
+    else if (depth > 0 && rule.member.test(code) && !(called && line.includes("`"))) {
       inert[i] = true;
       depth += code.split(/[[{]/).length - code.split(/[\]}]/).length;
     } else if (rule.other.test(code)) {
@@ -199,7 +204,9 @@ function inertLines(engine, lines, deadline) {
       depth = Math.max(0, depth - (code.split(/[\]}]/).length - 1));
     } else {
       const bound = rule.bind.exec(code);
-      depth = bound?.[1] ? 1 : 0;
+      const argument = bound === null && !rule.block?.test(code) ? rule.call?.exec(code) : null;
+      depth = bound?.[1] ? 1 : (argument?.[1].replace(/\s/g, "").length ?? 0);
+      called = Boolean(argument);
       inert[i] = bound !== null;
       if (bound === null && rule.block?.test(code)) {
         // A braced import or re-export spread over lines, read up to its `from`.

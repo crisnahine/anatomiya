@@ -331,6 +331,9 @@ export const HIT_FIELDS = [
   // rather than the construct. Stable within this parse and meaningless
   // outside it, which is all the reducer asks of it.
   ["group", (hit) => hit.group ?? undefined],
+  // Which declaration a site belongs to, on the rows whose construct lives in
+  // one file by design: a route in a route table.
+  ["section", (hit) => (typeof hit.section === "string" ? hit.section : undefined)],
 ];
 
 /** The site a hit becomes on the far side of the worker boundary. */

@@ -136,8 +136,8 @@ committed when that one went. The other 35 rows are the full run's.
 | decidim__decidim | 7189 | 338 | 33/1548 | 7/36/36 | 339 | yes | ok | 0 | yes file_naming_case | 27.1 |
 | diaspora__diaspora | 1135 | 64 | 7/299 | 7/16/16 | 65 | yes | ok | 0 | yes file_naming_case | 7.8 |
 | discourse__discourse | 13965 | 447 | 128/3277 | 7/150/150 | 448 | yes | ok | 0 | yes file_naming_case | 82.7 |
-| empire-flippers__api | 5518 | 156 | 42/853 | 7/0/0 | 157 | yes | ok | 0 | yes file_naming_case | 28.9 |
-| empire-flippers__client | 2486 | 127 | 72/2149 | 7/127/127 | 128 | yes | ok | 0 | yes file_naming_case | 7.9 |
+| rails-api | 5518 | 156 | 42/853 | 7/0/0 | 157 | yes | ok | 0 | yes file_naming_case | 28.9 |
+| react-front-end | 2486 | 127 | 72/2149 | 7/127/127 | 128 | yes | ok | 0 | yes file_naming_case | 7.9 |
 | errbit__errbit | 252 | 32 | 0/71 | 7/2/2 | 33 | yes | ok | 0 | n.a. | 2.4 |
 | eslint__eslint | 853 | 29 | 6/261 | 7/29/29 | 30 | yes | ok | 0 | yes file_naming_case | 6.6 |
 | fastlane__fastlane | 1285 | 54 | 7/219 | 7/0/0 | 55 | yes | ok | 0 | yes file_naming_case | 10.4 |
@@ -171,10 +171,10 @@ keeps, source or not.
 The third scan, the one measured against the pin. The root path is the scratch clone and is written
 here as `<scratch>`.
 
-empire-flippers__client:
+react-front-end:
 
 ```
-2486 files, 127 areas, 2148ms, root <scratch>/empire-flippers__client
+2486 files, 127 areas, 2148ms, root <scratch>/react-front-end
 72 of 2149 claims stated, 67 match the model default, the rest print as counts
 layout: 7 roots, 3 folded, tests: 103 cypress under cypress/integration, 7 vitest under src; roster lines: 86 areas with imports, 44 with reuse
 baseline 897ee5d9, 0 files changed since origin/HEAD
@@ -183,10 +183,10 @@ wrote 128 files
 a session already running still holds the old map; restart to pick it up
 ```
 
-empire-flippers__api:
+rails-api:
 
 ```
-5518 files, 156 areas, 7000ms, root <scratch>/empire-flippers__api
+5518 files, 156 areas, 7000ms, root <scratch>/rails-api
 42 of 853 claims stated, the rest print as counts
 layout: 7 roots, 2 folded, tests: 1334 rspec under spec, 2 test files; roster lines: 0 areas with imports, 0 with reuse
 baseline 804aa468, 0 files changed since origin/HEAD

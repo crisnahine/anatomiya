@@ -2,7 +2,7 @@ import { guardedChild, absentInterpreter, signalChild } from "./child.mjs";
 import { collectHits } from "./walk.mjs";
 import { walkRuby } from "./ruby-walk.mjs";
 import { rubyFacets } from "./facets.mjs";
-import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
+import { guardsOver, MAX_FILE_BYTES, RUBY_STRING_CAP } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 import { olderThan } from "./version.mjs";
 import { ENGINES } from "./langs.mjs";
@@ -256,7 +256,7 @@ end
 
 MAX_BYTES = ${maxBytes}
 SKIP = [:location, :node_id, :locals, :flags, :depth].freeze
-STR_CAP = 40
+STR_CAP = ${RUBY_STRING_CAP}
 
 def conv(v)
   case v
@@ -361,7 +361,7 @@ end
 // startup costs more than it saves.
 const MIN_SHARD_FILES = 500;
 // Four, because each shard thread holds a heap of its own. Six against four on
-// empire-flippers/api: 4% to 16% less scan wall, and 15 to 29 MB more peak,
+// a measured Rails API: 4% to 16% less scan wall, and 15 to 29 MB more peak,
 // which put the scan 22% to 30% over 0.13.3's peak memory where four is 8% to
 // 14% over. Six was outside the memory budget.
 const MAX_SHARDS = Math.min(4, defaultPoolSize());
@@ -424,7 +424,7 @@ export async function parseRuby(
 
   // One child left the parent idle for most of a large Ruby repository, and
   // with several the parent's own reading of the trees was what the scan
-  // waited on: on empire-flippers/api, 2.28s of a 3.45s parse phase. So each
+  // waited on: on a measured Rails API, 2.28s of a 3.45s parse phase. So each
   // shard is a worker thread that runs its child, reads the trees and answers
   // the rows, and a scan gets only counts back, as B10 does for JavaScript. A
   // check asks for no rows, so the trees of the files it touched do cross.
@@ -460,7 +460,7 @@ const STEEP_HOLD_BYTES = 256 * 1024;
 /**
  * A shard's heap is held to what its largest file needs, because V8 grows a
  * heap toward its limit rather than its live set: four threads at the default
- * limit took a scan of empire-flippers/api from 176 MB peak to 318 MB, and
+ * limit took a scan of a measured Rails API from 176 MB peak to 318 MB, and
  * held it is 207 MB against 178 MB. Measured, a 588 KB spec needs 20 MB of old
  * generation. A tree that outgrows its hold anyway is read again on a thread
  * with the default heap, with every file not yet answered, so the hold costs

@@ -577,6 +577,8 @@ test("everything the build reads to decide a model, an effort or a context windo
     "CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_MODEL_CATALOG_URL", "CLAUDE_CODE_MODEL_CATALOG",
     // 2.1.296: the model a workflow's agents run on, over the one the script asks for.
     "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
+    // 2.1.303: a per-model client-data document, and the switch that starts without it.
+    "CLAUDE_CODE_CLIENT_DATA_URL", "CLAUDE_CODE_ALLOW_OTHER_MODELS",
   ]) {
     assert.equal(overridesEngine(name), true, `${name} can move the engine and has to go`);
   }
@@ -922,6 +924,9 @@ const KEPT = new Map([
   // 2.1.290 does it once more: the byte after the name is 0x4e, so the scan
   // reads a trailing `N`.
   ["CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENTN", "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT, which OVERRIDES scrubs, with the next string-table entry's length byte"],
+  // 2.1.306 moves both once more: the bytes after them are 0x43 and 0x45.
+  ["CLAUDE_CODE_ALWAYS_ENABLE_EFFORTC", "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT, which OVERRIDES scrubs, with the next string-table entry's length byte"],
+  ["CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENTE", "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT, which OVERRIDES scrubs, with the next string-table entry's length byte"],
   // CLAUDE_CODE_MODEL_CATALOG sat here through 2.1.252 as the off switch for a
   // catalog that was compared and logged. 2.1.257 installs the fetched catalog
   // in place of the compiled model list, so the switch is scrubbed with the URL

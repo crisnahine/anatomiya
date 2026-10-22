@@ -108,7 +108,7 @@ test("the roster counts against the mirror index it is handed, and builds none o
 
 test("a directory called test does not make what sits in it a test", () => {
   // The directory holds the support code as well as the specs. Counting all of
-  // it read `136 test files under spec/factories` on empire-flippers/api,
+  // it read `136 test files under spec/factories` on a measured Rails API,
   // `spec/support: 22 test files` on rubocop, and 1,979 fixture modules under
   // webpack's `test/cases`.
   assert.equal(isTestFile(file("spec/factories/users.rb", "ruby")), false);
@@ -513,7 +513,7 @@ test("the tests line groups by runner and names the prefix each shares", () => {
 });
 
 test("the tests line names where most of a runner's files are, not what one stray file leaves", () => {
-  // Measured on empire-flippers/client: 102 Cypress specs under
+  // Measured on a React front end: 102 Cypress specs under
   // cypress/integration and 4 elsewhere collapsed the shared prefix to the
   // repository root, and the line read "106 Cypress specs under .".
   const corpus = [
@@ -563,7 +563,7 @@ test("two runners at one count order by name, whichever file arrived first", () 
   assert.deepEqual(testsLine([...corpus].reverse()), expected);
 });
 
-// The shape of empire-flippers/client, at the numbers the spec recounted by
+// The shape of a measured React front end, at the numbers the spec recounted by
 // hand: JSX pages and components, sibling modules named by role, four vitest
 // files beside a Cypress suite.
 const client = () => [
@@ -1028,7 +1028,7 @@ test("a namesake root tie breaks by code units, not locale", () => {
 });
 
 test("a spec the parse read and found no case in is not a test file", () => {
-  // empire-flippers/api:
+  // a measured Rails API:
   // spec/services/.../one_off/multiple_changes_spec.rb is commented out top to
   // bottom, so the runner collects nothing from it, and it still made
   // app/services/.../multiple_changes.rb read as covered.

@@ -310,6 +310,7 @@ A claim states how many sites conform out of how many were eligible; "no convent
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
 When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.
+Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.
 
 ## Areas (127)
 
@@ -322,15 +323,21 @@ When a change is asked for, follow what this repository already does and carry i
 
 ## Not covered
 
-- 205 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)
-- memory, GC and I/O behaviour: runtime only, nothing static to count
+- 208 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)
+- 3 files hold a language this map does not read (2 .html, 1 .css); 18 configuration, data or prose files are counted by extension, and no row reads them (.json, .md, .yaml)
+- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not
 ```
+
+Not covered is the map saying where it is silent, so a silent map is not read as one that checked.
+A file in a language the map has no parser for, a template among them (`.erb`, `.hbs`, `.gjs`), is
+named by extension. So is a configuration, data or prose file, which is counted and which no row reads.
+The string clause is the same on every repository.
 
 ### What lives where
 
 The overview's first section says where things already live: which kinds of files each directory
 holds, how they are tested, and what the directory extracts versus inlines. This is the
-`empire-flippers/client` section, rendered by this version from the 35-repository acceptance corpus
+section of a measured React front end, rendered by this version from the 35-repository acceptance corpus
 first measured in
 [docs/measurements/2026-08-17-what-lives-where.md](docs/measurements/2026-08-17-what-lives-where.md):
 
@@ -429,9 +436,9 @@ clause.
 
 ## What it measures
 
-61 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby, and one more for
+65 dimensions ship: 29 for JavaScript, 34 reachable in JSX, 28 for Ruby, and one more for
 JavaScript and JSX that needs the type checker. A Vue or Svelte script
-block is asked most of the JavaScript ones: 24 for Vue, 24 for Svelte. Three are asked of the
+block is asked most of the JavaScript ones: 25 for Vue, 25 for Svelte. Three are asked of the
 languages a tree-sitter grammar reads, each where measured repositories differ on it: 2 for
 Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for Rust, 1 for Kotlin. Each is one claim
 about one area, with a precision marker where the predicate cannot see every site. Among them:
@@ -440,7 +447,8 @@ about one area, with a precision marker where the predicate cannot see every sit
   translation calls, Rails migrations and callbacks, and the rest of the registry in
   [docs/how-it-works.md](docs/how-it-works.md).
 - **Learned rows**: naming classes for files, functions and exports, interface and type prefixes,
-  the base class and the included mixin, learned from the area's own plurality rather than declared.
+  URL path segments a route table, a server or a Rails routes file declares, the base class, the included
+  mixin and the strong-parameter call, learned from the area's own plurality rather than declared.
 - **9 file-to-file obligations**: a model ships with its spec, a rake task with its spec, learned
   from where the repository actually keeps its companions.
 - **What ships together**: for a kind of file the default branch's changes added at least 35 times,
@@ -720,7 +728,7 @@ old (a local named `in1`, `get(` on the line after a `val`). A C# file with `#if
 expression is read with the first branch of each conditional kept, and the scan counts those files
 too. A Python stub (`.pyi`) is not read.
 
-One of the 61 needs the type checker and is the only
+One of the 65 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
@@ -751,10 +759,10 @@ types are marked import type`. `failure is returned, not thrown` is left out for
 that exports a hook exports one` for Svelte. The five JSX dimensions and the type-checked one are
 never asked of a component. Nothing is counted about markup: its directives, its event bindings, or
 which components it renders. The overview says so for any repository that holds a `.vue` or `.svelte` file:
-`of 17 .vue and .svelte files only the script block is read; the template is not`.
+`of 17 .vue and .svelte files only the script block is read, not the template`.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
-files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 205 of 2,468
+files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 208 of 2,468
 on the repository the overview comes from, and the overview says so on every scan. The 9 file-to-file obligations are the newest part: a repository that keeps its
 companions somewhere unusual scores zero against a habit it plainly has, which is why the count of
 companions found elsewhere prints beside the ratio.
@@ -795,7 +803,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 335 numbered decisions, a line each, and each
+- [DECISIONS.md](DECISIONS.md) is the build contract: 342 numbered decisions, a line each, and each
   links to its own file under [docs/decisions](docs/decisions) with the measurement or the review
   finding that forced it. Why a threshold is where it is, why the parser runs in child processes, why
   no hook carries the map on its own: that is where to look.
