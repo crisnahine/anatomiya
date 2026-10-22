@@ -15,6 +15,8 @@ import { EXCLUDED, HOLDS, COMPONENT_FIXTURES } from "./component-fixtures.mjs";
  * no site for it.
  */
 const EXPECTED = {
+  // No fixture declares a route in its script.
+  url_segment_case: {},
   swallowed_error: {
     "vue-setup": "1/1", "vue-options": "1/1", "vue-js-setup": "0/1", "vue-define": "0/1",
     "svelte-runes": "1/1", "svelte-store": "0/1", "svelte-form": "1/1", "svelte-tabs": "1/1",

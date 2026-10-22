@@ -1,4 +1,4 @@
-import { walkRuby, constName, bodyOf, ownDef, site, args } from "./ruby-walk.mjs";
+import { walkRuby, constName, bodyOf, ownDef, site, args, options } from "./ruby-walk.mjs";
 import { implementsCapability, nameWords, NOTHING } from "./dimensions-capability.mjs";
 import { CAPABILITY_WORDS } from "./stems.mjs";
 
@@ -128,6 +128,25 @@ function sidekiqBody(n, ctx) {
   if (ctx.def || !ctx.cls || inSingletonClass(ctx)) return null;
   return args(n).some((arg) => SIDEKIQ_JOB.test(constName(arg) || "")) ? ctx.cls : null;
 }
+
+const STRONG_PARAMS = new Set(["require", "permit", "expect"]);
+
+// `params` is a controller method, so it is read as a call with no receiver, or as a local of that name.
+const readsParams = (r) =>
+  !!r && r.name === "params" && ((r.t === "call" && !r.receiver && args(r).length === 0) || r.t === "local_variable_read");
+
+// Whether the call above this one is a `permit` chained off it. An argument
+// sits under the call's arguments node, so the parent call is always the chain.
+const permittedOff = (ancestors) => {
+  const parent = ancestors[ancestors.length - 1];
+  return parent?.t === "call" && parent.name === "permit";
+};
+
+const isDescribe = (n) =>
+  n.t === "call" && n.name === "describe" && !!n.block && (!n.receiver || constName(n.receiver) === "RSpec");
+
+const isSharedGroup = (n) =>
+  n.t === "call" && /^shared_(?:examples|examples_for|context)$/.test(n.name) && (!n.receiver || constName(n.receiver) === "RSpec");
 
 export const RUBY_DIMENSIONS = [
   {
@@ -589,6 +608,63 @@ export const RUBY_DIMENSIONS = [
             // No class key, so it votes for nothing and conforms to nothing.
             add({ node: site(body.node), conforming: false, where: body.name || null, group: body.group });
           }
+        },
+      };
+    },
+  },
+
+  {
+    key: "strong_params_style",
+    tier: "syntactic",
+    framework: "rails",
+    learnedClasses: true,
+    // Three spellings of one job, and which of them a team writes is its own:
+    // the generator writes `require(...).permit`, Rails 8 adds `expect`, and a
+    // controller can permit off the whole hash.
+    claim: "request parameters are filtered through params.<style>",
+    counterClaim: null, // the other side is another method, which the learning already picks
+    precision: "partial",
+    applicabilityPredicate: {
+      sites: "a Ruby file calling require, permit or expect directly on params, the call a strong-parameter chain starts from; a permit chained off a require is that chain's second call and not a site, and a read such as params[:id], params.fetch or a require with no permit chained off it filters nothing",
+      blind: "parameters handed to a local or a helper first are filtered through a receiver this does not follow",
+    },
+    langs: ["ruby"],
+    visitor(ast, add) {
+      return {
+        node(n, ctx) {
+          if (n.t !== "call" || !STRONG_PARAMS.has(n.name) || !readsParams(n.receiver)) return;
+          // `params.require(:id)` alone reads one value and filters nothing.
+          if (n.name === "require" && !permittedOff(ctx.ancestors)) return;
+          add({ node: site(n), conforming: false, where: where(ctx), class: n.name });
+        },
+      };
+    },
+  },
+
+  {
+    key: "spec_type_declared",
+    tier: "syntactic",
+    framework: "rails",
+    claim: "specs declare their type: metadata",
+    counterClaim: "specs leave their type to the directory they sit in",
+    precision: "precise",
+    applicabilityPredicate: {
+      sites: "the outermost describe of a _spec.rb file, written bare or on RSpec, one site per describe that no other describe and no RSpec shared group (`shared_examples`, `shared_examples_for`, `shared_context`, bare or on RSpec) encloses, unless its options cannot be read (a `**` splat, a computed key); it conforms where its options name type:",
+      blind: null,
+    },
+    langs: ["ruby"],
+    visitor(ast, add, { rel } = {}) {
+      if (!/_spec\.rb$/.test(rel ?? "")) return NOTHING;
+      return {
+        node(n, ctx) {
+          // A shared group takes its type from the spec that includes it.
+          if (!isDescribe(n) || ctx.ancestors.some((a) => isDescribe(a) || isSharedGroup(a))) return;
+          // Options this cannot read cannot say whether they name a type (C33).
+          const opts = options(n);
+          if (opts === null) return;
+          const subject = args(n)[0];
+          const named = constName(subject) ?? (subject?.t === "string" ? subject.unescaped ?? null : null);
+          add({ node: site(n), conforming: opts.has("type"), where: named });
         },
       };
     },

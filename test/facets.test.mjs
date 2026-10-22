@@ -341,7 +341,7 @@ test("the minitest base table holds exactly the classes driven through it", () =
 
 test("a method named test_ in an ordinary class is not a minitest case", needsRuby, async (t) => {
   // `def test_connection` is ordinary Ruby: a service exposes it, a client
-  // pings with it. Counting it made rails-api read
+  // pings with it. Counting it made a measured Rails API read
   // `app/services: 6 minitest specs` and discourse `lib: 3 minitest specs`.
   // The signal is the base class or the file's own shape, never the method
   // name on its own.
@@ -530,7 +530,7 @@ test("minitestByPath only trusts a top-level test tree", needsRuby, async (t) =>
 });
 
 test("a file the parse read and found no statement in says so", needsRuby, async (t) => {
-  // rails-api commented one spec out top to bottom, header and all.
+  // a measured Rails API commented one spec out top to bottom, header and all.
   // The runner collects nothing from it, and without this facet the roster
   // counted it as the spec for the service beside it.
   const dir = repo({

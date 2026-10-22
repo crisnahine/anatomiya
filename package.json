@@ -47,6 +47,7 @@
   ],
   "devDependencies": {
     "@tree-sitter-grammars/tree-sitter-kotlin": "1.1.0",
+    "fast-check": "4.10.2",
     "ignore": "7.0.5",
     "tree-sitter-c-sharp": "0.23.5",
     "tree-sitter-go": "0.25.0",

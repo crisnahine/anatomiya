@@ -1,4 +1,8 @@
-import { walkRuby, constName, ownDef, site, args } from "./ruby-walk.mjs";
+import { walkRuby, constName, ownDef, site, args, options } from "./ruby-walk.mjs";
+import { addPathSites, namesWellKnown } from "./dimensions-naming.mjs";
+import { RUBY_STRING_CAP } from "./limits.mjs";
+import { underTestTree } from "./test-shape.mjs";
+import { dirOf } from "./paths.mjs";
 
 /**
  * Rails-data dimensions, same contract as the other dimension files: one claim,
@@ -115,34 +119,6 @@ const blockParam = (call) => {
   return first && typeof first.name === "string" ? first.name : null;
 };
 
-/**
- * The trailing option hash as a Map of symbol name to value node, or null when
- * the set is unknowable. `{ null: false }` parses as `hash` and `null: false` as
- * `keyword_hash`, so reading one spelling reports a conforming site as a
- * violation. `**opts` parses as an `assoc_splat` with no key: the options cannot
- * be read, so the site is dropped rather than counted as having none.
- *
- * A key that is not written out hides which option was set, so one of them can
- * be the option the row asks for: `key => false`, `CONST => 1` and
- * `:"#{name}" => 1` void the list the way a splat does (C33).
- */
-function options(call) {
-  const list = args(call);
-  const last = list[list.length - 1];
-  if (!last || (last.t !== "keyword_hash" && last.t !== "hash")) return new Map();
-  const out = new Map();
-  for (const el of last.elements || []) {
-    if (!el || el.t === "assoc_splat" || !el.key) return null;
-    // Rails looks the option up by symbol, so `"null" => false` is a hash entry
-    // and not the `null:` option. Read, and read as not being it: a string key
-    // is skipped rather than voiding the list, whatever it interpolates to.
-    if (el.key.t === "string" || el.key.t === "interpolated_string") continue;
-    if (el.key.t !== "symbol" || typeof el.key.unescaped !== "string") return null;
-    out.set(el.key.unescaped, el.value);
-  }
-  return out;
-}
-
 // Whether a receiver is a local the enclosing block was handed, which is what
 // `reversible` yields its direction as.
 const isBlockParam = (receiver, ctx) =>
@@ -187,7 +163,7 @@ function pluralOf(name) {
  *
  * `add_reference :issue_comments, :user` followed by
  * `add_foreign_key :issue_comments, :users` declares exactly what
- * `foreign_key: true` declares inline, and rails-api writes 167 of
+ * `foreign_key: true` declares inline, and a measured Rails API writes 167 of
  * them against 12 inline options. Read as the inline option alone, a reference
  * the migration does constrain reads as a violation.
  *
@@ -613,7 +589,100 @@ function isModel(name, local, method = null) {
   return !FRAMEWORK.has(root);
 }
 
+const ROUTE_VERBS = new Set(["get", "post", "put", "patch", "delete", "match", "options", "head"]);
+const ROUTE_RESOURCES = new Set(["resources", "resource"]);
+const ROUTE_CALLS = new Set([...ROUTE_VERBS, ...ROUTE_RESOURCES, "namespace", "scope"]);
+
+// The Ruby tree keeps `RUBY_STRING_CAP` characters of a string, so one that long may be cut short.
+const cutShort = (text) => [...text].length >= RUBY_STRING_CAP;
+
+/** A literal path with whether it may be cut short, or none for anything else. */
+function pathOf(node) {
+  const text = lit(node);
+  return text === null ? [] : [{ text, cut: cutShort(text) }];
+}
+
+/**
+ * What a route call in a Rails routes file names as its path, or none.
+ *
+ * A symbol is a path too: `resources :support_tickets` serves
+ * `/support_tickets` unless a `path:` option says otherwise, and that default
+ * is exactly where a kebab-case team writes the option. A verb's first argument
+ * is the path, or the key of `get "a" => "c#a"`. `scope module:` names a
+ * namespace and no path, and `member`, `collection`, `concern` and `root` name
+ * none either.
+ */
+function routePaths(n) {
+  if (n.t !== "call" || n.receiver || !ROUTE_CALLS.has(n.name)) return [];
+  const list = args(n);
+  const first = list[0];
+  // `get "a" => "c#a"`: with no path before the options, Rails takes their first string key.
+  if (ROUTE_VERBS.has(n.name) && (first?.t === "keyword_hash" || first?.t === "hash")) {
+    const key = (first.elements || []).find((el) => el?.key?.t === "string" || el?.key?.t === "interpolated_string")?.key;
+    return pathOf(key);
+  }
+  // A verb's string is the path whatever the options say.
+  if (ROUTE_VERBS.has(n.name) && first?.t === "string") return pathOf(first);
+  // A scope's own arguments are its path, joined, and one this cannot read hides it.
+  if (n.name === "scope") {
+    const positional = list.filter((a) => a.t !== "keyword_hash" && a.t !== "hash");
+    if (positional.length) {
+      const parts = positional.map(lit);
+      // Only the last part's cut can be told from a word; an earlier one cut short hides the path.
+      if (parts.includes(null) || parts.slice(0, -1).some(cutShort)) return [];
+      return [{ text: parts.join("/"), cut: cutShort(parts[parts.length - 1]) }];
+    }
+  }
+  // A `path:` replaces the name of a namespace or a resource, and options this cannot read may hold one (C33).
+  const opts = options(n);
+  if (opts === null) return [];
+  if (opts.has("path")) return pathOf(opts.get("path"));
+  if (ROUTE_VERBS.has(n.name) || n.name === "namespace") return pathOf(first);
+  return list.flatMap((a) => (a.t === "symbol" ? pathOf(a) : []));
+}
+
+const ROUTES_FILE = /(?:^|\/)config\/routes(?:\.rb|\/.+\.rb)$/;
+
+// `Rails.application.routes.draw do`, an engine's `Engine.routes.draw do`.
+const drawsRoutes = (n) => n.t === "call" && n.name === "draw" && n.receiver?.t === "call" && n.receiver.name === "routes";
+
 export const RAILS_DIMENSIONS = [
+  {
+    key: "route_segment_case",
+    tier: "syntactic",
+    learnedClasses: true,
+    claim: "URL path segments here are <style>",
+    counterClaim: null, // the other side is another class, which the learning already picks
+    precision: "partial",
+    applicabilityPredicate: {
+      sites:
+        "a word of a path a Rails route declares, in config/routes.rb, a file under config/routes, or a routes.draw block: the string of get, post, put, patch, delete, match, options and head, a verb's symbol unless a path: option replaces it, the first string key of `get \"a\" => \"c#a\"`, a scope's own arguments joined or else its path: option, a namespace's name unless a path: option replaces it, and each resources or resource symbol unless a path: option replaces it. A parameter (`:id`, `*path`, `(.:format)`) is Rails's syntax, what sits under `.well-known` a standard names, and the last word of a string as long as the " + RUBY_STRING_CAP + " characters the Ruby tree keeps of one may be cut short, so none of those is a site; nor is a single word, `users` or `Users`, a route under a test tree such as an engine's `spec/dummy`, or a path whose `path:` option or string this cannot read",
+      blind: "a path built at run time, from an interpolated string, a constant or a method call, and a route declared through a helper this does not read, name segments this never sees",
+    },
+    langs: ["ruby"],
+    visitor(ast, add, { rel } = {}) {
+      // An engine's dummy app under `spec` or `test` stands in for the application that mounts it.
+      if (underTestTree(dirOf(rel ?? ""), "ruby")) return { node() {} };
+      const file = ROUTES_FILE.test(rel ?? "");
+      return {
+        node(n, ctx) {
+          const paths = routePaths(n);
+          if (!paths.length) return;
+          if (!file && !ctx.ancestors.some(drawsRoutes)) return;
+          // A standard names what sits under `.well-known`, however a scope spells it.
+          if (ctx.ancestors.some((a) => routePaths(a).some((p) => namesWellKnown(p.text)))) return;
+          // A call is the declaration: `resources :a, :b` declares both at once.
+          // Prism gives no offset, so its line and its paths tell two calls apart.
+          const declared = `${n.name} ${paths.map((p) => p.text).join(" ")}`;
+          const section = `${n.line ?? ""} ${declared}`;
+          // The name is the site's identity in the check: its paths, never its
+          // line, or a route above it moving would make it new.
+          const node = { ...site(n), name: declared };
+          for (const { text, cut } of paths) addPathSites(add, node, text, section, { mayBeCut: cut });
+        },
+      };
+    },
+  },
   {
     key: "migration_reversible",
     tier: "syntactic",

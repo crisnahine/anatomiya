@@ -634,14 +634,14 @@ export const HOLDS = {
     "import_extension", "nullish_default", "non_null_assertion", "absent_is_null", "iterate_with_for_of",
     "test_call_style", "assertion_style", "doc_comment_style", "function_naming_case", "exported_symbol_case",
     "exported_class_case", "exported_type_case", "extends_base", "interface_prefix", "type_alias_prefix",
-    "route_logging", "route_network", "route_env", "file_naming_case",
+    "route_logging", "route_network", "route_env", "file_naming_case", "url_segment_case",
   ],
   svelte: [
     "swallowed_error", "error_shape", "async_error_handling", "function_style", "explicit_return_type",
     "import_extension", "nullish_default", "non_null_assertion", "absent_is_null", "iterate_with_for_of",
     "test_call_style", "assertion_style", "doc_comment_style", "function_naming_case", "exported_symbol_case",
     "exported_class_case", "exported_type_case", "extends_base", "interface_prefix", "type_alias_prefix",
-    "route_logging", "route_network", "route_env", "file_naming_case",
+    "route_logging", "route_network", "route_env", "file_naming_case", "url_segment_case",
   ],
 };
 

@@ -329,6 +329,68 @@ test("the largest file may not hold the area over the ratio bar by itself", () =
   assert.equal(r.gate, "concentration");
 });
 
+/* --- a registry's sections --- */
+
+// One route table among seven files that hold no route, the shape of a
+// React Router `src/router`: every definition sits in `routes.tsx` by design.
+function routeArea(sections, { withSections = true, odd = 0 } = {}) {
+  const rels = ["src/router/routes.tsx", "src/router/Router.tsx", "src/router/index.tsx", "src/router/keys.tsx",
+    "src/router/permissions.tsx", "src/router/PrivateRoute/index.tsx", "src/router/PrivateRoute/guard.tsx", "src/router/scroll.tsx"];
+  const area = { langs: ["jsx"], files: rels.map((rel) => ({ rel, lang: "jsx" })) };
+  const hits = [];
+  for (const [s, n] of sections.entries()) {
+    for (let i = 0; i < n; i++) {
+      const cls = hits.length < odd ? "snake_case" : "kebab-case";
+      hits.push({ conforming: false, where: `seg${hits.length}`, class: cls, ...(withSections ? { section: `s${s}` } : {}) });
+    }
+  }
+  const parsed = rels.map((rel, i) => ({ rel, ok: true, facets: { jsx: true }, hits: i === 0 ? { url_segment_case: hits } : {} }));
+  return reduce.reduceArea(area, parsed).find((d) => d.key === "url_segment_case");
+}
+
+test("a route table's sections are what its evidence is spread over, not its one file", () => {
+  // 40 kebab-case segments under ten top-level paths, all in one file. Read as
+  // one file it is one file's habit; read by section it is ten parts of the app
+  // that each chose kebab-case, which is what a route table is.
+  const slot = routeArea(Array(10).fill(4));
+  assert.equal(slot.applicability, 1, "the printed count is still files");
+  assert.equal(slot.sections, 10);
+  assert.equal(Number(slot.effectiveFiles.toFixed(4)), 10);
+  const r = applyGates(slot, ctx({ authors: 3, areaFileCount: 8, areaDirCount: 2 }));
+  assert.equal(r.gate, null);
+  assert.equal(r.directive, true);
+});
+
+test("the same sites with no sections are one file's habit", () => {
+  const slot = routeArea(Array(10).fill(4), { withSections: false });
+  assert.equal(slot.sections, undefined);
+  const r = applyGates(slot, ctx({ authors: 3, areaFileCount: 8, areaDirCount: 2 }));
+  assert.equal(r.gate, "concentration");
+});
+
+test("a route table whose sites sit under one or two sections is still one place's habit", () => {
+  // Two sections of twenty are worth two places, under the three the gate asks.
+  const r = applyGates(routeArea([20, 20]), ctx({ authors: 3, areaFileCount: 8, areaDirCount: 2 }));
+  assert.equal(r.gate, "concentration");
+});
+
+test("a section reaches the applicability floor as a file would", () => {
+  // Floor 3 over eight files: ten sections reach it and two do not, whatever
+  // else would pass. Two even sections fail concentration first, so the floor
+  // is read off the record directly.
+  assert.equal(reduce.applicabilityFloor(8), 3);
+  assert.equal(routeArea(Array(10).fill(4)).sections >= 3, true);
+  const two = { ...routeArea(Array(10).fill(4)), sections: 2, effectiveFiles: 10 };
+  assert.equal(applyGates(two, ctx({ authors: 3, areaFileCount: 8, areaDirCount: 2 })).gate, "applicability");
+});
+
+test("one snake_case segment among forty kebab-case ones is the exception, not a second class", () => {
+  const slot = routeArea(Array(10).fill(4), { odd: 1 });
+  assert.equal(slot.learned, "kebab-case");
+  assert.equal(slot.candidates, 40);
+  assert.equal(slot.conforming, 39);
+});
+
 /* --- the applicability gate --- */
 
 test("the applicability floor is the stricter of a root and a quarter share", () => {
@@ -1618,4 +1680,38 @@ test("the bounds live in a leaf a hook can import without the reducer", () => {
   assert.equal(wilsonLower(6, 6), 0.6096569663469354);
   assert.equal(wilsonUpper(12, 12), 1);
   assert.equal(wilsonUpper(9, 12), 0.9110599603710388);
+});
+
+test("a route table holding conforming routes is never named as its own slot's exception", () => {
+  // All 40 sites sit in routes.tsx; naming it an exception tells an agent the
+  // one file the claim was counted over is exempt from it.
+  const slot = routeArea(Array(10).fill(4), { odd: 1 });
+  assert.equal(slot.conforming, 39);
+  assert.deepEqual(slot.exceptions, []);
+  assert.equal(slot.moreExceptions, 0);
+});
+
+test("a file whose every site breaks a sectioned claim is still named its exception", () => {
+  const area = { langs: ["jsx"], files: ["src/router/routes.tsx", "src/router/legacy.tsx"].map((rel) => ({ rel, lang: "jsx" })) };
+  const site = (cls, i) => ({ conforming: false, where: `w${i}`, class: cls, section: `s${i}` });
+  const parsed = [
+    { rel: "src/router/routes.tsx", ok: true, facets: { jsx: true }, hits: { url_segment_case: Array.from({ length: 40 }, (_, i) => site("kebab-case", i)) } },
+    { rel: "src/router/legacy.tsx", ok: true, facets: { jsx: true }, hits: { url_segment_case: [site("snake_case", 90), site("snake_case", 91)] } },
+  ];
+  const slot = reduce.reduceArea(area, parsed).find((d) => d.key === "url_segment_case");
+  assert.deepEqual(slot.exceptions, [{ path: "src/router/legacy.tsx", count: 2 }]);
+});
+
+test("a two-sided sectioned claim names as its counter's exception only a file wholly on the claim's side", () => {
+  // No shipped row is both, so the rule is held on a stand-in row the fold is handed.
+  const row = { key: "sectioned_two_sided", tier: "syntactic", claim: "c", counterClaim: "the other", precision: "precise", langs: ["jsx"] };
+  const area = { langs: ["jsx"], files: ["src/a.tsx", "src/b.tsx"].map((rel) => ({ rel, lang: "jsx" })) };
+  const site = (conforming, i) => ({ conforming, where: `w${i}`, section: `s${i}` });
+  const parsed = [
+    { rel: "src/a.tsx", ok: true, facets: { jsx: true }, hits: { sectioned_two_sided: [site(true, 1), site(false, 2)] } },
+    { rel: "src/b.tsx", ok: true, facets: { jsx: true }, hits: { sectioned_two_sided: [site(true, 3), site(true, 4)] } },
+  ];
+  const slot = reduce.reduceArea(area, parsed, { rows: [row] }).find((d) => d.key === "sectioned_two_sided");
+  assert.deepEqual(slot.counterExceptions, [{ path: "src/b.tsx", count: 2 }]);
+  assert.deepEqual(slot.exceptions, []);
 });

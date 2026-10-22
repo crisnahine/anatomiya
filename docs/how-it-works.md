@@ -17,7 +17,7 @@ path and a newline split turns one hostile filename into two corpus entries.
 
 | Filter | Value |
 |---|---|
-| Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .vue .svelte .rb .rake .gemspec .jbuilder` |
+| Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .vue .svelte .rb .rake .gemspec .jbuilder .py .php .go .java .cs .rs .kt .kts` |
 | Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
 | Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixture`, `fixtures` and any `<word>_fixture(s)`, `__fixtures__`, `snapshot`, `snapshots`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens` and their `-test(s)` or `_test(s)` compounds (`golden-test`), `__mocks__`, `mocks`, `cases` and a camelCase word ending in `Cases` (`configCases`), `dist`, `coverage`, `.next`, and `build` unless a `src` directory sits above it. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
@@ -238,8 +238,8 @@ with no `lang` is read as a `.js` file is. A script that never closes, or a synt
 block, leaves the whole file rejected. A component with no script at all is read as an empty file:
 it keeps its name and its place in the layout and holds no site but its filename. Neither retry above runs for a
 component. The template and the style block are never read, and the overview's Not covered section
-says so wherever the corpus holds one: `of 17 .vue and .svelte files only the script block is read; the
-template is not`.
+says so wherever the corpus holds one: `of 17 .vue and .svelte files only the script block is read, not
+the template`.
 
 Python, PHP, Go, Java, C#, Rust and Kotlin are parsed by `web-tree-sitter`, one runtime for seven
 grammars. A grammar is a `.wasm` file in `plugins/anatomiya/grammars/`, named after its language's
@@ -297,7 +297,7 @@ ending in a `#pragma` line. The second blanks every directive line and every bra
 but the first, in place, so no offset or line moves: it reads 17 of serilog's 18 and the other 43
 of Newtonsoft.Json's. Where a blanked branch held anything, the file is counted over the branch
 that was kept and the scan counts it on a line of its own, `7 files were read with one branch of
-each #if; the other branches were not read`: 7 files in serilog and 31 in Newtonsoft.Json. The one
+each #if, not the others`: 7 files in serilog and 31 in Newtonsoft.Json. The one
 serilog file still unread holds a C# 12 collection expression.
 
 prism is asked to parse as the interpreter it runs on (as 3.3, its oldest grammar, on an older
@@ -375,7 +375,7 @@ each row still live, then calls each row's `done` for the work that needs the wh
 while a visitor is made, on any node, or in `done` drops that row's sites for the file and no other
 row's. A throw from the walk itself, which a deep tree can raise from a recursive walker, drops
 every visitor row's sites for the file, and a row with its own `run` keeps its own. When every row
-walked for itself, a file on react-front-end took 50.8 walks and 18,518 visitor calls,
+walked for itself, a file on a measured React front end took 50.8 walks and 18,518 visitor calls,
 counting every walk of the file's tree or of a subtree in it, and `collectHits` was 87% of each
 parse worker's time; one shared walk took that to 9.2 walks and 2,047 calls. The check and the tests
 still ask one row at a time, through a `run` that `dimensions.mjs` builds from the same visitor on
@@ -391,7 +391,7 @@ tree-sitter child 1.50 MB where it added 1.94, medians of 25 on macOS arm64.
 
 A JavaScript file's facets take a walk of their own first, because they choose its rows: JSX and
 type syntax decide which rows the file gets, and only those rows go on the shared walk. The facets'
-own walk costs 502ms of `parseFile` beside 4,269ms of rows, summed over react-front-end's
+own walk costs 502ms of `parseFile` beside 4,269ms of rows, summed over a measured React front end's
 2,486 files. A build that rode the rows' walk instead had every row the file could get walk before
 the facets ruled any out, all 32 a JavaScript file can get where a file on this repository walks 25,
 and its parse workers' CPU rose 9% on this repository with the scan's wall flat, so it was taken
@@ -401,7 +401,7 @@ takes beside the rows in its `also` list. They are not a row: they run when no r
 on the check's Ruby path, and a throw in them is held until their `done`, which throws it for the
 bridge to answer with no test runner, so it never stops a row's walk. Riding the rows' walk takes
 the facets' own walk off every Ruby file, and the rows sharing one walk (B49) take the rest: a file
-on rails-api takes 5.5 walks, where 0.13.3 took 22.5.
+on a measured Rails API takes 5.5 walks, where 0.13.3 took 22.5.
 
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
@@ -441,7 +441,7 @@ number of files handed over, since a child that answers one file every fourteen 
 idle timer happy and never ends.
 
 A corpus of 1,000 Ruby files or more is split into batches, one child each: one per 500 files, up to
-four and never more than the machine's cores less one. Six cut rails-api's scan by 4% to
+four and never more than the machine's cores less one. Six cut a measured Rails API's scan by 4% to
 16% but put its peak memory 22% to 30% over 0.13.3's, since each batch's thread holds a heap of its
 own. The batches are balanced by bytes, the largest file first into the lightest batch, and a file
 over the size cap weighs nothing, since the child skips it unread. The answers are put back in the
@@ -464,7 +464,7 @@ Each thread's heap is held to what its largest file needs, because V8 grows a he
 rather than its live set and four threads at the default limit doubled the scan's peak memory. Past
 256 KB the hold covers the densest code measured (nested calls or hashes, 90 MB of heap for a
 megabyte); below it the hold stays small, since covering dense code on every thread took
-rails-api's peak from 221 MB to about 340 MB. It starts at 16 MB, twice what a thread
+a measured Rails API's peak from 221 MB to about 340 MB. It starts at 16 MB, twice what a thread
 uses once its modules are loaded: at 8 MB, half the threads on Linux ran out before reading any
 Ruby. Held, api's peak is 207 MB against 0.13.3's 178 MB. A thread that runs out of its hold keeps the
 records it already sent, and the files it left unanswered are read again on a thread with the
@@ -581,11 +581,11 @@ average of 80 to 310.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 52 ship, the filename row included: 28 for JavaScript, 33
-reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and
+A dimension is one claim about one area. 56 ship, the filename row included: 29 for JavaScript, 34
+reachable in JSX, and 19 that speak Ruby, plus the one type-checked row, which sits in the total and
 reaches a scan only when the checker runs. Beside them are 9 file-to-file obligations, all Ruby,
-which makes the 25 for Ruby and the 61 dimensions the README counts. A component's script block is asked most of the 28: 24
-for Vue and 24 for Svelte. Three are asked of a tree-sitter tree, each of the languages whose
+which makes the 28 for Ruby and the 65 dimensions the README counts. A component's script block is asked most of the 29: 25
+for Vue and 25 for Svelte. Three are asked of a tree-sitter tree, each of the languages whose
 measured repositories differ on it: 2 for Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for
 Rust and 1 for Kotlin. Each is defined by three quantities, not one.
 
@@ -694,6 +694,10 @@ in `check`.
 | `http_through_client` | partial | ruby | HTTP goes through the repository's own client, not `Net::HTTP` |
 | `class_base` | precise | ruby | classes here inherit `<style>`, learned |
 | `module_include` | precise | ruby | classes here include `<style>`, learned |
+| `url_segment_case` | partial | js, jsx, vue, svelte | URL path segments here are `<style>`, learned |
+| `route_segment_case` | partial | ruby | URL path segments here are `<style>`, learned |
+| `strong_params_style` | partial | ruby | request parameters are filtered through `params.<style>`, learned |
+| `spec_type_declared` | precise | ruby | specs declare their `type:` metadata |
 | `caught_error_used` | partial | php, java | exception handlers use the error they caught |
 | `public_doc_comment` | partial | python, php, go, java, csharp, rust, kotlin | public functions carry a doc comment |
 | `declared_return_type` | precise | python, php | functions declare what they return |
@@ -711,9 +715,11 @@ function its class and its receiver as written, `Host.List<User>.toDtos`, which 
 new method from an older one of the same name in another class when `check` asks what a branch
 added.
 
-The five JSX rows are the ones that make the JSX total 33 rather than 28: a `.tsx` or `.jsx` file is
-counted by every `js` dimension as well as these. The five migration rows are Rails and count as
-Ruby, which is what takes Ruby from 11 to 16.
+The five JSX rows are the ones that make the JSX total 34 rather than 29: a `.tsx` or `.jsx` file is
+counted by every `js` dimension as well as these. The six rows of `dimensions-rails.mjs`, the five
+migration rows and the route row, count as Ruby, which is what takes Ruby from 13 to 19; the two
+Rails-profile rows of `dimensions-ruby.mjs`, `strong_params_style` and `spec_type_declared`, were
+counted among the 13.
 
 A row is asked of a component's script only where it lists `vue` or `svelte` itself. Each row was
 run on six hand-written components per framework and is listed where its sites match the ones a
@@ -776,6 +782,55 @@ receiver is: `ApiClient.get`, `HttpClientV2.get` and `http_client.post` do, `Oau
 dalli, db, pg, mysql, mongo and a few more) talks to a store, so `redis_client.get` and
 `db_client.execute` do not either. The list is closed, so a store it does not name still reads as
 the client.
+
+The two URL rows read a string for its words, which no other row does. `url_segment_case` reads a
+route's own definition: a `path` property written as a string, on an object that also names what
+the route renders, nests or loads (`element`, `children`, `loadChildren`, a `component` key), in a
+file that imports a router module (13 in a closed list, React Router, Vue Router, Angular's and
+TanStack's among them), is named for its routes (`routes.ts`, `router.js`, `app.routes.ts`) or
+sits under a `router` or `routes` directory; a `path` attribute on an element whose name ends in
+`Route`; and a server's declaration, `router.get("/path", handler)`, on a receiver named `app`,
+`server`, `fastify`, `hono` or `router` or ending in `Router` or `App`, since `api.get("/path",
+config)` is a request client's call. A test file holds none, and neither does a file in a test
+tree (`__tests__`, `test`, `tests`, `spec`, `cypress`, `e2e`): its routes, a mock server's or a fixture's,
+stand in for the URLs the code under test names. A Rails route's identity in the check is its verb
+and its paths, never its line, so a route that only moved is not new. A link is no site: measured on a React front end, link
+sites added a counts line to 14 area files and stated in none. `route_segment_case` reads a Rails routes file, `config/routes.rb`, a file under
+`config/routes` or a `routes.draw` block: a verb's path string, or its symbol unless a `path:`
+replaces it, or the first string key of `get "a" => "c#a"` where no path comes before it; a
+scope's own arguments, joined, else its `path:`; a namespace's name unless a `path:` replaces it; and a `resources` symbol unless a `path:`
+replaces it, since `resources
+:support_tickets` serves `/support_tickets`. A `path:` this cannot read, a constant or a
+helper's answer, names no path, nor does an interpolated string or a scope whose earlier part the
+Ruby tree cut short, and a routes file under a test tree, an engine's `spec/dummy` app,
+holds none. Each word of two or more words in a path that
+spells a naming class is a site. A parameter (`:id`, `*`, `[id]`, `$id`, `{id}`, `(.:format)`) is
+the router's syntax and is not, and a single word is not either: `Users` is a case, not a choice of
+separator, and openproject's SCIM routes spell it as the standard does. Nothing under `.well-known`
+is a site, since a standard registers those names (`openid-configuration`,
+`apple-app-site-association`), and in Rails the last word of a string as long as the 40 characters
+the Ruby tree keeps of one is not, since it may be cut short. A path built at run time is the miss,
+which is why both are partial. On a measured React front end the route table states `URL path segments here are
+kebab-case` over 41 of 41 sites, and a branch adding `/members/support_tickets/create/:id?` is a
+FIX finding on that line (#238).
+
+A route table is one file by design, so read by file either row is one file's habit and three gates
+refuse it. Each site carries its route's declaration as a section: the route object or `Route`
+element in JavaScript, the route call in Rails. Never a route around it, since React Router nests a
+whole table under one layout route, and never a namespace or a scope, which is a prefix every route
+under it shares, the way a directory is. Section 5 says what the gates do with them.
+
+`strong_params_style` learns which call a controller's parameter filter starts from:
+`params.require(...).permit`, `params.permit` or Rails 8's `params.expect`. A `permit` chained off a
+`require` is that chain's second call and no site, and a read such as `params[:id]`, or a `require`
+with no `permit` chained off it, filters nothing.
+Measured on the corpus's Rails controllers, one Rails API starts 91 of 92 filters with
+`permit`, whitehall 41 of 42 with `require`, and errbit 16 of 17 with `expect`.
+`spec_type_declared` asks of a `_spec.rb` file's outermost `describe` whether it names `type:`,
+since rspec-rails infers the type from the directory only where a repository turns that on. A
+`describe` inside `shared_examples`, `shared_examples_for` or `shared_context` is no site: the
+group takes its type from the spec that includes it.
+Both are asked of a repository the Rails profile detects.
 
 A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
 naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and
@@ -861,6 +916,16 @@ name of the gate that stopped it.
 | `applicability` | `applicability >= max(R, min(ceil(0.25 * F), 3R))`, where `R = ceil(sqrt(F))` and `F` is the files the dimension can speak about | the stricter of two floors, because each is wrong alone. The root asks for more than a quarter below sixteen files, where a quarter of a small directory is one or two files. The share holds above it: on its own the root asked 11 files of 120, and a measured 120-file area where 11 files used `?.` and 109 read absent values without it stated the claim over all 120. The share is capped at three roots because it grows with the area while the risk it guards does not: on a single 1,531-file `db/migrate` it asked for 383 files, which made any construct rarer than a quarter of the directory unstateable however perfect. The first area size where the cap changes the answer is 157, above every area the share was measured on |
 | `authors` | `>= min(2, distinct authors in the repository)` distinct authors over the files carrying the stated side's matches, and `>= 2` where the clone holds only a window of history | one person's habit is not a convention, but one author is not a thin team either: it is the whole team, and there is no second opinion being withheld. That reasoning needs the whole history to stand on: a `--depth=1` checkout, which is what `actions/checkout` does by default, holds one author whatever the team is, so the bar derived from it collapses and the map states more than a full clone does |
 | `directories` | `>= 2` distinct directories, **only when the area spans more than one directory** | applied unconditionally this blocked 124 of 170 measured slots, because area discovery finds leaf directories and a leaf directory holds one |
+
+A route table's sites are spread over its sections rather than its files (D16). Where a site carries
+its route declaration, `concentration` counts how many sections the evidence is worth and leaves out
+the largest section rather than the largest file, `applicability` holds the count of sections to
+the same floor a count of files is held to, and `directories` counts each section as a directory
+of its own. The printed `across N of M files` stays a count of files, and only a file whose every
+site breaks the claim is named an exception: a route table holding the claim's own routes is not
+one, or the check would exempt the file the claim was counted over. Measured: the route table of
+a measured React front end is 41 sites in one file, and a measured Rails API's is 259 in one, and
+neither cleared `concentration` read by file.
 
 Gates are evaluated in that order and the **first** failure is the one recorded and printed. So
 `no convention. 0 of 133 sites (ratio)` means ratio failed first, not that ratio was the only
@@ -1143,7 +1208,13 @@ of line shapes rather than a parse, read over the whole file so a line inside a 
 literal spread over lines counts as part of it: a comment, an import, an `export ... from`, a
 `require`, a name bound to a literal (a number, a string with no interpolation, `true`, `false`,
 `null`, `undefined`, `nil`, a symbol, or an array or object holding only those), a member of such a
-literal, and a closing `}`, `]`, `)` or `end`. Every other line asks, so a shape nobody listed
+literal, and a closing `}`, `]`, `)` or `end`. In JavaScript and TypeScript a member of an array or
+object opened at the end of a call's argument list (`new Set([`, `Object.freeze({`, `foo(a, [`) is
+one too: the line that opens it still asks, since it calls, and a member there holding a template
+asks, since the line above may tag it. On the JavaScript and TypeScript files of six corpus
+repositories that moved 201,988 lines from asking to not asking, and a parser found none of them
+defining, calling or tagging anything. Ruby keeps the narrower rule, because a Ruby call needs no
+parenthesis and `{` opens a block as well as a hash. Every other line asks, so a shape nobody listed
 still asks, and a line longer than 400 characters asks unread. A block comment that is not
 closed on its line opens only at the line's start or behind one `{`, as JSX writes it, since after
 code a `/*` may be a regex; a line comment that holds `*/` asks, and so does a Ruby comment that
@@ -1427,7 +1498,7 @@ until a file under it is touched. A subagent that only greps and `cat`s never to
 the exploration phase issue #34 measured going dark, and it is the whole of the gap: a subagent that
 Reads is served like the main thread, overview included.
 
-The overview head carries three fixed sentences beside the counts. "Read a file before editing it:
+The overview head carries four fixed sentences beside the counts. "Read a file before editing it:
 these notes load when you read, not when you grep" is that ceiling said to the agent. "When unsure
 what this code does, read it, grep it, or run it instead of guessing, and say what you could not
 verify" names the tools the agent already has and permits the abstention, which is what keeps a
@@ -1438,8 +1509,12 @@ one about what to do with a change instead of what to read first: the counts bel
 files they point at, say what the practice is, and this says to follow it and finish. It opens on a
 trigger clause because removing the equivalent scope guard is measured to move the out-of-scope rate
 by double digits;
-`docs/research/one-line-that-finishes-in-house-style.md` carries the sources (A42). All three are
-constant, so A5 holds. The line above them that says what a claim is also carries the key to every
+`docs/research/one-line-that-finishes-in-house-style.md` carries the sources (A42). The fourth is a
+house rule set for every map rather than counted or measured: "Code comments stay short and carry
+no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs
+several, each opens with the part it changes, such as BE or FE" (A121). All four are constant, so A5
+holds, and to keep the overview inside its forty lines with every optional line on, the string line
+of Not covered shares the line that says memory, GC and I/O are runtime only. The line above them that says what a claim is also carries the key to every
 counts line: `"no convention" means the gate in parentheses stopped it, and its sites may still all
 agree`. Without it `no convention. 73 of 73 sites (applicability)` read as a denial of a habit every
 site follows, and the gates' meanings lived only in this file and the README. It shares that line
@@ -1559,6 +1634,25 @@ named `x.md`, or a socket, is a shape rather than a file, on the platforms that 
 ones that refuse, under whatever errno they refuse with; where one holds a name the scan is about to write, which `anatomiya-overview.md`
 invites since that name is fixed, it is reported as that condition rather than as an errno out of
 the rename.
+
+### Not covered
+
+The overview's last section says where the map is silent. A source file in no area, and a
+directory nothing was counted in, are counted apart (A14). A tracked file in a language no
+declaration owns is named by extension from a closed list, which holds templates and component
+formats that carry code too: `.erb`, `.haml`, `.hbs`, `.ejs`, `.gjs`, `.mdx` and the rest (H7).
+Configuration, data and prose files (`.json`, `.yml`, `.yaml`, `.toml`, `.xml`, `.ini`, `.md`,
+`.rst`, `.txt`, `.csv`) are counted by extension too, since no row reads one. Every kind of unread
+file, a component's template and a generated file among them, is a clause on one line, and every
+file the parse could not read a clause on another, so the overview keeps its forty lines and its
+"What lives where" with every optional line on.
+One line is the same on every repository, because it is about the tool: a string is read only as an
+import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options,
+table and column names and SQL, method names, a spec's subject) or the URL path a route table, a
+server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and
+request paths are not (A120). A method name counts when it is handed to `send`, `public_send`,
+`__send__`, `method` or `define_method`. Across the 35-repository corpus 91,369 of 268,541 tracked
+files are never parsed, and the measured classes no row reads are in `docs/research/what-no-row-reads.md`.
 
 ### The same map for Cursor and Copilot
 

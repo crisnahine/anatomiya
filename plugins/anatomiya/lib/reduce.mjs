@@ -263,6 +263,12 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
     const claimFiles = [];
     const counterFiles = [];
 
+    const sections = sectionsOf(perFile);
+    // Where the claim was counted over sections, a file is not its unit: a
+    // route table holding the claim's own routes is no exception to it, and
+    // named one, the check would exempt the very file the claim is about.
+    const countedByFile = sections === null;
+
     for (const [rel, hits] of perFile) {
       candidates += hits.length;
       const bad = hits.filter((h) => !h.conforming);
@@ -270,8 +276,8 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       elsewhere += hits.filter((h) => h.elsewhere).length;
       if (bad.length < hits.length) claimFiles.push(rel);
       if (bad.length) counterFiles.push(rel);
-      if (bad.length) exceptions.push({ path: rel, count: bad.length });
-      if (counterExceptions && bad.length < hits.length) {
+      if (bad.length && (countedByFile || bad.length === hits.length)) exceptions.push({ path: rel, count: bad.length });
+      if (counterExceptions && bad.length < hits.length && (countedByFile || bad.length === 0)) {
         counterExceptions.push({ path: rel, count: hits.length - bad.length });
       }
     }
@@ -299,7 +305,9 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       askedExts: [...new Set(examined.filter(eligible).map((e) => extOrName(e.rel)))].sort(),
       claimFiles,
       counterFiles,
-      ...spread(perFile, candidates),
+      ...spread(sections ?? perFile, candidates),
+      // Only where a site named its section, so every other record is as it was.
+      ...(sections ? { sections: sections.size, sectionDirs: dirsOfPlaces(sections) } : {}),
       // The path breaks ties, so the three that print do not depend on
       // filesystem order between two scans of unchanged source (A5).
       exceptions: exceptions.sort(byCountThenPath).slice(0, 3),
@@ -529,6 +537,43 @@ function byCountThenPath(a, b) {
 }
 
 /**
+ * The places a slot's sites come from, or null where no site named a section.
+ *
+ * A route table is one file by design, so read by file every route row is one
+ * file's habit and three gates refuse it before its counts are asked. Its
+ * declarations are what the file's authors decided one at a time: a site
+ * carrying a section is placed at its file and section, and a site carrying
+ * none at its file. Keyed so a section can never collide with a file's path.
+ */
+function sectionsOf(perFile) {
+  let any = false;
+  const places = new Map();
+  for (const [rel, hits] of perFile) {
+    for (const h of hits) {
+      const place = typeof h.section === "string" ? `${rel}\0${h.section}` : rel;
+      if (place !== rel) any = true;
+      if (!places.has(place)) places.set(place, []);
+      places.get(place).push(h);
+    }
+  }
+  return any ? places : null;
+}
+
+/**
+ * How many directories a slot's places stand for: a file's own, and a
+ * section as one of its own, since a route table's declarations are its parts.
+ */
+function dirsOfPlaces(places) {
+  const plain = [];
+  let sections = 0;
+  for (const place of places.keys()) {
+    if (place.includes("\0")) sections++;
+    else plain.push(place);
+  }
+  return dirCount(plain) + sections;
+}
+
+/**
  * How the sites are spread over the files carrying them: the inverse-Simpson
  * count of how many files the evidence is worth, and the largest file's own
  * counts so a gate can ask what the area looks like without it.
@@ -595,6 +640,10 @@ export function applyGates(dim, {
   const candidates = pop.candidates ?? 0;
   const conforming = pop.conforming ?? 0;
   const applicability = pop.applicability ?? dim.applicability ?? 0;
+  // A route table's sections stand in for its files wherever a gate asks how
+  // many places the evidence comes from (`sectionsOf`). The printed
+  // applicability stays files.
+  const places = pop.sections ?? applicability;
   const effectiveFiles = pop.effectiveFiles ?? dim.effectiveFiles ?? 0;
   const top = pop.top ?? dim.top ?? { candidates: 0, conforming: 0 };
   const files = pop.files ?? dim.files;
@@ -613,7 +662,7 @@ export function applyGates(dim, {
   // counts would clear a bar it never reached.
   const restCandidates = pooled ? Math.max(0, pooled.candidates - candidates) : 0;
   const restConforming = pooled ? Math.max(0, pooled.conforming - conforming) : 0;
-  const dimDirs = distinctDirs(files);
+  const dimDirs = pop.sectionDirs ?? distinctDirs(files);
   const required = historyRead ? authorsRequired(repoAuthors, { shallow }) : null;
 
   // The same battery, run once per side. The numerator moves, and so do the
@@ -651,7 +700,7 @@ export function applyGates(dim, {
       // One file supplying most of the sites is one file's habit, and the second
       // clause is what sees a large file holding the rest of the area over 0.90.
       ["concentration", effectiveFiles >= GATES.minEffectiveFiles && looRatio >= GATES.minRatio],
-      ["applicability", denominator > 0 && applicability >= minApplicable],
+      ["applicability", denominator > 0 && places >= minApplicable],
       // `historyRead &&` is load-bearing: git failing is a third state, and
       // `0 >= null` is true.
       [historyRead ? "authors" : "history-unread", historyRead && hands >= required],

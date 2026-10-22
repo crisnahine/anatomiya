@@ -218,6 +218,42 @@ test("the line rules of oxc and prism answer through the same seam", async () =>
   assert.deepEqual(await asking("ruby", "# note\nA = 1\ndef f; end\n"), [3]);
 });
 
+test("a member of a literal list opened inside a call asks nothing, and the line that calls asks", async () => {
+  const set = 'const OVERRIDES = new Set([\n  "A",\n  // comment\n  "CLAUDE_CODE_CLIENT_DATA_URL",\n  "CLAUDE_CODE_ALLOW_OTHER_MODELS",\n]);\n';
+  assert.deepEqual(await asking("js", set), [1]);
+  assert.deepEqual(await asking("js", 'export const NAMES = Object.freeze([\n  "a",\n  -1,\n]);\n'), [1]);
+  assert.deepEqual(await asking("js", 'run("x", [\n  1,\n]);\n'), [1]);
+  // An assignment that binds no name is no argument list, so its members still ask.
+  assert.deepEqual(await asking("js", 'x = {\n  a: 1,\n};\n'), [1, 2]);
+  // `as const` closes the list and the call's parenthesis closes after it.
+  assert.deepEqual(await asking("js", 'const KEYS = Object.freeze([\n  "a",\n] as const);\n'), [1]);
+});
+
+test("nested objects and lists in a call argument ask nothing through their closers", async () => {
+  const each = 'describe.each([\n  { name: "a", value: 1 },\n  {\n    name: "b",\n    nested: [1, 2],\n    deeper: {\n      flag: true,\n    },\n  },\n])("case %s", () => {});\n';
+  assert.deepEqual(await asking("js", each), [1, 10]);
+  assert.deepEqual(await asking("js", "foo({\n  a: 1,\n  b: [\n    \"x\",\n  ],\n}, {\n  c: null,\n});\n"), [1]);
+  assert.deepEqual(await asking("js", "Object.freeze([{\n  a: 1,\n}, {\n  b: 2,\n}]);\n"), [1]);
+  // Both brackets the line opens stay open past the first object's closer.
+  assert.deepEqual(await asking("js", "Object.freeze([{\n  a: 1,\n},\n{\n  b: 2,\n}]);\n"), [1]);
+  assert.deepEqual(await asking("js", "x(f([\n  1,\n]))\n"), [1]);
+  // The closer ends the list, so a member-shaped line after it is no member.
+  assert.deepEqual(await asking("js", "foo([\n  1,\n]);\nb: 1,\n"), [1, 4]);
+});
+
+test("a call-opened list holds no function body or template, and a braced import and Ruby read as before", async () => {
+  // A brace after an arrow opens a body, not a literal.
+  assert.deepEqual(await asking("js", "run(() => {\n  x: [\n  ],\n});\n"), [1, 2]);
+  // A template may be tagged by the line above it, here an import's value.
+  assert.deepEqual(await asking("js", 'foo([\n  require("tag")\n  `x`,\n]);\n'), [1, 3]);
+  assert.deepEqual(await asking("js", "foo([\n  tag\n  `x`,\n]);\n"), [1, 2, 3]);
+  assert.deepEqual(await asking("js", "foo([\n  `x`,\n]);\n"), [1, 2]);
+  // A braced import is read to its `from`, and leaves nothing open.
+  assert.deepEqual(await asking("js", 'import a, {\n  b,\n} from "x";\n"c",\n'), [4]);
+  // Ruby calls with no parentheses and opens blocks with a brace, so its rule is unchanged.
+  assert.deepEqual(await asking("ruby", 'foo([\n  "a",\n])\n'), [1, 2]);
+});
+
 test("a regex literal holding /* opens no comment, so the lines after it ask", async () => {
   assert.deepEqual(await asking("js", "const trailing = /\\/*$/;\nexport function duplicate(a, b) {\n  return a + b;\n}\n/** doc */\nfunction after() {}\n"), [1, 2, 3, 6]);
   assert.deepEqual(await asking("js", 'p.replace(/^\\/*/, "");\nfunction f() {}\n'), [1, 2]);

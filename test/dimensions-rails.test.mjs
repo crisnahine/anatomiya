@@ -30,6 +30,14 @@ function write(name, src) {
  * string cap does to it.
  */
 const SRC = {
+  // A route table, so the route row has a fixture of its own to be held to.
+  routes_table: `
+Rails.application.routes.draw do
+  namespace :team_tools, path: "team-tools" do
+    resources :saved_searches
+  end
+end
+`,
   // `def self.up` is a def with receiver {t:"self"}. Four real files on the
   // measured repository are written this way.
   legacy_self_up: `
@@ -1053,7 +1061,7 @@ class AddThing < ActiveRecord::Migration[7.0]
 end
 `,
 
-  // rails-api writes the constraint as its own statement beside the
+  // a measured Rails API writes the constraint as its own statement beside the
   // reference, which is the form `add_reference ... foreign_key: true` spells
   // inline. Both declare the same foreign key.
   fk_separate_statement: `
@@ -1302,6 +1310,7 @@ const parsed = await parseRuby(Object.entries(SRC).map(([name, src]) => write(na
 const programs = new Map(parsed.results.map((r) => [r.rel.replace(/\.rb$/, ""), r]));
 
 const KEYS = [
+  "route_segment_case",
   "migration_reversible",
   "migration_schema_only",
   "column_null_declared",
@@ -1369,7 +1378,7 @@ test("a migration defining self.up and self.down is an up-down migration, not a 
 
 test("a class defining both change and up is a violation, not a conforming migration", needsRuby, () => {
   // A predicate written as `defs.has("change")` reports this as the good case.
-  // It is a migration Rails cannot roll back; there are 3 on private corpus
+  // It is a migration Rails cannot roll back; there are 3 on a measured Rails API
   // and 1 on Mastodon.
   assert.deepEqual(counts("migration_reversible", "mixed_change_and_up"), {
     candidates: 1,
@@ -1668,7 +1677,7 @@ test("the column block parameter is read from the block, not assumed to be named
 test("create_table without an id option does not declare its primary key", needsRuby, () => {
   // The Rails default is bigint, so a repository on uuid keys has a rule an
   // agent gets wrong on its first new table, and the default is the opposite
-  // rule. 0.9869 on private corpus against 0.0165 on Mastodon.
+  // rule. 0.9869 on a measured Rails API against 0.0165 on Mastodon.
   assert.deepEqual(counts("table_primary_key_declared", "named_block_param"), {
     candidates: 1,
     conforming: 0,
@@ -1705,7 +1714,7 @@ test("schema.rb contributes nothing to any of the six", needsRuby, () => {
 
 /* --- the gates these counts have to pass through --- */
 
-test("the real private corpus reversible and primary-key counts both state a directive", needsRuby, () => {
+test("a measured Rails API's real reversible and primary-key counts both state a directive", needsRuby, () => {
   // db/migrate is one directory, so the directory gate is skipped. The claim
   // survives down to 1,393 conforming before the bound falls under 0.90, which
   // is 9 more violations than it carries.
@@ -1779,7 +1788,7 @@ test("a two-migration repository states nothing from a perfect record", needsRub
 
 /* --- the shape the reducer and the check rely on --- */
 
-test("the six rails dimensions ship, reachable from the one registry", needsRuby, () => {
+test("the seven rails dimensions ship, reachable from the one registry", needsRuby, () => {
   // A dimension the registry cannot see is counted nowhere, whichever file
   // defines it.
   assert.deepEqual(RAILS_DIMENSIONS.map((d) => d.key).sort(), [...KEYS].sort());
@@ -1976,7 +1985,7 @@ test("a polymorphic reference cannot declare a foreign key, so it is not a site"
 });
 
 test("a foreign key declared as its own statement is this reference's foreign key", needsRuby, () => {
-  // rails-api: 167 `add_foreign_key` statements against 12 inline
+  // a measured Rails API: 167 `add_foreign_key` statements against 12 inline
   // options. Read as the inline option only, a reference the migration does
   // constrain read as a violation.
   assert.deepEqual(counts("reference_foreign_key", "fk_separate_statement"), {

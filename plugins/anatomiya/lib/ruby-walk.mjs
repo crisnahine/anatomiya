@@ -105,6 +105,34 @@ export function site(n) {
 /** The arguments of a call, and none for anything that is not one. */
 export const args = (call) => call?.arguments?.arguments ?? [];
 
+/**
+ * The trailing option hash as a Map of symbol name to value node, or null when
+ * the set is unknowable. `{ null: false }` parses as `hash` and `null: false` as
+ * `keyword_hash`, so reading one spelling reports a conforming site as
+ * breaking the claim. `**opts` parses as an `assoc_splat` with no key: the options cannot
+ * be read, so the site is dropped rather than counted as having none.
+ *
+ * A key that is not written out hides which option was set, so one of them can
+ * be the option the row asks for: `key => false`, `CONST => 1` and
+ * `:"#{name}" => 1` void the list the way a splat does (C33).
+ */
+export function options(call) {
+  const list = args(call);
+  const last = list[list.length - 1];
+  if (!last || (last.t !== "keyword_hash" && last.t !== "hash")) return new Map();
+  const out = new Map();
+  for (const el of last.elements || []) {
+    if (!el || el.t === "assoc_splat" || !el.key) return null;
+    // Rails looks the option up by symbol, so `"null" => false` is a hash entry
+    // and not the `null:` option. Read, and read as not being it: a string key
+    // is skipped rather than voiding the list, whatever it interpolates to.
+    if (el.key.t === "string" || el.key.t === "interpolated_string") continue;
+    if (el.key.t !== "symbol" || typeof el.key.unescaped !== "string") return null;
+    out.set(el.key.unescaped, el.value);
+  }
+  return out;
+}
+
 /** Statements written directly in a body, skipping the statements wrapper. */
 export function bodyOf(node) {
   const b = node && node.body;

@@ -38,5 +38,5 @@ figures.
 Fifteen corpus repositories scanned with both builds, each from a fresh clone, every written file
 compared with times, `mtimeMs`, the refresh `stamp`, `measuredUnder` and the scanned root's path
 masked: errbit, huginn, vitepress, shadcn-svelte, flask, gin, ripgrep, gson, okhttp, serilog, Slim,
-kotlinx.serialization, element-plus, the react-front-end and eslint. JavaScript, TypeScript,
+kotlinx.serialization, element-plus, a measured React front end and eslint. JavaScript, TypeScript,
 Ruby, Vue, Svelte, Python, Go, Rust, Java, Kotlin, C# and PHP. Every file is byte-identical.

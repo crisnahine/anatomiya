@@ -1533,7 +1533,7 @@ test("a class that merely shares its last segment with the learned base is still
 });
 
 test("a superclass written relative to its enclosing namespace is the class it resolves to", async () => {
-  // rails-api: 55 controllers under app/controllers/api/v1 write
+  // a measured Rails API: 55 controllers under app/controllers/api/v1 write
   // `< Api::V1::BaseController` and four write `< BaseController` from inside
   // `module Api::V1`, where Ruby resolves the bare name to the same class.
   // Counted as two classes the row read 55 of 64 and fell under the 0.90 gate,
@@ -1560,7 +1560,7 @@ test("a superclass written relative to its enclosing namespace is the class it r
 });
 
 test("a controller area counts the relative and the scoped spelling as one base", async () => {
-  // The 59-of-64 shape from rails-api, reduced to its smallest form:
+  // The 59-of-64 shape from a measured Rails API, reduced to its smallest form:
   // above the 0.90 gate together, under it counted apart.
   const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const scoped = Array.from({ length: 8 }, (_, i) => `app/controllers/api/v1/s${i}.rb`);
@@ -1681,4 +1681,322 @@ test("the filename row asks none of the seven tree-sitter languages", async () =
   const row = rowByKey("file_naming_case");
   assert.deepEqual(row.langs, ["js", "jsx", "ruby", "vue", "svelte"]);
   for (const { id } of LANGUAGES.filter((l) => l.engine === "tree-sitter")) assert.equal(row.langs.includes(id), false, id);
+});
+
+/* --- URL path segments --- */
+
+test("a path's words leave out parameters, the query and the fragment", async () => {
+  const { pathWords, namesWellKnown } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  assert.deepEqual(pathWords("/:locale/user-dashboard/:id?"), ["user-dashboard"]);
+  assert.deepEqual(pathWords("/[slug]/$post/{item}/*/team_page"), ["team_page"]);
+  assert.deepEqual(pathWords("/search-page?next=/admin/user_list"), ["search-page"]);
+  assert.deepEqual(pathWords("/help-center#faq_list/x"), ["help-center"]);
+  assert.deepEqual(pathWords("relative-path/child_page"), ["relative-path", "child_page"]);
+  assert.deepEqual(pathWords("/team-page/(saved_view)/(:locale)/(.:format)/(*rest)"), ["team-page", "saved_view"]);
+  assert.deepEqual(pathWords("/((user_list))/((:id))"), ["user_list"]);
+  assert.equal(namesWellKnown("/((.well-known))/apple_app"), true);
+  assert.equal(pathWords("https://example.com/some-page"), null);
+  assert.equal(pathWords("mailto:a@b.c"), null);
+  assert.equal(pathWords("//cdn.example.com/some-page"), null);
+});
+
+// A section's own spelling is where its declaration starts, so the tests read
+// which sites share one rather than what it is called.
+const sectionLabels = (hits) => {
+  const seen = new Map();
+  return hits.map(({ where, class: cls, section }) => {
+    if (section !== undefined && !seen.has(section)) seen.set(section, `s${seen.size}`);
+    return { where, cls, section: section === undefined ? undefined : seen.get(section) };
+  });
+};
+
+test("each route declaration is its own section, a nested one included, and a link is no site", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = [
+    `import { Route } from "react-router-dom"`,
+    `export const routes = [`,
+    `  { path: "/", children: [`,
+    `    { path: "/:locale/members/support-tickets/create", element: null },`,
+    `    { path: "/teams/order-drafts", children: [{ path: "draft-items", element: null }] },`,
+    `  ] },`,
+    `]`,
+    `export const nav = <Link to="/members/reading-list" />`,
+    `export const el = <Route path="/"><Route path="/my-account/saved_cards"><Route path="saved-cards" /></Route></Route>`,
+  ].join("\n");
+  const { records } = await parseAll([{ rel: "src/router/routes.tsx", source, lang: "jsx" }]);
+  // A layout route around the whole table holds no site, and nests nothing into one section.
+  assert.deepEqual(sectionLabels(records.get("src/router/routes.tsx").hits.url_segment_case), [
+    { where: "support-tickets", cls: "kebab-case", section: "s0" },
+    { where: "order-drafts", cls: "kebab-case", section: "s1" },
+    { where: "draft-items", cls: "kebab-case", section: "s2" },
+    { where: "my-account", cls: "kebab-case", section: "s3" },
+    { where: "saved_cards", cls: "snake_case", section: "s3" },
+    { where: "saved-cards", cls: "kebab-case", section: "s4" },
+  ]);
+});
+
+test("a module named for its routes declares them without importing the router", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `export const routes = [{ path: "/user-dashboard", element: null }]\n`;
+  const files = ["src/routes.ts", "src/router.js", "src/app/app.routes.ts", "src/config.ts"].map((rel) => ({ rel, source, lang: "js" }));
+  const { records } = await parseAll(files);
+  assert.deepEqual(
+    files.map((f) => (records.get(f.rel).hits.url_segment_case ?? []).length),
+    [1, 1, 1, 0]
+  );
+});
+
+test("a Rails route's segments are the path it serves, each route call a section of its own", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = [
+    `Rails.application.routes.draw do`,
+    `  namespace :team_tools, path: "team-tools" do`,
+    `    resources :support_tickets, only: [:show] do`,
+    `      get :export_pdf, on: :member`,
+    `    end`,
+    `    get "saved-searches/:id(.:format)" => "searches#show"`,
+    `  end`,
+    `  scope module: "admin" do`,
+    `    resources :audit_logs, path: "audit-logs"`,
+    `  end`,
+    `  get :health_check`,
+    `  root "home#index"`,
+    `end`,
+  ].join("\n");
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(sectionLabels(records.get("config/routes.rb").hits.route_segment_case), [
+    { where: "team-tools", cls: "kebab-case", section: "s0" },
+    { where: "support_tickets", cls: "snake_case", section: "s1" },
+    { where: "export_pdf", cls: "snake_case", section: "s2" },
+    { where: "saved-searches", cls: "kebab-case", section: "s3" },
+    { where: "audit-logs", cls: "kebab-case", section: "s4" },
+    { where: "health_check", cls: "snake_case", section: "s5" },
+  ]);
+});
+
+test("a route call outside a routes file or a draw block is not a route", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `class ApiClient\n  def go\n    get "user-list/active_only"\n  end\nend\n`;
+  const { records } = await parseAll([{ rel: "app/clients/api_client.rb", source, lang: "ruby" }]);
+  assert.equal(records.get("app/clients/api_client.rb").hits.route_segment_case, undefined);
+});
+
+test("a single word, a well-known path and a cut-off last word are no URL sites", async () => {
+  const { pathSites } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  const words = (text, o) => pathSites(text, o).map((x) => `${x.word}:${x.cls}`);
+  assert.deepEqual(words("/scim_v2/Users/:id"), ["scim_v2:snake_case"]);
+  assert.deepEqual(words("/my-account/.well-known/openid-configuration"), ["my-account:kebab-case"]);
+  // Its format group or query comes off before it is compared, as it does for any other segment.
+  assert.deepEqual(words("/my-account/.well-known(.:format)/openid-configuration"), ["my-account:kebab-case"]);
+  assert.deepEqual(words("/.well-known?x=1/openid-configuration"), []);
+  assert.deepEqual(words("/reports/raw_data/weekly_summary_downloa", { mayBeCut: true }), ["raw_data:snake_case"]);
+  assert.deepEqual(words("/saved-searches(.:format)/userList"), ["saved-searches:kebab-case", "userList:camelCase"]);
+});
+
+test("a Rails scope at .well-known names no site under it", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  scope ".well-known" do\n    get "openid-configuration" => "o#c"\n  end\n  get "saved-searches" => "s#i"\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["saved-searches"]);
+});
+
+test("a Rails scope at .well-known with a format group names no site under it, and an optional segment is read", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  scope ".well-known(.:format)" do\n    get "apple_app" => "o#c"\n  end\n  get "posts(/archive_view)" => "p#a"\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["archive_view"]);
+});
+
+test("a route nested under a .well-known route names no site", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `import { createBrowserRouter } from "react-router-dom";\nexport const r = createBrowserRouter([\n  { path: "/.well-known", children: [{ path: "apple_app", element: null }] },\n  { path: "/saved-searches", element: null },\n]);\nexport const J = () => <Route path=".well-known"><Route path="apple_app" element={null} /></Route>;\n`;
+  const { records } = await parseAll([{ rel: "src/router/routes.tsx", source, lang: "jsx" }]);
+  assert.deepEqual(records.get("src/router/routes.tsx").hits.url_segment_case.map((h) => h.where), ["saved-searches"]);
+});
+
+test("a route's own path keeps its words before .well-known, as the path rule says", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `import { createBrowserRouter } from "react-router-dom";\nexport const r = createBrowserRouter([{ path: "/my-account/.well-known/x", element: null }]);\nexport const J = () => <Route path="/team-page/.well-known/y" element={null} />;\n`;
+  const { records } = await parseAll([{ rel: "src/router/routes.tsx", source, lang: "jsx" }]);
+  assert.deepEqual(records.get("src/router/routes.tsx").hits.url_segment_case.map((h) => h.where), ["my-account", "team-page"]);
+});
+
+test("a Rails path as long as the string the tree keeps loses its last word, not the rest", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  get 'reports/raw_data/weekly_summary_downloads' => 'x#y'\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["raw_data"]);
+});
+
+test("a Rails route whose options cannot be read names no path the options may replace", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  resources :user_profiles, **opts\n  namespace :admin_tools, **opts\n  get "saved-searches" => "s#i"\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["saved-searches"]);
+});
+
+test("a path key is a route only on an object that carries a route's other keys", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = [
+    `import { Route } from "react-router-dom"`,
+    `export const upload = { path: "/tmp/upload_dir", cookie: { path: "/session_scope" } }`,
+    `export const routes = [`,
+    `  { path: "/user-dashboard", element: null },`,
+    `  { path: "/admin-dashboard", RouteComponent: Route },`,
+    `  { path: "/order-drafts", loadChildren: () => null },`,
+    `  { path: "/help-center", children: [] },`,
+    `]`,
+  ].join("\n");
+  const { records } = await parseAll([{ rel: "src/router/routes.tsx", source, lang: "jsx" }]);
+  assert.deepEqual(records.get("src/router/routes.tsx").hits.url_segment_case.map((h) => h.where), ["user-dashboard", "admin-dashboard", "order-drafts", "help-center"]);
+});
+
+test("a route object found by its parent route or under a router directory is read", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const tanstack = `import { createRoute } from "@tanstack/react-router"\nexport const r = createRoute({ getParentRoute: () => root, path: "/user-settings" })\n`;
+  const vue = `import Layout from "@/layout"\nexport default { path: "/table-views", component: Layout, children: [{ path: "inline-edit", redirect: "/x" }] }\n`;
+  const { records } = await parseAll([
+    { rel: "src/routes/user.tsx", source: tanstack, lang: "jsx" },
+    { rel: "src/router/modules/table.js", source: vue, lang: "js" },
+  ]);
+  assert.deepEqual(records.get("src/routes/user.tsx").hits.url_segment_case.map((h) => h.where), ["user-settings"]);
+  assert.deepEqual(records.get("src/router/modules/table.js").hits.url_segment_case.map((h) => h.where), ["table-views", "inline-edit"]);
+});
+
+test("a server's route declaration is a route, and a request client's call is not", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = [
+    `import express from "express"`,
+    `const router = express.Router()`,
+    `router.get("/saved-searches/:id", (req, res) => res.end())`,
+    `app.post("/support_tickets", handler)`,
+    `apiRouter.delete("/audit-logs", controller.destroy)`,
+    `api.get("/user-list", { params })`,
+    `axios.get("/user-list", config)`,
+    `router.get("/no-handler")`,
+    `router.get("/user-profile", { params })`,
+    `app.get("relative-path", handler)`,
+  ].join("\n");
+  const { records } = await parseAll([{ rel: "src/server/articles.ts", source, lang: "js" }]);
+  assert.deepEqual(records.get("src/server/articles.ts").hits.url_segment_case.map((h) => h.where), ["saved-searches", "support_tickets", "audit-logs"]);
+});
+
+test("two Rails routes of one verb in a file are told apart by their paths", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const { siteIdentity } = await import("../plugins/anatomiya/lib/introduced.mjs");
+  const source = `Rails.application.routes.draw do\n  get "saved-searches" => "s#i"; get "audit-logs" => "a#i"\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }], { withProgram: true });
+  const { rowByKey } = await import("../plugins/anatomiya/lib/registry.mjs");
+  const hits = [];
+  rowByKey("route_segment_case").run(records.get("config/routes.rb").program, (h) => hits.push(h), { rel: "config/routes.rb" });
+  assert.equal(hits.length, 2);
+  assert.notEqual(siteIdentity("config/routes.rb", "route_segment_case", hits[0].node, ""), siteIdentity("config/routes.rb", "route_segment_case", hits[1].node, ""));
+  assert.notEqual(hits[0].section, hits[1].section, "two calls on one line are two declarations");
+});
+
+test("a route call on a receiver in a routes file is not Rails's own", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  client.get "user-list"\n  get "saved-searches" => "s#i"\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["saved-searches"]);
+});
+
+test("a test file's routes are a stand-in and no site", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `server.get("/admin/data-explorer/queries", () => ok())\nexport const routes = [{ path: "/user-settings", element: null }]\n`;
+  const { records } = await parseAll([
+    { rel: "test/javascripts/acceptance/run-query-test.js", source, lang: "js" },
+    { rel: "src/routes.test.ts", source, lang: "js" },
+  ]);
+  assert.equal(records.get("test/javascripts/acceptance/run-query-test.js").hits.url_segment_case, undefined);
+  assert.equal(records.get("src/routes.test.ts").hits.url_segment_case, undefined);
+});
+
+test("a file in a test tree holds no URL site, whatever it is named", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `router.get("/admin-tools/run-query", (req, res) => res.end())\n`;
+  const { records } = await parseAll([
+    { rel: "src/server/__tests__/mock.ts", source, lang: "js" },
+    { rel: "cypress/support/routes.js", source, lang: "js" },
+    { rel: "src/server/routes.ts", source, lang: "js" },
+  ]);
+  assert.equal(records.get("src/server/__tests__/mock.ts").hits.url_segment_case, undefined);
+  assert.equal(records.get("cypress/support/routes.js").hits.url_segment_case, undefined);
+  assert.equal(records.get("src/server/routes.ts").hits.url_segment_case.length, 2);
+});
+
+test("a Rails route keeps its identity when a line above it moves", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const { siteIdentity } = await import("../plugins/anatomiya/lib/introduced.mjs");
+  const { rowByKey } = await import("../plugins/anatomiya/lib/registry.mjs");
+  const identities = async (source) => {
+    const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }], { withProgram: true });
+    const hits = [];
+    rowByKey("route_segment_case").run(records.get("config/routes.rb").program, (h) => hits.push(h), { rel: "config/routes.rb" });
+    return hits.map((h) => siteIdentity("config/routes.rb", "route_segment_case", h.node, ""));
+  };
+  const before = await identities(`Rails.application.routes.draw do\n  get "raw_data/export" => "a#e"\nend\n`);
+  const after = await identities(`Rails.application.routes.draw do\n  get "x" => "x#x"\n  get "y" => "y#y"\n  get "raw_data/export" => "a#e"\nend\n`);
+  assert.deepEqual(after, before);
+});
+
+test("a Rails verb's path option and a scope's symbol are the paths they serve", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  get :show_all, path: "show-all", on: :collection\n  scope :admin_area do\n  end\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => `${h.where}:${h.class}`), ["show-all:kebab-case", "admin_area:snake_case"]);
+});
+
+test("a Rails path option this cannot read names no path, a split routes file is read, and an engine's dummy app is not", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const { records } = await parseAll([
+    { rel: "config/routes.rb", source: `Rails.application.routes.draw do\n  resources :user_profiles, path: profile_path\n  namespace :admin_tools, path: ENV["X"]\n  get "saved-searches" => "s#i"\nend\n`, lang: "ruby" },
+    { rel: "config/routes/admin.rb", source: `get "audit-logs" => "a#i"\n`, lang: "ruby" },
+    { rel: "spec/dummy/config/routes.rb", source: `Rails.application.routes.draw do\n  get "user_list" => "u#i"\nend\n`, lang: "ruby" },
+  ]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["saved-searches"]);
+  assert.deepEqual(records.get("config/routes/admin.rb").hits.route_segment_case.map((h) => h.where), ["audit-logs"]);
+  assert.equal(records.get("spec/dummy/config/routes.rb").hits.route_segment_case, undefined);
+});
+
+test("one path declared twice in a routes file is two declarations", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  scope "a" do\n    get "saved-searches" => "s#i"\n  end\n  scope "b" do\n    get "saved-searches" => "s#i"\n  end\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  const sections = records.get("config/routes.rb").hits.route_segment_case.filter((h) => h.where === "saved-searches").map((h) => h.section);
+  assert.equal(new Set(sections).size, 2);
+});
+
+test("a route path written as a template with nothing in it, or in a JSX expression, is read", async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = "import { Route } from \"react-router-dom\"\nexport const r = [{ path: `/user_list`, element: null }]\nexport const e = <Route path={\"/team_page\"} />\n";
+  const { records } = await parseAll([{ rel: "src/app.tsx", source, lang: "jsx" }]);
+  assert.deepEqual(records.get("src/app.tsx").hits.url_segment_case.map((h) => h.where), ["user_list", "team_page"]);
+});
+
+test("Rails reads a scope's own argument over its path option, a namespace's string, and a hash-rocket's first string key", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  scope :admin_area, path: "admin-area" do\n  end\n  namespace "admin_tools" do\n  end\n  namespace "audit_logs", path: "audit-logs" do\n  end\n  match via: :get, "/user_list" => "u#i"\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["admin_area", "admin_tools", "audit-logs", "user_list"]);
+});
+
+test("a Rails route path as Rails reads it: a leading non-literal path wins over a hash key, a scope joins its arguments, a verb's string wins over unreadable options", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const source = `Rails.application.routes.draw do\n  get helper_path, "x-y/a_b" => "c#a"\n  scope "api_v", "v-one" do\n  end\n  scope "api_w", prefix do\n  end\n  get "saved-searches/z_w", **opts\nend\n`;
+  const { records } = await parseAll([{ rel: "config/routes.rb", source, lang: "ruby" }]);
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["api_v", "v-one", "saved-searches", "z_w"]);
+});
+
+test("an engine's routes.draw block is read, an interpolated hash key names no path, and a scope part at the string cap hides its path", needsRuby, async () => {
+  const { parseAll } = await import("../plugins/anatomiya/lib/parse.mjs");
+  const engine = `module Foo\n  Engine.routes.draw do\n    get "audit-logs" => "a#i"\n  end\nend\n`;
+  const routes = `Rails.application.routes.draw do\n  get "#{p}/y" => "a#b", "user_list" => "c#d"\n  scope "abcdefghij/abcdefghij/abcdefghij/abcdefg_xy", "kk_ll" do\n  end\n  scope "short", "last-part" do\n  end\n  scope "abcdefghij/abcdefghij/abcdefghij", "next-part" do\n  end\nend\n`;
+  const { records } = await parseAll([
+    { rel: "lib/foo/engine.rb", source: engine, lang: "ruby" },
+    { rel: "config/routes.rb", source: routes, lang: "ruby" },
+  ]);
+  assert.deepEqual(records.get("lib/foo/engine.rb").hits.route_segment_case.map((h) => h.where), ["audit-logs"]);
+  // The joined path is past the cap, but each string the tree kept is whole.
+  assert.deepEqual(records.get("config/routes.rb").hits.route_segment_case.map((h) => h.where), ["last-part", "next-part"]);
 });

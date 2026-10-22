@@ -10,9 +10,11 @@
  */
 import { templateMountsByName } from "./langs.mjs";
 import { componentProps, isFunctionLike } from "./walk.mjs";
-import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
+import { attrName, jsxElementNames, jsxName, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./stems.mjs";
 import { encode } from "./encode.mjs";
+import { namesATestFile, underTestTree } from "./test-shape.mjs";
+import { dirOf } from "./paths.mjs";
 
 const NAMESPACE = new Set(["TSModuleDeclaration"]);
 
@@ -347,7 +349,195 @@ function exportedSites(program, props = null) {
   return out;
 }
 
+/**
+ * The modules whose route objects a `path:` property belongs to. A `path` key
+ * means a file path, a cookie's scope or a JSON pointer everywhere else, so a
+ * file that imports none of these declares no route with one.
+ */
+export const ROUTER_MODULES = new Set([
+  "react-router", "react-router-dom", "react-router-native", "vue-router", "@angular/router",
+  "@tanstack/react-router", "@tanstack/vue-router", "@tanstack/solid-router", "@reach/router",
+  "wouter", "preact-router", "svelte-spa-router", "@solidjs/router",
+]);
+
+function fromRouter(source) {
+  for (const m of ROUTER_MODULES) if (source === m || source.startsWith(`${m}/`)) return true;
+  return false;
+}
+
+const importsRouter = (program) =>
+  (program.body || []).some((st) => st.type === "ImportDeclaration" && typeof st.source?.value === "string" && fromRouter(st.source.value));
+
+/** The text of a string literal, or of a template literal with nothing interpolated, or null. */
+function literalText(n) {
+  if (!n) return null;
+  if (n.type === "JSXExpressionContainer") return literalText(n.expression);
+  if ((n.type === "Literal" || n.type === "StringLiteral") && typeof n.value === "string") return n.value;
+  if (n.type === "TemplateLiteral" && n.expressions.length === 0 && n.quasis.length === 1) {
+    return n.quasis[0].value.cooked ?? null;
+  }
+  return null;
+}
+
+/**
+ * The words a URL path spells, in order. A parameter (`:id`, `:id?`, `*`,
+ * `[id]`, `$id`, `{id}`) is the framework's syntax rather than a name anybody
+ * chose, and so is a format group (`(.:format)`); a query or a fragment ends
+ * the path. A scheme makes it somebody else's URL, and everything under
+ * `.well-known` is named by the standard that registers it
+ * (`openid-configuration`, `apple-app-site-association`).
+ */
+export function pathWords(text) {
+  return typeof text !== "string" || /^[a-z][a-z\d+.-]*:/i.test(text) || text.startsWith("//") ? null : walkPath(text).words;
+}
+
+/** Whether a path reaches `.well-known`, however its segment is spelled around the name. */
+export const namesWellKnown = (text) => typeof text === "string" && walkPath(text).wellKnown;
+
+function walkPath(text) {
+  const words = [];
+  for (const segment of text.split("/")) {
+    // An optional group comes off at its own bracket, whichever segment holds it: `posts(/archive_view)`, `(saved_view)`.
+    const part = segment.replace(/^\(+/, "");
+    if (part === "" || /^[:*[${]|^\.:/.test(part)) continue;
+    const cut = part.search(/[?#]/);
+    const word = (cut === -1 ? part : part.slice(0, cut)).replace(/\(.*$/, "").replace(/\)+$/, "");
+    if (word === ".well-known") return { words, wellKnown: true };
+    if (word) words.push(word);
+    if (cut !== -1) break;
+  }
+  return { words, wellKnown: false };
+}
+
+// Two words at least: a separator, or a capital after a lower-case letter.
+// `Users` alone is a case, not a choice between kebab-case and snake_case.
+const spellsWords = (word) => /[-_]|\p{Ll}\p{Lu}/u.test(word);
+
+/**
+ * The words of a path that are sites, each with the class it spells.
+ *
+ * `mayBeCut` says whatever produced the text may have cut it short, so its
+ * last word may be part of one: the Ruby tree keeps `RUBY_STRING_CAP`
+ * characters of a string.
+ */
+export function pathSites(text, { mayBeCut = false } = {}) {
+  const words = pathWords(text);
+  if (!words) return [];
+  const whole = mayBeCut && words.length ? words.slice(0, -1) : words;
+  return whole.flatMap((word) => {
+    const cls = spellsWords(word) ? classifyWord(word) : null;
+    return cls ? [{ word, cls }] : [];
+  });
+}
+
+/**
+ * One site per word of a path that is a site (`pathSites`), each carrying the
+ * route declaration it sits in as its section: a route table is one file by
+ * design, and each route in it was declared on its own (the reducer's
+ * `sectionsOf`). The declaration alone, never a route around it, since a
+ * React Router table nests every route under one layout route.
+ */
+export function addPathSites(add, node, text, section, { mayBeCut = false } = {}) {
+  for (const { word, cls } of pathSites(text, { mayBeCut })) {
+    add({ node, conforming: false, where: word, class: cls, section });
+  }
+}
+
+const ROUTE_KEY = /^(?:element|errorElement|children|loader|action|lazy|index|redirect|redirectTo|loadComponent|loadChildren|canActivate|beforeEnter|getParentRoute|render|exact)$|[Cc]omponents?$/;
+
+/**
+ * Whether an object holding a `path` is a route: one that also says what the
+ * path renders, nests or loads, as every router's route object does. A cookie's
+ * `{ path }` and an upload's `{ path, cookie }` say none of that.
+ */
+const isRouteObject = (o) =>
+  o?.type === "ObjectExpression" &&
+  (o.properties || []).some((p) => p.type === "Property" && !p.computed && ROUTE_KEY.test(p.key?.name ?? p.key?.value ?? ""));
+
+// A module named for its routes declares them, whether or not it imports the
+// router that reads them: `routes.ts`, `router.js`, Angular's `app.routes.ts`,
+// and a module under a `router` or `routes` directory, as Vue splits them.
+const ROUTES_MODULE = /(?:^|\/)(?:(?:[^/]+\.)?(?:routes?|router)\.[cm]?[jt]sx?$|(?:routes?|router)\/)/i;
+
+// What a server declares a route with: `router.get("/path", handler)`. Named
+// receivers only, since `api.get("/path", config)` is a request client's call.
+const SERVER_VERBS = new Set(["get", "post", "put", "patch", "delete", "all", "head", "options"]);
+const SERVER_RECEIVER = /^(?:app|server|fastify|hono|router)$|(?:Router|App)$/;
+
+/** The path a server route call declares, or null where the call is not one. */
+function serverRoutePath(n) {
+  if (n.type !== "CallExpression" || n.arguments.length < 2) return null;
+  const c = n.callee;
+  if (c?.type !== "MemberExpression" || c.computed || !SERVER_VERBS.has(c.property?.name)) return null;
+  if (c.object?.type !== "Identifier" || !SERVER_RECEIVER.test(c.object.name)) return null;
+  const handler = n.arguments[n.arguments.length - 1];
+  if (!isFunctionLike(handler) && handler.type !== "Identifier" && handler.type !== "MemberExpression") return null;
+  const text = literalText(n.arguments[0]);
+  return text !== null && text.startsWith("/") ? text : null;
+}
+
+/** The path a route object or a `*Route` element declares, or null. */
+function routePathOf(n) {
+  if (isRouteObject(n)) {
+    const p = n.properties.find((x) => x.type === "Property" && !x.computed && (x.key?.name ?? x.key?.value) === "path");
+    return p ? literalText(p.value) : null;
+  }
+  if (n.type === "JSXElement" && /Route$/.test(jsxName(n.openingElement?.name) ?? "")) {
+    const a = (n.openingElement.attributes || []).find((x) => attrName(x) === "path");
+    return a ? literalText(a.value) : null;
+  }
+  return null;
+}
+
 export const NAMING_AST = [
+  {
+    key: "url_segment_case",
+    tier: "syntactic",
+    learnedClasses: true,
+    claim: "URL path segments here are <style>",
+    counterClaim: null, // the other side is another class, which the learning already picks
+    // A path built at run time is the miss: a template with an expression, a
+    // constant, or a helper call names segments this never reads.
+    precision: "partial",
+    applicabilityPredicate: {
+      sites:
+        "a word of two or more words in a URL path a route declares that spells a naming class: a `path` property written as a string, on an object that also names what the route renders, nests or loads (`element`, `children`, `loadChildren`, a `component` key and the like), in a file importing a router module or named for its routes (`routes.ts`, `router.js`, `app.routes.ts`), or a `path` attribute on an element whose name ends in Route, or the path a server declares, `router.get(\"/path\", handler)` on a receiver named app, server, fastify, hono or router or ending in Router or App, outside a test file or a test tree (`__tests__`, `test`, `tests`, `spec`, `cypress`, `e2e`), whose routes stand in for another's. A parameter (`:id`, `*`, `[id]`, `$id`, `{id}`) is the router's syntax, a query or fragment ends the path, a URL with a scheme or a leading `//` is another site's, and what sits under `.well-known` a standard names, so none of those is a site; nor is a single word, `users` or `Users`",
+      blind: "a path built at run time, from a template with an expression, a constant or a helper call, names segments this never reads",
+    },
+    // A component's script answers only the route objects it declares.
+    langs: ["js", "jsx", "vue", "svelte"],
+    visitor(program, add, { rel } = {}) {
+      // A test's routes, and a mock server's or a fixture's beside it, stand in for URLs the code under test names.
+      if (namesATestFile(rel ?? "", "js") || underTestTree(dirOf(rel ?? ""), "js")) return { node() {} };
+      const router = importsRouter(program) || ROUTES_MODULE.test(rel ?? "");
+      return {
+        node(n, ctx) {
+          // A standard names what sits under `.well-known`, however deep the routes nest.
+          // Asked only of a site, so a file's walk stays linear in its depth, and
+          // never of the route the site is on, whose own path is read word by word.
+          const declare = (at, text, own) => {
+            const around = ctx.ancestors.slice(0, ctx.ancestors.length - own);
+            if (!around.some((a) => namesWellKnown(routePathOf(a)))) addPathSites(add, at, text, `${n.start}`);
+          };
+          if (router && n.type === "Property" && !n.computed && (n.key?.name ?? n.key?.value) === "path") {
+            if (!isRouteObject(ctx.ancestors[ctx.ancestors.length - 1])) return;
+            const text = literalText(n.value);
+            if (text !== null) declare(n.value, text, 1);
+            return;
+          }
+          const served = serverRoutePath(n);
+          if (served !== null) {
+            declare(n.arguments[0], served, 0);
+            return;
+          }
+          if (n.type !== "JSXOpeningElement" || !/Route$/.test(jsxName(n.name) ?? "")) return;
+          const a = (n.attributes || []).find((x) => attrName(x) === "path");
+          const text = a ? literalText(a.value) : null;
+          if (text !== null) declare(a.value, text, 1);
+        },
+      };
+    },
+  },
   {
     key: "function_naming_case",
     tier: "syntactic",

@@ -170,7 +170,7 @@ function visitorOf(node, done) {
  *
  * Its own walk, ahead of the rows', because the facets choose which rows the
  * file gets. It costs 502ms of `parseFile` beside the rows' 4,269ms on
- * react-front-end's 2,486 files. A build that rode the rows' walk had
+ * a measured React front end's 2,486 files. A build that rode the rows' walk had
  * every row the file could get walk before the facets ruled any out, 32 where
  * a file on this repository walks 25, and its workers' CPU rose 9% there with
  * the scan's wall flat.
@@ -350,7 +350,7 @@ const namedAsTest = (node) => /Test$/.test(constName(node?.name) ?? node?.name ?
  *
  * The second half of the `def test_*` rule, and the reason it needs one:
  * `def test_connection` is ordinary Ruby, and a service that exposes one is not
- * a test. Measured, it put `6 minitest specs` on rails-api's
+ * a test. Measured, it put `6 minitest specs` on a measured Rails API's
  * `app/services` and `3` on discourse's `lib`. Minitest's own convention is the
  * `_test.rb` suffix under `test/`, so a file wearing either is taken at its
  * word. The directory half only trusts the tree's own top: Homebrew keeps its

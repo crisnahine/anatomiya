@@ -65,6 +65,11 @@ const OVERRIDES = new Set([
   // 2.1.296 runs a workflow's agents on the model this names, over the one the
   // script asks for, and says so: `Workflow agent model "..." ignored`.
   "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
+  // 2.1.303 applies a fetched document's per-model client data to the run, and
+  // the switch starts on a model the document has no entry for, applying none
+  // of it: the URL and the switch both decide what a trial runs with.
+  "CLAUDE_CODE_CLIENT_DATA_URL",
+  "CLAUDE_CODE_ALLOW_OTHER_MODELS",
 ]);
 
 /**
