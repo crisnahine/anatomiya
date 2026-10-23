@@ -500,7 +500,7 @@ then the suite: `node scripts/grammars.mjs --check` (part of `npm run validate`)
 its package, and the shapes test says which names the new grammar dropped.
 
 A grammar is built for one language version, its ABI, and a runtime reads a range of them:
-`web-tree-sitter` 0.27.0 reads 13 through 15. `plugins/anatomiya/grammars/grammars.json` records
+`web-tree-sitter` 0.27.1 reads 13 through 15. `plugins/anatomiya/grammars/grammars.json` records
 each grammar's. Java, Rust and Kotlin are at 14 and Python, PHP, Go and C# at 15, so those three are
 the first a runtime that raises its floor turns away. The test that fails then is `every vendored
 grammar loads, reports the manifest's ABI and reads a sample clean` in `test/grammars.test.mjs`.
