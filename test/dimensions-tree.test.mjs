@@ -7,6 +7,7 @@ import { declOf, engineOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { isTestFile, mirroredTests } from "../plugins/anatomiya/lib/layout.mjs";
 import { withOneBranch } from "../plugins/anatomiya/lib/csharp-directives.mjs";
 import { parseTreeFile } from "../plugins/anatomiya/lib/tree-sitter-file.mjs";
+import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { TREE_DECLINED } from "./declined-fixtures.mjs";
 
 /**
@@ -309,7 +310,7 @@ const FEW_SIBLINGS = 500;
 const docRow = () => TREE_DIMENSIONS.find((d) => d.key === "public_doc_comment");
 
 /** How many times the row reads any node's list of children, over a file of this many functions. */
-async function childReads(lang, count, item, head = "", tail = "") {
+async function childReads(lang, count, item, head = "", tail = "", row = docRow()) {
   const source = head + Array.from({ length: count }, (_, i) => item(i)).join("") + tail;
   const rel = `src/a.${declOf(lang).exts[0]}`;
   const { program } = await parseTreeFile(source, rel, lang, { withProgram: true, rows: [] });
@@ -322,7 +323,7 @@ async function childReads(lang, count, item, head = "", tail = "") {
     node.children = new Proxy(node.children, counted);
   }
   let sites = 0;
-  docRow().run(program, () => sites++, { source, rel });
+  row.run(program, () => sites++, { source, rel });
   return { reads, sites };
 }
 
@@ -337,6 +338,17 @@ for (const [shape, [lang, each, item, head, tail]] of Object.entries(MANY_SIBLIN
   });
 }
 
+test("endpoint_segment_case reads each handler's siblings a number of times that does not grow with the file", async () => {
+  // Each route attribute looked over every sibling for a test attribute: 10,000 Rust handlers took 30 s.
+  const row = TREE_DIMENSIONS.find((d) => d.key === "endpoint_segment_case");
+  const item = (i) => `#[get("/saved-items")]\n#[allow(dead_code)]\nfn a${i}() {}\n`;
+  const fewer = await childReads("rust", FEW_SIBLINGS, item, "", "", row);
+  const more = await childReads("rust", 2 * FEW_SIBLINGS, item, "", "", row);
+
+  assert.ok(more.reads <= 2 * fewer.reads, `twice the handlers read their siblings ${more.reads} times against ${fewer.reads}`);
+  assert.deepEqual([fewer.sites, more.sites], [FEW_SIBLINGS, 2 * FEW_SIBLINGS]);
+});
+
 const TESTLESS = ["public_doc_comment", "declared_return_type"];
 
 test("the rows are registered, each for the languages whose measured repositories differ on it", () => {
@@ -346,12 +358,13 @@ test("the rows are registered, each for the languages whose measured repositorie
     caught_error_used: ["php", "java"],
     public_doc_comment: ["python", "php", "go", "java", "csharp", "rust", "kotlin"],
     declared_return_type: ["python", "php"],
+    endpoint_segment_case: ["python", "java", "csharp", "rust"],
   });
   for (const d of TREE_DIMENSIONS) {
     assert.ok(ALL_DIMENSIONS.includes(d), `${d.key} is not in the list the worker runs`);
     assert.equal(typeof d.run, "function", `${d.key} cannot be asked alone`);
     for (const lang of d.langs) assert.equal(engineOf(lang), "tree-sitter", `${d.key} lists ${lang}`);
-    assert.deepEqual(Object.keys(CASES[d.key]), d.langs, `${d.key} is not driven in every language it lists`);
+    assert.deepEqual(Object.keys((d.learnedClasses ? WORDS : CASES)[d.key]), d.langs, `${d.key} is not driven in every language it lists`);
   }
 });
 
@@ -368,6 +381,116 @@ for (const [key, byLang] of Object.entries(CASES)) {
     });
   }
 }
+
+/**
+ * Per learned row and language: each source beside the sites it must answer, as `word:class` in source order. An
+ * empty list is a source holding the neighbouring construct and no site.
+ */
+const WORDS = {
+  endpoint_segment_case: {
+    python: [
+      ['from django.urls import path, re_path\n\nurlpatterns = [\n    path("saved-searches/<int:pk>/", v),\n    path("audit_logs/", v),\n    re_path(r"^raw_data/$", v),\n]\n', ["saved-searches:kebab-case", "audit_logs:snake_case"]],
+      // Without the import a `path` call is anybody's.
+      ['urlpatterns = [path("saved-searches/", v)]\n', []],
+      ['@router.get("/saved-items/{item_id}")\ndef a():\n    pass\n\n\n@app.route("/user_list", methods=["GET"])\ndef b():\n    pass\n', ["saved-items:kebab-case", "user_list:snake_case"]],
+      // A decorator's path must start with `/`, and a client's `.get` is no decorator.
+      ['@cache.get("saved-items")\ndef a():\n    pass\n\n\nrequests.get("/saved-items")\n', []],
+      ['app.add_url_rule("/audit-logs", view_func=v)\n', ["audit-logs:kebab-case"]],
+      ['r = APIRouter(prefix="/api-keys", tags=["x"])\napp.include_router(r, prefix="/team_members")\nbp = Blueprint("admin-panel", __name__, url_prefix="/admin-panel")\n', ["api-keys:kebab-case", "team_members:snake_case", "admin-panel:kebab-case"]],
+      ['@router.get(f"/saved-items/{x}")\ndef a():\n    pass\n\n\n@router.get(PREFIX + "/saved-items")\ndef b():\n    pass\n\n\n@router.get("/users/<pk>")\ndef c():\n    pass\n\n\n@router.get("/audit-logs")\ndef d():\n    pass\n', ["audit-logs:kebab-case"]],
+      // A comment among the arguments takes no positional slot, and only the first positional is the path.
+      ['@router.get(  # the listing\n    "/saved-items"\n)\ndef a():\n    pass\n', ["saved-items:kebab-case"]],
+      ['from django.urls import path\n\nurlpatterns = [path("saved-searches/", v, {}, "audit_logs")]\n', ["saved-searches:kebab-case"]],
+      ['@router.get("/.well-known/openid-configuration")\ndef a():\n    pass\n', []],
+      // FastAPI names the path `path`, Flask names it `rule`.
+      ['@router.get(path="/saved-items")\ndef a():\n    pass\n\n\n@bp.route(rule="/user_list")\ndef b():\n    pass\n', ["saved-items:kebab-case", "user_list:snake_case"]],
+      // Django names `path`'s path `route`.
+      ['from django.urls import path\n\nurlpatterns = [path(route="saved-items/", view=v)]\n', ["saved-items:kebab-case"]],
+    ],
+    java: [
+      ['@RestController\n@RequestMapping("/api-keys")\nclass A {\n    @GetMapping(value = {"/saved-items", "/auditLogs/{id}"})\n    public void a() {}\n\n    @PostMapping(path = "/team_members")\n    void b() {}\n}\n', ["api-keys:kebab-case", "saved-items:kebab-case", "auditLogs:camelCase", "team_members:snake_case"]],
+      ['class A {\n    @org.springframework.web.bind.annotation.DeleteMapping("userList/{id:[0-9]+}")\n    void a() {}\n}\n', ["userList:camelCase"]],
+      // A path built from a constant, a method's argument named otherwise, and an annotation that maps no route.
+      ['class A {\n    @RequestMapping(value = BASE + "/saved-items", method = RequestMethod.GET)\n    void a() {}\n\n    @GetMapping(produces = "application/json-patch")\n    void b() {}\n\n    @SuppressWarnings("saved-items")\n    void c() {}\n}\n', []],
+      ['@RequestMapping("/.well-known")\nclass A {\n    @GetMapping("/openid-configuration")\n    void a() {}\n}\n\nclass B {\n    @GetMapping("/saved-items")\n    void b() {}\n}\n', ["saved-items:kebab-case"]],
+      // A Feign client's mappings are another service's routes, called from here.
+      ['@FeignClient(name = "x")\ninterface A {\n    @GetMapping("/saved_items")\n    void a();\n}\n\nclass B {\n    @GetMapping("/audit-logs")\n    void b() {}\n}\n', ["audit-logs:kebab-case"]],
+      // In any order of its annotations.
+      ['@RequestMapping("/user_accounts")\n@FeignClient(name = "x")\ninterface A {\n    @GetMapping("/saved_items")\n    void a();\n}\n\nclass B {\n    @GetMapping("/audit-logs")\n    void b() {}\n}\n', ["audit-logs:kebab-case"]],
+    ],
+    csharp: [
+      ['[Route("api-keys/[controller]")]\npublic class A : Controller\n{\n    [HttpGet("saved-items/{id:int}"), Authorize]\n    [Route("~/audit_logs", Name = "team-members")]\n    public void B() { }\n\n    [HttpPost(template: "UserList")]\n    public void C() { }\n}\n', ["api-keys:kebab-case", "saved-items:kebab-case", "audit_logs:snake_case", "UserList:PascalCase"]],
+      ['class P\n{\n    void M()\n    {\n        var g = app.MapGroup("/team-members");\n        g.MapGet("/saved_items", () => 1);\n    }\n}\n', ["team-members:kebab-case", "saved_items:snake_case"]],
+      ['class P\n{\n    [Authorize("saved-items")]\n    void M()\n    {\n        app.MapGet($"/saved-items/{a}", h);\n        app.Get("/saved-items", h);\n        app.MapGet("/audit-logs", h);\n    }\n}\n', ["audit-logs:kebab-case"]],
+      // A generic call is named by its method, not its type argument.
+      ['class P\n{\n    void M()\n    {\n        app.MapGet<int>("/saved-items", h);\n        app.MapPost<Todo>("/audit_logs", h);\n    }\n}\n', ["saved-items:kebab-case", "audit_logs:snake_case"]],
+    ],
+    rust: [
+      ['#[get("/saved-items/<id>")]\nfn a() {}\n\n#[actix_web::post("/audit_logs/{id}")]\nasync fn b() {}\n', ["saved-items:kebab-case", "audit_logs:snake_case"]],
+      ['fn r() -> Router {\n    Router::new().route("/team-members", get(h)).nest("/api_keys", x)\n}\n\nfn s() {\n    web::scope("/user-list").service(web::resource("/saved-items"));\n    rocket::build().mount("/two-words", routes![a]);\n}\n', ["api_keys:snake_case", "team-members:kebab-case", "user-list:kebab-case", "saved-items:kebab-case", "two-words:kebab-case"]],
+      ['#[get("saved-items")]\nfn a() {}\n\nfn b() {\n    map.get("/saved-items");\n    Router::new().route(PATH, get(h)).route("/audit-logs", get(h));\n}\n', ["audit-logs:kebab-case"]],
+      // What a `.well-known` call's own arguments declare is the standard's.
+      ['fn r() -> Router {\n    Router::new().nest("/.well-known", Router::new().route("/apple-app", get(h))).route("/team-members", get(h))\n}\n', ["team-members:kebab-case"]],
+      // A unit test module's handlers are declared for the test, as a test file's are.
+      ['#[cfg(test)]\nmod t {\n    #[get("/saved-items")]\n    fn a() {}\n}\n\n#[get("/audit-logs")]\nfn b() {}\n', ["audit-logs:kebab-case"]],
+      // And a handler marked on its own, above or below its route.
+      ['#[cfg(test)]\n#[get("/saved-items")]\nfn a() {}\n\n#[get("/audit-logs")]\nfn b() {}\n', ["audit-logs:kebab-case"]],
+      ['#[get("/saved-items")]\n#[cfg(test)]\nfn a() {}\n\n#[get("/audit-logs")]\nfn b() {}\n', ["audit-logs:kebab-case"]],
+    ],
+  },
+};
+
+for (const [key, byLang] of Object.entries(WORDS)) {
+  for (const [lang, cases] of Object.entries(byLang)) {
+    test(`${key}, ${lang}: each word of a declared path answers with its class, and the neighbouring construct is no site`, async () => {
+      for (const [source, want] of cases) {
+        const got = await hits(key, lang, source);
+        assert.deepEqual(got.map((h) => `${h.where}:${h.class}`), want, JSON.stringify(source));
+        assert.ok(got.every((h) => h.conforming === false && typeof h.section === "string"), "a learned site votes with its class and its section");
+      }
+    });
+  }
+}
+
+test("endpoint_segment_case: each route declaration is a section of its own, and a chained call is not the chain", async () => {
+  const sections = async (lang, source) => (await hits("endpoint_segment_case", lang, source)).map((h) => h.section);
+  const [nest, route] = await sections("rust", 'fn r() -> Router {\n    Router::new().route("/team-members", get(h)).nest("/api-keys", x)\n}\n');
+  assert.notEqual(nest, route);
+  const [one, two, three] = await sections("java", 'class A {\n    @GetMapping({"/saved-items", "/audit-logs"})\n    void a() {}\n\n    @GetMapping("/team-members")\n    void b() {}\n}\n');
+  assert.equal(one, two, "one annotation declares both paths");
+  assert.notEqual(two, three);
+});
+
+test("endpoint_segment_case: a test file and a file in a test tree hold no site", async () => {
+  const route = '@router.get("/saved-items")\ndef a():\n    pass\n';
+  assert.equal((await hits("endpoint_segment_case", "python", route, "app/views.py")).length, 1);
+  assert.deepEqual(await hits("endpoint_segment_case", "python", route, "app/test_views.py"), []);
+  assert.deepEqual(await hits("endpoint_segment_case", "python", route, "tests/support/views.py"), []);
+  const controller = 'class A {\n    @GetMapping("/saved-items")\n    void a() {}\n}\n';
+  assert.equal((await hits("endpoint_segment_case", "java", controller, "src/main/java/A.java")).length, 1);
+  assert.deepEqual(await hits("endpoint_segment_case", "java", controller, "src/test/java/A.java"), []);
+  const attribute = 'class A\n{\n    [HttpGet("saved-items")]\n    public void B() { }\n}\n';
+  assert.deepEqual(await hits("endpoint_segment_case", "csharp", attribute, "test/Api.Tests/Fake.cs"), []);
+  assert.deepEqual(await hits("endpoint_segment_case", "rust", '#[get("/saved-items")]\nfn a() {}\n', "tests/support.rs"), []);
+});
+
+test("endpoint_segment_case: a path longer than the tree keeps of a string loses its last word, which may be cut", async () => {
+  const path = `/${"x-y/".repeat(70)}`;
+  const got = await hits("endpoint_segment_case", "python", `@router.get("${path}")\ndef a():\n    pass\n`);
+  // 256 characters hold the slash and 64 whole words; the last of them is read as cut.
+  assert.equal(got.length, 63);
+});
+
+test("endpoint_segment_case: a site's identity in the check is its path, so a route that moved down the file is no new site", async () => {
+  const at = async (source) => {
+    const { program } = await parseTreeFile(source, "src/a.py", "python", { withProgram: true });
+    const sites = [];
+    TREE_DIMENSIONS.find((d) => d.key === "endpoint_segment_case").run(program, (h) => sites.push(siteIdentity("src/a.py", "endpoint_segment_case", h.node, source)), { source, rel: "src/a.py" });
+    return sites;
+  };
+  const route = '@router.get("/saved-items")\ndef a():\n    pass\n';
+  assert.deepEqual(await at(route), await at(`import os\n\n\n@router.get("/other")\ndef b():\n    pass\n\n\n${route}`));
+});
 
 for (const key of TESTLESS) {
   test(`${key}: a file a test runner collects holds no site`, async () => {
@@ -525,7 +648,7 @@ for (const [key, { lang, declined, counted }] of Object.entries(TREE_DECLINED)) 
 
 test("what the doc comment row cannot see in Rust, and what it leaves out, is said on the row", () => {
   const rust = TREE_DIMENSIONS.filter((d) => d.langs.includes("rust"));
-  assert.deepEqual(rust.map((d) => d.key), ["public_doc_comment"]);
+  assert.deepEqual(rust.map((d) => d.key), ["public_doc_comment", "endpoint_segment_case"]);
   const { sites, blind } = rust[0].applicabilityPredicate;
   assert.match(blind, /Rust code inside a macro call is not in the tree/);
   assert.match(sites, /`#\[cfg\(test\)\]`, alone or inside `all\(\.\.\)`, on an item or as `#!\[cfg\(test\)\]` on the file/);

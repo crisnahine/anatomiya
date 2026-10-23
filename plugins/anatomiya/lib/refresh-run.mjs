@@ -9,6 +9,7 @@ import { basename, join } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
+import { gitRoot } from "./corpus.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
 import { createdAlone, lockContent, refreshBlockers, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
 import { atomic } from "./store.mjs";
@@ -155,6 +156,8 @@ async function passes(root, store, { scan, pin, git }) {
       const options = { ...(leaveAlone.length > 0 ? { leaveAlone } : {}), ...(carried !== null ? { carried } : {}) };
       stopped = stoppedIn(await (Object.keys(options).length > 0 ? scan(root, options) : scan(root)));
     } catch (err) {
+      // Another scan wrote the map while this one planned: its map and its record stand, and the next pass asks again.
+      if (err?.stale) continue;
       // The previous map stays: a scan that throws has written nothing or
       // put back what it replaced, and one that would not run now will not
       // run on the next trigger either, until something about the checkout
@@ -172,20 +175,31 @@ async function passes(root, store, { scan, pin, git }) {
  * session to `/anatomiya:scan` when a refresh failed, and without this the
  * warning outlived the scan that answered it, and the next refresh rescanned a
  * checkout that had not moved. What the last automatic pin accepted is kept.
- * Never throws: the scan it follows has already succeeded.
+ * `before` is the stamp taken before the scan started: where the checkout moved
+ * since, the map is older than the stamp and nothing is recorded, so the next
+ * refresh rescans. Never throws: the scan it follows has already succeeded.
  */
-export async function noteScan(root) {
+export async function noteScan(root, before) {
   try {
     const store = resolveInside(root, STORE_DIR);
     if (store === null) return;
     // Not this scan's to remove: an empty directory that cannot be listed goes with `rmdir` all the same.
     if (refreshBlockers(store).includes(basename(REFRESH_STATE))) return;
     const stamp = await stampOf(root);
-    if (stamp === null) return;
+    if (stamp === null || stamp !== before) return;
     const previous = readRecord(join(store, basename(REFRESH_STATE))).record;
     writeState(store, { stamp, ok: true, error: null, pinned: previous?.pinned ?? null, held: previous?.held ?? null });
   } catch {
     // Nothing to record; the next refresh rescans, which is the old behaviour.
+  }
+}
+
+/** The stamp of the repository a path is in, taken before a hand scan so `noteScan` can tell the scan saw it; null where there is none. */
+export async function scanStamp(cwd) {
+  try {
+    return await stampOf(await gitRoot(cwd));
+  } catch {
+    return null;
   }
 }
 

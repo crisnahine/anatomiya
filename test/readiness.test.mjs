@@ -728,9 +728,9 @@ test("an install that ran and stopped short is left to the rows that say which e
  * a fix.
  */
 const OLD_NODE = "20.20.2";
-function onOldNode(args, { input = "" } = {}) {
-  const pretend = `Object.defineProperty(process.versions, "node", { value: ${JSON.stringify(OLD_NODE)} })`;
-  const run = spawnSync(process.execPath, [`--import=data:text/javascript,${encodeURIComponent(pretend)}`, BINARY, ...args], {
+function onOldNode(args, { input = "", version = OLD_NODE, flags = [] } = {}) {
+  const pretend = `Object.defineProperty(process.versions, "node", { value: ${JSON.stringify(version)} })`;
+  const run = spawnSync(process.execPath, [...flags, `--import=data:text/javascript,${encodeURIComponent(pretend)}`, BINARY, ...args], {
     encoding: "utf8",
     input,
   });
@@ -806,5 +806,44 @@ test("a hook on a node under the floor answers the empty object and exits 0", as
 
     assert.equal(code, 0, `${hook}: ${stderr}`);
     assert.equal(stdout, "{}", hook);
+  }
+});
+
+test("a hook whose own modules fail to load answers the empty object, and a command still fails loudly", (t) => {
+  // A plugin update that left a module unparseable made every echo exit 1 with
+  // a SyntaxError, on every turn of the session, before the hook's own guard.
+  const home = mkdtempSync(join(tmpdir(), "anatomiya-broken-"));
+  t.after(() => removeTree(home));
+  for (const part of ["lib", "bin"]) cpSync(join(ROOT, REL.anatomiya, part), join(home, part), { recursive: true });
+  cpSync(join(ROOT, REL.anatomiya, "package.json"), join(home, "package.json"));
+  writeFileSync(join(home, "lib", "encode.mjs"), "/**\n");
+  const run = (args, input = "") => spawnSync(process.execPath, [join(home, "bin", "anatomiya.mjs"), ...args], { encoding: "utf8", input });
+
+  const hook = run(["echo", home], JSON.stringify({ hook_event_name: "UserPromptSubmit", cwd: home }));
+  assert.equal(hook.status, 0, hook.stderr);
+  assert.equal(hook.stdout, "{}");
+  const scan = run(["scan", home]);
+  assert.equal(scan.status, 1);
+  assert.match(scan.stderr, /SyntaxError/);
+});
+
+test("a node too old to parse the plugin still gets the floor sentence, and a hook the empty object", (t) => {
+  // Node 18's V8 refuses the `v` regular-expression flag a module the binary
+  // loads uses, so the parse failed before the floor check ran. Turning the
+  // flag off stands in for that parser; a newer V8 drops harmony flags.
+  const flag = "--no-harmony-regexp-unicode-sets";
+  if (spawnSync(process.execPath, [flag, "-e", "0"]).status !== 0) return t.skip(`this node does not take ${flag}`);
+  const run = (args, input = "") => onOldNode(args, { input, version: "18.20.8", flags: [flag] });
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-oldparser-"));
+  t.after(() => removeTree(dir));
+
+  const hook = run(["echo", dir], JSON.stringify({ hook_event_name: "UserPromptSubmit", cwd: dir }));
+  assert.equal(hook.code, 0, hook.stderr);
+  assert.equal(hook.stdout, "{}");
+  // doctor runs under the floor only where this node can load it, and this one cannot.
+  for (const args of [["scan", dir], ["doctor"]]) {
+    const { code, stderr } = run(args);
+    assert.equal(code, 1, `${args[0]}: ${stderr}`);
+    assert.match(stderr, /^anatomiya: node 18\.20\.8 is older than the 22\.0\.0 this runs on, install Node 22 or newer/, `${args[0]}: ${stderr}`);
   }
 });

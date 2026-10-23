@@ -200,6 +200,39 @@ test("a try directly in the async function counts", () => {
   assert.deepEqual(r, { candidates: 1, conforming: 1 });
 });
 
+test("a .catch handed a value, a schema's fallback, or nothing at all handles no failure", () => {
+  // Zod's `.catch({})` is a default, and `.catch()` passes a rejection on.
+  for (const src of [
+    `async function save(i) { const s = z.object({}).catch({}); return await db.insert(s.parse(i)) }`,
+    `async function save(i) { const s = z.array(z.string()).catch([]); return await db.insert(s.parse(i)) }`,
+    `async function load() { return await fetch("/x").catch() }`,
+    `async function f(i) { return await z.string().catch("").parse(i) }`,
+    "async function g(i) { return await z.string().catch(`n/a`).parse(i) }",
+    `async function h(p) { return await p.catch(-1) }`,
+    `async function k(p) { return await p.catch(undefined) }`,
+    `async function m(p) { return await p.catch(new Date()) }`,
+    `async function n(p) { return await p.then(ok, null) }`,
+  ]) {
+    assert.deepEqual(counts("async_error_handling", src), { candidates: 1, conforming: 0 }, src);
+  }
+});
+
+test("a .catch() or a two-argument .then() in the function's own body handles it", () => {
+  assert.deepEqual(
+    counts("async_error_handling", `async function f() { return fetch("/x").catch(() => null) }`),
+    { candidates: 1, conforming: 1 }
+  );
+  assert.deepEqual(
+    counts("async_error_handling", `async function h(p) { return await p.then(ok, fail) }`),
+    { candidates: 1, conforming: 1 }
+  );
+  assert.deepEqual(
+    counts("async_error_handling", `async function g(p) { await p.then(ok); x["catch"](y) }`),
+    { candidates: 1, conforming: 0 },
+    "a one-argument then and a computed catch handle nothing"
+  );
+});
+
 test("a try with only a finally lets the failure through, so it handles nothing", () => {
   // Lock, transaction and cleanup helpers are written as try/finally, which
   // re-throws: 80 async functions none of which caught anything stated "async

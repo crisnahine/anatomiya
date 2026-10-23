@@ -187,6 +187,10 @@ function bodyIsEmpty(block) {
   return !block || !Array.isArray(block.body) || block.body.length === 0;
 }
 
+// Argument shapes no promise handler takes.
+const VALUE_ARGUMENT = new Set(["ObjectExpression", "ArrayExpression", "Literal", "TemplateLiteral", "UnaryExpression", "NewExpression"]);
+const isHandler = (arg) => !!arg && !VALUE_ARGUMENT.has(arg.type) && !(arg.type === "Identifier" && arg.name === "undefined");
+
 export const DIMENSIONS = [
   {
     key: "swallowed_error",
@@ -315,7 +319,7 @@ export const DIMENSIONS = [
     judgesBody: true,
     applicabilityPredicate: {
       sites: "a file declaring at least one async function",
-      blind: "a caller-level wrapper handling the failure is invisible from the function that fails",
+      blind: "a caller-level wrapper handling the failure is invisible from the function that fails, and a schema's `.catch` handed a function, Zod's `.catch(() => d)`, reads as handling one",
     },
     langs: ["js", "jsx", "vue", "svelte"],
     visitor(program, add) {
@@ -331,6 +335,10 @@ export const DIMENSIONS = [
             // are written that way everywhere: counted, they stated this claim
             // at 80 of 80 over code that caught nothing.
             if (m.type === "TryStatement" && m.handler) handled = true;
+            const p = m.type === "CallExpression" && m.callee.type === "MemberExpression" && !m.callee.computed &&
+              m.callee.property.name;
+            // A value handed to `.catch` is a schema's fallback (Zod's `.catch({})`), and none passes the rejection on.
+            if ((p === "catch" && isHandler(m.arguments[0])) || (p === "then" && m.arguments.length === 2 && isHandler(m.arguments[1]))) handled = true;
           });
           add({ node: n, conforming: handled, where: whereOf(n, ctx) });
         },

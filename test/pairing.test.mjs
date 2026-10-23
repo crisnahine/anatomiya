@@ -430,6 +430,54 @@ test("a tie the declared pair has no part in learns nothing", () => {
   assert.equal(companionRoot(corpus, shape), null);
 });
 
+test("the companion root compares a producer only with specs of its basename, and votes as a full scan does", () => {
+  // The vote a full producer-by-spec scan casts, kept here as the oracle.
+  function scanned(corpus, { from, to, ext, companionSuffix }) {
+    const specs = [...corpus].filter((rel) => rel.endsWith(companionSuffix));
+    const votes = new Map();
+    for (const rel of corpus) {
+      if (!rel.startsWith(`${from}/`) || !rel.endsWith(ext) || rel.endsWith(companionSuffix)) continue;
+      const tail = `/${rel.slice(from.length + 1, -ext.length)}${companionSuffix}`;
+      for (const c of specs) {
+        if (c.endsWith(tail)) votes.set(c.slice(0, -tail.length), (votes.get(c.slice(0, -tail.length)) || 0) + 1);
+      }
+    }
+    if (!votes.size) return null;
+    const ranked = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    const tied = ranked.filter(([, n]) => n === ranked[0][1]).map(([root]) => root);
+    return tied.length === 1 ? tied[0] : tied.includes(to) ? to : null;
+  }
+
+  let seed = 7;
+  const pick = (list) => list[(seed = (seed * 1103515245 + 12345) % 2147483648) % list.length];
+  const names = ["user", "post", "a/user", "b/post", "edition", "a/b/c", "x_user", "user_x"];
+  const roots = ["spec/models", "test/unit/app/models", "spec/requests", "spec", "spec/models/a"];
+  const shape = { from: "app/models", to: "spec/models", ext: ".rb", companionSuffix: "_spec.rb" };
+  for (let round = 0; round < 200; round++) {
+    const corpus = new Set();
+    for (let i = 0; i < 12; i++) corpus.add(`app/models/${pick(names)}.rb`);
+    for (let i = 0; i < 12; i++) corpus.add(`${pick(roots)}/${pick(names)}_spec.rb`);
+    assert.equal(companionRoot(corpus, shape), scanned(corpus, shape), [...corpus].join(" "));
+  }
+
+  // 50 producers, their 50 specs and 500 unrelated specs: a spec of another
+  // basename is never compared with a producer's tail.
+  let compared = 0;
+  const Spec = class extends String {
+    endsWith(s) {
+      if (s.startsWith("/")) compared++;
+      return super.endsWith(s);
+    }
+  };
+  const corpus = new Set([
+    ...Array.from({ length: 50 }, (_, i) => `app/models/m${i}.rb`),
+    ...Array.from({ length: 50 }, (_, i) => new Spec(`spec/models/m${i}_spec.rb`)),
+    ...Array.from({ length: 500 }, (_, i) => new Spec(`spec/lib/other${i}_spec.rb`)),
+  ]);
+  assert.equal(companionRoot(corpus, shape), "spec/models");
+  assert.equal(compared, 50);
+});
+
 test("a producer root nested inside a package is learned, and the obligation fires inside that package", () => {
   // decidim: PAIRINGS declares "app/models" literally, so on a monorepo where
   // every gem nests its own app/ one level down, the producer set was empty

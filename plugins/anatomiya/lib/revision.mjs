@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 
 import { blobReader } from "./git.mjs";
 import { language } from "./langs.mjs";
-import { byCode } from "./paths.mjs";
+import { byCode, folded } from "./paths.mjs";
 
 // How many reads are asked for at once. One child answers them in turn; the
 // bound is on what runs side by side in the per-call reader: every read once
@@ -86,18 +86,17 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
  *
  * At its own path under the temporary root, except where that path folds to
  * one already taken: on a case-insensitive filesystem `src/Foo.ts` and
- * `src/foo.ts` are one file there, as a composed and a decomposed `é` are on
- * APFS, and the second blob written replaced the
- * first, so one of the two was parsed with the other's contents. A later one
- * goes under a numbered directory of its own, with its path, and so its name
- * and the extension that picks the grammar, kept whole beneath it. That
+ * `src/foo.ts` are one file there, as `s.ts` and `ſ.ts` and a composed and a
+ * decomposed `é` are on APFS, and the second blob written replaced the first,
+ * so one of the two was parsed with the other's contents. A later one goes
+ * under a numbered directory of its own, with its path, and so its name and
+ * the extension that picks the grammar, kept whole beneath it. That
  * directory sits under `.git`, a name git never tracks a path through, so no
  * file asked for can have been meant to sit there.
  */
 function placements(dir, files) {
   const taken = new Set();
   const placed = new Map();
-  const folded = (path) => path.normalize("NFC").toLowerCase();
   for (const f of files) {
     const rel = f?.rel;
     if (typeof rel !== "string") continue;

@@ -12,37 +12,26 @@ permissions:
   contents: read
 
 jobs:
-  release:
+  test:
     runs-on: ubuntu-latest
     # A test that hangs (a blocking open on a fifo, say) fails here instead of
     # holding the runner for the six-hour default. This job runs the same suite
     # as ci, and it is the one whose result cannot be taken back.
     timeout-minutes: 30
-    # Write is needed for one thing: creating the release. Nothing else in this
-    # workflow writes, so nothing else gets the permission.
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: npm
 
-      # Which plugin this tag releases, whether every manifest that plugin owns
-      # carries that version, and the changelog section that becomes the release
-      # body. One module rather than shell, because a release cannot be taken
-      # back and nothing could run the shell until a tag was already pushed.
+      # A tag the release job would refuse is refused here, before the suite.
       - name: Resolve the tag
-        id: release
         shell: bash
-        run: |
-          node scripts/release.mjs "$GITHUB_REF_NAME" \
-            --notes "$RUNNER_TEMP/notes.md" \
-            --github-output "$GITHUB_OUTPUT"
-          echo "release notes:"
-          cat "$RUNNER_TEMP/notes.md"
+        run: node scripts/release.mjs "$GITHUB_REF_NAME"
 
       - run: npm ci --ignore-scripts
 
@@ -80,6 +69,38 @@ jobs:
           fi
           # shellcheck disable=SC2086
           node --test $files
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Write is needed for one thing: creating the release. A step can change the
+    # PATH and environment of every later step in its job, so the job holding
+    # the token installs nothing and runs no test.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      # Which plugin this tag releases, whether every manifest that plugin owns
+      # carries that version, and the changelog section that becomes the release
+      # body. One module rather than shell, because a release cannot be taken
+      # back and nothing could run the shell until a tag was already pushed.
+      - name: Resolve the tag
+        id: release
+        shell: bash
+        run: |
+          node scripts/release.mjs "$GITHUB_REF_NAME" \
+            --notes "$RUNNER_TEMP/notes.md" \
+            --github-output "$GITHUB_OUTPUT"
+          echo "release notes:"
+          cat "$RUNNER_TEMP/notes.md"
 
       # The release body is the changelog section the resolve step already read
       # and wrote, unedited. A tag with no section of its own never reached this

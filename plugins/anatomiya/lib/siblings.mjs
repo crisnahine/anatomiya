@@ -248,7 +248,10 @@ function projectIndex(corpusRels) {
 
   const tails = new Map();
   for (const rel of corpusRels) {
-    for (let cut = -1, last = false; !last; cut = rel.indexOf("/", cut + 1)) {
+    // The last 32 segments at most, as `register` keeps: every tail costs the length of the path again.
+    let cut = -1;
+    for (let extra = rel.split("/").length - 32; extra > 0; extra--) cut = rel.indexOf("/", cut + 1);
+    for (let last = false; !last; cut = rel.indexOf("/", cut + 1)) {
       const tail = rel.slice(cut + 1);
       const prefix = rel.slice(0, Math.max(cut, 0));
       const held = tails.get(tail);
@@ -318,7 +321,8 @@ function tailIndex(corpusRels) {
  */
 function register(index, path, rel) {
   const segments = path.split("/");
-  for (let i = 0; i < segments.length; i++) {
+  // Every tail of a path is quadratic in its depth, and the scanned tree sets the depth.
+  for (let i = Math.max(0, segments.length - 32); i < segments.length; i++) {
     const key = `/${segments.slice(i).join("/")}`;
     index.set(key, index.has(key) && index.get(key) !== rel ? null : rel);
   }

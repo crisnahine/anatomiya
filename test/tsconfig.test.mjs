@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, isAbsolute, win32 } from "node:path";
+import { join, isAbsolute, posix, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 import { repo } from "./ts-repo.mjs";
@@ -277,10 +277,10 @@ test("a path on another drive is outside, not inside", needsTs, () => {
   // host's own check did not. Driven through path.win32 so it holds here.
   const rel = win32.relative("C:\\plugin\\node_modules\\typescript\\lib", "D:\\secrets\\x.ts");
   assert.equal(rel.startsWith(".."), false, "this is why the bare check let it through");
-  assert.equal(within(rel), false, "a path on another drive is not contained");
+  assert.equal(within(rel, win32.sep), false, "a path on another drive is not contained");
 
-  assert.equal(within(win32.relative("C:\\a\\lib", "C:\\a\\lib\\lib.d.ts")), true);
-  assert.equal(within(win32.relative("C:\\a\\lib", "C:\\a\\other\\x.ts")), false);
+  assert.equal(within(win32.relative("C:\\a\\lib", "C:\\a\\lib\\lib.d.ts"), win32.sep), true);
+  assert.equal(within(win32.relative("C:\\a\\lib", "C:\\a\\other\\x.ts"), win32.sep), false);
 });
 
 test("containment folds case on Windows and does not on POSIX", () => {
@@ -651,9 +651,9 @@ test("two Windows drives have no relative path between them, and that is not con
   // and read as inside on the one platform singled out for special handling.
   assert.equal(within(""), true);
   assert.equal(within("sub/a.ts"), true);
-  assert.equal(within("../a.ts"), false);
-  assert.equal(within("/etc/passwd"), false);
-  assert.equal(within("D:\\other\\a.ts"), false);
+  assert.equal(within("../a.ts", posix.sep), false);
+  assert.equal(within("/etc/passwd", posix.sep), false);
+  assert.equal(within("D:\\other\\a.ts", win32.sep), false);
 });
 
 test("a directory whose name starts with two dots is inside, not above", (t) => {
@@ -661,14 +661,24 @@ test("a directory whose name starts with two dots is inside, not above", (t) => 
   // root, so an `extends` into a directory of that name was refused as
   // escaped and the whole tier degraded. Only `..` as a whole segment climbs.
   assert.equal(within("..base/tsconfig.json"), true);
-  assert.equal(within("..base\\tsconfig.json"), true);
+  assert.equal(within("..base\\tsconfig.json", win32.sep), true);
   assert.equal(within(".."), false);
-  assert.equal(within("..\\a.ts"), false);
+  assert.equal(within("..\\a.ts", win32.sep), false);
   const dir = tree(t);
   mkdirSync(join(dir, "..base"));
   writeFileSync(join(dir, "..base", "a.ts"), "export const a = 1;\n");
   assert.equal(insideRoot(dir, join(dir, "..base", "a.ts")), true);
   assert.equal(insideRoot(dir, join(dir, "..")), false);
+});
+
+test("on POSIX a backslash or a drive letter is part of a name, so such a directory is inside", { skip: process.platform === "win32" && "Windows cannot name these" }, (t) => {
+  const dir = tree(t);
+  for (const name of ["..\\cfg", "C:"]) {
+    mkdirSync(join(dir, name));
+    writeFileSync(join(dir, name, "base.json"), "{}\n");
+    assert.equal(insideRoot(dir, join(dir, name, "base.json")), true, name);
+    assert.equal(contains(dir, join(dir, name, "base.json")), true, name);
+  }
 });
 
 test("a root tsconfig that is a link out of the repository is refused, not followed", { skip: needsTs.skip || needsSymlinks.skip }, () => {

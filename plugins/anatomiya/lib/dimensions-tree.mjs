@@ -1,6 +1,9 @@
 // Rows over a tree-sitter tree. No row spells a node type: each asks `SHAPES` what its language calls the thing.
-import { assertKeyed } from "./langs.mjs";
+import { addPathSites, namesWellKnown } from "./stems.mjs";
+import { assertKeyed, familyOf } from "./langs.mjs";
 import { isTestFile } from "./layout.mjs";
+import { dirOf } from "./paths.mjs";
+import { underTestTree } from "./test-shape.mjs";
 import { treeFacets } from "./tree-facets.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
 import { fieldOf, nameOf, site } from "./tree-walk.mjs";
@@ -8,6 +11,7 @@ import { fieldOf, nameOf, site } from "./tree-walk.mjs";
 const KINDS = [
   "fn", "cls", "scope", "wrap", "comment", "annotation", "inner", "directive", "catch", "raise", "ident", "variable",
   "block", "docstring", "doc", "args", "iface", "receiverType", "receiverBeforeName", "paren", "property", "label", "reference", "conditional",
+  "import", "route", "routeArgs", "argument", "array", "string", "stringText", "quote",
 ];
 const SETS = new Map(
   Object.entries(SHAPES).map(([lang, shapes]) => [lang, Object.fromEntries(KINDS.map((kind) => [kind, new Set(shapes[kind] ?? [])]))])
@@ -80,9 +84,12 @@ function attributeSays(item, sets, name, word) {
 }
 
 // Rust keeps a file's unit tests in the file, and marks what it takes out of the documented surface.
+const inTests = (item, sets) => attributeSays(item, sets, "cfg", "test");
 const OUTSIDE = {
-  rust: (item, sets) => attributeSays(item, sets, "cfg", "test") || attributeSays(item, sets, "doc", "hidden"),
+  rust: (item, sets) => inTests(item, sets) || attributeSays(item, sets, "doc", "hidden"),
 };
+// What holds a file's own tests, in a language that keeps them in the file.
+const TEST_ITEMS = { rust: inTests };
 
 /** The first node after an attribute among its siblings that is neither an attribute nor a comment, or null. */
 function standsOn(parent, attribute, sets) {
@@ -93,9 +100,22 @@ function standsOn(parent, attribute, sets) {
   return null;
 }
 
-/** Which nodes an attribute takes out of the documented surface, so the row passes over each and all it holds. */
-function outside(lang, sets) {
-  const says = OUTSIDE[lang];
+/**
+ * Whether another attribute standing on the item `own` stands on `says` so, above it or below: the
+ * attributes and comments run unbroken up to their item, so only that run is read.
+ */
+function besideOwn(says, own, container, sets) {
+  const kids = container.children;
+  const inRun = (node) => sets.annotation.has(node.type) || sets.comment.has(node.type);
+  const said = (node) => sets.annotation.has(node.type) && says(node, sets);
+  const at = placeAmong(container, own);
+  for (let i = at - 1; i >= 0 && inRun(kids[i]); i--) if (said(kids[i])) return true;
+  for (let i = at + 1; i < kids.length && inRun(kids[i]); i++) if (said(kids[i])) return true;
+  return false;
+}
+
+/** Which nodes an attribute `says` marks, so a row passes over each and all it holds. */
+function outside(says, sets) {
   if (!says) return { note() {}, holds: () => false };
   const marked = new Set();
   return {
@@ -352,6 +372,69 @@ const UNTYPED = { python: /^__\w+__$/, php: PHP_BUILDS };
 // parameter whose name matches `ignored?[A-Za-z\d]*`, and of the names that fits only this one is read.
 const UNBOUND = { java: new Set(["ignored"]) };
 
+/** A string's text where it is written whole, with whether the walk cut it, or null: an interpolation, an escape or a concatenation is built. */
+function wholeString(node, sets) {
+  if (!sets.string.has(node.type)) return null;
+  let text = "";
+  let cut = false;
+  for (const child of node.children) {
+    if (sets.quote.has(child.type)) continue;
+    if (!sets.stringText.has(child.type) || child.children.length) return null;
+    text += child.text;
+    cut ||= child.text.length < child.end - child.start;
+  }
+  return { text, cut };
+}
+
+/** The values a route's path may be: its first positional argument where `positional`, and any named in `keys`, an array element by element. */
+function pathValues(list, { positional = true, keys = [] }, shapes, sets) {
+  const values = [];
+  let first = positional;
+  for (const arg of list.children) {
+    if (sets.comment.has(arg.type)) continue;
+    const wrapped = sets.argument.has(arg.type);
+    const key = wrapped && shapes.key ? (fieldOf(arg, shapes.key)?.text ?? null) : null;
+    const value = wrapped ? arg.children.at(-1) : arg;
+    if (key === null) {
+      if (!first) continue;
+      first = false;
+    } else if (!keys.includes(key)) continue;
+    values.push(...(sets.array.has(value.type) ? value.children : [value]));
+  }
+  return values;
+}
+
+const VERBS = ["get", "post", "put", "patch", "delete", "head", "options"];
+const PY_DECORATORS = new Set([...VERBS, "route", "api_route", "websocket"]);
+const PY_PREFIXES = new Map([["APIRouter", "prefix"], ["include_router", "prefix"], ["Blueprint", "url_prefix"], ["register_blueprint", "url_prefix"]]);
+const SPRING_MAPPINGS = new Set(["GetMapping", "PostMapping", "PutMapping", "PatchMapping", "DeleteMapping", "RequestMapping"]);
+const ASPNET_ATTRIBUTES = new Set(["Route", "HttpGet", "HttpPost", "HttpPut", "HttpPatch", "HttpDelete", "HttpHead", "HttpOptions"]);
+const MINIMAL_API = new Set(["MapGet", "MapPost", "MapPut", "MapPatch", "MapDelete", "MapGroup", "MapMethods"]);
+const RUST_ATTRIBUTES = new Set([...VERBS, "route"]);
+const RUST_CALLS = new Set(["route", "nest", "mount", "resource", "scope"]);
+// Django's `re_path` and `url` take a regular expression, which is no path.
+const DJANGO_URLS = /^(?:from\s+django\.urls\s+import|import\s+django\.urls)\b/;
+
+/**
+ * Which arguments of a call or an annotation declare a route's path, by its name and whether it sits on a declaration;
+ * `{ client: true }` for an annotation marking its class's mappings as another service's; or null.
+ * `slash` asks the path to start with `/`, where the name alone is some other library's too.
+ */
+const ROUTE_FORMS = {
+  python: (name, onDeclaration, django) => {
+    if (onDeclaration) return PY_DECORATORS.has(name) ? { slash: true, keys: ["path", "rule"] } : null;
+    if (name === "add_url_rule") return { slash: true, keys: ["rule"] };
+    if (name === "path" && django) return { keys: ["route"] };
+    return PY_PREFIXES.has(name) ? { positional: false, keys: [PY_PREFIXES.get(name)], slash: true } : null;
+  },
+  // A Feign client's mappings name another service's routes.
+  java: (name, onDeclaration) =>
+    !onDeclaration ? null : SPRING_MAPPINGS.has(name) ? { keys: ["value", "path"] } : name === "FeignClient" ? { client: true } : null,
+  csharp: (name, onDeclaration) =>
+    onDeclaration ? (ASPNET_ATTRIBUTES.has(name.replace(/Attribute$/, "")) ? { keys: ["template"] } : null) : MINIMAL_API.has(name) ? { keys: ["pattern"] } : null,
+  rust: (name, onDeclaration) => ((onDeclaration ? RUST_ATTRIBUTES : RUST_CALLS).has(name) ? { slash: true } : null),
+};
+
 // A function row reports the function's name as its site: a site is known again by its text, and a line added to the body would make an old function a new one.
 // `where` carries the class beside the name, which is what tells a new `B.run` from the `A.run` under it.
 export const TREE_DIMENSIONS = [
@@ -402,7 +485,7 @@ export const TREE_DIMENSIONS = [
       const lang = program.lang;
       const shapes = SHAPES[lang];
       const sets = SETS.get(lang);
-      const out = outside(lang, sets);
+      const out = outside(OUTSIDE[lang], sets);
       const notOffered = NOT_OFFERED[lang] ?? [];
       const noSite = NO_SITE[lang]?.(program, sets) ?? (() => false);
       return {
@@ -450,6 +533,65 @@ export const TREE_DIMENSIONS = [
       };
     },
   },
+  {
+    key: "endpoint_segment_case",
+    tier: "syntactic",
+    learnedClasses: true,
+    claim: "URL path segments here are <style>",
+    counterClaim: null, // the other side is another class, which the learning already picks
+    precision: "partial",
+    applicabilityPredicate: {
+      sites:
+        "a word of two or more words that spells a naming class, in a URL path a route declares as a string written whole: in Python a route decorator, `@x.get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `route`, `api_route` or `websocket`, and `add_url_rule`, on a path starting with `/`, Django's `path`, by its first argument or `route=`, in a file importing django.urls, and the prefix of `APIRouter(prefix=)`, `include_router(prefix=)`, `Blueprint(url_prefix=)` and `register_blueprint(url_prefix=)` starting with `/`; in Java Spring's `@GetMapping`, `@PostMapping`, `@PutMapping`, `@PatchMapping`, `@DeleteMapping` and `@RequestMapping`, its first argument, `value=` or `path=`, an array element by element, on a method or a class, outside an interface marked `@FeignClient`, whose mappings are another service's; in C# `[Route]`, `[HttpGet]` and the other verbs, its first argument or `template:`, and a minimal API's `MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `MapGroup` and `MapMethods`; in Rust actix's and rocket's `#[get]`, the other verbs and `#[route]`, and `.route`, `.nest`, `.mount`, `resource` and `scope`, on a path starting with `/`; outside a test file or a test tree. A parameter (`{id}`, `{id:int}`, `<int:pk>`, `<id>`, `[controller]`, `:id`, `*`) is the framework's syntax, a query or fragment ends the path, a URL with a scheme or a leading `//` is another site's, and what sits under `.well-known` on a class's mapping or in a call's own arguments a standard names, so none of those is a site; nor is a single word, `users` or `Users`, nor a Rust route in or on an item marked `#[cfg(test)]`, nor a Django `re_path` or `url`, which take a regular expression",
+      blind: "a path built at run time, from an interpolated string (an f-string with a field), a concatenation, a constant or a helper call, or written with an escape, as a C# verbatim or raw string or a Rust raw string, names segments this never reads, a `.well-known` group held in a variable or chained ahead of the call does not reach the routes under it, and Starlette's `Route`, `Mount` and `WebSocketRoute` and ASP.NET's conventional `MapControllerRoute` and `MapRoute` are not read at all",
+    },
+    langs: ["python", "java", "csharp", "rust"],
+    visitor(program, add, extra = {}) {
+      if (inTestFile(program, extra) || underTestTree(dirOf(extra.rel ?? ""), familyOf(program.lang))) return IDLE;
+      const shapes = SHAPES[program.lang];
+      const sets = SETS.get(program.lang);
+      const testItem = TEST_ITEMS[program.lang];
+      const tests = outside(testItem, sets);
+      const formOf = ROUTE_FORMS[program.lang];
+      const source = extra.source ?? "";
+      const django =
+        program.lang === "python" &&
+        program.children.some((node) => sets.import.has(node.type) && DJANGO_URLS.test(source.slice(node.start, node.end)));
+      // What declares no route of this service's own: a class under a `.well-known` mapping or a Feign client's, a call's arguments under a `.well-known` path.
+      const skipped = new Set();
+      return {
+        node(node, ctx) {
+          tests.note(node, ctx);
+          // A Feign client's annotations come in any order, so its interface is marked before any of them is read.
+          const marks = (part) => part.children.some((a) => sets.route.has(a.type) && formOf(annotationName(a, sets.routeArgs), true, django)?.client);
+          if (sets.cls.has(node.type) && node.children.some(marks)) skipped.add(node);
+          if (!sets.route.has(node.type) || tests.holds(node, ctx)) return;
+          const parent = ctx.ancestors.at(-1);
+          const onDeclaration = sets.annotation.has(node.type) || sets.annotation.has(parent.type);
+          const form = formOf(annotationName(node, sets.routeArgs), onDeclaration, django);
+          if (!form || form.client) return;
+          const holder = ctx.ancestors.at(-2);
+          // A handler marked as the file's own test, beside its route rather than around it.
+          if (testItem && onDeclaration) {
+            const own = sets.annotation.has(node.type) ? node : parent;
+            const container = own === node ? parent : holder;
+            if (container && besideOwn(testItem, own, container, sets)) return;
+          }
+          const list = node.children.find((child) => sets.routeArgs.has(child.type));
+          if (!list) return;
+          const scope = !onDeclaration ? list : holder && sets.cls.has(holder.type) ? holder : null;
+          if (skipped.size && ctx.ancestors.some((a) => skipped.has(a))) return;
+          for (const value of pathValues(list, form, shapes, sets)) {
+            const path = wholeString(value, sets);
+            if (path === null || (form.slash && !path.text.startsWith("/"))) continue;
+            if (namesWellKnown(path.text) && scope) skipped.add(scope);
+            // Its arguments' offset, since a chained call starts where the chain does.
+            addPathSites(add, site(value), path.text, `${list.start}`, { mayBeCut: path.cut });
+          }
+        },
+      };
+    },
+  },
 ];
 
 // Held to the rows that read them, here because a row's `langs` is the list: a
@@ -462,3 +604,5 @@ assertKeyed("OUTSIDE", OUTSIDE, [], asked("public_doc_comment"));
 assertKeyed("NO_SITE", NO_SITE, [], asked("public_doc_comment"));
 assertKeyed("UNBOUND", UNBOUND, [], asked("caught_error_used"));
 assertKeyed("UNTYPED", UNTYPED, asked("declared_return_type"));
+assertKeyed("ROUTE_FORMS", ROUTE_FORMS, asked("endpoint_segment_case"));
+assertKeyed("TEST_ITEMS", TEST_ITEMS, [], asked("endpoint_segment_case"));

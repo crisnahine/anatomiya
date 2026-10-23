@@ -314,9 +314,9 @@ _Avoid_: threshold, check, filter, guard
 
 **Section**:
 The declaration a candidate sits in, on a row whose construct lives in one file by design: a route
-in a route table, never a route, a namespace or a scope around it. Where a slot's candidates carry
-sections, the gates that ask how many places the evidence comes from count sections in place of
-files (D16).
+in a route table, never a route, a namespace or a scope around it. In Python, Java, C# and Rust it
+is the route call's or annotation's own argument list. Where a slot's candidates carry sections,
+the gates that ask how many places the evidence comes from count sections in place of files (D16).
 _Avoid_: group, bucket, chunk
 
 **Scope clause**:
@@ -339,7 +339,8 @@ _Avoid_: dependency, coupling, co-occurrence rule
 A directory and a file suffix, `lib/rubocop/cop/style/*.rb`, or the same suffix one directory up,
 `lib/rubocop/cop/*/*.rb`, which speaks for a sibling directory only where its changes came from two
 child directories, at least half of them from ones that still hold a producer. The suffix runs from
-the first dot past any segment starting with a digit, Ruby's `_spec.rb` and `_test.rb` kept whole,
+the first dot past any segment starting with a digit, Ruby's `_spec.rb` and `_test.rb`, Go's
+`_test.go` and Python's `_test.py` kept whole,
 and holds only ASCII letters, digits, `.`, `_` and `-`. A test's class is neither side of a
 co-change claim.
 _Avoid_: glob, pattern, file type (for a class)
