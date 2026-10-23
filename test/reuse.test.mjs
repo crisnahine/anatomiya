@@ -658,10 +658,14 @@ test("a name git has to quote keeps its lines", needsPosixPaths, async (t) => {
 });
 
 test("an added line that starts with ++ is not read as a file of its own", async (t) => {
+  // A hunk after it, so a parser that took the line for a header would hand
+  // that hunk to the wrong file.
   const { dir, write } = repo(t);
-  write("src/a.ts", "export const one = 1;\nexport const two = 2;\n++ b/src/elsewhere.ts\nexport function three() {}\n");
+  write("src/a.ts", "export const one = 1;\n++ b/src/elsewhere.ts\nexport const two = 2;\nexport function three() {}\n");
 
-  assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 3, to: 4, created: false }]]]);
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [
+    ["src/a.ts", [{ from: 2, to: 2, created: false }, { from: 4, to: 4, created: false }]],
+  ]);
 });
 
 test("a diff driver the repository configures is never run", needsShebang, async (t) => {

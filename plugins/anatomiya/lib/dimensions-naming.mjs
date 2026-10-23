@@ -11,7 +11,7 @@
 import { templateMountsByName } from "./langs.mjs";
 import { componentProps, isFunctionLike } from "./walk.mjs";
 import { attrName, jsxElementNames, jsxName, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
-import { fileStem } from "./stems.mjs";
+import { addPathSites, classifyWord, fileStem, namesWellKnown } from "./stems.mjs";
 import { encode } from "./encode.mjs";
 import { namesATestFile, underTestTree } from "./test-shape.mjs";
 import { dirOf } from "./paths.mjs";
@@ -19,37 +19,6 @@ import { dirOf } from "./paths.mjs";
 const NAMESPACE = new Set(["TSModuleDeclaration"]);
 
 export const CLASSES = ["camelCase", "PascalCase", "kebab-case", "snake_case"];
-
-/**
- * One word's class, or null where the classes cannot disagree about it.
- *
- * A single lowercase word (`index`, `utils`) matches every class at once, so it
- * votes for none of them: counting it as any one class would let a directory
- * full of single words state a convention no filename ever expressed.
- *
- * A word of capitals alone is not PascalCase either. `DEBUG` is the constant
- * `MAX_DEBUG` is with one word fewer, and `GET` is a route handler whose name
- * the framework decides; read as PascalCase, a Next.js `app/api` directory
- * stated "functions are named PascalCase" and a constants module stated it of
- * its exports. It spells the SCREAMING case none of the four classes is, the
- * way `MAX_DEBUG` already does.
- */
-export function classifyWord(word) {
-  if (/^[\p{Ll}\p{Lo}\d]+(-[\p{Ll}\p{Lo}\d]+)+$/u.test(word)) return "kebab-case";
-  if (/^[\p{Ll}\p{Lo}\d]+(_[\p{Ll}\p{Lo}\d]+)+$/u.test(word)) return "snake_case";
-  // Every character class here is disjoint from its neighbour, so no run
-  // splits two ways: an identifier is repository-controlled input, and the
-  // ambiguous `(?:[A-Z][a-zA-Z0-9]*)+` this replaces measured six seconds on
-  // twenty-eight characters.
-  //
-  // Letters by Unicode case, not ASCII range: `caféBar` spelled no class and
-  // `café` was not the single lowercase word it is (see `spellsEveryClass`).
-  // A letter with no case (`\p{Lo}`, a CJK name) sides with lower case, since
-  // it cannot make any two classes disagree.
-  if (/^\p{Ll}[\p{L}\d]*$/u.test(word) && /\p{Lu}/u.test(word)) return "camelCase";
-  if (/^\p{Lu}[\p{L}\d]*$/u.test(word) && /\p{Ll}/u.test(word)) return "PascalCase";
-  return null;
-}
 
 /**
  * One spelling of the template fill, shared by the reducer and the check.
@@ -346,7 +315,15 @@ function exportedSites(program, props = null) {
       if (population) out.push({ node: d.id, name: d.id.name, population, fn: isFunctionLike(d) ? d : null });
     }
   }
-  return out;
+  // An overload set and a merged interface are one export each, judged by the
+  // declaration that has a body; a value and a type sharing a name are two.
+  const kept = new Map();
+  for (const s of out) {
+    const first = kept.get(`${s.population} ${s.name}`);
+    if (!first) kept.set(`${s.population} ${s.name}`, s);
+    else if (!first.fn?.body && s.fn?.body) first.fn = s.fn;
+  }
+  return [...kept.values()];
 }
 
 /**
@@ -377,70 +354,6 @@ function literalText(n) {
     return n.quasis[0].value.cooked ?? null;
   }
   return null;
-}
-
-/**
- * The words a URL path spells, in order. A parameter (`:id`, `:id?`, `*`,
- * `[id]`, `$id`, `{id}`) is the framework's syntax rather than a name anybody
- * chose, and so is a format group (`(.:format)`); a query or a fragment ends
- * the path. A scheme makes it somebody else's URL, and everything under
- * `.well-known` is named by the standard that registers it
- * (`openid-configuration`, `apple-app-site-association`).
- */
-export function pathWords(text) {
-  return typeof text !== "string" || /^[a-z][a-z\d+.-]*:/i.test(text) || text.startsWith("//") ? null : walkPath(text).words;
-}
-
-/** Whether a path reaches `.well-known`, however its segment is spelled around the name. */
-export const namesWellKnown = (text) => typeof text === "string" && walkPath(text).wellKnown;
-
-function walkPath(text) {
-  const words = [];
-  for (const segment of text.split("/")) {
-    // An optional group comes off at its own bracket, whichever segment holds it: `posts(/archive_view)`, `(saved_view)`.
-    const part = segment.replace(/^\(+/, "");
-    if (part === "" || /^[:*[${]|^\.:/.test(part)) continue;
-    const cut = part.search(/[?#]/);
-    const word = (cut === -1 ? part : part.slice(0, cut)).replace(/\(.*$/, "").replace(/\)+$/, "");
-    if (word === ".well-known") return { words, wellKnown: true };
-    if (word) words.push(word);
-    if (cut !== -1) break;
-  }
-  return { words, wellKnown: false };
-}
-
-// Two words at least: a separator, or a capital after a lower-case letter.
-// `Users` alone is a case, not a choice between kebab-case and snake_case.
-const spellsWords = (word) => /[-_]|\p{Ll}\p{Lu}/u.test(word);
-
-/**
- * The words of a path that are sites, each with the class it spells.
- *
- * `mayBeCut` says whatever produced the text may have cut it short, so its
- * last word may be part of one: the Ruby tree keeps `RUBY_STRING_CAP`
- * characters of a string.
- */
-export function pathSites(text, { mayBeCut = false } = {}) {
-  const words = pathWords(text);
-  if (!words) return [];
-  const whole = mayBeCut && words.length ? words.slice(0, -1) : words;
-  return whole.flatMap((word) => {
-    const cls = spellsWords(word) ? classifyWord(word) : null;
-    return cls ? [{ word, cls }] : [];
-  });
-}
-
-/**
- * One site per word of a path that is a site (`pathSites`), each carrying the
- * route declaration it sits in as its section: a route table is one file by
- * design, and each route in it was declared on its own (the reducer's
- * `sectionsOf`). The declaration alone, never a route around it, since a
- * React Router table nests every route under one layout route.
- */
-export function addPathSites(add, node, text, section, { mayBeCut = false } = {}) {
-  for (const { word, cls } of pathSites(text, { mayBeCut })) {
-    add({ node, conforming: false, where: word, class: cls, section });
-  }
 }
 
 const ROUTE_KEY = /^(?:element|errorElement|children|loader|action|lazy|index|redirect|redirectTo|loadComponent|loadChildren|canActivate|beforeEnter|getParentRoute|render|exact)$|[Cc]omponents?$/;

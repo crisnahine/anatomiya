@@ -23,7 +23,7 @@
  * The numbers are measured rather than chosen, and sit under the worst run
  * observed rather than at it, which is what leaves room for one refactor.
  */
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +75,9 @@ export const FLOORS = [
     // admit every other file at 0% too. The tier itself is covered by the
     // smoke job, which scans a real repository with its dependencies installed.
     except: [`${REL.anatomiya}/lib/dimensions-semantic.mjs`],
+    // Worker shells, run only in the children the pool forks, which the test
+    // process's coverage never reaches; the bodies they call are measured here.
+    childOnly: ["parse-worker.mjs", "tree-sitter-worker.mjs", "semantic-worker.mjs"].map((name) => `${REL.anatomiya}/lib/${name}`),
   },
 ];
 
@@ -145,13 +148,21 @@ export const SUMMARY_FLAG = "--summary";
 /** Rounded the way a percentage reads, two places at most and no trailing zero. */
 const shown = (value) => Number(value.toFixed(2));
 
+/** Every module under a library directory, at any depth, by the forward-slash path the lcov record names. */
+export function libFiles(root, lib) {
+  return readdirSync(join(root, lib), { recursive: true })
+    .map(asPosix)
+    .filter((name) => name.endsWith(".mjs"))
+    .map((name) => `${lib}/${name}`);
+}
+
 /**
  * Every floor this report misses, as sentences.
  *
  * Returned rather than printed, for the reason the other gates here return
  * theirs: the cases are reports, and that is what puts them under test.
  */
-export function shortfalls(rows, floor) {
+export function shortfalls(rows, floor, files = []) {
   const problems = [];
   const inside = rows.filter((row) => inScope(row.file, floor.include));
   if (inside.length === 0) {
@@ -175,6 +186,23 @@ export function shortfalls(rows, floor) {
   for (const rel of except) {
     if (!inside.some((row) => row.file === rel)) {
       problems.push(`${floor.scope}: ${rel} is excepted from the per-file floor and the report holds no such file`);
+    }
+  }
+  // A file named as loaded only in a child that the report holds is loaded in the test process after all.
+  const childOnly = new Set(floor.childOnly ?? []);
+  for (const rel of childOnly) {
+    if (inside.some((row) => row.file === rel)) {
+      problems.push(`${floor.scope}: ${rel} is named as loaded only in a child process and the report holds it`);
+    } else if (files.length && !files.includes(rel)) {
+      problems.push(`${floor.scope}: ${rel} is named as loaded only in a child process and no such file is listed`);
+    }
+  }
+  // Node writes no row for a file no test loaded, so the files on disk are asked too.
+  if (KINDS.some((kind) => floor.file[kind] !== undefined)) {
+    for (const rel of files) {
+      if (inScope(rel, floor.include) && !except.has(rel) && !childOnly.has(rel) && !inside.some((row) => row.file === rel)) {
+        problems.push(`${rel}: no test loads it, so it is under every floor`);
+      }
     }
   }
   for (const kind of KINDS) {
@@ -268,7 +296,8 @@ function measure(argv, root, report, summary) {
     console.log(`${SUMMARY}${floor.scope}: ${line}`);
   }
 
-  const problems = FLOORS.flatMap((floor) => shortfalls(rows, floor));
+  const files = libFiles(root, `${REL.anatomiya}/lib`);
+  const problems = FLOORS.flatMap((floor) => shortfalls(rows, floor, files));
   // The shortfall names the file, and the summary the job prints is the only
   // thing some readers see: an aggregate on its own is the shape this module
   // was written to argue against.

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { byCode, baseOf, dirOf, extOf, stemOf, withoutExtension } from "../plugins/anatomiya/lib/paths.mjs";
+import { join, posix, win32 } from "node:path";
+import { byCode, baseOf, dirOf, escapes, extOf, folded, stemOf, withoutExtension } from "../plugins/anatomiya/lib/paths.mjs";
 import { REL, ROOT } from "../scripts/plugins.mjs";
 
 test("the basename is everything after the last slash", () => {
@@ -94,4 +94,24 @@ test("no module this repository ships or measures with sorts by the host's local
       .filter((f) => /\.localeCompare\(|new Intl\.Collator\b|Intl\.Collator\(/.test(readFileSync(join(ROOT, f), "utf8")))
   );
   assert.deepEqual(offenders, []);
+});
+
+test("a relative path escapes only by a whole `..` segment or by being absolute, in its own grammar", () => {
+  assert.equal(escapes("..", posix.sep), true);
+  assert.equal(escapes("../a", posix.sep), true);
+  assert.equal(escapes("/etc/passwd", posix.sep), true);
+  assert.equal(escapes("..base/a", posix.sep), false);
+  assert.equal(escapes("..\\cfg/a", posix.sep), false, "a backslash is part of a POSIX name");
+  assert.equal(escapes("C:/a", posix.sep), false, "so is a drive letter");
+  assert.equal(escapes("..\\a", win32.sep), true);
+  assert.equal(escapes("D:\\a", win32.sep), true, "two drives have no relative path between them");
+  assert.equal(escapes("..base\\a", win32.sep), false);
+});
+
+test("the fold puts together every pair of names a case-folding volume opens as one", () => {
+  // Upper case alone left the capital sharp s as ß against ss, and Greek letters
+  // with a dialytika and a tonos decomposed, where APFS opens either pair as one name.
+  const same = [["ß", "ẞ"], ["ß", "ss"], ["ſ", "s"], ["\u0390", "\u03AA\u0301"], ["\u03B0", "\u03AB\u0301"], ["Src/A.ts", "src/a.ts"], ["é", "e\u0301"]];
+  for (const [a, b] of same) assert.equal(folded(a), folded(b), `${a} and ${b}`);
+  for (const [a, b] of [["a.ts", "b.ts"], ["s", "ss"], ["e", "é"]]) assert.notEqual(folded(a), folded(b), `${a} and ${b}`);
 });

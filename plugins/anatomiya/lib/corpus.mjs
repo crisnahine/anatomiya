@@ -6,7 +6,8 @@ import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { placedTests } from "./layout.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
-import { folded, isLink, isMapName, readHead, STORE_DIR, trackedRulesDir } from "./rules.mjs";
+import { folded } from "./paths.mjs";
+import { isLink, isMapName, readHead, STORE_DIR, trackedRulesDir } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
@@ -388,14 +389,16 @@ export function safeResolve(root, relPath) {
  * and were charged as escaped, the bucket nothing prints, so they left the
  * scan without a word said.
  */
-function confine(root, relPath) {
+function confine(root, relPath, roots = new Map()) {
   const absRoot = resolve(root);
   const full = resolve(absRoot, relPath);
   if (full !== absRoot && !full.startsWith(absRoot + sep)) return { why: "outside" };
 
   let realRoot, realFull;
   try {
-    realRoot = realpathSync(absRoot);
+    // Every file one listing names sits under the same root, so it is resolved once per listing.
+    if (!roots.has(absRoot)) roots.set(absRoot, realpathSync(absRoot));
+    realRoot = roots.get(absRoot);
     realFull = realpathSync(full);
   } catch {
     return { why: "unreadable" };
@@ -481,13 +484,15 @@ export async function collect(root) {
   // Where each folded name sits in `files`. Only a fold that collides is asked
   // for file identity, so a stat per file is not the price of the rare case.
   const byFold = new Map();
+  const listings = new Map();
   const own = ownOutput(root);
   // Git is asked whether it folds case only when a path is the map's own on no
   // other ground: the question is a child process, measured at 25 to 30 ms a scan.
   const ownIfFolded = new Set();
 
+  const roots = new Map();
   await lsFiles(root, (rel) => {
-    const { drop, abs } = classify(root, rel, generatedRules);
+    const { drop, abs } = classify(root, rel, generatedRules, roots);
     // Non-source tracked files feed the roster this scan builds over every
     // tracked path, not just the parsed ones.
     const anyCase = drop === "notSource" || drop === "excluded" ? languageInAnyCase(rel) : null;
@@ -508,11 +513,11 @@ export async function collect(root) {
     // on a filesystem that folds them, and both names read it: its sites counted
     // twice and the other entry's blob, which the tree does not hold, not at all.
     // The spelling on disk, directories included, is kept and the other is unread.
-    const fold = rel.normalize("NFC").toLowerCase();
+    const fold = folded(rel);
     const at = byFold.get(fold);
     if (at !== undefined && sameFile(files[at].abs, abs)) {
       dropped.unreadable++;
-      if (listedAs(root, rel) > listedAs(root, files[at].rel)) files[at] = file;
+      if (listedAs(root, rel, listings) > listedAs(root, files[at].rel, listings)) files[at] = file;
       return;
     }
     if (at === undefined) byFold.set(fold, files.length);
@@ -546,18 +551,24 @@ function sameFile(a, b) {
  * How closely the directories on the way list this name: 2 byte for byte, 1 only
  * up to Unicode form (macOS lists a decomposed name under git's composed one), 0 not at all.
  */
-function listedAs(root, rel) {
+function listedAs(root, rel, listings) {
   let dir = root;
   let rank = 2;
   try {
     for (const part of rel.split("/")) {
-      const names = readdirSync(dir);
-      if (names.includes(part)) {
+      // Read once a scan: a directory of case pairs re-read per pair costs its size squared.
+      let listing = listings.get(dir);
+      if (!listing) {
+        const names = readdirSync(dir);
+        const byNfc = new Map();
+        for (const n of names) if (!byNfc.has(n.normalize("NFC"))) byNfc.set(n.normalize("NFC"), n);
+        listings.set(dir, (listing = { names: new Set(names), byNfc }));
+      }
+      if (listing.names.has(part)) {
         dir = join(dir, part);
         continue;
       }
-      const nfc = part.normalize("NFC");
-      const found = names.find((n) => n.normalize("NFC") === nfc);
+      const found = listing.byNfc.get(part.normalize("NFC"));
       if (found === undefined) return 0;
       rank = 1;
       dir = join(dir, found);
@@ -584,8 +595,9 @@ function listedAs(root, rel) {
 export async function countUntrackedSource(root) {
   let n = 0;
   const generatedRules = await generatedAttrRules(root);
+  const roots = new Map();
   await lsFiles(root, (rel) => {
-    if (!classify(root, rel, generatedRules).drop) n++;
+    if (!classify(root, rel, generatedRules, roots).drop) n++;
   }, ["--others", "--exclude-standard"]);
   return n;
 }
@@ -600,7 +612,8 @@ export async function countUntrackedSource(root) {
  */
 export async function corpusDrop(root, { timeout } = {}) {
   const generatedRules = await generatedAttrRules(root, { timeout });
-  return (rel) => classify(root, rel, generatedRules).drop ?? null;
+  const roots = new Map();
+  return (rel) => classify(root, rel, generatedRules, roots).drop ?? null;
 }
 
 /**
@@ -620,10 +633,10 @@ export async function corpusByName(root) {
  * a copy that drifts. `generatedRules` is read once by the caller rather than
  * once per path, since it is the same `.gitattributes` for every file asked.
  */
-function classify(root, rel, generatedRules) {
+function classify(root, rel, generatedRules, roots) {
   const drop = pathDrop(rel);
   if (drop) return { drop };
-  const { abs, why } = confine(root, rel);
+  const { abs, why } = confine(root, rel, roots);
   // A link whose target is gone fails realpath too, and a link is `escaped`
   // whatever it points at, so only a path that is not one reads as unreadable.
   if (!abs) return { drop: why === "outside" || isLink(resolve(root, rel)) ? "escaped" : "unreadable" };

@@ -477,6 +477,8 @@ export function pinSummary({ root = null, previous, next, delta, path, dryRun = 
 /** The pin summary as the lines the CLI prints. Facts only, no recommendation. */
 export function pinLines(s) {
   const lines = formatDelta(s.delta).split("\n");
+  // A dry run pinned nothing, so its first line says what a pin would do.
+  if (s.dryRun) lines[0] = lines[0].replace(/^baseline pinned at /, "baseline would be pinned at ").replace(/^baseline (\S+) -> /, "baseline would move $1 -> ");
   if (s.previousUnreadable) {
     lines.push(
       `the pin on disk could not be read because ${s.previousUnreadable}, so nothing was compared against it ` +

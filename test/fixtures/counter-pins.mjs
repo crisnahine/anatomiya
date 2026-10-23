@@ -55,7 +55,7 @@ export const REFUSED = [
   // already picks; a hand-written inverse would fight it.
   "function_naming_case", "exported_symbol_case", "exported_class_case", "exported_type_case", "file_naming_case",
   "extends_base", "class_base", "module_include",
-  "interface_prefix", "type_alias_prefix", "url_segment_case", "route_segment_case", "strong_params_style",
+  "interface_prefix", "type_alias_prefix", "url_segment_case", "route_segment_case", "endpoint_segment_case", "strong_params_style",
   // "This repository logs to the console on purpose" is a repository with no
   // wrapper, and there the row is not offered at all (C8): a counter would
   // only ever state where a wrapper exists and is ignored, which is a defect.

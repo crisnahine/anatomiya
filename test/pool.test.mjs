@@ -500,6 +500,75 @@ process.send({ ready: true, engine: "stub", version: "1" });
   assert.notEqual(c.pid, a.pid);
 });
 
+// A worker that waits at `held` for the `go` file, then answers and says so at `sent`. The parent holds
+// its own event loop until the answer is on the pipe and the clock has passed, so the kill and the late
+// answer reach the pool in the same turn, which is how a reply already sent meets a clock that just fired.
+function lateWorker(dir, when) {
+  const at = (name) => JSON.stringify(join(dir, name));
+  const worker = join(dir, "late-worker.mjs");
+  writeFileSync(
+    worker,
+    `import { existsSync, writeFileSync } from "node:fs";
+function late(msg) {
+  writeFileSync(${at("held")}, "");
+  while (!existsSync(${at("go")}));
+  process.send(msg, () => writeFileSync(${at("sent")}, ""));
+}
+process.on("message", ({ rel }) => {
+  if (${when === "parse"} && rel === "slow.py" && !existsSync(${at("go")})) return late({ rel, ok: true });
+  process.send({ rel, ok: true });
+});
+if (${when === "ready"} && !existsSync(${at("go")})) late({ ready: true, engine: "stub", version: "1" });
+else process.send({ ready: true, engine: "stub", version: "1" });
+`,
+  );
+  return worker;
+}
+
+async function holdPastClock(dir, clockMs) {
+  while (!existsSync(join(dir, "held"))) await new Promise((r) => setTimeout(r, 5));
+  // Held from the check phase, so the next turn runs the expired clock before it polls for the answer.
+  await new Promise((resolve) =>
+    setImmediate(() => {
+      const from = Date.now();
+      writeFileSync(join(dir, "go"), "");
+      while (!existsSync(join(dir, "sent")) || Date.now() - from < clockMs * 2);
+      resolve();
+    }),
+  );
+}
+
+test("a worker the clock killed with its answer already sent is handed no other file", { timeout: 60_000 }, async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-late-worker-"));
+  t.after(() => removeTree(dir));
+  const worker = lateWorker(dir, "parse");
+  const timeoutMs = 200;
+  const pool = createPool({ size: 1, worker, engine: "stub", guards: { timeoutMs }, retryTimeouts: false });
+  t.after(() => pool.close());
+
+  const pending = Promise.all(["slow.py", "fast.py"].map((name) => pool.parse(file(dir, name, "x = 1\n"))));
+  await holdPastClock(dir, timeoutMs);
+  const [slow, fast] = await pending;
+
+  assert.equal(slow.ok, true, "the answer sent before the kill is kept");
+  assert.equal(fast.ok, true, `the next file went to a live worker: ${fast.error}`);
+});
+
+test("a worker the ready clock killed with its ready already sent is handed no file", { timeout: 60_000 }, async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-late-ready-"));
+  t.after(() => removeTree(dir));
+  const worker = lateWorker(dir, "ready");
+  const readyTimeoutMs = 200;
+  const pool = createPool({ size: 1, worker, engine: "stub", guards: { readyTimeoutMs } });
+  t.after(() => pool.close());
+
+  const pending = pool.parse(file(dir, "a.py", "x = 1\n"));
+  await holdPastClock(dir, readyTimeoutMs);
+  const r = await pending;
+
+  assert.equal(r.ok, true, `the file went to a live worker: ${r.error}`);
+});
+
 test("a guard the pool does not carry is refused under the engine the pool was given", () => {
   assert.throws(() => createPool({ size: 1, engine: "stub", guards: { timeoutMS: 1 } }), /timeoutMS is not one of the stub guards/);
   assert.throws(() => createPool({ size: 1, guards: { timeoutMS: 1 } }), /timeoutMS is not one of the oxc guards/);

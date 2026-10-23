@@ -9,10 +9,11 @@
  * naming a file its plugin does not ship loads nothing.
  */
 import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from "node:fs";
-import { join, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { join, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { invokedAs } from "./entry.mjs";
+import { escapes } from "../plugins/anatomiya/lib/paths.mjs";
 
 const MANIFESTS = ["plugin.json", "marketplace.json"];
 
@@ -37,13 +38,6 @@ const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v)
 
 /** A value as a sentence can carry it: a string as it is, anything else as JSON. */
 const shown = (v) => (typeof v === "string" ? v.replace(/\r?\n/g, "\\n") : JSON.stringify(v));
-
-/**
- * Whether a path relative to its root steps out of it. `..cmds` is a name and
- * `../x` is a step, and a prefix test read both as the step; on Windows a
- * path on another drive comes back absolute rather than dotted.
- */
-const escapes = (rel) => rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 
 /**
  * Whether a path inside the repository is a link to somewhere outside it. The

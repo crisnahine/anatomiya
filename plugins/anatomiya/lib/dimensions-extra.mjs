@@ -818,8 +818,8 @@ export const EXTRA_DIMENSIONS = [
     // whitespace in one and text in the other, so a stripped file holds no
     // answer the two passes can agree on.
     blindWhenStripped: true,
-    claim: "exported functions carry a doc comment",
-    counterClaim: "code here explains itself; exported functions carry no doc comment",
+    claim: "exported functions and classes carry a doc comment",
+    counterClaim: "code here explains itself; exported functions and classes carry no doc comment",
     precision: "partial",
     applicabilityPredicate: {
       sites: "a file exporting a top-level function or class, by name, as a default, or as a function-valued const; a comment opening with a tool directive or a TODO, FIXME, XXX or HACK note, and a license or copyright header, is not a doc comment on either side. A Svelte component's `export let` declares a prop and is not an export",
@@ -840,10 +840,23 @@ export const EXTRA_DIMENSIONS = [
       // comment above the decorators to the class, so the declaration begins at
       // whichever comes first.
       const top = (n) => Math.min(n.start, ...(n.declaration?.decorators || []).map((d) => d.start));
-      const site = (n, name) =>
-        add({ node: n, conforming: attachedAbove(comments, top(n), source), where: name ?? null });
+      // TypeScript reads an overload set's doc from above its first signature,
+      // and the implementation has to follow the signatures directly.
+      let sig = null;
+      // A default export's set is keyed "default", since its signatures name nothing.
+      const setOf = (n) => (n.type === "ExportDefaultDeclaration" ? "default" : n.declaration?.id?.name);
+      const site = (n, name) => {
+        const start = sig && sig.name === setOf(n) ? sig.start : top(n);
+        sig = null;
+        add({ node: n, conforming: attachedAbove(comments, start, source), where: name ?? null });
+      };
       return {
         node(n) {
+          if ((n.type === "ExportNamedDeclaration" || n.type === "ExportDefaultDeclaration") &&
+            n.declaration?.type === "TSDeclareFunction") {
+            if (sig?.name !== setOf(n)) sig = { name: setOf(n), start: top(n) };
+            return;
+          }
           if (n.type === "ExportNamedDeclaration" && n.declaration) {
             const d = n.declaration;
             if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") return site(n, d.id?.name);

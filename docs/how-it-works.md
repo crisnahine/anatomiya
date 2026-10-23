@@ -341,6 +341,11 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs without holding the parent, and not enforced on Windows, where the wall clock is what stops a runaway parse. A worker that moved on to another file while the read ran is not charged for the new one |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
+A worker the parent killed, by a clock or the memory guard, is handed no further file, even where
+its answer to the file it was killed for arrives before its exit: that answer is kept, and the exit
+spawns the replacement. Handed the next file, the dead worker had that file charged as timed out
+without ever parsing it.
+
 Pool size is `min(8, cores - 1)`, counting the cores this process may run on
 (`availableParallelism`: the CPU affinity, and from Node 22.12 a cgroup CPU quota, rounded down): in
 a container held to two cores, `cpus()` still lists every core of the host. The memory grace period
@@ -581,13 +586,13 @@ average of 80 to 310.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 56 ship, the filename row included: 29 for JavaScript, 34
+A dimension is one claim about one area. 57 ship, the filename row included: 29 for JavaScript, 34
 reachable in JSX, and 19 that speak Ruby, plus the one type-checked row, which sits in the total and
 reaches a scan only when the checker runs. Beside them are 9 file-to-file obligations, all Ruby,
-which makes the 28 for Ruby and the 65 dimensions the README counts. A component's script block is asked most of the 29: 25
-for Vue and 25 for Svelte. Three are asked of a tree-sitter tree, each of the languages whose
-measured repositories differ on it: 2 for Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for
-Rust and 1 for Kotlin. Each is defined by three quantities, not one.
+which makes the 28 for Ruby and the 66 dimensions the README counts. A component's script block is
+asked most of the 29: 25 for Vue and 25 for Svelte. Four are asked of a tree-sitter tree, each of
+the languages whose measured repositories differ on it: 3 for Python, 3 for PHP, 1 for Go, 3 for
+Java, 2 for C#, 2 for Rust and 1 for Kotlin. Each is defined by three quantities, not one.
 
 | Quantity | Meaning |
 |---|---|
@@ -686,7 +691,7 @@ in `check`.
 | `extends_base` | precise | js, jsx, vue, svelte | classes here extend `<style>`, learned |
 | `interface_prefix` | precise | js, jsx, vue, svelte | interfaces are named with a `<style>` prefix, learned |
 | `type_alias_prefix` | precise | js, jsx, vue, svelte | type aliases are named with a `<style>` prefix, learned |
-| `doc_comment_style` | partial | js, jsx, vue, svelte | exported functions carry a doc comment |
+| `doc_comment_style` | partial | js, jsx, vue, svelte | exported functions and classes carry a doc comment |
 | `route_logging` | partial | js, jsx, vue, svelte | logging goes through the repository's own logger, not the console |
 | `route_network` | partial | js, jsx, vue, svelte | network calls go through the repository's own client, not fetch directly |
 | `route_env` | partial | js, jsx, vue, svelte | environment reads go through the repository's own config module, not process.env |
@@ -696,13 +701,14 @@ in `check`.
 | `module_include` | precise | ruby | classes here include `<style>`, learned |
 | `url_segment_case` | partial | js, jsx, vue, svelte | URL path segments here are `<style>`, learned |
 | `route_segment_case` | partial | ruby | URL path segments here are `<style>`, learned |
+| `endpoint_segment_case` | partial | python, java, csharp, rust | URL path segments here are `<style>`, learned |
 | `strong_params_style` | partial | ruby | request parameters are filtered through `params.<style>`, learned |
 | `spec_type_declared` | precise | ruby | specs declare their `type:` metadata |
 | `caught_error_used` | partial | php, java | exception handlers use the error they caught |
 | `public_doc_comment` | partial | python, php, go, java, csharp, rust, kotlin | public functions carry a doc comment |
 | `declared_return_type` | precise | python, php | functions declare what they return |
 
-The three rows over a tree-sitter tree leave out what each language's own tools leave out (C50,
+The rows over a tree-sitter tree leave out what each language's own tools leave out (C50,
 C51, C53). The two function rows hold no site in a file the layout counts as a test file, a
 `conftest.py` and a `.rs` file cargo builds from a crate's `tests` among them. The doc comment row
 counts no constructor (a PHP `__construct` or `__destruct`), no entry point (a static `main` in
@@ -783,42 +789,71 @@ dalli, db, pg, mysql, mongo and a few more) talks to a store, so `redis_client.g
 `db_client.execute` do not either. The list is closed, so a store it does not name still reads as
 the client.
 
-The two URL rows read a string for its words, which no other row does. `url_segment_case` reads a
-route's own definition: a `path` property written as a string, on an object that also names what
-the route renders, nests or loads (`element`, `children`, `loadChildren`, a `component` key), in a
-file that imports a router module (13 in a closed list, React Router, Vue Router, Angular's and
-TanStack's among them), is named for its routes (`routes.ts`, `router.js`, `app.routes.ts`) or
-sits under a `router` or `routes` directory; a `path` attribute on an element whose name ends in
-`Route`; and a server's declaration, `router.get("/path", handler)`, on a receiver named `app`,
-`server`, `fastify`, `hono` or `router` or ending in `Router` or `App`, since `api.get("/path",
-config)` is a request client's call. A test file holds none, and neither does a file in a test
-tree (`__tests__`, `test`, `tests`, `spec`, `cypress`, `e2e`): its routes, a mock server's or a fixture's,
-stand in for the URLs the code under test names. A Rails route's identity in the check is its verb
-and its paths, never its line, so a route that only moved is not new. A link is no site: measured on a React front end, link
-sites added a counts line to 14 area files and stated in none. `route_segment_case` reads a Rails routes file, `config/routes.rb`, a file under
-`config/routes` or a `routes.draw` block: a verb's path string, or its symbol unless a `path:`
-replaces it, or the first string key of `get "a" => "c#a"` where no path comes before it; a
-scope's own arguments, joined, else its `path:`; a namespace's name unless a `path:` replaces it; and a `resources` symbol unless a `path:`
-replaces it, since `resources
-:support_tickets` serves `/support_tickets`. A `path:` this cannot read, a constant or a
-helper's answer, names no path, nor does an interpolated string or a scope whose earlier part the
-Ruby tree cut short, and a routes file under a test tree, an engine's `spec/dummy` app,
-holds none. Each word of two or more words in a path that
-spells a naming class is a site. A parameter (`:id`, `*`, `[id]`, `$id`, `{id}`, `(.:format)`) is
-the router's syntax and is not, and a single word is not either: `Users` is a case, not a choice of
-separator, and openproject's SCIM routes spell it as the standard does. Nothing under `.well-known`
-is a site, since a standard registers those names (`openid-configuration`,
-`apple-app-site-association`), and in Rails the last word of a string as long as the 40 characters
-the Ruby tree keeps of one is not, since it may be cut short. A path built at run time is the miss,
-which is why both are partial. On a measured React front end the route table states `URL path segments here are
-kebab-case` over 41 of 41 sites, and a branch adding `/members/support_tickets/create/:id?` is a
-FIX finding on that line (#238).
+The three URL rows read a string for its words, which no other row does. `url_segment_case` reads a
+route's own definition: a `path` property written as a string, on an object that also names what the
+route renders, nests or loads (`element`, `children`, `loadChildren`, a `component` key), in a file
+that imports a router module (13 in a closed list, React Router, Vue Router, Angular's and
+TanStack's among them), is named for its routes (`routes.ts`, `router.js`, `app.routes.ts`) or sits
+under a `router` or `routes` directory; a `path` attribute on an element whose name ends in `Route`;
+and a server's declaration, `router.get("/path", handler)`, on a receiver named `app`, `server`,
+`fastify`, `hono` or `router` or ending in `Router` or `App`, since `api.get("/path", config)` is a
+request client's call. A test file holds none, and neither does a file in a test tree (`__tests__`,
+`test`, `tests`, `spec`, `cypress`, `e2e`): its routes, a mock server's or a fixture's, stand in for
+the URLs the code under test names. A Rails route's identity in the check is its verb and its paths,
+never its line, so a route that only moved is not new. A link is no site: measured on a React front
+end, link sites added a counts line to 14 area files and stated in none. `route_segment_case` reads
+a Rails routes file, `config/routes.rb`, a file under `config/routes` or a `routes.draw` block: a
+verb's path string, or its symbol unless a `path:` replaces it, or the first string key of `get "a"
+=> "c#a"` where no path comes before it; a scope's own arguments, joined, else its `path:`; a
+namespace's name unless a `path:` replaces it; and a `resources` symbol unless a `path:` replaces
+it, since `resources :support_tickets` serves `/support_tickets`. A `path:` this cannot read, a
+constant or a helper's answer, names no path, nor does an interpolated string or a scope whose
+earlier part the Ruby tree cut short, and a routes file under a test tree, an engine's `spec/dummy`
+app, holds none. Each word of two or more words in a path that spells a naming class is a site. A
+parameter (`:id`, `*`, `[id]`, `$id`, `{id}`, `(.:format)`) is the router's syntax and is not, and a
+single word is not either: `Users` is a case, not a choice of separator, and openproject's SCIM
+routes spell it as the standard does. Nothing under `.well-known` is a site, since a standard
+registers those names (`openid-configuration`, `apple-app-site-association`), and in Rails the last
+word of a string as long as the 40 characters the Ruby tree keeps of one is not, since it may be cut
+short. A path built at run time is the miss, which is why all three are partial. On a measured React
+front end the route table states `URL path segments here are kebab-case` over 41 of 41 sites, and a
+branch adding `/members/support_tickets/create/:id?` is a FIX finding on that line (#238).
 
-A route table is one file by design, so read by file either row is one file's habit and three gates
-refuse it. Each site carries its route's declaration as a section: the route object or `Route`
-element in JavaScript, the route call in Rails. Never a route around it, since React Router nests a
-whole table under one layout route, and never a namespace or a scope, which is a prefix every route
-under it shares, the way a directory is. Section 5 says what the gates do with them.
+`endpoint_segment_case` reads the routes Python, Java, C# and Rust declare (C62). In Python: a route
+decorator, `@app.get` and the other verbs, `route`, `api_route` or `websocket`, by its first
+argument, `path=` or `rule=`, and `add_url_rule`, on a path starting with `/`; Django's `path`, by
+its first argument or `route=`, in a file that imports `django.urls`; and the `prefix=` of
+`APIRouter` and `include_router` and the `url_prefix=` of `Blueprint` and `register_blueprint`, the
+keyword alone, starting with `/`. In Java, Spring's five verb mappings and `@RequestMapping` on a
+method or a class: the first argument, `value=` or `path=`, an array element by element. In C#,
+`[Route]` and `[HttpGet]` with the other verbs, the first unnamed argument or `template:`, and the
+minimal API's `MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `MapGroup` and `MapMethods`,
+the first argument or `pattern:`; neither asks for a leading slash, since those names are ASP.NET's
+alone. In Rust, actix's and rocket's verb attributes and `#[route]`, and `.route`, `.nest`,
+`.mount`, `resource` and `scope`, on a path starting with `/`. A test file, a file in a test tree
+and a Rust `#[cfg(test)]` module hold none, as for the JavaScript row. Only a string written whole
+is read: an interpolated string (an f-string with a field), a C# verbatim or raw string, a Rust raw
+string, a concatenation, a constant and a string holding an escape are the blind spot. Django's
+`re_path` and `url` take a regular expression and hold no site, `<int:pk>` and `<id>` are parameters
+as `{id}` is, and a request client's `.get("/x")` outside a decorator calls a route rather than
+declaring one. Everything under a `.well-known` path a Java or C# class mapping or a call's own
+arguments declare is no site; a FastAPI or Flask prefix does not carry one down. ASP.NET's
+conventional `MapControllerRoute(pattern:)` is not read, which leaves one measured application's 14
+literal sites unread. A site's identity is its string literal, so a route that moved down the file
+is no new finding. The class is learned because it differs within each language: on clones netbox
+states kebab-case in 10 areas against healthchecks' snake_case, thingsboard camelCase 416 of 430 and
+mall 53 of 53 against the kebab-case dolphinscheduler holds, 104 of 114, short of the evidence gate,
+and jellyfin PascalCase 139 of 139 against another C# server's kebab-case in 7 areas. PHP, Go and
+Kotlin have no such row: a Laravel `routes/` directory folds into the root and gets no area, one
+measured Go repository holds 20 or more sites, and no Kotlin application does.
+
+A route table is one file by design, so read by file any of these rows is one file's habit and three
+gates refuse it. Each site carries its route's declaration as a section: the route object or `Route`
+element in JavaScript, the route call in Rails, and in the tree-sitter languages the route call's or
+annotation's own argument list, since a chained call starts where the whole chain does. Never a
+route around it, since React Router nests a whole table under one layout route, and never a
+namespace or a scope, which is a prefix every route under it shares, the way a directory is. Section
+5 says what the gates do with them.
 
 `strong_params_style` learns which call a controller's parameter filter starts from:
 `params.require(...).permit`, `params.permit` or Rails 8's `params.expect`. A `permit` chained off a
@@ -1275,6 +1310,8 @@ file copied into a sibling checkout is.
 All four are absent from the usage block and from `commands/` on purpose: no person runs them and no
 agent should. Each reads the payload on stdin, answers with one JSON object, and answers `{}` and exits
 0 on every failure path, because a hook that exits non-zero interrupts the session it exists to help.
+That covers its own answer too: a write to stdout that fails, with `EPIPE` or any other error, is
+swallowed, where a command a person runs lets every error but `EPIPE` through.
 All four walk up to find what they answer from, the rendered map for `echo` and the recorded counts
 for the other three. `refresh` starts from the payload's working directory, since its events name no
 tool call. The other three start from the place the tool call is about rather than from where the
@@ -1386,19 +1423,22 @@ the life of that session, which is what 0.2.4 through 0.2.6 shipped. A plugin ho
 session the plugin is installed for, with no way to scope it to one repository, so the scoping is
 the hook's own job: it walks up from the working directory for a map, and a session with none gets
 `{}`. The refresh and the end-of-turn check also look one level down when the walk up finds nothing,
-since their payloads name no file (below and above). That answer costs one node process and almost nothing else: three runs on one laptop put the median
-at 73ms, 104ms and 237ms, and which `node` is on `PATH` moves it more than anything the tool does. It is
-paid per turn and per tool call, so a hook loads only what its verb uses. The binary imports the
-payload reader, the readiness check and the names `--targets` takes (`targets.mjs`, which imports
-nothing) and nothing else, each verb imports its own module when it
+since their payloads name no file (below and above). That answer costs one node process and almost
+nothing else: three runs on one laptop put the median at 73ms, 104ms and 237ms, and which `node` is
+on `PATH` moves it more than anything the tool does. It is paid per turn and per tool call, so a
+hook loads only what its verb uses. The binary imports the Node floor check (`node-floor.mjs`, which
+imports nothing) and nothing else, then loads the payload reader, the output encoder and the names
+`--targets` takes once the node is known to parse them, each verb imports its own module when it
 runs (`hook-verbs.mjs` for the echo, the notice and the end-of-turn check, `refresh.mjs` for the
-refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check.
-Every hook process used to load 65 modules; at the split the echo loaded 13, the notice 13 until it
-read its rules and 26 after, the end-of-turn check 22 and the refresh 28, and the echo went from
-65ms to 39ms against 26ms for bare node, timed when it loaded 12 (A100). The echo's list is written
-out in `test/modules.test.mjs`, 16 modules of the library, a count the test pins, and the end-of-turn check loads
-its tree adapter only on a stop that changed a file of the seven tree-sitter languages. A module that will not
-load throws inside the same boundary as everything else, so the hook still answers `{}`.
+refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check. Every
+hook process used to load 65 modules; at the split the echo loaded 13, the notice 13 until it read
+its rules and 26 after, the end-of-turn check 22 and the refresh 28, and the echo went from 65ms to
+39ms against 26ms for bare node, timed when it loaded 12 (A100). The echo's list is written out in
+`test/modules.test.mjs`, 14 modules of the library, a count the test pins; the notice and the reuse
+check load the same 14 before their lazy imports and 36 after, and the refresh 32. The end-of-turn
+check loads its tree adapter only on a stop that changed a file of the seven tree-sitter languages.
+A module that will not load throws inside the same boundary as everything else, so the hook still
+answers `{}`.
 
 The map it echoes has to be one this tool wrote, which is A3's rule arriving on the read side. The file is
 read through the same bounded reader the audit uses, so a named pipe at that path does not hang the session
@@ -1424,6 +1464,8 @@ It stays silent when those bytes hold a delivery of the same map with no compact
 map carries a `digest` of its body, so a re-scan is delivered on the next call, and a copy further
 back than the window is delivered again, about every 29.9k tokens at the 6.57 bytes per token
 measured on 2.1.292 to 2.1.296. A subagent or a workflow stage is answered from its own transcript.
+A workflow stage's carries no `toolUseResult` copy of each tool result and runs about 4.3 bytes per
+token, so there the window is about 46k tokens.
 Anything the hook cannot read answers with a delivery. The decision is one function, `echoDue` in
 `echo.mjs`, over the map's digest, the window's transcript and the plugin's data directory; the map,
 its digest and the stamp around it stay in `hook.mjs`. What a transcript record says, a delivery, a
@@ -1648,8 +1690,8 @@ file the parse could not read a clause on another, so the overview keeps its for
 "What lives where" with every optional line on.
 One line is the same on every repository, because it is about the tool: a string is read only as an
 import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options,
-table and column names and SQL, method names, a spec's subject) or the URL path a route table, a
-server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and
+table and column names and SQL, method names, a spec's subject) or the URL path a route declares in
+JavaScript, Ruby, Python, Java, C# or Rust; i18n keys, CSS classes, event names, messages, links and
 request paths are not (A120). A method name counts when it is handed to `send`, `public_send`,
 `__send__`, `method` or `define_method`. Across the 35-repository corpus 91,369 of 268,541 tracked
 files are never parsed, and the measured classes no row reads are in `docs/research/what-no-row-reads.md`.
@@ -1740,20 +1782,24 @@ and off, none passed its bound, 40, 43 and 43, and each reached it (A103). An in
 can pass the bound, for Claude Code's overview too:
 `test/render.test.mjs` renders one at 41, on a shape it says no scan reaches.
 
-The plan is made per target, and all of it before anything is created. The two `.claude`
-directories are resolved first, then each other target's state is read, then each directory that is
-on is audited against the names this scan would put there, and only then is a body rendered. The two
-new directories are held more tightly than `.claude/rules` (A104): every component of `.cursor/rules`
-and `.github/instructions` is a directory of the repository's own or is not there yet, a link at any
-of them is refused wherever it leads, and so is a directory that is, holds or sits inside the place
-`.claude/rules` resolves to. People write rules in both by hand, so an entry this tool did not write
-is never written over there (A105): a file with no key, a link, a file that will not open, a
-directory or a fifo, and an entry spelled as a planned name in another letter case where the listing
-does not also hold the name itself. In `.claude/rules` a generated name is this tool's own, so
-there an entry spelled as one of the map's names in another letter case is that file where the
-volume says so, and the scan replaces it and names it as the directory spells it. The volume is
-asked, since JavaScript's fold sends a dotless `ı` onto `i` and APFS keeps the two apart: the two
-names are one entry where `lstat` gives both the same device and inode, with one link. What happens next depends on who asked. Named by `--targets`,
+The plan reads the size and mtime of `facts.json` as it found it, and the commit refuses where
+another scan has written it since, with `another scan wrote the map meanwhile, so nothing was
+written: scan again`. A plan made from a record another scan replaced removes none of the area files
+that scan wrote, and those would then load for good. The plan is made per target, and all of it
+before anything is created. The two `.claude` directories are resolved first, then each other
+target's state is read, then each directory that is on is audited against the names this scan would
+put there, and only then is a body rendered. The two new directories are held more tightly than
+`.claude/rules` (A104): every component of `.cursor/rules` and `.github/instructions` is a directory
+of the repository's own or is not there yet, a link at any of them is refused wherever it leads, and
+so is a directory that is, holds or sits inside the place `.claude/rules` resolves to. People write
+rules in both by hand, so an entry this tool did not write is never written over there (A105): a
+file with no key, a link, a file that will not open, a directory or a fifo, and an entry spelled as
+a planned name in another letter case where the listing does not also hold the name itself. In
+`.claude/rules` a generated name is this tool's own, so there an entry spelled as one of the map's
+names in another letter case is that file where the volume says so, and the scan replaces it and
+names it as the directory spells it. The volume is asked, since JavaScript's fold sends a dotless
+`ı` onto `i` and APFS keeps the two apart: the two names are one entry where `lstat` gives both the
+same device and inode, with one link. What happens next depends on who asked. Named by `--targets`,
 the target cannot be written as asked, so the scan refuses and writes nothing anywhere, the
 `.claude/rules` map included:
 
@@ -1931,55 +1977,57 @@ lock, read bounded and typed since the directory can come with the repository, a
 finds it taken leaves word for the holder to run once more after letting go, so a move landing after
 the holder's last look at HEAD is not lost. The lock is the one `lock.mjs` gives the echo too, with
 the worker's own judge of what is dead: a lock whose process is gone, that is older than half an
-hour, that is stamped later than now or that does not parse. Such a lock is taken over by the
-worker that wins the exclusive create of the lock token `refresh.lock.<the dead lock's nonce>`,
-which removes the lock only while it still holds the content judged dead; every worker then makes
-the one create, and the one that takes the lock removes any lock token of another generation beside it.
-Moving a dead lock aside let two workers hold the lock in 1 of 200 rounds at
-3 workers and 11 of 200 at 8 (A95, A117). A lock token a killed worker left is broken the same way where
-its mtime is more than 62 seconds from the clock. One case is left: a worker killed while it holds a token's own token
+hour, that is stamped later than now or that does not parse. Such a lock is taken over by the worker
+that wins the exclusive create of the lock token `refresh.lock.<the dead lock's nonce>`, which
+removes the lock only while it still holds the content judged dead; every worker then makes the one
+create, and the one that takes the lock removes any lock token of another generation beside it.
+Moving a dead lock aside let two workers hold the lock in 1 of 200 rounds at 3 workers and 11 of 200
+at 8 (A95, A117). A lock token a killed worker left is broken the same way where its mtime is more
+than 62 seconds from the clock. One case is left: a worker killed while it holds a token's own token
 leaves a dead lock no worker breaks, every refresh of that checkout then leaves `refresh.again` and
-scans nothing, and the map there stays as it was until a scan run by hand sweeps the token's own token
-(A118). Neither `doctor`, the summary nor the delivered map says the refresh is stuck meanwhile. An
-entry at the lock's name that is no lock is told apart: the worker removes an empty directory there
-and takes the lock. A directory holding entries at the lock's name, at a lock token's or at the
-state's, `refresh.json`, or one there that cannot be listed, is never emptied and stops every refresh in the checkout: the worker asks
-`refreshBlockers` before it takes the lock or scans, and ends with the reason `lock-blocked`, or
-`state-blocked` for the state's, and the path. Nobody reads a worker's reason, so a scan run by hand
-says it in its summary, one line per name:
+scans nothing, and the map there stays as it was until a scan run by hand sweeps the token's own
+token (A118). Neither `doctor`, the summary nor the delivered map says the refresh is stuck
+meanwhile. An entry at the lock's name that is no lock is told apart: the worker removes an empty
+directory there and takes the lock. A directory holding entries at the lock's name, at a lock
+token's or at the state's, `refresh.json`, or one there that cannot be listed, is never emptied and
+stops every refresh in the checkout: the worker asks `refreshBlockers` before it takes the lock or
+scans, and ends with the reason `lock-blocked`, or `state-blocked` for the state's, and the path.
+Nobody reads a worker's reason, so a scan run by hand says it in its summary, one line per name:
 `".claude/anatomiya/refresh.lock" is a directory holding entries, so no refresh of the map can run
-in this checkout while it stays: remove it to clear this`. It stamps what a scan depends on (HEAD, the index as
-`ls-files -s`, the pin's bytes, the plugin version, whether the repository holds packages and where
-`typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
-map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
-merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run the type checker
-to the rescan, which decides it the way any scan does, except that the refresh hands it a degraded
-verdict measured under the same build, install and root config, and the rescan then does not run
-the checker, unless that verdict is a first failed run's (B8). Where the repository tracks the overview of
-a Cursor or Copilot copy of the map, the rescan leaves that directory alone and writes the rest:
-nothing there is written, removed or turned off, the record keeps the names it had, and a scan run
-by hand rewrites it. A copy git could not be asked about is left alone too. A scan that throws writes nothing, so the
-previous map stays; the same stamp is tried again only after half an hour, and the echo says the
-refresh failed until a refresh or a scan run by hand succeeds. A refresh that could not ask git a
-question before its stamp is read (whether the map is committed, HEAD, the remote's tip, whether the
-pinned commit is still here, whether the pin is the newer one) ends before the rescan with nothing
-recorded and nothing said, and is tried again the next time the checkout moves or a session starts
-(F29). A rescan that wrote the `.claude/rules`
-map and left a Cursor or Copilot directory stopped at a locked file is no failure and the echo says
-nothing of it: `refresh.json` keeps `ok: true` and names the directory under `stopped`
-(`stoppedIn`), and the same stamp is due again on that half hour for as long as the key is there
-(`settled`). `stoppedIn` reads `unwritable` on the plan, which a directory with no write permission
-carries too (`audited` in `write.mjs`), so while it stays that way a refresh scans the checkout
-again once each half hour: with `.cursor/rules` at mode 555 and the target on, four refreshes 31
-minutes apart ran four scans. Each is a whole scan, the type checker included unless the last
-verdict was degraded and is carried, and the `SessionStart` answer says nothing of it. Fixing the
-directory's mode ends it at the next of those scans. So does a scan run by hand, which prints the
-reason. `scan --targets claude` does not turn such a target off: it refuses with
+in this checkout while it stays: remove it to clear this`. It stamps what a scan depends on (HEAD,
+the index as `ls-files -s`, the pin's bytes, the plugin version, whether the repository holds
+packages and where `typescript` resolves), and rescans only when the stamp moved. It leaves alone a
+checkout with no map of its own (A24), a map, a pin or any other file of the store the repository
+tracks, and a merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run
+the type checker to the rescan, which decides it the way any scan does, except that the refresh
+hands it a degraded verdict measured under the same build, install and root config, and the rescan
+then does not run the checker, unless that verdict is a first failed run's (B8). Where the
+repository tracks the overview of a Cursor or Copilot copy of the map, the rescan leaves that
+directory alone and writes the rest: nothing there is written, removed or turned off, the record
+keeps the names it had, and a scan run by hand rewrites it. A copy git could not be asked about is
+left alone too. A scan that throws writes nothing, so the previous map stays; the same stamp is
+tried again only after half an hour, and the echo says the refresh failed until a refresh or a scan
+run by hand succeeds. A refresh that could not ask git a question before its stamp is read (whether
+the map is committed, HEAD, the remote's tip, whether the pinned commit is still here, whether the
+pin is the newer one) ends before the rescan with nothing recorded and nothing said, and is tried
+again the next time the checkout moves or a session starts (F29). A rescan that wrote the
+`.claude/rules` map and left a Cursor or Copilot directory stopped at a locked file is no failure
+and the echo says nothing of it: `refresh.json` keeps `ok: true` and names the directory under
+`stopped` (`stoppedIn`), and the same stamp is due again on that half hour for as long as the key is
+there (`settled`). `stoppedIn` reads `unwritable` on the plan, which a directory with no write
+permission carries too (`audited` in `write.mjs`), so while it stays that way a refresh scans the
+checkout again once each half hour: with `.cursor/rules` at mode 555 and the target on, four
+refreshes 31 minutes apart ran four scans. Each is a whole scan, the type checker included unless
+the last verdict was degraded and is carried, and the `SessionStart` answer says nothing of it.
+Fixing the directory's mode ends it at the next of those scans. So does a scan run by hand, which
+prints the reason. `scan --targets claude` does not turn such a target off: it refuses with
 `.cursor/rules is not writable, so the map could not be written: fix its permissions and scan again`
-while the directory cannot be written. A rescan that leaves no directory stopped writes no such key. A scan run by hand
-records its stamp too, with no such key, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
-running session through the echo's digest, and an area file is read from disk the first time its
-directory is.
+while the directory cannot be written. A rescan that leaves no directory stopped writes no such key.
+A scan run by hand records its stamp too, with no such key, so the next refresh has nothing to redo.
+It takes that stamp before it starts and records it only where the checkout still holds it after, so
+a commit or a `git add` made while it ran leaves the next refresh to rescan. It has its own clock. A
+changed overview reaches a running session through the echo's digest, and an area file is read from
+disk the first time its directory is.
 
 A session started above its checkouts, the way a project split into sibling repositories is opened,
 has no map at its own directory, and neither `SessionStart` nor `FileChanged` names a path the walk
@@ -2541,13 +2589,14 @@ a change.
 
 A file's class is its directory and its kind, `lib/rubocop/cop/style/*.rb`, and the same kind one
 directory up, `lib/rubocop/cop/*/*.rb`, unless that would be the repository root. The kind runs from
-the first dot of the name past any segment a version number starts, so forem's vendored gems are
-all `vendor/cache/*.gem` and not `*.1.0.gem` and `*.2.0.gem`; a dotfile's own name is not its kind,
-Ruby's `_spec.rb` and `_test.rb` are kinds of their own, and a kind holding anything but ASCII
-letters, digits, `.`, `_` and `-` is none, so such a file is in no class. A claim says what a change
-adding a file of one class, the producer, also touches: one named file edited, or a file of another
-class added, the companion. A test class is neither side: tests are counted file by file by the
-namesake count and the obligations, and as a class "adds a spec here" is met by any spec at all.
+the first dot of the name past any segment a version number starts, so forem's vendored gems are all
+`vendor/cache/*.gem` and not `*.1.0.gem` and `*.2.0.gem`; a dotfile's own name is not its kind,
+Ruby's `_spec.rb` and `_test.rb`, Go's `_test.go` and Python's `_test.py` are kinds of their own,
+and a kind holding anything but ASCII letters, digits, `.`, `_` and `-` is none, so such a file is
+in no class. A claim says what a change adding a file of one class, the producer, also touches: one
+named file edited, or a file of another class added, the companion. A test class is neither side:
+tests are counted file by file by the namesake count and the obligations, and as a class "adds a
+spec here" is met by any spec at all.
 
 Each producer class is judged on its newest 100 candidates, the changes that added one, because a
 deep window averages a habit with the years before it began: rubocop's style cops ship with
@@ -2939,7 +2988,11 @@ Claude Code's own installer needs no Node, so the `node` on a user's `PATH` can 
 20 a scan died halfway with `Map.groupBy is not a function` while `doctor` called every engine ok.
 Every other verb now asks the same question before it does any work. Under the floor `scan`,
 `check`, `pin` and `setup` refuse with that row's sentence and exit 1, and a hook answers its empty
-object and exits 0, as it does on any failure.
+object and exits 0, as it does on any failure. The check lives in `node-floor.mjs`, the one module
+the binary imports up front, because a module that fails to parse runs no code at all: on Node 18,
+whose parser refuses a `v`-flag regular expression in `encode.mjs`, every hook printed a
+`SyntaxError` and exited 1 while the check meant to stop it never ran. Where the rest of the plugin
+does not load, `doctor` answers with the same sentence.
 
 | Row | Host | Ready when | Remedy |
 |---|---|---|---|

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { fc, parseReport, layoutShape, corpusShape, areaList, semanticShape, authorsShape } from "./fuzz.js";
 import { renderOverview } from "../plugins/anatomiya/lib/render.mjs";
-import { pathWords, pathSites } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
+import { pathWords, pathSites } from "../plugins/anatomiya/lib/stems.mjs";
 
 test("any parse, corpus and roster a scan can report keeps the overview to forty lines and its head", () => {
   // The bound has broken on combinations of optional lines that no
@@ -69,7 +69,7 @@ test("a path built from known segments gives back the words it was built from", 
     word.map((w) => ({ text: w, word: w })),
     word.map((w) => ({ text: `(${w})`, word: w })),
     word.map((w) => ({ text: `((${w}))`, word: w })),
-    fc.constantFrom(":id", ":id?", "*rest", "[slug]", "{item}", "$post", "(:locale)", "(.:format)").map((text) => ({ text }))
+    fc.constantFrom(":id", ":id?", "*rest", "[slug]", "{item}", "$post", "<int:pk>", "(:locale)", "(.:format)").map((text) => ({ text }))
   );
   fc.assert(
     fc.property(fc.array(segment, { maxLength: 8 }), fc.constantFrom(null, ".well-known", "(.well-known)"), fc.constantFrom("", "?next=/a_b", "#c_d/e-f"), (segments, wellKnown, tail) => {

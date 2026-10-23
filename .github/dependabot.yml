@@ -8,10 +8,8 @@ updates:
   # lockfile and prunes it to what the plugin declares, so the two never pin
   # different versions. An entry for `/plugins/anatomiya` would resolve that
   # directory afresh, which is the drift `plugin-lock.mjs --check` refuses.
-  # A bump here that moves a runtime dependency is followed by
-  # `.github/workflows/dependabot-lock.yml`, which regenerates the plugin's
-  # lockfile with that same script on the Dependabot branch, pushes it, and
-  # starts ci on the new commit. ci itself still only reads the repository.
+  # A bump here that moves a runtime dependency is redone by hand with
+  # `npm run lock:plugin`, since ci refuses a plugin lockfile left behind.
   - package-ecosystem: npm
     directory: "/"
     schedule:

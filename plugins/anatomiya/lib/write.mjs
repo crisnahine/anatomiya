@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, readdirSync, rmdirSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, rmdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { PIN_PATH } from "./baseline.mjs";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
@@ -72,6 +72,7 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   // The facts on disk are the third fact ownership needs, and the record a held
   // area's file was derived from. Read before the new record replaces them, and
   // `null` when there is no record to read, which makes nothing removable.
+  const factsSeen = factsStamp(storeDir);
   const previous = readFacts(result.root).facts;
   // After Claude Code's own directories: theirs is the refusal a scan has always
   // given, and the other targets can read as on or off while it does not resolve.
@@ -160,6 +161,7 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     bodies,
     blind,
     root: result.root,
+    factsSeen,
     // The scan itself, with any held area's carried record beside the ones it
     // measured, because the facts record is derived from the whole of it and
     // the committer is handed a plan rather than a scan.
@@ -490,6 +492,16 @@ function isWholeDimension(d) {
 
 const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
+/** The record's size and time, as a plan read it, or null where there was none to read. */
+function factsStamp(storeDir) {
+  try {
+    const { size, mtimeMs } = statSync(join(storeDir, basename(FACTS_PATH)));
+    return `${size}:${mtimeMs}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The filesystem half: the directories, the facts, the bodies, the removals.
  *
@@ -514,6 +526,10 @@ export function commitMap(root, plan) {
   if (plan.blind) return plan;
 
   const { rulesDir, storeDir } = resolveDirs(root);
+  // A plan from a record another scan has since replaced removes none of that scan's files, which then load for good.
+  if (factsStamp(storeDir) !== plan.factsSeen) {
+    throw Object.assign(new Error("another scan wrote the map meanwhile, so nothing was written: scan again"), { stale: true });
+  }
   // Asked again here for the same reason, and only of a directory this touches.
   const own = (id, t, did) => {
     const dir = resolveTargetDir(root, TARGETS[id]);

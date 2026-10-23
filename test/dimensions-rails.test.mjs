@@ -422,6 +422,244 @@ class Ddl < ActiveRecord::Migration[7.2]
 end
 `,
 
+  sql_set_then_update: `
+class Fix4 < ActiveRecord::Migration[7.2]
+  def up
+    execute "SET statement_timeout = 0; UPDATE users SET a = 1"
+  end
+end
+`,
+
+  sql_ddl_then_update: `
+class Fix5 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      ALTER TABLE users ADD COLUMN slug text;
+      UPDATE users SET slug = lower(name);
+    SQL
+  end
+end
+`,
+
+  sql_trigger_body: `
+class Fix6 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      CREATE FUNCTION touch() RETURNS trigger AS $$
+      BEGIN
+        NEW.a := 1;
+        UPDATE users SET a = 1;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql;
+    SQL
+  end
+end
+`,
+
+  sql_named_local: `
+class Fix7 < ActiveRecord::Migration[7.2]
+  def up
+    execute(sql, "Backfill")
+  end
+end
+`,
+
+  sql_helper_call: `
+class Fix8 < ActiveRecord::Migration[7.2]
+  def up
+    execute(backfill_sql("users"))
+  end
+end
+`,
+
+  sql_quoted_semicolon: `
+class Fix9 < ActiveRecord::Migration[7.2]
+  def up
+    execute "COMMENT ON TABLE t IS 'a; delete'"
+  end
+end
+`,
+
+  sql_long_line_then_update: `
+class Fix10 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      ALTER TABLE users ADD COLUMN normalized_email text;
+      UPDATE users SET normalized_email = lower(email);
+    SQL
+  end
+end
+`,
+
+  sql_cut_comment_then_update: `
+class Fix12 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      -- backfill the slugs before the index goes on
+      UPDATE users SET slug = lower(name);
+      ALTER TABLE users ADD c int;
+    SQL
+  end
+end
+`,
+
+  sql_block_comment_semicolon: `
+class Fix13 < ActiveRecord::Migration[7.2]
+  def up
+    execute "/* x; update y */ ALTER TABLE t ADD c"
+  end
+end
+`,
+
+  sql_cut_ddl_then_update: `
+class Fix15 < ActiveRecord::Migration[7.2]
+  def up
+    execute "ALTER TABLE users ADD COLUMN slug text; UPDATE users SET slug = lower(name)"
+  end
+end
+`,
+
+  sql_dash_heredoc_then_update: `
+class Fix16 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<-SQL
+      ALTER TABLE users ADD COLUMN slug text;
+      UPDATE users SET slug = lower(name);
+    SQL
+  end
+end
+`,
+
+  sql_cut_with: `
+class Fix18 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      CREATE INDEX CONCURRENTLY index_users_on_lower_email ON users (lower(email))
+        WITH (fillfactor = 90);
+    SQL
+  end
+end
+`,
+
+  sql_interp_cut_newline: `
+class Fix19 < ActiveRecord::Migration[7.2]
+  def up
+    execute "ALTER TABLE users ADD COLUMN slug text;\\nUPDATE users SET slug = '#{x}'"
+  end
+end
+`,
+
+  sql_cut_block_comment: `
+class Fix20 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      /* this used to run a big backfill of every row
+      update users set a = 1 was removed */
+      ALTER TABLE t ADD c int;
+    SQL
+  end
+end
+`,
+
+  sql_cut_comment_semicolon: `
+class Fix23 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      /* this used to run a big backfill of every row
+      x; update users set a = 1 */
+      ALTER TABLE t ADD c int;
+    SQL
+  end
+end
+`,
+
+  sql_cut_literal_then_comment: `
+class Fix24 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      COMMENT ON TABLE users IS 'every account that signed up';
+      COMMENT ON COLUMN u.a IS 'a; update b';
+    SQL
+  end
+end
+`,
+
+  sql_cut_literal_then_update: `
+class Fix25 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      COMMENT ON TABLE users IS 'every account that signed up';
+      ALTER TABLE users ADD c int;
+      UPDATE users SET c = 1;
+    SQL
+  end
+end
+`,
+
+  sql_interpolated_statement: `
+class Fix26 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      ALTER TABLE users ADD c int;
+      #{backfill_sql}
+    SQL
+  end
+end
+`,
+
+  sql_interpolated_name: `
+class Fix27 < ActiveRecord::Migration[7.2]
+  def up
+    execute "ALTER TABLE #{table} ADD c int"
+  end
+end
+`,
+
+  sql_quoted_ident: `
+class Fix21 < ActiveRecord::Migration[7.2]
+  def up
+    execute 'ALTER TABLE "a;update" ADD c int'
+  end
+end
+`,
+
+  sql_block_comment_slash: `
+class Fix22 < ActiveRecord::Migration[7.2]
+  def up
+    execute "/*/ x; y */ UPDATE t SET a = 1"
+  end
+end
+`,
+
+  sql_cut_ddl_and_model: `
+class Fix17 < ActiveRecord::Migration[7.2]
+  def up
+    execute "CREATE INDEX CONCURRENTLY index_users_on_lower_email ON users (lower(email))"
+    User.update_all(active: true)
+  end
+end
+`,
+
+  sql_closed_quote_then_update: `
+class Fix14 < ActiveRecord::Migration[7.2]
+  def up
+    execute "COMMENT ON TABLE t IS 'x'; UPDATE t SET c = 1"
+  end
+end
+`,
+
+  sql_comment_apostrophe: `
+class Fix11 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      ALTER TABLE t ADD c int; -- don't lock
+      ALTER TABLE t ADD d int;
+      UPDATE t SET c = 1;
+    SQL
+  end
+end
+`,
+
   polymorphic_reference: `
 class AddOwner < ActiveRecord::Migration[7.2]
   def change
@@ -1272,7 +1510,7 @@ end
   sql_and_send_irreversible: `
 class Q1 < ActiveRecord::Migration[7.1]
   def change
-    exec_query "CREATE TRIGGER t_upd BEFORE UPDATE ON t FOR EACH ROW EXECUTE PROCEDURE f()"
+    exec_query "CREATE TRIGGER t BEFORE UPDATE ON t"
   end
 end
 class Q2 < ActiveRecord::Migration[7.1]
@@ -1416,6 +1654,64 @@ test("a leading SQL comment does not hide the verb, and MERGE rewrites rows", ne
   // at all: each migration rewriting rows was stated as leaving data alone.
   for (const name of ["sql_line_comment_dml", "sql_block_comment_dml", "sql_merge"]) {
     assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+  }
+});
+
+test("every SQL statement is read, not only the first", needsRuby, () => {
+  // Only the first statement's verb was tested, so a backfill after a SET or an
+  // ALTER in the same string was stated as leaving data alone. A trigger body's
+  // UPDATE counts too, the side this check already errs on.
+  for (const name of ["sql_set_then_update", "sql_ddl_then_update", "sql_trigger_body"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+  }
+  // A `;` inside a quoted literal ends no statement.
+  assert.deepEqual(counts("migration_schema_only", "sql_quoted_semicolon"), { candidates: 1, conforming: 1 });
+  // A heredoc line the Ruby tree cut short lost its `;`, and an apostrophe in a
+  // comment opens no literal: the UPDATE after either is still its own statement.
+  for (const name of ["sql_comment_apostrophe", "sql_cut_comment_then_update", "sql_closed_quote_then_update"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+  }
+  // A `;` inside a block comment ends no statement either.
+  assert.deepEqual(counts("migration_schema_only", "sql_block_comment_semicolon"), { candidates: 1, conforming: 1 });
+});
+
+test("a string the Ruby tree cut short with no data statement before the cut is SQL this could not read", needsRuby, () => {
+  // A plain string and a `<<-SQL` heredoc keep RUBY_STRING_CAP characters in
+  // all, so an UPDATE past them went unseen and the backfill read as DDL.
+  for (const name of ["sql_cut_ddl_then_update", "sql_dash_heredoc_then_update"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 0, conforming: 0 }, name);
+    assert.deepEqual(counts("migration_reversible", name), { candidates: 0, conforming: 0 }, name);
+  }
+  // A line after a heredoc line the tree cut may finish that line's statement:
+  // `WITH (fillfactor = 90)` is a clause of the index, so what follows is unread
+  // rather than a new statement, an UPDATE included.
+  for (const name of ["sql_cut_with", "sql_long_line_then_update"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 0, conforming: 0 }, name);
+  }
+  // A part that happens to end in a newline at the cap was cut all the same, and a
+  // comment the cut left open goes on past it.
+  for (const name of ["sql_interp_cut_newline", "sql_cut_block_comment", "sql_cut_comment_semicolon"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 0, conforming: 0 }, name);
+  }
+  // A literal cut at the cap closes in the part of its line the tree dropped, so the next line is code
+  // again: the second line's quoted `; update` is a literal, and an UPDATE after a whole `;` is data work.
+  assert.deepEqual(counts("migration_schema_only", "sql_cut_literal_then_comment"), { candidates: 0, conforming: 0 });
+  assert.deepEqual(counts("migration_schema_only", "sql_cut_literal_then_update"), { candidates: 1, conforming: 0 });
+  // An interpolation where a statement starts may be any statement; one inside a statement names a part of it.
+  assert.deepEqual(counts("migration_schema_only", "sql_interpolated_statement"), { candidates: 0, conforming: 0 });
+  assert.deepEqual(counts("migration_schema_only", "sql_interpolated_name"), { candidates: 1, conforming: 1 });
+  // A `;` in a quoted identifier ends no statement, and `/*/` opens a comment rather than closing it.
+  assert.deepEqual(counts("migration_schema_only", "sql_quoted_ident"), { candidates: 1, conforming: 1 });
+  assert.deepEqual(counts("migration_schema_only", "sql_block_comment_slash"), { candidates: 1, conforming: 0 });
+  // SQL it could not read decides nothing where the class rewrites rows anyway.
+  assert.deepEqual(counts("migration_schema_only", "sql_cut_ddl_and_model"), { candidates: 1, conforming: 0 });
+});
+
+test("SQL is read from the first argument only, so a statement name or a helper's argument is not the SQL", needsRuby, () => {
+  // Every string under the arguments was a candidate, so `"Backfill"` or
+  // `"users"` was read as the SQL and the class was counted schema-only.
+  for (const name of ["sql_named_local", "sql_helper_call"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 0, conforming: 0 }, name);
   }
 });
 

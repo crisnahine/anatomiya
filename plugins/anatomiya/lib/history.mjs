@@ -156,7 +156,7 @@ export async function historyFields(root, walk, open, { history = null, signal =
 export async function saveHistory(root, history, { write = true } = {}) {
   const pending = scanOf(history).pending.splice(0);
   if (!write) return;
-  // Read once per environment: the two walks of a scan share one, and where the clone is partial each carries its own.
+  // Read once per environment: the two walks of a scan share one.
   const besides = new Map();
   for (const { walk, stamp, records } of pending) {
     const { kind, env } = walk;

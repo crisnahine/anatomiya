@@ -25,6 +25,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
 import { locator } from "./encode.mjs";
+import { escapes } from "./paths.mjs";
 import { echoDue } from "./echo.mjs";
 import { FACTS_PATH, readLayout, readRecord, schemaProblem } from "./facts.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
@@ -469,7 +470,7 @@ export function targetIn(payload, root, from) {
   // bound is on what they made.
   if (target.length > PATH_MOST) return null;
   const rel = relative(resolveLinks(resolve(root)), resolveLinks(target));
-  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+  if (!rel || escapes(rel)) return null;
   // Only where a backslash is the separator: on POSIX it is a legal filename
   // character, and splitting on it named a different file.
   return sep === "\\" ? rel.split("\\").join("/") : rel;
@@ -899,10 +900,11 @@ export function readPayload() {
  * the call, so a try/catch around this never saw it and node turned it into an
  * uncaught exception and exit 1: the one outcome a hook must not have, on every
  * turn and every tool call for the life of that session. The listener is what
- * makes the error ordinary, and it is added once however often this is called.
+ * makes the error ordinary, and it replaces the binary's own, which lets every
+ * error but EPIPE through for the commands a person runs.
  */
 export function respond(value) {
-  if (process.stdout.listenerCount("error") === 0) process.stdout.on("error", () => {});
+  process.stdout.removeAllListeners("error").on("error", () => {});
   try {
     process.stdout.write(JSON.stringify(value));
   } catch {
