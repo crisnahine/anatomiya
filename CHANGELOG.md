@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-10-23
+
+The JavaScript parser, the tree-sitter runtime and the Flow stripper move to their current versions,
+which change no fact across the 35-repository corpus.
+
 ### Changed
 
 - `oxc-parser` 0.155.0, `web-tree-sitter` 0.27.1 and `flow-remove-types` 2.336.0, with the plugin's
@@ -5009,7 +5014,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/crisnahine/anatomiya/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/crisnahine/anatomiya/compare/v0.15.6...v0.16.0
 [0.15.6]: https://github.com/crisnahine/anatomiya/compare/v0.15.5...v0.15.6
 [0.15.5]: https://github.com/crisnahine/anatomiya/compare/v0.15.4...v0.15.5
