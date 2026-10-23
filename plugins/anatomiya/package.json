@@ -9,9 +9,9 @@
     "node": ">=22"
   },
   "dependencies": {
-    "flow-remove-types": "^2.334.0",
-    "oxc-parser": "^0.153.0",
-    "web-tree-sitter": "^0.27.0"
+    "flow-remove-types": "^2.336.0",
+    "oxc-parser": "^0.155.0",
+    "web-tree-sitter": "^0.27.1"
   },
   "optionalDependencies": {
     "typescript": "^5.9.3"

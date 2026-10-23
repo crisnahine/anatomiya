@@ -3016,7 +3016,7 @@ process that tried it, and fails naming any that still does not load. Where ever
 last line says to scan again in any repository that holds a map: a refresh that stopped for the
 missing package waits on that checkout's HEAD or its retry clock, and the map there is as it was. A grammar file is not
 something it can put back, and it is not listed as something to install: with one cut short,
-`setup` and `setup --dry-run` print `doctor`'s own line for it, `tree-sitter 0.27.0: grammars: 6
+`setup` and `setup --dry-run` print `doctor`'s own line for it, `tree-sitter 0.27.1: grammars: 6
 of 7, kotlin.wasm did not load, reinstall this plugin, which ships its grammar files in its own
 directory`, run no install for it, and end non-zero; a file that loads and is not the one the plugin
 shipped, or a missing `grammars.json`, gets the same treatment under its own words. It is the only command that installs anything
