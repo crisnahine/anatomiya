@@ -184,6 +184,38 @@ test("an untouched copy of this repository passes", (t) => {
   assert.match(output, /docs match the code/);
 });
 
+test("a reworded severity reason the table still quotes the old way fails", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, REL.anatomiya, "lib", "check.mjs"), (text) => text.replaceAll("no baseline population recorded", "no baseline recorded"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /the severity table's FIX row does not quote the reason "no baseline recorded"/);
+});
+
+test("a check whose reasons the gate cannot find fails rather than passing every one unread", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, REL.anatomiya, "lib", "check.mjs"), (text) => text.replace(/severity: "(NIT|FIX|MUST-FIX)",(\s*)reason: /g, 'severity: "$1",$2reason: String('));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /no severity reason was read: the pattern that finds them matched nothing/);
+});
+
+test("a severity reason moved into a constant fails rather than going unread", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, REL.anatomiya, "lib", "check.mjs"), (text) =>
+    `const NO_BASELINE = "no baseline recorded";\n${text.replace('reason: "no baseline population recorded"', "reason: NO_BASELINE")}`,
+  );
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /severity reasons this cannot read, not written as a literal: 1 of \d+/);
+});
+
 test("a tree git cannot list the files of fails the gate and says why", (t) => {
   const dir = copyWithNoRepository(t);
 
@@ -245,6 +277,25 @@ test("a command file that spells an invocation the CLI refuses fails", (t) => {
   const flag = check(dir);
   assert.equal(flag.status, 1);
   assert.match(flag.output, /commands\/check\.md: .*check \. --deep/);
+});
+
+test("a command a person copies from the README or CONTRIBUTING is parsed too", (t) => {
+  // Spelled from the repository root rather than through CLAUDE_PLUGIN_ROOT,
+  // and a renamed flag left those lines stale with the gate green.
+  for (const [rel, spelled] of [
+    ["README.md", "anatomiya.mjs scan /path/to/your/repo --targets cursor,copilot"],
+    ["CONTRIBUTING.md", "anatomiya.mjs scan /path/to/some/repo --dry-run"],
+  ]) {
+    const dir = repoCopy(t);
+    const path = join(dir, rel);
+    const body = readFileSync(path, "utf8");
+    assert.ok(body.includes(`node plugins/anatomiya/bin/${spelled}`), `${rel} spells the invocation this case breaks`);
+    writeFileSync(path, body.replace(spelled, `${spelled} --target x`));
+
+    const { status, output } = check(dir);
+    assert.equal(status, 1, `${rel} spells a flag the CLI refuses and passed`);
+    assert.match(output, new RegExp(`${rel.replace(".", "\\.")}: .*--target x`));
+  }
 });
 
 test("the rows a component's script is asked are read against the registry, per framework", (t) => {
@@ -417,17 +468,17 @@ test("every registry count is read in words as well as digits", (t) => {
   const dir = repoCopy(t);
   const swaps = {
     "docs/how-it-works.md": [
-      ["56 ship", "twenty ship"],
+      [/\d+ ship, the filename row/, "twenty ship, the filename row"],
       ["29 for JavaScript", "twenty for JavaScript"],
-      ["34\nreachable in JSX", "twenty\nreachable in JSX"],
+      [/34\s+reachable in JSX/, "twenty reachable in JSX"],
       ["19 that speak Ruby", "twenty that speak Ruby"],
       ["9 file-to-file obligations", "twenty file-to-file obligations"],
       ["28 for Ruby", "twenty for Ruby"],
-      ["25\nfor Vue", "twenty\nfor Vue"],
+      [/25\s+for Vue/, "twenty for Vue"],
       ["25 for Svelte", "twenty for Svelte"],
       ["JSX total 34 rather than 29", "JSX total twenty rather than 29"],
     ],
-    "README.md": [["One of the 65", "One of the twenty"], [/\d+ numbered decisions/, "twenty numbered decisions"]],
+    "README.md": [[/One of the \d+ needs/, "One of the twenty needs"], [/\d+ numbered decisions/, "twenty numbered decisions"]],
   };
   for (const [rel, pairs] of Object.entries(swaps)) {
     edit(join(dir, ...rel.split("/")), (text) => pairs.reduce((out, [from, to]) => out.replace(from, to), text));

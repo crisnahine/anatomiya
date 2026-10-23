@@ -342,11 +342,12 @@ for (const exit of [0, 1]) {
 
     const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
     await until(t, () => existsSync(started));
-    writeFileSync(go, "");
     // Held past the clock and past git's own exit, and from the loop's check phase, so the loop turns to its
-    // timers, the clock among them, before it reads the pipe again.
+    // timers, the clock among them, before it reads the pipe again. The word is given once the loop is held,
+    // so a loaded machine cannot read git's exit before the clock is due.
     await new Promise((done) => {
       setImmediate(() => {
+        writeFileSync(go, "");
         Atomics.wait(cell, 0, 0, 4500);
         done();
       });
@@ -378,9 +379,10 @@ for (const exit of [0, 1]) {
 
     const reading = gitBuffered(dir, ["ls-files", "-z", "--"], { timeout: 3000, env });
     await until(t, () => existsSync(started));
-    writeFileSync(go, "");
+    // The word is given once the loop is held, as above.
     await new Promise((done) => {
       setImmediate(() => {
+        writeFileSync(go, "");
         Atomics.wait(cell, 0, 0, 4500);
         done();
       });

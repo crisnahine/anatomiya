@@ -59,6 +59,21 @@ the shipped row 256 of 259.
   and test titles are both answered by the sibling an agent lists or opens before it writes, and the
   rows over CSS, YAML and locale files have no area to stand in.
 
+Issues #239 to #243 then measured every class this note ranks but locale key parity against the bar,
+over the three corpora with the tool's own filters, areas and gates, and put the classes whose
+numbers cleared it to sessions with no map (`docs/measurements/2026-10-23-unread-classes.md`). One
+shipped: `endpoint_segment_case` reads the route paths Python, Java, C# and Rust declare, since the
+class a repository holds differs inside each of the four, and PHP, Go and Kotlin were refused (C62).
+The rest were refused. The URL forms left unread above stay unread (C63). The YAML extension and
+Markdown and data file names cleared the numbers, but the sibling in the file's own directory
+already agrees with 0.98 or more of their sites, every session matched it, and they have no area to
+sit in; CSS classes hold CSS's own default and locale parity is the translation pipeline's (C64).
+Directory names, "should" titles and i18n key case and shape were matched in every session that
+wrote one, and the other classes in section 4 fail on applicability, spread, a linter or a reader
+this tool lacks (C65). An i18n key's presence in the base locale is a correctness check with no
+sides, a migration's schema edit is a co-change claim already, and an action pinned to a sha was
+copied from the sibling workflows in every session (C66).
+
 ## Summary
 
 anatomiya reads source text in 12 languages and the path of every tracked file. Inside source it

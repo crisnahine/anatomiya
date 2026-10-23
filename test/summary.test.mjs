@@ -1072,6 +1072,11 @@ test("a pin that would write says so and sends nobody off to scan", () => {
 
   assert.deepEqual(pinLines(s).slice(-2), ["", "would write .claude/anatomiya/baseline.json"]);
   assert.ok(!pinLines(s).includes(RUNNING_SESSION));
+  // Nothing was pinned, so the first line does not say it was, and a re-pin says it would move.
+  assert.match(pinLines(s)[0], /^baseline would be pinned at /);
+  const moved = buildPin([{ id: "id0", path: "lib", files: [{ rel: "lib/a.js" }, { rel: "lib/b.js" }] }], { sha: "1234567890abcdef1234567890abcdef12345678", corpus: 2 });
+  const again = pinSummary({ previous: next, next: moved, delta: pinDelta(next, moved), path: PIN_PATH, dryRun: true });
+  assert.match(pinLines(again)[0], /^baseline would move \S+ -> /);
 });
 
 test("a pin that gains a root area names it in words, and a directory of that name as a path", () => {

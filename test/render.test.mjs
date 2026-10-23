@@ -2210,7 +2210,7 @@ test("configuration, data and prose files are said to go unopened, apart from th
 
 test("the overview says which strings a row reads, whatever the repository holds", () => {
   const out = renderOverview(result({ corpus: { files: 1, truncated: false, dropped: {}, otherExts: [] } }), { uncovered: 0 });
-  const line = "- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not";
+  const line = "- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route declares in JavaScript, Ruby, Python, Java, C# or Rust; i18n keys, CSS classes, event names, messages, links and request paths are not";
   assert.ok(out.split("\n").includes(line), out);
 });
 
@@ -2802,6 +2802,20 @@ test("a dropped description is named as one rather than counted as a count", () 
   // Two, not three: the kinds line is no longer one of the descriptions the
   // notice counts, because it no longer reaches the notice.
   assert.match(out, /^and \d+ more not shown here, \d+ of them stated, 2 of them descriptions(\.|$)/m);
+});
+
+test("an area that lost only its roster lines says all of them were descriptions", () => {
+  // Nine directive blocks and two exceptions leave room for every directive and
+  // the notice, but not for the two roster lines.
+  const exceptions = [{ path: "src/services/e0.ts", count: 1 }, { path: "src/services/e1.ts", count: 1 }];
+  const out = renderArea(
+    rosterArea({
+      kinds: kindsOf(),
+      dimensions: Array.from({ length: 9 }, (_, i) => dim({ key: `s${i}`, claim: `stated ${i}`, ...(i === 0 ? { exceptions } : {}) })),
+    })
+  );
+
+  assert.match(out, /^and 2 more not shown here, all of them descriptions$/m);
 });
 
 test("the overview does not carry the crash count, which measures the machine", () => {
@@ -3955,7 +3969,7 @@ const CLAUDE_OVERVIEW = [
   "- 12 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)",
   "- 18 source files sit in a directory nothing was counted in",
   "- 3 files hold a language this map does not read (3 .swift); 2 files say a generator wrote them, so nothing here is counted from them",
-  "- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not",
+  "- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route declares in JavaScript, Ruby, Python, Java, C# or Rust; i18n keys, CSS classes, event names, messages, links and request paths are not",
   "- 2 files hold syntax the parser rejected; 1 file exceeded the size cap",
   "",
   "Generated files: 3 under .claude/rules/anatomiya-*.md",

@@ -7,6 +7,120 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-23
+
+Python, Java, C# and Rust routes are read for the words of their URL paths, the classes #240 to #243
+asked about are measured and refused, most on the numbers and the eight that cleared them on
+sessions with no map or, for Rails views, because no template is parsed here, apart from the few C63
+to C66 name as unmeasured, and an audit of the whole plugin fixed 30 defects, among them hooks that
+crashed on Node 18 and a hand scan that recorded a stamp it never saw.
+
+### Added
+
+- `endpoint_segment_case` reads the URL paths routes declare in Python, Java, C# and Rust (#239,
+  C62): a Python route decorator, `add_url_rule`, Django's `path` and the `APIRouter`, `Blueprint`
+  and router prefixes; Spring's verb mappings and `@RequestMapping`; ASP.NET's `[Route]`,
+  `[HttpGet]` and the other verbs, and the minimal API's `MapGet` to `MapMethods`; actix's and
+  rocket's verb attributes and `.route`, `.nest`, `.mount`, `resource` and `scope`. The class is
+  learned, since it differs within each language: on clones netbox states kebab-case and
+  healthchecks snake_case, and bitwarden kebab-case where jellyfin states PascalCase, which C67
+  reads as clearing the bar's spread for a row that learns its class; Java clears it by the letter,
+  through appsmith's mixed `controllers/ce`. PHP, Go and Kotlin are refused on the measurement.
+- The classes #240 to #243 named are measured against the bar and written down so nobody measures
+  them again (C63 to C66): the URL forms that stay unread, rows over non-source files, the remaining
+  unread classes and the wiring checks, 22 classes in all with directory name case, i18n key shape
+  and the `TODO` form among them, each with its per-repository numbers and, where a class cleared
+  the numbers, real sessions in which the agent matched the repository's side, in all but two after
+  reading its siblings first. `docs/measurements/2026-10-23-unread-classes.md` holds the tables, and
+  `docs/dimension-intake.md` a dropped row per class. Each row also names what was not measured:
+  #243's schema invariant stays planned, and one-file registries other than a barrel and i18n in
+  template files are unmeasured.
+
+### Changed
+
+- A Go `_test.go` and a Python `_test.py` are a kind of their own in the co-change walk, as Ruby's
+  `_spec.rb` and `_test.rb` already were, so a test named that way is no producer, and a branch that
+  adds only one owes nothing. A pytest `test_x.py` still takes the plain `.py` class (C56).
+- `async_error_handling` counts a function as handling its failure where its own body calls
+  `.catch(...)` or `.then(ok, fail)` with a handler: a `.catch({})` is a schema's fallback, and
+  `.then(ok, null)` handles nothing.
+- An exported TypeScript overload set and a merged interface vote once in the export naming rows,
+  judged by the declaration with a body, so an overloaded component stays out. A value and a type
+  sharing a name still vote twice. `doc_comment_style` reads a JSDoc above the first overload
+  signature as documenting the set.
+- `migration_schema_only` reads every SQL statement the Ruby tree keeps of an `execute`, split on
+  `;` outside a quoted literal and outside comments, so `SET lock_timeout = 0; UPDATE ...` and a
+  squiggly heredoc's `UPDATE` line after a whole `ALTER TABLE ...;` line are data work, while a line
+  after one the tree cut may finish that line's statement (`WITH (fillfactor = 90)`) and is unread.
+  The SQL is read from the first argument alone: `execute(sql, "Backfill")` and
+  `execute(helper("x"))` are unreadable, never schema-only. A trigger body's `UPDATE` now counts as
+  data work too, the side the row errs on. The Ruby tree keeps 40 characters of a plain string or a
+  `<<-SQL` heredoc, so where the cut leaves no data statement before it the SQL is unreadable, and
+  drops the class unless something else in it rewrites rows: 121 `db/migrate` migrations across 12
+  Rails corpus repositories leave the count, and no claim changes.
+- A specifier tail and an alias tail resolve over at most the last 32 path segments: 300 files 2,000
+  directories deep took 1.27 GB.
+- The binary imports only `node-floor.mjs` up front and loads everything else once the node is known
+  to parse it. A hook loads 14 library modules for the echo, the notice and the reuse check.
+- `npm run coverage` names a library file no test loads, which the lcov record has no row for, as
+  under every per-file floor. The three worker shells run only in forked children and are named as
+  such.
+- `check:docs` parses the `node plugins/anatomiya/bin/anatomiya.mjs ...` command lines too, reads
+  `CONTRIBUTING.md`, and reads every reason `check` prints: `no baseline population recorded` sat in
+  a constant it never read, and a pattern that finds no reason at all fails the gate.
+- A map changes on its first scan with this version where a repository declares Python, Java, C# or
+  Rust routes (the new row's claims), holds Go or Python tests beside their code (co-change classes
+  and claims), exports TypeScript overloads or merged interfaces, handles async failures with
+  `.catch`, or runs SQL in its migrations. Over the 35-repository corpus 34 slots change what they
+  state: 23 claims are gained and 7 lost, all through overload sets and merged interfaces voting
+  once and a JSDoc read above the first overload signature, most gains being small areas that now
+  borrow a cleaner prior from their repository; 2 learned classes flip where nothing is stated; and
+  the new row opens 2 slots in one Java repository and states neither.
+
+### Removed
+
+- `.github/workflows/dependabot-lock.yml`. Its pushed commit could never get the CodeQL and
+  dependency review checks `main` requires, so its pull requests could not merge; a Dependabot bump
+  of a runtime dependency takes `npm run lock:plugin` by hand.
+
+### Fixed
+
+- On Node 18 every hook printed a `SyntaxError` and exited 1 on every turn and tool call, because a
+  module the binary imported up front holds a regular expression that node cannot parse, and no code
+  ran, the floor check included. A hook now answers `{}` and exits 0 there, and a command prints the
+  floor sentence.
+- A hook swallows every error writing its answer, not `EPIPE` alone: the binary's own listener let
+  the others through, and the hook's never got installed.
+- A scan run by hand took the refresh stamp after it finished, so a commit made while it ran was
+  recorded as seen and the stale map stayed until the checkout moved again. It takes the stamp
+  before it starts and records it only where the checkout still holds it.
+- Two scans at once could leave an area file nothing removes: the later commit wrote a plan made
+  from a record the other scan had replaced. A commit refuses now where `facts.json` moved after the
+  plan read it: `another scan wrote the map meanwhile, so nothing was written: scan again`, and a
+  refresh refused that way records no failure over the other scan's record.
+- A parse worker the pool had killed could be handed the next file, which was then charged as timed
+  out without being parsed. A killed worker gets no more files, and its late answer is kept.
+- A Ruby symbol with a high byte in a binary-encoded file made the whole file unreadable. Its text
+  goes through the same UTF-8 step a string's does.
+- On APFS a long `ſ`, a sharp `ß` and its capital `ẞ`, and a Greek letter with a dialytika and a
+  tonos fold as the volume folds them in revision placements, the corpus listing and the check's ref
+  fold: a revision holding `s.ts` and `ſ.ts` wrote both blobs to one file and counted one file's
+  sites from the other's text.
+- One check, `escapes` in `paths.mjs`, decides whether a relative path leaves its base for the
+  tsconfig, rules, hook, validate and shipped readers; on POSIX a directory named `..\cfg` or `C:`
+  is inside, where the tsconfig reader refused `..\cfg`.
+- `doc_comment_style` counts exported classes as well as functions, and its claim now says so:
+  exported functions and classes carry a doc comment.
+- A file named exactly `.rb` is delivered where it is counted: the check's glob test now reads a
+  leading dot as the language does.
+- The release workflow runs the suite in a job that can only read the repository, and creates the
+  release in a second job that installs nothing and runs no test: a dependency the suite imports
+  could have put its own `gh` on the `PATH` of the release call. Neither checkout leaves its token
+  in `.git/config`.
+- Faster on large or hostile repositories: a case-folding collision reads each directory once, the
+  root's real path is resolved once per listing, a check reads tracked test directories from a set,
+  and pairing groups specs by name, each where the old loop was quadratic.
+
 ## [0.15.6] - 2026-10-22
 
 A route table, a server's route declarations and a Rails routes file are read for the words of
@@ -4889,7 +5003,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.15.6...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/crisnahine/anatomiya/compare/v0.15.6...v0.16.0
 [0.15.6]: https://github.com/crisnahine/anatomiya/compare/v0.15.5...v0.15.6
 [0.15.5]: https://github.com/crisnahine/anatomiya/compare/v0.15.4...v0.15.5
 [0.15.4]: https://github.com/crisnahine/anatomiya/compare/v0.15.3...v0.15.4

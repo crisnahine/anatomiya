@@ -591,6 +591,43 @@ test("an alias import of a tail tens of thousands of files share resolves in tim
   assert.ok(took < 5000, `8,000 alias imports took ${Math.round(took)} ms`);
 });
 
+test("a file thousands of directories deep registers only its last 32 tails", () => {
+  const deep = `${"d/".repeat(2000)}p/q.ts`;
+  const rels = corpus(deep);
+  const set = Map.prototype.set;
+  let registered = 0;
+  Map.prototype.set = function (key, value) {
+    if (typeof key === "string" && key.startsWith("/")) registered++;
+    return set.call(this, key, value);
+  };
+  try {
+    assert.equal(specifierToFile("p/q", "src/x.ts", rels), deep);
+  } finally {
+    Map.prototype.set = set;
+  }
+
+  assert.equal(registered, 32);
+  assert.equal(specifierToFile(`${"d/".repeat(30)}p/q`, "src/x.ts", rels), deep);
+  assert.equal(specifierToFile(`${"d/".repeat(31)}p/q`, "src/x.ts", rels), null, "a longer tail has no key");
+});
+
+test("an alias over a file thousands of directories deep indexes only its last 32 tails", () => {
+  const deep = `${"d/".repeat(2000)}p/q.ts`;
+  const rels = corpus(deep, "a/b/X.vue");
+  const set = Map.prototype.set;
+  let indexed = 0;
+  Map.prototype.set = function (key, value) {
+    if (typeof key === "string" && key.endsWith("q.ts")) indexed++;
+    return set.call(this, key, value);
+  };
+  try {
+    assert.equal(specifierToFile("@/p/q", "a/b/X.vue", rels), null, "a tail no directory above the importer holds");
+  } finally {
+    Map.prototype.set = set;
+  }
+  assert.equal(indexed, 32);
+});
+
 test("an alias that climbs out of its root names what the path names from each directory above the importer", () => {
   const page = "apps/web/src/routes/+page.svelte";
 

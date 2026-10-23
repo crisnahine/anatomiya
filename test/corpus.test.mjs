@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, realpathSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, isAbsolute, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { Worker } from "node:worker_threads";
 
-import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
+import { collect, corpusDrop, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
@@ -297,6 +297,118 @@ for (const [kind, onDisk, alias, written = onDisk, precompose = "false"] of [
     assert.equal(dropped.unreadable, 1, "the entry whose blob the tree does not hold is named as unread");
   });
 }
+
+test("two index entries the volume folds past lower case, the long s onto s, are one file read once", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/lib/s.ts");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    stageAlias(d, git, "src/lib/ſ.ts");
+  });
+  if (!existsSync(join(dir, "src", "lib", "ſ.ts"))) return t.skip("this volume keeps the long s apart from s");
+
+  const { files, dropped } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["src/lib/s.ts"]);
+  assert.equal(dropped.unreadable, 1);
+});
+
+/** Every path `name` on node:fs is called with during the test, seen through the module's named export too. */
+async function spyFs(t, name) {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs[name];
+  const seen = [];
+  fs[name] = (p, ...rest) => {
+    seen.push(String(p));
+    return real(p, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  });
+  return seen;
+}
+
+test("many index entries that fold onto one directory's files read that directory once", needsFoldingFilesystem, async (t) => {
+  // Each collision read every directory on both paths again, so a directory of
+  // case pairs cost its size squared and the scan ran past git's clock.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 20; i++) write(`src/lib/f${i}.ts`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    const index = Array.from({ length: 20 }, (_, i) => {
+      const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: `export const alias = ${i};\n` }).toString().trim();
+      return `100644 ${blob}\tsrc/lib/F${i}.ts\n`;
+    }).join("");
+    execFileSync("git", ["update-index", "--index-info"], { cwd: d, input: index });
+    git("commit", "-qm", "aliases");
+  });
+  const read = await spyFs(t, "readdirSync");
+
+  const { files, dropped } = await collect(dir);
+
+  assert.equal(files.length, 20);
+  assert.equal(dropped.unreadable, 20);
+  const lib = read.filter((p) => p.endsWith(join("src", "lib")));
+  assert.equal(lib.length, 1, lib.join("\n"));
+});
+
+test("collect resolves the repository root once, not once per file", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 20; i++) write(`src/f${i}.ts`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const resolved = await spyFs(t, "realpathSync");
+
+  const { files } = await collect(dir);
+
+  assert.equal(files.length, 20);
+  // Other steps resolve it a few times too; what matters is no count per file.
+  assert.ok(resolved.filter((p) => p === dir).length < files.length, resolved.join("\n"));
+});
+
+test("the untracked count and a drop filter resolve the root once per listing too", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/seed.ts");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    for (let i = 0; i < 20; i++) write(`src/u${i}.ts`);
+  });
+  const resolved = await spyFs(t, "realpathSync");
+  const rootReads = () => resolved.filter((p) => p === dir).length;
+
+  assert.equal(await countUntrackedSource(dir), 20);
+  const counted = rootReads();
+  assert.ok(counted < 20, resolved.join("\n"));
+  const drop = await corpusDrop(dir);
+  for (let i = 0; i < 20; i++) assert.equal(drop(`src/u${i}.ts`), null);
+  assert.ok(rootReads() - counted < 20, resolved.join("\n"));
+});
+
+test("a root re-pointed between two listings is resolved again, not read off the first", needsSymlinks, (t) => {
+  // A process outlives one listing: a root reached through a link that moved
+  // kept the old target, so a file of the new one read as outside, and a link
+  // out of the new root was judged against the old, wider one.
+  const base = mkdtempSync(join(tmpdir(), "anatomiya-reroot-"));
+  t.after(() => removeTree(base));
+  mkdirSync(join(base, "A", "sub"), { recursive: true });
+  mkdirSync(join(base, "B"));
+  writeFileSync(join(base, "B", "f.ts"), "");
+  writeFileSync(join(base, "A", "secret"), "");
+  symlinkSync("../secret", join(base, "A", "sub", "leak"));
+  const root = join(base, "L");
+  symlinkSync(join(base, "A"), root);
+  assert.equal(safeResolve(root, "f.ts"), null);
+  unlinkSync(root);
+  symlinkSync(join(base, "B"), root);
+  assert.equal(safeResolve(root, "f.ts"), realpathSync(join(base, "B", "f.ts")));
+  unlinkSync(root);
+  symlinkSync(join(base, "A", "sub"), root);
+  assert.equal(safeResolve(root, "leak"), null);
+});
 
 test("two files that differ only in case on a case-sensitive filesystem are both read", needsCaseSensitiveFilesystem, async (t) => {
   const dir = repo(t, (d, { git, write }) => {
@@ -742,6 +854,17 @@ test("an excluded directory repeated under many directories is cut out by its na
   }
 });
 
+test("a left-out file named only by its extension is cut out like any other", () => {
+  const files = fakeFiles(Array.from({ length: 8 }, (_, i) => `src/comp/c${i}.ts`));
+  const uncounted = [{ rel: "src/comp/gen/.ts", lang: "js" }];
+  const [a] = discover(files, { uncounted, minFiles: 3 });
+
+  for (const f of [...files, ...uncounted]) {
+    assert.equal(matches(a.globs, f.rel), !f.rel.includes("gen/"), f.rel);
+    assert.equal(areaLib.globsReach(a.globs, f.rel), !f.rel.includes("gen/"), `globsReach: ${f.rel}`);
+  }
+});
+
 test("an excluded name that also names a counted directory is cut out by path instead", () => {
   // `build` is output only where no `src` sits above it, so the name alone
   // would cut `src/build/` out of the area that counted it.
@@ -794,6 +917,8 @@ test("globsReach answers what the delivery channel would, over every glob shape"
     "src/new/Late.tsx", "m0.mjs", "sub/m0.mjs", "README.md", "lib/deep/deeper/x.js",
     // The delivery channel folds case, so a file added in another case is delivered too.
     "LIB/c0.js", "lib/DEEP/d0.js", "lib/C0.JS", "lib/tasks/RAKEFILE", "SRC/Util/u0.ts",
+    // A file named only by its extension is that language's, and `*.js` reaches it.
+    "lib/.js", "lib/deep/.js", "src/util/.ts",
   ];
 
   for (const files of layouts) {

@@ -48,7 +48,7 @@ class Order(Record):
 def load(path) -> Order:
     try:
         with open(os.path.expanduser(path)) as handle:
-            return Order(handle.readlines())
+            return Order(handle.readlines(), sort=True)
     except OSError:
         pass
     return Order([])
@@ -246,7 +246,7 @@ enum Currency {
         if (this.name() == null) {
             throw new IllegalStateException();
         }
-        @SuppressWarnings(value = "unused")
+        @SuppressWarnings(value = {"unused", "rawtypes"})
         int tries = 0;
         again:
         while (tries < 2) {

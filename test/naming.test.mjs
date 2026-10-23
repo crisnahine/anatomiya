@@ -354,6 +354,29 @@ test("exported_symbol_case votes with a function or a variable, never a class or
   assert.deepEqual(h.map((x) => x.where).sort(), ["doThing", "fooBar", "my_thing"]);
 });
 
+test("an overload set votes once, and a type sharing a value's name still votes", async () => {
+  const src = `
+    export function parse_value(a: string): string;
+    export function parse_value(a: number): string;
+    export function parse_value(a: any): string { return a }
+    export interface Shape { a: string }
+    export interface Shape { b: string }
+    export const Foo = 1;
+    export type Foo = number;
+  `;
+  const values = await astHits("exported_symbol_case", src);
+  assert.deepEqual(values.map((x) => x.where).sort(), ["Foo", "parse_value"]);
+  const types = await astHits("exported_type_case", src);
+  assert.deepEqual(types.map((x) => x.where).sort(), ["Foo", "Shape"]);
+  // The set is judged by its implementation, so an overloaded component stays out.
+  const component = await astHits("exported_symbol_case", `
+    export function Button(p: string): JSX.Element;
+    export function Button(p: number): JSX.Element;
+    export function Button(p: any) { return <div>{p}</div> }
+  `);
+  assert.deepEqual(component, []);
+});
+
 test("exported_class_case votes with a class declaration or a class bound to a variable", async () => {
   const h = await astHits("exported_class_case", `
     export class OrderList {}
@@ -598,7 +621,7 @@ test("a leading digit run and its separator are cut before the stem is classifie
 /* --- the classifier is linear on hostile identifiers --- */
 
 test("classifyWord answers a long uppercase run followed by a non-word in linear time", async () => {
-  const { classifyWord } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  const { classifyWord } = await import("../plugins/anatomiya/lib/stems.mjs");
   // The camelCase pattern used to carry `(?:[A-Z][a-zA-Z0-9]*)+`, whose
   // uppercase runs split ambiguously; 28 characters measured six seconds.
   const hostile = "a" + "A".repeat(40) + "!";
@@ -672,7 +695,8 @@ test("a lowercase name outside ASCII spells every class, and a mixed one spells 
   // ASCII-only test, so the check counted it as a stem spelling no class
   // against a stated claim: every accented Spanish or French filename was a
   // finding the author could not fix.
-  const { classifyWord, namesASite, classifyBasename } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  const { classifyWord } = await import("../plugins/anatomiya/lib/stems.mjs");
+  const { namesASite, classifyBasename } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   assert.equal(classifyWord("café"), null);
   assert.equal(namesASite("src/café.ts"), false);
   assert.equal(namesASite("src/_menú.tsx"), false, "a router's special file under an accented word");
@@ -1686,9 +1710,10 @@ test("the filename row asks none of the seven tree-sitter languages", async () =
 /* --- URL path segments --- */
 
 test("a path's words leave out parameters, the query and the fragment", async () => {
-  const { pathWords, namesWellKnown } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  const { pathWords, namesWellKnown } = await import("../plugins/anatomiya/lib/stems.mjs");
   assert.deepEqual(pathWords("/:locale/user-dashboard/:id?"), ["user-dashboard"]);
   assert.deepEqual(pathWords("/[slug]/$post/{item}/*/team_page"), ["team_page"]);
+  assert.deepEqual(pathWords("/<int:pk>/<path:file_name>/team_page/<cipher_id>"), ["team_page"]);
   assert.deepEqual(pathWords("/search-page?next=/admin/user_list"), ["search-page"]);
   assert.deepEqual(pathWords("/help-center#faq_list/x"), ["help-center"]);
   assert.deepEqual(pathWords("relative-path/child_page"), ["relative-path", "child_page"]);
@@ -1782,7 +1807,7 @@ test("a route call outside a routes file or a draw block is not a route", needsR
 });
 
 test("a single word, a well-known path and a cut-off last word are no URL sites", async () => {
-  const { pathSites } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  const { pathSites } = await import("../plugins/anatomiya/lib/stems.mjs");
   const words = (text, o) => pathSites(text, o).map((x) => `${x.word}:${x.cls}`);
   assert.deepEqual(words("/scim_v2/Users/:id"), ["scim_v2:snake_case"]);
   assert.deepEqual(words("/my-account/.well-known/openid-configuration"), ["my-account:kebab-case"]);

@@ -26,8 +26,8 @@
  */
 import { spawnSync } from "node:child_process";
 import { cp } from "node:fs/promises";
-import { appendFileSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { appendFileSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { invokedAs, readArgv, selectRepos } from "./entry.mjs";
@@ -42,7 +42,7 @@ import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, readRecord, statedSide } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
-import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { isGeneratedName, nativeUpTo, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, isClaude, overviewName, parseTargets } from "../plugins/anatomiya/lib/targets.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
@@ -514,19 +514,6 @@ function overlap(corpus, scratch) {
 }
 
 /**
- * The path as the filesystem holds it. A directory this run has not made yet
- * resolves through its parent, which is the link that would move it.
- */
-function real(path) {
-  try {
-    return realpathSync(path);
-  } catch {
-    const up = dirname(path);
-    return up === path ? path : join(real(up), basename(path));
-  }
-}
-
-/**
  * Whether these two directories are safe to run between, on resolved paths.
  *
  * The corpus is read-only and the scratch directory is a place this run makes
@@ -541,7 +528,7 @@ function real(path) {
  * `..` but never follows a symlink and every write here does.
  */
 export function checkDirs(corpus, scratch, entries) {
-  for (const [c, s] of [[corpus, scratch], [real(corpus), real(scratch)]]) {
+  for (const [c, s] of [[corpus, scratch], [nativeUpTo(corpus), nativeUpTo(scratch)]]) {
     const refused = overlap(c, s);
     if (refused) return refused;
   }

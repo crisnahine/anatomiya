@@ -45,37 +45,39 @@ runs a binary of its own: the second is pure JavaScript, is loaded only inside t
 is reached only after `oxc-parser` has already rejected a `.js`, `.jsx`, `.mjs` or `.cjs` file. It
 rewrites that file's text in memory and nothing is written back to disk. The third is JavaScript and
 one WebAssembly module, with no dependency and no install script of its own. It is the runtime for
-the seven grammars the plugin carries as `.wasm` files under `plugins/anatomiya/grammars/` (Python, PHP, Go, Java, C#,
-Rust and Kotlin). Those files are committed to this repository and nothing fetches one at install
-or at run time. Each is a byte-for-byte copy of the file in its grammar's npm package, and
-`plugins/anatomiya/grammars/grammars.json` records the package, the version and the SHA-256. `npm run validate` and
-the test suite refuse a copy that does not hash to its entry, or to the installed package's file.
-On your machine `doctor` and `setup` hash each grammar file against that manifest and name one that
-does not match, or a manifest that is not there. A scan does not hash: it loads the file that is
-there, where that is a regular file of at most 32 MB. An entry at a grammar's name that is a link,
-a directory, a fifo or a device, or a larger file, is never read, and `scan`, `check` and `doctor`
-name it as `is not the file this plugin shipped`. A manifest that is no regular file or is over
-64 kB is never read either, and `doctor` answers as it does for a missing one. On Windows a link is followed and what it leads to is typed. What a
-grammar's loader says when a file does not load is printed through the encoder. `.gitattributes`
-marks `*.wasm` binary, so no git setting rewrites a grammar's line endings on checkout, and a test
-asks git for that attribute.
+the seven grammars the plugin carries as `.wasm` files under `plugins/anatomiya/grammars/` (Python,
+PHP, Go, Java, C#, Rust and Kotlin). Those files are committed to this repository and nothing
+fetches one at install or at run time. Each is a byte-for-byte copy of the file in its grammar's npm
+package, and `plugins/anatomiya/grammars/grammars.json` records the package, the version and the
+SHA-256. `npm run validate` and the test suite refuse a copy that does not hash to its entry, or to
+the installed package's file. On your machine `doctor` and `setup` hash each grammar file against
+that manifest and name one that does not match, or a manifest that is not there. A scan does not
+hash: it loads the file that is there, where that is a regular file of at most 32 MB. An entry at a
+grammar's name that is a link, a directory, a fifo or a device, or a larger file, is never read, and
+`scan`, `check` and `doctor` name it as `is not the file this plugin shipped`. A manifest that is no
+regular file or is over 64 kB is never read either, and `doctor` answers as it does for a missing
+one. On Windows a link is followed and what it leads to is typed. What a grammar's loader says when
+a file does not load is printed through the encoder. `.gitattributes` marks `*.wasm` binary, so no
+git setting rewrites a grammar's line endings on checkout, and a test asks git for that attribute.
 The packages of the seven grammars are dev dependencies of this repository at exact versions and no
-dependency of the plugin, so installing the plugin never fetches one:
-`tree-sitter-python@0.25.0`, `tree-sitter-php@0.24.2`, `tree-sitter-go@0.25.0`,
-`tree-sitter-java@0.23.5`, `tree-sitter-c-sharp@0.23.5`, `tree-sitter-rust@0.24.0` and
-`@tree-sitter-grammars/tree-sitter-kotlin@1.1.0`. Each of them declares an install script, which
-is one reason every install in this repository, in CI and in the release runs with
-`--ignore-scripts`. A scanned repository cannot supply a grammar or choose one: the seven load from
-the plugin's own directory by language id, and nothing in the repository is read to pick a file.
-Ruby files go through `prism`, which is
-a default gem, in children (up to four on a large repository) each started as
-`ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and `GEM_HOME` dropped from its
-environment, because each of those can inject a `-r` into a process about to be pointed at
-repository files. The parser child gets `PATH` and `LANG` and nothing else (on Windows
-also `SystemRoot`, `SYSTEMROOT`, `COMSPEC` and `windir` where set, without which the interpreter
-does not start), plus, where
-the interpreter's own `prism` is too old, `-I` load paths to an installed one (below): absolute
-directories RubyGems recorded, never read from the repository.
+dependency of the plugin, so installing the plugin never fetches one: `tree-sitter-python@0.25.0`,
+`tree-sitter-php@0.24.2`, `tree-sitter-go@0.25.0`, `tree-sitter-java@0.23.5`,
+`tree-sitter-c-sharp@0.23.5`, `tree-sitter-rust@0.24.0` and
+`@tree-sitter-grammars/tree-sitter-kotlin@1.1.0`. Each of them declares an install script, which is
+one reason every install in this repository, in CI and in the release runs with `--ignore-scripts`.
+The release workflow runs the suite, which imports every dependency, in a job whose token can only
+read the repository. The token that can write it belongs to a second job that runs after the suite
+passes, installs nothing and runs no test, since a step can change the `PATH` and environment of
+every later step in its own job. Both check out with `persist-credentials: false`, so neither token
+is left in `.git/config`. A scanned repository cannot supply a grammar or choose one: the seven load
+from the plugin's own directory by language id, and nothing in the repository is read to pick a
+file. Ruby files go through `prism`, which is a default gem, in children (up to four on a large
+repository) each started as `ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and
+`GEM_HOME` dropped from its environment, because each of those can inject a `-r` into a process
+about to be pointed at repository files. The parser child gets `PATH` and `LANG` and nothing else
+(on Windows also `SystemRoot`, `SYSTEMROOT`, `COMSPEC` and `windir` where set, without which the
+interpreter does not start), plus, where the interpreter's own `prism` is too old, `-I` load paths
+to an installed one (below): absolute directories RubyGems recorded, never read from the repository.
 
 ### The working directory is the control that contains those tools
 

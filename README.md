@@ -325,7 +325,7 @@ Code comments stay short and carry no ticket or issue number; a pull request tak
 
 - 208 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)
 - 3 files hold a language this map does not read (2 .html, 1 .css); 18 configuration, data or prose files are counted by extension, and no row reads them (.json, .md, .yaml)
-- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not
+- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route declares in JavaScript, Ruby, Python, Java, C# or Rust; i18n keys, CSS classes, event names, messages, links and request paths are not
 ```
 
 Not covered is the map saying where it is silent, so a silent map is not read as one that checked.
@@ -436,18 +436,20 @@ clause.
 
 ## What it measures
 
-65 dimensions ship: 29 for JavaScript, 34 reachable in JSX, 28 for Ruby, and one more for
+66 dimensions ship: 29 for JavaScript, 34 reachable in JSX, 28 for Ruby, and one more for
 JavaScript and JSX that needs the type checker. A Vue or Svelte script
-block is asked most of the JavaScript ones: 25 for Vue, 25 for Svelte. Three are asked of the
-languages a tree-sitter grammar reads, each where measured repositories differ on it: 2 for
-Python, 3 for PHP, 1 for Go, 2 for Java, 1 for C#, 1 for Rust, 1 for Kotlin. Each is one claim
+block is asked most of the JavaScript ones: 25 for Vue, 25 for Svelte. Four are asked of the
+languages a tree-sitter grammar reads, each where measured repositories differ on it: 3 for
+Python, 3 for PHP, 1 for Go, 3 for Java, 2 for C#, 2 for Rust, 1 for Kotlin. Each is one claim
 about one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
   translation calls, Rails migrations and callbacks, and the rest of the registry in
   [docs/how-it-works.md](docs/how-it-works.md).
 - **Learned rows**: naming classes for files, functions and exports, interface and type prefixes,
-  URL path segments a route table, a server or a Rails routes file declares, the base class, the included
+  URL path segments a route table, a server or a Rails routes file declares, and those a Python
+  decorator or router call, a Spring mapping, an ASP.NET attribute or minimal API, or an actix or
+  rocket attribute or router call declares, the base class, the included
   mixin and the strong-parameter call, learned from the area's own plurality rather than declared.
 - **9 file-to-file obligations**: a model ships with its spec, a rake task with its spec, learned
   from where the repository actually keeps its companions.
@@ -698,26 +700,30 @@ Kotlin or C# test that sits in the one place its language's tool reads it from. 
 asked, since cargo collects by place and a Rust test has no name. A file of any other language is not read: "What lives where" counts it, and
 "Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
 
-Each of the seven gets its test files and the layout section. None gets a naming row or an imports
-row. A row is asked of a language only where three measured repositories of it differ. For Java,
-C#, Rust and Kotlin each language's own parser was run in a container over the same three
-repositories: every file a grammar could not read in those four is one its compiler accepts, and no
-file a grammar read is one its compiler rejects (`docs/measurements/2026-10-08-reference-parsers.md`,
-`DECISIONS.md` B60, B63):
+Each of the seven gets its test files and the layout section. None gets a row on how its identifiers
+are named, or an imports row. A row is asked of a language only where three measured repositories of
+it differ. For Java, C#, Rust and Kotlin each language's own parser was run in a container over the
+same three repositories: every file a grammar could not read in those four is one its compiler
+accepts, and no file a grammar read is one its compiler rejects
+(`docs/measurements/2026-10-08-reference-parsers.md`, `DECISIONS.md` B60, B63):
 
 | Language | A test file is | Rows asked | Measured or weighed, and not asked |
 |---|---|---|---|
-| Python | `test_*.py`, `*_test.py`, `conftest.py` | doc comments, return types | handlers (1.0000 in all three); naming (0.99 to 1.00); imports (a default) |
+| Python | `test_*.py`, `*_test.py`, `conftest.py` | doc comments, return types, URL path words | handlers (1.0000 in all three); naming (0.99 to 1.00); imports (a default) |
 | PHP | `*Test.php` under a test tree | doc comments, return types, handlers | naming (1.00); imports (the language has no wildcard form) |
 | Go | `_test.go` | doc comments | naming (a name's case is its visibility); imports (a dot import is 1 of 9,863 lines) |
-| Java | `*Test`, `*Tests`, `*IT` under a test tree | doc comments, handlers | naming (1.0000 in all three); imports (a default) |
-| C# | `*Tests`, `*Test` under a test tree | doc comments | handlers (repositories differ by 0.10); naming (1.0000); imports (no wildcard form) |
-| Rust | a `.rs` file directly under a crate's `tests`; one holding a `#[test]` with a `tests` directory anywhere above it, or named `tests.rs` | doc comments | naming (the compiler lints it); imports (repositories differ by 0.10) |
+| Java | `*Test`, `*Tests`, `*IT` under a test tree | doc comments, handlers, URL path words | naming (1.0000 in all three); imports (a default) |
+| C# | `*Tests`, `*Test` under a test tree | doc comments, URL path words | handlers (repositories differ by 0.10); naming (1.0000); imports (no wildcard form) |
+| Rust | a `.rs` file directly under a crate's `tests`; one holding a `#[test]` with a `tests` directory anywhere above it, or named `tests.rs` | doc comments, URL path words | naming (the compiler lints it); imports (repositories differ by 0.10) |
 | Kotlin | `*Test`, `*Tests`, `*IT` under a test tree | doc comments | handlers (repositories differ by 0.12); naming (0.95 to 1.00); imports (ktlint's default rule) |
 
 The bar is one repository under 0.90 and a spread of 0.15. No filename claim is asked of any of the
-seven, for the same reason. The files of rows C50 to C54 and H52 under `docs/decisions/` hold the
-numbers.
+seven, for the same reason. The URL row is learned, so its bar is that the class differs between
+repositories of one language: in Python netbox states kebab-case and healthchecks snake_case, and in
+Java thingsboard states camelCase where dolphinscheduler holds kebab-case short of the evidence
+gate. PHP, Go and Kotlin get no URL row: a Laravel `routes/` directory folds into the root and gets
+no area, one measured Go repository holds 20 or more sites, and no Kotlin application does. The
+files of rows C50 to C54, C62 and H52 under `docs/decisions/` hold the numbers.
 
 **A grammar reads less than its language.** A file a grammar cannot read is left out of every
 count, and the scan and the overview say how many there were: `82 files could not be read by this
@@ -728,7 +734,7 @@ old (a local named `in1`, `get(` on the line after a `val`). A C# file with `#if
 expression is read with the first branch of each conditional kept, and the scan counts those files
 too. A Python stub (`.pyi`) is not read.
 
-One of the 65 needs the type checker and is the only
+One of the 66 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
 own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
@@ -803,7 +809,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 342 numbered decisions, a line each, and each
+- [DECISIONS.md](DECISIONS.md) is the build contract: 349 numbered decisions, a line each, and each
   links to its own file under [docs/decisions](docs/decisions) with the measurement or the review
   finding that forced it. Why a threshold is where it is, why the parser runs in child processes, why
   no hook carries the map on its own: that is where to look.

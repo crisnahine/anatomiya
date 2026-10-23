@@ -47,6 +47,9 @@ test("a file's kind runs from the first dot, past any segment a version number s
   // Ruby's test suffixes are kinds of their own.
   assert.equal(suffixOf("user_spec.rb"), "_spec.rb");
   assert.equal(suffixOf("user_test.rb"), "_test.rb");
+  // So are Go's and Python's, or a test is a producer of its package's class.
+  assert.equal(suffixOf("user_test.go"), "_test.go");
+  assert.equal(suffixOf("user_test.py"), "_test.py");
 });
 
 test("a file is in its directory's class and the same suffix one directory up", () => {
@@ -57,6 +60,7 @@ test("a file is in its directory's class and the same suffix one directory up", 
   assert.deepEqual(classesOf("app/Gemfile"), []);
   // Built on the forward slashes git prints, so a backslash is part of a name.
   assert.deepEqual(classesOf("a\\b.rb"), ["*.rb"]);
+  assert.deepEqual(classesOf("pkg/h/y_test.go"), ["pkg/h/*_test.go", "pkg/*/*_test.go"]);
 });
 
 test("the sentence names the kind by its suffix and every path through the path encoder", () => {
@@ -183,6 +187,10 @@ test("a branch owes a companion only where it added a producer and touched nothi
     owedBy(edits, { added: ["lib/rubocop/cop/style/z.rb", "lib/rubocop/cop/style/a.rb"], touched: [] }),
     ["lib/rubocop/cop/style/a.rb", "lib/rubocop/cop/style/z.rb"]
   );
+  // A Go test is not of the package's class, so a test-only branch owes nothing.
+  const routes = claim({ producer: "pkg/h/*.go", companion: { kind: "edits", path: "pkg/h/routes.go" } });
+  assert.deepEqual(owedBy(routes, { added: ["pkg/h/y_test.go"], touched: ["pkg/h/y_test.go"] }), []);
+  assert.deepEqual(owedBy(routes, { added: ["pkg/h/y.go"], touched: ["pkg/h/y.go"] }), ["pkg/h/y.go"]);
 });
 
 test("a claim's key keeps two companions of one producer apart and names no dimension", () => {

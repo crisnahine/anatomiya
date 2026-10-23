@@ -16,8 +16,9 @@
  * wrote and this one knows nothing about.
  */
 import { accessSync, closeSync, constants, fstatSync, lstatSync, opendirSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
+import { escapes, folded } from "./paths.mjs";
 import { GENERATOR, PREFIX, TARGETS, areaName, isClaude, overviewName } from "./targets.mjs";
 import { isFileAt, stager } from "./store.mjs";
 
@@ -156,9 +157,6 @@ const AREA_STEM = new RegExp(`^${PREFIX}area-[0-9a-f]{8}$`);
 export function stagedBy(name, target = TARGETS.claude) {
   return stager(name, (staged) => isMapName(staged, target));
 }
-
-/** What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`. */
-export const folded = (name) => name.toUpperCase().toLowerCase();
 
 /**
  * The entry a write to `name` may land on: one spelled otherwise that a volume
@@ -488,7 +486,7 @@ export function trackedRulesDir(root) {
 }
 
 /** The native real path of the deepest part of `p` that exists, with the rest appended as written. */
-function nativeUpTo(p) {
+export function nativeUpTo(p) {
   const real = realpathOrNull(p);
   if (real !== null) return real;
   const parent = dirname(p);
@@ -636,8 +634,7 @@ export function isLink(path) {
 }
 
 function contains(base, target) {
-  const rel = relative(base, target);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+  return !escapes(relative(base, target));
 }
 
 /** The first `most` names a directory lists, in the order it lists them, or none where it will not list: one that comes with the repository is never read whole. */

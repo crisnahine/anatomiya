@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 342 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 349 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -43,7 +43,10 @@ The plugin ships a lockfile of its own because Claude Code installs a plugin's d
 one beside its manifest, and the marketplace's is a directory up where the loader never looks. It is
 seeded from the marketplace's resolutions rather than resolved afresh, so the two cannot answer
 different versions for one range. `npm run validate` refuses a plugin whose lockfile is missing,
-stale, or disagreeing.
+stale, or disagreeing. A Dependabot bump of a runtime dependency arrives with the plugin's lockfile
+behind, so run `npm run lock:plugin` on it by hand. A workflow once did that and pushed the result,
+but a commit pushed with a workflow's token gets no CodeQL or dependency review run, two of the
+checks `main` requires, so its pull request could never merge.
 
 Moving a grammar package to another version takes one more step too:
 
@@ -664,7 +667,10 @@ So before a dimension is accepted:
    between the highest and lowest ratio must be at least 0.15. If every repository sits at or near
    1.0, the dimension is a language default and it does not ship, however sensible the claim sounds.
    The 0.15 is a working threshold set to make the test bite, not a measured constant; if you think
-   it is wrong, argue it with numbers and move it in the decision row that holds it.
+   it is wrong, argue it with numbers and move it in the decision row that holds it. A row that
+   learns its class, where the claim is whichever form an area holds, clears this point when the
+   class differs between repositories of one language, since then no language default predicts it
+   (C67).
 4. **Sanity check the applicability predicate.** A wrongly narrow predicate gives ratio 1.0 over a
    small candidate set and reads as a strong convention. Compare `applicability` against the area's
    file count and be suspicious of anything under a quarter.

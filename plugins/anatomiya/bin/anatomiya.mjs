@@ -1,8 +1,14 @@
 #!/usr/bin/env node
-import { locator } from "../lib/encode.mjs";
-import { readPayload, respond } from "../lib/hook.mjs";
-import { unsupportedNode } from "../lib/readiness.mjs";
-import { parseTargets } from "../lib/targets.mjs";
+import { unsupportedNode } from "../lib/node-floor.mjs";
+
+// Loaded only once the node is known to parse them: a static import failing to
+// parse runs nothing here, the floor check included.
+let locator, readPayload, respond, parseTargets;
+async function load() {
+  ({ locator } = await import("../lib/encode.mjs"));
+  ({ readPayload, respond } = await import("../lib/hook.mjs"));
+  ({ parseTargets } = await import("../lib/targets.mjs"));
+}
 
 const USAGE = [
   "usage: anatomiya scan   [path] [--dry-run] [--targets <list>] [--format <name>]",
@@ -85,12 +91,13 @@ const COMMANDS = {
     formats: ["text", "json"],
     async run(cwd, opts) {
       const { runScan } = await import("../lib/commands.mjs");
-      const { noteScan } = await import("../lib/refresh-run.mjs");
+      const { noteScan, scanStamp } = await import("../lib/refresh-run.mjs");
       const { scanJson, scanLines } = await import("../lib/summary.mjs");
+      const before = opts.dryRun ? null : await scanStamp(cwd);
       const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun, targets: opts.targets });
       // A scan run by hand is the refresh's answer too: it clears a failed
       // refresh the echo is reporting, and the next refresh has nothing to redo.
-      if (!opts.dryRun) await noteScan(result.root);
+      if (!opts.dryRun) await noteScan(result.root, before);
       if (opts.format === "json") process.stdout.write(scanJson(summary));
       else console.log(scanLines(summary).join("\n"));
     },
@@ -332,52 +339,69 @@ function parseArgs(argv) {
   return opts;
 }
 
-// A reader that stops early (`check | head`) closes the pipe, and the next
-// write failed with an unhandled EPIPE and a stack trace. Output nobody reads
-// any more is not a failure of the command.
-process.stdout.on("error", (err) => {
-  if (err?.code === "EPIPE") process.exit(process.exitCode ?? 0);
-  throw err;
-});
+// Before any work, so a hook answers its empty object and every other verb one
+// sentence: on a node older than the manifests declare, a scan got as far as a
+// builtin that node lacks and died there with a TypeError naming neither Node
+// nor a fix. doctor runs anyway wherever this node can load it.
+const verb = Object.hasOwn(COMMANDS, process.argv[2] ?? "") ? COMMANDS[process.argv[2]] : null;
+let cannotRun = unsupportedNode();
+// A module that fails to load, in a half-updated install say, gets from a hook
+// the answer an older node gets; any other verb fails on it.
+if (cannotRun === null) {
+  await load().catch((err) => {
+    if (!verb?.hook) throw err;
+    cannotRun = String(err);
+  });
+} else if (verb?.anyNode) cannotRun = await load().then(() => null, () => cannotRun);
 
-const opts = parseArgs(process.argv.slice(2));
-if (opts.help) {
-  // Returned rather than exited from: a write to a pipe is asynchronous once it
-  // is larger than the buffer, and `process.exit` drops what has not flushed.
-  console.log(USAGE);
+if (cannotRun !== null) {
+  if (verb?.hook) process.stdout.on("error", () => {}).write("{}");
+  else {
+    console.error(`anatomiya: ${cannotRun}`);
+    process.exitCode = 1;
+  }
 } else {
-  try {
-    const spec = COMMANDS[opts.cmd];
-    // Before any work, and through the boundary below, so a hook answers its
-    // empty object and every other verb one sentence: on a node older than the
-    // manifests declare, a scan got as far as a builtin that node lacks and
-    // died there with a TypeError naming neither Node nor a fix.
-    const unsupported = spec.anyNode ? null : unsupportedNode();
-    if (unsupported !== null) throw new Error(unsupported);
-    // Only the verbs that answer about a repository ask where this process is.
-    // `doctor` and `setup` answer about this installation and take no path, so
-    // a directory removed under them decides nothing they say.
-    const cwd = spec.path ? opts.path ?? sessionDir(spec.hook === true) : null;
-    await spec.run(cwd, opts);
-  } catch (err) {
-    // The hook answers for itself, whatever went wrong and wherever it came from.
-    // A non-zero exit interrupts the run it exists to help, and it would do it on
-    // every turn and every tool call for the life of that session, so the
-    // guarantee belongs at the boundary rather than at each site that might throw.
-    if (COMMANDS[opts.cmd]?.hook) {
-      // Answered, and then nothing: the exit code is 0 because nothing set it,
-      // and no `process.exit` runs, which would drop a write the pipe has not
-      // flushed.
-      respond({});
-    } else {
-      // A missing repository, an unreadable tree or a git that will not run are
-      // all ordinary conditions here, and a stack trace is not what the caller
-      // needs.
-      // The sentence can quote a path or a ref the caller typed, so each line the
-      // tool wrote is printed as `refuse` prints its own.
-      const lines = err?.lines ?? [err && err.message ? err.message : String(err)];
-      console.error(`anatomiya: ${lines.map(locator).join("\n")}`);
-      process.exitCode = 1;
+  // A reader that stops early (`check | head`) closes the pipe, and the next
+  // write failed with an unhandled EPIPE and a stack trace. Output nobody reads
+  // any more is not a failure of the command.
+  process.stdout.on("error", (err) => {
+    if (err?.code === "EPIPE") process.exit(process.exitCode ?? 0);
+    throw err;
+  });
+
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) {
+    // Returned rather than exited from: a write to a pipe is asynchronous once it
+    // is larger than the buffer, and `process.exit` drops what has not flushed.
+    console.log(USAGE);
+  } else {
+    try {
+      const spec = COMMANDS[opts.cmd];
+      // Only the verbs that answer about a repository ask where this process is.
+      // `doctor` and `setup` answer about this installation and take no path, so
+      // a directory removed under them decides nothing they say.
+      const cwd = spec.path ? opts.path ?? sessionDir(spec.hook === true) : null;
+      await spec.run(cwd, opts);
+    } catch (err) {
+      // The hook answers for itself, whatever went wrong and wherever it came from.
+      // A non-zero exit interrupts the run it exists to help, and it would do it on
+      // every turn and every tool call for the life of that session, so the
+      // guarantee belongs at the boundary rather than at each site that might throw.
+      if (COMMANDS[opts.cmd]?.hook) {
+        // Answered, and then nothing: the exit code is 0 because nothing set it,
+        // and no `process.exit` runs, which would drop a write the pipe has not
+        // flushed.
+        respond({});
+      } else {
+        // A missing repository, an unreadable tree or a git that will not run are
+        // all ordinary conditions here, and a stack trace is not what the caller
+        // needs.
+        // The sentence can quote a path or a ref the caller typed, so each line the
+        // tool wrote is printed as `refuse` prints its own.
+        const lines = err?.lines ?? [err && err.message ? err.message : String(err)];
+        console.error(`anatomiya: ${lines.map(locator).join("\n")}`);
+        process.exitCode = 1;
+      }
     }
   }
 }

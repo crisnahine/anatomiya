@@ -140,6 +140,23 @@ test("a plan made by one call is committed by the other", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a plan made before another scan wrote the map commits nothing over it", () => {
+  // Committed, the older plan put back a record without src/api while that
+  // scan's file for it stayed loading, owned by no record and never removed.
+  const dir = workspace();
+  const [a, b] = [area("src/services"), area("src/api")];
+  writeMap(result(dir, [a]));
+  const stale = planMap(result(dir, [a]));
+  writeMap(result(dir, [a, b]));
+  const before = snapshot(dir);
+
+  assert.throws(() => commitMap(dir, stale), { message: "another scan wrote the map meanwhile, so nothing was written: scan again" });
+
+  assert.deepEqual(snapshot(dir), before, "the second map stays whole");
+  assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), ["src/api", "src/services"]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a plan is committed to the root it was made for, or to nothing", () => {
   // The committer resolves the store from the root it is handed, and the record
   // it writes there carries the root the plan was made for, so two roots put one
@@ -1648,7 +1665,7 @@ const BEFORE_PLAN = {
   blind: false,
 };
 // `staged` and `storeStaged` are the temporary files an earlier run left: none where no scan stopped.
-const BEFORE_KEYS = ["write", "remove", "staged", "storeStaged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "result"];
+const BEFORE_KEYS = ["write", "remove", "staged", "storeStaged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "factsSeen", "result"];
 const BEFORE_AREA = `---
 generator: anatomiya
 paths:
@@ -1684,7 +1701,7 @@ Code comments stay short and carry no ticket or issue number; a pull request tak
 
 - 8 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)
 - 12 source files sit in a directory nothing was counted in
-- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not
+- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route declares in JavaScript, Ruby, Python, Java, C# or Rust; i18n keys, CSS classes, event names, messages, links and request paths are not
 
 Generated files: 2 under .claude/rules/anatomiya-*.md
 Any other file there was not written by this tool.
@@ -1740,10 +1757,11 @@ test("with no target asked for and none on, the plan and the disk are what they 
 
   const plan = writeMap(scan);
 
-  const { bodies, result: planned, root, targets, ...fields } = plan;
+  const { bodies, result: planned, root, factsSeen, targets, ...fields } = plan;
   assert.deepEqual(fields, BEFORE_PLAN);
   assert.deepEqual(Object.keys(plan).filter((k) => k !== "targets"), BEFORE_KEYS);
   assert.equal(root, dir);
+  assert.equal(factsSeen, null, "no record was there to read");
   assert.equal(planned, scan, "the scan itself, with nothing added to it");
   assert.deepEqual([...bodies], [["anatomiya-overview.md", BEFORE_OVERVIEW], ["anatomiya-area-5c06cdf8.md", BEFORE_AREA]]);
   assert.deepEqual(Object.keys(tree(dir)), [

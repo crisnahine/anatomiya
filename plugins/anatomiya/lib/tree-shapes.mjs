@@ -46,6 +46,15 @@ export const SHAPES = {
     unary: ["unary_operator"],
     // `1, 2` with no brackets is a tuple all the same.
     collection: ["list", "tuple", "expression_list", "dictionary", "pair", "set"],
+    // What a route is declared with, what its arguments sit in, and a keyword argument with its name.
+    route: ["call"],
+    routeArgs: ["argument_list"],
+    argument: ["keyword_argument"],
+    key: "name",
+    // A string read whole: its text pieces and its quotes, so an interpolation or an escape is none.
+    string: ["string"],
+    stringText: ["string_content"],
+    quote: ["string_start", "string_end"],
   },
   php: {
     fn: ["function_definition", "method_declaration"],
@@ -201,6 +210,12 @@ export const SHAPES = {
     collection: ["array_initializer"],
     declaration: ["field_declaration", "local_variable_declaration", "constant_declaration"],
     part: ["identifier", "modifiers", "type_identifier", "scoped_type_identifier", "integral_type", "floating_point_type", "boolean_type", "generic_type", "type_arguments", "array_type", "dimensions"],
+    route: ["annotation"],
+    routeArgs: ["annotation_argument_list"],
+    argument: ["element_value_pair"],
+    array: ["element_value_array_initializer"],
+    string: ["string_literal"],
+    stringText: ["string_fragment"],
   },
   csharp: {
     fn: ["method_declaration", "local_function_statement"],
@@ -245,6 +260,13 @@ export const SHAPES = {
     declaration: ["field_declaration", "local_declaration_statement", "variable_declaration"],
     // An array's rank is read by its children, so a call in one asks.
     part: ["identifier", "modifier", "predefined_type", "implicit_type", "nullable_type", "qualified_name", "generic_name", "type_argument_list", "array_type", "array_rank_specifier"],
+    route: ["attribute", "invocation_expression"],
+    // A generic call's type arguments are no part of its name.
+    routeArgs: ["attribute_argument_list", "argument_list", "type_argument_list"],
+    argument: ["attribute_argument", "argument"],
+    key: "name",
+    string: ["string_literal"],
+    stringText: ["string_literal_content"],
   },
   rust: {
     fn: ["function_item"],
@@ -290,6 +312,11 @@ export const SHAPES = {
     literalPart: ["string_content", "escape_sequence"],
     unary: ["unary_expression"],
     collection: ["array_expression", "tuple_expression"],
+    // An attribute's path comes first in its token tree; a call's in its arguments.
+    route: ["attribute", "call_expression"],
+    routeArgs: ["token_tree", "arguments"],
+    string: ["string_literal"],
+    stringText: ["string_content"],
   },
   kotlin: {
     fn: ["function_declaration"],

@@ -882,6 +882,8 @@ INF = 1e400
   binary_string: `# encoding: ascii-8bit
 MAGIC = "\\xff"
 `,
+  // A raw high byte in a name, which no escape can spell: the method's name is a binary symbol.
+  binary_symbol: Buffer.concat([Buffer.from("# encoding: ascii-8bit\ndef f"), Buffer.from([0xff]), Buffer.from("; end\n")]),
   index_assign_keyword: `
 a[0, k: 1] = 2
 `,
@@ -1099,7 +1101,7 @@ test("a literal JSON cannot spell is still a file that parsed", needsRuby, () =>
   // raised JSON::GeneratorError in the encoder: a file prism read without a
   // single error was reported as unread. Neither value is anything a
   // dimension reads, so each is dropped from the tree rather than the file.
-  for (const name of ["infinite_float", "binary_string"]) {
+  for (const name of ["infinite_float", "binary_string", "binary_symbol"]) {
     const file = programs.get(name);
     assert.equal(file.ok, true, `${name}: ${file.error}`);
   }

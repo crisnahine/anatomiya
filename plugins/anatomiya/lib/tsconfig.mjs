@@ -12,8 +12,9 @@
  * somebody is working in.
  */
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, join, resolve, relative, isAbsolute, posix, win32 } from "node:path";
+import { basename, dirname, join, resolve, relative, posix, win32 } from "node:path";
 
+import { escapes } from "./paths.mjs";
 import { realpathOf, resolveInside } from "./rules.mjs";
 
 /**
@@ -64,7 +65,7 @@ export const FORCED_OPTIONS = {
 export function insideRoot(root, abs, { realpath } = {}) {
   const rel = relative(resolve(root), resolve(abs));
   if (rel === "") return true;
-  if (climbs(rel) || isAbsolute(rel)) return false;
+  if (escapes(rel)) return false;
   // Lexical containment costs nothing and is not containment: resolve()
   // normalises ".." and follows no link, and the checker's own reads do.
   return resolveInside(root, rel.split(separator()).join("/"), { realpath }) !== null;
@@ -113,31 +114,16 @@ export function contains(base, p, platform = process.platform) {
   // neither.
   const on = platform === "win32" ? win32 : posix;
   const fold = (x) => (platform === "win32" ? x.toLowerCase() : x);
-  return within(on.relative(fold(on.resolve(base)), fold(on.resolve(p))));
+  return within(on.relative(fold(on.resolve(base)), fold(on.resolve(p))), on.sep);
 }
 
 /**
- * Whether a `relative()` answer means "contained".
+ * Whether a `relative()` answer means "contained", in the grammar whose separator is `sep`.
  *
  * Two Windows drives have no relative path between them, so `relative` answers
- * an absolute one, which does not start with ".." and read as inside. That is
- * the guard `insideRoot` already carries and the compiler host's own check did
- * not, on the one platform B18 singles out for special handling.
+ * an absolute one, which does not start with ".." and read as inside.
  */
-export const within = (rel) =>
-  rel === "" || (!climbs(rel) && !posix.isAbsolute(rel) && !win32.isAbsolute(rel));
-
-/**
- * Whether a `relative()` answer starts by stepping above its base.
- *
- * `..` as a whole first segment, not as a prefix: `startsWith("..")` read a
- * directory named `..base` as outside the root, so an `extends` into it was
- * refused as escaped and the whole tier degraded over a file it could read.
- * Either separator, because `relative` answers in the platform's own.
- */
-function climbs(rel) {
-  return rel === ".." || rel.startsWith("../") || rel.startsWith("..\\");
-}
+export const within = (rel, sep) => rel === "" || !escapes(rel, sep);
 
 /**
  * A path in the form TypeScript compares against.

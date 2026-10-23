@@ -2788,7 +2788,7 @@ test("a claim is not silenced by a finding invented off the base's stripped tree
 
   assert.match(
     out,
-    /exported functions carry a doc comment/,
+    /exported functions and classes carry a doc comment/,
     `the head file added an undocumented export and nothing said so:\n${out}`
   );
 });
@@ -3987,7 +3987,7 @@ test("an inherited slot is judged on the side the ancestor was handed", async (t
             states: "counter",
             directive: false,
             gate: "ratio",
-            counterClaim: "code here explains itself; exported functions carry no doc comment",
+            counterClaim: "code here explains itself; exported functions and classes carry no doc comment",
             counterGate: null,
             counterExceptions: [],
           }),
@@ -4002,7 +4002,7 @@ test("an inherited slot is judged on the side the ancestor was handed", async (t
 
   assert.equal(hits.length, 1, JSON.stringify(hits));
   assert.equal(hits[0].where, "documented", "the documented export is what breaks the inherited sentence");
-  assert.equal(hits[0].claim, "code here explains itself; exported functions carry no doc comment");
+  assert.equal(hits[0].claim, "code here explains itself; exported functions and classes carry no doc comment");
 });
 
 /* --- a directive the 40-line budget dropped may not reach MUST-FIX (#70) --- */
@@ -5579,6 +5579,25 @@ test("the branch's own name in another case is refused where the filesystem fold
   assert.equal((await check(dir, { baseRef: "refs/heads/Feat" })).mode, "compare");
 });
 
+test("the branch's own name under a fold past lowercase is refused where the filesystem folds it", async (t) => {
+  // APFS opens `feſt` as `fest`, which lowercasing alone does not see.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "fest");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", "feſt"], { cwd: dir, stdio: "pipe" });
+  } catch {
+    return t.skip("this filesystem tells feſt from fest");
+  }
+
+  await assert.rejects(() => check(dir, { baseRef: "feſt" }), /--base feſt names this branch's own tip/);
+});
+
 test("the branch's own name in another Unicode form is refused where the filesystem folds it", async (t) => {
   const nfc = "caf\u00e9";
   const dir = repo(t, ({ git, write, commit }) => {
@@ -6687,4 +6706,19 @@ test("a companion a commit edited and the tree then deleted is no companion touc
   }, { pending: ({ dir }) => rmSync(join(dir, "src/registry.ts")) });
   const [f] = cochangeOf(await check(dir, { baseRef: "main" }));
   assert.equal(f?.path, "src/services/b.ts");
+});
+
+test("a route a Python branch adds against the area's learned URL spelling is a finding, and one that only moved down the file is not", async (t) => {
+  const route = (path, name) => `@router.get("${path}")\ndef ${name}():\n    pass\n`;
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/views.py", `${route("/saved-items", "a")}\n\n${route("/audit_logs", "d")}`);
+    commit("base");
+    git("checkout", "-q", "-b", "work");
+    write("src/views.py", `import os\n\n\n${route("/users", "b")}\n\n${route("/saved-items", "a")}\n\n${route("/support_tickets/{id}", "c")}\n\n${route("/audit_logs", "d")}`);
+    commit("two routes");
+  });
+  facts(dir, { sha: sha(dir, "main"), dimensions: [dim({ key: "endpoint_segment_case", learned: "kebab-case", precision: "partial" })] });
+
+  const found = forKey(await check(dir), "endpoint_segment_case");
+  assert.deepEqual(found.map((f) => [f.path, f.line, f.where, f.claim]), [["src/views.py", 14, "support_tickets", "URL path segments here are kebab-case"]]);
 });

@@ -23,11 +23,12 @@
  * marketplace manifest, which is the one file that belongs to something else.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { invokedAs } from "./entry.mjs";
+import { escapes } from "../plugins/anatomiya/lib/paths.mjs";
 import { LOADABLE, pluginPaths } from "./validate.mjs";
 
 /** Read rather than trusted: this gate must not reach a registry. */
@@ -242,10 +243,7 @@ function pluginPathsIn(root, rel, body) {
  */
 function inside(root, path) {
   const rel = relative(root, path);
-  // The absolute case is what `escapes` in `scripts/validate.mjs` guards and
-  // this did not: two Windows drives have no relative path between them, so
-  // `relative` answers an absolute one, which holds no `..` and read as inside.
-  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+  if (rel === "" || escapes(rel)) return null;
   return asPosix(rel);
 }
 

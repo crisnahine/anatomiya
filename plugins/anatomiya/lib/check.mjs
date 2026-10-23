@@ -41,7 +41,7 @@ import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
-import { byCode, dirOf, extOrName } from "./paths.mjs";
+import { byCode, dirOf, extOrName, folded } from "./paths.mjs";
 import { CHANGE_MOST, claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
 
 /**
@@ -286,8 +286,8 @@ export async function check(cwd, { baseRef = null } = {}) {
   // file in it. The hook cannot ask this, since a `git ls-files` per write is a
   // subprocess per write, so it reads the directory and is quieter where a
   // stray file sits there; this run catches what that one let past.
-  const holdsTest = (dir) =>
-    tracked === null || tracked.some((rel) => dirname(rel) === (dir || ".") && !brought.has(rel));
+  const testDirs = tracked && new Set(tracked.filter((rel) => !brought.has(rel)).map(dirname));
+  const holdsTest = (dir) => tracked === null || testDirs.has(dir || ".");
 
   const roots = facts?.layout?.roots ?? [];
   // The comparison alone is what says a file arrived; a stale map does not
@@ -384,6 +384,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     }
   }
 
+  const changedPaths = new Set(changed.map((c) => c.path));
   return {
     schema: CHECK_SCHEMA,
     root,
@@ -399,7 +400,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     // Deletions, apart from `changed` because none has a file to examine. The
     // tree's count too, and a path `changed` names is counted there.
     removed: [...new Set(diff.rows.filter((c) => c.status === "D").map((c) => c.path).concat(
-      pending.removed.filter((p) => !changed.some((c) => c.path === p))
+      pending.removed.filter((p) => !changedPaths.has(p))
     ))],
     examined,
     findings,
@@ -531,9 +532,8 @@ async function resolveBase(root, baseRef, caveats) {
     const own = await fullName("HEAD");
     // A filesystem that folds case and Unicode form opens the loose ref under
     // any spelling, so `FEAT` names this branch while no ref of that name is listed.
-    const fold = (ref) => ref.normalize("NFC").toLowerCase();
     const mine = named === own ||
-      (named !== "" && fold(named) === fold(own) && !(await refsNamed(root, named)).length);
+      (named !== "" && folded(named) === folded(own) && !(await refsNamed(root, named)).length);
     if (named !== "" && !mine) return;
     if (mine) {
       const unasked = await resolveBaseRef(root, null, { head: at });
@@ -1217,7 +1217,7 @@ function addCochangeFindings(root, findings, { rows = [], pending, areas, capped
  * by, and only for a record no change the claim was counted over contradicts.
  */
 function cochangeSeverity(claim, { from, area, dropped, capped, size }) {
-  if (from !== "pin") return { severity: "FIX", reason: NO_BASELINE };
+  if (from !== "pin") return { severity: "FIX", reason: "no baseline population recorded" };
   if (area === null) return { severity: "FIX", reason: "no area file carries this claim" };
   const rung = cappedRung({ dropped });
   if (rung) return rung;
@@ -1404,7 +1404,7 @@ export function severityFor(file, { dim, capped = null, dropped = false }) {
   }
 
   const base = baselineSide(dim, side);
-  if (!base) return { severity: "FIX", reason: NO_BASELINE };
+  if (!base) return { severity: "FIX", reason: "no baseline population recorded" };
   // A claim the map stated on the rest of the repository's confidence rather
   // than on this area's own sample. It is a real claim and it is enforced, but
   // not at the severity that means "this branch is the first violation in this
@@ -1434,8 +1434,6 @@ export function severityFor(file, { dim, capped = null, dropped = false }) {
     reason: `all ${base.candidates} baseline sites conform`,
   };
 }
-
-const NO_BASELINE = "no baseline population recorded";
 
 /**
  * The rungs every finding shares above its own counts: the area file had no

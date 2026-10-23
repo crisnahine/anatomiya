@@ -99,11 +99,12 @@ export function companionRoot(corpus, { from, to, ext, companionSuffix }, prefix
   }
   if (!bySuffix.length) return null;
 
+  const byBase = Map.groupBy(bySuffix, basename);
   const votes = new Map();
   for (const rel of corpus) {
     if (!rel.startsWith(`${pFrom}/`) || !rel.endsWith(ext) || rel.endsWith(companionSuffix)) continue;
     const tail = `/${rel.slice(pFrom.length + 1, -ext.length)}${companionSuffix}`;
-    for (const c of bySuffix) {
+    for (const c of byBase.get(basename(tail)) ?? []) {
       if (!c.endsWith(tail)) continue;
       const root = c.slice(0, c.length - tail.length);
       votes.set(root, (votes.get(root) || 0) + 1);
@@ -224,12 +225,7 @@ export function pairingsFor(langs) {
  * every dimension produces, so the fold counts this without knowing it differs.
  */
 export function pairingHits(corpus, pairing) {
-  const shaped = new Map();
-  for (const rel of corpus) {
-    if (!rel.endsWith(pairing.companionSuffix)) continue;
-    const base = basename(rel);
-    shaped.set(base, [...(shaped.get(base) ?? []), rel]);
-  }
+  const shaped = Map.groupBy([...corpus].filter((rel) => rel.endsWith(pairing.companionSuffix)), basename);
 
   const hits = new Map();
   for (const { from, root, suffixes } of packagedPairings(corpus, pairing)) {

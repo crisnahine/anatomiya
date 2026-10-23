@@ -220,7 +220,7 @@ function spells(pattern, name) {
   const ext = pattern.slice(2);
   const exts = ext.startsWith("{") && ext.endsWith("}") ? ext.slice(1, -1).split(",") : [ext];
   const dot = name.lastIndexOf(".");
-  return dot > 0 && exts.includes(name.slice(dot + 1));
+  return dot >= 0 && exts.includes(name.slice(dot + 1));
 }
 
 export function assertGlobSafe(g) {
@@ -501,7 +501,7 @@ function reachable(area, uncounted, bare) {
     if (!f.rel.startsWith(under)) return false;
     const name = foldCase(baseName(f.rel));
     const dot = name.lastIndexOf(".");
-    return names.has(name) || (dot > 0 && exts.has(name.slice(dot + 1)));
+    return names.has(name) || (dot >= 0 && exts.has(name.slice(dot + 1)));
   });
 }
 

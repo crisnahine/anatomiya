@@ -276,6 +276,37 @@ test("the workflow fires on every tag a plugin here can carry", () => {
   );
 });
 
+/** The release workflow with LF line endings, as a Windows checkout's CRLF would otherwise end every `.`. */
+const releaseWorkflow = () => readFileSync(join(ROOT, ".github", "workflows", "release.yml"), "utf8").replace(/\r\n/g, "\n");
+
+/** Each job under `jobs:`, by name, with the lines indented beneath it. */
+function jobsOf(workflow) {
+  const jobs = workflow.slice(workflow.indexOf("\njobs:\n"));
+  return [...jobs.matchAll(/^ {2}([\w-]+):\n((?: {4}[^\n]*\n|\n)*)/gm)].map(([, name, lines]) => ({ name, lines }));
+}
+
+test("every checkout in the release workflow leaves its token off disk", () => {
+  // Only the release call needs the token, and that reads it from GH_TOKEN.
+  const checkouts = [...releaseWorkflow().matchAll(/uses: actions\/checkout@[^\n]*\n((?:\s+[^\n]*\n)*?)(?=\s*-\s|\s*$)/g)];
+
+  assert.ok(checkouts.length > 0, "no checkout step was read");
+  for (const [step, body] of checkouts) assert.match(body, /persist-credentials: false/, step);
+});
+
+test("the token that can write the repository never shares a job with a dependency", () => {
+  // A step can append to $GITHUB_PATH or $GITHUB_ENV for every later step of its
+  // job, so code the suite imports could put its own `gh` in front of the release.
+  const jobs = jobsOf(releaseWorkflow());
+  const writers = jobs.filter((job) => /contents: write/.test(job.lines));
+  const suite = jobs.find((job) => /node --test/.test(job.lines));
+
+  assert.ok(suite, "no job runs the suite");
+  assert.deepEqual(writers.map((job) => job.name), ["release"]);
+  assert.match(writers[0].lines, /gh release create/);
+  assert.doesNotMatch(writers[0].lines, /npm (?:ci|install)|node --test|setup-ruby/);
+  assert.match(writers[0].lines, new RegExp(`needs: ${suite.name}\\n`));
+});
+
 test("the release checklist's table says what the code says", () => {
   // The page a person works through, against the table the workflow runs. Two
   // copies of one contract is the failure this repository keeps writing tests
