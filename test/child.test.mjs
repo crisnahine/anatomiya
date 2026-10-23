@@ -146,7 +146,7 @@ test("a child that keeps answering outlives the window between its answers", asy
     "let n = 0\n" +
       "const tick = () => {\n" +
       "  process.send({ n: ++n })\n" +
-      "  if (n < 6) setTimeout(tick, 60)\n" +
+      "  if (n < 16) setTimeout(tick, 60)\n" +
       "  else process.exit(0)\n" +
       "}\n" +
       "tick()\n"
@@ -157,7 +157,8 @@ test("a child that keeps answering outlives the window between its answers", asy
     modulePath: path,
     stdio: STDIO,
     stderrBytes: 2048,
-    idleMs: 150,
+    // Wide beside one gap, so a loaded runner's late tick is no silence, and well short of the whole run.
+    idleMs: 400,
     onTimeout: (reason) => fired.push(reason),
   });
 
@@ -170,7 +171,7 @@ test("a child that keeps answering outlives the window between its answers", asy
   const { code } = await closed(sup.child);
   sup.settle();
 
-  assert.equal(answers, 6, "every answer arrived");
+  assert.equal(answers, 16, "every answer arrived");
   assert.deepEqual(fired, [], "a child still answering was never called idle");
   assert.equal(sup.killedBy(), null);
   assert.equal(code, 0);
