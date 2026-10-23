@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- `oxc-parser` 0.155.0, `web-tree-sitter` 0.27.1 and `flow-remove-types` 2.336.0, with the plugin's
+  own lockfile rebuilt to match. `web-tree-sitter` 0.27.1 reads grammar versions 13 through 15, as
+  0.27.0 did.
+
 ## [0.16.0] - 2026-10-23
 
 Python, Java, C# and Rust routes are read for the words of their URL paths, the classes #240 to #243
