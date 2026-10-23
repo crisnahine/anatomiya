@@ -21,6 +21,8 @@ export const CLAIMS_MOST = 100;
 // such change and the check holds no such branch to a claim at MUST-FIX.
 export const CHANGE_MOST = 40;
 
+const SUFFIX_TEST_NAME = /_test\.(?:go|py)$/;
+
 // A kind is printed in a sentence, so it holds nothing a sentence could be built from.
 const KIND = /^[\w.-]+$/;
 
@@ -31,7 +33,7 @@ const KIND = /^[\w.-]+$/;
  */
 export function suffixOf(name) {
   // A test name's own suffix is a kind apart from the plain one.
-  const test = RUBY_TEST_NAME.exec(name);
+  const test = RUBY_TEST_NAME.exec(name) ?? SUFFIX_TEST_NAME.exec(name);
   if (test) return test[0];
   const parts = name.split(".");
   // A dotfile's own name is not its kind: `.eslintrc.js` is a `.js`.

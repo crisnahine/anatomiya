@@ -796,6 +796,31 @@ container = document.createElement("div")`,
       { lang: "php", source: `<?php\n$f = function () { return 1; };\n$g = fn () => 1;\n` },
     ],
   },
+  endpoint_segment_case: {
+    lang: "python",
+    // Each form apart: a decorator, Django's path, a prefix, a Spring mapping, an ASP.NET attribute and a minimal API, a Rust attribute and a router call.
+    applicable: [
+      `@router.get("/saved-items/{id}")\ndef a():\n    pass\n`,
+      { source: `from django.urls import path\n\nurlpatterns = [path("audit_logs/<int:pk>/", v)]\n` },
+      { source: `bp = Blueprint("admin", __name__, url_prefix="/team-members")\n` },
+      { lang: "java", source: `class A {\n    @GetMapping({"/saved-items", "/audit-logs"})\n    void a() {}\n}\n`, sites: 2 },
+      { lang: "csharp", source: `class A\n{\n    [HttpGet("saved-items/{id:int}")]\n    public void B() { }\n}\n` },
+      { lang: "csharp", source: `class P\n{\n    void M()\n    {\n        app.MapGet("/saved-items", h);\n    }\n}\n` },
+      { lang: "rust", source: `#[get("/saved-items/<id>")]\nfn a() {}\n` },
+      { lang: "rust", source: `fn r() -> Router {\n    Router::new().route("/saved-items", get(h))\n}\n` },
+    ],
+    // A path with no word of two words, a regular expression, a path built at run time, a client's call, and a test tree.
+    inapplicable: [
+      `@router.get("/users/{id}")\ndef a():\n    pass\n`,
+      `from django.urls import re_path\n\nurlpatterns = [re_path(r"^audit_logs/$", v)]\n`,
+      `@router.get(f"/saved-items/{x}")\ndef a():\n    pass\n`,
+      `requests.get("/saved-items")\n`,
+      { source: `@router.get("/saved-items")\ndef a():\n    pass\n`, rel: "tests/support/views.py" },
+      { lang: "java", source: `class A {\n    @GetMapping(BASE + "/saved-items")\n    void a() {}\n}\n` },
+      { lang: "csharp", source: `class P\n{\n    void M()\n    {\n        app.MapGet($"/saved-items/{a}", h);\n    }\n}\n` },
+      { lang: "rust", source: `fn b() {\n    map.get("/saved-items");\n}\n` },
+    ],
+  },
 };
 
 /**

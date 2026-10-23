@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { absentInterpreter } from "./child.mjs";
 import { firstLine } from "./encode.mjs";
 import { ENGINES, engineOf } from "./langs.mjs";
+import { NODE_FLOOR, NODE_REMEDY, unsupportedNode } from "./node-floor.mjs";
 import { installedVersion, manifestVersion, olderThan } from "./version.mjs";
 
 /**
@@ -62,8 +63,8 @@ const RUNTIME = {
   node: {
     id: "node",
     host: "runtime",
-    floor: "22.0.0",
-    remedy: "install Node 22 or newer and put it first on PATH",
+    floor: NODE_FLOOR,
+    remedy: NODE_REMEDY,
   },
 };
 
@@ -83,8 +84,8 @@ export const NODE_PROBE_IDS = Object.freeze(PROBE_IDS.filter((id) => PROBES[id].
 // installs to ask: the same load path the parser is handed, so the answer is
 // about the library that will parse. The argv belongs to the engine rather than
 // to its interpreter, so a second one adds a row here instead of a branch below.
-// Loaded when the probe runs: the entry point imports this module for the node
-// floor before every hook, and the Ruby bridge reaches the walker.
+// Loaded when the probe runs: the refresh hook imports this module, and the
+// Ruby bridge reaches the walker.
 const BRIDGES = {
   prism: async () => {
     const { prismLoadArgs, prismVersionArgs, rubyEnv } = await import("./ruby.mjs");
@@ -258,23 +259,10 @@ export function readinessAfresh({ engines = NODE_PROBE_IDS, timeoutMs = 60_000 }
   });
 }
 
-/**
- * Why this node cannot run anything here, with the fix, or null where it can.
- *
- * Asked by the entry point before any verb that works, so a scan refuses in
- * one sentence instead of dying halfway through on a builtin the old node
- * lacks. Doctor is the one verb that runs anyway, and says the same thing on
- * its row.
- */
-export function unsupportedNode() {
-  const row = probeRuntime(RUNTIME.node);
-  return row.ok ? null : `${row.reason}, ${row.remedy}`;
-}
-
 /** The node this process runs on, held to its floor. */
 function probeRuntime(engine) {
   const version = process.versions.node;
-  if (olderThan(version, engine.floor)) {
+  if (unsupportedNode(version) !== null) {
     return row(engine, { present: true, version, reason: `${engine.id} ${version} is older than the ${engine.floor} this runs on` });
   }
   return row(engine, { present: true, version, ok: true });

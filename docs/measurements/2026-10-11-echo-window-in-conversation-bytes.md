@@ -53,3 +53,5 @@ branch's first commit, and with the branch's head. 4,327 transcripts holding 46,
 The store holds transcripts from every build since 2.1.233, and builds before 2.1.263 write no
 `rendered`, so their attachments count for nothing here. The replay cannot see claims: a parallel
 batch's extra copies are only in the live rule.
+
+Re-measured 2026-10-23: a workflow stage's transcript carries no `toolUseResult` copy, and 136 such logs ran a median 4.28 bytes per token (p10 3.90) against 6.61 (p10 5.76) for 984 main and plain subagent logs, so in a stage the 192 KiB window is about 46k tokens (A92).

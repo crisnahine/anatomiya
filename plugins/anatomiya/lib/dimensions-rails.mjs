@@ -1,5 +1,5 @@
 import { walkRuby, constName, ownDef, site, args, options } from "./ruby-walk.mjs";
-import { addPathSites, namesWellKnown } from "./dimensions-naming.mjs";
+import { addPathSites, namesWellKnown } from "./stems.mjs";
 import { RUBY_STRING_CAP } from "./limits.mjs";
 import { underTestTree } from "./test-shape.mjs";
 import { dirOf } from "./paths.mjs";
@@ -56,6 +56,54 @@ function sqlBody(sql) {
       return s;
     }
   }
+}
+
+/**
+ * The statements of a SQL string: split on each `;` outside a single-quoted
+ * literal (whose `''` closes and reopens it), a double-quoted identifier and a
+ * comment, and at each NUL `firstString` puts where the Ruby tree cut a line
+ * short, since the cut took that line's `;` with it. A piece after a NUL is
+ * marked, since it may be the rest of the statement the cut line began, and a
+ * block comment the cut left open goes on past it. A literal or an identifier
+ * the cut left open is closed again: its line almost always closed it in the
+ * part the tree dropped.
+ */
+function statements(sql) {
+  const out = [];
+  let mode = "code";
+  let start = 0;
+  let afterCut = false;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    if (c === "\0") {
+      out.push({ text: sql.slice(start, i), afterCut, open: mode === "block" });
+      start = i + 1;
+      afterCut = true;
+      if (mode !== "block") mode = "code";
+    } else if (mode === "quote") {
+      if (c === "'") mode = "code";
+    } else if (mode === "ident") {
+      if (c === '"') mode = "code";
+    } else if (mode === "line") {
+      if (c === "\n") mode = "code";
+    } else if (mode === "block") {
+      if (c === "*" && sql[i + 1] === "/") mode = "code";
+    } else if (c === "'") mode = "quote";
+    else if (c === '"') mode = "ident";
+    else if (c === "-" && sql[i + 1] === "-") mode = "line";
+    else if (c === "/" && sql[i + 1] === "*") {
+      // Past the opener's `*`, so `/*/` does not close as it opens.
+      mode = "block";
+      i++;
+    }
+    else if (c === ";") {
+      out.push({ text: sql.slice(start, i), afterCut });
+      start = i + 1;
+      afterCut = false;
+    }
+  }
+  out.push({ text: sql.slice(start), afterCut });
+  return out;
 }
 
 export const COLUMN_TYPE = new Set([
@@ -356,10 +404,17 @@ function dataWork(cls) {
       const sql = firstString(args(m));
       // A heredoc that keeps its indentation can truncate to whitespace at the
       // string cap, and defaulting that to schema-only would state the
-      // convention over migrations that rewrite rows.
-      const body = sql === null ? "" : sqlBody(sql);
-      if (body === "") unreadable = true;
-      else if (DML.test(body)) touches = true;
+      // convention over migrations that rewrite rows. Split before the comments
+      // come off, since a comment line the cap cut ends at its cut, not a newline.
+      // With no data statement before a cut, what follows it is unread, and a
+      // piece after a cut line that held statement text, `WITH (fillfactor = 90)`
+      // say, or after a cut that left a block comment open, may be that
+      // statement's or comment's rest rather than a statement of its own. An
+      // interpolation where a statement starts may be any statement at all.
+      const pieces = sql === null ? [] : statements(sql).map((s) => ({ ...s, body: sqlBody(s.text) }));
+      const starts = pieces.filter((p, i) => !p.afterCut || (!pieces[i - 1].body && !pieces[i - 1].open));
+      if (starts.some((p) => DML.test(p.body))) touches = true;
+      else if (!pieces.some((p) => p.body) || sql.includes("\0") || starts.some((p) => p.body.startsWith(INTERPOLATED))) unreadable = true;
       return;
     }
     const onLocal = dataCallOnLocal(m, ctx);
@@ -595,6 +650,8 @@ const ROUTE_CALLS = new Set([...ROUTE_VERBS, ...ROUTE_RESOURCES, "namespace", "s
 
 // The Ruby tree keeps `RUBY_STRING_CAP` characters of a string, so one that long may be cut short.
 const cutShort = (text) => [...text].length >= RUBY_STRING_CAP;
+// What `firstString` leaves where an interpolation sat: SQL this tool never sees.
+const INTERPOLATED = "\u0001";
 
 /** A literal path with whether it may be cut short, or none for anything else. */
 function pathOf(node) {
@@ -727,14 +784,14 @@ export const RAILS_DIMENSIONS = [
     counterClaim: null, // the inverse rewrites rows from inside a schema migration
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a migration class, unless one of its SQL calls (execute, exec_query, exec_update, exec_delete, exec_insert, or a bare update, delete or insert handed a string) carries SQL this tool could not read",
-      blind: "unreadable SQL drops the class, and a repository-local base class hides the migration from the superclass test",
+      sites: "a migration class, unless one of its SQL calls (execute, exec_query, exec_update, exec_delete, exec_insert, or a bare update, delete or insert handed a string) carries SQL this tool could not read and nothing else in the class rewrites rows. SQL is read as far as the Ruby tree keeps it, " + RUBY_STRING_CAP + " characters of a string or of a heredoc line, so a cut string is SQL it could not read unless a data statement starts before the cut or after a `;` it keeps, and so is an interpolation where a statement starts",
+      blind: "SQL this tool could not read drops a class nothing else in it marks as rewriting rows, and a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
     visitor(ast, add) {
       return migrations((cls) => {
         const { touches, unreadable } = dataWork(cls);
-        if (unreadable) return;
+        if (unreadable && !touches) return;
         add({ node: site(cls), conforming: !touches, where: cls.name ?? null });
       });
     },
@@ -847,11 +904,21 @@ export const RAILS_DIMENSIONS = [
 
 ];
 
-/** The first string leaf under a call's arguments: `<<~SQL.squish` hides it behind a call. */
+/**
+ * The first argument's text, through its receiver chain (`<<~SQL.squish`).
+ * A later argument is a statement name and a nested call's string is its own
+ * argument, so neither is read as the SQL. A squiggly heredoc parses as one
+ * string part per line, so the parts are joined to reach later statements. A
+ * NUL follows every text as long as the cap the Ruby tree keeps, since it may
+ * have been cut there: a part that ends in a newline at the cap is no proof.
+ */
 function firstString(list) {
-  let found = null;
-  walkRuby(list, (n) => {
-    if (found === null && n.t === "string" && typeof n.unescaped === "string") found = n.unescaped;
-  });
-  return found;
+  let n = list[0];
+  while (n?.t === "call") n = n.receiver;
+  const kept = (text) => (cutShort(text) ? `${text}\0` : text);
+  if (n?.t === "string") return typeof n.unescaped === "string" ? kept(n.unescaped) : null;
+  if (n?.t !== "interpolated_string" || n.parts?.[0]?.t !== "string") return null;
+  return n.parts
+    .map((p) => (p.t === "string" && typeof p.unescaped === "string" ? kept(p.unescaped) : INTERPOLATED))
+    .join("");
 }

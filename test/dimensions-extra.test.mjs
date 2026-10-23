@@ -501,6 +501,22 @@ test("an exported declaration with a comment directly above conforms", () => {
   assert.equal(h.filter((x) => x.conforming).length, 1);
 });
 
+test("an overload set is documented by the comment above its first signature", () => {
+  const h = docHits(`/** Formats. */
+export function fmt(a: string): string;
+export function fmt(a: number): string;
+export function fmt(a: any) { return a }
+export function bare(a: string): string;
+export function bare(a: any) { return a }`);
+  assert.deepEqual(h.map((x) => [x.where, x.conforming]), [["fmt", true], ["bare", false]]);
+  // A default export's set has no name of its own, and is one set all the same.
+  const anon = docHits(`/** Formats. */
+export default function (a: string): string;
+export default function (a: number): string;
+export default function (a: any) { return a }`);
+  assert.deepEqual(anon.map((x) => [x.where, x.conforming]), [["default", true]]);
+});
+
 test("a line comment and a blank line still attach", () => {
   const h = docHits(`// what b is for\n\nexport const b = () => {}`);
   assert.deepEqual(h.map((x) => x.conforming), [true]);

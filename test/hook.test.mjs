@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdtempSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1314,6 +1314,20 @@ test("the hook exits 0 when its reader goes away before it answers", async (t) =
     const { code, stderr } = await within(hook, 8000);
     assert.equal(code, 0, stderr);
   }
+});
+
+test("the hook exits 0 when its stdout fails with an error other than a closed pipe", (t) => {
+  // A descriptor opened read-only answers every write with EBADF, which the
+  // binary's own listener lets through for the commands a person runs.
+  const dir = mapped(t);
+  const sink = join(dir, "read-only.txt");
+  writeFileSync(sink, "");
+  const fd = openSync(sink, "r");
+  t.after(() => closeSync(fd));
+
+  const run = spawnSync(process.execPath, [ECHO, "echo"], { cwd: dir, input: JSON.stringify({ hook_event_name: "UserPromptSubmit" }), stdio: ["pipe", fd, "pipe"], encoding: "utf8" });
+
+  assert.equal(run.status, 0, run.stderr);
 });
 
 test("the hook gives up on a payload that never arrives", async (t) => {

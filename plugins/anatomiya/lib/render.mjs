@@ -416,7 +416,7 @@ function unopenedDataFiles(result) {
  * one that checked.
  */
 const STRINGS_NOT_READ =
-  "a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route table, a server or a Rails routes file declares; i18n keys, CSS classes, event names, messages, links and request paths are not";
+  "a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route declares in JavaScript, Ruby, Python, Java, C# or Rust; i18n keys, CSS classes, event names, messages, links and request paths are not";
 
 const HOUSE_RULES =
   "Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.";

@@ -272,7 +272,7 @@ def conv(v)
     end
     h
   when Array then v.map { |x| conv(x) }.compact
-  when Symbol then v.to_s
+  when Symbol then utf8(v.to_s)
   when String then utf8(v.length > STR_CAP ? v[0, STR_CAP] : v)
   # \`1e400\` is Infinity, which JSON cannot spell: the encoder raised and a file
   # prism read cleanly was reported unread. No dimension reads a float's value.

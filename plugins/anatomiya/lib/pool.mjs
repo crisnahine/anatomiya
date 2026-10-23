@@ -217,7 +217,8 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   }
 
   function release(w) {
-    if (closed) return;
+    // A reply already sent when a clock killed the worker still lands here; its exit spawns the replacement.
+    if (closed || w.sup.killedBy() !== null) return;
     const next = queue.shift() ?? (workers.some((x) => x.job) ? null : retries.shift());
     if (next) return assign(w, next);
     idle.push(w);

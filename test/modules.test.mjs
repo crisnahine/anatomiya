@@ -198,6 +198,7 @@ test("the writers do not reach the pipeline that produced the record", () => {
   assert.deepEqual([...reachedFrom("check-report.mjs")].sort(), [
     "check-report.mjs",
     "encode.mjs",
+    "paths.mjs",
     "rules.mjs",
     "store.mjs",
     "targets.mjs",
@@ -326,7 +327,8 @@ test("a parse child that reads no component loads no component scanner, and no c
   // Counted from each shell's static imports: what a child holds before its first file.
   const loads = (shell) => reachedFrom(shell, graph(LIB, { dynamic: false }));
   assert.deepEqual(["blank.mjs", "script-blocks.mjs", "csharp-directives.mjs", "tree-sitter-file.mjs"].filter((file) => loads("parse-worker.mjs").has(file)), []);
-  assert.deepEqual(["script-blocks.mjs", "parse-file.mjs", "dimensions-base.mjs"].filter((file) => loads("tree-sitter-worker.mjs").has(file)), []);
+  // The oxc naming rows too: a URL row over tree-sitter takes its path words from the stems leaf.
+  assert.deepEqual(["script-blocks.mjs", "parse-file.mjs", "dimensions-base.mjs", "dimensions-naming.mjs", "dimensions-jsx.mjs"].filter((file) => loads("tree-sitter-worker.mjs").has(file)), []);
   // Loaded on the first component instead, by the body that reads one.
   assert.ok(reachedFrom("parse-worker.mjs").has("script-blocks.mjs"));
 });
@@ -680,17 +682,20 @@ test("every verb the binary declares carries its own arm in the one table", () =
   }
   // A command is imported inside the arm that runs it, so no arm can exist
   // outside the table for a verb to fall through to, and a hook loads only its
-  // own. The binary itself imports what reading argv and the never-fail
-  // boundary need: the targets leaf is the names `--targets` takes, and it
-  // imports nothing, and the encoder is what a refusal quoting argv is printed
-  // through, which the hook module loads already. The offsets are asserted
-  // first: compared against undefined, every import would read as inside.
+  // own. The binary itself imports only the node floor, which imports nothing
+  // and parses on any node, and loads what reading argv and the never-fail
+  // boundary need once the floor has passed: the targets leaf is the names
+  // `--targets` takes, and the encoder is what a refusal quoting argv is
+  // printed through, which the hook module loads already. The offsets are
+  // asserted first: compared against undefined, every import would read as inside.
   const own = program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value);
-  assert.deepEqual(own.sort(), ["../lib/encode.mjs", "../lib/hook.mjs", "../lib/readiness.mjs", "../lib/targets.mjs"]);
+  assert.deepEqual(own, ["../lib/node-floor.mjs"]);
+  assert.match(readFileSync(join(LIB, "node-floor.mjs"), "utf8"), /^(?![\s\S]*\bimport\b)/, "the floor imports nothing");
   assert.ok(Number.isInteger(table.init.start) && Number.isInteger(table.init.end), "the table carries offsets");
-  const loads = [...scan(src).matchAll(/\bimport\(/g)];
+  const loads = [...scan(src).matchAll(/\bimport\(\s*"([^"]+)"/g)];
   assert.ok(loads.length >= verbs.length, `read ${loads.length} arm imports`);
-  assert.deepEqual(loads.filter((m) => m.index < table.init.start || m.index >= table.init.end).map((m) => m[0]), []);
+  const outside = loads.filter((m) => m.index < table.init.start || m.index >= table.init.end).map((m) => m[1]);
+  assert.deepEqual(outside.sort(), ["../lib/encode.mjs", "../lib/hook.mjs", "../lib/targets.mjs"]);
 });
 
 /**
@@ -708,6 +713,7 @@ function armReach(verb, { lazy = false } = {}) {
   const arm = table.init.properties.find((p) => (p.key.name ?? p.key.value) === verb).value;
   const roots = [
     ...program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value),
+    ...[...(src.slice(0, table.init.start) + src.slice(table.init.end)).matchAll(/\bimport\(\s*"([^"]+)"/g)].map((m) => m[1]),
     ...[...src.slice(arm.start, arm.end).matchAll(/\bimport\s*\(\s*(?:["']([^"']+)["']|`([^`$]+)`)\s*\)/g)].map((m) => m[1] ?? m[2]),
   ].map((spec) => spec.replace(/^\.\.\/lib\//, ""));
   const edges = graph(LIB, { dynamic: lazy });
@@ -718,21 +724,19 @@ function armReach(verb, { lazy = false } = {}) {
 
 // Written out rather than counted, so a module joining the echo's load shows by name.
 const ECHO_LOADS = [
-  "child.mjs",
   "echo.mjs",
   "encode.mjs",
   "facts.mjs",
   "gates.mjs",
   "hook-verbs.mjs",
   "hook.mjs",
-  "langs.mjs",
   "lock.mjs",
-  "readiness.mjs",
+  "node-floor.mjs",
+  "paths.mjs",
   "rules.mjs",
   "store.mjs",
   "targets.mjs",
   "transcript.mjs",
-  "version.mjs",
   "worktree.mjs",
 ];
 
@@ -753,8 +757,8 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
   assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
   // The other arms by count, before any lazy import and with each followed (A100).
   const sizes = (opts) => Object.fromEntries(["echo", "notice", "reuse", "refresh"].map((verb) => [verb, armReach(verb, opts).size]));
-  assert.deepEqual(sizes(), { echo: 16, notice: 16, reuse: 16, refresh: 31 });
-  assert.deepEqual(sizes({ lazy: true }), { echo: 37, notice: 37, reuse: 37, refresh: 31 });
+  assert.deepEqual(sizes(), { echo: 14, notice: 14, reuse: 14, refresh: 32 });
+  assert.deepEqual(sizes({ lazy: true }), { echo: 36, notice: 36, reuse: 36, refresh: 32 });
   assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
   assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
 });

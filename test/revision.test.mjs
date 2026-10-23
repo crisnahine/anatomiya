@@ -264,6 +264,26 @@ test("two paths that differ only in how their accents are encoded are written wh
   assert.equal(new Set(out.files.map((f) => f.abs.normalize("NFC").toLowerCase())).size, 2);
 });
 
+test("two paths APFS folds past lower case, the long s onto s, are written where neither overwrites the other", async (t) => {
+  let sha;
+  const dir = repo(t, (d, { git }) => {
+    for (const [rel, which] of [["src/s.ts", "plain"], ["src/ſ.ts", "long"]]) {
+      const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: `export const which = '${which}'\n` }).toString().trim();
+      git("update-index", "--add", "--cacheinfo", `100644,${blob},${rel}`);
+    }
+    git("commit", "-qm", "first");
+    sha = git("rev-parse", "HEAD").trim();
+  });
+
+  const out = await readAtRevision(dir, sha, [{ rel: "src/s.ts" }, { rel: "src/ſ.ts" }]);
+  t.after(out.dispose);
+
+  const want = { "src/s.ts": "plain", "src/ſ.ts": "long" };
+  assert.equal(out.files.length, 2);
+  for (const f of out.files) assert.equal(readFileSync(f.abs, "utf8"), `export const which = '${want[f.rel]}'\n`, f.rel);
+  assert.notEqual(out.files[0].abs, out.files[1].abs.replace("ſ", "s"));
+});
+
 test("every file at a revision is read by one child, and it is gone when the read is done", { ...needsShebang, ...needsBatchZ }, async (t) => {
   const rels = Array.from({ length: 20 }, (_, i) => `src/f${i}.js`);
   let sha;

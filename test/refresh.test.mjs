@@ -12,13 +12,13 @@ import { buildPin, loadPin, PIN_PATH, writePin } from "../plugins/anatomiya/lib/
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
 import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
-import { acquire, noteScan, refreshRepository } from "../plugins/anatomiya/lib/refresh-run.mjs";
+import { acquire, noteScan, refreshRepository, scanStamp } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { gitBuffered, Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
-import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
+import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
 import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
 import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
@@ -325,6 +325,29 @@ test("a moved HEAD is scanned again, and the map on disk is the new one", async 
   assert.match(readFileSync(join(dir, OVERVIEW), "utf8"), /lib\/services/);
 });
 
+test("a refresh whose write a hand scan beat records no failure, and the hand scan's record stands", async (t) => {
+  // The refused commit was recorded as the refresh failing, over the hand scan's
+  // own record, so a current map warned of a failure until the retry was due.
+  const dir = await scanned(t);
+  source(dir, "lib", 6);
+  commit(dir, "more");
+  let raced = false;
+  const racing = async (root, options) => {
+    if (raced) return runScan(root, options);
+    raced = true;
+    const plan = planMap(await scan(root), options ?? {});
+    const before = await scanStamp(root);
+    await runScan(root);
+    await noteScan(root, before);
+    return commitMap(root, plan);
+  };
+
+  assert.equal((await refreshRepository(dir, { scan: racing })).reason, "scanned");
+  const record = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8"));
+  assert.equal(record.ok, true, JSON.stringify(record));
+  assert.equal(record.error, null);
+});
+
 test("a directory holding a file at the refresh state's name stops every refresh before it scans", async (t) => {
   // Each refresh scanned, threw on the write and recorded nothing, so the next one scanned again.
   const dir = await scanned(t);
@@ -358,7 +381,7 @@ test("a scan run by hand records itself over an empty directory at the refresh s
   const dir = await scanned(t);
   mkdirSync(join(dir, REFRESH_STATE));
 
-  await noteScan(dir);
+  await noteScan(dir, await scanStamp(dir));
 
   assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).ok, true);
 });
@@ -438,7 +461,7 @@ test("a directory that cannot be listed at a name a refresh locks or records und
         assert.deepEqual(await refreshRepository(dir, { scan }), { reason, blocked: entry, pinned: false }, said);
         assert.equal(scans, 0, said);
         assert.deepEqual((await runScan(dir, { dryRun: true })).plan.refreshBlocked, [`.claude/anatomiya/${name}`], said);
-        await noteScan(dir);
+        await noteScan(dir, await scanStamp(dir));
         assert.equal(lstatSync(entry).isDirectory(), true, `${said}: a scan run by hand leaves it too`);
       } finally {
         chmodSync(entry, 0o700);
@@ -572,7 +595,7 @@ test("a refresh rewrites every target that is on, and turns none on or off", asy
   const dir = await scanned(t);
   const cursor = join(dir, ".cursor", "rules", "anatomiya-overview.mdc");
   await runScan(dir, { targets: ["claude", "cursor"] });
-  await noteScan(dir);
+  await noteScan(dir, await scanStamp(dir));
   const before = readFileSync(cursor, "utf8");
 
   source(dir, "lib/services", 8);
@@ -1024,7 +1047,7 @@ async function typed(t, { name = "tsconfig.json", config = BROKEN, body = TRIMS 
   mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
   commit(dir, "init");
   const { result } = await runScan(dir);
-  await noteScan(dir);
+  await noteScan(dir, await scanStamp(dir));
   return { dir, first: result.semantic };
 }
 
@@ -1108,7 +1131,7 @@ async function partlyInstalled(t) {
   for (let i = 0; i < 8; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `${imports}export function f${i}${body}`);
   commit(dir, "import two packages that are not installed");
   const partial = (await runScan(dir)).result.semantic;
-  await noteScan(dir);
+  await noteScan(dir, await scanStamp(dir));
   assert.deepEqual([partial.ran, partial.status, partial.reason, partial.typedResolutionRate], [true, "degraded", "no-tsconfig", 0]);
   return { dir, partial };
 }
@@ -1251,7 +1274,7 @@ async function failing(t) {
   };
   const byHand = async () => {
     await scanAround(dir);
-    await noteScan(dir);
+    await noteScan(dir, await scanStamp(dir));
     return recorded(dir);
   };
   return { dir, seen, refresh, byHand };
@@ -1432,7 +1455,7 @@ test("a scan a person runs clears a failed refresh, and the next refresh has not
   await refreshRepository(dir, { scan: async () => { throw new Error("boom"); } });
 
   await runScan(dir);
-  await noteScan(dir);
+  await noteScan(dir, await scanStamp(dir));
 
   const state = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8"));
   assert.equal(state.ok, true);
@@ -1441,13 +1464,31 @@ test("a scan a person runs clears a failed refresh, and the next refresh has not
   assert.equal(scans, 0);
 });
 
+test("a commit landing while a scan run by hand is under way is left for the next refresh to scan", async (t) => {
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
+  t.after(() => removeTree(dir));
+  init(dir);
+  source(dir, "src", 8);
+  commit(dir, "init");
+  const before = await scanStamp(dir);
+  await runScan(dir);
+  source(dir, "lib", 8);
+  commit(dir, "landed during the scan");
+
+  await noteScan(dir, before);
+
+  let scans = 0;
+  assert.equal((await refreshRepository(dir, { scan: async () => { scans++; } })).reason, "scanned");
+  assert.equal(scans, 1);
+});
+
 test("a manual scan keeps what the last automatic pin accepted", async (t) => {
   const { dir } = await cloned(t);
   await refreshRepository(dir);
   const pinned = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).pinned;
   assert.ok(pinned);
 
-  await noteScan(dir);
+  await noteScan(dir, await scanStamp(dir));
 
   assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).pinned, pinned);
 });

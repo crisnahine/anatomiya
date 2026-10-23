@@ -1156,6 +1156,23 @@ test("the co-change walk replays the same way: a merged branch is one change, re
   assert.deepEqual(fresh.said, { stored: 0, walked: 1, wrote: true });
 });
 
+test("a scan of a partial clone reads what its records depend on once for both walks", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // The authors walk once handed git an environment of its own on a partial
+  // clone, so saving its records read every input of the stamp again.
+  const dir = repo(t, storied);
+  tools(dir).git("config", "remote.origin.promisor", "true");
+  const counted = mkdtempSync(join(tmpdir(), "anatomiya-history-asked-"));
+  t.after(() => removeTree(counted));
+  const log = join(counted, "asked");
+  gitInFront(t, `case " $* " in *" var GIT_ATTR_SYSTEM "*) echo asked >> '${log}';; esac`);
+
+  const scan = await runScan(dir);
+
+  assert.deepEqual(scan.history, { authors: { stored: 0, walked: 5, wrote: true }, cochange: { stored: 0, walked: 5, wrote: true } });
+  // One read opens the stores, and one more saves them.
+  assert.equal(readFileSync(log, "utf8").split("\n").filter(Boolean).length, 2);
+});
+
 test("a scan keeps both stores, a dry run reads them and writes neither", async (t) => {
   const dir = repo(t, storied);
   rmSync(join(dir, ".claude"), { recursive: true });

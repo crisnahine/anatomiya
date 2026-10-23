@@ -850,10 +850,13 @@ export function checkDocs() {
   // that severity. Read from the source because the reasons are built inline.
   // A `${...}` in a reason is any placeholder the row spells, such as N or <area>.
   const walkthroughLines = read("docs/how-it-works.md").split(/\r?\n/);
-  const reasons = read(`${REL.anatomiya}/lib/check.mjs`).matchAll(
+  const checkSource = read(`${REL.anatomiya}/lib/check.mjs`);
+  const reasons = checkSource.matchAll(
     /severity: "(NIT|FIX|MUST-FIX)",\s*reason: (?:"([^"]*)"|`([^`]*)`)/g
   );
+  let reasonsRead = 0;
   for (const [, severity, plain, template] of reasons) {
+    reasonsRead++;
     const reason = plain ?? template;
     const row = walkthroughLines.find((line) => line.startsWith(`| ${severity} |`));
     const quoted = reason
@@ -866,6 +869,15 @@ export function checkDocs() {
       `the severity table's ${severity} row does not quote the reason "${reason}"`
     );
   }
+  // A pattern that matches nothing passes every reason it never read.
+  claim(`${REL.anatomiya}/lib/check.mjs`, reasonsRead > 0, "no severity reason was read: the pattern that finds them matched nothing");
+  // A reason held in a constant is one the table is never checked against.
+  const reasonSites = checkSource.match(/severity: "(?:NIT|FIX|MUST-FIX)",\s*reason:/g)?.length ?? 0;
+  claim(
+    `${REL.anatomiya}/lib/check.mjs`,
+    reasonsRead === reasonSites,
+    `severity reasons this cannot read, not written as a literal: ${reasonSites - reasonsRead} of ${reasonSites}`
+  );
 
   // --- what a scan leaves in the working tree ---------------------------------
 
@@ -919,7 +931,7 @@ export function checkDocs() {
   // validator: the parser refuses a bad verb or option before it reaches it,
   // and answers with the usage, writing nothing, once everything before it
   // parsed.
-  const INVOCATION = /node "\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/anatomiya\.mjs"([^`\n]*)/g;
+  const INVOCATION = /node (?:"\$\{CLAUDE_PLUGIN_ROOT\}\/|plugins\/anatomiya\/)bin\/anatomiya\.mjs"?([^`\n]*)/g;
   const commandDocs = readdirSync(join(root, REL.anatomiya, "commands"))
     .filter((f) => f.endsWith(".md"))
     .map((f) => `${REL.anatomiya}/commands/${f}`);
@@ -927,7 +939,7 @@ export function checkDocs() {
     .filter((f) => f.endsWith(".md"))
     .map((f) => `docs/${f}`);
   const parsed = new Map();
-  for (const rel of ["README.md", ...topDocs, ...commandDocs]) {
+  for (const rel of ["README.md", "CONTRIBUTING.md", ...topDocs, ...commandDocs]) {
     for (const m of read(rel).matchAll(INVOCATION)) {
       const args = m[1].trim().split(/\s+/).filter(Boolean);
       const key = args.join(" ");

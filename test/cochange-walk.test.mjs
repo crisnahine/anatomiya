@@ -376,6 +376,8 @@ test("a fixture, a snapshot or a test file outside a test tree is the test side,
   assert.equal(producers(adding((i) => `lib/__fixtures__/f${i}.json`)).includes("lib/__fixtures__/*.json"), false);
   assert.equal(producers(adding((i) => `lib/cases/test_fixtures/f${i}.yml`)).includes("lib/cases/test_fixtures/*.yml"), false);
   assert.deepEqual(producers(adding((i) => `src/a${i}.test.ts`)), []);
+  assert.deepEqual(producers(adding((i) => `pkg/h/x${i}_test.go`)), []);
+  assert.deepEqual(producers(adding((i) => `app/x${i}_test.py`)), []);
   assert.deepEqual(adding((i) => `lib/x${i}.rb`, "lib/__snapshots__/all.snap"), []);
 });
 

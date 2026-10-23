@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { FLOORS, SUMMARY, SUMMARY_FLAG, parseLcov, shortfalls } from "../scripts/coverage.mjs";
+import { FLOORS, SUMMARY, SUMMARY_FLAG, libFiles, parseLcov, shortfalls } from "../scripts/coverage.mjs";
 import { REL } from "../scripts/plugins.mjs";
 import { removeTree } from "./platform.mjs";
 
@@ -113,6 +113,27 @@ test("an exception naming a file the scope does not hold is a stale exception", 
   ]);
 });
 
+test("a file no test loads is under every per-file floor, though the report holds no row for it", () => {
+  // Node writes a row only for a file some test loaded, so the floor has to be
+  // asked of the files on disk too, or a module nothing runs never meets it.
+  const rows = parseLcov([record("lib/a.mjs"), record("lib/b.mjs", { lh: 10 })].join("\n"));
+  const floor = { scope: "lib", include: "lib/**", whole: {}, file: { lines: 80 }, except: ["lib/b.mjs"] };
+
+  assert.deepEqual(shortfalls(rows, floor, ["lib/a.mjs", "lib/b.mjs", "lib/unloaded.mjs", "other/out.mjs"]), [
+    "lib/unloaded.mjs: no test loads it, so it is under every floor",
+  ]);
+  assert.deepEqual(shortfalls(rows, { ...floor, file: {} }, ["lib/unloaded.mjs"]), [], "a scope with no per-file floor");
+  // A worker shell runs in a child the test process does not measure, and naming one the report holds is a mistake.
+  assert.deepEqual(shortfalls(rows, { ...floor, childOnly: ["lib/unloaded.mjs"] }, ["lib/a.mjs", "lib/unloaded.mjs"]), []);
+  assert.deepEqual(shortfalls(rows, { ...floor, childOnly: ["lib/a.mjs"] }, ["lib/a.mjs"]), [
+    "lib: lib/a.mjs is named as loaded only in a child process and the report holds it",
+  ]);
+  // A shell renamed or deleted leaves its old name naming nothing, which is said rather than kept.
+  assert.deepEqual(shortfalls(rows, { ...floor, childOnly: ["lib/gone-worker.mjs"] }, ["lib/a.mjs"]), [
+    "lib: lib/gone-worker.mjs is named as loaded only in a child process and no such file is listed",
+  ]);
+});
+
 test("a report row from outside the tree is not part of the whole tree", () => {
   // `**` matched every path the reporter wrote, and it writes a relative one
   // for a spec run from anywhere, so a file above the root counted toward the
@@ -142,6 +163,7 @@ test("this repository's own floors are the measured ones", () => {
       whole: {},
       file: { lines: 80, branches: 65, functions: 80 },
       except: [`${REL.anatomiya}/lib/dimensions-semantic.mjs`],
+      childOnly: [`${REL.anatomiya}/lib/parse-worker.mjs`, `${REL.anatomiya}/lib/tree-sitter-worker.mjs`, `${REL.anatomiya}/lib/semantic-worker.mjs`],
     },
   ]);
 });
@@ -171,6 +193,16 @@ function measured(t, body, options = []) {
     said: `${run.stdout}${run.stderr}`,
   };
 }
+
+test("a library module in a subdirectory is listed, so one no test loads is named too", (t) => {
+  // The floor reads lib/**, and a flat listing let lib/sub/x.mjs sit under every floor unnamed.
+  const root = mkdtempSync(join(tmpdir(), "anatomiya-libfiles-"));
+  t.after(() => removeTree(root));
+  mkdirSync(join(root, "lib", "sub"), { recursive: true });
+  for (const file of ["lib/a.mjs", "lib/sub/b.mjs", "lib/sub/c.json"]) writeFileSync(join(root, file), "");
+
+  assert.deepEqual(libFiles(root, "lib").sort(), ["lib/a.mjs", "lib/sub/b.mjs"]);
+});
 
 test("every scope is stated on a run that misses a floor, not only on one that clears it", (t) => {
   // The job pipes this to a file and puts the summary in front of whoever broke

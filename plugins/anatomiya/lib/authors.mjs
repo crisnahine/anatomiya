@@ -273,9 +273,7 @@ async function logStream(root, open, history) {
       // under two addresses is counted once.
       diff: [partial ? "-M100%" : "-M", "--name-status", "-z"],
       cap: [],
-      // Belt as well as braces on a partial clone: nothing in this walk may
-      // reach the network, so a missing object fails here instead of hanging.
-      env: partial ? { ...process.env, GIT_NO_LAZY_FETCH: "1" } : process.env,
+      env: process.env,
     },
     open,
     { history }
