@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { echoDue, heldIn } from "../plugins/anatomiya/lib/echo.mjs";
+import { stubbed } from "./fs-stub.mjs";
 import { removeTree } from "./platform.mjs";
 
 const DIGEST = "a1b2c3d4e5f6";
@@ -222,19 +223,6 @@ function lockEnds(call) {
   }, call);
   assert.ok(creates <= 8, `the lock loop ended, after ${creates} exclusive creates`);
   return answer;
-}
-
-/** Runs one echo call with `fs[name]` replaced by `stub`, which is handed the real one. */
-function stubbed(name, stub, call) {
-  const real = fs[name];
-  fs[name] = (...args) => stub(real, ...args);
-  syncBuiltinESMExports();
-  try {
-    return call();
-  } finally {
-    fs[name] = real;
-    syncBuiltinESMExports();
-  }
 }
 
 // Holds every read of a lock's age, so two calls that find one dead both read it before either breaks it.
@@ -628,7 +616,8 @@ test("a batch claim write that fails partway leaves the batch claim it replaces 
 
   let failed = false;
   const answer = stubbed("writeFileSync", (real, p, text, ...rest) => {
-    if (!String(p).startsWith(join(data, "echo"))) return real(p, text, ...rest);
+    // The staged file is written through its descriptor, and nothing else is written while the call runs.
+    if (typeof p !== "number" && !String(p).startsWith(join(data, "echo"))) return real(p, text, ...rest);
     failed = true;
     real(p, String(text).slice(0, 1));
     throw Object.assign(new Error("EIO"), { code: "EIO" });
@@ -637,6 +626,7 @@ test("a batch claim write that fails partway leaves the batch claim it replaces 
   assert.equal(failed, true);
   assert.equal(answer, true, "a batch claim that cannot be written answers as the transcript alone");
   assert.equal(readFileSync(claim, "utf8"), before);
+  assert.deepEqual(readdirSync(join(data, "echo")), [name], "and the half written beside it is gone");
 });
 
 test("a batch claim from later in the same transcript keeps a sibling silent that read an earlier, shorter snapshot", (t) => {
@@ -726,6 +716,12 @@ test("batch claims older than a day are swept when a new one is made", (t) => {
   const foreign = join(data, "echo", "notes.txt");
   writeFileSync(foreign, "");
   utimesSync(foreign, twoDays, twoDays);
+  // What a call killed between writing a batch claim and renaming it left, under this build's name and an older one's.
+  const staged = [`${old}.tmp-4242-0123456789abcdef`, `${old}.4242`];
+  for (const name of staged) {
+    writeFileSync(name, "0\n");
+    utimesSync(name, twoDays, twoDays);
+  }
 
   due(transcript(t, [filler(10)]), data);
 
@@ -733,9 +729,26 @@ test("batch claims older than a day are swept when a new one is made", (t) => {
   assert.equal(existsSync(lock), false, "a lock left by a call that died");
   assert.equal(existsSync(token), false, "a lock token a call died holding");
   assert.equal(existsSync(tokenOfToken), false, "and a token's token");
+  for (const name of staged) assert.equal(existsSync(name), false, name);
   assert.equal(existsSync(recent), true);
   assert.equal(existsSync(foreign), true, "only a name a batch claim has");
   assert.equal(readdirSync(join(data, "echo")).length, 3);
+});
+
+test("a batch claim that cannot be replaced leaves nothing of its own beside it", (t) => {
+  const data = dataDir(t);
+  const path = transcript(t, [filler(10)]);
+  assert.equal(due(path, data), true);
+  const [name] = readdirSync(join(data, "echo"));
+  const claim = join(data, "echo", name);
+  // A directory holding a file at the claim's name, which no rename replaces.
+  rmSync(claim);
+  mkdirSync(claim);
+  writeFileSync(join(claim, "x"), "");
+
+  assert.equal(due(path, data), true, "what cannot be written answers as the transcript alone does");
+
+  assert.deepEqual(readdirSync(join(data, "echo")), [name]);
 });
 
 test("a batch claim that is not one this hook wrote is replaced rather than believed", (t) => {

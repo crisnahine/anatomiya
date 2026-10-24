@@ -11,9 +11,7 @@ import {
   collect as collectCorpus,
   frameworksIn,
   capabilitiesIn,
-  corpusDrop,
   gitRoot,
-  isCorpusPath,
   isSource,
   safeResolve,
   lsFiles,
@@ -22,10 +20,11 @@ import {
 import { familyOf, language, MISSING_STRIPPER, placeTestsOf } from "./langs.mjs";
 import { isProducer, placedTests } from "./layout.mjs";
 import { areaIndex, areaLabel, globsReach, underArea } from "./areas.mjs";
-import { droppedSlots, scopeOf, unexaminedPhrase, unstatedLine } from "./render.mjs";
-import { auditRules, isLink, knownNames, pendingAmong, readHead, resolveInside, targetStatus, turningOff } from "./rules.mjs";
+import { droppedSlots, unexaminedPhrase, unstatedLine } from "./render.mjs";
+import { auditRules, readHead, recordFor, resolveInside, targetStatus, turningOff } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
-import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
+import { FACTS_PATH, readFacts } from "./facts.mjs";
+import { scopeOf, statedSide } from "./slot.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { nameText, sanitisePath } from "./encode.mjs";
 import { remedyForMissing } from "./readiness.mjs";
@@ -35,8 +34,8 @@ import { isTestPath, precedentFindings } from "./precedent.mjs";
 import { claimFor, CLASSES } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
-import { Unasked, answered, commitAt, gitBuffered, resolveBaseRef, mergeBase, filesAt, isSha, BASE_REFS, GIT } from "./git.mjs";
-import { addedRanges, changedFiles, onlyInHead, pendingPaths, renamesSkipped, resolvePendingBases, withPendingEdits } from "./changeset.mjs";
+import { Unasked, ask, commitAt, resolveBaseRef, mergeBase, filesAt, isSha, unaskedAs, BASE_REFS, GIT } from "./git.mjs";
+import { branchChange } from "./changeset.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
@@ -139,63 +138,33 @@ export async function check(cwd, { baseRef = null } = {}) {
   // The refusal reason in `stale` travels, or the report prints "capped by this
   // run: no map on disk" above a note saying the map is a schema this build
   // cannot read. The first is false and points at the wrong fix.
-  const [diff, status, dropOf, stale, added, tracked] = await Promise.all([
-    from ? changedFiles(root, from, base.head) : { ok: true, rows: [] },
-    pendingPaths(root),
-    corpusDrop(root),
+  const [change, stale, tracked] = await Promise.all([
+    branchChange(root, { from, head: base.head, mergeBase: base.mergeBase, compare: mode === "compare", ranges: mode === "added-lines" }),
     staleness(root, facts, base, unreadable),
-    mode === "added-lines" ? addedRanges(root, from, base.head) : null,
     trackedTests(root),
   ]);
-  if (!diff.ok) {
+  const { changed, examined, pending, added } = change;
+  if (!change.readable) {
     caveat(
       caveats,
       CAVEATS.DIFF_UNREADABLE,
       `the diff against ${base.ref || from} could not be read, so no file was examined and this run found nothing it could look at`
     );
   }
-  if (renamesSkipped(diff.rows)) {
+  if (change.renamesSkipped) {
     caveat(
       caveats,
       CAVEATS.RENAMES_SKIPPED,
       "this branch moves more files than git will pair up, so a file moved and edited may be judged as new"
     );
   }
-  const changed = diff.rows.filter((c) => c.status !== "D");
-  // What the branch took away: no file to examine, and still a companion its
-  // producer no longer has. The tree's own deletions join these below.
-  const removed = diff.rows.filter((c) => c.status === "D").map((c) => c.path)
-    .concat(diff.rows.filter((c) => c.from && c.from !== c.path).map((c) => c.from));
-
-  if (status === null) {
+  if (!change.listed) {
     caveat(
       caveats,
       CAVEATS.PENDING_UNLISTED,
       "the working tree's pending edits could not be listed, so only committed content was read"
     );
   }
-  // Only where a base exists to judge against. With no merge base nothing can
-  // be called newly introduced, which is why the degraded modes report nothing
-  // rather than everything, and reading the tree there would report every site
-  // in an uncommitted file against an author who may not have written one.
-  // Both ask a listing of a commit, HEAD's and the merge base's, and neither
-  // waits on the other. They share the rows: the base sets `from` on the rows
-  // in `status.present`, the same array `pending` carries, and the tree reads
-  // it only once both are done.
-  const [pending] = await Promise.all([
-    status !== null && mode === "compare" ? onlyInHead(root, status, base.head) : { present: [], deleted: [], removed: [] },
-    resolvePendingBases(root, base.mergeBase, status?.present ?? []),
-  ]);
-  // Generated files leave with the path filter's rejects, by the corpus's own
-  // rule: a regenerated client was a MUST-FIX per site in code nobody writes by
-  // hand, judged against claims the map counted without it. The rule's other
-  // refusals stay in, because a file this run could not read is named rather
-  // than dropped. A symbolic link is not source either: its target is counted
-  // where it is tracked, and read through the link its sites were charged
-  // twice. Asked of the tree, where every examined row stands once the
-  // pending edits are folded in.
-  const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending)
-    .filter((c) => dropOf(c.path) !== "generated" && !isLink(join(root, c.path)));
   const fromTree = examined.filter((c) => c.tree).length;
   if (fromTree) {
     caveat(
@@ -204,12 +173,11 @@ export async function check(cwd, { baseRef = null } = {}) {
       `${fromTree} file(s) were read from the working tree rather than from a commit, so this run answers for the work as it stands`
     );
   }
-  const unread = status !== null && mode !== "compare" ? status.present.length : 0;
-  if (unread) {
+  if (change.unjudged) {
     caveat(
       caveats,
       CAVEATS.PENDING_UNJUDGED,
-      `${unread} file(s) have uncommitted edits this run could not judge, because it found no base to compare them against`
+      `${change.unjudged} file(s) have uncommitted edits this run could not judge, because it found no base to compare them against`
     );
   }
 
@@ -250,9 +218,9 @@ export async function check(cwd, { baseRef = null } = {}) {
     frameworks,
     capabilities,
     pending,
-    removed: new Set([...removed, ...pending.deleted]),
+    removed: change.lost,
     // Every row of the committed diff, corpus or not, and what the map says ships together.
-    rows: diff.rows,
+    rows: change.rows,
     cochange: facts?.layout?.cochange ?? null,
     // Only the two-run comparison establishes that a site is newly introduced,
     // so the degraded mode caps severity for the same reason a stale map does.
@@ -345,7 +313,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // Cursor's and Copilot's directories get the same audit while their target
   // is on, each under its own name.
   const audited = (target) => {
-    const { foreign, unknown, unreadable, escaped, listed } = auditRules(root, knownNames(facts, target), target);
+    const { foreign, unknown, removing, unreadable, escaped, listed } = auditRules(root, facts, target);
     // The scan refuses to write through a link out of the repository; the check
     // has nothing to refuse, so it says what it could not look at. A clean rules
     // directory reported here would be the same lie as a clean diff reported for
@@ -368,9 +336,8 @@ export async function check(cwd, { baseRef = null } = {}) {
         `${unreadable.length} file(s) in ${target.dir} could not be read, so whose they are is unknown`
       );
     }
-    // Still unnamed by the map and still loading, but a killed scan's record lists it, so the next scan removes it.
-    const removing = pendingAmong(facts, target, unknown);
-    return { foreign, unknown, ...(removing.length ? { removing } : {}), rules: { escaped, listed, unreadable } };
+    // Every file the map does not name is reported, and those a killed scan's record means to remove are also named apart.
+    return { foreign, unknown: [...unknown, ...removing].sort(), ...(removing.length ? { removing } : {}), rules: { escaped, listed, unreadable } };
   };
   const { foreign, unknown, removing, rules } = audited(TARGETS.claude);
   const targets = {};
@@ -378,13 +345,12 @@ export async function check(cwd, { baseRef = null } = {}) {
     const { state, reason } = targetStatus(root, target);
     if (state === "on") targets[target.id] = { dir: target.dir, state: turningOff(facts, target) ? "off" : state, ...audited(target) };
     // Unread, and the record says a scan wrote files there: they load whether or not this run saw them.
-    if (state === "unknown" && knownNames(facts, target)?.size) {
+    if (state === "unknown" && recordFor(facts, target).names?.size) {
       caveat(caveats, CAVEATS.RULES_UNLISTED, `${target.dir} could not be read (${reason}), so nothing there was examined`);
       targets[target.id] = { dir: target.dir, state, reason, foreign: [], unknown: [], rules: { escaped: false, listed: false, unreadable: [] } };
     }
   }
 
-  const changedPaths = new Set(changed.map((c) => c.path));
   return {
     schema: CHECK_SCHEMA,
     root,
@@ -397,11 +363,8 @@ export async function check(cwd, { baseRef = null } = {}) {
     // an unreachable one, or a drift range git would not produce.
     drift: stale.drift ?? null,
     changed,
-    // Deletions, apart from `changed` because none has a file to examine. The
-    // tree's count too, and a path `changed` names is counted there.
-    removed: [...new Set(diff.rows.filter((c) => c.status === "D").map((c) => c.path).concat(
-      pending.removed.filter((p) => !changedPaths.has(p))
-    ))],
+    // Deletions, apart from `changed` because none has a file to examine.
+    removed: change.removed,
     examined,
     findings,
     counts: tally(findings),
@@ -477,7 +440,7 @@ async function resolveBase(root, baseRef, caveats) {
   const candidates = (baseRef ? [baseRef] : BASE_REFS).filter((c) => c && !c.startsWith("-"));
   const [isShallow, headAt] = await Promise.all([
     // Unasked is not a whole clone: read as one, a shallow clone is told its base resolves to no commit.
-    askGit(root, ["rev-parse", "--is-shallow-repository"], "whether this clone is shallow"),
+    ask(root, ["rev-parse", "--is-shallow-repository"], "whether this clone is shallow", bounds()),
     // Null is a repository with no commit yet. A HEAD git could not be asked
     // for throws: read as no commit, a typed base that names nothing passes at exit 0.
     commitAt(root, "HEAD", bounds()),
@@ -524,7 +487,7 @@ async function resolveBase(root, baseRef, caveats) {
     if (!asked || sha !== head) return;
     // Any exit code is git's answer, and a name no ref holds prints nothing. Unasked
     // is no answer: read as "names no ref", HEAD's own id passes as a commit id.
-    const fullName = async (ref) => (await askGit(root, ["rev-parse", "--symbolic-full-name", ref], `which ref ${ref} names`)).stdout.trim();
+    const fullName = async (ref) => (await ask(root, ["rev-parse", "--symbolic-full-name", ref], `which ref ${ref} names`, bounds())).stdout.trim();
     const named = await fullName(baseRef);
     // A commit id is known by naming no ref, never by its spelling: `7812` and
     // `facade` are branch names too.
@@ -569,8 +532,8 @@ async function resolveBase(root, baseRef, caveats) {
       const remote = await remoteSha(root, c);
       if (!remote) continue;
       // A fetch that did not happen, for whatever reason, is the next candidate and then the caveat that says so.
-      const fetched = await gitBuffered(root, ["fetch", "--depth=1", "origin", remote], bounds());
-      if (!fetched.ok) continue;
+      const fetched = await ask(root, ["fetch", "--depth=1", "origin", remote], `for ${remote} from origin`, bounds()).catch(unaskedAs(null));
+      if (fetched?.code !== 0) continue;
       const mb = await mergeBase(root, remote, "HEAD");
       // A depth-1 checkout grafts HEAD as a root, so `merge-base` cannot see
       // past it, not even to the commit just fetched. The commit object still
@@ -626,7 +589,7 @@ function shallowNoHistory(caveats) {
 async function refsNamed(root, name) {
   const rules = [name, `refs/${name}`, `refs/tags/${name}`, `refs/heads/${name}`, `refs/remotes/${name}`, `refs/remotes/${name}/HEAD`];
   // Unasked is not "one ref holds it": the name would then go to git's own precedence unseen.
-  const listed = new Set((await askGit(root, ["for-each-ref", "--format=%(refname)", ...rules], `which refs hold the name ${name}`)).stdout.split("\n"));
+  const listed = new Set((await ask(root, ["for-each-ref", "--format=%(refname)", ...rules], `which refs hold the name ${name}`, bounds())).stdout.split("\n"));
   return rules.filter((r) => listed.has(r));
 }
 
@@ -658,8 +621,8 @@ async function remoteSha(root, ref) {
   const branch = ref.replace(/^origin\//, "");
   const wanted = branch === "HEAD" ? "HEAD" : `refs/heads/${branch}`;
   // A remote that did not answer names no commit to fetch, which the caller's caveat says.
-  const ls = await gitBuffered(root, ["ls-remote", "origin", wanted], bounds());
-  for (const line of ls.stdout.split("\n")) {
+  const ls = await ask(root, ["ls-remote", "origin", wanted], `which commit origin holds as ${wanted}`, bounds()).catch(unaskedAs(null));
+  for (const line of (ls?.code === 0 ? ls.stdout : "").split("\n")) {
     const [sha, name] = line.split("\t");
     if (name === wanted && isSha(sha)) return sha;
   }
@@ -672,8 +635,8 @@ async function remoteSha(root, ref) {
  * reads a shallow clone's graft instead and answers that HEAD has none.
  */
 async function recordedParents(root) {
-  const r = await askGit(root, ["cat-file", "commit", "HEAD"], "which parents HEAD's commit records");
-  if (!r.ok) return [];
+  const r = await ask(root, ["cat-file", "commit", "HEAD"], "which parents HEAD's commit records", bounds());
+  if (r.code !== 0) return [];
   // The header ends at the first blank line, and a message can hold a line
   // that reads like one of its fields.
   const header = r.stdout.split("\n\n")[0];
@@ -687,7 +650,7 @@ async function recordedParents(root) {
  */
 async function boundary(root, head) {
   // Unasked is not a clone holding one commit, which the report would word as nothing earlier to compare against.
-  const r = await askGit(root, ["rev-list", "--max-parents=0", head], "for the oldest commit this clone holds");
+  const r = await ask(root, ["rev-list", "--max-parents=0", head], "for the oldest commit this clone holds", bounds());
   const first = r.stdout.trim().split("\n").filter(Boolean).pop();
   if (!first) return null;
   return first === head ? null : first;
@@ -752,8 +715,8 @@ async function absentAt(root, mergeBase, dirs) {
   // Asked of a directory and of one inside it, git lists what the outer one holds and not the outer one, so every directory above an entry is held too.
   const held = new Set();
   for (const named of calls) {
-    const listed = await gitBuffered(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...named], { timeout: GIT.checkTimeoutMs });
-    if (!listed.ok) return null;
+    const listed = await ask(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...named], `which directories ${mergeBase} holds`, { timeout: GIT.checkTimeoutMs }).catch(unaskedAs(null));
+    if (listed?.code !== 0) return null;
     for (const entry of listed.stdout.split("\0")) {
       for (let at = entry; at !== "" && !held.has(at); at = dirOf(at)) held.add(at);
     }
@@ -1002,7 +965,7 @@ async function collect(root, run) {
         const up = !own && area ? ancestorSlot(ancestorsOf, area, f.dimension) : null;
         const dim = own ?? up?.dim;
         if (area && !dim) continue;
-        if (dim && outsideScope(area, dim, path)) continue;
+        if (dim && outsideScope(dim, path)) continue;
         // Capped at FIX, whatever the ancestor's own baseline says. MUST-FIX
         // means the map told this file's author and they are the first to break
         // it; the ancestor's area file is not delivered to this directory, so
@@ -1267,7 +1230,7 @@ const spokenClaim = (claim, area, dim) =>
 
 // A slot whose scope names the kinds it was counted over was never counted over
 // a file of another kind, so it raises nothing there at any severity.
-const outsideScope = (area, dim, path) => scopeOf(area, dim)?.includes(extOrName(path)) === false;
+const outsideScope = (dim, path) => scopeOf(dim)?.includes(extOrName(path)) === false;
 
 /** How an area's file dropped this slot, `named` or `unnamed`, or false where it printed it. */
 function droppedOf(droppedIn, area, key) {
@@ -1284,7 +1247,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
   const path = job.file.path;
   const nameDim = area && (area.dimensions || []).find((d) => d.key === row.key);
   if (!nameDim || typeof nameDim.learned !== "string" || !CLASSES.includes(nameDim.learned)) return null;
-  if (outsideScope(area, nameDim, path)) return null;
+  if (outsideScope(nameDim, path)) return null;
   // The class was learned over one kind of file, so the other kind expressed no
   // opinion about it. A file this run could not read carries no facets, and its
   // kind is unknown rather than the one an absent facet spells: reading it as a
@@ -1496,7 +1459,7 @@ async function staleness(root, facts, base, unreadable = null) {
   // the ref's tip: its own fork point with HEAD is itself, including on a
   // depth-1 clone where `merge-base` cannot see it, so the drift range is the
   // one the name would have given.
-  const state = await resolveBaseline(root, { baseRef: base.mergeBase ?? base.sha, head: base.head });
+  const state = await resolveBaseline(root, { baseRef: base.mergeBase ?? base.sha, head: base.head, driftOnly: true });
   if (state.status === "unpinned") return { reason: "no baseline pinned" };
   if (state.status === "pin-unreadable") return { reason: `the pin on disk could not be read because ${state.unreadable}` };
   if (state.status === "unreachable") return { reason: "the pinned baseline commit is unreachable" };
@@ -1535,8 +1498,7 @@ async function staleness(root, facts, base, unreadable = null) {
 function ancestorsIndex(areas = []) {
   const up = new Map();
   // A record somebody edited by hand can carry an area with no path at all, and
-  // this runs before anything reads one. Guarded the way `knownNames` guards
-  // its own list: the array is checked, its entries are not.
+  // this runs before anything reads one, so an entry without a path is passed over.
   for (const a of areas.filter((x) => x && typeof x.path === "string")) {
     const above = areas
       .filter((o) => o && typeof o.path === "string")
@@ -1592,13 +1554,6 @@ async function treeSource(root, path) {
 
 // The check's own bounds on a git call, read at the call: a test sets them.
 const bounds = () => ({ maxBytes: GIT.checkMaxBytes, timeout: GIT.checkTimeoutMs });
-
-/**
- * What git answered `question` with under the check's bounds, whatever its
- * exit code: the check reports what git would not determine. It throws
- * `Unasked` where git gave no exit code, which is no answer to report (F29).
- */
-const askGit = async (root, args, question) => answered(await gitBuffered(root, args, bounds()), question);
 
 function tally(findings) {
   const counts = { "MUST-FIX": 0, FIX: 0, NIT: 0 };

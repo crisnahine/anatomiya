@@ -658,6 +658,18 @@ test("an omission is reported only where the map stated the claim", needsRuby, a
   assert.deepEqual(ask(unsaid), []);
 });
 
+test("a class with no base is reported only where the map stated the base", needsRuby, async (t) => {
+  // The site-by-site twin of the grouped rule above: an omission says "you
+  // should have written X", which is said only where the map said X.
+  const src = await rubyRevision(t, "class W\nend\n");
+  const said = area(stated("class_base", { learned: "ApplicationRecord" }));
+  const unsaid = area({ key: "class_base", learned: "ApplicationRecord", directive: false, states: null });
+
+  const ask = (slot) => only("class_base", newlyIntroduced({ area: slot, path: "app/w.rb", lang: "ruby", head: src, base: null }));
+  assert.equal(ask(said).length, 1);
+  assert.deepEqual(ask(unsaid), []);
+});
+
 test("a base spelled relative to the nesting it is written in is the learned one, as the fold reads it", needsRuby, async (t) => {
   // The fold resolves a bare constant against the site's nesting (C30), and
   // compared as written the check flagged every class the map counted.

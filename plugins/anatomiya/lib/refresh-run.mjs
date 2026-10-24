@@ -12,8 +12,8 @@ import { runPin, runScan } from "./commands.mjs";
 import { gitRoot } from "./corpus.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
 import { createdAlone, lockContent, refreshBlockers, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
-import { atomic } from "./store.mjs";
-import { answered, BASE_REFS, Unasked, caseMagic, commitAt, failureOf, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
+import { atomic, quietUnlink } from "./store.mjs";
+import { ask, askWhether, BASE_REFS, Unasked, caseMagic, commitAt, gitStreamed, headSha, operationUnfinished, shaReachable, unaskedAs } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { carriedVerdict, checkerStamp, verdictStamp } from "./semantic.mjs";
@@ -74,18 +74,16 @@ const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
  * and who this clone commits as are held as `unread` instead. A failure after
  * the stamp is read, a could-not-ask included, is a failed refresh of that
  * stamp: it is recorded with its text and waits out the retry clock.
- *
- * `git` is a test seam with one use: it answers whether a target's overview
- * is committed, which only a git that fails on that question can prove.
  */
-export async function refreshRepository(root, { scan = runScan, pin = runPin, git = gitBuffered } = {}) {
+export async function refreshRepository(root, { scan = runScan, pin = runPin } = {}) {
   const store = resolveInside(root, STORE_DIR);
   if (store === null) return { reason: "outside", pinned: false };
   // Only a checkout's own root: a scan resolves the root from wherever it is
   // started and writes there, so a worker handed a directory below one scanned
   // the enclosing checkout, which never opted in (A24).
-  const top = await gitBuffered(root, ["rev-parse", "--show-toplevel"]);
-  if (!top.ok || realpathOf(top.stdout.trim()) !== realpathOf(root)) return { reason: "outside", pinned: false };
+  // A top git could not be asked for reads as somewhere else, and the worker leaves.
+  const top = await ask(root, ["rev-parse", "--show-toplevel"], "where this checkout's top is").catch(unaskedAs(null));
+  if (top?.code !== 0 || realpathOf(top.stdout.trim()) !== realpathOf(root)) return { reason: "outside", pinned: false };
   const facts = readFacts(root).facts;
   if (!facts) return { reason: "no-map", pinned: false };
   if (await mapTracked(root)) return { reason: "tracked", pinned: false };
@@ -112,7 +110,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
     let round;
     let more;
     try {
-      round = await passes(root, store, { scan, pin, git });
+      round = await passes(root, store, { scan, pin });
     } finally {
       release(lock);
       // Taken where the round threw too: left, it costs a later worker a pass nobody asked for.
@@ -127,7 +125,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin, gi
 }
 
 /** Follow the pin, then rescan until HEAD holds still or the passes run out. */
-async function passes(root, store, { scan, pin, git }) {
+async function passes(root, store, { scan, pin }) {
   const { accepted, held } = await followPin(root, pin);
   const pinned = accepted !== null;
   for (let pass = 0; pass < PASSES; pass++) {
@@ -145,14 +143,13 @@ async function passes(root, store, { scan, pin, git }) {
     }
     let stopped = [];
     try {
-      const leaveAlone = await committedTargets(root, git);
+      const leaveAlone = await committedTargets(root);
       // A checker the last run measured as degraded, with nothing it reads
       // moved since, comes out the same and costs most of the scan. So does one
       // that failed twice in a row; the scan runs one that failed once. A scan run
-      // by hand is handed no verdict and measures. The stamp reads the root
-      // config, so it is taken only where there is a verdict to compare.
+      // by hand is handed no verdict and measures.
       const recorded = readFacts(root).facts?.semantic ?? null;
-      const carried = recorded?.status === "degraded" ? carriedVerdict(recorded, verdictStamp(root, buildVersion())) : null;
+      const carried = carriedVerdict(recorded, () => verdictStamp(root, buildVersion()));
       const options = { ...(leaveAlone.length > 0 ? { leaveAlone } : {}), ...(carried !== null ? { carried } : {}) };
       stopped = stoppedIn(await (Object.keys(options).length > 0 ? scan(root, options) : scan(root)));
     } catch (err) {
@@ -177,9 +174,11 @@ async function passes(root, store, { scan, pin, git }) {
  * checkout that had not moved. What the last automatic pin accepted is kept.
  * `before` is the stamp taken before the scan started: where the checkout moved
  * since, the map is older than the stamp and nothing is recorded, so the next
- * refresh rescans. Never throws: the scan it follows has already succeeded.
+ * refresh rescans. `scanned` is the scan's answer, whose plan names the
+ * directories it left stopped, which the refresh retries as it does its own.
+ * Never throws: the scan it follows has already succeeded.
  */
-export async function noteScan(root, before) {
+export async function noteScan(root, before, scanned) {
   try {
     const store = resolveInside(root, STORE_DIR);
     if (store === null) return;
@@ -188,7 +187,7 @@ export async function noteScan(root, before) {
     const stamp = await stampOf(root);
     if (stamp === null || stamp !== before) return;
     const previous = readRecord(join(store, basename(REFRESH_STATE))).record;
-    writeState(store, { stamp, ok: true, error: null, pinned: previous?.pinned ?? null, held: previous?.held ?? null });
+    writeState(store, { stamp, ok: true, error: null, pinned: previous?.pinned ?? null, held: previous?.held ?? null, stopped: stoppedIn(scanned) });
   } catch {
     // Nothing to record; the next refresh rescans, which is the old behaviour.
   }
@@ -282,8 +281,7 @@ async function followPin(root, pin) {
     // Newer than this checkout: the remote was rewound, or this clone is
     // behind the one that pinned. Either way the pin does not move backwards.
     // Exit code 1 is git saying it is not. Unasked, the pin stays where it is.
-    const newer = await asked(root, ["merge-base", "--is-ancestor", head, from], `whether the pin at ${from} is newer than ${head}`);
-    if (newer.ok) return none;
+    if (await askWhether(root, ["merge-base", "--is-ancestor", head, from], `whether the pin at ${from} is newer than ${head}`)) return none;
   }
   const made = await madeHereOnLine(root, from, head);
   if (made === "") return hold("unread", head);
@@ -305,9 +303,6 @@ async function followPin(root, pin) {
     return none;
   }
 }
-
-/** What git answered `question` with, whatever its exit code. It throws `Unasked` where git gave none (F29). */
-const asked = async (root, args, question) => answered(await gitBuffered(root, args), question);
 
 // Reflog entries that create no commit; every other entry is a commit made
 // here, since a list of what creates commits missed each spelling git gives a
@@ -389,8 +384,8 @@ async function madeHereOnLine(root, from, to) {
  */
 async function committerEmail(root) {
   // Unasked is not a clone with no identity: the walk that called is then unread, and the pin held.
-  const r = await asked(root, ["var", "GIT_COMMITTER_IDENT"], "who this clone commits as");
-  const email = r.ok ? /<([^>]*)>/.exec(r.stdout)?.[1]?.trim().toLowerCase() : "";
+  const r = await ask(root, ["var", "GIT_COMMITTER_IDENT"], "who this clone commits as");
+  const email = r.code === 0 ? /<([^>]*)>/.exec(r.stdout)?.[1]?.trim().toLowerCase() : "";
   return email ? email : null;
 }
 
@@ -411,8 +406,8 @@ async function clonedAt(root) {
     // No such file, which a clone made without templates leaves.
   }
   // Unasked, the walk that called is unread, as for the identity.
-  const log = await asked(root, ["reflog", "show", "--date=unix", "--format=%gd", "main-worktree/HEAD"], "when this clone's oldest reflog entry was written");
-  const oldest = log.ok ? (log.stdout.trimEnd().split("\n").pop() ?? "") : "";
+  const log = await ask(root, ["reflog", "show", "--date=unix", "--format=%gd", "main-worktree/HEAD"], "when this clone's oldest reflog entry was written");
+  const oldest = log.code === 0 ? (log.stdout.trimEnd().split("\n").pop() ?? "") : "";
   const at = /@\{(\d+)\}$/.exec(oldest)?.[1];
   if (at !== undefined) times.push(Number(at));
   return times.length > 0 ? Math.min(...times) : null;
@@ -425,8 +420,9 @@ async function clonedAt(root) {
  */
 async function remoteTip(root) {
   const candidates = [...REMOTE_BASES];
-  const remotes = await gitBuffered(root, ["remote"]);
-  const names = remotes.ok ? remotes.stdout.split("\n").map((s) => s.trim()).filter(Boolean) : [];
+  // A remote git could not be asked for names no candidate, and there is then no pin.
+  const remotes = await ask(root, ["remote"], "which remotes this clone has").catch(unaskedAs(null));
+  const names = remotes?.code === 0 ? remotes.stdout.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   if (names.length === 1 && names[0] !== "origin" && /^[A-Za-z0-9._-]+$/.test(names[0])) candidates.push(`${names[0]}/HEAD`);
   for (const ref of candidates) {
     const sha = await commitAt(root, ref);
@@ -449,11 +445,11 @@ async function remoteTip(root) {
  * onto this same commit; anything else with no record is refused.
  */
 async function fetchedHere(root, ref, sha) {
-  const full = await asked(root, ["rev-parse", "--symbolic-full-name", ref], `which ref ${ref} names`);
-  const name = full.ok ? full.stdout.trim() : "";
+  const full = await ask(root, ["rev-parse", "--symbolic-full-name", ref], `which ref ${ref} names`);
+  const name = full.code === 0 ? full.stdout.trim() : "";
   if (!name.startsWith("refs/remotes/")) return "moved-here";
-  const last = await asked(root, ["reflog", "show", "-n1", "--format=%gs", name], `how ${name} last moved`);
-  if (!last.ok) return "no-record";
+  const last = await ask(root, ["reflog", "show", "-n1", "--format=%gs", name], `how ${name} last moved`);
+  if (last.code !== 0) return "no-record";
   const message = last.stdout.trim();
   if (message !== "") return movedByRemote(message) ? "fetched" : "moved-here";
   return (await clonedOnto(root, sha)) ? "fetched" : "no-record";
@@ -461,8 +457,8 @@ async function fetchedHere(root, ref, sha) {
 
 /** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`. It throws where git could not be asked. */
 async function clonedOnto(root, sha) {
-  const log = await asked(root, ["reflog", "show", "--format=%H %gs", "main-worktree/HEAD"], "how this clone was made");
-  if (!log.ok) return false;
+  const log = await ask(root, ["reflog", "show", "--format=%H %gs", "main-worktree/HEAD"], "how this clone was made");
+  if (log.code !== 0) return false;
   const first = log.stdout.trimEnd().split("\n").pop() ?? "";
   return first.startsWith(`${sha} clone: `);
 }
@@ -475,9 +471,9 @@ async function clonedOnto(root, sha) {
  */
 async function mapTracked(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
-  const r = await asked(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`], "whether this repository commits its map");
+  const r = await ask(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`], "whether this repository commits its map");
   // A listing git did not give is not an empty one, which would have the worker write over a committed map.
-  if (!r.ok) throw new Error(`git would not say whether this repository commits its map: ${failureOf(r)}`);
+  if (r.code !== 0) throw new Error(`git would not say whether this repository commits its map: ${r.said}`);
   return r.stdout.length > 0;
 }
 
@@ -490,20 +486,22 @@ async function mapTracked(root) {
  * How the repository folds case is asked first and throws where it could not
  * be: that is after the stamp, so it is a failed refresh of that stamp.
  */
-async function committedTargets(root, git) {
+async function committedTargets(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
   const committed = [];
   for (const t of Object.values(TARGETS)) {
     if (isClaude(t) || targetState(root, t) !== "on") continue;
-    const r = await git(root, ["ls-files", "-z", "--", `${magic}${t.dir}/${overviewName(t)}`]);
-    if (!r.ok || r.stdout.length > 0) committed.push(t.id);
+    const path = `${t.dir}/${overviewName(t)}`;
+    const r = await ask(root, ["ls-files", "-z", "--", `${magic}${path}`], `whether this repository commits ${path}`).catch(unaskedAs(null));
+    if (r?.code !== 0 || r.stdout.length > 0) committed.push(t.id);
   }
   return committed;
 }
 
 async function gitBusy(root) {
-  const r = await gitBuffered(root, ["rev-parse", "--absolute-git-dir"]);
-  return !r.ok || operationUnfinished(r.stdout.trim());
+  // A git directory git could not be asked for reads as busy, and the worker leaves.
+  const r = await ask(root, ["rev-parse", "--absolute-git-dir"], "where this checkout's git directory is").catch(unaskedAs(null));
+  return r?.code !== 0 || operationUnfinished(r.stdout.trim());
 }
 
 function writeState(store, { stamp, ok, error, pinned = null, held = null, stopped = [], at = new Date().toISOString() }) {
@@ -552,15 +550,7 @@ export function acquire(path) {
  * worker's lock for a fourth to take.
  */
 function release(lock) {
-  if (lockContent(lock.path) === lock.content) remove(lock.path);
-}
-
-function remove(path) {
-  try {
-    unlinkSync(path);
-  } catch {
-    // Already gone is released.
-  }
+  if (lockContent(lock.path) === lock.content) quietUnlink(lock.path);
 }
 
 // Exclusive, so a link planted at the path is never followed.

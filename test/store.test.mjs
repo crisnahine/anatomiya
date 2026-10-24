@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, fstatSync, lstatSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { atomic, putBack, replaceAll, stagedPath, writeTemp } from "../plugins/anatomiya/lib/store.mjs";
 import { stagedBy } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
-import { removeTree } from "./platform.mjs";
+import { stubbed } from "./fs-stub.mjs";
+import { needsPosixPermissions, needsSymlinks, removeTree } from "./platform.mjs";
 
 /**
  * The store's file mechanics: a file replaced whole or not at all, and the
@@ -33,6 +34,68 @@ test("the replace never writes through a link planted where its temporary file g
 
   assert.equal(readFileSync(victim, "utf8"), "untouched\n");
   assert.equal(readFileSync(target, "utf8"), "{}\n");
+});
+
+// What mode the file a write lands in had when its bytes went in.
+const writtenModes = (written) => (real, file, ...rest) => {
+  if (typeof file === "number") written.push(fstatSync(file).mode & 0o777);
+  return real(file, ...rest);
+};
+
+test("a file replaced whole keeps its mode, read-only included, and its bytes are never in a file more open than that", needsPosixPermissions, (t) => {
+  // Renamed over it, a 0600 file came back 0644; set after the write, the mode left its bytes readable between the two.
+  const dir = workspace(t);
+
+  // 0664 is wider than a new file under the usual umask of 022 makes, so it is set on the open file before the write.
+  for (const mode of [0o600, 0o664, 0o444]) {
+    const path = join(dir, `settings-${mode.toString(8)}.json`);
+    writeFileSync(path, "{}\n");
+    chmodSync(path, mode);
+    const written = [];
+
+    stubbed("writeFileSync", writtenModes(written), () => atomic(path, '{"a":1}\n'));
+
+    assert.equal(lstatSync(path).mode & 0o777, mode, mode.toString(8));
+    assert.deepEqual(written, [mode], `${mode.toString(8)}: the bytes were written into a file of that mode and no wider`);
+  }
+});
+
+test("a filesystem that refuses a mode change leaves a replaced file narrower, never wider, and still replaces it", needsPosixPermissions, (t) => {
+  const dir = workspace(t);
+  const refuse = () => {
+    throw Object.assign(new Error("EPERM: operation not permitted, fchmod"), { code: "EPERM" });
+  };
+
+  for (const mode of [0o600, 0o664]) {
+    const path = join(dir, `settings-${mode.toString(8)}.json`);
+    writeFileSync(path, "{}\n");
+    chmodSync(path, mode);
+    const written = [];
+
+    stubbed("fchmodSync", refuse, () => stubbed("writeFileSync", writtenModes(written), () => atomic(path, '{"a":1}\n')));
+
+    assert.equal(readFileSync(path, "utf8"), '{"a":1}\n', mode.toString(8));
+    assert.equal(written.length, 1);
+    for (const seen of [written[0], lstatSync(path).mode & 0o777]) assert.equal(seen & ~mode, 0, `${mode.toString(8)}: ${seen.toString(8)} opens no bit the file did not`);
+  }
+});
+
+test("a file put where a link stood takes a new file's own mode, never the link's", needsSymlinks, (t) => {
+  // A replaced file keeps its mode, and a link's is not its target's: read through the link, a 0600 target's would be.
+  const dir = workspace(t);
+  const fresh = join(dir, "fresh.json");
+  atomic(fresh, "{}\n");
+  const elsewhere = join(dir, "elsewhere.json");
+  writeFileSync(elsewhere, "{}\n");
+  chmodSync(elsewhere, 0o600);
+  const target = join(dir, "facts.json");
+  symlinkSync(elsewhere, target);
+
+  atomic(target, "{}\n");
+
+  assert.equal(lstatSync(target).isFile(), true, "the control: the link itself was replaced");
+  assert.equal(lstatSync(target).mode & 0o777, lstatSync(fresh).mode & 0o777);
+  assert.equal(readFileSync(elsewhere, "utf8"), "{}\n", "and what it named is left alone");
 });
 
 test("a link planted at the exact temporary name is refused, not written through", async (t) => {

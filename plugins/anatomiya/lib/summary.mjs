@@ -1,11 +1,12 @@
 import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
-import { oversizedSentence, statedSide } from "./facts.mjs";
+import { oversizedSentence } from "./facts.mjs";
+import { statedSide } from "./slot.mjs";
 import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { listSome, LISTED, PREFIX, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
-import { TARGETS, TARGET_IDS, overviewName } from "./targets.mjs";
+import { TARGETS, TARGET_IDS, isClaude, overviewName } from "./targets.mjs";
 import { statedClaims } from "./cochange.mjs";
 
 /**
@@ -54,6 +55,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
   // A co-change claim an area file carries is stated there; one no area file carries is said by the notice alone.
   const carried = statedClaims(result.layout?.cochange).filter((c) => c.area !== null).length;
   const targets = targetSummaries(result, plan);
+  const claude = plan.targets[TARGET_IDS.find((id) => isClaude(TARGETS[id]))];
 
   return {
     files: result.corpus.files,
@@ -87,7 +89,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // The two causes named apart, the way the overview names them. One folded
     // number printed beside "N files crashed the parser" invited exactly the
     // reading the overview line was fixed to stop.
-    barren: plan.uncovered - plan.orphaned,
+    barren: plan.barren,
     // Tracked files the working tree would not resolve: under a directory the
     // scan may not enter, deleted since the commit, or named in bytes that are
     // not UTF-8. They sat in the escaped count, which nothing prints, and left
@@ -115,22 +117,22 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     ...(result.layout?.cochange?.error ? { cochangeError: result.layout.cochange.error } : {}),
     ...(result.layout?.cochange?.truncated === true ? { cochangeTruncated: true } : {}),
     rules: {
-      foreign: plan.foreign,
-      unknown: plan.unknown,
-      unreadable: plan.unreadableRules,
-      listed: plan.listed,
-      replaced: plan.replaced,
+      foreign: claude.foreign,
+      unknown: claude.unknown,
+      unreadable: claude.unreadableRules,
+      listed: claude.listed,
+      replaced: claude.replaced,
     },
-    removed: plan.remove.length,
+    removed: claude.remove.length,
     // Only where there were any: a scan that stopped part way is the one thing that leaves them.
-    ...(plan.staged?.length ? { stagedRemoved: plan.staged.length } : {}),
+    ...(claude.staged.length ? { stagedRemoved: claude.staged.length } : {}),
     ...(plan.storeStaged?.length ? { storeStagedRemoved: plan.storeStaged.length } : {}),
     // And the ones that would not go: a file somebody holds, or made read-only.
-    ...(plan.stagedLeft?.length ? { stagedLeft: plan.stagedLeft.length } : {}),
+    ...(claude.stagedLeft?.length ? { stagedLeft: claude.stagedLeft.length } : {}),
     ...(plan.storeStagedLeft?.length ? { storeStagedLeft: plan.storeStagedLeft.length } : {}),
     ...(plan.refreshBlocked?.length ? { refreshBlocked: plan.refreshBlocked } : {}),
     ...(plan.oversized?.length ? { oversized: plan.oversized } : {}),
-    wrote: plan.write.length,
+    wrote: claude.write.length,
     // A language read no file of is one of two facts, told apart by whether
     // anything else was read: `blind` is a run that wrote nothing at all, and
     // `uncounted` is one that wrote the rest and left `held` area files alone.
@@ -143,7 +145,8 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
 }
 
 /**
- * What the scan did in each other directory the map goes to, by target id.
+ * What the scan did in each directory the map goes to besides Claude Code's,
+ * whose is the summary's own top level, by target id.
  *
  * A target this scan found off and left off has no entry, whatever its
  * directory holds: that is somebody else's directory until a scan is asked to
@@ -154,20 +157,22 @@ function targetSummaries(result, plan) {
   // An area that states nothing has no file in any directory, so no target lacks one for it.
   const stated = new Set((plan.result ?? result).areas.filter((a) => a.dimensions.length > 0).map((a) => a.path));
   const out = {};
-  for (const [id, t] of Object.entries(plan.targets ?? {})) {
+  for (const [id, t] of Object.entries(plan.targets)) {
     // Left alone for a caller nobody is watching, which is why it was.
-    if (t.leftAlone) continue;
+    if (isClaude(TARGETS[id]) || t.leftAlone) continue;
     const unread = t.state === "unknown";
     const foreign = t.foreign.length + t.unknown.length;
     // One nobody could read is said only where the record names files there.
     // One that could not be written was on, so it is always said.
-    const quiet = unread ? t.names.length === 0 && !t.unwritable : !t.on && t.state === "off" && t.remove.length === 0;
+    // A temporary file an earlier run left is counted with what this one removes.
+    const removed = t.remove.length + t.staged.length;
+    const quiet = unread ? t.names.length === 0 && !t.unwritable : !t.on && t.state === "off" && removed === 0;
     if (quiet) continue;
     out[id] = {
       state: unread || plan.blind ? t.state : t.on ? "on" : "off",
       dir: t.dir,
       wrote: t.write.length,
-      removed: t.remove.length,
+      removed,
       unfiled: t.unfiled.filter((path) => stated.has(path)).length,
       foreign,
       ...(t.unreadableRules.length ? { unreadable: t.unreadableRules } : {}),

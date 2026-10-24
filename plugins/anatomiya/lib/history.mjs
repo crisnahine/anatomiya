@@ -22,7 +22,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 
-import { gitBuffered, gitStreamed } from "./git.mjs";
+import { ask, gitStreamed, unaskedAs } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
 import { resolveInside, STORE_DIR } from "./rules.mjs";
 import { atomic, recordBytes } from "./store.mjs";
@@ -224,8 +224,8 @@ async function openStore(root, walk, history) {
  * will not say reads as tracked.
  */
 async function isTracked(root, walk) {
-  const listed = await gitBuffered(root, ["ls-files", "-z", "--", `:(icase)${STORE_DIR}/${HISTORY_FILES[walk.kind]}`], { env: walk.env });
-  return !listed.ok || listed.stdout !== "";
+  const listed = await ask(root, ["ls-files", "-z", "--", `:(icase)${STORE_DIR}/${HISTORY_FILES[walk.kind]}`], "whether git tracks the history store", { env: walk.env }).catch(unaskedAs(null));
+  return listed?.code !== 0 || listed.stdout !== "";
 }
 
 /**
@@ -284,17 +284,19 @@ export function configValue(config, key) {
 }
 
 async function readBesides(root, env) {
-  const ask = (args) => gitBuffered(root, args, { env });
+  // Unasked is no stamp, as a refusal is: nothing is replayed or kept, and the plain walk answers.
+  const asked = (args, question) => ask(root, args, question, { env }).catch(unaskedAs(null));
+  const said = (r) => r?.code === 0;
   const [version, listed, common, replaced, attributeFiles, systemFile] = await Promise.all([
-    ask(["version"]),
-    ask(["config", "--list", "--null"]),
-    ask(["rev-parse", "--git-common-dir"]),
-    ask(["for-each-ref", "--format=%(refname) %(objectname)", "--", env.GIT_REPLACE_REF_BASE ?? "refs/replace/"]),
+    asked(["version"], "which git this is"),
+    asked(["config", "--list", "--null"], "for the configuration the walk runs under"),
+    asked(["rev-parse", "--git-common-dir"], "where the shared git directory is"),
+    asked(["for-each-ref", "--format=%(refname) %(objectname)", "--", env.GIT_REPLACE_REF_BASE ?? "refs/replace/"], "which replacement refs there are"),
     // Every tracked `.gitattributes` with its blob, at any depth and in any letter case a folding volume would open.
-    ask(["ls-files", "-s", "-z", "--", ":(glob,icase)**/.gitattributes"]),
-    ask(["var", "GIT_ATTR_SYSTEM"]),
+    asked(["ls-files", "-s", "-z", "--", ":(glob,icase)**/.gitattributes"], "which .gitattributes files git tracks"),
+    asked(["var", "GIT_ATTR_SYSTEM"], "where the system's attributes file is"),
   ]);
-  if (![version, listed, common, replaced].every((r) => r.ok)) return null;
+  if (![version, listed, common, replaced].every(said)) return null;
   const config = listed.stdout.split("\0").filter(Boolean);
   const valueOf = (key) => configValue(config, key);
 
@@ -326,10 +328,10 @@ async function readBesides(root, env) {
     if (name === undefined) return "unset";
     // `rev-parse` takes no `--`, so a name that opens with a dash is an option to it.
     if (name.startsWith("-")) return null;
-    const found = await ask(["rev-parse", "--verify", "--quiet", name]);
-    if (found.ok) return found.stdout;
+    const found = await asked(["rev-parse", "--verify", "--quiet", name], `which object ${name} names`);
+    if (said(found)) return found.stdout;
     // Exit code 1 is git saying the name is no object's.
-    return found.code === 1 ? "absent" : null;
+    return found?.code === 1 ? "absent" : null;
   };
   // Where the name is no object's the walk reads no blob either.
   const blob = await idOf(valueOf("mailmap.blob"));
@@ -341,7 +343,7 @@ async function readBesides(root, env) {
   // that git does not track, which only a walk of the tree finds; the system-wide file on a git that
   // cannot name it (before 2.42); and, on Windows with no HOME, the user's file where git's home is
   // not Node's.
-  if (!attributeFiles.ok) return { shared, attributes: null };
+  if (!said(attributeFiles)) return { shared, attributes: null };
   // `<mode> <blob> <stage>`, a tab, the path. Read off the disk as well: git reads the
   // working tree's file, and an edit that is not staged moves no index entry.
   const tracked = attributeFiles.stdout.split("\0").filter(Boolean).map((entry) => entry.slice(entry.indexOf("\t") + 1));
@@ -352,7 +354,7 @@ async function readBesides(root, env) {
   const fallback = env.XDG_CONFIG_HOME ? `${env.XDG_CONFIG_HOME}/git/attributes` : home === undefined ? null : `${home}/.config/git/attributes`;
   const own = named("core.attributesFile") ?? fallback;
   // Exit code 1 is a git told to read no system-wide file, and 129 one that knows no such variable.
-  const system = systemFile.ok ? digestOf(resolve(root, systemFile.stdout.replace(/\r?\n$/, ""))) : systemFile.code === 1 || systemFile.code === 129 ? "unnamed" : null;
+  const system = said(systemFile) ? digestOf(resolve(root, systemFile.stdout.replace(/\r?\n$/, ""))) : systemFile?.code === 1 || systemFile?.code === 129 ? "unnamed" : null;
   // A tree named by a branch moves with the branch, so the commit is stamped and not the name. A name
   // that is no object's is no stamp: git dies on the variable, passes over the key, and an older one reads neither.
   const trees = [await idOf(env.GIT_ATTR_SOURCE), await idOf(valueOf("attr.tree"))];

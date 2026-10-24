@@ -406,6 +406,9 @@ const WORDS = {
       ['@router.get(path="/saved-items")\ndef a():\n    pass\n\n\n@bp.route(rule="/user_list")\ndef b():\n    pass\n', ["saved-items:kebab-case", "user_list:snake_case"]],
       // Django names `path`'s path `route`.
       ['from django.urls import path\n\nurlpatterns = [path(route="saved-items/", view=v)]\n', ["saved-items:kebab-case"]],
+      ['import django.urls\n\nurlpatterns = [django.urls.path("saved-searches/", v)]\n', ["saved-searches:kebab-case"]],
+      // A prefix is only ever passed by its keyword, and a rule that starts with no `/` is some other library's.
+      ['r = APIRouter("/team-members")\napp.add_url_rule("audit-logs", view_func=v)\n', []],
     ],
     java: [
       ['@RestController\n@RequestMapping("/api-keys")\nclass A {\n    @GetMapping(value = {"/saved-items", "/auditLogs/{id}"})\n    public void a() {}\n\n    @PostMapping(path = "/team_members")\n    void b() {}\n}\n', ["api-keys:kebab-case", "saved-items:kebab-case", "auditLogs:camelCase", "team_members:snake_case"]],
@@ -417,6 +420,12 @@ const WORDS = {
       ['@FeignClient(name = "x")\ninterface A {\n    @GetMapping("/saved_items")\n    void a();\n}\n\nclass B {\n    @GetMapping("/audit-logs")\n    void b() {}\n}\n', ["audit-logs:kebab-case"]],
       // In any order of its annotations.
       ['@RequestMapping("/user_accounts")\n@FeignClient(name = "x")\ninterface A {\n    @GetMapping("/saved_items")\n    void a();\n}\n\nclass B {\n    @GetMapping("/audit-logs")\n    void b() {}\n}\n', ["audit-logs:kebab-case"]],
+      // The service a client names is no path.
+      ['@FeignClient("billing-service")\ninterface A {\n    @GetMapping("/saved_items")\n    void a();\n}\n', []],
+      // Spring maps a nested class by its own mapping alone, never its enclosing class's.
+      ['@RequestMapping("/.well-known")\nclass A {\n    @RestController\n    static class Inner {\n        @GetMapping("/saved-items")\n        void a() {}\n    }\n}\n', ["saved-items:kebab-case"]],
+      // And a class nested in a Feign client maps routes of its own.
+      ['@FeignClient(name = "x")\ninterface A {\n    @GetMapping("/saved_items")\n    void a();\n\n    @RestController\n    class Inner {\n        @GetMapping("/audit-logs")\n        void b() {}\n    }\n}\n', ["audit-logs:kebab-case"]],
     ],
     csharp: [
       ['[Route("api-keys/[controller]")]\npublic class A : Controller\n{\n    [HttpGet("saved-items/{id:int}"), Authorize]\n    [Route("~/audit_logs", Name = "team-members")]\n    public void B() { }\n\n    [HttpPost(template: "UserList")]\n    public void C() { }\n}\n', ["api-keys:kebab-case", "saved-items:kebab-case", "audit_logs:snake_case", "UserList:PascalCase"]],
@@ -424,6 +433,9 @@ const WORDS = {
       ['class P\n{\n    [Authorize("saved-items")]\n    void M()\n    {\n        app.MapGet($"/saved-items/{a}", h);\n        app.Get("/saved-items", h);\n        app.MapGet("/audit-logs", h);\n    }\n}\n', ["audit-logs:kebab-case"]],
       // A generic call is named by its method, not its type argument.
       ['class P\n{\n    void M()\n    {\n        app.MapGet<int>("/saved-items", h);\n        app.MapPost<Todo>("/audit_logs", h);\n    }\n}\n', ["saved-items:kebab-case", "audit_logs:snake_case"]],
+      ['public class A : Controller\n{\n    [HttpGetAttribute("saved-items")]\n    public void B() { }\n}\n\nclass P\n{\n    void M()\n    {\n        app.MapGet(pattern: "/audit-logs", handler: h);\n    }\n}\n', ["saved-items:kebab-case", "audit-logs:kebab-case"]],
+      // ASP.NET Core routes a public top-level class only, so a nested class's attributes declare no route; a call is still one.
+      ['public class Outer\n{\n    [Route("api-keys")]\n    public class InnerController : Controller\n    {\n        [HttpGet("saved-items")]\n        public void B() { }\n\n        void M()\n        {\n            app.MapGet("/team-members", h);\n        }\n    }\n}\n', ["team-members:kebab-case"]],
     ],
     rust: [
       ['#[get("/saved-items/<id>")]\nfn a() {}\n\n#[actix_web::post("/audit_logs/{id}")]\nasync fn b() {}\n', ["saved-items:kebab-case", "audit_logs:snake_case"]],

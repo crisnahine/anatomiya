@@ -6,7 +6,7 @@ import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { ASKS_BY_ID, gitAhead, needsGitStub, unasked, exits } from "./git-stub.mjs";
+import { asksById, exitsWhere, scriptGit, unaskedOn, unaskedWhere } from "./git-script.mjs";
 import { needsPosixPermissions, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { scratch } from "./git-worktrees.mjs";
@@ -132,8 +132,9 @@ test("a dry-run scan plans the whole map and puts none of it on disk", async (t)
 
   // The whole map, planned: the overview and this repository's one area file,
   // which is what a real run of this fixture writes. Nothing of it lands.
-  assert.equal(plan.write.length, 2, plan.write.join(", "));
-  assert.ok(plan.write.includes(OVERVIEW_FILE), plan.write.join(", "));
+  const written = plan.targets.claude.write.map((w) => w.name);
+  assert.equal(written.length, 2, written.join(", "));
+  assert.ok(written.includes(OVERVIEW_FILE), written.join(", "));
   assert.equal(summary.dryRun, true);
   assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
 });
@@ -417,8 +418,9 @@ test("a TypeScript repository with a Gemfile still gets its map when ruby is mis
 
   const { plan, summary } = await runScan(dir);
 
-  assert.equal(plan.write.filter((name) => name !== OVERVIEW_FILE).length, 2, plan.write.join(", "));
-  for (const name of plan.write) assert.ok(existsSync(join(dir, RULES, name)), `${name} is on disk`);
+  const written = plan.targets.claude.write.map((w) => w.name);
+  assert.equal(written.filter((name) => name !== OVERVIEW_FILE).length, 2, written.join(", "));
+  for (const name of written) assert.ok(existsSync(join(dir, RULES, name)), `${name} is on disk`);
   const lines = scanLines(summary);
   assert.ok(lines.some((l) => /read no ruby file/.test(l)), lines.join("\n"));
   assert.ok(lines.some((l) => /install Ruby 3\.4 or newer/.test(l)), lines.join("\n"));
@@ -1308,21 +1310,21 @@ test("setup is the only command that runs npm, so a scan, a check and a pin inst
   assert.deepEqual(decls.filter((d) => d.exported && reaches(d)).flatMap((d) => d.names), ["runSetup"]);
 });
 
-test("a scan stops where git could not be asked whether the pinned commit is still there, and writes nothing", needsGitStub, async (t) => {
+test("a scan stops where git could not be asked whether the pinned commit is still there, and writes nothing", async (t) => {
   const dir = repo(t);
   await runPin(dir);
   await runScan(dir);
   const before = claudeTree(dir);
-  gitAhead(t, unasked(ASKS_BY_ID));
+  scriptGit(t, unaskedWhere(asksById));
 
   await assert.rejects(() => runScan(dir), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
 
   assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
 });
 
-test("the summary's line for a walk git could not be asked for carries the question and what ended git", needsGitStub, async (t) => {
+test("the summary's line for a walk git could not be asked for carries the question and what ended git", async (t) => {
   const dir = repo(t);
-  gitAhead(t, unasked("*' rev-parse --verify --quiet origin/HEAD^{commit} '*"));
+  scriptGit(t, unaskedWhere((line) => line.includes(" rev-parse --verify --quiet origin/HEAD^{commit} ")));
 
   const lines = scanLines((await runScan(dir, { dryRun: true })).summary);
 
@@ -1333,84 +1335,84 @@ test("the summary's line for a walk git could not be asked for carries the quest
   );
 });
 
-test("a pinned scan stops where git could not be asked what the base ref names, or for its merge base, and writes nothing", needsGitStub, async (t) => {
+test("a pinned scan stops where git could not be asked what the base ref names, or for its merge base, and writes nothing", async (t) => {
   const dir = repoWithBranch(t);
   await runPin(dir);
   await runScan(dir);
   const before = claudeTree(dir);
 
-  let calls = gitAhead(t, unasked("*' rev-parse --verify --quiet main^{commit} '*"));
+  let calls = scriptGit(t, unaskedWhere((line) => line.includes(" rev-parse --verify --quiet main^{commit} ")));
   await assert.rejects(() => runScan(dir), /^Error: git could not be asked which commit main names: /);
   calls.restore();
 
   // Read as no fork point, the drift is measured to the ref's tip.
-  calls = gitAhead(t, unasked("*' merge-base '*"));
+  calls = scriptGit(t, unaskedWhere((line) => line.includes(" merge-base ")));
   await assert.rejects(() => runScan(dir), /^Error: git could not be asked for the merge base of HEAD and [0-9a-f]{40}: git was ended by SIGTERM/);
   calls.restore();
 
   assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
 });
 
-test("a check stops where git could not be asked for the merge base, and keeps its caveat where git found none", needsGitStub, async (t) => {
+test("a check stops where git could not be asked for the merge base, and keeps its caveat where git found none", async (t) => {
   const dir = repoWithBranch(t);
-  let calls = gitAhead(t, unasked("*' merge-base '*"));
+  let calls = scriptGit(t, unaskedWhere((line) => line.includes(" merge-base ")));
   await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /^Error: git could not be asked for the merge base of [0-9a-f]{40} and [0-9a-f]{40}: git was ended by SIGTERM/);
   calls.restore();
 
-  calls = gitAhead(t, exits("*' merge-base '*", 1));
+  calls = scriptGit(t, exitsWhere((line) => line.includes(" merge-base "), 1));
   const { report } = await runCheck(dir, { baseRef: "main" });
   assert.ok(report.caveats.some((c) => c.message === "no merge base between main and HEAD"), JSON.stringify(report.caveats));
 });
 
-test("a check stops where git could not be asked whether a base that looks like a commit id names a ref", needsGitStub, async (t) => {
+test("a check stops where git could not be asked whether a base that looks like a commit id names a ref", async (t) => {
   // Read as "names no ref", an unasked name lets HEAD's own id, or a branch named in hex at HEAD, through as a commit id.
   const dir = repo(t);
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
   writeFileSync(join(dir, "src", "f0.ts"), "export const edited = 1\n");
   assert.equal((await runCheck(dir, { baseRef: head })).report.base.sha, head, "a commit id at HEAD is a base for uncommitted work");
 
-  gitAhead(t, unasked("*' rev-parse --symbolic-full-name '*"));
+  scriptGit(t, unaskedWhere((line) => line.includes(" rev-parse --symbolic-full-name ")));
   await assert.rejects(() => runCheck(dir, { baseRef: head }), new RegExp(`^Error: git could not be asked which ref ${head} names: git was ended by SIGTERM`));
 });
 
-test("a pin stops where git could not be asked for HEAD, before the list is read or after it", needsGitStub, async (t) => {
+test("a pin stops where git could not be asked for HEAD, before the list is read or after it", async (t) => {
   const dir = repo(t);
-  const head = "*' rev-parse --verify --quiet HEAD^{commit} '*";
-  const calls = gitAhead(t, unasked(head));
+  const head = (line) => line.includes(" rev-parse --verify --quiet HEAD^{commit} ");
+  const calls = scriptGit(t, unaskedWhere(head));
   await assert.rejects(() => runPin(dir), /^Error: git could not be asked which commit HEAD names: /);
   calls.restore();
 
   // Answered once, for the commit to pin, and not when it is asked again.
-  const count = join(scratch(t, "anatomiya-pin-count-"), "n");
-  gitAhead(t, `case " $* " in ${head}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -gt 1 ] && kill -TERM $$;; esac`);
+  let asked = 0;
+  scriptGit(t, unaskedWhere((line) => head(line) && ++asked > 1));
   await assert.rejects(() => runPin(dir), /^Error: git could not be asked which commit HEAD names: /);
 
   assert.equal(existsSync(join(dir, PIN_PATH)), false, "no pin was written");
 });
 
-test("a check stops where git could not be asked about its base or about the pinned commit", needsGitStub, async (t) => {
+test("a check stops where git could not be asked about its base or about the pinned commit", async (t) => {
   const dir = repoWithBranch(t);
   await runPin(dir);
   await runScan(dir);
 
-  let calls = gitAhead(t, unasked("*' rev-parse --verify --quiet main^{commit} '*"));
+  let calls = scriptGit(t, unaskedWhere((line) => line.includes(" rev-parse --verify --quiet main^{commit} ")));
   await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /^Error: git could not be asked which commit main names: /);
   calls.restore();
 
-  calls = gitAhead(t, unasked("*' rev-parse --verify --quiet origin/HEAD^{commit} '*"));
+  calls = scriptGit(t, unaskedWhere((line) => line.includes(" rev-parse --verify --quiet origin/HEAD^{commit} ")));
   await assert.rejects(() => runCheck(dir), /^Error: git could not be asked which commit origin\/HEAD names: /);
   calls.restore();
 
-  calls = gitAhead(t, unasked(ASKS_BY_ID));
+  calls = scriptGit(t, unaskedWhere(asksById));
   await assert.rejects(() => runCheck(dir, { baseRef: "main" }), /git could not be asked whether commit [0-9a-f]{40} is still in this repository/);
   calls.restore();
 
   // Read as a repository with no commit, an unasked HEAD lets a base that names nothing through at exit 0.
-  gitAhead(t, unasked("*' rev-parse --verify --quiet HEAD^{commit} '*"));
+  scriptGit(t, unaskedWhere((line) => line.includes(" rev-parse --verify --quiet HEAD^{commit} ")));
   await assert.rejects(() => runCheck(dir, { baseRef: "no-such-branch" }), /^Error: git could not be asked which commit HEAD names: /);
 });
 
-test("a pinned scan stops where git could not be asked what the fork held, and writes nothing", needsGitStub, async (t) => {
+test("a pinned scan stops where git could not be asked what the fork held, and writes nothing", async (t) => {
   // A branch cut before the pin: read as a fork that held none of the pinned paths,
   // the files the base added since close the area as a population change.
   const dir = repo(t);
@@ -1424,14 +1426,14 @@ test("a pinned scan stops where git could not be asked what the fork held, and w
   await runScan(dir);
   git("checkout", "-q", "feat");
   const before = claudeTree(dir);
-  gitAhead(t, unasked("*' ls-tree '*"));
+  scriptGit(t, unaskedWhere((line) => line.includes(" ls-tree ")));
 
   await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked which files [0-9a-f]{40} holds: git ls-tree exited SIGTERM/.test(err.message));
 
   assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
 });
 
-test("a pinned scan stops where git could not be asked what changed since the pin, and writes nothing", needsGitStub, async (t) => {
+test("a pinned scan stops where git could not be asked what changed since the pin, and writes nothing", async (t) => {
   // Read as nothing renamed, an area the branch moved is one made after the pin.
   const dir = repo(t);
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
@@ -1440,61 +1442,55 @@ test("a pinned scan stops where git could not be asked what changed since the pi
   git("mv", "src", "lib");
   git("commit", "-qm", "moved");
   const before = claudeTree(dir);
-  gitAhead(t, unasked("*' diff '*'..'*"));
+  scriptGit(t, unaskedWhere((line) => line.includes(" diff ") && line.includes("..")));
 
   await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked what changed from [0-9a-f]{40} to \S+: git diff exited SIGTERM/.test(err.message));
 
   assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
 });
 
-test("a pinned scan stops where git could not be asked for a pinned blob, and writes nothing", needsGitStub, async (t) => {
+test("a pinned scan stops where git could not be asked for a pinned blob, and writes nothing", async (t) => {
   // Read as absent, the file closes its area as a population change.
   const dir = repo(t);
   await runPin(dir);
   await runScan(dir);
   writeFileSync(join(dir, "src", "f0.ts"), "const a0 = 2\nexport { a0 }\n");
   const before = claudeTree(dir);
-  // The one child and the per-call read behind it, and no other `cat-file`.
-  gitAhead(t, unasked(`*' cat-file --batch '*|*' cat-file blob '[0-9a-f]*`));
+  // The per-call read the one child hands its reads to, and no other `cat-file`.
+  scriptGit(t, unaskedWhere((line) => / cat-file blob [0-9a-f]/.test(line)));
 
   await assert.rejects(() => runScan(dir), (err) => err instanceof Unasked && /^git could not be asked for src\/f0\.ts at [0-9a-f]{40}: git was ended by SIGTERM/.test(err.message));
 
   assert.deepEqual(claudeTree(dir), before, "the map still says what the last scan read");
 });
 
-/** A `case` arm that ends git on the `nth` call matching `pattern`, and on no other. */
-function unaskedOn(t, pattern, nth) {
-  const count = join(scratch(t, "anatomiya-check-count-"), "n");
-  return `case " $* " in ${pattern}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -eq ${nth} ] && kill -TERM $$;; esac`;
-}
-
 // Each was read as an answer: not shallow, not ambiguous, a first commit, no test tracked.
 for (const [what, stub, said] of [
-  ["whether the clone is shallow", () => unasked("*' rev-parse --is-shallow-repository '*"), /^git could not be asked whether this clone is shallow: git was ended by SIGTERM/],
-  ["which refs hold a typed base's name", () => unasked("*' for-each-ref '*"), /^git could not be asked which refs hold the name main: git was ended by SIGTERM/],
-  ["for the oldest commit it holds", () => `${exits("*' merge-base '*", 1)}\n${unasked("*' rev-list --max-parents=0 '*")}`, /^git could not be asked for the oldest commit this clone holds: git was ended by SIGTERM/],
-  ["which tests are tracked", (t) => unaskedOn(t, "*' ls-files -z -- '", 1), /^git ls-files exited SIGTERM/],
+  ["whether the clone is shallow", () => unaskedWhere((line) => line.includes(" rev-parse --is-shallow-repository ")), /^git could not be asked whether this clone is shallow: git was ended by SIGTERM/],
+  ["which refs hold a typed base's name", () => unaskedWhere((line) => line.includes(" for-each-ref ")), /^git could not be asked which refs hold the name main: git was ended by SIGTERM/],
+  ["for the oldest commit it holds", () => (args, line) => exitsWhere((l) => l.includes(" merge-base "), 1)(args, line) ?? unaskedWhere((l) => l.includes(" rev-list --max-parents=0 "))(args, line), /^git could not be asked for the oldest commit this clone holds: git was ended by SIGTERM/],
+  ["which tests are tracked", () => unaskedOn((line) => line.endsWith(" ls-files -z -- "), 1), /^git ls-files exited SIGTERM/],
 ]) {
-  test(`a check stops where git could not be asked ${what}`, needsGitStub, async (t) => {
+  test(`a check stops where git could not be asked ${what}`, async (t) => {
     const dir = repoWithBranch(t);
-    gitAhead(t, stub(t));
+    scriptGit(t, stub());
     await assert.rejects(() => runCheck(dir, { baseRef: "main" }), (err) => err instanceof Unasked && said.test(err.message));
   });
 }
 
-test("a shallow check stops where git could not be asked which parents HEAD records", needsGitStub, async (t) => {
+test("a shallow check stops where git could not be asked which parents HEAD records", async (t) => {
   const origin = repoWithBranch(t);
   const dir = scratch(t, "anatomiya-check-shallow-");
   // Both tips arrive grafted as roots, so no merge base is reached and the commit object is read.
   execFileSync("git", ["clone", "-q", "--depth=1", "--no-single-branch", `file://${origin}`, dir], { stdio: "pipe" });
-  gitAhead(t, unasked("*' cat-file commit HEAD '*"));
+  scriptGit(t, unaskedWhere((line) => line.includes(" cat-file commit HEAD ")));
   await assert.rejects(() => runCheck(dir, { baseRef: "origin/main" }), (err) => err instanceof Unasked && /^git could not be asked which parents HEAD's commit records: git was ended by SIGTERM/.test(err.message));
 });
 
-test("a check says which file it could not read where git could not be asked for its blob, and finds nothing in it", needsGitStub, async (t) => {
+test("a check says which file it could not read where git could not be asked for its blob, and finds nothing in it", async (t) => {
   const dir = repoWithBranch(t);
   await runScan(dir);
-  gitAhead(t, unasked(`*' cat-file --batch '*|*' cat-file blob '[0-9a-f]*`));
+  scriptGit(t, unaskedWhere((line) => / cat-file blob [0-9a-f]/.test(line)));
 
   const { report } = await runCheck(dir, { baseRef: "main" });
 

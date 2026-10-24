@@ -5,7 +5,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { basename, join, dirname } from "node:path";
 
 import { areaCeiling, areaLabel, areaOwner, dirCount } from "./areas.mjs";
-import { langsIn } from "./corpus.mjs";
+import { generatedAt, isCorpusPath, langsIn } from "./corpus.mjs";
 import { language } from "./langs.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { plural } from "./render-layout.mjs";
@@ -381,12 +381,15 @@ function areaBlock(state, population, baseline) {
  * `head` is HEAD's sha where the caller has already resolved it, so every
  * range here ends at the commit that caller is reading.
  *
+ * `driftOnly` leaves out the two reads only the scan uses, the rename map to
+ * HEAD and what the fork held, for the check, which reads the drift alone.
+ *
  * It throws where git could not be asked whether the pinned commit is still
  * here, what a base ref names, for a merge base, for a range or for what the
  * fork held: none of them is a pin past reach, a rename that did not happen
  * or a path the base added (F29).
  */
-export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {}) {
+export async function resolve(root, { pin, baseRef = null, head = "HEAD", driftOnly = false } = {}) {
   // Read here unless handed in. A pin on disk that will not load drops to
   // counts like no pin at all, and carries why, so nothing prints "no baseline
   // pinned" over a pin a human committed.
@@ -431,9 +434,9 @@ export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {})
   // the base moved it and its bytes there differ from the pin's, which is both
   // ranges at once. None of the three reads another's answer.
   const [identity, moved, sinceFork] = await Promise.all([
-    diffRange(root, pin.sha, head),
+    driftOnly ? null : diffRange(root, pin.sha, head),
     base.ok ? driftRange(root, pin.sha, base.sha) : null,
-    laterOnBase(root, pin, head),
+    driftOnly ? new Set() : laterOnBase(root, pin, head),
   ]);
 
   return state({
@@ -446,7 +449,7 @@ export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {})
     baseRef: base.ok ? { ref: base.ref, sha: base.sha, forkPoint: base.forkPoint } : null,
     baseRefReason: base.ok ? null : base.reason,
     renames: identity ? identity.renames : new Map(),
-    drift: moved ? driftIn(areas, moved.changed) : null,
+    drift: moved ? await driftIn(areas, moved, (paths) => generatedAt(root, base.sha, paths)) : null,
     sinceFork,
   });
 }
@@ -474,7 +477,10 @@ async function laterOnBase(root, pin, head) {
   return later;
 }
 
-/** The paths the base moved since the pin and the shared commit both, or null. */
+/**
+ * The paths the base moved since the pin and the shared commit both, with what
+ * was renamed and added as the pin's own range says, or null.
+ */
 async function driftRange(root, pinSha, baseSha) {
   // It throws where git could not be asked: read from the pin in its place, the range is the symmetric one and takes the branch's own commits for the base's (F29).
   const shared = await mergeBase(root, pinSha, baseSha);
@@ -483,7 +489,7 @@ async function driftRange(root, pinSha, baseSha) {
   const differs = await diffRange(root, pinSha, baseSha);
   if (!differs) return since;
   const changed = new Set([...since.changed].filter((rel) => differs.changed.has(rel)));
-  return { ...since, changed };
+  return { ...differs, changed };
 }
 
 function state(o) {
@@ -511,15 +517,32 @@ function state(o) {
 }
 
 /**
- * Drift is files changed inside mapped areas over `<baseline>..<base-ref>`
- * (E6). Files outside every mapped area are not drift: nothing claims them.
+ * Drift is files of the map changed over `<baseline>..<base-ref>` (E6): a
+ * pinned file, or a source file the base added or renamed in. Data, prose, a
+ * fixture or a generated file beside the code is counted by no claim, and was
+ * charged against the pinned population all the same. A rename is one change,
+ * charged where the file went, or where it was where it left every area.
+ * Files outside every mapped area are not drift: nothing claims them.
  */
-function driftIn(areas, changed) {
+async function driftIn(areas, { changed, renames, added }, generated) {
+  const pinned = populationOf(areas);
+  const movedTo = new Map([...renames].map(([to, from]) => [from, to]));
+  const owned = [];
+  for (const path of changed) {
+    if (changed.has(movedTo.get(path))) continue;
+    const from = renames.get(path);
+    const held = pinned.has(from ?? path);
+    if (!held && !((from !== undefined || added.has(path)) && isCorpusPath(path))) continue;
+    const owner = areaOwner(path, areas.keys()) ?? (from === undefined ? null : areaOwner(from, areas.keys()));
+    if (owner !== null) owned.push({ path, owner, held });
+  }
+  // A file the pin did not hold is the corpus's only where no generator wrote it, which its own head says.
+  const fresh = owned.filter((o) => !o.held).map((o) => o.path);
+  const stamped = fresh.length ? await generated(fresh) : new Set();
   const byArea = new Map();
   let total = 0;
-  for (const path of changed) {
-    const owner = areaOwner(path, areas.keys());
-    if (owner === null) continue;
+  for (const { path, owner } of owned) {
+    if (stamped.has(path)) continue;
     byArea.set(owner, (byArea.get(owner) || 0) + 1);
     total++;
   }
@@ -591,22 +614,43 @@ export function baselinePopulation(state, area) {
 
 /**
  * The pinned area a current area descends from, by shared files rather than by
- * path, so a renamed directory still finds itself. An area split across two
- * current areas matches the same pin twice and both report a population change,
- * which is the conservative answer.
+ * path, so a renamed directory still finds itself: the one holding most of its
+ * files, the first in pin order on a tie. An area split across two current
+ * areas matches the same pin twice and both report a population change, which
+ * is the conservative answer.
  */
 function bestMatch(areas, currentByBaselinePath) {
+  const { owners, rank } = pinnedIndex(areas);
+  const hits = new Map();
+  for (const path of currentByBaselinePath.keys()) {
+    for (const entry of owners.get(path) ?? []) hits.set(entry, (hits.get(entry) ?? 0) + 1);
+  }
   let best = null;
-  let bestHits = 0;
+  for (const [entry, n] of hits) {
+    const most = best === null ? 0 : hits.get(best);
+    if (n > most || (n === most && rank.get(entry) < rank.get(best))) best = entry;
+  }
+  return best;
+}
+
+// Built once per pin, so matching an area costs a lookup per file, not a pass over every pinned area.
+const pinnedIndexes = new WeakMap();
+
+/** Which pinned areas hold each pinned file, and each area's place in pin order. */
+function pinnedIndex(areas) {
+  let index = pinnedIndexes.get(areas);
+  if (index) return index;
+  index = { owners: new Map(), rank: new Map() };
   for (const entry of areas.values()) {
-    let hits = 0;
-    for (const path of currentByBaselinePath.keys()) if (entry.files.has(path)) hits++;
-    if (hits > bestHits) {
-      best = entry;
-      bestHits = hits;
+    index.rank.set(entry, index.rank.size);
+    for (const path of entry.files) {
+      const held = index.owners.get(path);
+      if (held) held.push(entry);
+      else index.owners.set(path, [entry]);
     }
   }
-  return bestHits > 0 ? best : null;
+  pinnedIndexes.set(areas, index);
+  return index;
 }
 
 /**

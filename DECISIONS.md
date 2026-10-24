@@ -244,6 +244,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | C65 | No row is built for the other unread classes: a directory name's case, a test title opening with "should", a module-level primitive constant's case, an object literal key's case, an i18n key's segment case and its shape, Rails views' lazy keys, the TODO form, and an error message's final period were measured against the bar and refused | done | [C65](docs/decisions/C65.md) |
 | C66 | No wiring check and no row over a pipeline file is built: an i18n key's presence in the base locale, the content of data-definition files and Dockerfiles, a workflow's extension, and an action pinned to a sha were measured and refused. A migration that ships with its schema edit is already a co-change claim (C55); the half of `schema_matches_migrations` that reads what the schema diff holds stays planned | done | [C66](docs/decisions/C66.md) |
 | C67 | A row that learns its class clears point 3 of the bar a new dimension has to clear when the class differs between repositories of one language, each holding its own at 0.90 or more, since then no single form is that language's default. `endpoint_segment_case`'s Python, C# and Rust halves clear it this way; by the point's letter only its Java half does | done | [C67](docs/decisions/C67.md) |
+| C68 | A migration's SQL is read as PostgreSQL, MySQL and SQLite each read it, and a statement any of the three would run counts; a dollar quote or an `E''` string limits the reading to PostgreSQL | done | [C68](docs/decisions/C68.md) |
 
 ## D. Gates
 
@@ -276,7 +277,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | E3 | Unreachable baseline sha: verify with `git rev-parse --verify --quiet`, then drop to counts-only until a human re-pins. Never fall back to stored counts | done | [E3](docs/decisions/E3.md) |
 | E4 | An area whose candidates all postdate the baseline emits no directive | done | [E4](docs/decisions/E4.md) |
 | E5 | Re-pin is a separate command that prints the population delta it is about to accept. The plugin never suggests it. E11 narrows it for commits already on the remote default branch | done | [E5](docs/decisions/E5.md) |
-| E6 | Drift is files changed in mapped areas from the commit the pin and the base ref share, to the base ref, and whose bytes there differ from the pin's, never `..HEAD` | done | [E6](docs/decisions/E6.md) |
+| E6 | Drift is the files of the map the base changed since the commit it shares with the pin, whose bytes there differ from the pin's: a pinned file, or a source file the base added to a mapped area, with a rename counted once. Never `..HEAD` | done | [E6](docs/decisions/E6.md) |
 | E7 | Carry a rename map from `git diff --find-renames` into the baseline lookup | done | [E7](docs/decisions/E7.md) |
 | E8 | A pinned file this tool cannot read closes the area, unless it cannot be read today either, which makes it a blind spot rather than something the pin lost | done | [E8](docs/decisions/E8.md) |
 | E9 | The head side of a check is read from the working tree wherever the tree differs from the commit, and a file only in the tree is examined like any other file the branch added. The base side stays on `git cat-file` | done | [E9](docs/decisions/E9.md) |

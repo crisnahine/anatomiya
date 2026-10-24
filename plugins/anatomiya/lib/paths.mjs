@@ -10,7 +10,8 @@ import { posix, sep as hostSep, win32 } from "node:path";
  * The slices are string slicing rather than `node:path`, since a corpus path
  * is always posix and `dirname` answers "." at the top level, which is a
  * directory name no repository has. `escapes` and `folded`, at the end, read a
- * host path and a volume's name comparison instead.
+ * host path and a volume's name comparison instead, and `escapeRe` writes a name
+ * as a pattern that matches it alone.
  */
 
 export const baseOf = (rel) => rel.slice(rel.lastIndexOf("/") + 1);
@@ -85,3 +86,6 @@ export const escapes = (rel, sep = hostSep) =>
  * what the case maps decompose.
  */
 export const folded = (name) => name.normalize("NFC").toLowerCase().toUpperCase().toLowerCase().normalize("NFC");
+
+/** `text` as a pattern matching exactly it, which `RegExp.escape` writes from Node 24. */
+export const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

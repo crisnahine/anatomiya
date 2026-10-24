@@ -9,11 +9,11 @@ import { check } from "./check.mjs";
 import { language } from "./langs.mjs";
 import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
-import { answered, caseMagic, failureOf, gitBuffered, headSha } from "./git.mjs";
+import { ask, askWhether, caseMagic, headSha } from "./git.mjs";
 import { encodePath } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
-import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, pendingAmong, PREFIX, RULES_DIR, targetStatus, trackedRulesDir, turningOff } from "./rules.mjs";
+import { auditRules, EXCLUDE_LINES, isMapName, listSome, LISTED, PREFIX, recordFor, RULES_DIR, targetStatus, trackedRulesDir, turningOff } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
@@ -169,9 +169,9 @@ async function refuseUnlikeHead(root) {
   // corpus larger than the tree, and the corpus fixes the area floor for every
   // scan after.
   // Each of the three throws `Unasked` where git gave no exit code, which the refresh worker tells from a refusal (F29).
-  const unmerged = answered(await gitBuffered(root, ["ls-files", "--unmerged", "-z"]), "whether the index holds unmerged paths");
-  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${failureOf(unmerged)}`);
-  const merging = answered(await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]), "whether a merge is in progress").ok;
+  const unmerged = await ask(root, ["ls-files", "--unmerged", "-z"], "whether the index holds unmerged paths");
+  if (unmerged.code !== 0) throw new Error(`could not read whether the index holds unmerged paths: ${unmerged.said}`);
+  const merging = await askWhether(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"], "whether a merge is in progress");
   const inMerge = "a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin";
   if (unmerged.stdout.length > 0) {
     // A rebase, cherry-pick, revert, am or stash pop leaves them too, with no merge to abort.
@@ -187,8 +187,8 @@ async function refuseUnlikeHead(root) {
   const rules = trackedRulesDir(root);
   const exclude = `:(${["exclude", await caseMagic(root)].filter(Boolean).join(",")})`;
   const own = [...(rules === RULES_DIR ? [] : [`${rules}/${PREFIX}*.md`]), ...EXCLUDE_LINES].map((line) => `${exclude}${line}`);
-  const dirty = answered(await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]), "whether the working tree matches HEAD");
-  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${failureOf(dirty)}`);
+  const dirty = await ask(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own], "whether the working tree matches HEAD");
+  if (dirty.code !== 0) throw new Error(`could not read whether the working tree matches HEAD: ${dirty.said}`);
   if (dirty.stdout.length > 0) {
     // Stashing a merge in progress drops the merge.
     throw new Error(merging ? inMerge : "tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
@@ -261,26 +261,23 @@ async function targetLines(cwd) {
   }
   const facts = readFacts(root).facts;
   const lines = [];
-  const claude = pendingAmong(facts, TARGETS.claude, auditRules(root, knownNames(facts)).unknown).length;
+  const claude = auditRules(root, facts).removing.length;
   if (claude > 0) lines.push(removingLine(TARGETS.claude.dir, claude));
   for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
     const { state, reason } = targetStatus(root, target);
-    const known = knownNames(facts, target);
+    const known = recordFor(facts, target).names;
     if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);
     if (state !== "on") continue;
     // The split a scan makes: the files the record names are the map's, and
     // the scan's summary counts every other entry as left there. A clone holds
     // the files and not the record, and there the key and a name a scan gives
     // a file are all there is to go on.
-    const { ours, unknown, foreign, occupied, listed } = auditRules(root, known, target);
-    // A name the record was about to remove is neither: the next scan removes it.
-    const going = pendingAmong(facts, target, unknown);
-    const removing = going.length;
-    const mine = known === null ? unknown.filter((name) => isMapName(name, target) && !going.includes(name)) : ours;
+    const { ours, removing, unknown, foreign, occupied, listed } = auditRules(root, facts, target);
+    const mine = known === null ? unknown.filter((name) => isMapName(name, target)) : ours;
     lines.push(`${target.dir}: ${turningOff(facts, target) ? "off at the next scan" : `on, ${listed ? plural(mine.length, "file") : "could not be listed"}`}`);
-    const others = unknown.length - (known === null ? mine.length : 0) - removing + foreign.length + occupied.length;
+    const others = unknown.length - (known === null ? mine.length : 0) + foreign.length + occupied.length;
     if (others > 0) lines.push(`${otherEntries(target.dir, others)} that a scan neither writes nor removes`);
-    if (removing > 0) lines.push(removingLine(target.dir, removing));
+    if (removing.length > 0) lines.push(removingLine(target.dir, removing.length));
   }
   return lines;
 }

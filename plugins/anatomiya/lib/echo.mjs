@@ -7,11 +7,12 @@
  * replay over kept transcripts walks the window the way a call does.
  */
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
 import { namesIn, readHead } from "./rules.mjs";
 import { createdAlone, mtimeAge, takeDeadLock } from "./lock.mjs";
+import { atomic, quietUnlink } from "./store.mjs";
 import { echoEventOf, parsed, transcriptTail, windowBytes } from "./transcript.mjs";
 
 /** How far back a delivery still counts, in bytes the model reads: about 29.9k tokens at the 6.57 per token measured on 2.1.292 to 2.1.296, A92's distance. */
@@ -26,9 +27,10 @@ export const ECHO_READ_MOST = 1024 * 1024;
 
 // A batch claim this old is no batch's: its delivery has reached the transcript.
 const BATCH_CLAIM_KEPT_MS = 24 * 60 * 60 * 1000;
-// A batch claim, its temp file, its lock, a lock token, or a token's own token: nothing breaks that
-// one, so a call killed holding it left the lock unbreakable until this takes it.
-const ECHO_FILE_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.lock(\.\d+){0,2})?$/;
+// A batch claim, its temp file as this build and an older one name it, its lock, a lock token, or a
+// token's own token: nothing breaks that one, so a call killed holding it left the lock unbreakable until
+// this takes it.
+const ECHO_FILE_NAME = /^[0-9a-f]{16}-[0-9a-f]{12}(\.\d+|\.tmp-\d+-[0-9a-f]{16}|\.lock(\.\d+){0,2})?$/;
 const BATCH_CLAIMS_LISTED_MOST = 4096;
 
 /**
@@ -108,18 +110,13 @@ function batchClaimed(path, transcript, tail, isOurs) {
     // A sibling's batch claim may sit past what this call read; only past the transcript as it is now is stale.
     const now = at !== null && at > tail.end ? (transcriptTail(transcript, ECHO_READ_MOST) ?? tail) : tail;
     if (at !== null && at <= now.end && heldIn(now, isOurs, { batchClaimAt: at })) return false;
-    const temp = `${path}.${process.pid}`;
-    writeFileSync(temp, `${now.end}\n`);
-    renameSync(temp, path);
+    atomic(path, `${now.end}\n`);
   } catch {
     return true;
   } finally {
-    try {
-      unlinkSync(lock);
-    } catch {
-      // Taken out by a call that read it as stale; nothing is left to release. A holder suspended past the
-      // dead-lock age removes whichever lock is there now, and a check before it would only narrow that window.
-    }
+    // Gone already where a call read it as stale. A holder suspended past the dead-lock age removes whichever
+    // lock is there now, and a check before it would only narrow that window.
+    quietUnlink(lock);
   }
   sweep(dirname(path), path);
   return true;

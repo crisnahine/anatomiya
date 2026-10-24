@@ -94,12 +94,12 @@ const COMMANDS = {
       const { noteScan, scanStamp } = await import("../lib/refresh-run.mjs");
       const { scanJson, scanLines } = await import("../lib/summary.mjs");
       const before = opts.dryRun ? null : await scanStamp(cwd);
-      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun, targets: opts.targets });
+      const scanned = await runScan(cwd, { dryRun: opts.dryRun, targets: opts.targets });
       // A scan run by hand is the refresh's answer too: it clears a failed
       // refresh the echo is reporting, and the next refresh has nothing to redo.
-      if (!opts.dryRun) await noteScan(result.root, before);
-      if (opts.format === "json") process.stdout.write(scanJson(summary));
-      else console.log(scanLines(summary).join("\n"));
+      if (!opts.dryRun) await noteScan(scanned.result.root, before, scanned);
+      if (opts.format === "json") process.stdout.write(scanJson(scanned.summary));
+      else console.log(scanLines(scanned.summary).join("\n"));
     },
   },
   check: {

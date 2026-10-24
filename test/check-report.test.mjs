@@ -202,7 +202,7 @@ test("a code no case names is one of the three nobody could force cheaply", () =
   // on the same clone once that caveat named the fetch that fixes it.
   // `RENAMES_SKIPPED` needs a branch past the rename limit the check sets for
   // itself, 7,000 additions against 7,000 deletions; the test git applies is
-  // pinned in `check.test.mjs` through `renamesSkipped` at a limit of one.
+  // pinned in `changeset.test.mjs` through `renamesSkipped` at a limit of one.
   const dir = dirname(fileURLToPath(import.meta.url));
   const suites = readdirSync(dir)
     .filter((f) => f.endsWith(".test.mjs"))

@@ -20,7 +20,7 @@
  * lives: yours, on this machine, not committed.
  */
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
@@ -29,6 +29,7 @@ import { escapes } from "./paths.mjs";
 import { echoDue } from "./echo.mjs";
 import { FACTS_PATH, readLayout, readRecord, schemaProblem } from "./facts.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
+import { atomic } from "./store.mjs";
 
 export { SETTINGS_PATH };
 
@@ -1006,9 +1007,14 @@ export function commitRemoval(root, plan) {
   if (!plan.changed) return plan;
 
   // A file this tool created and that now holds nothing else goes entirely: a
-  // `{}` left behind is a file somebody has to wonder about.
+  // `{}` left behind is a file somebody has to wonder about. Replaced whole, since
+  // a rewrite in place truncates first, and a full disk then left the file empty.
   if (plan.empty) unlinkSync(plan.path);
-  else writeFileSync(plan.path, `${JSON.stringify(plan.settings, null, 2)}\n`);
+  else {
+    // A rename needs only the directory's write bit, so a file its owner made read-only is refused first.
+    accessSync(plan.path, constants.W_OK);
+    atomic(plan.path, `${JSON.stringify(plan.settings, null, 2)}\n`);
+  }
   return plan;
 }
 
