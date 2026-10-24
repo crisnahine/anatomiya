@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-24
+
 Drift counts only the files the map holds, a migration's SQL is read the way each database it can
 run on reads it, a route on a class nested in another no longer takes the outer class's marks, and a
 refresh lock stamped ahead of the clock is judged by its process. An audit of the whole plugin fixed
@@ -5065,7 +5067,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/crisnahine/anatomiya/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/crisnahine/anatomiya/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/crisnahine/anatomiya/compare/v0.15.6...v0.16.0
 [0.15.6]: https://github.com/crisnahine/anatomiya/compare/v0.15.5...v0.15.6
