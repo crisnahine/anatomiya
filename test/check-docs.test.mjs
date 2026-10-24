@@ -1334,7 +1334,7 @@ test("a measurement naming any home directory is failed, the placeholder too, be
 
 test("this machine's home is caught behind the other separator, escaped, and in another case where the filesystem folds it", needsCheckout, (t) => {
   const dir = repoCopy(t);
-  const other = process.platform === "win32" ? homedir().replaceAll("\\", "/") : homedir().replaceAll("/", "\\\\");
+  const other = process.platform === "win32" ? homedir().replaceAll("\\", "/") : homedir().replaceAll("/", "\\/");
   const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n${line}\n`);
   append("test/encode.test.mjs", `// copied from "${other}" in a string literal`);
   if (process.platform !== "linux") append("test/fuzz.js", `// copied from ${homedir().toUpperCase()}/x`);
@@ -1344,6 +1344,19 @@ test("this machine's home is caught behind the other separator, escaped, and in 
   assert.equal(status, 1, output);
   assert.match(output, /test\/encode\.test\.mjs: carries the path of the machine it was written on/);
   if (process.platform !== "linux") assert.match(output, /test\/fuzz\.js: carries the path of the machine it was written on/);
+});
+
+test("a Windows path or a URL that spells this machine's home's names is not this machine's home", { ...needsCheckout, ...(process.platform === "win32" ? { skip: "this machine's home is a Windows path here" } : {}) }, (t) => {
+  // A macOS runner's home spells the same names as the Windows runner's 8.3 temp path, and comments naming that path failed there.
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n${line}\n`);
+  append("test/encode.test.mjs", `// tmpdir() answers C:${homedir().replaceAll("/", "\\").toUpperCase()}~1\\Temp on Windows`);
+  append("test/fuzz.js", `// see https://example.test${homedir()}/notes`);
+  append("test/hook.test.mjs", `// "C:${homedir().toUpperCase()}~1/AppData/Local/Temp"`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 0, output);
 });
 
 test("a home directory written with a drive letter and forward slashes is a home directory too", needsCheckout, (t) => {
