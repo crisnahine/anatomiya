@@ -133,12 +133,15 @@ test("a directory with no map of its own is answered with nothing, and nothing i
 test("a relative directory in the payload is no checkout, whatever directory the hook runs in", async (t) => {
   // Resolved against the hook process's own directory, it started a refresh of a checkout the session never named.
   const dir = await scanned(t);
+  const { started, start } = recorder();
+  // Back before the test's cleanup removes the directory: Windows refuses to remove a process's own one.
   const was = process.cwd();
   process.chdir(dir);
-  t.after(() => process.chdir(was));
-  const { started, start } = recorder();
-
-  assert.deepEqual(runRefresh(dir, { hook_event_name: "SessionStart", cwd: ".", source: "startup" }, { start }), {});
+  try {
+    assert.deepEqual(runRefresh(dir, { hook_event_name: "SessionStart", cwd: ".", source: "startup" }, { start }), {});
+  } finally {
+    process.chdir(was);
+  }
   assert.deepEqual(started, []);
 });
 
