@@ -635,7 +635,7 @@ test("the base is not a site on either side, so the scan and the check agree abo
   const corpus = new Set([
     "app/controllers/api/v1/base_controller.rb",
     "app/controllers/api/v1/products_controller.rb",
-    "spec/controllers/api/v1/projects_controller_spec.rb",
+    "spec/controllers/api/v1/products_controller_spec.rb",
   ]);
 
   const hits = pairingHits(corpus, CONTROLLER_SPEC);

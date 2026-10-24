@@ -23,7 +23,7 @@ import { dirname, join } from "node:path";
 import { parseSync } from "oxc-parser";
 
 import { DECISIONS_DIR, escaped, indexRows, readRowFile, rowFiles, shortStatus } from "./decisions.mjs";
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, isFile } from "./entry.mjs";
 import { REL } from "./plugins.mjs";
 import { RELEASES, notesFor, tagFor } from "./release.mjs";
 import { SEMVER } from "./validate.mjs";
@@ -370,7 +370,8 @@ function repositoryFiles() {
     return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
       .split("\n")
       .filter(Boolean)
-      .filter((rel) => existsSync(join(root, rel)));
+      // A regular file only: a link git lists as an entry, such as a linked node_modules, leads to a directory.
+      .filter((rel) => isFile(join(root, rel)));
   } catch (err) {
     return { error: String(err.stderr || err.message).trim().split("\n")[0] };
   }
@@ -581,6 +582,16 @@ const inRecord = (rel) => rel === "DECISIONS.md" || rel.startsWith(`${DECISIONS_
 // A document that records a past state names the paths that state had, and
 // today's path in it would be a claim the measurement never made.
 const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
+
+// The ways a note cited a place in a proprietary build beside its code: `offset 123,456,789`, `offset 1234567` and `BUNDLE@1234567` (G17).
+const BUILD_OFFSET = /\boffsets? \d{1,3}(?:,\d{3}){2,}\b|\boffsets? \d{6,}\b|@\d{6,}\b/i;
+
+// A path under a home directory, less `/Users/me`, the placeholder the README shows output under. It starts
+// a path, so the `users/` of a view or a route is none.
+const HOME_SHAPED = /(?<![\w.-])(?:\/Users|\/home|[A-Za-z]:[\\/]+[Uu]sers)[\\/]+(?!me[\\/])[^\s\\/`'"<>)]+[\\/]/;
+
+// Text this repository ships and does not write, which no rule on house prose reads.
+const THIRD_PARTY = new Set([`${REL.anatomiya}/grammars/LICENSES.md`]);
 
 // A changelog is both at once, and exempting it whole was the wider half of the
 // rule than the reason for it: its released sections are the past, and the
@@ -1084,7 +1095,7 @@ export function checkDocs() {
   // the net under it.
   for (const rel of readdirSync(join(root, "docs/measurements")).filter((f) => f.endsWith(".md"))) {
     const text = read(join("docs/measurements", rel));
-    const hit = text.match(/\/Users\/[^\s/]+|\/home\/[^\s/]+|[A-Z]:\\Users\\[^\s\\]+/);
+    const hit = text.match(/(?<![\w.-])(?:\/Users|\/home|[A-Za-z]:[\\/]+[Uu]sers)[\\/]+[^\s\\/]+/);
     claim(`docs/measurements/${rel}`, !hit, `carries the local path ${hit ? hit[0] : ""}`);
   }
 
@@ -1110,19 +1121,34 @@ export function checkDocs() {
   // in the README is how the output is shown to a reader. What may never ship is
   // this machine's own home, which is the one that got into a public repository
   // before: a note written while reading an installed build carried it nine
-  // times, and the net under the generated documents did not reach it.
+  // times, and the net under the generated documents did not reach it. A note or a
+  // comment carries a path as easily as a document, so every tracked text file is read.
   const HOME = homedir();
+  // A drive's home behind either separator, escaped or not, and a POSIX one behind its own, as JSON may
+  // escape it, and never inside a drive path. From the start of a path, in either case where the filesystem
+  // folds it, and up to a name character, so a home of /Users/me does not claim /Users/meg, and a full stop ends it.
+  const sep = /^[A-Za-z]:/.test(HOME) ? "[\\\\/]+" : "\\\\?/";
+  const HOME_AT =
+    HOME && HOME.length > 3
+      ? new RegExp(`(?<![\\w.-])(?<![A-Za-z]:)${HOME.split(/[\\/]+/).map(escapeRe).join(sep)}(?![\\w-])(?!\\.[\\w-])`, process.platform === "linux" ? "" : "i")
+      : null;
   for (const rel of tracked) {
-    if (!rel.endsWith(".md") || RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
+    if (rel.endsWith(".wasm")) continue;
     const text = read(rel);
-    if (HOME && HOME.length > 3) claim(rel, !text.includes(HOME), "carries the path of the machine it was written on");
+    if (HOME_AT) claim(rel, !HOME_AT.test(text), "carries the path of the machine it was written on");
+    if (!rel.endsWith(".md") || THIRD_PARTY.has(rel)) continue;
+    claim(rel, !BUILD_OFFSET.test(text), "quotes a byte offset into a build");
+    // CI runs on a runner's home, so another machine's home is caught by its shape; the measurements have their own net above.
+    const named = rel.startsWith("docs/measurements/") ? null : text.match(HOME_SHAPED);
+    claim(rel, !named, `names the home directory ${named?.[0]}`);
+    if (RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
     for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
       claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
     }
   }
   // CONTRIBUTING bars a word on an `_Avoid_` line from a claim, a test name and a comment, and the
   // documents keep to it as well.
-  const written = [...tracked].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md");
+  const written = [...tracked].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md" && !THIRD_PARTY.has(rel));
   for (const { rel, line, word, term } of avoidedWords(glossary.terms, written.map((rel) => [rel, CHANGELOG.test(rel) ? unreleased(read(rel)) : read(rel)]))) {
     claim(`${rel}:${line}`, false, `says "${word}", a word the ${term} entry in CONTEXT.md displaces`);
   }

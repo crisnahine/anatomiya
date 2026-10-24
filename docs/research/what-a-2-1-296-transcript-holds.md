@@ -17,11 +17,11 @@ Every record is one JSON line. Two families, told apart by their first key:
   `worktree-state` and a few rarer ones. `queue-operation` is the large one: 1.8 MB over the six
   2.1.296 sessions of the last three days.
 
-Among attachments, the build itself says which the model reads. In the bundle, `r7` computes
-`rendered` for an attachment by converting it to messages and sets it only when the conversion
-yields some (`if(n===void 0)return{}`); `renderedRole` is `user` or `system` beside it. A second
-set, `jUn`, names the attachments the build strips from the message list before a forked agent sees
-it: `prompt_snapshot`, `prompt_render_point`, `deferred_tools_record`.
+Among attachments, the build itself says which the model reads. Read from the bundle, and described
+here rather than quoted: the step that records an attachment converts it to messages and sets
+`rendered` only when the conversion yields some; `renderedRole` is `user` or `system` beside it. A
+second set in the build names the attachments it strips from the message list before a forked agent
+sees it: `prompt_snapshot`, `prompt_render_point`, `deferred_tools_record`.
 
 Counted over 14 days of transcripts (4,376 files):
 
@@ -52,8 +52,8 @@ traced in the bundle.
 
 ## A delivery pushed out by a snapshot, on 2.1.296
 
-This session's own transcript (a subagent): the first delivery ended at offset 267,197; the next
-call's hook read at offset 569,042 and delivered again, 301,845 bytes later. Of those, 78,191 were
+This session's own transcript (a subagent): the first delivery ended at byte 267,197 of the
+transcript; the next call's hook read at byte 569,042 and delivered again, 301,845 bytes later. Of those, 78,191 were
 one `prompt_snapshot`. Without it the distance was 223,654, inside the 262,144-byte window.
 
 ## Bytes per context token, counting only what the model reads

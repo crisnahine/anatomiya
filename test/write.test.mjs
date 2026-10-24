@@ -1836,7 +1836,6 @@ A claim states how many sites conform out of how many were eligible; "no convent
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
 When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.
-Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.
 
 ## Areas (2)
 

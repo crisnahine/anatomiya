@@ -8,14 +8,15 @@ parser engines missing until `setup` runs by hand. This note establishes the fou
 them from the specifications, from Node's own source, from the installed Claude Code build, and from
 runs on this machine.
 
-Every claim below carries its source, in the three kinds the companion notes use: **read**, a string or
-a function recovered from an installed build or from published source, with its offset or its path;
+Every claim below carries its source, in the three kinds the companion notes use: **read**, behaviour
+read from the installed Claude Code build, described here rather than quoted, or published source
+(Node's), quoted with its path;
 **run**, a command and its output on this machine, today; **doc**, a first-party page or a
 specification clause, quoted, with its URL and section number.
 
 Everything was measured on **2026-08-29** with **node v22.22.3**, macOS **26.5.2** build 25F84
 (`Darwin 25.5.0`), **arm64**, against **anatomiya 0.4.2** (`7080e7b`) and **Claude Code 2.1.251**, the
-file `<home>/.local/share/claude/versions/2.1.251`, 197,171,680 bytes. Offsets are into that file.
+file `<home>/.local/share/claude/versions/2.1.251`, 197,171,680 bytes.
 
 ```
 $ node --version
@@ -540,42 +541,24 @@ dependencies](https://code.claude.com/docs/en/plugins-reference#node-js-package-
 
 ### The code, in the installed build
 
-**read**, offsets 162,749,019 and 162,749,783, the table and the function that walks it:
+**read** from the build, the install step holds a table of four lockfiles with the commands the docs
+list: `bun.lock` and `bun.lockb` run `bun install --frozen-lockfile --ignore-scripts`, and
+`npm-shrinkwrap.json` and `package-lock.json` run `npm ci --ignore-scripts`. The two npm rows also
+name `node_modules/.package-lock.json` as the file that records a finished install. The function that
+walks the table lists the plugin root, returns with nothing run if `package.json` is not in the
+listing, then runs the first lockfile's command it finds, in the plugin root, with a 60,000 ms
+timeout, logging a debug line before and after. A non-zero exit returns an error. When no lockfile in
+the table matches and a `yarn.lock` or `pnpm-lock.yaml` is present, it returns a skip reason saying
+yarn and pnpm are not supported; otherwise it returns with nothing run and no error.
 
-```js
-var Qsr=60000,
-HNe=[{lockfile:"bun.lock",command:"bun",args:["install","--frozen-lockfile","--ignore-scripts"]},
-     {lockfile:"bun.lockb",command:"bun",args:["install","--frozen-lockfile","--ignore-scripts"]},
-     {lockfile:"npm-shrinkwrap.json",command:"npm",args:["ci","--ignore-scripts"],
-      completionRecord:"node_modules/.package-lock.json"},
-     {lockfile:"package-lock.json",command:"npm",args:["ci","--ignore-scripts"],
-      completionRecord:"node_modules/.package-lock.json"}];
+Three things the code adds to the prose. The listing is a plain `readdir`, not a recursive walk, so the
+lockfile has to be a top-level entry of the plugin root; one in a parent or a subdirectory does not
+count. The two silent exits are the early return when `package.json` is missing and the final return
+when no lockfile matches, both with no error, which is the "skipped without a log entry" the docs
+name. And the completion record is `node_modules/.package-lock.json`, npm's own hidden lockfile, which
+every cached anatomiya version has.
 
-async function Qae(e){
-  let t; try{t=await Xsr(e)}catch(o){if(Ht(o))return{ran:!1};throw o}
-  let r=new Set(t);
-  if(!r.has("package.json"))return{ran:!1};
-  for(let o of HNe){
-    if(!r.has(o.lockfile))continue;
-    n(`Installing plugin dependencies: ${o.command} ${o.args.join(" ")} in ${e}`);
-    let u=await qe(o.command,o.args,{cwd:e,timeout:Qsr,toolCgroupClass:"plugin"});
-    if(u.code!==0)return{ran:!0,error:`Plugin dependency install failed (${o.command}): ...`.slice(0,500)};
-    return n(`Plugin dependency install succeeded (${o.command}) in ${e}`),{ran:!0}
-  }
-  if(r.has("yarn.lock")||r.has("pnpm-lock.yaml"))
-    return{ran:!1,error:"Skipped: yarn/pnpm lockfiles are not supported (resolution-time hooks bypass --ignore-scripts). Use bun or npm."};
-  return{ran:!1}
-}
-```
-
-Three things the code adds to the prose. `Xsr` is `readdir`, not a recursive walk, so the lockfile has
-to be a top-level entry of the plugin root; one in a parent or a subdirectory does not count. The two
-silent exits are the early `if(!r.has("package.json"))return{ran:!1}` and the final bare
-`return{ran:!1}`, both returning no error, which is the "skipped without a log entry" the docs name.
-And `completionRecord` is `node_modules/.package-lock.json`, npm's own hidden lockfile, which every
-cached anatomiya version has.
-
-`Qsr` is 60000, matching the documented 60-second timeout.
+The timeout is 60,000 ms, matching the documented 60-second timeout.
 
 ### There is no install-time lifecycle hook
 
@@ -599,17 +582,9 @@ does not need it, because the automatic install already ran.
 
 ### What the install copies
 
-**read**, offset 162,798,149, the copy step:
-
-```js
-if(o&&typeof o.source==="string"&&u){
-  let Ke=KNe(u,o.source);
-  n(`Copying source directory ${o.source} for plugin ${t}`);
-  ...
-} else n(`Copying plugin ${t} to versioned cache (fallback to full copy)`),await MHt(e,pe,e,M);
-let Fe=Ks(pe,".git");
-await Tc(Fe);
-```
+**read** from the build, the copy step: when the marketplace entry's `source` is a string, it copies
+that source directory out of the marketplace checkout; otherwise it falls back to a full copy of the
+plugin into the versioned cache. Either way it then removes `.git` from the copy.
 
 A directory copy of the marketplace checkout's plugin source directory, then `.git` is removed. Nothing
 reads `package.json`'s `files`.
@@ -792,7 +767,7 @@ statement is the opposite, for link mode, which expects it:
 - The exact error shape `Error`, `code: "ENOENT"`, `syscall: "uv_cwd"`, `errno: -2`.
 - That `pause()` alone releases the stdin handle enough for the process to exit.
 - That a decode producing an empty string emits no `data` event.
-- The `HNe` lockfile table and `Qae` in build 2.1.251, the non-recursive `readdir`, and
+- The lockfile table and the function that walks it in build 2.1.251, the non-recursive `readdir`, and
   `completionRecord: "node_modules/.package-lock.json"`.
 - That the plugin install is a directory copy with `.git` removed afterwards.
 
@@ -809,7 +784,7 @@ statement is the opposite, for link mode, which expects it:
   performed for this note. The claim rests on the build's code, the docs, and the mtime boundary at
   0.3.0, not on a fresh install watched end to end.
 - **What the debug output says when the install is skipped.** The docs say a missing lockfile is
-  skipped with no log entry, and the code returns `{ran:!1}` with no error. No debug session was run
+  skipped with no log entry, and the code returns that nothing ran, with no error. No debug session was run
   to confirm the silence from the other side.
 - **Whether a JSON payload can carry enough non-ASCII to matter.** The 1 MiB to 3 MiB spread is real
   arithmetic. No real hook payload was measured with a byte-to-unit ratio above 1.
@@ -851,8 +826,8 @@ done
 ls plugins/anatomiya/package-lock.json plugins/anatomiya/npm-shrinkwrap.json 2>&1
 ```
 
-The bundle reads use `LC_ALL=C grep -a -b -o -F -e '<literal>'` for offsets, then a seek and read of a
-few kilobytes around each. Quote the pattern with `-e` when it starts with a dash, or `ugrep` reads it
+The bundle reads use `LC_ALL=C grep -a -b -o -F -e '<literal>'` to find a site, then a seek and read
+of a few kilobytes around it. Quote the pattern with `-e` when it starts with a dash, or `ugrep` reads it
 as an option. The file is 197 MB and a wide context pattern is refused by the stock macOS `grep`.
 
 ## Sources
@@ -880,11 +855,10 @@ Published source, read at v22.22.3:
 - `lib/internal/bootstrap/switches/does_own_process_state.js`, `cachedCwd`, `wrappedCwd`, `wrappedChdir`
 - `lib/path.js`, the posix `resolve`
 
-The installed build, `<home>/.local/share/claude/versions/2.1.251`, 197,171,680 bytes. Named sites: the
-dependency-install table `HNe` at 162,749,019, its log line at 162,749,783 and its yarn/pnpm refusal at
-162,750,227; the plugin copy step at 162,798,149; the cache path helpers and the `.orphaned_at`,
-`.in_use`, `.gcs-sha`, `.links_materialized` markers at 157,433,627; the installed-plugins reader at
-162,713,312.
+The installed build, `<home>/.local/share/claude/versions/2.1.251`, 197,171,680 bytes, read for: the
+dependency-install table, its log lines and its yarn/pnpm refusal; the plugin copy step; the cache path
+helpers and the `.orphaned_at`, `.in_use`, `.gcs-sha`, `.links_materialized` markers; the
+installed-plugins reader.
 
 This repository:
 

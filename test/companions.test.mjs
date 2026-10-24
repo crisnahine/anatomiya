@@ -140,14 +140,14 @@ test("a source root whose tree-less form outruns the spec tree still credits its
 
 test("one file answers the same at that root and at the area inside it", () => {
   // The same invariant the package case pins, on the other trigger:
-  // `app/widgets/widgets/engineering/context.rb` read 1 of 1 at `app/widgets/widgets` and 0 of
+  // `app/widgets/widgets/admin/context.rb` read 1 of 1 at `app/widgets/widgets` and 0 of
   // 1 at the directory it actually sits in.
-  const src = [file("app/widgets/widgets/engineering/context.rb")];
-  const tst = [file("spec/widgets/engineering/context_spec.rb")];
+  const src = [file("app/widgets/widgets/admin/context.rb")];
+  const tst = [file("spec/widgets/admin/context_spec.rb")];
   const byStem = namesakeIndex(tst, src);
 
   assert.equal(
-    namesakeCompanions(src, tst, "app/widgets/widgets/engineering", byStem).with,
+    namesakeCompanions(src, tst, "app/widgets/widgets/admin", byStem).with,
     namesakeCompanions(src, tst, "app/widgets/widgets", byStem).with
   );
 });
@@ -584,13 +584,13 @@ test("a spec in a sibling namespace does not answer this one's file", () => {
   // a measured Rails API: app/services/payments/reports/generate.rb has no spec.
   // Counted against the area's own tail, `reports`, every directory of specs
   // ending in `/reports` answered it, and the shipping spec was credited to
-  // Stripe. The kinds line then said 15 where the pairing claim said 13.
-  const stripe = [
+  // payments. The kinds line then said 15 where the pairing claim said 13.
+  const payments = [
     file("app/services/payments/reports/generate.rb"),
     file("app/services/payments/reports/start.rb"),
     file("app/services/payments/charge.rb"),
   ];
-  const shopify = [
+  const shipping = [
     file("app/services/shipping/reports/generate.rb"),
     file("app/services/shipping/reports/start.rb"),
   ];
@@ -601,16 +601,16 @@ test("a spec in a sibling namespace does not answer this one's file", () => {
   ];
   // The whole corpus's sources, which is what decides contention: the index is
   // built once per scan over every file, and a root only ever holds one side.
-  const byStem = namesakeIndex(specs, [...stripe, ...shopify]);
+  const byStem = namesakeIndex(specs, [...payments, ...shipping]);
 
-  assert.deepEqual(namesakeCompanions(stripe, specs, "app/services/payments", byStem), {
+  assert.deepEqual(namesakeCompanions(payments, specs, "app/services/payments", byStem), {
     with: 1,
     of: 3,
     root: null,
   });
-  // Shopify keeps both: they are its specs, and refusing Stripe must not cost
+  // Shipping keeps both: they are its specs, and refusing payments must not cost
   // the directory that actually owns them.
-  assert.deepEqual(namesakeCompanions(shopify, specs, "app/services/shipping", byStem), {
+  assert.deepEqual(namesakeCompanions(shipping, specs, "app/services/shipping", byStem), {
     with: 2,
     of: 2,
     root: "spec/services/shipping",
@@ -692,21 +692,21 @@ test("ownership is decided within one language, so a Ruby spec cannot be owned b
 
 test("a test file answering two stems is owned once per stem, not once overall", () => {
   // `spec/models/badge_model_spec.rb` is the literal namesake of
-  // `address_model.rb` and the learned-spelling namesake of `address.rb`.
+  // `badge_model.rb` and the learned-spelling namesake of `badge.rb`.
   // Carried as one owner on one shared object, whichever stem was decided last
   // won, and the file whose own name the spec spells read untested.
   const models = [
-    file("app/models/address.rb"),
-    file("app/models/address_model.rb"),
+    file("app/models/badge.rb"),
+    file("app/models/badge_model.rb"),
     file("app/models/company.rb"),
     file("app/models/device.rb"),
     file("app/models/order.rb"),
   ];
-  const sources = [...models, file("app/legacy/address.rb")];
-  const specs = ["address", "company", "device", "order"].map((n) => file(`spec/models/${n}_model_spec.rb`));
+  const sources = [...models, file("app/legacy/badge.rb")];
+  const specs = ["badge", "company", "device", "order"].map((n) => file(`spec/models/${n}_model_spec.rb`));
   const byStem = namesakeIndex(specs, sources);
 
-  assert.deepEqual(namesakeCompanions([file("app/models/address_model.rb")], specs, "app/models", byStem), {
+  assert.deepEqual(namesakeCompanions([file("app/models/badge_model.rb")], specs, "app/models", byStem), {
     with: 1,
     of: 1,
     root: null,

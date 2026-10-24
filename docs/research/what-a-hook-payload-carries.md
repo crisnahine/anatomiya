@@ -13,13 +13,13 @@ the call is about instead. The issue names its own load-bearing unknown:
 **Confirmed.** A real `Read` payload carries `tool_input.file_path` on `PreToolUse` and on
 `PostToolUse`, byte for byte the same string.
 
-Every claim below carries its source, in the companion note's three kinds: **read**, a string or a
-function recovered from the installed build with its byte offset; **run**, a captured payload or a
+Every claim below carries its source, in the companion note's three kinds: **read**, behaviour read from
+the installed build, described here rather than quoted; **run**, a captured payload or a
 command and its output on this machine, today; **doc**, a first-party page, quoted, with its URL.
 
 The build read and run against is **Claude Code 2.1.251**, the file
-`<home>/.local/share/claude/versions/2.1.251`, 197,171,680 bytes. Offsets are into that file and are
-one build's addresses. Every `run` is a headless `claude -p` session with a throwaway `--settings`
+`<home>/.local/share/claude/versions/2.1.251`, 197,171,680 bytes. What is read out of it is one build's
+behaviour. Every `run` is a headless `claude -p` session with a throwaway `--settings`
 file, in `/tmp/hookcap/work`, against `claude-opus-5[1m]` at `--effort medium` under
 `--permission-mode bypassPermissions`.
 
@@ -67,16 +67,9 @@ file. Three sessions. Every row below was captured; nothing is inferred from the
 | `ToolSearch` | none | `query`, `max_results` | n/a |
 | `TodoWrite` | not a tool on this build | | |
 
-`Task` is an alias. **read**, offset 154,672,753, the build's own rename table, right under the string
-`// Version: 2.1.251`:
-
-```js
-var i={Task:"Agent",KillShell:"TaskStop",KillBash:"TaskStop",AgentOutputTool:"TaskOutput",
-       BashOutputTool:"TaskOutput",AgentOutput:"TaskOutput",BashOutput:"TaskOutput",
-       ListPeers:"ListAgents",Brief:"SendUserMessage",ListMcpResources:"ListMcpResourcesTool",
-       ReadMcpResource:"ReadMcpResourceTool",ReadMcpResourceDir:"ReadMcpResourceDirTool"};
-function Vd(e){return Object.hasOwn(i,e)?i[e]:e}
-```
+`Task` is an alias. **read**: the build carries a rename table, next to its version banner, that
+maps old tool names to current ones. `Task` maps to `Agent`, and about a dozen other old names map
+the same way, `KillShell` to `TaskStop` among them. A name not in the table passes through unchanged.
 
 `tool_name` in the payload is the new name, `Agent`. The alias runs on the matcher side, so a matcher
 of `"Task"` still fires on it, but a reader keyed on `tool_name` must expect `Agent`.
@@ -93,14 +86,9 @@ This contradicts nothing in the companion note, which measured `Write`, `Edit` a
 
 ## 2. The path is not always absolute
 
-The tool schemas ask for absolute. **read**, offset 162,025,996, the `Read` input schema:
-
-```js
-ot({file_path:i().describe("The absolute path to the file to read"), offset:..., limit:...})
-```
-
-and offset 161,299,722, `NotebookEdit`: `"The absolute path to the Jupyter notebook file to edit (must
-be absolute, not relative)"`. Asking is not enforcing. Two runs show it.
+The tool schemas ask for absolute. **read**: the `Read` input schema has `file_path`, `offset` and
+`limit`, and describes `file_path` as an absolute path. The `NotebookEdit` schema says its notebook
+path must be absolute, not relative. Asking is not enforcing. Two runs show it.
 
 First, nothing normalises `tool_input` on the way to the hook. **run**, a `Glob` call the model spelled
 `/tmp/hookcap/work/src` while the payload's own `cwd` read `/private/tmp/hookcap/work`. On macOS `/tmp`
@@ -131,22 +119,12 @@ relative path was not observed.
 `cwd` is in every payload, on both events. It is neither the session's start directory nor the tool's
 target.
 
-**read**, offset 162,169,545, the base of every hook payload, and offset 154,838,700, where its `cwd`
-argument comes from:
+**read**: the base of every hook payload sets `session_id`, `transcript_path`, `cwd`, `prompt_id`,
+`permission_mode`, `agent_id`, `agent_type` and `effort`. Its `cwd` comes from a per-agent store kept
+in Node's `AsyncLocalStorage`. The store has a setter that writes the agent's directory, and a reader
+that falls back to the process-wide directory when no agent store is active.
 
-```js
-return{session_id:e.id,transcript_path:om(e.id),cwd:t,prompt_id:$J()??void 0,
-       permission_mode:r,agent_id:o?.agentId,agent_type:u,effort:C}
-```
-
-```js
-var e=new AsyncLocalStorage;
-function JRn(t){let r=e.getStore();if(r)r.cwd=tr(t);else rie(t)}
-function QRn(){return e.getStore()?.cwd??xw()}
-function ee(){try{return QRn()}catch{return Se()}}
-```
-
-Both hook builders pass `ee()` as that argument, so `cwd` is a per-agent value with a setter. Something
+Both hook builders take `cwd` from that reader, so `cwd` is a per-agent value with a setter. Something
 calls the setter.
 
 **run**, the decisive capture. One session, one tool call per row, only the working directory changing:
@@ -182,17 +160,11 @@ kept the model's `/tmp/...`. A comparison between the two has to resolve both si
 
 ## 4. The envelope, and what each event adds
 
-**read**, offsets 160,227,645 and 160,228,284, the two builders, side by side:
-
-```js
-let F={...Ea(o.session,ee(),u,o),hook_event_name:"PreToolUse",
-       tool_name:e,tool_input:r,tool_use_id:t};
-let M={...Ea(u.session,ee(),d,u),hook_event_name:"PostToolUse",
-       tool_name:e,tool_input:r,tool_response:o,tool_use_id:t,duration_ms:A};
-// and a third this plugin also wires, at offset 160,228,746:
-let M={...Ea(u.session,ee(),_,u),hook_event_name:"PostToolUseFailure",
-       tool_name:e,tool_input:r,tool_use_id:t,error:o,is_interrupt:d,duration_ms:x};
-```
+**read**: the builders for the two events, and a third for `PostToolUseFailure` that this plugin
+also wires, each spread the base payload above and add their own fields. `PreToolUse` adds
+`hook_event_name`, `tool_name`, `tool_input` and `tool_use_id`. `PostToolUse` adds the same four plus
+`tool_response` and `duration_ms`. `PostToolUseFailure` adds the same four plus `error`,
+`is_interrupt` and `duration_ms`.
 
 So the field set, all of it confirmed by capture except where marked:
 
@@ -223,29 +195,17 @@ path-first reader does not already have from `tool_input`, and it is only there 
 
 ## 5. Glob and Grep
 
-**read**, offset 161,036,037, the `Glob` schema:
-
-```js
-ot({pattern:i().describe("The glob pattern to match files against"),
-    path:i().optional().describe('The directory to search in. If not specified, the current working
-    directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter
-    "undefined" or "null" - simply omit it for the default behavior. Must be a valid directory path
-    if provided.')})
-```
-
-and offset 161,039,588, the `Grep` schema:
-
-```js
-ot({pattern:i().describe("The regular expression pattern to search for in file contents"),
-    path:i().optional().describe("File or directory to search in (rg PATH). Defaults to current
-    working directory."), glob:..., output_mode:..., ...})
-```
+**read**: the `Glob` schema has a required `pattern` and an optional `path`, which its description
+calls the directory to search in, with the working directory used when it is omitted. The `Grep`
+schema has a required `pattern` (a regular expression), an optional `path`, `glob`, `output_mode` and
+more. Its description of `path` says it is a file or a directory, handed to `rg` as its path
+argument, and that it defaults to the working directory.
 
 Three facts a fix has to hold apart:
 
 1. The key is `path` on both, not `file_path`.
-2. `Glob`'s `path` is a directory. `Grep`'s may be a file **or** a directory. Its own text says so, and
-   it is passed through to `rg` as `PATH`. So a reader that calls `dirname` on it, the way it would for
+2. `Glob`'s `path` is a directory. `Grep`'s may be a file **or** a directory. Its own description says so,
+   and it is passed through to `rg` as the path argument. So a reader that calls `dirname` on it, the way it would for
    a write target, drops a level on every `Grep` aimed at a directory.
 3. It is optional on both, and when it is omitted the tool falls back to the working directory. So this
    is exactly the case where the payload names no place and the `cwd` fallback is the only answer, and
@@ -261,19 +221,10 @@ Both were captured with the key spelled `path`:
 
 ## 6. Bash carries the command and nothing else
 
-**read**, offset 162,988,343, the whole `Bash` input schema:
-
-```js
-ot({command:i().refine(e$,Ucr).describe("The command to execute"),
-    timeout:NL(v().optional()), description:i().optional(),
-    run_in_background:Yb(q().optional()), dangerouslyDisableSandbox:Yb(q().optional()), ...!1,
-    _simulatedSedEdit:f({filePath:i(),newContent:i(),baseHash:i().optional()}).optional()
-      .describe("Internal: pre-computed sed edit result from preview"),
-    ...eEe()})
-```
-
-`eEe` is `function eEe(){return{}}` (**read**, offset 156,847,682), so it adds nothing. Captured
-payloads carried `command` and `description` and nothing else.
+**read**: the whole `Bash` input schema is a required `command`, and optional `timeout`,
+`description`, `run_in_background` and `dangerouslyDisableSandbox`, plus an optional
+`_simulatedSedEdit` object with `filePath`, `newContent` and an optional `baseHash`. The last spread
+in the schema adds no fields. Captured payloads carried `command` and `description` and nothing else.
 
 There is no working directory in the input. The shell's directory reaches the hook through the
 envelope's `cwd`, and section 3 shows that for `Bash` that value is exactly right: it is the shell's
@@ -287,8 +238,9 @@ payload locates that write.** `tool_input` holds the command text and a human de
 list, no exit code, no directory. The only way to a path is to parse the command string, and a path
 inside it may be relative to a `cwd` that a `cd` earlier in the same string has already moved.
 
-One field is worth naming and not relying on: `_simulatedSedEdit` carries a `filePath`. It is marked
-`Internal: pre-computed sed edit result from preview` and appeared in no capture here.
+One field is worth naming and not relying on: `_simulatedSedEdit` carries a `filePath`. Its schema
+description marks it internal, a sed edit computed ahead for a preview, and it appeared in no
+capture here.
 
 ## The raw payloads
 
@@ -453,13 +405,10 @@ First-party documentation:
 
 - [Anthropic, Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 
-The installed build, `<home>/.local/share/claude/versions/2.1.251`, 197,171,680 bytes. Named sites: the
-tool rename table and `Vd` at 154,672,753 and 154,673,083; the cwd store, its setter `JRn` and its
-reader `ee` at 154,838,700; the base payload builder at 162,169,545; the `PreToolUse` builder `Tye` at
-160,227,645; the `PostToolUse` builder `b3e` at 160,228,284; the `PostToolUseFailure` builder at
-160,228,746; the `Glob` schema at 161,036,037; the `Grep` schema at 161,039,588; the `Read` schema at
-162,025,996; the `NotebookEdit` schema at 161,299,722; the `Bash` schema at 162,988,343; `eEe` at
-156,847,682.
+The installed build, `<home>/.local/share/claude/versions/2.1.251`, 197,171,680 bytes. Sites read: the
+tool rename table and its lookup; the per-agent cwd store, its setter and its reader; the base payload
+builder; the `PreToolUse`, `PostToolUse` and `PostToolUseFailure` builders; and the `Glob`, `Grep`,
+`Read`, `NotebookEdit` and `Bash` input schemas.
 
 This repository:
 

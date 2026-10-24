@@ -285,7 +285,7 @@ function columnBlockTable(n, ctx) {
 
 /**
  * The table name Rails derives from a reference name, both spellings a
- * repository writes: `:listing` owes `listings`, `:company` owes `companies`,
+ * repository writes: `:project` owes `projects`, `:company` owes `companies`,
  * `:address` owes `addresses`.
  *
  * Three rules, not an inflector. A table whose name is irregular or uncountable

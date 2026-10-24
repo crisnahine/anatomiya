@@ -192,7 +192,7 @@ function mirrorRoot(sourceDir, testDir, family) {
  * What each test directory adds to the name of the file it covers, beyond the
  * suffix that already says it is a test.
  *
- * A repository is free to call `address.rb`'s spec `badge_model_spec.rb`, and
+ * A repository is free to call `badge.rb`'s spec `badge_model_spec.rb`, and
  * a rule that only knows `_spec` reads half such a directory as untested. The
  * extra is learned rather than listed: it is whatever the directory's own files
  * put between the covered name and the test suffix, kept only where enough of
@@ -214,8 +214,8 @@ function learnStemExtras(byStem, sourceFiles) {
       const stem = namesakeStem(t.rel);
       const lang = language(t.rel);
       if (stems.has(`${lang}\u0000${stem}`)) continue;
-      // The longest covered name this one extends, so `address_model` offers
-      // `_model` for `address` rather than `_address_model` for nothing.
+      // The longest covered name this one extends, so `badge_model` offers
+      // `_model` for `badge` rather than `_badge_model` for nothing.
       for (let i = stem.length - 1; i > 0; i--) {
         if (!stems.has(`${lang}\u0000${stem.slice(0, i)}`)) continue;
         const extra = stem.slice(i);
@@ -369,7 +369,7 @@ function assignPairs(byStem, sourceFiles) {
 
 /**
  * Register each candidate under the name it covers as well as under its own, so
- * a directory writing `badge_model_spec.rb` answers `address.rb` without any
+ * a directory writing `badge_model_spec.rb` answers `badge.rb` without any
  * other reading having to know about it.
  *
  * A record of its own per name, not the same object under a second key: one

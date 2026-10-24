@@ -29,8 +29,8 @@ default: a strings dump of Claude Code 2.1.241 contains no "Do what has been ask
 blocks (measured locally, one build, an absence).
 
 The convention half is already said, twice, by things the agent is holding anyway. Claude Code
-2.1.241's own system prompt contains "Write code that reads like the surrounding code: match its
-comment density, naming, and idiom." (measured locally in the shipped binary). And this repository's
+2.1.241's own system prompt carries an instruction to write code that matches the surrounding code's
+comment density, naming and idiom (measured locally in the shipped binary). And this repository's
 overview already derives up to two roster sentences of exactly that kind: "Match sibling test shape;
 skip tests where siblings have none." and "Match directory granularity; don't extract into a sibling
 module what the directory's files inline." (`plugins/anatomiya/lib/principles.mjs` lines 5 to 16).
@@ -173,22 +173,21 @@ point at.
 
 ### Claude Code 2.1.241 itself, which is a product surface and not a doc page
 
-The strongest verbatim precedent for the convention half is not on any documentation page. It is in
-the shipped Claude Code binary, in the block that composes the user-facing system prompt. From
-`strings` over `~/.local/share/claude/versions/2.1.241`, appearing twice in the coding-agent branch
-of that block:
+The strongest first-party precedent for the convention half is not on any documentation page. It is in
+the shipped Claude Code binary, in the block that composes the user-facing system prompt. Read with
+`strings` over `~/.local/share/claude/versions/2.1.241`, the coding-agent branch of that block carries,
+twice, an instruction to write code that reads like the code around it, matching its comment density,
+naming and idiom.
 
-> Write code that reads like the surrounding code: match its comment density, naming, and idiom.
+Right after it, the same block limits code comments to stating a constraint the code cannot show, and
+rules out comments about where the code came from, what the next line does, or why the change is
+correct. The built-in plan subagent's prompt carries the exploration form of the same idea: it tells the
+subagent to find existing patterns and conventions with `find` and `grep`, and to follow existing
+patterns where they fit.
 
-Immediately after it, in the same block: "Only write a code comment to state a constraint the code
-itself can't show, never to say where it came from, what the next line does, or why your change is
-correct". The built-in plan subagent's prompt carries the exploration form of the same idea: "Find
-existing patterns and conventions using `find`, `grep`" and "Follow existing patterns where
-appropriate".
-
-**Measured** locally, in the sense that the strings are in the binary this machine runs; **vendor
-claim** as to what they mean, since Anthropic publishes no page stating this wording. Two limits
-worth naming. The strings are a build artifact, so their presence is solid and their exact assembly
+**Measured** locally, in the sense that the text is in the binary this machine runs; **vendor
+claim** as to what it means, since Anthropic publishes no page stating this wording. Two limits
+worth naming. The text is a build artifact, so its presence is solid and their exact assembly
 at runtime is not something this note verified. And the same dump found no counterpart on the
 proactive side: `grep` for "Do what has been asked", "nothing more, nothing less", and
 "rather than only suggesting" returns nothing, and every "proactiv" hit is a tool description, a
@@ -228,8 +227,8 @@ the codebase already has. Neither publishes a number for either clause on its ow
 ## What one line can and cannot do
 
 **The convention half is already in the room twice, so it can only add a pointer.** Claude Code
-2.1.241's system prompt says "Write code that reads like the surrounding code: match its comment
-density, naming, and idiom" (measured locally), and the overview itself already prints up to two
+2.1.241's system prompt tells the model to match the surrounding code's comment density, naming and
+idiom (measured locally), and the overview itself already prints up to two
 derived sentences of the same kind from `principles.mjs`: "Match sibling test shape; skip tests where
 siblings have none." and "Match directory granularity; don't extract into a sibling module what the
 directory's files inline." Those two are gated on counts the scan actually made
@@ -327,8 +326,8 @@ the same conditional voice as the line above it. Phrase by phrase:
   multiplies the overeager rate on every shared base model (Delta in [11.9, 17.2] pp)". A conditional also mirrors the head's existing "When unsure what this code
   does", so the two behavioural lines read as a pair of triggers instead of a pile of orders.
 - "follow what this repository already does": the convention half. Its wording alone adds nothing
-  that is not already said: Claude Code says "match its comment density, naming, and idiom" about
-  the code in view, and this map already derives "Match sibling test shape" with counts behind it.
+  that is not already said: Claude Code's system prompt already asks for the comment density, naming
+  and idiom of the code in view, and this map already derives "Match sibling test shape" with counts behind it.
   What the half adds is where it is said. Printed at the top of the file whose body is the counts,
   "what this repository already does" has those counts under it instead of being a sentiment, and it
   is the "conventions that differ from tool defaults" the vendor's own trim check says to keep, and
@@ -486,7 +485,7 @@ First-party prompting and product docs:
 - [Anthropic, Claude Code subagents](https://code.claude.com/docs/en/sub-agents)
 - Claude Code 2.1.241, shipped binary at `~/.local/share/claude/versions/2.1.241`, read with
   `strings`. The user-facing system-prompt block and the built-in plan subagent prompt. Not a
-  documentation page; quoted as a product surface.
+  documentation page; described here as a product surface, not quoted.
 - [OpenAI, GPT-4.1 prompting guide (2025)](https://developers.openai.com/cookbook/examples/gpt4-1_prompting_guide)
 - [OpenAI, GPT-5 prompting guide (2025)](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5_prompting_guide)
 

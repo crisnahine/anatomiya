@@ -294,8 +294,8 @@ a running session gets the new overview on its next prompt or tool call, and a n
 ### The overview, loaded on every turn
 
 `.claude/rules/anatomiya-overview.md` has no `paths` key, so it is in context before the agent
-reads or writes anything. This one and the area file below are from a 2,468 file React and
-TypeScript repository, trimmed from its 127 area lines:
+reads or writes anything. This one and the area file below are from a private 2,468 file React and
+TypeScript repository, trimmed from its 127 area lines, with its file names changed:
 
 ```markdown
 ---
@@ -310,7 +310,6 @@ A claim states how many sites conform out of how many were eligible; "no convent
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
 When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.
-Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.
 
 ## Areas (127)
 
@@ -809,7 +808,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 350 numbered decisions, a line each, and each
+- [DECISIONS.md](DECISIONS.md) is the build contract: 352 numbered decisions, a line each, and each
   links to its own file under [docs/decisions](docs/decisions) with the measurement or the review
   finding that forced it. Why a threshold is where it is, why the parser runs in child processes, why
   no hook carries the map on its own: that is where to look.

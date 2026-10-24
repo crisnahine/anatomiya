@@ -26,7 +26,7 @@ test("a changed map, a compaction and a delivery past the window are each kept",
 
 test("text that is not this plugin's delivery is not counted", () => {
   const quoted = { type: "user", message: { content: [{ type: "tool_result", content: map("A") }] } };
-  assert.deepEqual(replayEcho(lines([quoted, delivered("PONYTAIL MODE"), "{half a line"]), 1024), { made: 0, repeats: 0, kept: 0 });
+  assert.deepEqual(replayEcho(lines([quoted, delivered("OTHER PLUGIN"), "{half a line"]), 1024), { made: 0, repeats: 0, kept: 0 });
 });
 
 test("a map the window still holds is not kept again, even with another map between", () => {

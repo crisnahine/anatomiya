@@ -11,10 +11,9 @@ carries an evidence label:
 - **vendor claim**: a first-party statement by a tool maker about its own product
 - **folklore**: widely reported by practitioners, not yet measured
 
-Build strings are quoted from `~/.local/share/claude/versions/2.1.272` (210,702,192
-bytes), read as latin1 with byte offsets into that file. The build writes its dashes as the escape
-`\u2014`, and the quotes below keep the escape as written. Their presence is **measured** locally. What
-they mean is **vendor claim**, because Anthropic publishes no page for them.
+What the build does was read from `~/.local/share/claude/versions/2.1.272` (210,702,192 bytes), and is
+described here rather than quoted. That the text is there is **measured** locally. What it means is
+**vendor claim**, because Anthropic publishes no page for it.
 
 The starting point, measured in this session at n=1 per case (local data, not proof): the current
 reason, "Before you finish, check what this change adds (<files>). For every function it adds, search
@@ -28,14 +27,14 @@ hard cases is unknown.
 
 ## Summary
 
-The reason reaches the model as a meta user message whose text is `Stop hook feedback:` then a newline
-then the reason (build, below). Nothing wraps it in instructions of its own, so the reason is the
+The reason reaches the model as a meta user message that carries the `Stop hook feedback` label, then a
+newline, then the reason (build, below). Nothing wraps it in instructions of its own, so the reason is the
 whole prompt for that pass.
 
 Anthropic ships wording for exactly this check, and it is not a Stop-hook sentence. The built-in
-`/simplify` and `/code-review` prompts carry a "Reuse" angle: "Flag new code that re-implements
-something the codebase already has", "Grep shared/utility modules and files adjacent to the change",
-"and name the existing helper to call instead". `/simplify` hands that angle to a separate agent with
+`/simplify` and `/code-review` prompts carry a "Reuse" angle: flag new code that does something the
+codebase already does, search the shared and utility modules and the files next to the change, and name
+the existing helper to call instead. `/simplify` hands that angle to a separate agent with
 the diff, then applies the fixes in the main session. The shipped design has two parts: a named search
 scope, and a reader that did not write the code (vendor claim).
 
@@ -80,29 +79,13 @@ finishing". It keeps the conversation going through the same loop protections as
 ([code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks)). **Vendor claim.** The page
 gives no advice on how to word a reason.
 
-**The build.** The JSON mapper turns a block decision into a blocking error whose text is the reason
-(offset 177,588,949, function `Vke`):
+**The build.** The JSON mapper turns a block decision into a blocking error whose text is the reason,
+with a fixed `Blocked by hook` fallback when the reason is missing. The Stop path frames that error by
+putting the event name and a short feedback label in front of it. The stop-hook loop then sends the
+framed text as a meta user message.
 
-```js
-case"block":U.permissionBehavior="deny",U.blockingError={blockingError:e.reason||"Blocked by hook",command:n};break;
-```
-
-The Stop path frames it (offset 168,864,004 and 177,624,989):
-
-```js
-var Xun=` hook feedback:
-`,OVn=["Stop","TeammateIdle","TaskCreated","TaskCompleted"];function oUt(e,n){return`${e}${Xun}${n}`}
-function tst(e){return oUt("Stop",e.blockingError)}
-```
-
-and the stop-hook loop sends it as a meta message (offset 175,641,643 region):
-
-```js
-if(_n.blockingError){let Pn=Ae({content:tst(_n.blockingError),isMeta:!0});Je.push(Pn),yield Pn,ir=!0;
-```
-
-So the model reads exactly `Stop hook feedback:\n<reason>`. **Measured** locally, one build, read not
-run. That is the byte string, not a claim about how the message is rendered to the API. What follows
+So the model reads exactly `Stop hook feedback:`, a newline, and the reason. **Measured** locally, one build, read not
+run. That is the text as the build assembles it, not a claim about how the message is rendered to the API. What follows
 from it: the model gets no framing sentence around the reason, so the reason has to carry its own
 trigger, scope, and exit condition.
 
@@ -110,55 +93,47 @@ trigger, scope, and exit condition.
 
 ### The Reuse angle in `/simplify` and `/code-review`
 
-The angle is a constant (offset 181,317,590):
+The angle is one shared piece of text, three short clauses long: flag new code that redoes something
+the codebase already has, search the shared and utility modules and the files next to the change, and
+point at the function that already exists.
 
-```js
-ue=`Flag new code that re-implements something the codebase
-already has \u2014 Grep shared/utility modules and files adjacent to the change,
-and name the existing helper to call instead.
-`
-```
+In `/simplify` it is one of four angles. The prompt launches four independent review agents at once,
+passes each the diff and one angle, and has each return findings with a file, a line, a one-line
+summary and the concrete cost. A second phase waits for all four, merges findings that point at the
+same line or mechanism, fixes the rest directly, and skips any fix that would change intended
+behaviour, reach well outside the diff, or that looks like a false positive. When the agent tool is
+missing, the prompt tells the main session to work through all four angles itself in one pass and not
+skip one.
 
-In `/simplify` (offset 181,455,195 region) it sits under `### Reuse` inside "Launch **4 independent
-review agents** via the ${_t} tool, all in a single message so they run concurrently. Pass each agent
-the diff and one of the four angles below. Each returns its findings with `file`, `line`, a one-line
-`summary`, and the concrete cost (what is duplicated, wasted, or harder to maintain)." Phase 2: "Wait
-for all four agents to complete, dedup findings that point at the same line or mechanism, and fix each
-remaining one directly. Skip any finding whose fix would change intended behavior, require changes well
-outside the reviewed diff, or that you judge to be a false positive". The fallback when the agent tool
-is missing: "Work through all four angles below yourself, in this same context, in one pass \u2014 do
-not skip an angle for lack of fan-out."
+In `/code-review` the same text sits among the cleanup angles, after the angles that hunt for bugs.
+That prompt runs ten independent finder angles, each surfacing up to eight candidate findings, and
+calls itself recall mode: one vote that was not refuted keeps a finding, and uncertainty is not a
+reason to drop one.
 
-In `/code-review` (offset 181,335,091 region) the same text follows "The angles above hunt for bugs;
-this one and the next two hunt for cleanup in the changed code." That prompt runs "**10 independent
-finder angles**", each surfacing "**up to 8 candidate findings**", and says "This is recall mode \u2014 a
-single non-REFUTED vote carries the finding. Do NOT drop on uncertainty."
-
-The low-effort `/code-review` shows the ceiling of a diff-only pass: "Also flag \u2014 still from the hunk
-alone \u2014 new code that duplicates an existing helper visible in the diff context" under "One tool
-call: read the unified diff ... No subagents, no full-file reads."
+The low-effort `/code-review` shows the ceiling of a diff-only pass. It reads only the unified diff in
+one tool call, with no subagents and no full-file reads, and it can flag a duplicate only of a function
+the diff itself shows.
 
 What the shipped wording does and does not say:
 
-- It scopes the search by place ("shared/utility modules and files adjacent to the change"), not by
+- It scopes the search by place (shared and utility modules, and files next to the change), not by
   behaviour.
-- It asks for a named answer ("name the existing helper"), which is a per-finding evidence rule.
+- It asks for a named answer, the function that already exists, which is a per-finding evidence rule.
 - It does not enumerate the added functions. It hands the diff to the reader.
 - It separates finding from fixing, and puts the finding in a reader that did not write the code.
 
-**Measured** that the strings are in the build; **vendor claim** as to design intent. No published
+**Measured** that the text is in the build; **vendor claim** as to design intent. No published
 number says how often this angle misses.
 
 ### Other reuse wording in the build
 
-Plan mode, final plan (offset 177,767,042): "Reference existing functions and utilities you found that
-should be reused, with their file paths". The remote planning reminder (offset 207,655,014): "Read the
-relevant code, understand how the pieces fit, look for existing functions and patterns you can reuse
-instead of proposing new ones". The coding-agent system prompt (offset 75,908,276): "Write code that
-reads like the surrounding code: match its comment density, naming, and idiom." Nearby (offset
-75,917,648): "Don't add features, refactor, or introduce abstractions beyond what the task requires. A
-bug fix doesn't need surrounding cleanup; a one-shot operation doesn't need a helper." and (offset
-75,920,032) "Prefer editing existing files to creating new ones." No sentence in the main system prompt
+Plan mode's final-plan instructions ask the plan to name the existing functions and utilities that
+should be reused, with their file paths. The remote planning reminder asks the model to read the
+relevant code and look for existing functions and patterns to reuse before proposing new ones. The
+coding-agent system prompt tells the model to write code that matches the surrounding code's comment
+density, naming and idiom. Nearby it tells the model not to add features, refactors or abstractions the
+task does not need, with the examples that a bug fix needs no surrounding cleanup and a one-shot
+operation needs no helper, and to prefer editing existing files over creating new ones. No sentence in the main system prompt
 tells the model to search for an existing function before writing one. **Measured** presence and
 absence in one build; absence in a string search is weaker evidence than presence.
 
@@ -315,8 +290,9 @@ o3-mini achieving a 0.943 F1 score, their performance significantly decreased in
 datasets" ([arXiv:2511.01176, 2025](https://arxiv.org/abs/2511.01176)). **Measured**, on older models
 and on given pairs, which is easier than finding the pair in a repository.
 
-**The shipped wording scopes by place.** Anthropic's Reuse angle names "shared/utility modules and files
-adjacent to the change". It does not name behaviour. **Vendor claim** (build string).
+**The shipped wording scopes by place.** Anthropic's Reuse angle names shared and utility modules and
+the files next to the change as the places to search. It does not name behaviour. **Vendor claim**
+(build text).
 
 **Behaviour words have no measurement.** No source found tests "search by the calls it makes and what it
 returns" against "search by name". The argument for it: the duplicates agents leave are Type-4 (the
@@ -327,8 +303,8 @@ inference. The argument against: a vaguer search instruction invites the tool ov
 ## Lever 3: written evidence per item
 
 **Vendor guidance favours it.** "Have Claude show evidence rather than asserting success" (Claude Code
-best practices). "If it can't find a quote, it must retract the claim" (reduce hallucinations). Shipped
-wording asks for a name: "name the existing helper to call instead". **Vendor claim.**
+best practices). "If it can't find a quote, it must retract the claim" (reduce hallucinations). The shipped
+wording asks the reader to point at the function that already exists. **Vendor claim.**
 
 **The cost is also first-party.** The Opus 5 page says to remove explicit verification instructions
 because they "cause over-verification". A per-item written log is a verification instruction by shape.
@@ -384,10 +360,10 @@ run `git diff -U0` itself and name the added functions. That turns lever 1 from 
 into "check each of these", the per-item shape CoVe and TICK measured, without the recall step the decay
 studies say loses items. Inference from the sources, not measured.
 
-**A hunk-only view is not enough to find the original.** The low-effort `/code-review` flags only "new
-code that duplicates an existing helper visible in the diff context". The original of a Type-4 clone is
+**A hunk-only view is not enough to find the original.** The low-effort `/code-review` can flag a
+duplicate only of a function the diff itself shows. The original of a Type-4 clone is
 by definition somewhere else. The list of added functions tells the model what to check; it does not do
-the search. **Vendor claim** (build string) plus inference.
+the search. **Vendor claim** (build text) plus inference.
 
 **The list costs tokens every block.** The hooks page for a local command hook gives no length cap for a
 Stop `reason` in the passages read. `what-a-pretooluse-hook-can-do.md` found a 2,000-character cap on
@@ -453,7 +429,8 @@ will never resolve") and CoVe's lost positives both argue for.
 - Everything in A, plus:
 - "write one line: the closest existing function with its file and line, or the searches that found
   none": "show evidence rather than asserting success" (Claude Code), "cite quotes ... If it can't find a
-  quote, it must retract the claim" (reduce hallucinations), and "name the existing helper" (the build).
+  quote, it must retract the claim" (reduce hallucinations), and the shipped angle's rule to name the
+  existing helper (the build).
 - Risk to watch: over-verification per the Opus 5 page, and forced near matches.
 - It drops A's exit sentence to stay short. Measure whether the model still finishes cleanly when nothing
   matches, because the loop cap is 8 blocks.
@@ -462,20 +439,23 @@ will never resolve") and CoVe's lost positives both argue for.
 
     Before you finish, give one subagent this change's diff and these added functions: <list>. Have it grep shared and utility modules, files near the change, and code making the same calls, then name any existing function that does the same job. Call each named function and delete the copy it replaces. If it names none, finish without changing anything.
 
-- "give one subagent this change's diff": `/simplify`'s "Pass each agent the diff"; Fable 5 "fresh-context
+- "give one subagent this change's diff": `/simplify` passes each review agent the diff; Fable 5 "fresh-context
   verifier subagents tend to outperform self-critique"; Claude Code "won't be biased toward code it just
   wrote"; CoVe factored over joint; Stechly external over self.
-- "grep shared and utility modules, files near the change": the shipped Reuse angle's scope, near
-  verbatim.
+- "grep shared and utility modules, files near the change": the shipped Reuse angle's scope, in this
+  note's own words.
 - "and code making the same calls": lever 2, added. Unmeasured.
-- "name any existing function": "name the existing helper to call instead".
+- "name any existing function": the shipped angle's rule to point at the function that already exists.
 - "one subagent": the Opus 5 page's "If one subagent can complete the task, use one rather than several".
 - Risk to watch: the Opus 5 page says to remove "use a subagent to verify". This is the candidate most
   likely to cost more tokens.
 
 ### D. Anthropic's shipped sentence, nearly verbatim (49 words)
 
-    Before you finish, flag new code in this change (<list>) that re-implements something the codebase already has: grep shared/utility modules and files adjacent to the change, and name the existing helper to call instead. Call that helper and delete the new code. If there is none, finish without changing anything.
+The wording run was "Before you finish, flag new code in this change (<list>)", then the build's Reuse
+angle as its middle clause, then "Call that helper and delete the new code. If there is none, finish
+without changing anything." The middle clause is not reproduced here because it is the vendor's text;
+it is the three clauses described under "The Reuse angle in `/simplify` and `/code-review`" above.
 
 - The middle clause is the build's Reuse angle word for word, minus the dash.
 - It is the control: if A to C cannot beat the vendor's own wording on the hard cases, the extra words
@@ -582,7 +562,7 @@ Every C run made an Agent call. **Measured**, local, n as shown.
   was read.
 - **An `agent`-type Stop hook doing the search itself.** Named in the docs' timeout table, not tested.
 - **The length cap on a Stop `reason` for a local command hook.** Not found and not measured.
-- **How the meta message is rendered to the API.** The build string was read, not captured from a live
+- **How the meta message is rendered to the API.** The build was read, not captured from a live
   request.
 
 ## Sources
@@ -601,21 +581,19 @@ First-party documentation, fetched 2026-09-15:
 - [OpenAI, GPT-4.1 prompting guide (2025)](https://developers.openai.com/cookbook/examples/gpt4-1_prompting_guide),
   read from `examples/gpt4-1_prompting_guide.ipynb` in `openai/openai-cookbook`
 
-The installed build, `~/.local/share/claude/versions/2.1.272`, 210,702,192 bytes:
+The installed build, `~/.local/share/claude/versions/2.1.272`, 210,702,192 bytes. Sites read, described
+above rather than quoted:
 
-- JSON mapper `Vke`, `decision:"block"` to `blockingError`: 177,588,949
-- `Xun` (" hook feedback:\n") and `oUt`: 168,864,004
-- `tst` (Stop framing): 177,624,989
-- Stop loop sending the meta message: 175,641,643 region
-- Reuse angle constant `ue`: 181,317,590 ("Grep shared/utility modules" at 181,317,665; "name the
-  existing helper" at 181,317,731)
-- `/code-review` Reuse angle copy and recall-mode text: 181,335,091 to 181,335,339
-- `/simplify` prompt with the 4-agent fan-out and inline fallback: 181,455,195 region
-- Plan mode "Reference existing functions and utilities": 177,767,042
-- Remote planning "look for existing functions and patterns you can reuse": 207,655,014
-- System prompt "Write code that reads like the surrounding code": 75,908,276
-- System prompt "Don't add features, refactor, or introduce abstractions": 75,917,648
-- System prompt "Prefer editing existing files to creating new ones.": 75,920,032
+- the JSON mapper that turns a block decision into a blocking error
+- the Stop framing that puts the feedback label in front of the reason
+- the Stop loop that sends the framed reason as a meta message
+- the Reuse angle text, and its copies in `/code-review` and `/simplify`
+- the `/code-review` recall-mode text and its low-effort diff-only variant
+- the `/simplify` prompt with its four-agent fan-out and inline fallback
+- plan mode's final-plan instruction on reusing existing functions
+- the remote planning reminder on looking for code to reuse
+- the system prompt's instructions on matching surrounding code, not adding what the task does not
+  need, and preferring edits to new files
 
 Papers and benchmarks:
 

@@ -1155,7 +1155,7 @@ test("settings this did not write are left exactly as they were", (t) => {
   const mine = {
     permissions: { allow: ["Bash(bundle exec rspec:*)"], deny: [], ask: [] },
     hooks: {
-      PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "bash ./block-heroku.sh" }] }],
+      PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "bash ./block-deploy.sh" }] }],
       PostToolUse: [
         { matcher: "Edit", hooks: [{ type: "command", command: "bash ./fmt.sh" }] },
         { matcher: "*", hooks: [{ type: "command", command: HOOK_COMMAND }] },

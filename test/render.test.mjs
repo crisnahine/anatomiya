@@ -31,8 +31,6 @@ import { claudeCodeReaches } from "./paths-reader.mjs";
 // The keys of the slots an area's file had no room for.
 const droppedKeys = (area, cochange) => new Set(droppedSlots(area, cochange).keys());
 
-const HOUSE_RULES_LINE = "Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.";
-
 const dim = (o = {}) => ({
   key: "swallowed_error",
   claim: "catch blocks use the error they caught",
@@ -654,13 +652,6 @@ test("the overview tells the agent to follow this repository's own practice and 
     lines[at - 1],
     "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify."
   );
-});
-
-test("the overview says how comments and pull request titles are written, closing the block of behavioural lines", () => {
-  const lines = renderOverview(result(), uncoveredFiles(30)).split("\n");
-  const at = lines.indexOf(HOUSE_RULES_LINE);
-  assert.ok(at > 0, "the sentence is in the overview");
-  assert.equal(lines[at - 1], "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.");
   assert.equal(lines[at + 1], "", "it closes the block of behavioural lines");
 });
 
@@ -673,7 +664,6 @@ test("a truncated scan still tells the agent how to work, because the head is no
   assert.match(out, /^Read a file before editing it: /m);
   assert.match(out, /^When unsure what this code does, /m);
   assert.match(out, /^When a change is asked for, /m);
-  assert.ok(out.split("\n").includes(HOUSE_RULES_LINE));
   assert.match(out, /^The scan was truncated, so no directive is stated\. Counts only\.$/m);
 });
 
@@ -3958,7 +3948,6 @@ const CLAUDE_OVERVIEW = [
   "Read a file before editing it: these notes load when you read, not when you grep.",
   "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.",
   "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.",
-  "Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.",
   "",
   "The scan was truncated, so no directive is stated. Counts only.",
   "",
@@ -4039,8 +4028,8 @@ const overviewFor = (key, reads, listed, generated) => {
   expected.splice(2, 0, key);
   expected.splice(7, 0, WROTE);
   expected[11] = reads;
-  expected[23] = `- and 1 more area in its own file, ${listed}`;
-  expected[33] = `Generated files: 3 under ${generated}`;
+  expected[22] = `- and 1 more area in its own file, ${listed}`;
+  expected[32] = `Generated files: 3 under ${generated}`;
   return expected;
 };
 

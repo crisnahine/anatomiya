@@ -75,9 +75,9 @@ const qualifiedName = (ctx, n) =>
  * before the top level, innermost first.
  *
  * An array and not a joined name, because a compact path opens one scope and
- * not one per segment. `module Api; module V1; class Qbo` nests as
- * `Api::V1::Qbo`, `Api::V1`, `Api`; `class Api::V1::Qbo` nests as
- * `Api::V1::Qbo` alone, and a bare name inside it that is not found there is a
+ * not one per segment. `module Api; module V1; class Sms` nests as
+ * `Api::V1::Sms`, `Api::V1`, `Api`; `class Api::V1::Sms` nests as
+ * `Api::V1::Sms` alone, and a bare name inside it that is not found there is a
  * top-level constant, never `Api::V1::Something`. Joined into one string the
  * two read alike, which is right for naming the class and wrong for resolving
  * what it refers to.
