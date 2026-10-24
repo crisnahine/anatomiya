@@ -703,9 +703,9 @@ Name no private repository, company or person, and copy nothing out of one: a fi
 names, and a measurement on a private repository describes it (`a measured Rails API`) and renames
 its paths (G16). Quote no code, prompt text or byte offset read out of a proprietary build, Claude
 Code's included: describe what the build does, and quote only first-party documentation, open-source
-source and the output a command prints (G17). `npm run check:docs` refuses a byte offset into a
-build in any tracked document, this machine's home directory in any tracked text file, and any other
-home directory a document names but the `/Users/me` placeholder.
+source and the output a command prints (G17). `npm run check:docs` refuses this machine's home
+directory in any tracked text file, and in any tracked document but the vendored grammar licenses a
+byte offset into a build and any other home directory but the `/Users/me` placeholder.
 
 ## Releases
 

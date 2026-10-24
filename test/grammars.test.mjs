@@ -105,6 +105,15 @@ test("a license notice that no longer matches its package is refused, and a lost
   await oneProblem((root, dir) => rmSync(join(dir, "LICENSES.md")), /LICENSES\.md is not the licenses the installed packages carry/);
 });
 
+test("a package license installed with CRLF line endings still matches its notice", async () => {
+  await withCopy((root) => {
+    const license = join(root, "node_modules", "tree-sitter-go", "LICENSE");
+    writeFileSync(license, readFileSync(license, "utf8").replace(/\r?\n/g, "\r\n"));
+
+    assert.deepEqual(check(root), []);
+  });
+});
+
 test("a copy of the tree is clean, so each refusal below is the one change made to it", async () => {
   await withCopy((root) => assert.deepEqual(check(root), []));
 });

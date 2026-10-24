@@ -9,7 +9,7 @@
  * line, so this file never lists them.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { invokedAs, readArgv, realOf } from "./entry.mjs";
@@ -18,8 +18,7 @@ import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { contains } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
 // Two passes, because one alternation would take `read` out of `read-only`.
-// shortcut: a name compares in its own case and from four characters, so `zebra_quota` is not `ZebraQuota`
-// and a three-letter name is never read; compare folded forms if a renamed private name gets through.
+// shortcut: names compare in their own case from four characters (G16); fold case if a renamed one gets through.
 const SNAKE = /[A-Za-z][A-Za-z0-9_]{3,}/g;
 const KEBAB = /[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+/g;
 const PATH = /[A-Za-z0-9_.@[\]-]+(?:\/[A-Za-z0-9_.@[\]-]+)+/g;
@@ -154,6 +153,10 @@ export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
   // A copy of this repository read as public holds every name it spells, and the check would pass on nothing.
   const repoRoots = rootsOf(repo);
   if (repoRoots.size === 0) return { error: `git cannot read the first commit of ${repo}, so no copy of it in the corpus could be told apart` };
+  // A shallow clone's first commit is where it was cut, which no full copy shares.
+  if (gitOut(repo, "rev-parse", "--is-shallow-repository") === "true") {
+    return { error: `${repo} is a shallow clone, so no copy of it in the corpus could be told apart; run git fetch --unshallow there first` };
+  }
   const others = children.filter((c) => !privates.includes(c));
   const skipped = others.filter((c) => copyOf(join(corpus, c), repo, repoRoots));
   const publics = others.filter((c) => !skipped.includes(c)).map((c) => join(corpus, c));
@@ -230,7 +233,8 @@ function main(argv) {
   const repo = realOf(resolve(read.values.repo ?? ROOT));
   let accepted = new Set();
   if (read.values.accept !== undefined) {
-    if (contains(repo, realOf(resolve(read.values.accept)))) {
+    // In the filesystem's own spelling, or a path written in another case reads as one outside.
+    if (contains(realOf(repo, realpathSync.native), realOf(resolve(read.values.accept), realpathSync.native))) {
       refuse(`${read.values.accept} sits inside the repository it checks, so it would name what it hides`);
     }
     try {
@@ -241,7 +245,7 @@ function main(argv) {
   }
   const result = privateNames({ repo, corpus, privates, accepted });
   if (result.error) refuse(result.error);
-  for (const name of result.skipped) console.error(`passed over ${name}: it shares a first commit with the repository it checks`);
+  for (const name of result.skipped) console.error(`passed over ${name}: it is a copy of the repository it checks`);
   for (const { kind, text, files } of result.found) console.log(`${kind} ${text}: ${files.join(", ")}`);
   if (result.found.length) process.exit(1);
   console.error(`no name, line or path here is held only by ${privates.join(", ")}`);

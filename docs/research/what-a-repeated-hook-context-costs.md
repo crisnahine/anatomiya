@@ -339,7 +339,7 @@ scan the tail for its own text (or its own sentinel, the way `reuse.mjs` already
       "uuids": [ 9 uuids ], "allUuids": [ 12 uuids ] } },
   "uuid": "00d829a2-f162-4692-851c-ad62d5a85ab6",
   "timestamp": "2026-09-02T02:16:20.715Z", "userType": "external", "entrypoint": "cli",
-  "cwd": "<home>/Documents/Projects/BESTTOOLFORCODING/anatomiya" }
+  "cwd": "<checkout>" }
 ```
 
 So `type: "system"`, `subtype: "compact_boundary"`, and `compactMetadata.preservedMessages.allUuids`

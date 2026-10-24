@@ -13,7 +13,7 @@ is forked with no `execArgv`, so its heap bound is V8's default on this machine:
 
 ## Method
 
-Each repository was cloned out of `~/Documents/Projects/anatomiya-corpus` with `cp -Rc`, its
+Each repository was cloned out of `anatomiya-corpus` with `cp -Rc`, its
 installed `node_modules` included, and measured one at a time, each mode in its own process.
 
 - The files are what `scan` hands the checker: `collect` over the copy, kept where the language has
