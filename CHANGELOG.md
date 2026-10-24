@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-24
+
 Two scans can no longer both write the map, a file name can no longer carry a tag into a rules file,
 and the check reads a moved producer and a big refactor the way the scan counted them. A second audit
 of the whole plugin found these and 13 more, and every one is fixed but one, which a test already
@@ -5116,7 +5118,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/crisnahine/anatomiya/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/crisnahine/anatomiya/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/crisnahine/anatomiya/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/crisnahine/anatomiya/compare/v0.15.6...v0.16.0
