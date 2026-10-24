@@ -27,7 +27,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, isFile } from "./entry.mjs";
 import { escapes } from "../plugins/anatomiya/lib/paths.mjs";
 import { LOADABLE, pluginPaths } from "./validate.mjs";
 
@@ -272,14 +272,6 @@ export function pluginRootsIn(marketplace) {
     roots.push(root);
   }
   return roots;
-}
-
-function isFile(path) {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
 }
 
 function isDirectory(path) {

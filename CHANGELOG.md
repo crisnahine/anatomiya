@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [0.18.0] - 2026-10-24
 
 The map no longer hands every repository's agent one maintainer's house rule, and this repository
-no longer names a private codebase or quotes a proprietary build.
+no longer names a private repository's code or quotes a proprietary build.
 
 ### Added
 
@@ -24,20 +24,21 @@ no longer names a private codebase or quotes a proprietary build.
 
 - The overview head no longer carries the house rule on comments and pull request titles (A121). It
   was the same for every map and counted from no repository, so every repository's agent was told
-  one team's conventions. A team that wants it writes it into its own
-  `CLAUDE.md`. A map written before 0.18.0 keeps the line until its next scan.
+  one team's conventions. A team that wants it writes it into its own `CLAUDE.md`. A map written
+  before 0.18.0 keeps the line until its next scan.
 
 ### Changed
 
-- The test fixtures, code comments, documents and earlier changelog entries no longer carry the file, class, table or service
-  names of the two private repositories in the measurement corpus. Those two keep their counts
+- The test fixtures, code comments, documents and earlier changelog entries no longer carry the file,
+  class, table or service names of the two private repositories in the measurement corpus. Those two keep their counts
   under neutral names, and the README says its sample area file had its file names changed.
 - The research notes and `docs/plugin-contract.md` describe what the Claude Code, Cursor and Copilot
   builds do instead of quoting their code, their prompts or byte offsets into them, and every
   conclusion stands.
-- `scripts/check-docs.mjs` fails any tracked Markdown or `.mjs` file holding this machine's home
-  directory. It used to pass over the research and measurement notes and every module, which is
-  how a home directory reached five research notes and a test comment.
+- `scripts/check-docs.mjs` fails any tracked text file holding this machine's home directory, and
+  any document naming a home directory other than the `/Users/me` placeholder, so a run on a CI
+  runner still catches a contributor's. It used to pass over the research and measurement notes and
+  every module, which is how a home directory reached five research notes and two test files.
 
 ### Fixed
 

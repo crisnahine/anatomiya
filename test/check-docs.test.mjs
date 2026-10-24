@@ -1282,15 +1282,39 @@ test("a document carrying the path of the machine it was written on is failed", 
 });
 
 test("a sibling of this machine's home is not its home", needsCheckout, (t) => {
-  // A home of /Users/me must not fail a document naming /Users/meg.
   const dir = repoCopy(t);
-  const path = join(dir, "docs", "why.md");
-  writeFileSync(path, `${readFileSync(path, "utf8")}\n\nRead from ${homedir()}x/notes.md\n`);
+  const path = join(dir, "test", "encode.test.mjs");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n// Read from ${homedir()}x/notes.md\n`);
 
   const { status, output } = check(dir);
 
   assert.equal(status, 0, output);
   assert.doesNotMatch(output, /carries the path of the machine/);
+});
+
+test("a home path that ends a sentence is failed, and one in a file that is neither a document nor a module", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n${line}\n`);
+  append("docs/why.md", `The notes were read from ${homedir()}.`);
+  append("test/fuzz.js", `// copied from ${homedir()}/fuzz.js`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/why\.md: carries the path of the machine it was written on/);
+  assert.match(output, /test\/fuzz\.js: carries the path of the machine it was written on/);
+});
+
+test("a document naming a home directory is failed whosever machine it is, and the placeholder home is not", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "docs", "why.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n\nRead from /home/alice/notes.md, as /Users/me/code/app shows.\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/why\.md: names the home directory \/home\/alice\//);
+  assert.doesNotMatch(output, /\/Users\/me\//);
 });
 
 test("a research note and a test module carrying that path are failed too", needsCheckout, (t) => {

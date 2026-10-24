@@ -12,7 +12,7 @@ import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from "n
 import { join, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, isFile } from "./entry.mjs";
 import { escapes } from "../plugins/anatomiya/lib/paths.mjs";
 
 const MANIFESTS = ["plugin.json", "marketplace.json"];
@@ -688,15 +688,6 @@ function eventProblems(pluginRoot, at, block) {
     }
   }
   return problems;
-}
-
-/** A directory exists and runs nothing, so existence is not the question. */
-function isFile(path) {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
 }
 
 function main() {

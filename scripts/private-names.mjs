@@ -99,12 +99,25 @@ function prune(dir, names, lines, paths) {
   }
 }
 
-/** The commits a repository's history starts from, which a clone or a fork of it shares. */
+const gitOut = (dir, ...args) => execFileSync("git", ["-C", dir, ...args], { stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
+
+/** The commits a repository's history starts from, which a clone or a fork of it shares; empty where it has none. */
 function rootsOf(dir) {
   try {
-    return new Set(execFileSync("git", ["-C", dir, "rev-list", "--max-parents=0", "HEAD"], { stdio: ["ignore", "pipe", "pipe"] }).toString().split("\n").filter(Boolean));
+    return new Set(gitOut(dir, "rev-list", "--max-parents=0", "HEAD").split("\n").filter(Boolean));
   } catch {
     return new Set();
+  }
+}
+
+/** Whether `child` is a copy of `repo`: a shared first commit, or a tip `repo` holds, which is what a shallow clone keeps. */
+function copyOf(child, repo, repoRoots) {
+  if ([...rootsOf(child)].some((r) => repoRoots.has(r))) return true;
+  try {
+    gitOut(repo, "cat-file", "-e", `${gitOut(child, "rev-parse", "HEAD")}^{commit}`);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -133,9 +146,11 @@ export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
     }
   }
   // A copy of this repository read as public holds every name it spells, and the check would pass on nothing.
-  const own = rootsOf(repo);
-  const skipped = children.filter((c) => !privates.includes(c) && [...rootsOf(join(corpus, c))].some((r) => own.has(r)));
-  const publics = children.filter((c) => !privates.includes(c) && !skipped.includes(c)).map((c) => join(corpus, c));
+  const repoRoots = rootsOf(repo);
+  if (repoRoots.size === 0) return { error: `git cannot read the first commit of ${repo}, so no copy of it in the corpus could be told apart` };
+  const others = children.filter((c) => !privates.includes(c));
+  const skipped = others.filter((c) => copyOf(join(corpus, c), repo, repoRoots));
+  const publics = others.filter((c) => !skipped.includes(c)).map((c) => join(corpus, c));
   const mine = textsOf(repo);
 
   const names = new Map();
@@ -145,6 +160,11 @@ export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
     for (const name of namesIn(text)) add(names, name, rel);
     for (const line of linesIn(text)) add(lines, line, rel);
     for (const path of text.match(PATH) ?? []) add(spelled, path, rel);
+  }
+  // A file's own path spells names too, a binary file's included.
+  for (const rel of tracked(repo)) {
+    for (const name of namesIn(rel)) add(names, name, rel);
+    add(spelled, rel, rel);
   }
 
   const secretNames = new Set();
