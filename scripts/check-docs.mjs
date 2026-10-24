@@ -23,7 +23,7 @@ import { dirname, join } from "node:path";
 import { parseSync } from "oxc-parser";
 
 import { DECISIONS_DIR, escaped, indexRows, readRowFile, rowFiles, shortStatus } from "./decisions.mjs";
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, isFile } from "./entry.mjs";
 import { REL } from "./plugins.mjs";
 import { RELEASES, notesFor, tagFor } from "./release.mjs";
 import { SEMVER } from "./validate.mjs";
@@ -370,7 +370,8 @@ function repositoryFiles() {
     return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
       .split("\n")
       .filter(Boolean)
-      .filter((rel) => existsSync(join(root, rel)));
+      // A regular file only: a link git lists as an entry, such as a linked node_modules, leads to a directory.
+      .filter((rel) => isFile(join(root, rel)));
   } catch (err) {
     return { error: String(err.stderr || err.message).trim().split("\n")[0] };
   }
@@ -584,6 +585,9 @@ const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
 
 // The two ways a note cited a place in a proprietary build beside its code, `offset 123,456,789` and `BUNDLE@1234567` (G17).
 const BUILD_OFFSET = /\boffsets? \d{1,3}(?:,\d{3}){2,}\b|@\d{6,}\b/;
+
+// A home directory, less `/Users/me`, the placeholder the README shows output under.
+const HOME_SHAPED = /(?:\/Users|\/home)\/(?!me\/)[^\s/`'"<>)]+\/|[A-Z]:\\Users\\(?!me\\)[^\s\\`'"<>)]+\\/;
 
 // A changelog is both at once, and exempting it whole was the wider half of the
 // rule than the reason for it: its released sections are the past, and the
@@ -1116,14 +1120,18 @@ export function checkDocs() {
   // times, and the net under the generated documents did not reach it. Research
   // notes and source comments carried it later, so every document and module is read.
   const HOME = homedir();
-  // Up to a name character, so a home of /Users/me does not claim /Users/meg.
-  const HOME_AT = HOME && HOME.length > 3 ? new RegExp(`${escapeRe(HOME)}(?![\\w.-])`) : null;
+  // Up to a name character, so a home of /Users/me does not claim /Users/meg, and a full stop ends it.
+  const HOME_AT = HOME && HOME.length > 3 ? new RegExp(`${escapeRe(HOME)}(?![\\w-])(?!\\.[\\w-])`) : null;
   for (const rel of tracked) {
-    if (!/\.(?:md|mjs)$/.test(rel)) continue;
+    if (rel.endsWith(".wasm")) continue;
     const text = read(rel);
     if (HOME_AT) claim(rel, !HOME_AT.test(text), "carries the path of the machine it was written on");
-    if (rel.endsWith(".md")) claim(rel, !BUILD_OFFSET.test(text), "quotes a byte offset into a build");
-    if (!rel.endsWith(".md") || RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
+    if (!rel.endsWith(".md")) continue;
+    claim(rel, !BUILD_OFFSET.test(text), "quotes a byte offset into a build");
+    // CI runs on a runner's home, so another machine's home is caught by its shape; the measurements have their own net above.
+    const named = rel.startsWith("docs/measurements/") ? null : text.match(HOME_SHAPED);
+    claim(rel, !named, `names the home directory ${named?.[0]}`);
+    if (RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
     for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
       claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
     }

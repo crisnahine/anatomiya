@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { git, scratch } from "./git-worktrees.mjs";
 import { needsPosixSpecialFiles } from "./platform.mjs";
@@ -43,7 +44,7 @@ test("a name only a private repository shares with this one is reported, with th
 
 test("a path only a private repository holds is reported once, at its longest, and a path a public one holds is not", (t) => {
   // Every segment here is an ordinary word a public repository could hold, so
-  // the name pass passes it: what gives the codebase away is the path.
+  // the name pass passes it: what gives that repository away is the path.
   const { corpus, repo } = corpusWith(t, {
     priv: { "app/services/ledger/sync/fetch.rb": "x\n", "app/models/user.rb": "x\n" },
     pub: { "app/models/user.rb": "x\n", "app/services/ledger/sync/README": "fetch\n" },
@@ -75,7 +76,6 @@ test("a line copied out of a private repository is reported, wherever a fixture 
 });
 
 test("a private file's own name is reported where this repository spells it, though no text of theirs does", (t) => {
-  // The name sits in the private repository's path alone; a copy of it here is still theirs.
   const { corpus, repo } = corpusWith(t, {
     priv: { "app/services/reports/ledger_rollup.rb": "x\n" },
     pub: { "app/services/billing/charge.rb": "x\n", "spec/services/billing/charge_spec.rb": "x\n", "lib/ledger.rb": "ledger reports\n" },
@@ -99,6 +99,43 @@ test("a copy of the checked repository in the corpus is passed over, not read as
 
   assert.deepEqual(found, [{ kind: "name", text: "ZebraQuota", files: ["docs/a.md"] }]);
   assert.deepEqual(skipped, ["owner__mirror"]);
+});
+
+test("a file this repository tracks under a private name is reported by its path alone", (t) => {
+  const { corpus, repo } = corpusWith(t, {
+    priv: { "app/models/order.rb": "class ZebraQuota\nend\n" },
+    repo: { "test/fixtures/ZebraQuota/x.rb": "x\n" },
+  });
+
+  const { found } = privateNames({ repo, corpus, privates: ["owner__secret"] });
+
+  assert.deepEqual(found, [{ kind: "name", text: "ZebraQuota", files: ["test/fixtures/ZebraQuota/x.rb"] }]);
+});
+
+test("a shallow copy of the checked repository, which shares no first commit with it, is passed over too", (t) => {
+  const { corpus, repo } = corpusWith(t, {
+    priv: { "app/models/order.rb": "class ZebraQuota\nend\n" },
+    repo: { "docs/a.md": "ZebraQuota\n" },
+  });
+  git(repo, "commit", "-q", "--allow-empty", "-m", "second");
+  git(corpus, "clone", "-q", "--depth", "1", pathToFileURL(repo).href, "owner__shallow");
+
+  const { found, skipped } = privateNames({ repo, corpus, privates: ["owner__secret"] });
+
+  assert.deepEqual(found, [{ kind: "name", text: "ZebraQuota", files: ["docs/a.md"] }]);
+  assert.deepEqual(skipped, ["owner__shallow"]);
+});
+
+test("a repository with no commit is refused, since no copy of it could be told apart", (t) => {
+  const { corpus, root } = corpusWith(t, {});
+  const empty = join(root, "empty");
+  mkdirSync(empty);
+  git(empty, "init", "-q");
+
+  const refused = run(corpus, "owner__secret", "--repo", empty);
+
+  assert.equal(refused.status, 2);
+  assert.match(refused.stderr, /^git cannot read the first commit of .*empty/);
 });
 
 test("a tracked file that a FIFO now stands in for is passed over, not read", needsPosixSpecialFiles, (t) => {

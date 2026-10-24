@@ -8,11 +8,24 @@ import { spawnSync } from "node:child_process";
 
 import { needsSymlinks, removeTree } from "./platform.mjs";
 import { REL } from "../scripts/plugins.mjs";
-import { checkOutput, invokedAs, readArgv, selectRepos } from "../scripts/entry.mjs";
+import { checkOutput, invokedAs, isFile, readArgv, selectRepos } from "../scripts/entry.mjs";
 
 // Resolved, because `import.meta.url` always is. That is what makes it the
 // control the symlinked spelling below is measured against.
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+test("a regular file is a file, through a link too, and a directory or a missing path is not", needsSymlinks, (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-entry-"));
+  t.after(() => removeTree(dir));
+  writeFileSync(join(dir, "a.txt"), "a\n");
+  mkdirSync(join(dir, "d"));
+  symlinkSync(join(dir, "a.txt"), join(dir, "link"));
+
+  assert.equal(isFile(join(dir, "a.txt")), true);
+  assert.equal(isFile(join(dir, "link")), true);
+  assert.equal(isFile(join(dir, "d")), false);
+  assert.equal(isFile(join(dir, "gone")), false);
+});
 
 test("a module that is not the one being run says so", () => {
   // This suite is what node was told to run, so nothing else can claim to be.
