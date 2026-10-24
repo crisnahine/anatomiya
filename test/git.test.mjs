@@ -2619,7 +2619,8 @@ test("a scripted blob is handed over as the bytes it was scripted with", async (
 
 test("a repository top git names as an empty line is no repository, never the directory the process runs in", async (t) => {
   const { dir } = repo(t);
-  assert.equal(await topLevel(dir), realpathSync.native(dir));
+  // git prints forward slashes on Windows, so the answer is held to a real path as `gitRoot` holds it.
+  assert.equal(realpathSync.native(await topLevel(dir)), realpathSync.native(dir));
   t.after(answerWith((args) => (args.includes("--show-toplevel") ? { stdout: "\n" } : null)));
   await assert.rejects(topLevel(dir, "there"), /^Error: not a git repository: there$/);
 });
