@@ -6,7 +6,7 @@ when a file reaches the model. DECISIONS A102 to A106 rest on this note.
 
 Every claim carries its source, in three kinds:
 
-- **read**: a string or a function recovered from an installed application, with its byte offset
+- **read**: behaviour read from an installed application, described here rather than quoted
 - **run**: code cut out of an installed application and run on its own, or a script run against this
   repository's build
 - **doc**: a first-party page, quoted, with its URL
@@ -19,8 +19,9 @@ What was read, on 2026-10-07:
 | VS Code | 1.140.0, commit `07f806f999227108933c2e30515b26eecc1fda74`, built 2026-09-30 | `out/vs/workbench/workbench.desktop.main.js` (VSW, 20,024,455 bytes) |
 | Copilot Chat | 0.68.0, the extension built into that VS Code | `extensions/copilot/dist/extension.js` (CPX, 19,679,291 bytes) |
 
-Offsets are byte offsets into those files (`EXEC@7243264`). Identifiers are minified and change
-between builds, so an offset is one build's address. Nothing was launched or signed in to. Only
+Cursor's code is proprietary, so what its build does is described here and not quoted. The
+Copilot Chat bundle is described the same way, and no byte offsets are given for any build. Short
+quotes of VS Code's own code come from the open-source `microsoft/vscode` repository named below. Nothing was launched or signed in to. Only
 client code was read: what Cursor's servers do to a prompt is not visible from it.
 
 The documentation was fetched on 2026-10-07:
@@ -38,24 +39,23 @@ The documentation was fetched on 2026-10-07:
 
 **read**: the string `.claude/rules` appears 0 times in 8 files of the client: EXEC, WB, the bundles of `cursor-agent-host`, `cursor-local-agent-runtime`,
 `cursor-agent-worker`, `cursor-retrieval` and `cursor-always-local`, and `out/main.js`. Its walk of
-`.claude/**` classifies only `SKILL.md` under `.claude/skills` and `.md` under `.claude/agents`
-(EXEC@7234289). `.github/instructions` has 0 hits in the same eight.
+`.claude/**` classifies only `SKILL.md` under `.claude/skills` and `.md` under `.claude/agents`. `.github/instructions` has 0 hits in the same eight.
 
-**read**: the rule walk asks for `**/*.mdc` under `.cursor/rules` (EXEC@7253800), so a plain `.md`
+**read**: the rule walk asks only for files ending in `.mdc` under `.cursor/rules`, so a plain `.md`
 there is not read.
 
 ## 2. How Cursor reads an `.mdc` file
 
-**read**: a hand-written line reader, no YAML (EXEC@7243264). It cuts each line at its first colon,
+**read**: a hand-written line reader, no YAML. It cuts each line at its first colon,
 keeps a key it does not know and reads nothing from it, and ends the frontmatter at any `---`.
 
-**read**: `globs` is split on commas outside braces, each part trimmed (EXEC@8952537).
+**read**: `globs` is split on commas outside braces, each part trimmed.
 
-**read**: matching is minimatch with `{ dot: true }` and no other option, against the path relative
-to the directory that holds `.cursor/rules` (EXEC@2183081). Nothing is put in front of a pattern. A
+**read**: matching is minimatch with its `dot` option on and no other option, against the path
+relative to the directory that holds `.cursor/rules`. Nothing is put in front of a pattern. A
 backslash in a pattern is turned into a slash first.
 
-**run**: the reader, the splitter and the bundled minimatch were cut out of EXEC by offset and run.
+**run**: the reader, the splitter and the bundled minimatch were cut out of EXEC and run.
 
 | pattern | matched | did not match |
 |---|---|---|
@@ -69,19 +69,20 @@ So a brace set works, matching is case-sensitive, and a leading `!` is a negatio
 other patterns by "or": one such entry makes the rule match almost every file, and it subtracts
 nothing.
 
-**read**: an `alwaysApply: true` rule is global and its `globs` are ignored (EXEC@7250763).
+**read**: an `alwaysApply: true` rule is global and its `globs` are ignored.
 
 ## 3. How VS Code reads an `.instructions.md` file
 
-**read**: VS Code's own YAML parser (VSW@4172087 to 4192010). `applyTo` has to be one scalar: a
-value is returned only where the node's type is `scalar` (VSW@4194328). A key nothing looks up is
+**read**: VS Code's own YAML parser. `applyTo` has to be one scalar: a value is returned only where
+the parsed node is a scalar. A key nothing looks up is
 parsed and read by nothing.
 
-**read**: `_matches` (VSW@12028446, and the same body in CPX@14090090) splits `applyTo` on commas,
-puts `**/` in front of a part that starts with neither `/` nor `**/`, and matches with
-`ignoreCase: true` against the path of each file the request carries.
+**read**: the matcher, `_matches` in `computeAutomaticInstructions.ts` in `microsoft/vscode`, with
+the same logic in CPX, splits `applyTo` on commas, puts `**/` in front of a part that starts with
+neither `/` nor `**/`, and matches case-insensitively against the path of each file the request
+carries.
 
-**run**: VS Code's parser and its glob code were cut out of VSW (VSW@3658110 to 3662160) and run.
+**run**: VS Code's parser and its glob code were cut out of VSW and run.
 
 | question | result |
 |---|---|
@@ -91,8 +92,8 @@ puts `**/` in front of a part that starts with neither `/` nor `**/`, and matche
 | the `**/` prefix | `src/*.ts` matched `vendor/x/src/a.ts` |
 | case | `src/*.ts` matched `SRC/A.TS` |
 
-**read**: VS Code already reads `.claude/rules/*.md` as instructions (VSW@4148664, VSW@4150434) and
-joins a rule's `paths` with `, ` into the same pattern string (VSW@4199973). **run**: a
+**read**: VS Code already reads `.claude/rules/*.md` as instructions and joins a rule's `paths`
+with a comma and a space into the same pattern string. **run**: a
 `"!lib/x/**"` entry there becomes `**/!lib/x/**` and matches nothing.
 
 No Copilot surface but VS Code was read or run: not the cloud agent, code review, the CLI, Visual
@@ -110,15 +111,15 @@ review."
 Not measured in either tool. What was read:
 
 **read**, Cursor: a rule with `globs` is handed to the agent with the result of its first read of
-a matching file (EXEC@3048623), and not on an edit or a write of a file it never read.
+a matching file, and not on an edit or a write of a file it never read.
 
 **doc**, Cursor: "Auto-attached when a matching file is in context." The page does not say what
 "in context" covers for a project rule.
 
 **read**, VS Code source: automatic attach matches `applyTo` against the files attached to the chat
-request (`computeAutomaticInstructions.ts` lines 249 to 335), and `**`, `**/*` and `*` attach with
+request (`computeAutomaticInstructions.ts` lines 249 to 335 in `microsoft/vscode`), and `**`, `**/*` and `*` attach with
 no file. Apart from that the model is given a list of every instruction file with its `applyTo` and
-is asked to read the ones that fit: "When modifying or creating files, check for instructions whose
+is asked to read the ones that fit, in this sentence from line 376 of the same file: "When modifying or creating files, check for instructions whose
 applyTo pattern matches the file path and follow them." So in agent mode a file the agent edits
 does not bring its area file in.
 

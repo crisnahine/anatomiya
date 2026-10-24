@@ -7,6 +7,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+The map no longer hands every repository's agent one maintainer's house rule, and this repository
+no longer names a private codebase or quotes a proprietary build.
+
+### Added
+
+- `scripts/private-names.mjs`, a release step: every name, copied line and path this repository
+  shares with the corpus's private repositories and with none of its public ones, named with the
+  files that carry it (G16). The private repositories are named on its command line and the names
+  judged ordinary sit in a list beside the corpus, so nothing here names them.
+- `check:docs` fails a document that quotes a byte offset into a build (G17).
+
+### Removed
+
+- The overview head no longer carries the house rule on comments and pull request titles (A121). It
+  was the same for every map and counted from no repository, so every repository's agent was told
+  one team's conventions. A team that wants it writes it into its own
+  `CLAUDE.md`.
+
+### Changed
+
+- The test fixtures, code comments and documents no longer carry the file, class, table or service
+  names of the two private repositories in the measurement corpus. Those two keep their counts
+  under neutral names, and the README says its sample area file had its file names changed.
+- The research notes and `docs/plugin-contract.md` describe what the Claude Code, Cursor and Copilot
+  builds do instead of quoting their code, their prompts or byte offsets into them, and every
+  conclusion stands.
+- `scripts/check-docs.mjs` fails any tracked Markdown or `.mjs` file holding this machine's home
+  directory. It used to pass over the research and measurement notes and every module, which is
+  how a home directory reached five research notes and a test comment.
+
+### Fixed
+
+- The plugin ships each vendored grammar's MIT license beside it, in `grammars/LICENSES.md`. The
+  seven `.wasm` copies shipped without the notice their license asks every copy to carry, and
+  `scripts/grammars.mjs --check` now refuses a notice that no longer matches its package (B61).
+- `CODE_OF_CONDUCT.md` names the address reports go to. It held a placeholder.
+- `CONTRIBUTING.md` links the code of conduct and the security policy, and the issue chooser sends a
+  security report to the private advisory form, which is now switched on.
+
 ## [0.17.1] - 2026-10-24
 
 Two scans can no longer both write the map, a file name can no longer carry a tag into a rules file,
@@ -2945,7 +2984,7 @@ do not merge with ones taken after it.
 
 - `check` asks whether a file the change added belongs where it was put, not only whether its contents
   match. Every other rule asks the second question, so a file that creates its own directory is the
-  only member of it and conforms with itself: `spec/mailers/cim_share_mailer_spec.rb`, in a repository
+  only member of it and conforms with itself: `spec/mailers/invoice_mailer_spec.rb`, in a repository
   whose four mailers have no specs, was examined and produced nothing. A test added where the source
   root it covers has three or more producers and none of them with a namesake test, and whose own
   directory holds no other test, is a FIX, dropping to NIT only where no comparison against a base
@@ -3036,9 +3075,9 @@ after it are not comparable line for line.
   across two maps were wrong this way, the worst at 6 of 11. The tests line has printed the honest
   pair since 0.2.x and the sibling clause never did. Decision H33.
 - A declared type name opening on three or more capitals votes for neither a prefix nor none, and is
-  a site of neither prefix row. `IEFLogon` is `I` on the `EFLogon` in the directory of the same name
+  a site of neither prefix row. `IQRScanner` is `I` on the `QRScanner` in the directory of the same name
   and was charged with violating the `I` prefix it carries, so the only way to comply was to write
-  `IIEFLogon`; in an area stating the row at N of N, `IAPIResponse` reached MUST-FIX while
+  `IIQRScanner`; in an area stating the row at N of N, `IAPIResponse` reached MUST-FIX while
   `IApiResponse` beside it conformed. The same miscount named two files with no violations in them as
   the area's exceptions, which waved through anything added to either. Decision C35.
 - A shallow clone can no longer move the author gate. `git log` answers on one and its answer is true
@@ -3050,8 +3089,8 @@ after it are not comparable line for line.
   checkout prints every claim as a count. How much of the window there is goes to the terminal
   alone: the overview owes byte-stability between scans of unchanged source, and a fixed-depth
   boundary slides forward with every commit that lands upstream. Decision D11.
-- The empty-tail mirror is asked in both directions. `app/mcp` is a Rails autoload root, so stripping
-  the tree words left `mcp/mcp` against `mcp` and every file sitting directly there read untested:
+- The empty-tail mirror is asked in both directions. `app/widgets` is a Rails autoload root, so stripping
+  the tree words left `widgets/widgets` against `widgets` and every file sitting directly there read untested:
   `0 of 13`, `0 of 11`, `0 of 8` where the specs exist and describe the right constants. Measured
   over the whole corpus, 6,849 areas of which 4,886 carry a companion count: 24 gain on this row's
   own account, every one hand-verified, and none drops. Decision H34.
@@ -3581,8 +3620,8 @@ the report was filed against and re-measured over the 35-repository corpus.
   option alone the row said 43 of 76; the block form the repository actually uses, `t.foreign_key`
   beside the `t.references` in one `create_table`, brings it to 72 of 76. A key declared only on the
   way down adds nothing going forward and is not counted.
-- One test file answers one source file. `app/services/stripe/reports/generate.rb`, which has no spec
-  at all, was credited with Shopify's, because the tail below the area root is `reports` on both
+- One test file answers one source file. `app/services/payments/reports/generate.rb`, which has no spec
+  at all, was credited with the shipping one's, because the tail below the area root is `reports` on both
   sides. The kinds line said 15 where the claim under it said 13, in one generated file about the
   same seventeen files; both read 13 now.
 - The namesake question answers the same whichever directory above the file asks it. A package whose
@@ -4911,7 +4950,7 @@ is rewritten by the next scan; `facts.json` moves to schema 3, where `glob` beco
 ### Fixed
 
 - An ancestor area's glob matched its descendants, so a claim a deeper area had been refused was
-  delivered to it anyway. `app/workers/workers/**` matched `app/workers/workers/google`, whose own
+  delivered to it anyway. `app/workers/workers/**` matched `app/workers/workers/imports`, whose own
   area measured the same dimension at 14 of 22 and was suppressed by the ratio gate; the ancestor's
   directive, counted over 125 files that do not include any of google's, arrived on every read there
   and contradicted it. The gates decide where a claim may be stated and the delivery channel was

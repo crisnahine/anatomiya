@@ -354,7 +354,8 @@ test("the grammars this plugin loads are files the shipped-set walk reaches", ()
   const { files } = reachableFrom(ANATOMIYA, ["lib/tree-sitter-file.mjs"]);
 
   const grammars = files.filter((file) => file.startsWith("grammars/")).sort();
-  assert.deepEqual(grammars, ["csharp", "go", "java", "kotlin", "php", "python", "rust"].map((id) => `grammars/${id}.wasm`).concat("grammars/grammars.json").sort());
+  // LICENSES.md is reached with them, so the notice their licenses ask for ships with every copy.
+  assert.deepEqual(grammars, ["csharp", "go", "java", "kotlin", "php", "python", "rust"].map((id) => `grammars/${id}.wasm`).concat("grammars/grammars.json", "grammars/LICENSES.md").sort());
 });
 
 test("the walk follows require and import alike, and stops at what it does not own", (t) => {

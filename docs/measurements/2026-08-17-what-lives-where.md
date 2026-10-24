@@ -3,6 +3,9 @@
 Date: 2026-08-17. Corpus acceptance for the `## What lives where` section of the overview, and
 for the two sibling roster lines and the five learned rows that print beside it.
 
+Two of the 35 repositories are private. They are labelled `rails-api` and `react-front-end`, and
+the names of their directories and files below are changed; the counts are not.
+
 `scripts/measure-layout.mjs <corpusDir>` runs it. For every child of the corpus directory that is
 a git repository it scans twice in this process, renders the overview twice, and writes nothing
 into the repository. The `files` argument the overview is handed is the one `writeMap` builds: the
@@ -162,7 +165,7 @@ Now a directory that is descended into and produces no root gets its own line. I
 where descent worked, and it bought: webpack `lib` (651 .js, 8 of them with a namesake test),
 supabase `packages/ui-patterns/src` and `packages/ui`, backstage `packages/core-app-api/src`,
 canvas-lms `lib` (463 of 808 with a namesake test under spec/lib), mastodon `app/lib` (119 of
-167), a measured Rails API `app/mcp/mcp` (41 of 93), eslint `lib/languages/js`.
+167), a measured Rails API `app/widgets/widgets` (41 of 93), eslint `lib/languages/js`.
 
 ### 4. A directory named after tests does not make its files tests
 
@@ -665,7 +668,7 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | discourse__discourse | app/jobs/scheduled | 107 | 107 | 107 | 107 | 1.000 | Jobs::Scheduled | yes |
 | discourse__discourse | spec/system/page_objects/pages | 94 | 95 | 106 | 81 | 0.764 | PageObjects::Pages::Base | no (ratio) |
 | rails-api | app/models | 129 | 129 | 130 | 124 | 0.954 | ApplicationRecord | yes |
-| rails-api | app/services/models/listings | 122 | 150 | 122 | 122 | 1.000 | ActiveInteraction::Base | yes |
+| rails-api | app/services/models/orders | 122 | 150 | 122 | 122 | 1.000 | ActiveInteraction::Base | yes |
 | rails-api | app/services/models | 116 | 143 | 116 | 116 | 1.000 | ActiveInteraction::Base | yes |
 | rails-api | app/services/api/v1 | 79 | 81 | 79 | 79 | 1.000 | ActiveInteraction::Base | yes |
 | rails-api | app/controllers/api/v1 | 65 | 65 | 65 | 55 | 0.846 | Api::V1::BaseController | no (ratio) |
@@ -767,9 +770,9 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | discourse__discourse | app/services | 44 | 127 | 44 | 38 | 0.864 | Service::Base | no (ratio) |
 | rails-api | app/workers/workers | 125 | 125 | 125 | 125 | 1.000 | Sidekiq::Worker | yes |
 | rails-api | app/workers/cronjobs | 70 | 70 | 70 | 70 | 1.000 | Sidekiq::Worker | yes |
-| rails-api | app/workers/workers/listings | 38 | 38 | 38 | 38 | 1.000 | Sidekiq::Worker | yes |
+| rails-api | app/workers/workers/orders | 38 | 38 | 38 | 38 | 1.000 | Sidekiq::Worker | yes |
 | rails-api | app/models | 31 | 129 | 31 | 20 | 0.645 | ActiveModel::Dirty | no (ratio) |
-| rails-api | app/workers/workers/vendor_sync | 25 | 25 | 25 | 25 | 1.000 | Sidekiq::Worker | no (evidence) |
+| rails-api | app/workers/workers/data_sync | 25 | 25 | 25 | 25 | 1.000 | Sidekiq::Worker | no (evidence) |
 | errbit__errbit | app/models | 13 | 14 | 13 | 12 | 0.923 | Mongoid::Document | no (evidence) |
 | errbit__errbit | app/controllers | 3 | 13 | 3 | 2 | 0.667 | ProblemsSearcher | no (ratio) |
 | fastlane__fastlane | spaceship/lib/spaceship/connect_api/models | 71 | 71 | 71 | 71 | 1.000 | Spaceship::ConnectAPI::Model | yes |
@@ -865,7 +868,7 @@ the five biggest per repository, so a row stated on a small area is not on the l
 | react-front-end | src/queries | 138 | 141 | 276 | 274 | 0.993 | I | yes |
 | react-front-end | src/components | 102 | 148 | 167 | 156 | 0.934 | I | no (evidence) |
 | react-front-end | src/queries/admin | 68 | 70 | 133 | 133 | 1.000 | I | yes |
-| react-front-end | src/components/TaskList/tasks | 64 | 75 | 122 | 122 | 1.000 | I | yes |
+| react-front-end | src/components/Checklist/steps | 64 | 75 | 122 | 122 | 1.000 | I | yes |
 | react-front-end | src/components/base | 64 | 122 | 92 | 91 | 0.989 | I | yes |
 | eslint__eslint | lib/types | 2 | 4 | 50 | 50 | 1.000 | none | no (concentration) |
 | eslint__eslint | tests/lib | 1 | 19 | 2 | 2 | 1.000 | none | no (evidence) |
@@ -1104,17 +1107,17 @@ generator: anatomiya
 paths:
   - "src/components/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
   - "!src/components/Admin/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
-  - "!src/components/BuyNowPopup/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
+  - "!src/components/CheckoutPopup/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
   - "!src/components/Calendar/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
   - "!src/components/Submenu/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
-  - "!src/components/TaskList/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
-  - "!src/components/TicketSidebar/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
-  - "!src/components/UniversalOnboarding/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
-  - "!src/components/UnlockPopup/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
+  - "!src/components/Checklist/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
+  - "!src/components/HelpSidebar/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
+  - "!src/components/OnboardingTour/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
+  - "!src/components/UpgradePopup/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
   - "!src/components/base/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
   - "!src/components/buttons/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
   - "!src/components/forms/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
-  - "!src/components/offers/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
+  - "!src/components/quotes/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
   - "!src/components/popups/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"
 ---
 
@@ -1125,7 +1128,7 @@ module-level functions are assigned as arrow consts, not declared with function
 
 imports used only as types are imported without the type marker
   146 of 150 sites across 99 of 148 files, 11 authors  (partial: some sites are not visible statically)
-  except "src/components/DougnutChart.tsx"
+  except "src/components/DonutChart.tsx"
   except "src/components/HorizontalBarChart.tsx"
   except "src/components/LineChart.tsx"
   and 1 more
@@ -1414,7 +1417,7 @@ Match sibling test shape; skip tests where siblings have none.
 - app/workers: 496 .rb; 0 of 496 have a namesake test
 - app/models: 166 .rb, 1 (none); 50 of 166 have a namesake test under spec/models
 - app/controllers/api/v1: 101 .rb; 98 of 101 have a namesake test under spec/controllers/api/v1
-- app/mcp/mcp: 93 .rb; 41 of 93 have a namesake test under spec/mcp
+- app/widgets/widgets: 93 .rb; 41 of 93 have a namesake test under spec/widgets
 - and 2 more directories holding 3560 files
 - tests: 1334 RSpec specs under spec; 2 test files; 1046 of 1575 .rb files have a namesake test
 

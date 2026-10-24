@@ -5,7 +5,7 @@ Counts what your code already does, directory by directory, and writes those cou
 `scan --targets cursor,copilot`, it writes the same counts for Cursor and GitHub Copilot too.
 
 This directory is the plugin. It is what a marketplace install copies: the manifest, the binary, the
-library it runs, the command files, the hook declaration and the grammars, plus the `package.json` and
+library it runs, the command files, the hook declaration and the grammars with their licenses, plus the `package.json` and
 `package-lock.json` its dependencies are installed from, the license and this file. The repository
 around it is the marketplace, the test suite and the gates, and none of
 that ships.

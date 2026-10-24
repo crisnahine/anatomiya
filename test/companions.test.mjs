@@ -124,31 +124,31 @@ test("an empty tail still finds its companion when the whole directory mirrors t
 });
 
 test("a source root whose tree-less form outruns the spec tree still credits its own files", () => {
-  // `app/mcp` is a Rails autoload root, so `app/mcp/mcp/context.rb` is
-  // `Mcp::Context` and its spec is `spec/mcp/context_spec.rb`. Stripping the
-  // tree words leaves `mcp/mcp` against `mcp`, and the mirror was asked in one
+  // `app/widgets` is a Rails autoload root, so `app/widgets/widgets/context.rb` is
+  // `Widgets::Context` and its spec is `spec/widgets/context_spec.rb`. Stripping the
+  // tree words leaves `widgets/widgets` against `widgets`, and the mirror was asked in one
   // direction only, so every file sitting directly in that root read untested.
-  const src = ["context", "rack_app", "server_instructions"].map((n) => file(`app/mcp/mcp/${n}.rb`));
-  const tst = ["context", "rack_app", "server_instructions"].map((n) => file(`spec/mcp/${n}_spec.rb`));
+  const src = ["context", "rack_app", "tool_list"].map((n) => file(`app/widgets/widgets/${n}.rb`));
+  const tst = ["context", "rack_app", "tool_list"].map((n) => file(`spec/widgets/${n}_spec.rb`));
 
-  assert.deepEqual(namesakeCompanions(src, tst, "app/mcp/mcp", namesakeIndex(tst, src)), {
+  assert.deepEqual(namesakeCompanions(src, tst, "app/widgets/widgets", namesakeIndex(tst, src)), {
     with: 3,
     of: 3,
-    root: "spec/mcp",
+    root: "spec/widgets",
   });
 });
 
 test("one file answers the same at that root and at the area inside it", () => {
   // The same invariant the package case pins, on the other trigger:
-  // `app/mcp/mcp/engineering/context.rb` read 1 of 1 at `app/mcp/mcp` and 0 of
+  // `app/widgets/widgets/admin/context.rb` read 1 of 1 at `app/widgets/widgets` and 0 of
   // 1 at the directory it actually sits in.
-  const src = [file("app/mcp/mcp/engineering/context.rb")];
-  const tst = [file("spec/mcp/engineering/context_spec.rb")];
+  const src = [file("app/widgets/widgets/admin/context.rb")];
+  const tst = [file("spec/widgets/admin/context_spec.rb")];
   const byStem = namesakeIndex(tst, src);
 
   assert.equal(
-    namesakeCompanions(src, tst, "app/mcp/mcp/engineering", byStem).with,
-    namesakeCompanions(src, tst, "app/mcp/mcp", byStem).with
+    namesakeCompanions(src, tst, "app/widgets/widgets/admin", byStem).with,
+    namesakeCompanions(src, tst, "app/widgets/widgets", byStem).with
   );
 });
 
@@ -224,9 +224,9 @@ test("the reversed mirror is refused across an engine, whichever way it is asked
 
   assert.deepEqual(namesakeCompanions(src, tst, "app/javascript/mastodon/models"), { with: 0, of: 1, root: null });
 
-  const ruby = [file("app/mcp/mcp/context.rb")];
+  const ruby = [file("app/widgets/widgets/context.rb")];
   assert.equal(
-    namesakeCompanions(ruby, [file("spec/mcp/context_spec.rb")], "app/mcp/mcp").with,
+    namesakeCompanions(ruby, [file("spec/widgets/context_spec.rb")], "app/widgets/widgets").with,
     1,
     "and the same shape within one language still answers"
   );
@@ -581,39 +581,39 @@ test("a package answers the same whichever root above it is evaluated", () => {
 });
 
 test("a spec in a sibling namespace does not answer this one's file", () => {
-  // a measured Rails API: app/services/stripe/reports/generate.rb has no spec.
+  // a measured Rails API: app/services/payments/reports/generate.rb has no spec.
   // Counted against the area's own tail, `reports`, every directory of specs
-  // ending in `/reports` answered it, and Shopify's spec was credited to
-  // Stripe. The kinds line then said 15 where the pairing claim said 13.
-  const stripe = [
-    file("app/services/stripe/reports/generate.rb"),
-    file("app/services/stripe/reports/start.rb"),
-    file("app/services/stripe/charge.rb"),
+  // ending in `/reports` answered it, and the shipping spec was credited to
+  // payments. The kinds line then said 15 where the pairing claim said 13.
+  const payments = [
+    file("app/services/payments/reports/generate.rb"),
+    file("app/services/payments/reports/start.rb"),
+    file("app/services/payments/charge.rb"),
   ];
-  const shopify = [
-    file("app/services/shopify/reports/generate.rb"),
-    file("app/services/shopify/reports/start.rb"),
+  const shipping = [
+    file("app/services/shipping/reports/generate.rb"),
+    file("app/services/shipping/reports/start.rb"),
   ];
   const specs = [
-    file("spec/services/shopify/reports/generate_spec.rb"),
-    file("spec/services/shopify/reports/start_spec.rb"),
-    file("spec/services/stripe/charge_spec.rb"),
+    file("spec/services/shipping/reports/generate_spec.rb"),
+    file("spec/services/shipping/reports/start_spec.rb"),
+    file("spec/services/payments/charge_spec.rb"),
   ];
   // The whole corpus's sources, which is what decides contention: the index is
   // built once per scan over every file, and a root only ever holds one side.
-  const byStem = namesakeIndex(specs, [...stripe, ...shopify]);
+  const byStem = namesakeIndex(specs, [...payments, ...shipping]);
 
-  assert.deepEqual(namesakeCompanions(stripe, specs, "app/services/stripe", byStem), {
+  assert.deepEqual(namesakeCompanions(payments, specs, "app/services/payments", byStem), {
     with: 1,
     of: 3,
     root: null,
   });
-  // Shopify keeps both: they are its specs, and refusing Stripe must not cost
+  // Shipping keeps both: they are its specs, and refusing payments must not cost
   // the directory that actually owns them.
-  assert.deepEqual(namesakeCompanions(shopify, specs, "app/services/shopify", byStem), {
+  assert.deepEqual(namesakeCompanions(shipping, specs, "app/services/shipping", byStem), {
     with: 2,
     of: 2,
-    root: "spec/services/shopify",
+    root: "spec/services/shipping",
   });
 });
 

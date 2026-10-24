@@ -362,7 +362,7 @@ end
   index_no_ddl: `
 class NoDdl < ActiveRecord::Migration[7.2]
   def change
-    add_index :listings, :patent_pending, algorithm: :concurrently
+    add_index :projects, :featured, algorithm: :concurrently
   end
 end
 `,
@@ -384,7 +384,7 @@ end
 class Sql < ActiveRecord::Migration[7.2]
   def up
     execute(<<~SQL.squish)
-      UPDATE listings SET watched_count = 0
+      UPDATE projects SET star_count = 0
     SQL
   end
 end
@@ -980,11 +980,11 @@ end
   data_up_down: `
 class UpdatePrompt < ActiveRecord::Migration[7.2]
   def up
-    Prompt.find_by(key: 'past_seller').update!(body: 'new')
+    Prompt.find_by(key: 'trial_ended').update!(body: 'new')
   end
 
   def down
-    Prompt.find_by(key: 'past_seller').update!(body: 'old')
+    Prompt.find_by(key: 'trial_ended').update!(body: 'old')
   end
 end
 `,
@@ -1023,11 +1023,11 @@ end
 
   const_index_name: `
 class Idx < ActiveRecord::Migration[7.2]
-  INDEX_NAME = 'index_watched_listings_on_user_id_and_listing_id'
+  INDEX_NAME = 'index_starred_projects_on_user_id_and_project_id'
 
   def up
-    remove_index :watched_listings, name: INDEX_NAME, if_exists: true
-    add_index :watched_listings, %i[user_id listing_id], name: INDEX_NAME
+    remove_index :starred_projects, name: INDEX_NAME, if_exists: true
+    add_index :starred_projects, %i[user_id project_id], name: INDEX_NAME
   end
 end
 `,
@@ -1035,7 +1035,7 @@ end
   model_backfill: `
 class Backfill < ActiveRecord::Migration[7.2]
   def up
-    Listing.where(archived: true).update_all(archived_at: Time.current)
+    Project.where(archived: true).update_all(archived_at: Time.current)
   end
 end
 `,
@@ -1543,9 +1543,8 @@ class Both < ActiveRecord::Migration[7.1]
 end
 `,
 
-  // Verbatim from the two files in
-  // /Users/crisn/Documents/Projects/chameleon-realusage-test/rails-blog/db/migrate,
-  // copied in so the suite does not read a repository outside this one.
+  // Verbatim from the two migrations of a small Rails blog app, copied in so
+  // the suite does not read a repository outside this one.
   blog_create_posts: `
 class CreatePosts < ActiveRecord::Migration[8.1]
   def change
@@ -1598,13 +1597,13 @@ end
   // reference, which is the form `add_reference ... foreign_key: true` spells
   // inline. Both declare the same foreign key.
   fk_separate_statement: `
-class CreateTicketComments < ActiveRecord::Migration[6.1]
+class CreateIssueComments < ActiveRecord::Migration[6.1]
   def change
-    add_reference :ticket_comments, :user, type: :uuid, index: true
-    add_foreign_key :ticket_comments, :users, on_update: :cascade
+    add_reference :issue_comments, :user, type: :uuid, index: true
+    add_foreign_key :issue_comments, :users, on_update: :cascade
 
-    add_reference :ticket_comments, :ticket, type: :uuid, index: true
-    add_foreign_key :ticket_comments, :tickets, on_update: :cascade
+    add_reference :issue_comments, :issue, type: :uuid, index: true
+    add_foreign_key :issue_comments, :issues, on_update: :cascade
   end
 end
 `,
@@ -1613,8 +1612,8 @@ end
   fk_other_table: `
 class AddOwner < ActiveRecord::Migration[6.1]
   def change
-    add_reference :listings, :owner, type: :uuid
-    add_foreign_key :listings, :categories
+    add_reference :projects, :owner, type: :uuid
+    add_foreign_key :projects, :categories
   end
 end
 `,
@@ -1622,29 +1621,29 @@ end
   fk_other_from: `
 class AddOwnerElsewhere < ActiveRecord::Migration[6.1]
   def change
-    add_reference :listings, :user, type: :uuid
-    add_foreign_key :tasks, :users
+    add_reference :projects, :user, type: :uuid
+    add_foreign_key :milestones, :users
   end
 end
 `,
   // `column:` names the reference outright, so no pluralisation is needed.
   fk_named_column: `
-class AddSeller < ActiveRecord::Migration[6.1]
+class AddReviewer < ActiveRecord::Migration[6.1]
   def change
-    add_reference :listings, :seller, type: :uuid
-    add_foreign_key :listings, :users, column: :seller_id
+    add_reference :projects, :reviewer, type: :uuid
+    add_foreign_key :projects, :users, column: :reviewer_id
   end
 end
 `,
   // A `t.references` inside the block the migration creates, answered by an
   // `add_foreign_key` on the same table below it.
   fk_inside_create_table: `
-class CreateTasks < ActiveRecord::Migration[6.1]
+class CreateMilestones < ActiveRecord::Migration[6.1]
   def change
-    create_table :tasks, id: :uuid do |t|
-      t.references :listing, type: :uuid
+    create_table :milestones, id: :uuid do |t|
+      t.references :project, type: :uuid
     end
-    add_foreign_key :tasks, :listings
+    add_foreign_key :milestones, :projects
   end
 end
 `,
@@ -1654,9 +1653,9 @@ end
   fk_only_on_rollback: `
 class R1 < ActiveRecord::Migration[6.1]
   def change
-    add_reference :listings, :user, type: :uuid
+    add_reference :projects, :user, type: :uuid
     reversible do |dir|
-      dir.down { add_foreign_key :listings, :users }
+      dir.down { add_foreign_key :projects, :users }
     end
   end
 end
@@ -1664,11 +1663,11 @@ end
   fk_only_in_down: `
 class R2 < ActiveRecord::Migration[6.1]
   def up
-    add_reference :listings, :user, type: :uuid
+    add_reference :projects, :user, type: :uuid
   end
 
   def down
-    add_foreign_key :listings, :users
+    add_foreign_key :projects, :users
   end
 end
 `,
@@ -1676,9 +1675,9 @@ end
   fk_inside_change_table: `
 class R3 < ActiveRecord::Migration[6.1]
   def change
-    change_table :tasks do |t|
-      t.references :listing, type: :uuid
-      t.foreign_key :listings, column: :listing_id
+    change_table :milestones do |t|
+      t.references :project, type: :uuid
+      t.foreign_key :projects, column: :project_id
     end
   end
 end
@@ -1689,11 +1688,11 @@ end
   fk_irregular_plurals: `
 class R4 < ActiveRecord::Migration[6.1]
   def change
-    add_reference :listings, :company, type: :uuid
-    add_foreign_key :listings, :companies
+    add_reference :projects, :company, type: :uuid
+    add_foreign_key :projects, :companies
 
-    add_reference :listings, :address, type: :uuid
-    add_foreign_key :listings, :addresses
+    add_reference :projects, :address, type: :uuid
+    add_foreign_key :projects, :addresses
   end
 end
 `,
@@ -1702,9 +1701,9 @@ end
   fk_unrelated_down_block: `
 class R5 < ActiveRecord::Migration[6.1]
   def change
-    add_reference :listings, :user, type: :uuid
+    add_reference :projects, :user, type: :uuid
     Rollout.down do
-      add_foreign_key :listings, :users
+      add_foreign_key :projects, :users
     end
   end
 end
@@ -2063,7 +2062,7 @@ test("a constant assigned in the migration is not an application model", needsRu
 test("a migration reaching into a model is the violation the claim is about", needsRuby, () => {
   // Without this the previous test is satisfied by a predicate that never
   // charges a constant receiver at all. Time is on the framework allowlist and
-  // Listing is not.
+  // Project is not.
   assert.deepEqual(counts("migration_schema_only", "model_backfill"), {
     candidates: 1,
     conforming: 0,

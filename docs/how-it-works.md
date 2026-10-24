@@ -900,7 +900,7 @@ and the claim names whichever spelling the directory writes more.
 `interface_prefix` and `type_alias_prefix` take the leading capital a declared type name carries
 before a second capital, where
 `IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more
-capitals reads both ways, `IOStream` being an acronym and `IEFLogon` being `I` on the `EFLogon` in
+capitals reads both ways, `IOStream` being an acronym and `IQRScanner` being `I` on the `QRScanner` in
 the directory of the same name, so it votes for neither and is not a site; nor does a name that is
 nothing but two capitals, `IO` being the same two readings with nothing to separate them, nor one
 that opens on two capitals and a digit, `IV8Profile` being `I` on `V8Profile` and `ID3Tag` the tag
@@ -1540,7 +1540,7 @@ until a file under it is touched. A subagent that only greps and `cat`s never to
 the exploration phase issue #34 measured going dark, and it is the whole of the gap: a subagent that
 Reads is served like the main thread, overview included.
 
-The overview head carries four fixed sentences beside the counts. "Read a file before editing it:
+The overview head carries three fixed sentences beside the counts. "Read a file before editing it:
 these notes load when you read, not when you grep" is that ceiling said to the agent. "When unsure
 what this code does, read it, grep it, or run it instead of guessing, and say what you could not
 verify" names the tools the agent already has and permits the abstention, which is what keeps a
@@ -1551,10 +1551,9 @@ one about what to do with a change instead of what to read first: the counts bel
 files they point at, say what the practice is, and this says to follow it and finish. It opens on a
 trigger clause because removing the equivalent scope guard is measured to move the out-of-scope rate
 by double digits;
-`docs/research/one-line-that-finishes-in-house-style.md` carries the sources (A42). The fourth is a
-house rule set for every map rather than counted or measured: "Code comments stay short and carry
-no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs
-several, each opens with the part it changes, such as BE or FE" (A121). All four are constant, so A5
+`docs/research/one-line-that-finishes-in-house-style.md` carries the sources (A42). A fourth, a
+house rule on comments and pull request titles that was the same for every map and counted from
+nothing, was removed: it told every repository's agent one team's conventions (A121). All three are constant, so A5
 holds, and to keep the overview inside its forty lines with every optional line on, the string line
 of Not covered shares the line that says memory, GC and I/O are runtime only. The line above them that says what a claim is also carries the key to every
 counts line: `"no convention" means the gate in parentheses stopped it, and its sites may still all

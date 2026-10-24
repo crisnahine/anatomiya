@@ -7,13 +7,13 @@ build actually gives a hook on that event and what it does with what the hook pr
 
 Every claim below carries its source. Three kinds appear:
 
-- **read**: a string or a function recovered from the installed Claude Code build, with its byte offset
+- **read**: behaviour read from the installed Claude Code build, described here rather than quoted
 - **run**: a command and its output on this machine, today
 - **doc**: a first-party page, quoted, with its URL
 
 The build read and run against is **Claude Code 2.1.250**, the file
-`/Users/crisn/.local/share/claude/versions/2.1.250`, 206,479,552 bytes. Offsets are into that file and
-are one build's addresses, not another's. Every `run` below is a headless `claude -p` session with a
+`~/.local/share/claude/versions/2.1.250`, 206,479,552 bytes. What it does is one build's behaviour, not
+another's. Every `run` below is a headless `claude -p` session with a
 throwaway `--settings` file, in a temp directory, against `claude-opus-5` at `--effort low`.
 
 ## Summary
@@ -53,7 +53,7 @@ Write:
 ```json
 {
   "session_id": "a8371397-866e-4cfc-864c-d4d61197826c",
-  "transcript_path": "/Users/crisn/.claude/projects/-private-tmp-pretooluse-cap-work/a8371397-866e-4cfc-864c-d4d61197826c.jsonl",
+  "transcript_path": "<home>/.claude/projects/-private-tmp-pretooluse-cap-work/a8371397-866e-4cfc-864c-d4d61197826c.jsonl",
   "cwd": "/private/tmp/pretooluse-cap/work",
   "prompt_id": "e0545205-67d0-4640-8110-dda2d36abf39",
   "permission_mode": "default",
@@ -73,7 +73,7 @@ Edit:
 ```json
 {
   "session_id": "3d95b296-d1b0-4c53-8220-7283993661ee",
-  "transcript_path": "/Users/crisn/.claude/projects/-private-tmp-pretooluse-cap-work/3d95b296-d1b0-4c53-8220-7283993661ee.jsonl",
+  "transcript_path": "<home>/.claude/projects/-private-tmp-pretooluse-cap-work/3d95b296-d1b0-4c53-8220-7283993661ee.jsonl",
   "cwd": "/private/tmp/pretooluse-cap/work",
   "prompt_id": "4b511057-21ff-48fc-809f-bb744ec86843",
   "permission_mode": "default",
@@ -95,7 +95,7 @@ NotebookEdit:
 ```json
 {
   "session_id": "13100479-08dc-44e9-b188-6149560db818",
-  "transcript_path": "/Users/crisn/.claude/projects/-private-tmp-pretooluse-cap-work/13100479-08dc-44e9-b188-6149560db818.jsonl",
+  "transcript_path": "<home>/.claude/projects/-private-tmp-pretooluse-cap-work/13100479-08dc-44e9-b188-6149560db818.jsonl",
   "cwd": "/private/tmp/pretooluse-cap/work",
   "prompt_id": "84533ce4-14fb-4562-a9da-c85cf66da22c",
   "permission_mode": "default",
@@ -121,28 +121,16 @@ The NotebookEdit capture is worth a second look. `cwd` is `/private/tmp/pretoolu
 so those are the same file, spelled two ways. The build hands the hook the string the model wrote, not
 a resolved path. A hook that compares the path against a repository root has to resolve it itself.
 
-Every path captured here was absolute, and the Write tool's own schema asks for one (**read**, offset
-72,006,488, `The absolute path to the file to write`). Nothing in the hook payload guarantees it. Treat
+Every path captured here was absolute, and the Write tool's own schema asks for an absolute path
+(**read**). Nothing in the hook payload guarantees it. Treat
 a relative path as possible and resolve against `cwd`.
 
 ### Where the common fields come from
 
-**read**, offset 161,218,712, the function that builds the base of every hook payload:
-
-```js
-function Ca(e,t,r,o){
-  ...
-  return {session_id:e.id, transcript_path:Cm(e.id), cwd:t, prompt_id:hY()??void 0,
-          permission_mode:r, agent_id:o?.agentId, agent_type:u, effort:T}
-}
-```
-
-and the PreToolUse caller that adds the rest (**read**, offset 159,357,000 region, inside
-`executePreToolHooks`):
-
-```js
-let D={...Ca(o.session,te(),u,o), hook_event_name:"PreToolUse", tool_name:e, tool_input:r, tool_use_id:t};
-```
+**read**. One function builds the base of every hook payload: the session id, the transcript path, the
+working directory, the prompt id, the permission mode, the agent id and type when there is an agent,
+and the effort. The PreToolUse caller spreads that base and adds the event name, the tool name, the
+tool input and the tool use id.
 
 So the field set is fixed: `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
 `agent_id`, `agent_type`, `effort`, `hook_event_name`, `tool_name`, `tool_input`, `tool_use_id`.
@@ -156,15 +144,9 @@ docs say they appear "only in subagents" and "only with `--agent` or in subagent
 
 ### `additionalContext` is supported on PreToolUse, with the same shape
 
-**read**, offset 155,228,997, the output schema for the event:
-
-```js
-m({hookEventName:F("PreToolUse"),
-   permissionDecision:H3().optional(),
-   permissionDecisionReason:i().optional(),
-   updatedInput:Le(i(),ye()).optional(),
-   additionalContext:i().optional()})
-```
+**read**. The build's output schema for the event takes `hookEventName` set to `PreToolUse`, and four
+optional fields: `permissionDecision` from the decision enum, `permissionDecisionReason` and
+`additionalContext` as strings, and `updatedInput` as an object.
 
 **run**. A hook whose whole stdout is one line:
 
@@ -217,18 +199,13 @@ The model answered `NO-MAGIC-WORD`. The transcript holds the text as a `hook_suc
 `content` set to the stdout, so it is recorded, and the model did not report it when asked to report
 every hook text it was shown.
 
-The build's own `/hooks` menu text agrees (**read**, offset 75,318,303, the PreToolUse entry):
+The build's own `/hooks` menu text agrees (**read**, the PreToolUse entry). It says the command gets
+the tool call's arguments as JSON, that at exit 0 neither stdout nor stderr is shown, that exit 2 shows
+stderr to the model and blocks the call, and that any other exit code shows stderr to the user only and
+lets the call go ahead.
 
-```
-Before tool execution
-Input to command is JSON of tool call arguments.
-Exit code 0 - stdout/stderr not shown
-Exit code 2 - show stderr to model and block tool call
-Other exit codes - show stderr to user only but continue with tool call
-```
-
-Compare `UserPromptSubmit`, three entries further on in the same table: "Exit code 0 - stdout shown to
-Claude". The plugin's existing echo hook can get away with plain stdout on that event. A PreToolUse
+Compare `UserPromptSubmit`, three entries further on in the same table, where the entry says stdout at
+exit 0 is shown to the model. The plugin's existing echo hook can get away with plain stdout on that event. A PreToolUse
 hook cannot. It has to return JSON.
 
 ### Stdout must be JSON and nothing else
@@ -236,18 +213,9 @@ hook cannot. It has to return JSON.
 This one cost a run. The first attempt printed a plain line, then the JSON, and the model answered
 `NO-MAGIC-WORD` even though the JSON was right there in the stdout the transcript recorded.
 
-**read**, offset 161,220,008, the stdout parser:
-
-```js
-function aIe(e){
-  let t=e.trim();
-  if(!t.startsWith("{"))return n("Hook output does not start with {, treating as plain text"),{plainText:e};
-  ...
-  if(!t.endsWith("}"))return ...,{plainText:e};
-  if(BNn(t))return n("Hook output is several JSON documents, treating as plain text"),{plainText:e};
-  ...
-}
-```
+**read**, the stdout parser. It trims the output, then treats it as plain text, with only a debug log
+line, if it does not start with `{`, if it does not end with `}`, or if it holds more than one JSON
+document.
 
 Three ways to lose the whole payload without an error: print anything before the `{`, truncate the
 JSON, or print more than one JSON document. Each is a silent downgrade to plain text, and plain text
@@ -257,11 +225,7 @@ on this event goes nowhere.
 
 ### The four values, three of them documented
 
-**read**, offsets 155,215,034 and 158,900,135, the enum the schema uses:
-
-```js
-H3=h(()=>le(["allow","deny","ask","defer"]))
-```
+**read**. The enum the schema uses has four values: `allow`, `deny`, `ask` and `defer`.
 
 The docs list three (**doc**, [Hooks reference](https://code.claude.com/docs/en/hooks), the PreToolUse
 Decision Control section):
@@ -271,8 +235,8 @@ Decision Control section):
 > * `"deny"`: blocks the tool call
 > * `"ask"`: prompts the user for permission
 
-`defer` is in the build's enum and in the mapper's switch (**read**, offset 161,222,061, inside `G1`:
-`case"defer":M.permissionBehavior="defer";break`). It appears in no documentation found. Do not use it.
+`defer` is in the build's enum, and the function that maps hook JSON to a decision has a case for it
+that sets the permission behaviour to `defer` (**read**). It appears in no documentation found. Do not use it.
 
 ### What each one did, measured
 
@@ -325,28 +289,16 @@ together. They have to agree with each other, because the model reads them side 
 
 To the model, in the tool result. Both `deny` and `ask` were reported back verbatim by the model in
 runs that asked it to quote everything it saw. It also lands in the transcript, which is where a user
-looking at the session sees it. **read**, offset 161,222,061, the mapper:
-
-```js
-case"deny": M.permissionBehavior="deny",
-  M.blockingError={blockingError:e.hookSpecificOutput.permissionDecisionReason||e.reason||"Blocked by hook",command:t};
-```
-
-so the reason is the block message, and the fallback when it is missing is the literal string
+looking at the session sees it. **read**, the mapper: on `deny` it sets the behaviour to deny and builds
+the blocking error from `permissionDecisionReason`, then the top-level `reason`, then a fixed fallback. So the reason is the block message, and the fallback when it is missing is the literal string
 `Blocked by hook`.
 
 ### An allow is not the last word
 
-**read**, offset 159,350,179, the function that takes the hook's decision into the permission
-pipeline:
-
-```js
-if(e?.behavior==="deny")return n(`Hook denied tool use for ${t.name}`),{decision:e,input:r};
-...
-if(M?.behavior==="deny")return n(`Hook returned '${E}' for ${t.name}, but deny rule overrides: ${M.message}`),{decision:M,input:R};
-if(M?.behavior==="ask"){ ... `but ask rule/safety check requires full permission pipeline` ... }
-if(E==="allow"){ if(T)return n(`Hook approved tool use for ${t.name}, but canUseTool is required`), ... }
-```
+**read**, the function that takes the hook's decision into the permission pipeline. A hook `deny`
+returns at once. A hook `allow` or `ask` is then checked against the configured rules: a matching deny
+rule overrides it, a matching ask rule or safety check sends it through the full permission pipeline,
+and an `allow` from a host that requires `canUseTool` still goes to `canUseTool`.
 
 A hook's `allow` is a vote, and a deny rule, an ask rule, or a host that requires `canUseTool` all beat
 it. A hook's `deny` is final.
@@ -365,10 +317,9 @@ Note the mismatch: I passed `note.txt`, the result claims `moved.txt`, and it cl
 telling me not to verify. Both the path and the content were changed out from under t...
 ```
 
-The rewrite is honoured with `allow` or `ask`, or on its own with no decision (**read**, offset
-161,272,700 region: `let mn=Ke.updatedInput&&(Ke.permissionBehavior==="allow"||Ke.permissionBehavior==="ask")?Ke.updatedInput:void 0`,
-and further down `if(Ke.updatedInput&&Ke.permissionBehavior===void 0) ... yield{updatedInput:Ke.updatedInput}`).
-It is not honoured alongside `deny`, which needs no input.
+The rewrite is honoured with `allow` or `ask`, or on its own with no decision (**read**: the hook runner
+keeps `updatedInput` when the behaviour is `allow` or `ask`, and passes it on by itself when there is no
+behaviour at all). It is not honoured alongside `deny`, which needs no input.
 
 Silently relocating a file the model asked to write leaves the model holding a false belief about its
 own work. If this repository ever wants relocation, say so in `additionalContext` and let the model do
@@ -388,13 +339,8 @@ same handler stays separate." (**doc**, same page.)
 
 ### The timeout field is seconds, and the default is 600
 
-**read**, offset 161,230,323, inside the spawn function:
-
-```js
-let cn=e.timeout?e.timeout*1000:Pi
-```
-
-and **read**, offset 159,357,381: `var Pi=600000`. So an absent `timeout` means ten minutes.
+**read**, inside the spawn function: a set `timeout` is multiplied by 1000, and an absent one falls back
+to a default of 600,000 milliseconds. So an absent `timeout` means ten minutes.
 
 **doc**, [Hooks reference](https://code.claude.com/docs/en/hooks), the handler field table:
 
@@ -417,7 +363,7 @@ default.
 | hook sleeps 12s under `"timeout": 2` | proceeds, file created | `hook_cancelled`, `timedOut: true`, `timeoutMs: 2000`, `durationMs: 2014` | nothing |
 | exit 2, stderr text | blocked, file not created | tool result with `is_error: true` | the stderr, verbatim |
 
-The build's own rule, again (**read**, offset 75,318,303): exit 2 blocks; every other non-zero exit
+The build's own rule, again (**read**, the `/hooks` menu text): exit 2 blocks; every other non-zero exit
 shows stderr to the user only and continues.
 
 That is the answer to the plugin's own rule that a hook must never break the run it exists to help. A
@@ -431,7 +377,7 @@ would go on exiting 0 forever.
 
 ### What the hook is given to run in
 
-**read**, offset 161,226,300 region, the spawn: the process gets the session environment plus
+**read**, the spawn: the process gets the session environment plus
 `CLAUDE_PROJECT_DIR`, and, for a plugin hook, `CLAUDE_PLUGIN_ROOT` and `CLAUDE_PLUGIN_DATA`. Its `cwd`
 is the project directory, not the tool's target directory. Referencing `${CLAUDE_PLUGIN_ROOT}` from a
 hook that is not a plugin hook throws with a named error, which is how the plugin's existing hooks are
@@ -441,27 +387,8 @@ already wired.
 
 ### `"Write|Edit|NotebookEdit"` is a literal list, not a regex
 
-**read**, offsets 161,236,106 and 161,238,079:
-
-```js
-function Dwt(e,t,r){
-  if(!(t?/^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/).test(e))return;
-  return e.split(t?/[|,]/:"|").map((u)=>u.trim()).filter(Boolean).flatMap((u)=>tLe(vd(u),r));
-}
-function AEe(e,t,r,o){
-  if(!t||t==="*")return!0;
-  let u=Dwt(t,r,o);
-  if(u!==void 0)return u.includes(e);
-  try{
-    let p=new RegExp(t);
-    if(p.test(e))return!0;
-    ...
-    return!1;
-  }catch{return n(`Invalid regex pattern in hook matcher: ${t}`),!1}
-}
-```
-
-Reading it in order:
+**read**, the two matcher functions, the fast path and the fallback that calls it. Reading them in
+order:
 
 - `"*"`, `""`, or no matcher at all matches every tool. Checked first, so `*` never reaches the regex
   compiler.
@@ -469,7 +396,7 @@ Reading it in order:
   comma, space and `-`, takes the fast path: split on `|` or `,`, trim, compare exact strings. So
   `"Write|Edit|NotebookEdit"` is three exact names.
 - Anything else is `new RegExp(matcher)` and an unanchored `.test`. `^Notebook` and `mcp__memory__.*`
-  work; a matcher with a syntax error logs `Invalid regex pattern in hook matcher` and matches nothing.
+  work; a matcher with a syntax error logs an invalid-regex debug line and matches nothing.
 
 **doc**, [Hooks reference](https://code.claude.com/docs/en/hooks), the matcher table, which says the
 same thing:
@@ -489,23 +416,16 @@ match-all and it is safe.
 **run**. A matcher of `"write"`, lowercase, on `PreToolUse`, pointed at a hook that appends to a log
 file. One session that wrote a file. The log file was never created: the hook never fired.
 
-The build has no case folding anywhere on that path. `vd` (**read**, offset 154,177,353) is an alias
-lookup for a handful of renamed tools (`ReadMcpResource` to `ReadMcpResourceTool` and similar), not a
-normaliser:
-
-```js
-function vd(e){return Object.hasOwn(i,e)?i[e]:e}
-```
+The build has no case folding anywhere on that path. The one lookup each name goes through (**read**)
+is an alias map for a handful of renamed tools (`ReadMcpResource` to `ReadMcpResourceTool` and
+similar), which returns the name unchanged when it is not in the map. It is not a normaliser.
 
 ### The file-writing tool names on this build
 
-**read**, offset 158,907,031, the build's own set, used to decide whether a tool call touched a file:
+**read**. The build keeps its own set of four names, used to decide whether a tool call touched a file:
+`Write`, `Edit`, `MultiEdit` and `NotebookEdit`.
 
-```js
-var n2t=["Write","Edit","MultiEdit","NotebookEdit"],sUe=new Set(n2t);
-```
-
-`MultiEdit` is still named in the build, in that set and in a tool-name list at offset 159,578,015.
+`MultiEdit` is still named in the build, in that set and in a separate tool-name list.
 It was not offered as a tool in any session run for this note, and no separate tool description for it
 was found. Treat it as a name the build still recognises rather than a tool that will appear. Including
 it in a matcher costs nothing and guards against it coming back.
@@ -591,7 +511,7 @@ Ranked by how quietly it would fail:
 
 ## What could not be established
 
-- **Whether the truncation caps apply to a local command hook.** A table at offset 174,260,187 sets
+- **Whether the truncation caps apply to a local command hook.** A table in the build sets
   `additionalContext` to 8000 characters and 200 lines and `permissionDecisionReason` to 2000
   characters and 20 lines. The same chunk drops `updatedInput`, `allow` and `defer` on `PreToolUse`,
   which the main path plainly honours, and it sits beside strings about serving a machine's hooks to a
@@ -606,7 +526,7 @@ Ranked by how quietly it would fail:
 - **Whether `MultiEdit` is a live tool.** Its name is in the build's own file-writing set and in a
   tool-name list. No tool description for it was found and it was never offered in any session run
   here. Read as a name still recognised, not as a tool confirmed present.
-- **What `defer` does.** It is in the enum and the mapper sets `permissionBehavior="defer"`, and the
+- **What `defer` does.** It is in the enum and the mapper turns it into a defer behaviour, and the
   aggregation ranks it between `deny` and `ask`. No run used it and no documentation covers it.
 - **Whether the `hook_success` attachment is genuinely hidden from the model.** Two runs asked the
   model to report every hook text it had been shown and it reported neither the plain stdout nor the
@@ -647,8 +567,8 @@ the `tool_result` that follows. The attachment types that matter are `hook_succe
 `hook_additional_context`, `hook_non_blocking_error` and `hook_cancelled`.
 
 The bundle reads use `plugins/ultracode-anywhere/hooks/upstream.mjs` to find the build (`cliPath()`),
-then `LC_ALL=C grep -a -b -o -F '<literal>'` for offsets and a seek-and-read of a few kilobytes around
-each. The file is 206 MB; a wide context pattern is refused by the stock macOS `grep`.
+then `LC_ALL=C grep -a -b -o -F '<literal>'` to find a known string and a seek-and-read of a few
+kilobytes around it. The file is 206 MB; a wide context pattern is refused by the stock macOS `grep`.
 
 ## Sources
 
@@ -658,13 +578,11 @@ First-party documentation:
 
 The installed build:
 
-- `/Users/crisn/.local/share/claude/versions/2.1.250`, 206,479,552 bytes. Offsets cited above are into
-  that file. Named sites: the `/hooks` menu event descriptions at 75,318,303; the bundled hooks
-  reference at 67,609,680; the payload builder `Ca` at 161,218,712; the stdout parser `aIe` at
-  161,220,008; the JSON mapper `G1` at 161,222,061; the spawn and timeout at 161,230,323; the matcher
-  `Dwt` and `AEe` at 161,236,106 and 161,238,079; the tool-name alias map `vd` at 154,177,353; the
-  output schema at 155,228,997; the decision enum at 155,215,034; the file-writing tool set at
-  158,907,031; the chain default `Pi` at 159,357,381; the permission handoff `_8t` at 159,350,179.
+- `~/.local/share/claude/versions/2.1.250`, 206,479,552 bytes. Sites read, described above rather than
+  quoted: the `/hooks` menu event descriptions, the bundled hooks reference, the payload builder, the
+  stdout parser, the JSON-to-decision mapper, the spawn and its timeout, the two matcher functions, the
+  tool-name alias map, the output schema, the decision enum, the file-writing tool set, the default
+  timeout, and the permission handoff.
 
 This repository:
 

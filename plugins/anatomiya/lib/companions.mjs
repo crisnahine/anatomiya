@@ -242,8 +242,8 @@ function learnStemExtras(byStem, sourceFiles) {
 
 /**
  * How many trailing segments two directories share, once the tree words are
- * gone. `services/shopify/reports` shares three with itself and one with
- * `services/stripe/reports`.
+ * gone. `services/shipping/reports` shares three with itself and one with
+ * `services/payments/reports`.
  */
 function sharedTail(a, b) {
   const x = a === "" ? [] : a.split("/");
@@ -258,9 +258,9 @@ function sharedTail(a, b) {
  *
  * A spec is written for one file. Asked per root, with only that root's sources
  * in hand, the question cannot see that another directory already owns the
- * answer: `app/services/stripe/reports/generate.rb` has no spec at all, and
- * `spec/services/shopify/reports/generate_spec.rb`, which describes
- * `Shopify::Reports::Generate`, was credited to it because the tail below the
+ * answer: `app/services/payments/reports/generate.rb` has no spec at all, and
+ * `spec/services/shipping/reports/generate_spec.rb`, which describes
+ * `Shipping::Reports::Generate`, was credited to it because the tail below the
  * area root is `reports` on both sides. The kinds line then said 15 where the
  * pairing claim, which mirrors the whole path, said 13, in one generated file.
  *
@@ -548,8 +548,8 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // The same mirror, asked the other way round. `mirrors` is one-directional
       // and the empty-tail arm only ever asked whether the candidate ends in the
       // root, so a root whose tree-less form is longer than the test tree's
-      // never matched: `app/mcp` is a Rails autoload root, `withoutTree` leaves
-      // `mcp/mcp` against `mcp`, and every file sitting directly there read
+      // never matched: `app/widgets` is a Rails autoload root, `withoutTree` leaves
+      // `widgets/widgets` against `widgets`, and every file sitting directly there read
       // untested while the same files read tested one segment up.
       //
       // The reversed direction is held twice, because H18 measured the

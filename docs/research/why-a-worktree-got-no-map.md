@@ -62,25 +62,16 @@ Source: same page, "Auto memory"
 
 ### The build actively excludes the main checkout
 
-Strings from `~/.local/share/claude/versions/2.1.280` (extracted with `strings -n 8`, searched
-with python) carry a pair of helpers in the same chunk as the `claudemd:` and
-`rules entry stat failed` log lines:
+Read from `~/.local/share/claude/versions/2.1.280` and described here rather than quoted, the
+memory loader carries a pair of helpers. The first answers the worktree root and the main
+repository root when the two differ and the worktree is under the main repository, and nothing
+otherwise. The second answers true for a directory that is under the main repository and *not*
+under the worktree. Three call sites use it, all in the memory loader:
 
-```js
-function Y8e(e){let n=Un(e),r=Ur(e);
-  return n!==null&&r!==null&&Bp(n)!==Bp(r)&&Gd(n,r)?{worktreeRoot:n,mainRepoRoot:r}:null}
-function X8e(e,n){return n!==null&&Gd(e,n.mainRepoRoot)&&!Gd(e,n.worktreeRoot)}
-```
-
-`Y8e(cwd)` answers `{worktreeRoot, mainRepoRoot}` when the two differ and the worktree is under
-the main repo. `X8e(dir, that)` answers true for a directory that is under the main repo and
-*not* under the worktree. Three call sites use it, all in the memory loader:
-
-- the CLAUDE.md ancestor walk: `let nr=X8e($n,Be), bn=Xe&&!nr`: `project` is forced false for
-  such a level, so `CLAUDE.md` and `.claude/CLAUDE.md` there are not read;
-- the rules walk: `for(let he of y.reverse()){if(X8e(he,M))continue; ...}`: the level is skipped
-  outright;
-- the nested-directory walk: `cwdLevelDirs: h.filter((w)=>!X8e(w,y))`.
+- the CLAUDE.md ancestor walk: `project` is forced false for such a level, so `CLAUDE.md` and
+  `.claude/CLAUDE.md` there are not read;
+- the rules walk: the level is skipped outright;
+- the nested-directory walk: such a level is filtered out of the directories it reads.
 
 This matters because Claude Code's own default worktree location is *inside* the repository:
 
@@ -88,8 +79,8 @@ This matters because Claude Code's own default worktree location is *inside* the
 
 Source: https://code.claude.com/docs/en/worktrees, "Start Claude in a worktree"
 
-Without `X8e`, walking up from `.claude/worktrees/foo` would reach the main checkout root and
-load its rules. `X8e` is what stops that. So the answer to "does it ever read them from the
+Without the second helper, walking up from `.claude/worktrees/foo` would reach the main checkout
+root and load its rules. That helper is what stops it. So the answer to "does it ever read them from the
 main checkout" is no, and the no is deliberate. For a worktree placed *outside* the repository
 (the front end's `.worktrees/` siblings and the scratchpad ones, listed in section 2), the main
 checkout is not an ancestor at all, so it is never a candidate.
@@ -139,10 +130,9 @@ It reaches inside a wholly ignored directory, which is exactly the front end's c
 
 Source: same section
 
-The name is real in the build: `strings` on 2.1.280 returns `.worktreeinclude`,
-`Skipping .worktreeinclude copy: realpath(`, `Skipping symlink in .worktreeinclude: `,
-`Skipping .worktreeinclude entry: destination escapes worktree via committed symlink: ` and
-` files from .worktreeinclude: `.
+The name is real in the build: 2.1.280 carries `.worktreeinclude`, with log lines for an entry
+whose realpath fails, a symlink it skips, an entry whose destination escapes the worktree through
+a committed symlink, and the count of files it copied.
 
 Two limits before recommending it:
 
@@ -430,14 +420,15 @@ the corpus would be the way to widen it, and that is a corpus run, not a reading
 ### The finding that argues against changing it
 
 The report says agents create `__tests__` directories against house style. anatomiya's counts
-say `__tests__` **is** the house style in the front end's `src/`:
+say `__tests__` **is** the house style in the front end's `src/` (three of the paths below are
+renamed, and each keeps its `__tests__` directory):
 
 ```
 src/components/Calendar/__tests__/Store.test.ts
 src/components/forms/utils/tests/pickDeep.test.js
-src/pages/Marketplace/Controller/utils/__tests__/mergePersistedColumns.test.ts
-src/pages/MyAccount/Controller/sections/Perks/__tests__/perks.test.ts
-src/utils/__tests__/currencyLabel.test.ts
+src/pages/Search/View/utils/__tests__/mergeSavedColumns.test.ts
+src/pages/Profile/View/panels/Billing/__tests__/billing.test.ts
+src/utils/__tests__/dateLabel.test.ts
 src/utils/__tests__/yup.test.js
 src/utils/__tests__/humps.test.js
 src/utils/deepmerge.test.ts
@@ -493,8 +484,8 @@ already reports. The closing sentence the notice prints is unchanged: it is meas
   `isolation: worktree`, `.worktreeinclude`, what worktrees share, isolation checks, refusals
 - https://code.claude.com/docs/en/hooks: hooks in subagents, `cwd` / `transcript_path` /
   `agent_id`, `WorktreeCreate` / `WorktreeRemove`
-- `~/.local/share/claude/versions/2.1.280`: `strings -n 8`, then python regex for call sites
-  (`Y8e`, `X8e`, `.worktreeinclude`, `tengu_worktree_*`)
+- `~/.local/share/claude/versions/2.1.280`, read for the worktree exclusion helpers and their
+  call sites, `.worktreeinclude` and the `tengu_worktree_*` flags, described rather than quoted
 - `git help worktree`, `git help gitrepository-layout`, git 2.54.0 (Apple Git-157)
 - Fixtures under `mktemp -d`: plain worktree, `--relative-paths`, `--separate-git-dir`, bare
   clone, `core.worktree` redirect; `echoContext` / `ownLayout` / `noticeFor` called directly

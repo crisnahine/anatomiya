@@ -1,6 +1,10 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 350 numbered rows, each one a measurement or a review finding
+Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A security problem is
+reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
+a public issue.
+
+Read `DECISIONS.md` first. It is 352 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -694,6 +698,13 @@ those are the rows where a plausible-looking refactor quietly removes a control.
 
 No attribution boilerplate in commits, code, or documentation. No tool or vendor footers, no
 generated-by banners, no co-author trailers.
+
+Name no private repository, company or person, and copy nothing out of one: a fixture invents its
+names, and a measurement on a private repository describes it (`a measured Rails API`) and renames
+its paths (G16). Quote no code, prompt text or byte offset read out of a proprietary build, Claude
+Code's included: describe what the build does, and quote only its public documentation, open-source
+source and the output a command prints (G17). `npm run check:docs` refuses a byte offset into a
+build in any tracked document, and this machine's home directory in any tracked document or module.
 
 ## Releases
 

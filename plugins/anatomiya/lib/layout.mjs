@@ -530,7 +530,7 @@ export function layoutIndexes(files, mirrored = mirroredTests(files)) {
   // The sources the whole corpus holds, so a test file can be assigned to the
   // one it was written for. A root only ever holds one side of a collision, so
   // asked per root the question cannot see that another directory already owns
-  // the answer, and `app/services/stripe` was credited with Shopify's specs.
+  // the answer, and `app/services/payments` was credited with the shipping specs.
   //
   // A file the parse read and found empty is left out of both sides. It is not
   // a producer, so no root would ever count it, and letting it win ownership
