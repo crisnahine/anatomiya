@@ -1615,7 +1615,7 @@ test("a controller area counts the relative and the scoped spelling as one base"
 
 test("a compact class name resolves its superclass at the top level, not inside itself", async () => {
   // Ruby evaluates the superclass expression in the scope the class is written
-  // in. `class Api::V1::Qbo < BaseController` is written at the top level, so
+  // in. `class Api::V1::Sms < BaseController` is written at the top level, so
   // the bare name is `::BaseController`; only bodies actually nested in
   // `module Api::V1` resolve it to `Api::V1::BaseController`. The site's own
   // qualified name cannot tell the two apart, because both read back alike.

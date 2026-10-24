@@ -673,8 +673,8 @@ test("a class with no base is reported only where the map stated the base", need
 test("a base spelled relative to the nesting it is written in is the learned one, as the fold reads it", needsRuby, async (t) => {
   // The fold resolves a bare constant against the site's nesting (C30), and
   // compared as written the check flagged every class the map counted.
-  const relative = await rubyRevision(t, "module Api\n  module V1\n    class Qbo < BaseController\n    end\n  end\nend\n");
-  const elsewhere = await rubyRevision(t, "class Api::V1::Qbo < BaseController\nend\n");
+  const relative = await rubyRevision(t, "module Api\n  module V1\n    class Sms < BaseController\n    end\n  end\nend\n");
+  const elsewhere = await rubyRevision(t, "class Api::V1::Sms < BaseController\nend\n");
   const mixin = await rubyRevision(t, "module Api\n  class W\n    include Concern\n  end\nend\n");
 
   const ask = (key, learned, head) =>

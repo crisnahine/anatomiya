@@ -692,21 +692,21 @@ test("ownership is decided within one language, so a Ruby spec cannot be owned b
 
 test("a test file answering two stems is owned once per stem, not once overall", () => {
   // `spec/models/badge_model_spec.rb` is the literal namesake of
-  // `address_model.rb` and the learned-spelling namesake of `address.rb`.
+  // `badge_model.rb` and the learned-spelling namesake of `badge.rb`.
   // Carried as one owner on one shared object, whichever stem was decided last
   // won, and the file whose own name the spec spells read untested.
   const models = [
-    file("app/models/address.rb"),
-    file("app/models/address_model.rb"),
+    file("app/models/badge.rb"),
+    file("app/models/badge_model.rb"),
     file("app/models/company.rb"),
     file("app/models/device.rb"),
     file("app/models/order.rb"),
   ];
-  const sources = [...models, file("app/legacy/address.rb")];
-  const specs = ["address", "company", "device", "order"].map((n) => file(`spec/models/${n}_model_spec.rb`));
+  const sources = [...models, file("app/legacy/badge.rb")];
+  const specs = ["badge", "company", "device", "order"].map((n) => file(`spec/models/${n}_model_spec.rb`));
   const byStem = namesakeIndex(specs, sources);
 
-  assert.deepEqual(namesakeCompanions([file("app/models/address_model.rb")], specs, "app/models", byStem), {
+  assert.deepEqual(namesakeCompanions([file("app/models/badge_model.rb")], specs, "app/models", byStem), {
     with: 1,
     of: 1,
     root: null,

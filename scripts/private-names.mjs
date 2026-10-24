@@ -4,7 +4,7 @@
  *
  * The corpus holds real repositories, and some of them are private. Every
  * fixture, comment and document here is public, so a class, a table or a path
- * lifted from a private one reads as that codebase to anyone who knows it, and
+ * lifted from a private one reads as that repository to anyone who knows it, and
  * three rounds of renaming by eye each found more. The private repositories are
  * named on the command line, so this file never lists them.
  */
@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 
 import { invokedAs, readArgv, realOf } from "./entry.mjs";
 import { ROOT } from "./plugins.mjs";
+import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { contains } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
 // Two passes, because one alternation would take `read` out of `read-only`.
@@ -86,7 +87,10 @@ const add = (map, key, rel) => (map.get(key) ?? map.set(key, new Set()).get(key)
  * and spent 72 seconds matching thousands of patterns before a file was read.
  */
 function prune(dir, names, lines, paths) {
-  for (const rel of tracked(dir)) for (const p of subPaths(rel)) paths.delete(p);
+  for (const rel of tracked(dir)) {
+    for (const p of subPaths(rel)) paths.delete(p);
+    for (const n of namesIn(rel)) names.delete(n);
+  }
   if (names.size === 0 && lines.size === 0) return;
   for (const { text } of textsOf(dir)) {
     if (names.size) for (const n of namesIn(text)) names.delete(n);
@@ -95,10 +99,20 @@ function prune(dir, names, lines, paths) {
   }
 }
 
+/** The commits a repository's history starts from, which a clone or a fork of it shares. */
+function rootsOf(dir) {
+  try {
+    return new Set(execFileSync("git", ["-C", dir, "rev-list", "--max-parents=0", "HEAD"], { stdio: ["ignore", "pipe", "pipe"] }).toString().split("\n").filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
 /**
  * What this repository shares only with the private repositories of the
- * corpus, less what `accepted` names, or `{ error }` for a corpus that cannot
- * be read or does not hold a repository `privates` names.
+ * corpus, less what `accepted` names, and the children passed over as copies
+ * of it; or `{ error }` for a corpus that cannot be read, a repository git
+ * cannot list, or a private name the corpus does not hold.
  */
 export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
   let children;
@@ -111,14 +125,17 @@ export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
   }
   const absent = privates.filter((name) => !children.includes(name));
   if (absent.length) return { error: `the corpus holds no repository named ${absent.join(", ")}` };
-  for (const dir of [repo, ...privates.map((name) => join(corpus, name))]) {
+  for (const dir of [repo, ...children.map((name) => join(corpus, name))]) {
     try {
       tracked(dir);
     } catch (err) {
       return { error: `git cannot list the files of ${dir}: ${String(err.stderr ?? err.message).trim().split("\n")[0]}` };
     }
   }
-  const publics = children.filter((c) => !privates.includes(c)).map((c) => join(corpus, c));
+  // A copy of this repository read as public holds every name it spells, and the check would pass on nothing.
+  const own = rootsOf(repo);
+  const skipped = children.filter((c) => !privates.includes(c) && [...rootsOf(join(corpus, c))].some((r) => own.has(r)));
+  const publics = children.filter((c) => !privates.includes(c) && !skipped.includes(c)).map((c) => join(corpus, c));
   const mine = textsOf(repo);
 
   const names = new Map();
@@ -139,7 +156,10 @@ export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
       for (const n of namesIn(text)) secretNames.add(n);
       for (const l of linesIn(text)) secretLines.add(l);
     }
-    for (const rel of tracked(dir)) for (const p of subPaths(rel)) secretPaths.add(p);
+    for (const rel of tracked(dir)) {
+      for (const p of subPaths(rel)) secretPaths.add(p);
+      for (const n of namesIn(rel)) secretNames.add(n);
+    }
   }
 
   const nameCandidates = new Set([...names.keys()].filter((n) => secretNames.has(n)));
@@ -161,8 +181,8 @@ export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
     ...[...paths].map(([text, files]) => ({ kind: "path", text, files: [...files].sort() })),
   ]
     .filter((f) => !accepted.has(f.text))
-    .sort((a, b) => (a.kind === b.kind ? (a.text < b.text ? -1 : a.text > b.text ? 1 : 0) : a.kind < b.kind ? -1 : 1));
-  return { found };
+    .sort((a, b) => byCode(a.kind, b.kind) || byCode(a.text, b.text));
+  return { found, skipped };
 }
 
 const USAGE = `usage: node scripts/private-names.mjs <corpusDir> <private>... [--repo <dir>] [--accept <file>]
@@ -194,6 +214,7 @@ function main(argv) {
   }
   const result = privateNames({ repo, corpus, privates, accepted });
   if (result.error) refuse(result.error);
+  for (const name of result.skipped) console.error(`passed over ${name}: it shares a first commit with the repository it checks`);
   for (const { kind, text, files } of result.found) console.log(`${kind} ${text}: ${files.join(", ")}`);
   if (result.found.length) process.exit(1);
   console.error(`no name, line or path here is held only by ${privates.join(", ")}`);

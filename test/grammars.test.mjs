@@ -87,6 +87,19 @@ test("every vendored grammar ships with its package's license, as that license a
   }
 });
 
+test("a package installed without its LICENSE is said once, by name", async () => {
+  await oneProblem((root) => rmSync(join(root, "node_modules", "tree-sitter-go", "LICENSE")), /node_modules\/tree-sitter-go\/LICENSE is not there/);
+});
+
+test("vendoring refuses before it writes anything when a package's license is missing", async () => {
+  await withCopy(async (root, dir) => {
+    rmSync(join(root, "node_modules", "tree-sitter-go", "LICENSE"));
+    const before = readFileSync(join(dir, "grammars.json"), "utf8");
+    await assert.rejects(vendor(root), /tree-sitter-go/);
+    assert.equal(readFileSync(join(dir, "grammars.json"), "utf8"), before);
+  });
+});
+
 test("a license notice that no longer matches its package is refused, and a lost one too", async () => {
   await oneProblem((root, dir) => writeFileSync(join(dir, "LICENSES.md"), "# Grammar licenses\n"), /LICENSES\.md is not the licenses the installed packages carry/);
   await oneProblem((root, dir) => rmSync(join(dir, "LICENSES.md")), /LICENSES\.md is not the licenses the installed packages carry/);

@@ -582,7 +582,7 @@ const inRecord = (rel) => rel === "DECISIONS.md" || rel.startsWith(`${DECISIONS_
 // today's path in it would be a claim the measurement never made.
 const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
 
-// The two ways a note cited a place in a proprietary build beside its code, `offset 160,980,291` and `EXEC@7253800` (G17).
+// The two ways a note cited a place in a proprietary build beside its code, `offset 123,456,789` and `BUNDLE@1234567` (G17).
 const BUILD_OFFSET = /\boffsets? \d{1,3}(?:,\d{3}){2,}\b|@\d{6,}\b/;
 
 // A changelog is both at once, and exempting it whole was the wider half of the
@@ -1116,10 +1116,12 @@ export function checkDocs() {
   // times, and the net under the generated documents did not reach it. Research
   // notes and source comments carried it later, so every document and module is read.
   const HOME = homedir();
+  // Up to a name character, so a home of /Users/me does not claim /Users/meg.
+  const HOME_AT = HOME && HOME.length > 3 ? new RegExp(`${escapeRe(HOME)}(?![\\w.-])`) : null;
   for (const rel of tracked) {
     if (!/\.(?:md|mjs)$/.test(rel)) continue;
     const text = read(rel);
-    if (HOME && HOME.length > 3) claim(rel, !text.includes(HOME), "carries the path of the machine it was written on");
+    if (HOME_AT) claim(rel, !HOME_AT.test(text), "carries the path of the machine it was written on");
     if (rel.endsWith(".md")) claim(rel, !BUILD_OFFSET.test(text), "quotes a byte offset into a build");
     if (!rel.endsWith(".md") || RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
     for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
