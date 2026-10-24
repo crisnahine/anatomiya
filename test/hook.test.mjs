@@ -6,8 +6,8 @@ import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
-import { needsPosixSpecialFiles, needsUnreadableDirs, removeTree } from "./platform.mjs";
-import { aboutDir, echoContext, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { needsFileSizeLimit, needsPosixPermissions, needsPosixSpecialFiles, needsUnreadableDirs, removeTree } from "./platform.mjs";
+import { aboutDir, echoContext, fieldsIn, ownLayout, planRemoval, commitRemoval, removeStaleHook, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
@@ -1055,6 +1055,56 @@ test("the hook an older version wrote is taken out, and the file with it when no
 
   assert.equal(plan.changed, true);
   assert.equal(existsSync(join(dir, SETTINGS_PATH)), false, "the file held nothing else");
+});
+
+test("a settings repair keeps the file's own permissions", needsPosixPermissions, (t) => {
+  // Replaced through a new file, a person's 0600 settings, where an env secret lives, came back readable by every user.
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  const path = join(dir, SETTINGS_PATH);
+  const theirs = { env: { TOKEN: "x" } };
+  writeFileSync(path, JSON.stringify({ ...theirs, ...OLD_SETTINGS }, null, 2));
+  chmodSync(path, 0o600);
+
+  commitRemoval(dir, planRemoval(dir));
+
+  assert.deepEqual(settings(dir), theirs, "the control: the old hook was taken out");
+  assert.equal(statSync(path).mode & 0o777, 0o600);
+});
+
+test("a settings file its owner made read-only is refused, not rewritten", needsPosixPermissions, (t) => {
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  const path = join(dir, SETTINGS_PATH);
+  const theirs = { env: { TOKEN: "x" }, ...OLD_SETTINGS };
+  writeFileSync(path, JSON.stringify(theirs, null, 2));
+  chmodSync(path, 0o444);
+
+  const answer = removeStaleHook(dir);
+
+  assert.match(answer.refused ?? "", /EACCES|EPERM/, "the control: the repair was refused");
+  assert.deepEqual(settings(dir), theirs);
+  assert.equal(statSync(path).mode & 0o777, 0o444);
+});
+
+test("a settings repair the disk refuses part way leaves the file as it was", needsFileSizeLimit, (t) => {
+  // A rewrite in place truncates at open, so a full disk or a kill mid-write
+  // left the person's permissions and hooks as an empty file.
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  const theirs = { permissions: { allow: ["Bash(npm test:*)"] }, ...OLD_SETTINGS };
+  writeFileSync(join(dir, SETTINGS_PATH), JSON.stringify(theirs, null, 2));
+  const hook = new URL("../plugins/anatomiya/lib/hook.mjs", import.meta.url).href;
+  const code = `const { removeStaleHook } = await import(${JSON.stringify(hook)}); process.stdout.write(JSON.stringify(removeStaleHook(${JSON.stringify(dir)})));`;
+
+  // No file may grow past nothing in the child, which is a disk with no room left. Nor its coverage
+  // profile, which the collector would then read as an empty record and report no coverage at all.
+  const env = { ...process.env, NODE_V8_COVERAGE: undefined };
+  const run = spawnSync("sh", ["-c", `ulimit -f 0; exec "${process.execPath}" --input-type=module -e "$0"`, code], { encoding: "utf8", env });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(JSON.parse(run.stdout).refused, /file too large|EFBIG/i, "the control: the write was refused");
+  assert.deepEqual(settings(dir), theirs);
 });
 
 test("a hook a person installed by hand is not one an older version wrote", (t) => {

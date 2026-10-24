@@ -12,8 +12,9 @@ import { collect, corpusDrop, countUntrackedSource, isDenied, isCorpusPath, isEx
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
-import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { scriptGit, unaskedWhere } from "./git-script.mjs";
 import { GIT } from "../plugins/anatomiya/lib/git.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
 
@@ -167,7 +168,7 @@ test("collect follows a .claude/rules link to where git tracks the map, and nowh
   assert.deepEqual(await under(build(false)), [...named, "agents/rules/team.md"].sort());
 });
 
-test("an index read of .gitattributes that could not be asked stops the corpus, and is not read as an index that marks nothing", needsGitStub, async (t) => {
+test("an index read of .gitattributes that could not be asked stops the corpus, and is not read as an index that marks nothing", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write(".gitattributes", "gen.ts linguist-generated\n");
     write("a.ts");
@@ -176,14 +177,14 @@ test("an index read of .gitattributes that could not be asked stops the corpus, 
   });
   assert.ok((await collect(dir)).files.some((f) => f.rel === "a.ts"));
 
-  for (const pattern of ["*' cat-file blob :.gitattributes '*", "*' ls-files -v -z -- .gitattributes '*"]) {
-    const calls = gitAhead(t, unasked(pattern));
+  for (const pattern of [" cat-file blob :.gitattributes ", " ls-files -v -z -- .gitattributes "]) {
+    const calls = scriptGit(t, unaskedWhere((line) => line.includes(pattern)));
     await assert.rejects(() => collect(dir), /git could not be asked .*\.gitattributes/, pattern);
     calls.restore();
   }
 });
 
-test("the corpus stops on an index read that could not be asked only once the read beside it has ended", needsGitStub, async (t) => {
+test("the corpus stops on an index read that could not be asked only once the read beside it has ended", async (t) => {
   // The two reads start together, and a throw passed on from the first would leave the other git running behind it.
   const dir = repo(t, (d, { git, write }) => {
     write(".gitattributes", "gen.ts linguist-generated\n");
@@ -192,13 +193,20 @@ test("the corpus stops on an index read that could not be asked only once the re
   });
   const ended = join(dir, "..", `${basename(dir)}.ended`);
   t.after(() => rmSync(ended, { force: true }));
-  gitAhead(t, `case " $* " in *' cat-file blob :.gitattributes '*) kill -TERM $$;; *' ls-files -v -z -- .gitattributes '*) sleep 0.5; : > '${ended}';; esac`);
+  scriptGit(t, (_args, line) => {
+    if (line.includes(" cat-file blob :.gitattributes ")) return { signal: "SIGTERM" };
+    if (!line.includes(" ls-files -v -z -- .gitattributes ")) return null;
+    return new Promise((done) => setTimeout(() => {
+      writeFileSync(ended, "");
+      done({ stdout: "" });
+    }, 500));
+  });
 
   await assert.rejects(() => collect(dir), /git could not be asked for the index's \.gitattributes/);
   assert.equal(existsSync(ended), true, "the listing beside it was not left running");
 });
 
-test("an index copy of .gitattributes past the bound of the read leaves the working tree's file to decide", needsGitStub, async (t) => {
+test("an index copy of .gitattributes past the bound of the read leaves the working tree's file to decide", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write(".gitattributes", "gen.ts linguist-generated\n");
     write("a.ts");
@@ -206,7 +214,7 @@ test("an index copy of .gitattributes past the bound of the read leaves the work
     git("add", "-A");
   });
   // git did answer, with more than is read: that is no git that could not be asked.
-  gitAhead(t, `case " $* " in *' cat-file blob :.gitattributes '*) head -c ${GIT.maxBytes + 1} /dev/zero; exit 0;; esac`);
+  scriptGit(t, (_args, line) => (line.includes(" cat-file blob :.gitattributes ") ? { stdout: Buffer.alloc(GIT.maxBytes + 1) } : null));
 
   const rels = (await collect(dir)).files.map((f) => f.rel);
   assert.ok(rels.includes("a.ts") && !rels.includes("gen.ts"), JSON.stringify(rels));
@@ -1190,6 +1198,22 @@ test("an empty corpus discovers nothing and still carries an orphan list", () =>
 
   assert.equal(areas.length, 0);
   assert.deepEqual(areas.orphaned, []);
+});
+
+test("folding small areas into one host grows with the files folded, not their square", () => {
+  // Each fold copied the host's whole file list: 60,000 files under one host took 2.5 s.
+  const tree = (dirs) => fakeFiles([
+    ...Array.from({ length: 10 }, (_, i) => `src/top${i}.ts`),
+    ...Array.from({ length: dirs }, (_, d) => Array.from({ length: 10 }, (_, i) => `src/d${d}/f${i}.ts`)).flat(),
+  ]);
+  const folded = discover(tree(1000), { minFiles: 5, maxAreas: 50 });
+  const host = folded.find((a) => a.path === "src");
+  assert.equal(host.fileCount, 10 + 10 * 951, "the control: the folds land on one host");
+  // The host's own files, then each folded area's in the order the fold took them.
+  assert.deepEqual(host.files.slice(9, 12).map((f) => f.rel), ["src/top9.ts", "src/d0/f0.ts", "src/d0/f1.ts"]);
+
+  const ratio = doublingRatio((dirs) => { const files = tree(dirs); return () => discover(files, { minFiles: 5, maxAreas: 50 }); }, 1000);
+  assert.ok(ratio < LINEAR, `twice the folded areas took ${ratio.toFixed(2)} times as long`);
 });
 
 test("the area cap holds and folding loses no file", () => {

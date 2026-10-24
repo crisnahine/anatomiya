@@ -5,7 +5,12 @@ import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMAR
 import { buildPin, pinDelta, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { truncatedHistoryLine } from "../plugins/anatomiya/lib/render.mjs";
 import { layoutSummary } from "../plugins/anatomiya/lib/render-layout.mjs";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
+import { removeTree } from "./platform.mjs";
 
 const RUNNING_SESSION = "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map";
 const UNPINNED =
@@ -645,20 +650,46 @@ const result = (o = {}) => ({
   ...o,
 });
 
-const plan = (o = {}) => ({
-  write: ["anatomiya-overview.md", "anatomiya-area-1.md"],
-  remove: [],
-  foreign: [],
-  unknown: [],
-  replaced: [],
-  unreadableRules: [],
-  listed: true,
-  uncovered: 0,
-  orphaned: 0,
-  unreadable: [],
-  held: [],
-  blind: false,
-  ...o,
+// What a directory's entry on the plan carries, which a case may name at the top for Claude Code's.
+const DIRECTORY_FIELDS = ["write", "remove", "staged", "stagedLeft", "foreign", "unknown", "replaced", "unreadableRules", "listed"];
+
+const plan = (o = {}) => {
+  const run = Object.fromEntries(Object.entries(o).filter(([key]) => !DIRECTORY_FIELDS.includes(key)));
+  const claude = {
+    dir: ".claude/rules",
+    state: "on",
+    reason: null,
+    on: true,
+    named: true,
+    first: false,
+    was: [],
+    pending: [],
+    write: [{ name: "anatomiya-overview.md", body: "" }, { name: "anatomiya-area-1.md", body: "" }],
+    remove: [],
+    staged: [],
+    foreign: [],
+    unknown: [],
+    replaced: [],
+    unreadableRules: [],
+    listed: true,
+    unfiled: [],
+    names: [],
+    ...Object.fromEntries(Object.entries(o).filter(([key]) => DIRECTORY_FIELDS.includes(key))),
+  };
+  return { uncovered: 0, orphaned: 0, barren: 0, unreadable: [], held: [], blind: false, ...run, targets: { claude, ...run.targets } };
+};
+
+test("a case's directory entry carries every key a scan's own entry does", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-summary-test-"));
+  t.after(() => removeTree(dir));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  mkdirSync(join(dir, "src"));
+  for (let i = 0; i < 12; i++) writeFileSync(join(dir, "src", `f${i}.js`), `export const f${i} = ${i};\n`);
+
+  const { plan: scanned } = await runScan(dir, { dryRun: true });
+
+  assert.deepEqual(Object.keys(plan().targets.claude).sort(), Object.keys(scanned.targets.claude).sort());
 });
 
 test("a stated co-change claim an area file prints counts as a stated claim, and one printed nowhere does not", () => {
@@ -722,8 +753,8 @@ test("a slot the model states by default is counted apart from one it does not",
   assert.deepEqual(s.claims, { stated: 1, matchingDefault: 1, total: 3 });
 });
 
-test("the uncovered files split into the two the scan names apart", () => {
-  const s = scanSummary(result(), plan({ uncovered: 9, orphaned: 4 }));
+test("the uncovered files split into the two the plan names apart", () => {
+  const s = scanSummary(result(), plan({ uncovered: 9, orphaned: 4, barren: 5 }));
 
   assert.equal(s.orphaned, 4);
   assert.equal(s.barren, 5);
@@ -772,7 +803,7 @@ test("the summary and its lines agree on a whole scan", () => {
       corpus: { files: 41, untracked: 2, truncated: false },
       authors: { error: "no history" },
     }),
-    plan({ uncovered: 3, orphaned: 2, foreign: ["house-style.md"], remove: ["anatomiya-area-9.md"] })
+    plan({ uncovered: 3, orphaned: 2, barren: 1, foreign: ["house-style.md"], remove: ["anatomiya-area-9.md"] })
   );
 
   assert.deepEqual(scanLines(s), [
@@ -803,6 +834,7 @@ const target = (o = {}) => ({
   on: false,
   write: [],
   remove: [],
+  staged: [],
   foreign: [],
   unknown: [],
   replaced: [],
@@ -880,6 +912,14 @@ test("a target turned off says what was removed and that it is off", () => {
 
   assert.deepEqual(s.targets, { cursor: { state: "off", dir: ".cursor/rules", wrote: 0, removed: 3, unfiled: 0, foreign: 0 } });
   assert.deepEqual(scanLines(s).slice(-3), ["removed 3 files under .cursor/rules", ".cursor/rules is off now", RUNNING_SESSION]);
+});
+
+test("a temporary file an earlier run left in another tool's directory is counted with what was removed there", () => {
+  const tmp = (name) => `${name}.tmp-1-0123456789abcdef`;
+  const s = scanSummary(result(), plan(others({ state: "on", on: true, remove: ["a"], staged: [tmp("b")] }, { staged: [tmp("c")] })));
+
+  assert.deepEqual([s.targets.cursor.removed, s.targets.copilot.removed], [2, 1]);
+  assert.ok(scanLines(s).includes("removed 1 file under .github/instructions"), "an off directory holding nothing but a leftover still says it");
 });
 
 test("a target that stays on and lost an area's file is not called off", () => {

@@ -418,7 +418,8 @@ const DJANGO_URLS = /^(?:from\s+django\.urls\s+import|import\s+django\.urls)\b/;
 /**
  * Which arguments of a call or an annotation declare a route's path, by its name and whether it sits on a declaration;
  * `{ client: true }` for an annotation marking its class's mappings as another service's; or null.
- * `slash` asks the path to start with `/`, where the name alone is some other library's too.
+ * `slash` asks the path to start with `/`, where the name alone is some other library's too, and `topLevel` asks the
+ * declaration's class to be no other class's member.
  */
 const ROUTE_FORMS = {
   python: (name, onDeclaration, django) => {
@@ -430,8 +431,9 @@ const ROUTE_FORMS = {
   // A Feign client's mappings name another service's routes.
   java: (name, onDeclaration) =>
     !onDeclaration ? null : SPRING_MAPPINGS.has(name) ? { keys: ["value", "path"] } : name === "FeignClient" ? { client: true } : null,
+  // ASP.NET Core takes a public top-level class alone for a controller.
   csharp: (name, onDeclaration) =>
-    onDeclaration ? (ASPNET_ATTRIBUTES.has(name.replace(/Attribute$/, "")) ? { keys: ["template"] } : null) : MINIMAL_API.has(name) ? { keys: ["pattern"] } : null,
+    onDeclaration ? (ASPNET_ATTRIBUTES.has(name.replace(/Attribute$/, "")) ? { keys: ["template"], topLevel: true } : null) : MINIMAL_API.has(name) ? { keys: ["pattern"] } : null,
   rust: (name, onDeclaration) => ((onDeclaration ? RUST_ATTRIBUTES : RUST_CALLS).has(name) ? { slash: true } : null),
 };
 
@@ -542,7 +544,7 @@ export const TREE_DIMENSIONS = [
     precision: "partial",
     applicabilityPredicate: {
       sites:
-        "a word of two or more words that spells a naming class, in a URL path a route declares as a string written whole: in Python a route decorator, `@x.get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `route`, `api_route` or `websocket`, and `add_url_rule`, on a path starting with `/`, Django's `path`, by its first argument or `route=`, in a file importing django.urls, and the prefix of `APIRouter(prefix=)`, `include_router(prefix=)`, `Blueprint(url_prefix=)` and `register_blueprint(url_prefix=)` starting with `/`; in Java Spring's `@GetMapping`, `@PostMapping`, `@PutMapping`, `@PatchMapping`, `@DeleteMapping` and `@RequestMapping`, its first argument, `value=` or `path=`, an array element by element, on a method or a class, outside an interface marked `@FeignClient`, whose mappings are another service's; in C# `[Route]`, `[HttpGet]` and the other verbs, its first argument or `template:`, and a minimal API's `MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `MapGroup` and `MapMethods`; in Rust actix's and rocket's `#[get]`, the other verbs and `#[route]`, and `.route`, `.nest`, `.mount`, `resource` and `scope`, on a path starting with `/`; outside a test file or a test tree. A parameter (`{id}`, `{id:int}`, `<int:pk>`, `<id>`, `[controller]`, `:id`, `*`) is the framework's syntax, a query or fragment ends the path, a URL with a scheme or a leading `//` is another site's, and what sits under `.well-known` on a class's mapping or in a call's own arguments a standard names, so none of those is a site; nor is a single word, `users` or `Users`, nor a Rust route in or on an item marked `#[cfg(test)]`, nor a Django `re_path` or `url`, which take a regular expression",
+        "a word of two or more words that spells a naming class, in a URL path a route declares as a string written whole: in Python a route decorator, `@x.get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `route`, `api_route` or `websocket`, and `add_url_rule`, on a path starting with `/`, Django's `path`, by its first argument or `route=`, in a file importing django.urls, and the prefix of `APIRouter(prefix=)`, `include_router(prefix=)`, `Blueprint(url_prefix=)` and `register_blueprint(url_prefix=)` starting with `/`; in Java Spring's `@GetMapping`, `@PostMapping`, `@PutMapping`, `@PatchMapping`, `@DeleteMapping` and `@RequestMapping`, its first argument, `value=` or `path=`, an array element by element, on a method or a class, outside an interface marked `@FeignClient`, whose mappings are another service's, though a class nested in one maps its own; in C# `[Route]`, `[HttpGet]` and the other verbs, its first argument or `template:`, on a class no other class holds, since ASP.NET Core routes no nested class, and a minimal API's `MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `MapGroup` and `MapMethods`; in Rust actix's and rocket's `#[get]`, the other verbs and `#[route]`, and `.route`, `.nest`, `.mount`, `resource` and `scope`, on a path starting with `/`; outside a test file or a test tree. A parameter (`{id}`, `{id:int}`, `<int:pk>`, `<id>`, `[controller]`, `:id`, `*`) is the framework's syntax, a query or fragment ends the path, a URL with a scheme or a leading `//` is another site's, and what sits under `.well-known` on a class's own mapping or in a call's own arguments a standard names, so none of those is a site, while a class nested in one maps by its own; nor is a single word, `users` or `Users`, nor a Rust route in or on an item marked `#[cfg(test)]`, nor a Django `re_path` or `url`, which take a regular expression",
       blind: "a path built at run time, from an interpolated string (an f-string with a field), a concatenation, a constant or a helper call, or written with an escape, as a C# verbatim or raw string or a Rust raw string, names segments this never reads, a `.well-known` group held in a variable or chained ahead of the call does not reach the routes under it, and Starlette's `Route`, `Mount` and `WebSocketRoute` and ASP.NET's conventional `MapControllerRoute` and `MapRoute` are not read at all",
     },
     langs: ["python", "java", "csharp", "rust"],
@@ -562,14 +564,15 @@ export const TREE_DIMENSIONS = [
       return {
         node(node, ctx) {
           tests.note(node, ctx);
-          // A Feign client's annotations come in any order, so its interface is marked before any of them is read.
+          // A Feign client's annotations come in any order, so its interface is marked before any of them, its own
+          // included, is read.
           const marks = (part) => part.children.some((a) => sets.route.has(a.type) && formOf(annotationName(a, sets.routeArgs), true, django)?.client);
           if (sets.cls.has(node.type) && node.children.some(marks)) skipped.add(node);
           if (!sets.route.has(node.type) || tests.holds(node, ctx)) return;
           const parent = ctx.ancestors.at(-1);
           const onDeclaration = sets.annotation.has(node.type) || sets.annotation.has(parent.type);
           const form = formOf(annotationName(node, sets.routeArgs), onDeclaration, django);
-          if (!form || form.client) return;
+          if (!form || (form.topLevel && ctx.stack.filter((n) => sets.cls.has(n.type)).length > 1)) return;
           const holder = ctx.ancestors.at(-2);
           // A handler marked as the file's own test, beside its route rather than around it.
           if (testItem && onDeclaration) {
@@ -580,7 +583,8 @@ export const TREE_DIMENSIONS = [
           const list = node.children.find((child) => sets.routeArgs.has(child.type));
           if (!list) return;
           const scope = !onDeclaration ? list : holder && sets.cls.has(holder.type) ? holder : null;
-          if (skipped.size && ctx.ancestors.some((a) => skipped.has(a))) return;
+          // A class's mark reaches its own routes and not a nested class's, which maps by its own mapping alone.
+          if (skipped.size && (skipped.has(ctx.cls) || ctx.ancestors.some((a) => skipped.has(a) && !sets.cls.has(a.type)))) return;
           for (const value of pathValues(list, form, shapes, sets)) {
             const path = wholeString(value, sets);
             if (path === null || (form.slash && !path.text.startsWith("/"))) continue;

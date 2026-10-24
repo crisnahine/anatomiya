@@ -5,8 +5,8 @@ import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
 import { defaultPoolSize } from "./pool.mjs";
 import { buildVersion } from "./readiness.mjs";
-import { checkerBlocked, failuresIn, runSemantic, semanticOver, standsIn, verdictStamp } from "./semantic.mjs";
-import { authorsRequired, blockOf, reduceArea, verdictFor } from "./reduce.mjs";
+import { checkerBlocked, checkerTurn, runSemantic, semanticOver, verdictStamp } from "./semantic.mjs";
+import { askedScope, authorsRequired, blockOf, reduceArea, verdictFor } from "./reduce.mjs";
 import { cochangeRecord, startCochange } from "./cochange-walk.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
@@ -14,7 +14,6 @@ import { resolve as resolveBaseline, measure as measureBaseline } from "./baseli
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
 import { extOf, extOrName } from "./paths.mjs";
-import { scopeOf } from "./render.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
 
 /**
@@ -50,7 +49,7 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * is recorded as carried. No type-checked row is counted then, since the counts
  * are the checker's, and none is kept from a run that measures the tier degraded.
  * A failed run's verdict is carried from its second failure under one stamp
- * (`standsIn`): handed the first, the checker runs and the scan records the count.
+ * (`checkerTurn`): handed the first, the checker runs and the scan records the count.
  * `history` is what the two history walks read their history stores through and leave
  * for `saveHistory` to write: a scan itself writes nothing.
  */
@@ -80,7 +79,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   // driving unresolved types from 3.1% to 36.2%. Its verdict is taken once the
   // fold below knows which areas the map describes.
   const checked = files.filter((f) => langHas(f.lang, "semantic"));
-  const kept = carried !== null && standsIn(carried) ? carried : null;
+  const turn = checkerTurn(carried);
   const stopChecker = new AbortController();
   // A degraded tier keeps no type-checked row, so the checker's run ends once
   // its rate, and where its rows have sites, say that is the verdict. The
@@ -99,7 +98,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   };
   const startChecker = async () => {
     const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checkedRels: checked.map((f) => f.rel) });
-    if (offReason || kept !== null || stopChecker.signal.aborted) return { offReason, whole: null, measuredUnder: null };
+    if (offReason || turn.carries !== null || stopChecker.signal.aborted) return { offReason, whole: null, measuredUnder: null };
     // Read before the checker starts, so a config edited under a long run is
     // not recorded as the one it measured, and only where it runs: a scan that
     // leaves the checker off reads no config.
@@ -349,7 +348,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
       // Over every record in the repository, not this area's: the question is
       // who else reaches in here.
       reused: hasImports ? mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels) : null,
-      dimensions: gated.map((d) => ({ ...d, scope: scopeOf(languages, d) })),
+      dimensions: gated.map((d) => ({ ...d, scope: askedScope(languages, d) })),
     });
   }
 
@@ -375,20 +374,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
     // Whether the checker ran, and how it went. Absent is not the same as
     // clean: a reader has to be able to tell a scan that never asked from one
     // that asked and got a bad answer (B8).
-    semantic: semantic
-      ? {
-          ran: true,
-          status: semantic.status,
-          reason: semantic.reason,
-          typedResolutionRate: semantic.typedResolutionRate,
-          carried: false,
-          measuredAt: scannedAt,
-          measuredUnder,
-          failures: failuresIn(semantic, carried, measuredUnder),
-        }
-      : kept !== null && offReason === null
-        ? { ran: false, ...kept, carried: true }
-        : { ran: false, status: null, reason: offReason, typedResolutionRate: null, carried: false, measuredAt: null, measuredUnder: null, failures: 0 },
+    semantic: turn.record({ semantic, offReason, measuredAt: scannedAt, measuredUnder }),
     scannedAt,
     durationMs: Date.now() - started,
     // `orphaned` is the files discovery found nowhere to put. The rest of the

@@ -237,6 +237,8 @@ test("the overview the recount reads back is the file a write puts on disk", () 
     parse: { parsed: 20, crashed: 0, skipped: 0 },
     suppressAll: false,
     areas: [],
+    held: [],
+    readNothing: false,
   };
 
   writeMap(result);

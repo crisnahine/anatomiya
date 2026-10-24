@@ -389,8 +389,9 @@ _Avoid_: block, freeze, lock
 Said of a question put to git that git never answered: the call ended with no exit code, by a
 signal or a start that failed, or was ended by its clock whatever code git left, or, for whether a
 commit is there, which commit a ref names and the merge base of two commits git holds, with an exit
-code other than 0 and 1, a 128 with nothing printed aside for a ref's name. It is no answer and is
-never read as a no. A scan, a pin and a check stop on one that would decide what is written and
+code other than 0 and 1, a 128 with nothing printed aside for a ref's name, and for whether a merge is
+in progress or one commit is an ancestor of another, with any code but those two. It is no answer and
+is never read as a no. A scan, a pin and a check stop on one that would decide what is written and
 print the question, and a refresh ends and asks again later. A git that ran and said no has
 answered.
 _Avoid_: failed (alone: a git that ran and refused has answered), unread (for a call that stops a command; a hold's reason and a history keep the word), unanswerable
@@ -406,9 +407,11 @@ Every gate reads these. Today's counts print beside them and decide nothing.
 _Avoid_: reference, previous run (for the baseline), snapshot
 
 **Drift**:
-How many files inside mapped areas the base has moved since the commit it shares with the pin, counting
-only those whose contents differ from the pin as well. Never measured to the branch tip, or a large
-branch would silence its own findings.
+How many files of the map the base has changed since the commit it shares with the pin, counting only
+those whose contents differ from the pin as well: a file the pin holds, or a source file the base added
+to a mapped area, with a rename counted once. A document, a fixture or a generated file beside the
+code moves no claim, so it is no drift. Never measured to the branch tip, or a large branch would
+silence its own findings.
 _Avoid_: churn, delta, divergence
 
 **Staleness**:
@@ -550,8 +553,9 @@ _Avoid_: violation, error, issue, offence
 
 **Change set**:
 What a branch changed: the committed diff from the merge base, the edits still pending in the working
-tree, the renames, and the lines each file gained. The check and the end-of-turn hook read the same
-one.
+tree, the renames, and the lines each file gained. The check reads it whole in one call; the
+end-of-turn hook reads only the pending edits and the lines they gained, through the same readers,
+since a third git read does not fit in its time.
 _Avoid_: diff, changes, delta
 
 **Newly introduced**:

@@ -689,6 +689,10 @@ function capCount(areas, maxAreas, twins) {
   const first = new Map(areas.map((a) => [a, a.files.reduce((m, f) => (byCode(f.rel, m) < 0 ? f.rel : m), a.files[0].rel)]));
   const order = [...areas].sort((a, b) => a.fileCount - b.fileCount || byCode(first.get(a), first.get(b)));
   const byPath = new Map(areas.map((a) => [a.path, a]));
+  // Each live area's files as the lists folded into it, joined once the fold is
+  // done: joined on every fold, a host taking thousands of small areas copied
+  // its own list each time, and 60,000 files took 2.5 s.
+  const parts = new Map(areas.map((a) => [a, [a.files]]));
 
   const orphaned = [];
 
@@ -718,12 +722,14 @@ function capCount(areas, maxAreas, twins) {
 
     byPath.delete(victim.path);
     if (parent === ".") {
-      orphaned.push(...victim.files);
+      for (const files of parts.get(victim)) orphaned.push(files);
       continue;
     }
 
     const host = byPath.get(parent);
-    const merged = build(parent, host ? host.files.concat(victim.files) : victim.files);
+    const merged = { path: parent, fileCount: (host?.fileCount ?? 0) + victim.fileCount };
+    parts.set(merged, host ? parts.get(host) : []);
+    for (const files of parts.get(victim)) parts.get(merged).push(files);
     byPath.set(parent, merged);
     // Creating a host is the one fold that does not shrink the map, so the new
     // area joins the queue: without it a tree of single-child directories walks
@@ -737,8 +743,9 @@ function capCount(areas, maxAreas, twins) {
     requeue(order, merged);
   }
 
-  const out = [...byPath.values()];
-  out.orphaned = orphaned;
+  // An area no fold reached is the one `discover` built; a host is built once, here.
+  const out = [...byPath.values()].map((a) => (a.files ? a : build(a.path, parts.get(a).flat())));
+  out.orphaned = orphaned.flat();
   return out;
 }
 

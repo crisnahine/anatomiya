@@ -9,9 +9,12 @@ import { needsPosixPermissions, needsPosixSpecialFiles, removeTree } from "./pla
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { factsJson, schemaProblem, writeFacts, readFacts, readLayout, readRecord, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
-import { knownNames } from "../plugins/anatomiya/lib/rules.mjs";
+import { factsJson, schemaProblem, writeFacts, readFacts, readLayout, readRecord, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { statedSide } from "../plugins/anatomiya/lib/slot.mjs";
+import { recordFor } from "../plugins/anatomiya/lib/rules.mjs";
 import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
+
+const knownNames = (facts, target) => recordFor(facts, target).names;
 
 /**
  * One owner for the machine record, so one round trip through it.
@@ -525,7 +528,7 @@ test("a record written before the roster existed reads as not counted, not as em
 });
 
 test("a null area on disk is carried, not thrown on", (t) => {
-  // `knownNames` in rules.mjs guards the same shape: a hand-edited or truncated
+  // `recordFor` in rules.mjs guards the same shape: a hand-edited or truncated
   // record is the ordinary case of a file nobody promised, and reading it must
   // not take the whole check down.
   const dir = root(t);
@@ -580,107 +583,6 @@ test("a record written before the sibling rosters existed reads as not counted",
   assert.equal(unreadable, null);
   assert.equal(facts.areas[0].imports, null);
   assert.equal(facts.areas[0].reused, null);
-});
-
-/* --- a plurality is not a majority (#78) --- */
-
-test("a plurality of seven does not flip the printed sentence", () => {
-  // `handler_is_named` is 799 of 1,055 = 0.757 repo-wide, and in one 7-file
-  // area it is 3 of 7 named. The plurality flipped, so that area printed "an
-  // event handler prop is given an inline arrow, not a named function" while
-  // other areas of the same repository printed the forward claim: one
-  // dimension, one run, two directly opposed sentences.
-  const side = statedSide({
-    ...dim({ states: null, directive: false, gate: "ratio", candidates: 7, conforming: 3 }),
-    counterClaim: "the other way",
-    counterGate: "ratio",
-  });
-
-  assert.equal(side.side, "claim", "four of seven is a directory with no habit");
-  assert.equal(side.conforming, 3);
-});
-
-test("a majority the sample can support still flips it", () => {
-  // C6's measured case, and the reason "always print the claim" is not the fix:
-  // 2 of 61 reports a directory with no habit when it has a very strong one.
-  const side = statedSide({
-    ...dim({ states: null, directive: false, gate: "concentration", candidates: 61, conforming: 2 }),
-    counterClaim: "the other way",
-    counterGate: null,
-  });
-
-  assert.equal(side.side, "counter");
-  assert.equal(side.conforming, 59);
-});
-
-test("a sentence no site here follows is never the one printed", () => {
-  // The bound is penalised hardest at small n, so a unanimous counter side of
-  // three failed it and the map printed the claim with 0 of 3: the sentence the
-  // directory follows zero times, which the check then enforced against files
-  // doing what every other file in the directory does. On one measured
-  // repository 81 unanimous rows read this way, and one parent and its own
-  // child printed directly opposed sentences off the same run.
-  const at = (candidates) =>
-    statedSide({
-      ...dim({ states: null, directive: false, gate: "ratio", candidates, conforming: 0 }),
-      counterClaim: "the other way",
-      counterGate: "ratio",
-    });
-
-  for (const n of [2, 3, 4]) {
-    assert.equal(at(n).side, "counter", `${n} of ${n} take the other side`);
-    assert.equal(at(n).conforming, n);
-  }
-});
-
-test("one observation is not a habit, so a single site decides nothing", () => {
-  // Without a floor the zero clause flipped a one-site directory against a
-  // claim the rest of the repository holds at 94.7%, and its own parent area
-  // stated the opposite as a directive: the D9 defect again, at n = 1. Of the
-  // 81 unanimous counters on one measured repository, 29 are a single site.
-  const side = statedSide({
-    ...dim({ states: null, directive: false, gate: "evidence", candidates: 1, conforming: 0 }),
-    counterClaim: "the other way",
-    counterGate: "evidence",
-  });
-
-  assert.equal(side.side, "claim");
-  assert.equal(side.conforming, 0, "the count beside it says how thin this is");
-});
-
-test("a claim side holding one site is still a directory with no habit", () => {
-  // The floor is zero sites, not a small share: one site each way is mixed, and
-  // the plurality rule is what decides it.
-  const side = statedSide({
-    ...dim({ states: null, directive: false, gate: "ratio", candidates: 4, conforming: 1 }),
-    counterClaim: "the other way",
-    counterGate: "ratio",
-  });
-
-  assert.equal(side.side, "claim");
-  assert.equal(side.conforming, 1);
-});
-
-test("a side the gates actually stated is never re-decided by the counts", () => {
-  const side = statedSide({
-    ...dim({ states: "counter", directive: false, gate: "ratio", candidates: 7, conforming: 3 }),
-    counterClaim: "the other way",
-    counterGate: null,
-  });
-
-  assert.equal(side.side, "counter", "the gates decided this, not the plurality");
-});
-
-test("the flip needs a majority at ten sites too, and eight of ten is not one", () => {
-  const at = (conforming) =>
-    statedSide({
-      ...dim({ states: null, directive: false, gate: "ratio", candidates: 10, conforming }),
-      counterClaim: "the other way",
-      counterGate: "ratio",
-    }).side;
-
-  assert.equal(at(2), "claim", "eight of ten: the lower bound on the majority is 0.49");
-  assert.equal(at(1), "counter", "nine of ten clears a half");
 });
 
 test("a record path holding a fifo reads as no record, rather than waiting on it", needsPosixSpecialFiles, (t) => {

@@ -1,9 +1,8 @@
 import { encode, encodePath, nameText, sanitisePath } from "./encode.mjs";
-import { embeddedIn, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
+import { embeddedIn, MISSING_STRIPPER } from "./langs.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
-import { PRECEDENT_FLOOR } from "./principles.mjs";
-import { statedSide } from "./facts.mjs";
+import { scopeOf, statedSide } from "./slot.mjs";
 import { areaLabel, globText } from "./areas.mjs";
 import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
@@ -153,60 +152,21 @@ const why = (d, s) =>
  */
 const claimLine = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 
-const ROW_LANGS = new Map(REGISTRY.map((d) => [d.key, d.langs]));
-
 const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]);
-
-/**
- * The extensions and names a claim was counted over, where the area holds others; null where nothing is said.
- *
- * An area delivers on one glob for every language in it, so a claim learned
- * from the `.ts` files of a directory reaches an agent editing the `.svelte`
- * file beside them, where the row was never asked and the opposite may be the
- * rule. A clause on the sentence rather than a line under it, because the
- * sentence is what survives the budget and a line is one of forty.
- *
- * Extensions first, then the files that have none by their own names: the kinds
- * line's `(none)` is a label for a count and reads as nothing in a sentence.
- *
- * Whether to say it is a question about languages, and what to say is the
- * files the fold asked. A `.ts` file beside a JSX row could have been asked,
- * as a `.js` file holding JSX is, so it alone earns no clause; and it is not
- * named in one, because no `.ts` file here was. Neither list is in a record,
- * so the scan keeps the answer on the slot as `scope`, and a record written
- * before it prints the sentence bare in the same number of lines.
- *
- * From three files of other languages up, the floor a directory's tests are
- * read from: one stray script in an area of two hundred files of another
- * language otherwise puts the clause on every line there.
- */
-export function scopeOf(area, d) {
-  const scope = d.scope !== undefined ? d.scope : askedOf(area, d);
-  // A record is committed, so a branch writes this list and check prints it once per finding.
-  return Array.isArray(scope) && scope.length > 0 && scope.length <= SCOPE_MOST && scope.every((e) => typeof e === "string" && SCOPE_ENTRY.test(e)) ? scope : null;
-}
-
-const SCOPE_MOST = 16;
-// What `extOrName` gives: an extension, `.d.` and all, or a whole name with none. Every
-// declared extension and file name is ASCII, so no scan writes another letter.
-const SCOPE_ENTRY = /^(?:(?:\.d)?\.)?[A-Za-z0-9_+-]{1,64}$/;
-
-function askedOf(area, d) {
-  const langs = ROW_LANGS.get(d.key);
-  const counted = d.askedExts ?? [];
-  if (!langs || counted.length === 0) return null;
-  const never = Object.keys(area.extsByLang ?? {}).filter((lang) => !spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
-  const unasked = never.reduce((n, lang) => n + (area.filesByLang?.[lang] ?? 0), 0);
-  return unasked < PRECEDENT_FLOOR ? null : counted;
-}
 
 const clauses = new WeakMap();
 
-/** The scope as a clause on the claim's sentence, or nothing: built once per area and slot, since check prints it per finding. */
-function scopeClause(area, d) {
-  const built = clauses.get(area) ?? clauses.set(area, new WeakMap()).get(area);
-  if (!built.has(d)) built.set(d, clauseOf(scopeOf(area, d) ?? []));
-  return built.get(d);
+/**
+ * The scope as a clause on the claim's sentence, or nothing: built once per slot, since check prints it per finding.
+ *
+ * A clause on the sentence rather than a line under it, because the sentence is
+ * what survives the budget and a line is one of forty. Extensions first, then
+ * the files that have none by their own names: the kinds line's `(none)` is a
+ * label for a count and reads as nothing in a sentence.
+ */
+function scopeClause(d) {
+  if (!clauses.has(d)) clauses.set(d, clauseOf(scopeOf(d) ?? []));
+  return clauses.get(d);
 }
 
 function clauseOf(counted) {
@@ -311,18 +271,6 @@ function declinedClause(d) {
 }
 
 /**
- * How the uncovered count divides, in one place because two surfaces print it.
- *
- * The CLI and the overview drifting apart on the same number is the failure
- * this run has already had twice, once on the wording for a crash and once on
- * this very line.
- */
-export function splitUncovered(uncovered, orphaned) {
-  const floorBound = Math.min(Math.max(0, orphaned), uncovered);
-  return { orphaned: floorBound, barren: uncovered - floorBound };
-}
-
-/**
  * Why discovery found nowhere to put a file, in one spelling for both surfaces.
  *
  * All three, because the record carries one count and not which cause each
@@ -352,8 +300,8 @@ const MACHINE_DEPENDENT = new Set(["crashed"]);
  * and the cap is a generated file nobody writes by hand. A rejection is counted
  * once per meaning (`ENGINES[id].rejects`): a grammar's is not the file's fault.
  *
- * Shared for the same reason `splitUncovered` is. Copied, they drifted: the cap
- * read "over the size cap" in the summary and "exceeded" in the overview.
+ * Shared, since two surfaces print it. Copied, they drifted: the cap read "over
+ * the size cap" in the summary and "exceeded" in the overview.
  *
  * `stable` drops the causes that measure the machine, for the one surface that
  * has to read the same between two scans of unchanged source.
@@ -550,7 +498,7 @@ function areaBlocks(area, cochange = []) {
   // The clauses this file has already printed, so a sentence shared by several
   // rows costs one line rather than one per row.
   const said = new Set();
-  const sentence = (d, s) => scoped(claimLine(s.claim), scopeClause(area, d));
+  const sentence = (d, s) => scoped(claimLine(s.claim), scopeClause(d));
   for (const [d, s] of directives) {
     const block = [
       sentence(d, s),
@@ -646,7 +594,7 @@ function areaBlocks(area, cochange = []) {
 export function unstatedLine(area, d, claim = statedSide(d).claim) {
   const s = statedSide(d);
   return (
-    `${scoped(claimLine(claim).replace(/(\w)\.$/, "$1"), scopeClause(area, d))}: no convention. ` +
+    `${scoped(claimLine(claim).replace(/(\w)\.$/, "$1"), scopeClause(d))}: no convention. ` +
     `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s)})` +
     partialNote(d)
   );
@@ -879,8 +827,10 @@ function companionAudit(d) {
  * work on a cached read, and anything that moves per commit destroys that. So
  * no timestamp, no duration, no counts that drift.
  *
- * `claudeFiles` is what `files` is for Claude Code's directory, which another
- * target's overview is laid out against.
+ * `files` is the run's uncovered count as the writer split it (`uncovered`,
+ * `orphaned`, `barren`), with what this directory holds besides the map;
+ * `claudeFiles` is the same for Claude Code's directory, which another target's
+ * overview is laid out against.
  */
 export function renderOverview(result, files, target = TARGETS.claude, claudeFiles = files) {
   const head = overviewHead(result, target);
@@ -1060,9 +1010,8 @@ function overviewTail(result, filed, files, target) {
   // A file is uncovered because discovery found nowhere to put it, or because
   // the directory it is in became an area and then had nothing counted in it,
   // which is a parse failure or a language this tool has no dimension for. The
-  // reader's next move differs, so the two are named apart. Absent `orphaned`
-  // means the caller knows of no second cause.
-  const { orphaned, barren } = splitUncovered(files.uncovered, files.orphaned ?? files.uncovered);
+  // reader's next move differs, so the two are named apart, as the writer split them.
+  const { orphaned, barren } = files;
   const source = (n) => `${n} source file${n === 1 ? "" : "s"} sit${n === 1 ? "s" : ""}`;
   if (orphaned) lines.push(`- ${source(orphaned)} in no area (${ORPHAN_CAUSES})`);
   if (barren) lines.push(`- ${source(barren)} in a directory nothing was counted in`);

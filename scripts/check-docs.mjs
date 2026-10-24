@@ -31,6 +31,7 @@ import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
 import { REGISTRY, rowsForLangs, rowsOfKind } from "../plugins/anatomiya/lib/registry.mjs";
 import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { escapeRe } from "../plugins/anatomiya/lib/paths.mjs";
 import { FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { GATES } from "../plugins/anatomiya/lib/gates.mjs";
@@ -230,7 +231,7 @@ export function avoidedWords(terms, files) {
     for (const entry of (avoid ?? "").split(",")) {
       const word = entry.trim();
       if (!/[\s-]/.test(word) || word.includes("(")) continue;
-      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      const escaped = escapeRe(word).replace(/\s+/g, "\\s+");
       // The plural is the same word: `non-tests`, `spec directories`.
       const spelled = escaped.endsWith("y") ? `${escaped.slice(0, -1)}(?:y|ies)` : `${escaped}(?:e?s)?`;
       held.push({ term, word, re: new RegExp(`(?<![\\w-])${spelled}(?![\\w-])`, "gi") });
@@ -861,7 +862,7 @@ export function checkDocs() {
     const row = walkthroughLines.find((line) => line.startsWith(`| ${severity} |`));
     const quoted = reason
       .split(/\$\{[^}]*\}/)
-      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .map(escapeRe)
       .join('[^"]+');
     claim(
       "docs/how-it-works.md",

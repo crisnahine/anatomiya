@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPathControl, needsPosixPaths, needsShebang, removeTree } from "./platform.mjs";
+import { needsPosixPaths, removeTree } from "./platform.mjs";
 import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { exits, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { exitsWhere, scriptGit, unaskedWhere } from "./git-script.mjs";
 import { authorsByFile, repoAuthorCount } from "../plugins/anatomiya/lib/authors.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 import * as scan from "../plugins/anatomiya/lib/scan.mjs";
@@ -240,9 +240,9 @@ function renamedWithEdit(d, { git, write, author, commit }) {
 const ASKS_PARTIAL = / config .*promisor/;
 const logsOf = (calls) => calls.filter((call) => / log .*--name-status /.test(call));
 
-test("a clone whose partial keys are not set is walked with -M, on one question", { ...needsShebang, ...needsPathControl }, async (t) => {
+test("a clone whose partial keys are not set is walked with -M, on one question", async (t) => {
   const dir = repo(t, renamedWithEdit);
-  const calls = gitAhead(t);
+  const calls = scriptGit(t);
 
   const map = await authorsByFile(dir);
 
@@ -257,7 +257,7 @@ test("a clone whose partial keys are not set is walked with -M, on one question"
 const flagged = (...values) => (d) => appendFileSync(join(d, ".git", "config"), `[remote "Late"]\n${values.map((value) => `\tpromisor = "${value}"\n`).join("")}`);
 const flags = (spellings) => Object.fromEntries(spellings.map((spelling) => [`a remote's flag set to "${spelling}"`, flagged(spelling)]));
 
-test("a clone is partial where the extension names a promisor or a remote's flag reads as true to git", { ...needsShebang, ...needsPathControl }, async (t) => {
+test("a clone is partial where the extension names a promisor or a remote's flag reads as true to git", async (t) => {
   const PARTIAL = {
     "the extension": (d, git) => git("config", "extensions.partialClone", "origin"),
     "a flag with no value": (d) => appendFileSync(join(d, ".git", "config"), '[remote "late"]\n\tpromisor\n'),
@@ -270,7 +270,7 @@ test("a clone is partial where the extension names a promisor or a remote's flag
   for (const [flag, cases] of [["-M100%", PARTIAL], ["-M", WHOLE]]) {
     for (const [name, set] of Object.entries(cases)) {
       const dir = repo(t, (d, { git }) => set(d, git));
-      const calls = gitAhead(t);
+      const calls = scriptGit(t);
       await authorsByFile(dir);
       const logs = logsOf(calls());
       calls.restore();
@@ -280,7 +280,7 @@ test("a clone is partial where the extension names a promisor or a remote's flag
   }
 });
 
-test("a promisor flag git refuses as a boolean is unread history, as the log git would die on", { ...needsShebang, ...needsPathControl }, async (t) => {
+test("a promisor flag git refuses as a boolean is unread history, as the log git would die on", async (t) => {
   // Each refused by `git config --type=bool` with "bad boolean config value".
   const REFUSED = {
     ...flags(["maybe", "08", "0x", "1.0", "1kb", "1 k", "2g", "2147483648", "020000000000", "0x80000000", "9999999999999999999999", "1 ", " true", "-", "+"]),
@@ -291,7 +291,7 @@ test("a promisor flag git refuses as a boolean is unread history, as the log git
       renamedWithEdit(d, tools);
       set(d);
     });
-    const calls = gitAhead(t);
+    const calls = scriptGit(t);
     const map = await authorsByFile(dir);
     const made = calls();
     calls.restore();
@@ -301,23 +301,23 @@ test("a promisor flag git refuses as a boolean is unread history, as the log git
   }
 });
 
-test("a git that cannot be asked whether the clone is partial is unread history, and no log is started on a guess", { ...needsShebang, ...needsPathControl }, async (t) => {
+test("a git that cannot be asked whether the clone is partial is unread history, and no log is started on a guess", async (t) => {
   const NO_ANSWER = {
-    "a git that dies on the question": "kill -9 $$",
-    "a git that refuses it": "exit 129",
+    "a git that dies on the question": [{ signal: "SIGKILL" }, /^git could not be asked whether this clone is partial: git was ended by SIGKILL$/],
+    "a git that refuses it": [{ code: 129 }, /^git could not say whether this clone is partial: git exited 129$/],
     // The signal the runner stops a git with once its clock runs out, sent at once so no clock is waited on.
-    "a git stopped as one that hangs is": "kill -TERM $$",
+    "a git stopped as one that hangs is": [{ signal: "SIGTERM" }, /^git could not be asked whether this clone is partial: git was ended by SIGTERM$/],
   };
-  for (const [name, how] of Object.entries(NO_ANSWER)) {
+  for (const [name, [how, said]] of Object.entries(NO_ANSWER)) {
     const dir = repo(t, renamedWithEdit);
-    const calls = gitAhead(t, `case " $* " in *" config "*promisor*) ${how};; esac`);
+    const calls = scriptGit(t, (_args, line) => (ASKS_PARTIAL.test(line) ? how : null));
 
     const map = await authorsByFile(dir);
 
     const made = calls();
     calls.restore();
     assert.equal(map.size, 0, name);
-    assert.match(map.error, /git could not say whether this clone is partial/, name);
+    assert.match(map.error, said, name);
     assert.equal(made.filter((call) => ASKS_PARTIAL.test(call)).length, 1, name);
     assert.deepEqual(logsOf(made), [], name);
   }
@@ -446,15 +446,15 @@ test("a clone that holds only a window of history says so, and a whole one says 
   assert.match(window.oldest, /^\d{4}-\d{2}-\d{2}T/, "and the moment its history begins");
 });
 
-test("a clone git could not be asked the depth of is unread history, and one git answered about is read", needsGitStub, async (t) => {
+test("a clone git could not be asked the depth of is unread history, and one git answered about is read", async (t) => {
   // Read as whole, a depth-1 checkout states claims its full clone does not.
   const dir = repo(t, (d, { write, commit }) => {
     write("src/a.ts", "export const a = 1\n");
     commit("a");
   });
-  const probe = `*" rev-parse --is-shallow-repository "*`;
+  const probe = (line) => line.includes(" rev-parse --is-shallow-repository ");
 
-  const calls = gitAhead(t, unasked(probe));
+  const calls = scriptGit(t, unaskedWhere(probe));
   const unread = await authorsByFile(dir);
   assert.match(unread.error, /^git could not be asked whether this clone holds its whole history: /);
   assert.equal(unread.size, 0);
@@ -465,7 +465,7 @@ test("a clone git could not be asked the depth of is unread history, and one git
   calls.restore();
 
   // Any exit code is git's own answer: one that says nothing reads as whole.
-  gitAhead(t, exits(probe, 129));
+  scriptGit(t, exitsWhere(probe, 129));
   const read = await authorsByFile(dir);
   assert.equal(read.error, undefined);
   assert.equal(read.shallow, null);

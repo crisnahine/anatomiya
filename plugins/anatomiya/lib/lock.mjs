@@ -16,7 +16,7 @@ import { closeSync, linkSync, lstatSync, opendirSync, openSync, rmdirSync, unlin
 import { basename, dirname, join } from "node:path";
 
 import { namesIn, readHead, REFRESH_LOCK, REFRESH_STATE } from "./rules.mjs";
-import { writeTemp } from "./store.mjs";
+import { quietUnlink, writeTemp } from "./store.mjs";
 
 /**
  * Creates `path` with an exclusive create: true where this call made it, false where a file holds the name.
@@ -49,13 +49,7 @@ export function createdAlone(path, content = null) {
     }
     return true;
   } finally {
-    if (temp !== null) {
-      try {
-        unlinkSync(temp);
-      } catch {
-        // Already gone; nothing of ours is left.
-      }
-    }
+    if (temp !== null) quietUnlink(temp);
   }
 }
 
@@ -106,7 +100,8 @@ function broken(lock, judge, content, levels) {
         const now = judge(lock);
         if (now !== null && !now.live && sameGeneration(now, found)) removeDeadLock(lock);
       } finally {
-        removeLockToken(token);
+        // One the system refuses to remove is left behind: it names a generation no call breaks again.
+        quietUnlink(token);
       }
     }
   }
@@ -140,18 +135,6 @@ function removeDeadLock(lock) {
 }
 
 /**
- * Removes a lock token; one the system refuses to remove is left behind. It names a generation no call
- * breaks again: a later dead lock takes its name only after the clock is set back, or by a nonce repeated.
- */
-function removeLockToken(path) {
-  try {
-    unlinkSync(path);
-  } catch {
-    // Still there, or gone already.
-  }
-}
-
-/**
  * The echo's judge: a lock whose mtime is within `heldMostMs + slackMs` of the clock, either way, is live.
  * Its generation is the mtime in ms, and the inode and the mtime in ns are what must still match: read
  * exactly, since an NTFS file id runs past what a float holds.
@@ -176,10 +159,10 @@ export const lockContent = (path) => contentOf(lockEntry(path));
 
 /**
  * The refresh worker's judge, over the lock's `{pid, at, nonce}`: dead where it does not parse, its pid is
- * not an integer or its `at` not a number, it is older than `staleMs` or stamped later than now, or its
- * process is gone. Its generation is its nonce, and what must still match is the kind of entry at the name
- * and at most its first 256 bytes; a lock with no nonce of ours is named by a digest of what was read, so
- * its lock token is still one name of ours.
+ * not an integer or its `at` not a number, it is further than `staleMs` from now either way, or its process
+ * is gone. Its generation is its nonce, and what must still match is the kind of entry at the name and at
+ * most its first 256 bytes; a lock with no nonce of ours is named by a digest of what was read, so its lock
+ * token is still one name of ours.
  */
 export const ownerAge = ({ staleMs, now = Date.now, alive = processAlive }) => (path) => {
   if (lstatOf(path) === null) return null;
@@ -218,9 +201,8 @@ function ownerGone(content, staleMs, now, alive) {
     return true;
   }
   if (!Number.isInteger(held?.pid) || !Number.isFinite(held?.at)) return true;
-  // A moment that has not come yet is no worker's on this machine.
-  const age = now() - held.at;
-  if (age < 0 || age > staleMs) return true;
+  // Either way, since a clock set back leaves a live worker's stamp ahead of it; within the bound the pid decides.
+  if (Math.abs(now() - held.at) > staleMs) return true;
   return !alive(held.pid);
 }
 
@@ -267,7 +249,7 @@ function tokensOf(lock) {
  * token's own token goes with it.
  */
 export function removeLeftTokens(lock, live) {
-  for (const { name, generation } of tokensOf(lock)) if (generation !== live) removeLockToken(join(dirname(lock), name));
+  for (const { name, generation } of tokensOf(lock)) if (generation !== live) quietUnlink(join(dirname(lock), name));
 }
 
 /**

@@ -36,74 +36,167 @@ const ADD_REFERENCE = /^(add_reference|add_belongs_to)$/;
 const DML = /^(update|insert|delete|truncate|merge|with)\b/i;
 
 /**
- * The SQL with its leading comments removed, so the verb test sees the verb.
- *
- * Anchored at the start, `-- backfill` or `/* x *\/` ahead of an UPDATE read as
- * DDL and the migration was stated as leaving data alone. A comment the string
- * cap cut off before it closed leaves nothing, which is unreadable rather than
- * schema-only, as a heredoc truncated to whitespace already is.
+ * How each database a migration can run on reads a quote or a comment. A
+ * migration names no database, so its SQL is read as each of them would, and a
+ * statement any of them would run counts. PostgreSQL nests block comments,
+ * quotes with `$tag$` and escapes only in `E''`, since `standard_conforming_strings`
+ * is on from 9.1 and cannot be turned off from 19.
  */
-function sqlBody(sql) {
-  let s = sql.trimStart();
-  for (;;) {
-    if (s.startsWith("--")) {
-      const end = s.indexOf("\n");
-      s = end === -1 ? "" : s.slice(end + 1).trimStart();
-    } else if (s.startsWith("/*")) {
-      const end = s.indexOf("*/", 2);
-      s = end === -1 ? "" : s.slice(end + 2).trimStart();
-    } else {
-      return s;
+const POSTGRES = { nests: true, dollar: true, escapeString: true };
+// PL/pgSQL, as a DO block's code reads: a statement also starts after BEGIN, THEN, ELSE and LOOP.
+const PLPGSQL = { ...POSTGRES, heads: true };
+const OTHER_DIALECTS = [
+  // MySQL escapes with a backslash in either quote, names in backticks, starts a
+  // comment with `#` or with `--` and a space or a control character, and runs
+  // what a `/*!` comment holds.
+  { backslash: true, backtick: true, hash: true, dashSpace: true, bang: true },
+  // SQLite neither nests nor escapes, and names in backticks too.
+  { backtick: true },
+];
+
+// What an unquoted name is made of in all three, so a `$` inside one opens no dollar quote.
+const NAME_PART = /[A-Za-z0-9_$\u0080-￿]/;
+const PLPGSQL_HEAD = new RegExp(`^(?:begin|then|else|loop)(?!${NAME_PART.source})`, "i");
+// PostgreSQL's own delimiter: a tag cannot start with a digit, which `$1` would be.
+const DOLLAR_TAG = /\$(?:[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/y;
+
+/**
+ * The statements of a SQL string as `dialect` reads it: split on each `;`
+ * outside a quote and a comment, and at each NUL `firstString` puts where the
+ * Ruby tree cut a line short, since the cut took that line's `;` with it. Each
+ * piece is `{ body, afterCut, open, runs }`: its text from its first token, so
+ * the verb test sees the verb behind any comment; whether it follows a cut;
+ * whether it ends inside a block comment or a dollar quote, which a cut leaves
+ * open past it, where a quote the cut left open is closed again, since its line
+ * almost always closed it in the part the tree dropped; and for a DO statement
+ * its dollar-quoted code, which runs as the migration does. The list is
+ * `onlyPostgres` where it met a dollar quote or an `E''` string, which no other
+ * database reads.
+ */
+function statements(sql, dialect) {
+  const out = [];
+  let first = -1;
+  let afterCut = false;
+  let runs = [];
+  let mode = null;
+  const end = (at, open) => {
+    const body = first === -1 ? "" : sql.slice(first, at);
+    out.push({ body, afterCut, open, runs: /^do\b/i.test(body) ? runs : [] });
+    first = -1;
+    runs = [];
+  };
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    const next = sql[i + 1];
+    if (c === "\0") {
+      const carried = mode?.depth !== undefined || mode?.tag !== undefined;
+      end(i, carried);
+      afterCut = true;
+      if (!carried) mode = null;
+    } else if (mode?.quote !== undefined) {
+      if (c === "\\" && mode.backslash) i++;
+      else if (c === mode.quote) mode = null;
+    } else if (mode?.line) {
+      if (c === "\n") mode = null;
+    } else if (mode?.depth !== undefined) {
+      if (c === "*" && next === "/") {
+        i++;
+        if (--mode.depth === 0) mode = null;
+      } else if (dialect.nests && c === "/" && next === "*") {
+        i++;
+        mode.depth++;
+      }
+    } else if (mode?.tag !== undefined) {
+      if (sql.startsWith(mode.tag, i)) {
+        runs.push(sql.slice(mode.from, i));
+        i += mode.tag.length - 1;
+        mode = null;
+      }
+    } else if (c === ";") {
+      end(i, false);
+      afterCut = false;
+    } else if (dialect.heads && !NAME_PART.test(sql[i - 1] ?? "") && PLPGSQL_HEAD.test(sql.slice(i, i + 6))) {
+      end(i, false);
+      afterCut = false;
+      i += PLPGSQL_HEAD.exec(sql.slice(i, i + 6))[0].length - 1;
+    } else if ((c === "-" && next === "-" && (!dialect.dashSpace || /[\s\x01-\x1f]/.test(sql[i + 2] ?? ""))) || (c === "#" && dialect.hash)) {
+      mode = { line: true };
+    } else if (dialect.bang && c === "/" && next === "*" && sql[i + 2] === "!") {
+      // What the comment holds is code, its version included.
+      i += 2;
+      while (/\d/.test(sql[i + 1] ?? "")) i++;
+    } else if (c === "/" && next === "*") {
+      // Past the opener's `*`, so `/*/` does not close as it opens.
+      mode = { depth: 1 };
+      i++;
+    } else if (!/\s/.test(c)) {
+      if (first === -1) first = i;
+      if (c === "'") {
+        const escaped = dialect.escapeString && /[Ee]/.test(sql[i - 1] ?? "") && !NAME_PART.test(sql[i - 2] ?? "");
+        out.onlyPostgres ||= escaped;
+        mode = { quote: "'", backslash: Boolean(dialect.backslash) || escaped };
+      } else if (c === '"') {
+        mode = { quote: '"', backslash: Boolean(dialect.backslash) };
+      } else if (c === "`" && dialect.backtick) {
+        mode = { quote: "`", backslash: false };
+      } else if (c === "$" && dialect.dollar && !NAME_PART.test(sql[i - 1] ?? "")) {
+        DOLLAR_TAG.lastIndex = i;
+        const tag = DOLLAR_TAG.exec(sql)?.[0];
+        if (tag) {
+          out.onlyPostgres = true;
+          mode = { tag, from: i + tag.length };
+          i += tag.length - 1;
+        }
+      }
     }
   }
+  end(sql.length, false);
+  return out;
 }
 
 /**
- * The statements of a SQL string: split on each `;` outside a single-quoted
- * literal (whose `''` closes and reopens it), a double-quoted identifier and a
- * comment, and at each NUL `firstString` puts where the Ruby tree cut a line
- * short, since the cut took that line's `;` with it. A piece after a NUL is
- * marked, since it may be the rest of the statement the cut line began, and a
- * block comment the cut left open goes on past it. A literal or an identifier
- * the cut left open is closed again: its line almost always closed it in the
- * part the tree dropped.
+ * What a migration's SQL does to rows, as any database it can run on reads it:
+ * "data", "unread" or "schema". A dollar quote or an `E''` string is
+ * PostgreSQL's alone, and then only its reading is asked.
  */
-function statements(sql) {
-  const out = [];
-  let mode = "code";
-  let start = 0;
-  let afterCut = false;
-  for (let i = 0; i < sql.length; i++) {
-    const c = sql[i];
-    if (c === "\0") {
-      out.push({ text: sql.slice(start, i), afterCut, open: mode === "block" });
-      start = i + 1;
-      afterCut = true;
-      if (mode !== "block") mode = "code";
-    } else if (mode === "quote") {
-      if (c === "'") mode = "code";
-    } else if (mode === "ident") {
-      if (c === '"') mode = "code";
-    } else if (mode === "line") {
-      if (c === "\n") mode = "code";
-    } else if (mode === "block") {
-      if (c === "*" && sql[i + 1] === "/") mode = "code";
-    } else if (c === "'") mode = "quote";
-    else if (c === '"') mode = "ident";
-    else if (c === "-" && sql[i + 1] === "-") mode = "line";
-    else if (c === "/" && sql[i + 1] === "*") {
-      // Past the opener's `*`, so `/*/` does not close as it opens.
-      mode = "block";
-      i++;
-    }
-    else if (c === ";") {
-      out.push({ text: sql.slice(start, i), afterCut });
-      start = i + 1;
-      afterCut = false;
-    }
+function sqlWork(sql) {
+  const postgres = statements(sql, POSTGRES);
+  let unread = false;
+  for (const pieces of postgres.onlyPostgres ? [postgres] : [postgres, ...OTHER_DIALECTS.map((dialect) => statements(sql, dialect))]) {
+    const work = piecesWork(pieces, sql.includes("\0"));
+    if (work === "data") return "data";
+    unread ||= work === "unread";
   }
-  out.push({ text: sql.slice(start), afterCut });
-  return out;
+  return unread ? "unread" : "schema";
+}
+
+/**
+ * A PL/pgSQL head as the statement it runs: EXECUTE runs a string, so a literal
+ * is read as the statement it holds, and a string built at run time may be any
+ * statement, which is SQL this could not read.
+ */
+function executed(head) {
+  const at = /^execute\s+/i.exec(head);
+  if (!at) return head;
+  const rest = head.slice(at[0].length);
+  const opens = /^(?:[Ee]?'|\$(?:[A-Za-z_\u0080-\uffff][A-Za-z0-9_\u0080-\uffff]*)?\$)/.exec(rest);
+  return opens ? rest.slice(opens[0].length) : INTERPOLATED;
+}
+
+/**
+ * "data" where a statement starts with a row-writing verb, or a DO block's code
+ * does; "unread" where nothing was read, where an interpolation stands where a
+ * statement starts, or where a cut left a data statement unseen. A piece after a
+ * cut line that held statement text, `WITH (fillfactor = 90)` say, or after a
+ * cut that left a block comment open, may be that statement's or comment's rest
+ * rather than a statement of its own, so it starts none.
+ */
+function piecesWork(pieces, cut, heads = (body) => [body]) {
+  const starts = pieces.filter((p, i) => !p.afterCut || (!pieces[i - 1].body && !pieces[i - 1].open)).flatMap((p) => heads(p.body));
+  const runs = pieces.flatMap((p) => p.runs).map((code) => piecesWork(statements(code, PLPGSQL), code.includes("\0"), (body) => [executed(body)]));
+  if (starts.some((head) => DML.test(head)) || runs.includes("data")) return "data";
+  if (cut || !pieces.some((p) => p.body) || starts.some((head) => head.startsWith(INTERPOLATED)) || runs.includes("unread")) return "unread";
+  return "schema";
 }
 
 export const COLUMN_TYPE = new Set([
@@ -401,20 +494,13 @@ function dataWork(cls) {
     // swallowed `ActiveRecord::Base.connection.execute`, so a migration
     // rewriting rows through it was checked by neither arm.
     if (sqlCall(m)) {
-      const sql = firstString(args(m));
       // A heredoc that keeps its indentation can truncate to whitespace at the
       // string cap, and defaulting that to schema-only would state the
-      // convention over migrations that rewrite rows. Split before the comments
-      // come off, since a comment line the cap cut ends at its cut, not a newline.
-      // With no data statement before a cut, what follows it is unread, and a
-      // piece after a cut line that held statement text, `WITH (fillfactor = 90)`
-      // say, or after a cut that left a block comment open, may be that
-      // statement's or comment's rest rather than a statement of its own. An
-      // interpolation where a statement starts may be any statement at all.
-      const pieces = sql === null ? [] : statements(sql).map((s) => ({ ...s, body: sqlBody(s.text) }));
-      const starts = pieces.filter((p, i) => !p.afterCut || (!pieces[i - 1].body && !pieces[i - 1].open));
-      if (starts.some((p) => DML.test(p.body))) touches = true;
-      else if (!pieces.some((p) => p.body) || sql.includes("\0") || starts.some((p) => p.body.startsWith(INTERPOLATED))) unreadable = true;
+      // convention over migrations that rewrite rows.
+      const sql = firstString(args(m));
+      const work = sql === null ? "unread" : sqlWork(sql);
+      if (work === "data") touches = true;
+      else if (work === "unread") unreadable = true;
       return;
     }
     const onLocal = dataCallOnLocal(m, ctx);
@@ -917,7 +1003,7 @@ function firstString(list) {
   while (n?.t === "call") n = n.receiver;
   const kept = (text) => (cutShort(text) ? `${text}\0` : text);
   if (n?.t === "string") return typeof n.unescaped === "string" ? kept(n.unescaped) : null;
-  if (n?.t !== "interpolated_string" || n.parts?.[0]?.t !== "string") return null;
+  if (n?.t !== "interpolated_string") return null;
   return n.parts
     .map((p) => (p.t === "string" && typeof p.unescaped === "string" ? kept(p.unescaped) : INTERPOLATED))
     .join("");
