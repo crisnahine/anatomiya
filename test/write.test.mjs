@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { caseSensitiveDir, needsBindableSocketPath, needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync, truncateSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, realpathSync, renameSync, rmdirSync, statSync, symlinkSync, chmodSync, rmSync, truncateSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,7 @@ import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from
 import { stagedPath } from "../plugins/anatomiya/lib/store.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 import { runDoctor } from "../plugins/anatomiya/lib/commands.mjs";
-import { acquire } from "../plugins/anatomiya/lib/refresh-run.mjs";
+import { acquire } from "../plugins/anatomiya/lib/lock.mjs";
 
 const RULES = ".claude/rules";
 const STORE = ".claude/anatomiya";
@@ -174,6 +174,119 @@ test("a plan made before another scan wrote the map commits nothing over it", ()
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a plan commits nothing while another scan holds the commit", () => {
+  // Both plans passed the record's stamp before either renamed: the older one's record then
+  // replaced the newer one's, and the newer one's file for src/api loaded owned by no record.
+  const dir = workspace();
+  const [a, b] = [area("src/services"), area("src/api")];
+  writeMap(result(dir, [a]));
+  const plan = planMap(result(dir, [a, b]));
+  // Held by another live process: this test runner's parent.
+  writeFileSync(join(dir, STORE, "commit.lock"), JSON.stringify({ pid: process.ppid, at: Date.now(), nonce: "0123456789abcdef" }));
+  const before = snapshot(dir);
+
+  assert.throws(() => commitMap(dir, plan), { message: "another scan is writing the map now, so nothing was written: scan again", stale: true });
+
+  assert.deepEqual(snapshot(dir), before, "the map is as the holder left it");
+  rmSync(join(dir, STORE, "commit.lock"));
+  commitMap(dir, plan);
+  assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), ["src/api", "src/services"]);
+  assert.equal(existsSync(join(dir, STORE, "commit.lock")), false, "the commit lets go of its lock");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a directory at the commit lock's name is refused by the plan, so a dry run says what the scan would", () => {
+  const dir = workspace();
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  mkdirSync(join(dir, STORE, "commit.lock", "held"), { recursive: true });
+  const before = [listRules(dir), readFileSync(join(dir, STORE, "facts.json"), "utf8")];
+
+  for (const dryRun of [true, false]) {
+    assert.throws(() => writeMap(result(dir, [a, area("src/api")]), { dryRun }), {
+      message: ".claude/anatomiya/commit.lock is not a file, so the map could not be written: remove it and scan again",
+    });
+  }
+  assert.deepEqual([listRules(dir), readFileSync(join(dir, STORE, "facts.json"), "utf8")], before);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("an empty directory at the commit lock's name is taken as a dead lock, as at the refresh lock's", () => {
+  const dir = workspace();
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  mkdirSync(join(dir, STORE, "commit.lock"));
+
+  writeMap(result(dir, [a, area("src/api")]));
+
+  assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), ["src/api", "src/services"]);
+  assert.equal(existsSync(join(dir, STORE, "commit.lock")), false);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a link at the commit lock's name is removed as a dead lock, and what it points at is left alone", needsSymlinks, (t) => {
+  const dir = workspace(t);
+  const outside = elsewhere(t);
+  mkdirSync(join(outside, "kept"));
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  symlinkSync(outside, join(dir, STORE, "commit.lock"));
+
+  writeMap(result(dir, [a, area("src/api")]));
+
+  assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), ["src/api", "src/services"]);
+  assert.equal(existsSync(join(dir, STORE, "commit.lock")), false);
+  assert.deepEqual(readdirSync(outside), ["kept"]);
+});
+
+test("a commit breaks the lock a killed scan left", () => {
+  const dir = workspace();
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  const plan = planMap(result(dir, [a, area("src/api")]));
+  writeFileSync(join(dir, STORE, "commit.lock"), JSON.stringify({ pid: gone(), at: Date.now(), nonce: "0123456789abcdef" }));
+
+  commitMap(dir, plan);
+
+  assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), ["src/api", "src/services"]);
+  assert.equal(existsSync(join(dir, STORE, "commit.lock")), false);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a commit lock naming this process is one it could not remove, since a commit runs to its end before another starts", () => {
+  // Windows refuses to unlink a file an indexer holds open, and the refresh worker's next pass then read its
+  // own leftover lock as a live scan's for half an hour.
+  const dir = workspace();
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  const plan = planMap(result(dir, [a, area("src/api")]));
+  writeFileSync(join(dir, STORE, "commit.lock"), JSON.stringify({ pid: process.pid, at: Date.now(), nonce: "0123456789abcdef" }));
+
+  commitMap(dir, plan);
+
+  assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), ["src/api", "src/services"]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a record replaced by one of the same size within one clock tick still stops an older plan", () => {
+  // HFS+ and FAT keep a second or two of mtime, so size and time alone read the two records as one.
+  const dir = workspace();
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  const facts = join(dir, STORE, "facts.json");
+  const tick = new Date(Math.floor(Date.now() / 1000) * 1000);
+  utimesSync(facts, tick, tick);
+  const stale = planMap(result(dir, [a]));
+  const body = readFileSync(facts);
+  const replacement = join(dir, STORE, "facts.json.next");
+  writeFileSync(replacement, body);
+  utimesSync(replacement, tick, tick);
+  renameSync(replacement, facts);
+
+  assert.throws(() => commitMap(dir, stale), { stale: true });
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a plan is committed to the root it was made for, or to nothing", () => {
   // The committer resolves the store from the root it is handed, and the record
   // it writes there carries the root the plan was made for, so two roots put one
@@ -227,6 +340,9 @@ test("a rules directory that refuses the write leaves the previous facts as well
   rmSync(dir, { recursive: true, force: true });
 });
 
+// The commit lock's own creates, links and removals, which no count of a commit's steps takes in.
+const commitLockStep = (path) => String(path).includes("commit.lock");
+
 /** Make the `n`th call of one `node:fs` export throw, and put it back after the test. */
 async function failNth(t, name, n, code = "EPERM") {
   const fs = (await import("node:fs")).default;
@@ -234,7 +350,7 @@ async function failNth(t, name, n, code = "EPERM") {
   const real = fs[name];
   let calls = 0;
   fs[name] = (...args) => {
-    if (++calls === n) throw Object.assign(new Error(`${code}: operation not permitted, ${name}`), { code });
+    if (!commitLockStep(args[0]) && ++calls === n) throw Object.assign(new Error(`${code}: operation not permitted, ${name}`), { code });
     return real(...args);
   };
   syncBuiltinESMExports();
@@ -3392,7 +3508,7 @@ test("every temporary file is staged before the first rename, each beside its de
   const real = { openSync: fs.openSync, renameSync: fs.renameSync };
   const events = [];
   fs.openSync = (path, flags, ...rest) => {
-    if (flags === "wx") events.push(["stage", String(path)]);
+    if (flags === "wx" && !commitLockStep(path)) events.push(["stage", String(path)]);
     return real.openSync(path, flags, ...rest);
   };
   fs.renameSync = (from, to) => (events.push(["rename", String(from), String(to)]), real.renameSync(from, to));
@@ -3678,7 +3794,7 @@ test("nothing is removed until every file has been renamed into place", async (t
   const { syncBuiltinESMExports } = await import("node:module");
   const real = { renameSync: fs.renameSync, unlinkSync: fs.unlinkSync };
   const events = [];
-  for (const name of Object.keys(real)) fs[name] = (...args) => (events.push(name), real[name](...args));
+  for (const name of Object.keys(real)) fs[name] = (...args) => (commitLockStep(args[0]) || events.push(name), real[name](...args));
   syncBuiltinESMExports();
   t.after(() => {
     Object.assign(fs, real);
@@ -3702,7 +3818,7 @@ const gone = () => 2 ** 22 + 7;
 const stagedName = (name, pid, hex = "0123456789abcdef") => stagedPath(name, pid, hex);
 const EVERY_TARGET = [TARGETS.claude, cursor, copilot];
 // The names a scan, a refresh, a pin and a history walk stage in the store.
-const STORE_FILES = ["facts.json", "layout.json", "refresh.json", "baseline.json", "refresh.lock", "history-authors.gz", "history-cochange.gz"];
+const STORE_FILES = ["facts.json", "layout.json", "refresh.json", "baseline.json", "refresh.lock", "commit.lock", "history-authors.gz", "history-cochange.gz"];
 
 test("a temporary file an earlier run left is removed from every directory this scan writes, and counted", (t) => {
   const dir = workspace(t);
@@ -4033,12 +4149,20 @@ test("a pin temp a killed pin left is swept", (t) => {
   assert.deepEqual([went, stayed], [left, kept], "a live pin's temp stays");
 });
 
-test("a lock temp a killed create left is swept", (t) => {
-  const left = [stagedName("refresh.lock", gone())];
-  const kept = [stagedName("refresh.lock", process.pid, "fedcba9876543210")];
-  const { plan, gone: went, stayed } = sweptFromStore(t, left, kept);
-  assert.deepEqual(plan.storeStaged, left);
-  assert.deepEqual([went, stayed], [left, kept], "a live create's temp stays");
+for (const lock of ["refresh.lock", "commit.lock"]) {
+  test(`a temp of ${lock} a killed create left is swept`, (t) => {
+    const left = [stagedName(lock, gone())];
+    const kept = [stagedName(lock, process.pid, "fedcba9876543210")];
+    const { plan, gone: went, stayed } = sweptFromStore(t, left, kept);
+    assert.deepEqual(plan.storeStaged, left);
+    assert.deepEqual([went, stayed], [left, kept], "a live create's temp stays");
+  });
+}
+
+test("the lock tokens a killed breaker of the commit lock left are swept with no commit lock there", (t) => {
+  const left = [`commit.lock.${LIVE_GENERATION}`, `commit.lock.${DEAD_GENERATION}.${OLD_MS}`].sort();
+  const { plan, gone: went } = sweptFromStore(t, left, []);
+  assert.deepEqual([plan.storeStaged, went], [left, left]);
 });
 
 // A refresh lock's content, held by `pid` since `at`, of generation `nonce`.
@@ -4287,7 +4411,8 @@ for (const name of ["renameSync", "unlinkSync"]) {
   const real = fs[name];
   fs[name] = (...args) => {
     const out = real(...args);
-    if (++steps === at) process.kill(process.pid, "SIGKILL");
+    // commitLockStep's rule, spelled out: this runs in a child that cannot see the test's own scope.
+    if (!String(args[0]).includes("commit.lock") && ++steps === at) process.kill(process.pid, "SIGKILL");
     return out;
   };
 }

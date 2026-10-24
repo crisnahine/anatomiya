@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 
 import {
   degradedSemanticSentence,
-  droppedDirectives,
   droppedSlots,
   mostLines,
   renderArea,
@@ -28,6 +27,9 @@ import { askedScope } from "../plugins/anatomiya/lib/reduce.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { TARGETS, isClaude } from "../plugins/anatomiya/lib/targets.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
+
+// The keys of the slots an area's file had no room for.
+const droppedKeys = (area, cochange) => new Set(droppedSlots(area, cochange).keys());
 
 const HOUSE_RULES_LINE = "Code comments stay short and carry no ticket or issue number; a pull request takes its ticket's title, and where one ticket needs several, each opens with the part it changes, such as BE or FE.";
 
@@ -117,7 +119,7 @@ test("a hostile path cannot add structure to the body of an area file", () => {
 
   const structure = structureLines(body);
   assert.equal(structure.length, 1, "one structural line in the body, our heading");
-  assert.ok(structure[0].startsWith('# "src/evil'), structure[0]);
+  assert.ok(structure[0].startsWith('# "<path this map cannot print as written, '), structure[0]);
   assert.ok(!/^generator:/m.test(body), "no injected frontmatter key");
   assert.ok(!body.includes("‮"), "bidi override removed");
   assert.ok(!body.includes("‍"), "zero-width joiner removed");
@@ -139,7 +141,7 @@ test("a hostile directory name in the paths glob stays inside the frontmatter", 
   // a markdown bullet, and a glob that lost it reads correct and matches
   // nothing.
   const tail = globText(globEntry("src", ["js"])).slice("src".length);
-  assert.ok(lines[3].startsWith(`  - "src/evil `), lines[3]);
+  assert.ok(lines[3].startsWith(`  - "<path this map cannot print as written, `), lines[3]);
   assert.ok(lines[3].endsWith(`${tail}"`), lines[3]);
 });
 
@@ -1259,7 +1261,8 @@ test("a foreign filename reaches the overview through the encoder", () => {
     others: { foreign: ["evil\n---\ngenerator: anatomiya\n# policy.md"] },
   });
 
-  assert.equal(structureLines(out).filter((l) => /policy/.test(l)).length, 1, "one bullet, not a new block");
+  assert.equal(structureLines(out).filter((l) => /cannot print as written/.test(l)).length, 1, "one bullet, not a new block");
+  assert.doesNotMatch(out, /policy/, "and nothing of the name it could not print");
   assert.doesNotMatch(out, /^# policy\.md$/m, "the heading never opens");
   assert.equal((out.match(/^generator: anatomiya$/gm) || []).length, 1, "no second frontmatter key");
 });
@@ -1307,7 +1310,7 @@ test("a stated slot the model writes by default counts as stated when it is drop
   ];
 
   const out = renderArea(area({ dimensions: dims }));
-  const dropped = droppedDirectives(area({ dimensions: dims }));
+  const dropped = droppedKeys(area({ dimensions: dims }));
 
   assert.ok(dropped.size > 0, "the check enforces these");
   assert.doesNotMatch(out, /not shown here, all of them counts$/m, JSON.stringify([...dropped]));
@@ -2687,7 +2690,7 @@ test("an area with room to spare still says what kinds of file it holds", () => 
 });
 
 test("a directory name the encoder empties is still a subject", () => {
-  // `- : 30 .ts` is a bullet about nothing.
+  // `- : 30 .ts` is a bullet about nothing, and `- (unnamed)` one about no directory there is.
   const lines = renderLayout(
     clientLayout({
       roots: [root("###", { files: 30, exts: [[".ts", 30]] })],
@@ -2697,7 +2700,7 @@ test("a directory name the encoder empties is still a subject", () => {
     })
   );
 
-  assert.equal(lines[2], "- (unnamed): 30 .ts");
+  assert.equal(lines[2], '- "<path this map cannot print as written, 3 chars>": 30 .ts');
 });
 
 test("a directory name that reads as words is printed quoted, and a plain path as it is", () => {
@@ -2929,7 +2932,7 @@ test("the directives an area file had no room for are recoverable from the recor
   });
 
   const out = renderArea(many);
-  const dropped = droppedDirectives(many);
+  const dropped = droppedKeys(many);
 
   assert.match(out, /^and \d+ more not shown here, all of them stated(\.|$)/m);
   assert.ok(dropped.size > 0, "something was dropped");
@@ -2958,7 +2961,7 @@ test("a dropped slot is told apart by whether the file still names its sentence"
   const kinds = new Set(slots.values());
 
   assert.ok(kinds.has("named") && kinds.has("unnamed"), JSON.stringify([...slots]));
-  assert.deepEqual(new Set(slots.keys()), droppedDirectives(many));
+  assert.deepEqual(new Set(slots.keys()), droppedKeys(many));
   for (const [key, kind] of slots) {
     const sentence = `claim number ${key.slice(1)}`;
     const printed = lines.some((l) => l.trim() === sentence);
@@ -2969,7 +2972,7 @@ test("a dropped slot is told apart by whether the file still names its sentence"
 test("an area whose directives all fit drops none", () => {
   const small = area({ dimensions: [dim({ key: "k0" }), dim({ key: "k1" })] });
 
-  assert.equal(droppedDirectives(small).size, 0);
+  assert.equal(droppedKeys(small).size, 0);
 });
 
 test("a suppressed slot is never reported as a dropped directive", () => {
@@ -2982,7 +2985,7 @@ test("a suppressed slot is never reported as a dropped directive", () => {
     ),
   });
 
-  assert.equal(droppedDirectives(many).size, 0);
+  assert.equal(droppedKeys(many).size, 0);
 });
 
 test("a stated slot the model writes by default is reported dropped when its counts line goes too", () => {
@@ -2998,7 +3001,7 @@ test("a stated slot the model writes by default is reported dropped when its cou
   });
 
   const out = renderArea(many);
-  const dropped = droppedDirectives(many);
+  const dropped = droppedKeys(many);
 
   assert.ok(dropped.size > 0, "something was dropped");
   for (const key of dropped) {
@@ -3102,7 +3105,7 @@ test("a stated convention the budget could not print is named in the notice", ()
   });
 
   const out = renderArea(many);
-  const dropped = droppedDirectives(many);
+  const dropped = droppedKeys(many);
 
   assert.ok(dropped.size > 0, "something was dropped");
   assert.match(out, /^and \d+ more not shown here.*\. Also stated here, without counts:$/m);
@@ -3148,7 +3151,7 @@ test("the naming block and the check agree on exactly which slots went unstated"
     .filter((l) => /^ {2}claim number \d+$/.test(l))
     .map((l) => `k${l.trim().slice("claim number ".length)}`);
 
-  assert.deepEqual(new Set(named), droppedDirectives(many));
+  assert.deepEqual(new Set(named), droppedKeys(many));
 });
 
 test("an area with more directives than lines keeps counts as well as sentences", () => {
@@ -3175,7 +3178,7 @@ test("the layout is the same one whether or not the record carries the sentences
   const dims = Array.from({ length: 14 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` }));
   const stored = area({ dimensions: dims.map(({ claim, ...rest }) => rest) });
 
-  assert.deepEqual(droppedDirectives(stored), droppedDirectives(area({ dimensions: dims })));
+  assert.deepEqual(droppedKeys(stored), droppedKeys(area({ dimensions: dims })));
 });
 
 /* --- what the predicate declines to count is written down (#97) --- */
@@ -3259,7 +3262,7 @@ test("the disclosure costs no line, so no area trades a directive for it", () =>
   });
 
   assert.equal(renderArea(withDeclined).split("\n").length, renderArea(without).split("\n").length);
-  assert.deepEqual(droppedDirectives(withDeclined), droppedDirectives(without));
+  assert.deepEqual(droppedKeys(withDeclined), droppedKeys(without));
 });
 
 test("a claim that names an exception still says what it skipped", () => {
@@ -3312,7 +3315,7 @@ test("the check reads the same block height as the writer, explanation and all",
   ).map((d, i) => ({ ...d, key: i === 0 ? "spread_on_component" : `k${i}` }));
   const stored = area({ dimensions: dims.map(({ claim, ...rest }) => rest) });
 
-  assert.deepEqual(droppedDirectives(stored), droppedDirectives(area({ dimensions: dims })));
+  assert.deepEqual(droppedKeys(stored), droppedKeys(area({ dimensions: dims })));
 });
 
 /* --- the two invariants the budget rewrite has to hold, over the shape space --- */
@@ -3393,8 +3396,8 @@ test("the writer and the check agree on every area shape, on a record carrying n
       const full = shaped(shape, matchesDefault);
       const stored = { ...full, dimensions: full.dimensions.map(({ claim, ...rest }) => rest) };
       assert.deepEqual(
-        droppedDirectives(stored),
-        droppedDirectives(full),
+        droppedKeys(stored),
+        droppedKeys(full),
         `${JSON.stringify({ ...shape, matchesDefault })}`
       );
     }
@@ -4167,21 +4170,21 @@ test("an overview lists and counts only the areas its target has a file for, and
     "",
     "- src/services — 40 files, 1 stated",
     "- lib/odd — 40 files, 1 stated",
-    '- "lib/ odder" — 40 files, 1 stated',
+    '- "<path this map cannot print as written, 11 chars>" — 40 files, 1 stated',
     "Generated files: 4 under .claude/rules/anatomiya-*.md",
   ]);
   assert.deepEqual(section(cursor), [
     "## Areas (1)",
     "",
     "- src/services — 40 files, 1 stated",
-    "- 2 areas have no pattern Cursor can be given, so no file here covers them: lib/odd, \"lib/ odder\".",
+    "- 2 areas have no pattern Cursor can be given, so no file here covers them: lib/odd, \"<path this map cannot print as written, 11 chars>\".",
     "Generated files: 2 under .cursor/rules/anatomiya-*.mdc",
   ]);
   assert.deepEqual(section(copilot), [
     "## Areas (1)",
     "",
     "- src/services — 40 files, 1 stated",
-    "- 2 areas have no pattern GitHub Copilot can be given, so no file here covers them: lib/odd, \"lib/ odder\".",
+    "- 2 areas have no pattern GitHub Copilot can be given, so no file here covers them: lib/odd, \"<path this map cannot print as written, 11 chars>\".",
     "Generated files: 2 under .github/instructions/anatomiya-*.instructions.md",
   ]);
 

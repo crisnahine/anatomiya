@@ -62,6 +62,12 @@ const INVISIBLE = /[\p{Default_Ignorable_Code_Point}--\p{Cf}]/gv;
 const CLUSTER_MOST = 8;
 const UNITS_PER_GRAPHEME = 4;
 
+// What a path the map does not print says instead, spelled once: the encoder strips no `<` that opens one,
+// and the quoting below knows one by it.
+const MARKER_KINDS = { mixed: "with mixed scripts", changed: "this map cannot print as written" };
+const markerOf = (kind, chars) => `<path ${MARKER_KINDS[kind]}, ${chars} chars>`;
+const MARKER_BODY = `path (?:${Object.values(MARKER_KINDS).join("|")}), \\d+ chars>`;
+
 const STRUCTURAL = [
   /-{3,}/g,      // a markdown rule or a frontmatter fence
   /~{3,}/g,      // the other fence character, which backticks alone miss
@@ -69,6 +75,10 @@ const STRUCTURAL = [
   /--!?>/g,      // parsers close a comment on --!> as well as -->
   /`{1,}/g,      // code fences and inline code
   /\|/g,         // a markdown table cell boundary
+  // A tag, or what reads as one: Claude Code wraps a rules file with no `paths` in one and escapes nothing
+  // inside it. Kept before a number, `=` or the end, and where it opens this encoder's own marker, since a
+  // sentence naming one is encoded whole again.
+  new RegExp(`<(?!\\s*(?:[\\d=]|$))(?!${MARKER_BODY})`, "gu"),
 ];
 
 // A block-level marker only bites in the first position of a line, so it is
@@ -146,28 +156,32 @@ export function sanitisePath(p) {
   const s = neutralise(p);
   // A rejected path leaks none of itself, so the marker is the whole value and
   // the cap has nothing to do.
-  if (s && s.split(WORD_BREAK).some(mixesLookalikes)) return `<path with mixed scripts, ${[...s].length} chars>`;
+  if (s && s.split(WORD_BREAK).some(mixesLookalikes)) return markerOf("mixed", [...s].length);
+  // Printed changed, it names a file that is not there, and an agent sent to it finds nothing. A name
+  // composed differently (NFD from Linux or a precompose-off clone) is the same name, and prints composed.
+  // No printed path holds a `<`, so none spells a marker.
+  const written = p == null ? "" : String(p);
+  if (s !== written.normalize("NFC") || s.includes("<")) return markerOf("changed", [...written].length);
   return capGraphemes(s, PATH_MAX);
 }
 
-// The whole marker, both ends anchored. Matched by its opening words alone, a
-// filename a repository can spell takes the branch below that adds quotes
-// without escaping what is inside them, so the name closes its own quoting.
-const MIXED_MARKER = /^<path with mixed scripts, \d+ chars>$/;
+// The whole marker, both ends anchored: a value matched by its opening words
+// alone would take the branch below that adds quotes without escaping inside them.
+const MARKER = new RegExp(`^<${MARKER_BODY}$`);
 
 /** A sanitised path, quoted for the line a reader sees it on. */
 export function quotePath(s) {
-  return MIXED_MARKER.test(s) ? `"${s}"` : JSON.stringify(s);
+  return MARKER.test(s) ? `"${s}"` : JSON.stringify(s);
 }
 
 /**
  * An encoded directory name as a line of the map says it: as it is where it
- * holds no space and no quote, and quoted the way `quotePath` quotes where it
- * does, since a name with a space can read as a sentence and a bare name with a
- * quote as a quoted one. Every other printable character is one some ordinary
- * path holds: `[slug]`, `(group)`, `@scope`, `+page`.
+ * holds no space, no quote and no `*`, and quoted the way `quotePath` quotes where
+ * it does, since a name with a space can read as a sentence, a bare name with a
+ * quote as a quoted one, and one with a `*` as a pattern. Every other printable
+ * character is one some ordinary path holds: `[slug]`, `(group)`, `@scope`, `+page`.
  */
-export const nameText = (s) => (/[ "]/.test(s) ? quotePath(s) : s);
+export const nameText = (s) => (/[ "*]/.test(s) ? quotePath(s) : s);
 
 /** Encode a repository-controlled scalar for rendering; `encodePath` for a path. */
 export function encode(value, { max = MAX } = {}) {

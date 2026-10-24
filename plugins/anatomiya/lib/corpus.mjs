@@ -674,9 +674,9 @@ function classify(root, rel, generatedRules, roots) {
  *
  * `ls-files -z` terminates every entry, so the runner's default holds: anything
  * left in the buffer at exit is half a path and not a name that happens to lack
- * a delimiter.
+ * a delimiter. `bounds` are the caller's clock and field cap, as `gitStreamed` takes them.
  */
-export function lsFiles(root, onEntry, extra = []) {
+export function lsFiles(root, onEntry, extra = [], bounds = {}) {
   // During an unresolved merge git lists a conflicted path once per stage it
   // holds, two or three times over, and every caller counted each line: a scan
   // run mid-merge tripled that file's sites. A set rather than `--deduplicate`,
@@ -691,5 +691,5 @@ export function lsFiles(root, onEntry, extra = []) {
       onEntry(rel);
     }
     return true;
-  });
+  }, bounds);
 }

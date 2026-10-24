@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 // taken over. Listing an extension the repository does not use matches nothing
 // extra, so the list is the language's rather than the area's.
 import { EXT_BY_LANG, LANGUAGES, rootIsPackage } from "./langs.mjs";
-import { byCode } from "./paths.mjs";
+import { baseOf, byCode } from "./paths.mjs";
 import { sanitisePath } from "./encode.mjs";
 
 export const AREA = {
@@ -161,8 +161,6 @@ const ROOT_ANCHOR = "/";
 // filter and the cover cannot drift apart again.
 const BARE_NAMES = LANGUAGES.flatMap((l) => l.filenames);
 
-const baseName = (rel) => rel.slice(rel.lastIndexOf("/") + 1);
-
 /**
  * The extension glob for a directory, plus one pattern per bare name it holds.
  * `under` names a directory at any depth below `dir` that every pattern goes
@@ -286,7 +284,7 @@ function caseTwins(files) {
   const byKey = new Map();
   for (const f of files) {
     for (let d = dirOf(f.rel); d !== "."; d = dirOf(d)) {
-      const key = `${dirOf(d)}/${foldCase(baseName(d))}`;
+      const key = `${dirOf(d)}/${foldCase(baseOf(d))}`;
       if (!byKey.has(key)) byKey.set(key, new Set());
       byKey.get(key).add(d);
     }
@@ -426,7 +424,7 @@ function withLeftOut(corpus, left) {
   for (const f of left) {
     const d = dirOf(f.rel);
     if (!byDir.has(d)) byDir.set(d, []);
-    byDir.get(d).push(baseName(f.rel));
+    byDir.get(d).push(baseOf(f.rel));
   }
   const sum = (a, b) => ({ get: (d) => (a.get(d) || 0) + (b.get(d) || 0) || undefined });
   return {
@@ -454,7 +452,7 @@ function byExcludedName(area, left) {
   const byName = new Map();
   const inTree = [];
   for (const f of left) {
-    const n = f.excludedAt && f.excludedAt.startsWith(under) ? baseName(f.excludedAt) : null;
+    const n = f.excludedAt && f.excludedAt.startsWith(under) ? baseOf(f.excludedAt) : null;
     if (n === null || counted.has(foldCase(n)) || !/^[\w.-]+$/.test(n) || !spellable(n)) {
       inTree.push(f);
       continue;
@@ -499,7 +497,7 @@ function reachable(area, uncounted, bare) {
   const under = underArea(area.path, "");
   return uncounted.filter((f) => {
     if (!f.rel.startsWith(under)) return false;
-    const name = foldCase(baseName(f.rel));
+    const name = foldCase(baseOf(f.rel));
     const dot = name.lastIndexOf(".");
     return names.has(name) || (dot >= 0 && exts.has(name.slice(dot + 1)));
   });
@@ -529,7 +527,7 @@ function assignGlobs(areas, files, uncounted) {
   const counted = corpusTree(files);
   for (const area of areas) {
     const mine = corpusTree(area.files);
-    const bare = BARE_NAMES.filter((n) => area.files.some((f) => baseName(f.rel) === n));
+    const bare = BARE_NAMES.filter((n) => area.files.some((f) => baseOf(f.rel) === n));
     const { byName, inTree } = byExcludedName(area, reachable(area, uncounted, bare));
     const corpus = withLeftOut(counted, inTree);
     // A tie goes to the shape with no negation: one pattern to read rather than

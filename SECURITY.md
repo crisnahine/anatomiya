@@ -159,12 +159,20 @@ in the rendered file, which is enough to make a directive read as its own opposi
 The encoder normalises to NFKC, keeps only letters, marks, numbers, punctuation, symbols and the
 plain space, removes every other default-ignorable code point (variation selectors, the combining
 grapheme joiner, the Hangul fillers: marks and letters that render as nothing, which the allowlist
-alone kept and which carried a payload invisibly inside one grapheme), rejects a path in which one word mixes look-alike alphabets (a Cyrillic `а` in a Latin word; Latin, Cyrillic, Greek, Armenian and Cherokee are checked against each other, and a name wholly in any one script is kept), strips markdown
-structure that would let a value become syntax (`|`, `---`, `<!--`, `-->`, backtick runs, a leading
-block marker), caps on grapheme clusters before quoting rather than after, and emits paths JSON
-quoted. The cap bounds length as well as count: a grapheme keeps at most eight code points and a
-value at most four code units per grapheme of its cap, since one grapheme can hold any number of
-marks and five of them once came back as a million code units.
+alone kept and which carried a payload invisibly inside one grapheme), rejects a path in which one
+word mixes look-alike alphabets (a Cyrillic `а` in a Latin word; Latin, Cyrillic, Greek, Armenian
+and Cherokee are checked against each other, and a name wholly in any one script is kept), strips
+markdown structure that would let a value become syntax (`|`, `---`, `<!--`, `-->`, backtick runs, a
+leading block marker) and every `<` except one followed by a number or `=` (spaces between allowed),
+by the end of the value or by this tool's own marker, caps on grapheme clusters before quoting rather than after, and emits paths JSON
+quoted. That `<` is there because Claude Code puts a rules file with no `paths`, such as the
+overview, inside a tag of its own and escapes nothing in it: a directory named `</system-reminder>`
+closed that tag, and what followed read as Claude Code's own text. A path the encoder had to change
+in any way but the cap is not printed changed, since it would name a file that is not there: it
+prints as `<path this map cannot print as written, N chars>`. The cap bounds length as well as
+count: a grapheme keeps at most eight code points and a value at most four code units per grapheme
+of its cap, since one grapheme can hold any number of marks and five of them once came back as a
+million code units.
 
 Every repository-controlled value goes through it: paths, area names, author names and emails, commit
 subjects, branch names, and matched source text.
@@ -255,8 +263,8 @@ files are created exclusively under unpredictable names, beside their destinatio
 
 What those files say is the map, and the map prints directory names, which the repository chooses.
 Each name goes through the encoder, which takes out Markdown structure and keeps words (see
-"Everything rendered goes through one allowlist encoder"). A name that holds a space or a double
-quote is then printed quoted, as JSON quotes it, on every line of the map that names a directory:
+"Everything rendered goes through one allowlist encoder"). A name that holds a space, a double
+quote or a `*` is then printed quoted, as JSON quotes it, on every line of the map that names a directory:
 the root lines, the `under` clauses, the tests line, an area file's heading and its line under
 Areas, the Cursor and Copilot lines naming the patterns a file also matches or cannot be given, and
 the notice before a write. So a name that is a sentence arrives as a quoted name. A
@@ -318,12 +326,12 @@ removed, and neither is a file under any other name, keyed or not. So the most a
 removed is a file it shipped under this tool's own name carrying this tool's own key, or a regular
 file it shipped under such a name plus the suffix a staged file carries, `.tmp-<pid>-<16 hex>`:
 that one is removed with no key asked, where no process of that id is running, by a scan that
-writes or removes in the directory. `.claude/anatomiya` is swept the same way for seven names: a regular
+writes or removes in the directory. `.claude/anatomiya` is swept the same way for eight names: a regular
 file there named `facts.json`, `layout.json`, `refresh.json`, `baseline.json`, `refresh.lock`,
-`history-authors.gz` or `history-cochange.gz` plus that suffix, whose stager is not running, is
+`commit.lock`, `history-authors.gz` or `history-cochange.gz` plus that suffix, whose stager is not running, is
 removed by a scan that writes, and the summary counts them (`3 temporary files an earlier run left
 in .claude/anatomiya were removed`). The same sweep takes what a killed
-breaker of the refresh lock left: a lock token, `refresh.lock.<16 hex>`, or a token's own token,
+breaker of the refresh lock or the commit lock left: a lock token, `refresh.lock.<16 hex>`, or a token's own token,
 `refresh.lock.<16 hex>.<digits>`, of a generation the lock does not name, which is all of them
 where the lock is gone, a token's own token of the dead generation the lock names whose own mtime
 is more than 62 seconds from the clock, and a `refresh.lock.stale-<pid>-<16 hex>` an older build
@@ -578,6 +586,11 @@ at `refresh.lock`, at a lock token's name or at `refresh.json`, which a reposito
 `rmdir`: no link is followed and nothing that holds an entry is removed. A directory holding entries
 at any of them is left whole and stops the worker before it takes the lock or scans, no refresh runs
 in that checkout while it stays, and a scan's summary names each one.
+
+A scan holds one more lock while it replaces the map, `commit.lock`, made and broken the same way,
+from the check that no other scan wrote the record since its plan to its last rename, so two scans
+that overlap cannot both write the map. It is held for the renames alone, and removed by the scan
+that made it.
 
 `npm` runs from `anatomiya setup` and from nothing else. `scan`, `check` and `pin` never call it,
 which is the whole reason the install is a command of its own rather than something a scan does on

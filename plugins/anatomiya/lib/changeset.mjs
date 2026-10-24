@@ -9,7 +9,7 @@
 import { join } from "node:path";
 
 import { corpusDrop, isCorpusPath } from "./corpus.mjs";
-import { ask, filesAt, gitStreamed, nameStatusReader, parsePorcelainRows, unaskedAs, GIT } from "./git.mjs";
+import { ask, filesAt, gitStreamed, nameStatusReader, parsePorcelainRows, unaskedAs, GIT, RENAME_LIMIT } from "./git.mjs";
 import { isLink } from "./rules.mjs";
 
 const NOTHING_PENDING = Object.freeze({ present: [], deleted: [], removed: [] });
@@ -140,12 +140,6 @@ async function changedFiles(root, from, head = "HEAD") {
   }
   return { ok: true, rows };
 }
-
-// Git's own default for a merge, which it chose as the size an exhaustive
-// rename pass is still worth paying for; a diff's default is 1000. Past it the
-// check's clock bounds the cost, and a diff that runs out of it is reported as
-// unread rather than as a branch that changed nothing.
-const RENAME_LIMIT = 7000;
 
 /**
  * Whether git will have skipped inexact rename detection on this diff.
@@ -314,7 +308,7 @@ export async function pendingPaths(root, { timeout } = {}) {
     removed: all.flatMap((row) => !gone(row) ? [] : [row.orig ?? row.path]),
     // Every path the tree adds or edits, corpus or not: a co-change companion
     // is as often a YAML or Markdown file as source.
-    touched: all.filter((row) => !gone(row)).map((row) => ({ path: row.path, status: isNew(row) ? "A" : "M" })),
+    touched: all.filter((row) => !gone(row)).map((row) => ({ path: row.path, status: isNew(row) ? "A" : "M", from: row.orig ?? null })),
   };
 }
 

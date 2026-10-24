@@ -436,6 +436,13 @@ _Avoid_: index, summary, README
 A map file scoped to one area's glob, so it loads when a file in that area is read.
 _Avoid_: rule file (for one of ours), doc, context file (for one of ours)
 
+**Path marker**:
+What the map and this tool's messages print in place of a path they cannot print as written:
+`<path with mixed scripts, N chars>` for a word in two look-alike alphabets, and
+`<path this map cannot print as written, N chars>` for one the encoder had to change. No printed
+path holds a `<`, so no path can spell one.
+_Avoid_: placeholder, redacted path, marker (alone: a batch claim is called that too)
+
 **Target**:
 One of the three places a scan can write the map, each for one reader: `claude` for Claude Code,
 `cursor` for Cursor and `copilot` for GitHub Copilot. The first is always written. Each of the other
@@ -515,10 +522,17 @@ _Avoid_: claim (alone: that is a dimension's sentence), marker, token
 
 **Lock token**:
 What gives one call the right to break a dead lock, for one generation of that lock: the lock file
-found dead, told apart from a later lock at the same name. The echo's lock beside a **batch claim**
-and the refresh's lock in the **store** are each broken through one. A lock token whose maker died
-is a dead lock too, broken through a lock token of its own, which is written "a token's own token".
+found dead, told apart from a later lock at the same name. The echo's lock beside a **batch claim**,
+and the refresh's lock and a scan's **commit lock** in the **store**, are each broken through one. A
+lock token whose maker died is a dead lock too, broken through a lock token of its own, which is
+written "a token's own token".
 _Avoid_: token (alone, but for that one phrase), lock (alone: that is the file it breaks)
+
+**Commit lock**:
+`commit.lock` in the **store**. A scan takes it before it checks that no other scan has replaced the
+record since its plan, and holds it to its last rename, so two scans that overlap cannot both write
+the map.
+_Avoid_: write lock, scan lock, refresh lock (that is the worker's, held for a whole scan)
 
 **Store**:
 The directory a scan keeps its own files in, `.claude/anatomiya`: the **facts**, the **layout

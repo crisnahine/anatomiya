@@ -40,7 +40,7 @@ import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { declaredParents, newlyIntroduced } from "./introduced.mjs";
-import { byCode, dirOf, extOrName, folded } from "./paths.mjs";
+import { baseOf, byCode, dirOf, extOrName, folded } from "./paths.mjs";
 import { CHANGE_MOST, claimKey, claimSentence, claimsIn, owedBy, statedClaims } from "./cochange.mjs";
 
 /**
@@ -138,11 +138,12 @@ export async function check(cwd, { baseRef = null } = {}) {
   // The refusal reason in `stale` travels, or the report prints "capped by this
   // run: no map on disk" above a note saying the map is a schema this build
   // cannot read. The first is false and points at the wrong fix.
-  const [change, stale, tracked] = await Promise.all([
+  const [change, stale, listed] = await Promise.all([
     branchChange(root, { from, head: base.head, mergeBase: base.mergeBase, compare: mode === "compare", ranges: mode === "added-lines" }),
     staleness(root, facts, base, unreadable),
-    trackedTests(root),
+    trackedFiles(root),
   ]);
+  const tracked = listed === null ? null : listed.filter(isTestPath);
   const { changed, examined, pending, added } = change;
   if (!change.readable) {
     caveat(
@@ -207,7 +208,7 @@ export async function check(cwd, { baseRef = null } = {}) {
       "the corpus could not be listed, so no routing claim was checked"))
     : new Set();
 
-  const placed = await placedAmong(root, examined);
+  const placed = placedAmong(examined, listed);
   const { findings, missingEngines, missingGrammars, missingParser, headFacets } = await collect(root, {
     examined,
     placed,
@@ -463,7 +464,9 @@ async function resolveBase(root, baseRef, caveats) {
   // Asked before anything is fetched. A remote holding a branch literally named
   // `HEAD` would otherwise be fetched and used as the base, which is the one
   // thing E6 refuses, and the refusal would arrive as a story about fetching.
+  // So is a name git would read as an option, which no ref can be.
   if (asked && (baseRef === "HEAD" || baseRef === "@")) throw new Error(refusal(baseRef, shallow));
+  if (asked && baseRef.startsWith("-")) throw new Error(refusal(baseRef, false));
   // git resolves a name two refs hold by precedence, tag before branch, and
   // says so only on a stderr this run never shows.
   if (asked) {
@@ -663,21 +666,19 @@ async function boundary(root, head) {
 const REVISION_READ = { withSource: true, timeout: GIT.checkTimeoutMs };
 
 /**
- * Every test file git tracks, or null where git refused the listing.
+ * Every file git tracks, listed once for every reader in the check, or null where git refused the listing.
  *
- * Null rather than an empty list, and the caller reads it as "there is one":
+ * Null rather than an empty list, and the test-file reader reads it as "there is one":
  * an index this cannot read says nothing about what a directory holds, and
  * every other reader in this file that meets an unlistable corpus drops the
  * claims it cannot support rather than printing them anyway (C33). A listing
  * git could not be asked for throws: a report with no placement finding and
  * no word of why would read as a run that looked (F29).
  */
-async function trackedTests(root) {
+async function trackedFiles(root) {
   const found = [];
   try {
-    await lsFiles(root, (rel) => {
-      if (isTestPath(rel)) found.push(rel);
-    });
+    await lsFiles(root, (rel) => found.push(rel), [], { timeout: GIT.checkTimeoutMs });
   } catch (err) {
     if (err instanceof Unasked) throw err;
     return null;
@@ -726,21 +727,14 @@ async function absentAt(root, mergeBase, dirs) {
 
 /**
  * The examined files a language's tool collects as tests by where they sit,
- * asked of everything git tracks beside them, the way a scan asks it.
+ * asked of everything git tracks beside them (`tracked`), the way a scan asks it.
  *
- * Empty where no examined language has such a tool, which costs no listing,
- * and where git refused the listing: the file is then read by what it holds
- * alone. It throws where git could not be asked.
+ * Empty where no examined language has such a tool, and where git refused the
+ * listing: the file is then read by what it holds alone.
  */
-async function placedAmong(root, examined) {
-  if (!examined.some((c) => placeTestsOf(language(c.path)) !== null)) return new Set();
-  const listed = examined.map((c) => ({ rel: c.path, lang: language(c.path) }));
-  try {
-    await lsFiles(root, (rel) => listed.push({ rel, lang: language(rel) }));
-  } catch (err) {
-    if (err instanceof Unasked) throw err;
-    return new Set();
-  }
+function placedAmong(examined, tracked) {
+  if (tracked === null || !examined.some((c) => placeTestsOf(language(c.path)) !== null)) return new Set();
+  const listed = [...examined.map((c) => c.path), ...tracked].map((rel) => ({ rel, lang: language(rel) }));
   return placedTests(listed);
 }
 
@@ -1141,6 +1135,12 @@ function addCochangeFindings(root, findings, { rows = [], pending, areas, capped
   const claims = statedClaims(cochange);
   if (claims.length === 0) return;
   const gone = new Set([...(pending?.deleted ?? []), ...(pending?.removed ?? [])]);
+  const addedHere = new Set(rows.filter((row) => row.status === "A").map((row) => row.path));
+  // The walk reads the whole branch as one change, where a file deleted and added under its own name is a
+  // move. Deleted from the merge base, that is: a file the branch added and then moved was never there.
+  const committedGone = rows.filter((row) => row.status === "D").map((row) => row.path);
+  const pendingGone = [...gone].filter((path) => !addedHere.has(path));
+  const goneNames = new Set([...committedGone, ...pendingGone].map(baseOf));
   // The map a scan wrote, the walk leaves out too: an untracked map takes no change past CHANGE_MOST files.
   const own = ownOutput(root).asWritten;
   const added = new Set();
@@ -1148,7 +1148,9 @@ function addCochangeFindings(root, findings, { rows = [], pending, areas, capped
   for (const row of [...rows, ...(pending?.touched ?? [])]) {
     if (row.status === "D" || gone.has(row.path) || own(row.path)) continue;
     touched.add(row.path);
-    if (row.status === "A") added.add(row.path);
+    // A pending move of a file the branch added is still that addition, as `withPendingEdits` reads it.
+    const isAdded = row.status === "A" || addedHere.has(row.from);
+    if (isAdded && !goneNames.has(baseOf(row.path))) added.add(row.path);
   }
   const change = { added: [...added], touched: [...touched] };
   for (const claim of claims) {

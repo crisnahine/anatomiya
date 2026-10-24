@@ -335,12 +335,13 @@ test("the globs line is spelled so that cursor's reader gets back the patterns i
 });
 
 test("the check reads the string that is emitted, so a comma the encoder folds in is caught", () => {
+  // NFKC folds the fullwidth comma to a comma, so the encoder prints its marker, which holds one too.
   const fullwidth = [{ negated: false, dir: "a，b", tail: "*.{js,ts}" }, { negated: false, dir: "ok", tail: "*.js" }];
-  assert.ok(encoded(fullwidth[0]).startsWith("a,b/"), encoded(fullwidth[0]));
+  assert.ok(encoded(fullwidth[0]).startsWith("<path this map cannot print as written, 3 chars>/"), encoded(fullwidth[0]));
   for (const target of [cursor, copilot]) {
     const out = spelledGlobs(target, fullwidth, encoded);
     assert.deepEqual(out.patterns, ["ok/*.js"]);
-    assert.deepEqual(out.unspellable, ["a,b/*.{js,ts}"]);
+    assert.deepEqual(out.unspellable, ["<path this map cannot print as written, 3 chars>/*.{js,ts}"]);
   }
   // Read before the encoder, the same directory is one neither target objects to.
   assert.deepEqual(spelledGlobs(cursor, fullwidth, plain).unspellable, []);
