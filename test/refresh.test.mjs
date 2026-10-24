@@ -12,7 +12,8 @@ import { buildPin, loadPin, PIN_PATH, writePin } from "../plugins/anatomiya/lib/
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
 import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
-import { acquire, noteScan, refreshRepository, scanStamp } from "../plugins/anatomiya/lib/refresh-run.mjs";
+import { acquire } from "../plugins/anatomiya/lib/lock.mjs";
+import { noteScan, refreshRepository, scanStamp } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { answerWith, Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
@@ -127,6 +128,21 @@ test("a directory with no map of its own is answered with nothing, and nothing i
   assert.deepEqual(runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }), {});
   assert.deepEqual(started, []);
   assert.equal(existsSync(join(dir, ".claude")), false, "nothing was created");
+});
+
+test("a relative directory in the payload is no checkout, whatever directory the hook runs in", async (t) => {
+  // Resolved against the hook process's own directory, it started a refresh of a checkout the session never named.
+  const dir = await scanned(t);
+  const { started, start } = recorder();
+  // Back before the test's cleanup removes the directory: Windows refuses to remove a process's own one.
+  const was = process.cwd();
+  process.chdir(dir);
+  try {
+    assert.deepEqual(runRefresh(dir, { hook_event_name: "SessionStart", cwd: ".", source: "startup" }, { start }), {});
+  } finally {
+    process.chdir(was);
+  }
+  assert.deepEqual(started, []);
 });
 
 test("a checkout with its own map answers a session start with the git files to watch, and starts one refresh", async (t) => {
@@ -2408,11 +2424,11 @@ test("a worker that judged a lock dead before two others ran leaves one holder",
   assert.equal(readFileSync(lock, "utf8"), holders[0].content);
 });
 
-const REFRESH_RUN = new URL("../plugins/anatomiya/lib/refresh-run.mjs", import.meta.url).href;
+const LOCK_MODULE = new URL("../plugins/anatomiya/lib/lock.mjs", import.meta.url).href;
 
 // Says it is up, takes the lock when told to, says what it holds, and holds it until its stdin ends.
 const LOCK_WORKER = `
-import { acquire } from ${JSON.stringify(REFRESH_RUN)};
+import { acquire } from ${JSON.stringify(LOCK_MODULE)};
 process.stdout.write("up\\n");
 process.stdin.once("data", () => {
   // Spread, as workers started by one checkout arrive.

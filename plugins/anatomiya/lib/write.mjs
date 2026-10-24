@@ -5,11 +5,12 @@ import { hasFile, renderArea, renderOverview } from "./render.mjs";
 import { claimsIn } from "./cochange.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBackRecord, writePair } from "./facts.mjs";
 import { HISTORY_FILES } from "./history.mjs";
-import { leftTokens, processAlive, refreshBlockers, workerAge } from "./lock.mjs";
+import { acquire, commitAge, holdsEntries, leftTokens, processAlive, refreshBlockers, release, workerAge } from "./lock.mjs";
 import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, isFileAt, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import { isWholeArea } from "./slot.mjs";
 import {
+  COMMIT_LOCK,
   REFRESH_LOCK,
   REFRESH_STATE,
   RULES_DIR,
@@ -63,12 +64,15 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   // and the scan die on a raw `EISDIR` out of the rename.
   for (const leaf of [FACTS_PATH, LAYOUT_PATH]) {
     if (!leafReplaceable(join(storeDir, basename(leaf)))) {
-      throw new Error(`${leaf} is not a file, so the map could not be written: remove it and scan again`);
+      throw notAFile(leaf);
     }
     // No command reads one past the bound, so it is replaced without being read rather than refused.
     const size = tooLargeToPutBack(join(storeDir, basename(leaf)));
     if (size !== null) oversized.push({ at: leaf, size });
   }
+  // The commit's lock too, refused here so a dry run says it. No commit removes a directory that holds
+  // entries or will not list; an empty one is taken as a dead lock.
+  if (holdsEntries(join(storeDir, basename(COMMIT_LOCK)))) throw notAFile(COMMIT_LOCK);
   // The facts on disk are the third fact ownership needs, and the record a held
   // area's file was derived from. Read before the new record replaces them, and
   // `null` when there is no record to read, which makes nothing removable.
@@ -236,9 +240,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // dies on EISDIR from inside the atomic replace.
   const occupied = names.filter((name) => audit.occupied.includes(name));
   if (occupied.length) {
-    throw new Error(
-      `${join(target.dir, occupied[0])} is not a file, so the map could not be written: remove it and scan again`
-    );
+    throw notAFile(join(target.dir, occupied[0]));
   }
 
   // Ours, and this run is not rewriting it, so its area is gone or states
@@ -383,7 +385,7 @@ function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritabl
 const recorded = (previous, target) => [...(recordFor(previous, target).names ?? [])].sort();
 
 // The files a scan, a refresh, a pin, a lock create and a history walk stage in the store, by name.
-const STORE_STAGED = [...[FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK].map((path) => basename(path)), ...Object.values(HISTORY_FILES)];
+const STORE_STAGED = [...[FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK, COMMIT_LOCK].map((path) => basename(path)), ...Object.values(HISTORY_FILES)];
 
 // Where a build before the lock tokens moved a dead refresh lock aside to break it.
 const LOCK_ASIDE = /^refresh\.lock\.stale-(\d+)-[0-9a-f]{16}$/;
@@ -404,7 +406,8 @@ function leftInStore(dir) {
     const aside = LOCK_ASIDE.exec(name);
     return aside !== null && !processAlive(Number(aside[1])) && isFileAt(join(dir, name));
   });
-  return [...staged, ...leftTokens(join(dir, basename(REFRESH_LOCK)), workerAge), ...asides].sort();
+  const tokens = [[REFRESH_LOCK, workerAge], [COMMIT_LOCK, commitAge]].flatMap(([lock, judge]) => leftTokens(join(dir, basename(lock)), judge));
+  return [...staged, ...tokens, ...asides].sort();
 }
 
 /**
@@ -458,8 +461,9 @@ const untouched = (o) => o.state === "unknown" || o.leftAlone === true;
 /** The record's size and time, as a plan read it, or null where there was none to read. */
 function factsStamp(storeDir) {
   try {
-    const { size, mtimeMs } = statSync(join(storeDir, basename(FACTS_PATH)));
-    return `${size}:${mtimeMs}`;
+    // The inode too: a record replaced at the same size inside one mtime tick (a second on HFS+, two on FAT) reads the same otherwise.
+    const { size, mtimeNs, ino } = statSync(join(storeDir, basename(FACTS_PATH)), { bigint: true });
+    return `${size}:${mtimeNs}:${ino}`;
   } catch {
     return null;
   }
@@ -489,10 +493,6 @@ export function commitMap(root, plan) {
   if (plan.blind) return plan;
 
   const { rulesDir, storeDir } = resolveDirs(root);
-  // A plan from a record another scan has since replaced removes none of that scan's files, which then load for good.
-  if (factsStamp(storeDir) !== plan.factsSeen) {
-    throw Object.assign(new Error("another scan wrote the map meanwhile, so nothing was written: scan again"), { stale: true });
-  }
   // Asked again here for the same reason, and only of a directory this touches.
   const own = (id, t, did) => {
     const dir = resolveTargetDir(root, TARGETS[id]);
@@ -513,6 +513,7 @@ export function commitMap(root, plan) {
   const staged = [];
   const theirs = [];
   const made = [];
+  const lock = holdCommit(storeDir, plan);
   try {
     for (const t of all) if (t.write.length > 0) makeOwnDirectory(t.at, t.dir, made);
     mkdirSync(rulesDir, { recursive: true });
@@ -614,8 +615,34 @@ export function commitMap(root, plan) {
     // Deepest first, and only while empty: `rmdir` refuses anything else.
     for (const dir of made.reverse()) quietRmdir(dir);
     throw err;
+  } finally {
+    release(lock);
   }
 }
+
+/**
+ * The commit lock, held from the record's stamp check to the last rename. Two scans that both passed the
+ * check before either renamed put the older one's record over the newer one's files, which then loaded for
+ * good owned by no record. Throws `stale` where a live scan holds it or the record moved since the plan.
+ */
+function holdCommit(storeDir, plan) {
+  mkdirSync(storeDir, { recursive: true });
+  const lock = acquire(join(storeDir, basename(COMMIT_LOCK)), commitAge);
+  if (lock === null) throw staleError("another scan is writing the map now");
+  if (lock.blocked) throw notAFile(COMMIT_LOCK);
+  // A plan from a record another scan has since replaced removes none of that scan's files, which then load for good.
+  if (factsStamp(storeDir) !== plan.factsSeen) {
+    release(lock);
+    throw staleError("another scan wrote the map meanwhile");
+  }
+  return lock;
+}
+
+// A name of the map's own that something other than a file holds, which nothing here removes.
+const notAFile = (at) => new Error(`${at} is not a file, so the map could not be written: remove it and scan again`);
+
+// A refusal the refresh worker passes over, since the other scan's map and record stand.
+const staleError = (why) => Object.assign(new Error(`${why}, so nothing was written: scan again`), { stale: true });
 
 const UNTOUCHED = "stopped before writing anything there";
 const PERMIT = "fix its permissions";

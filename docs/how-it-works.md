@@ -1782,26 +1782,30 @@ and off, none passed its bound, 40, 43 and 43, and each reached it (A103). An in
 can pass the bound, for Claude Code's overview too:
 `test/render.test.mjs` renders one at 41, on a shape it says no scan reaches.
 
-The plan reads the size and mtime of `facts.json` as it found it, and the commit refuses where
-another scan has written it since, with `another scan wrote the map meanwhile, so nothing was
-written: scan again`. A plan made from a record another scan replaced removes none of the area files
-that scan wrote, and those would then load for good. The plan is made per target, and all of it
-before anything is created. The two `.claude` directories are resolved first, then each other
-target's state is read, then each directory that is on is audited against the names this scan would
-put there, and only then is a body rendered. The two new directories are held more tightly than
-`.claude/rules` (A104): every component of `.cursor/rules` and `.github/instructions` is a directory
-of the repository's own or is not there yet, a link at any of them is refused wherever it leads, and
-so is a directory that is, holds or sits inside the place `.claude/rules` resolves to. People write
-rules in both by hand, so an entry this tool did not write is never written over there (A105): a
-file with no key, a link, a file that will not open, a directory or a fifo, and an entry spelled as
-a planned name in another letter case where the listing does not also hold the name itself. In
-`.claude/rules` a generated name is this tool's own, so there an entry spelled as one of the map's
-names in another letter case is that file where the volume says so, and the scan replaces it and
-names it as the directory spells it. The volume is asked, since JavaScript's fold sends a dotless
-`ı` onto `i` and APFS keeps the two apart: the two names are one entry where `lstat` gives both the
-same device and inode, with one link. What happens next depends on who asked. Named by `--targets`,
-the target cannot be written as asked, so the scan refuses and writes nothing anywhere, the
-`.claude/rules` map included:
+The plan reads the size, the mtime in nanoseconds and the inode of `facts.json` as it found it, and
+the commit refuses where another scan has written it since, with `another scan wrote the map
+meanwhile, so nothing was written: scan again`. The commit asks that under `commit.lock` in the
+store, held to its last rename, and refuses with `another scan is writing the map now, so nothing
+was written: scan again` where a live scan holds it; one a killed scan left is broken as the refresh
+lock is. Without the lock, two scans that both passed the check before either renamed put the older
+one's record over the newer one's files. A plan made from a record another scan replaced removes
+none of the area files that scan wrote, and those would then load for good. The plan is made per
+target, and all of it before anything is created. The two `.claude` directories are resolved first,
+then each other target's state is read, then each directory that is on is audited against the names
+this scan would put there, and only then is a body rendered. The two new directories are held more
+tightly than `.claude/rules` (A104): every component of `.cursor/rules` and `.github/instructions`
+is a directory of the repository's own or is not there yet, a link at any of them is refused
+wherever it leads, and so is a directory that is, holds or sits inside the place `.claude/rules`
+resolves to. People write rules in both by hand, so an entry this tool did not write is never
+written over there (A105): a file with no key, a link, a file that will not open, a directory or a
+fifo, and an entry spelled as a planned name in another letter case where the listing does not also
+hold the name itself. In `.claude/rules` a generated name is this tool's own, so there an entry
+spelled as one of the map's names in another letter case is that file where the volume says so, and
+the scan replaces it and names it as the directory spells it. The volume is asked, since
+JavaScript's fold sends a dotless `ı` onto `i` and APFS keeps the two apart: the two names are one
+entry where `lstat` gives both the same device and inode, with one link. What happens next depends
+on who asked. Named by `--targets`, the target cannot be written as asked, so the scan refuses and
+writes nothing anywhere, the `.claude/rules` map included:
 
 ```
 anatomiya: .cursor/rules/anatomiya-overview.mdc was not written by this tool, so .cursor/rules could not be written and nothing was written anywhere: move or delete it and scan again
@@ -1824,12 +1828,12 @@ A temporary file a scan left behind, by a kill or through a directory swapped un
 by the next scan that writes or removes in that directory: a regular file named as a map file plus
 `.tmp-<pid>-<16 hex>`, where no process of that id is running. The summary counts the ones under
 `.claude/rules`, `1 temporary file an earlier run left in .claude/rules was removed`.
-`.claude/anatomiya` is swept for seven names, `facts.json`, `layout.json`, `refresh.json`,
-`baseline.json`, `refresh.lock`, `history-authors.gz` and `history-cochange.gz` plus
+`.claude/anatomiya` is swept for eight names, `facts.json`, `layout.json`, `refresh.json`,
+`baseline.json`, `refresh.lock`, `commit.lock`, `history-authors.gz` and `history-cochange.gz` plus
 that suffix (`STORE_STAGED`), counted on a line of their own: `3 temporary files an earlier run
-left in .claude/anatomiya were removed`. So what a killed pin or a killed create of the refresh
-lock staged goes too. The same sweep takes, and counts with them, what a killed breaker of the
-refresh lock left (A118): a lock token or a token's own token of a generation the lock does not
+left in .claude/anatomiya were removed`. So what a killed pin or a killed create of either lock
+staged goes too. The same sweep takes, and counts with them, what a killed breaker of either lock
+left (A118): a lock token or a token's own token of a generation the lock does not
 name, which is all of them where the lock is gone, a token's own token of the dead generation the
 lock names whose own mtime is more than 62 seconds from the clock, and a
 `refresh.lock.stale-<pid>-<16 hex>` an older build moved aside, where no process of that id is
@@ -1938,12 +1942,15 @@ no notice before a write, no reuse check, and no refresh of their own.
 ### The encoder
 
 Every repository-controlled value is encoded before it is rendered: paths, area names, author names,
-commit subjects, branch names, and matched source text. Allowlist, not
-denylist. It normalises to NFKC, keeps only printable codepoints (which drops Cc, Cf, Co, Cs, Zl and
-Zp, and so catches bidi overrides and zero-width joiners that an ASCII control filter and
-`JSON.stringify` both miss), strips markdown structure (`---`, comment delimiters, backticks, table
-pipes), rejects a word mixing Latin, Cyrillic or Greek letters as a probable homoglyph (a name wholly in one script, any script, is kept), caps on grapheme clusters before quoting,
-and emits paths JSON-quoted.
+commit subjects, branch names, and matched source text. Allowlist, not denylist. It normalises to
+NFKC, keeps only printable codepoints (which drops Cc, Cf, Co, Cs, Zl and Zp, and so catches bidi
+overrides and zero-width joiners that an ASCII control filter and `JSON.stringify` both miss),
+strips markdown structure (`---`, comment delimiters, backticks, table pipes) and every `<` that can
+read as a tag, since Claude Code wraps a rules file with no `paths` in a tag and escapes nothing
+inside it, rejects a word mixing Latin, Cyrillic or Greek letters as a probable homoglyph (a name
+wholly in one script, any script, is kept), caps on grapheme clusters before quoting, and emits
+paths JSON-quoted. A path any of that changed, the cap aside, prints as `<path this map cannot print
+as written, N chars>` rather than as a name no file has.
 
 The claim text is the one rendered string that does not go through it, because it is this tool's own
 sentence rather than a repository-controlled value. It used to: the encoder strips `|` as a table
@@ -2765,9 +2772,10 @@ HEAD, so nothing is examined and the caveat names the fix, `fetch-depth: 0`. The
 `base.sha` is the base ref's own tip and `base.mergeBase` the fork point the diff is taken from.
 
 The diff and the pending listing set their own rename limit, 7,000, where git's diff default is
-1,000: past the limit git lists each move as a deletion and an addition, and every site that came
-with a moved file was charged to whoever moved it. A branch past even that is said, as
-`renames-skipped`. A submodule is left out of both, since a gitlink is a commit rather than a file.
+1,000, and so does the range diff drift reads (E6): past the limit git lists each move as a deletion
+and an addition, and every site that came with a moved file was charged to whoever moved it. A
+branch past even that is said, as `renames-skipped`. A submodule is left out of both, since a
+gitlink is a commit rather than a file.
 
 What the branch changed, the committed diff from the fork point, the work still pending in the tree,
 the renames and the lines each file gained, is read by one module, `changeset.mjs`, and the
@@ -2827,7 +2835,7 @@ Severity, in the order the checks are made:
 | Result | When |
 |---|---|
 | NIT | "no convention counted here", or a gate suppressed the one that was: "no convention stated here (GATE)", naming the gate. On such a slot the finding's claim is the area file's own counts line for it, in its words and with its scope clause, `functions declare no return type: no convention. 62 of 70 sites (ratio)`, never the majority side's sentence alone. That claim already says `no convention` and the gate, so the finding carries `toldInClaim`: the text report prints no reason line under it, the GitHub annotation carries the claim as its message with no title, and the JSON keeps `reason` beside the field. A slot carries a scope only where its area holds 3 or more files of languages the row never asks, and a file of a kind outside the scope raises nothing: a new `.ts` file beside a slot counted over `.js` files is passed over in an area that also holds three Python files, and judged in an area of JavaScript alone |
-| FIX | the area file's 40-line budget dropped the claim's block: "the area file names this claim without its counts" where the notice still prints its sentence, "the area file had no room to state this claim" where it does not; or the run is capped, "capped by this run: CAUSE", where CAUSE is the stale reason the header prints or no merge base; or the predicate is partial, "partial predicate: some sites are not visible statically"; or "the map already names this file as an exception"; or "no baseline population recorded"; or the claim was stated on the rest of the repository's bound rather than this area's own (D8), "N of M baseline sites here, on a claim the rest of the repository carries"; or the Wilson bound on the baseline counts does not reach 0.90, "N of M baseline sites is thin"; or the baseline itself was not perfect, "N of M baseline sites conform". Two caps sit outside that ladder (H24): a file whose area holds no slot for the claim is judged on the nearest enclosing area that states one, "counted in AREA, which this directory sits inside", AREA named as the map names it, quoted where it holds a space or a double quote, and a MUST-FIX on a path the owning area's globs never deliver to drops to FIX, with the same "counted in" reason where the globs miss the directory, such as a new subdirectory under a `dir/*.ext` area, and "the area file for AREA does not reach TYPE, so this claim was never delivered here" where they miss the file's name, TYPE being its extension as `.tsx files` or its whole name; or, for a co-change claim, "no baseline population recorded" where the walk's tip was not a pin, "no area file carries this claim" where no one area holds the producer class, "this branch touches N files, more than any change this claim was counted over" past 40 files, and "N of the last M changes that added one" where the record was not perfect |
+| FIX | the area file's 40-line budget dropped the claim's block: "the area file names this claim without its counts" where the notice still prints its sentence, "the area file had no room to state this claim" where it does not; or the run is capped, "capped by this run: CAUSE", where CAUSE is the stale reason the header prints or no merge base; or the predicate is partial, "partial predicate: some sites are not visible statically"; or "the map already names this file as an exception"; or "no baseline population recorded"; or the claim was stated on the rest of the repository's bound rather than this area's own (D8), "N of M baseline sites here, on a claim the rest of the repository carries"; or the Wilson bound on the baseline counts does not reach 0.90, "N of M baseline sites is thin"; or the baseline itself was not perfect, "N of M baseline sites conform". Two caps sit outside that ladder (H24): a file whose area holds no slot for the claim is judged on the nearest enclosing area that states one, "counted in AREA, which this directory sits inside", AREA named as the map names it, quoted where it holds a space, a double quote or a `*`, and a MUST-FIX on a path the owning area's globs never deliver to drops to FIX, with the same "counted in" reason where the globs miss the directory, such as a new subdirectory under a `dir/*.ext` area, and "the area file for AREA does not reach TYPE, so this claim was never delivered here" where they miss the file's name, TYPE being its extension as `.tsx files` or its whole name; or, for a co-change claim, "no baseline population recorded" where the walk's tip was not a pin, "no area file carries this claim" where no one area holds the producer class, "this branch touches N files, more than any change this claim was counted over" past 40 files, and "N of the last M changes that added one" where the record was not perfect |
 | MUST-FIX | "all N baseline sites conform", so this branch is the first violation; for a co-change claim, "all N of the last N changes that added one" |
 
 Baseline counts come from the pinned population, never from the current one, or the agent's own

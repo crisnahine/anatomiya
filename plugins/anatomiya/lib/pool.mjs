@@ -59,6 +59,9 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   const workers = [];
   const idle = [];
   const queue = [];
+  // Read by index: past about 16k entries V8 copies the array on every `shift`, and a
+  // 40,000-file corpus spent 445 ms of the parent's time there.
+  let head = 0;
   // Parses the wall clock killed beside other parses, held until the queue
   // drains and every worker is idle, then run one at a time.
   const retries = [];
@@ -191,7 +194,14 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   // file and write an overview of zero areas.
   function fail(reason) {
     broken = reason;
-    for (const job of [...queue.splice(0), ...retries.splice(0)]) job.resolve(neverAnswered(job.file.rel));
+    for (const job of [...queued(), ...retries.splice(0)]) job.resolve(neverAnswered(job.file.rel));
+  }
+
+  // Every job still waiting, taken off the queue.
+  function queued() {
+    const left = queue.slice(head);
+    queue.length = head = 0;
+    return left;
   }
 
   function neverAnswered(rel) {
@@ -219,7 +229,8 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   function release(w) {
     // A reply already sent when a clock killed the worker still lands here; its exit spawns the replacement.
     if (closed || w.sup.killedBy() !== null) return;
-    const next = queue.shift() ?? (workers.some((x) => x.job) ? null : retries.shift());
+    const next = (head < queue.length ? queue[head++] : null) ?? (workers.some((x) => x.job) ? null : retries.shift());
+    if (head === queue.length) queue.length = head = 0;
     if (next) return assign(w, next);
     idle.push(w);
   }
@@ -308,7 +319,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     if (closed) return;
     closed = true;
     stopRssPoll();
-    for (const job of [...queue.splice(0), ...retries.splice(0)]) {
+    for (const job of [...queued(), ...retries.splice(0)]) {
       job.resolve({ rel: job.file.rel, ok: false, error: "pool closed" });
     }
     idle.length = 0;

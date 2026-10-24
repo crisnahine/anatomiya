@@ -122,9 +122,10 @@ function underTemp(dir, rel) {
 }
 
 async function pooled(items, size, fn) {
-  const queue = [...items];
-  const workers = Array.from({ length: Math.max(1, Math.min(size, queue.length)) }, async () => {
-    while (queue.length) await fn(queue.shift());
+  // By index rather than `shift`, which copies the array on every call past about 16k items.
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(size, items.length)) }, async () => {
+    while (next < items.length) await fn(items[next++]);
   });
   await Promise.all(workers);
 }

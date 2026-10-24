@@ -815,6 +815,40 @@ test("a rename survives the streamed range diff with both of its paths", async (
   assert.deepEqual([...range.changed].sort(), ["a.ts", "moved.ts"]);
 });
 
+test("the range diff pairs edited moves past the repository's own rename limit", async (t) => {
+  // Inherited, a limit of 1 (or git's default 1000 on a large refactor) read every edited move as a
+  // deletion and an addition: drift counted each file twice and the moved area read as greenfield.
+  // Renamed as well as moved, since git pairs a moved file that keeps its name before the limit applies.
+  const { diffRange } = await import("../plugins/anatomiya/lib/git.mjs");
+  const { dir, git } = repo(t);
+  const names = ["one", "two", "three"];
+  for (const n of names) writeFileSync(join(dir, `${n}.ts`), `export const ${n} = "${n.repeat(20)}"\n`);
+  git("add", "-A");
+  git("commit", "-qm", "three");
+  const first = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  mkdirSync(join(dir, "lib"));
+  for (const n of names) {
+    git("mv", `${n}.ts`, `lib/${n}-moved.ts`);
+    writeFileSync(join(dir, "lib", `${n}-moved.ts`), `export const ${n} = "${n.repeat(20)}"\nexport const more = 1\n`);
+  }
+  git("add", "-A");
+  git("commit", "-qm", "move and edit");
+  git("config", "diff.renameLimit", "1");
+
+  const range = await diffRange(dir, first, "HEAD");
+
+  assert.deepEqual([...range.renames].sort(), names.map((n) => [`lib/${n}-moved.ts`, `${n}.ts`]).sort());
+});
+
+test("the files that differ from a commit name both paths of a move", async (t) => {
+  // Git collapses a move to its new path once `diff.renames` is on, its default since 2.9.
+  const { changedSinceWorktree } = await import("../plugins/anatomiya/lib/git.mjs");
+  const { dir, git } = repo(t);
+  git("mv", "a.ts", "moved.ts");
+
+  assert.deepEqual([...(await changedSinceWorktree(dir, "HEAD"))].sort(), ["a.ts", "moved.ts"]);
+});
+
 test("a tree listing git would not produce is unknown, not empty", async (t) => {
   // F15: a read the check could not perform is reported, never absorbed as an
   // empty answer. An empty tree is a real answer meaning "no files", and the
@@ -1383,7 +1417,8 @@ async function gitCalls(t, run) {
   } finally {
     process.env.PATH = path;
   }
-  return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter((c) => !c.startsWith("config ")) : [];
+  // By subcommand: a `-c` set for one call is part of how it is asked, not what.
+  return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map((c) => c.replace(/^(-c \S+ )+/, "")).filter((c) => !c.startsWith("config ")) : [];
 }
 
 function twoCommits(t) {

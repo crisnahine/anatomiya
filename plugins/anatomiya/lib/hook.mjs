@@ -21,9 +21,9 @@
  */
 import { createHash } from "node:crypto";
 import { accessSync, constants, existsSync, lstatSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
+import { HEAD_BYTES, isOwned, nativeUpTo, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
 import { locator } from "./encode.mjs";
 import { escapes } from "./paths.mjs";
 import { echoDue } from "./echo.mjs";
@@ -261,24 +261,6 @@ function recordedLayout(path) {
 const TARGET_KEY = { Write: "file_path", Edit: "file_path", NotebookEdit: "notebook_path" };
 
 /**
- * A path with the part of it that exists resolved through its links, and the
- * rest left as it was spelled.
- *
- * `realpath` refuses a path that is not there, which is every path this is
- * asked about: the write has not happened yet. So the nearest ancestor that
- * does exist is resolved and the tail put back. Resolving one side only is what
- * this is here to stop: the root arrives already resolved, and a payload
- * carrying `/tmp/x` against a root reading `/private/tmp/x` looked like another
- * repository's file, so the hook said nothing at all.
- */
-function resolveLinks(path) {
-  const here = realpathOrNull(path);
-  if (here !== null) return here;
-  const up = dirname(path);
-  return up === path ? path : join(resolveLinks(up), basename(path));
-}
-
-/**
  * Whether a directory under this repository already holds a file the caller
  * calls a test.
  *
@@ -393,14 +375,14 @@ export function inCheckout(from) {
  *
  * The payload's own first, for the reason `aboutDir` records below.
  *
- * Spelled here rather than at each reader because the two have to pick the same
+ * Spelled here rather than at each reader because they have to pick the same
  * one for a single payload: apart, the root was resolved from a relative target
  * that the other then measured as outside it, and the hook said nothing about a
  * write it had already located. The fallback may be absent, since
  * `process.cwd()` refuses once the directory a session started in is unlinked,
  * so this answers null and both callers take it.
  */
-function baseIn(payload, fallback) {
+export function baseIn(payload, fallback) {
   const here = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : fallback;
   // Absolute or nothing: `resolve` reaches `process.cwd()` for any argument
   // list with nothing absolute in it, which is the one call this path may not
@@ -466,11 +448,14 @@ export function targetIn(payload, root, from) {
   if (!isAbsolute(raw) && here === null) return null;
   const target = resolve(here ?? "/", raw);
   // The same bound the map's reader takes, and for the same reason one segment
-  // deeper: `resolveLinks` recurses per segment, so a path the other refuses in
+  // deeper: `nativeUpTo` recurses per segment, so a path the other refuses in
   // milliseconds was a stack overflow here. Both fields make the path, so the
   // bound is on what they made.
   if (target.length > PATH_MOST) return null;
-  const rel = relative(resolveLinks(resolve(root)), resolveLinks(target));
+  // Both sides resolved through their links: the root arrives resolved, and a payload carrying `/tmp/x`
+  // against a root reading `/private/tmp/x` looked like another repository's file. The write has not
+  // happened yet, so only the part of the target that exists is resolved.
+  const rel = relative(nativeUpTo(resolve(root)), nativeUpTo(target));
   if (!rel || escapes(rel)) return null;
   // Only where a backslash is the separator: on POSIX it is a legal filename
   // character, and splitting on it named a different file.
