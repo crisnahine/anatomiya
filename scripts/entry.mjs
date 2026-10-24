@@ -30,12 +30,11 @@ export function invokedAs(url) {
  * The path behind the links, or the path itself where there is nothing to
  * resolve. Exported because `scripts/claude-build.mjs` asks the same question
  * of the build it finds on PATH, and two spellings of one try/catch is two
- * places to answer it differently. `real` is `realpathSync.native` where the
- * case the filesystem spells a name in matters.
+ * places to answer it differently.
  */
-export function realOf(path, real = realpathSync) {
+export function realOf(path) {
   try {
-    return real(path);
+    return realpathSync(path);
   } catch {
     return path;
   }

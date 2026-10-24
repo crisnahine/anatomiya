@@ -186,7 +186,7 @@ test("a tracked file that a FIFO now stands in for is passed over, not read", ne
   assert.match(told.stderr, /no name, line or path here is held only by owner__secret/);
 });
 
-test("a lockfile and a binary file are not read as text, though a binary file's path still is", (t) => {
+test("a lockfile and a binary file are not read as text", (t) => {
   // A lockfile names packages, and a binary file's bytes spell nothing anyone wrote.
   const { corpus, repo } = corpusWith(t, {
     priv: { "app/models/order.rb": "class ZebraQuota\nend\n" },
