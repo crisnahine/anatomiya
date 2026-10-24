@@ -13,6 +13,7 @@ import { scriptGit } from "./git-script.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { formatReport, formatReportGithub, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -1773,6 +1774,37 @@ test("the check asks the baseline for drift alone", async (t) => {
   await check(dir, { baseRef: "main" });
 
   assert.deepEqual(calls().filter((c) => c.includes(`${pin}..${head}`) || c.includes(` merge-base ${pin} ${head} `)), []);
+});
+
+test("a check lists the index once, however many of its readers need it", async (t) => {
+  // The test-file reader and the placement reader each streamed the whole of `git ls-files`.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("Cargo.toml", "[package]\nname = \"x\"\n");
+    write("src/lib.rs", "pub fn a() {}\n");
+    write("tests/a.rs", "#[test]\nfn a() {}\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.rs", "pub fn b() {}\n");
+    write("tests/b.rs", "#[test]\nfn b() {}\n");
+    commit("b");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const calls = scriptGit(t);
+  await check(dir, { baseRef: "main" });
+
+  // The whole index, not a one-path question such as the attributes file's.
+  assert.equal(calls().filter((c) => c === " ls-files -z -- ").length, 1, calls().join("\n"));
+});
+
+test("a base ref that reads as an option is refused as a base, not as an unaskable git", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir) });
+
+  await assert.rejects(check(dir, { baseRef: "-x" }), (err) => !(err instanceof Unasked) && /^--base -x /.test(err.message));
 });
 
 // --- the severity table on its own ---
@@ -6645,6 +6677,52 @@ test("a companion touched anywhere in the change, committed or still in the tree
     commit("service and its note");
   }, { claim: shipsWith({ companion: { kind: "adds", path: "changelog/*.md" } }) });
   assert.deepEqual(cochangeOf(await check(added, { baseRef: "main" })), []);
+});
+
+test("a producer the branch added and then moved in the tree still owes its companion", async (t) => {
+  // The move left the committed addition gone and the new path an edit, so nothing read as added.
+  const dir = shipping(t, ({ write, commit }) => {
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  }, { pending: ({ dir }) => execFileSync("git", ["mv", "src/services/b.ts", "src/services/c.ts"], { cwd: dir }) });
+
+  const found = cochangeOf(await check(dir, { baseRef: "main" }));
+
+  assert.deepEqual(found.map((f) => [f.severity, f.path]), [["MUST-FIX", "src/services/c.ts"]]);
+});
+
+test("a file deleted and added again under its own name elsewhere is a move, as the walk counts one", async (t) => {
+  // Rewritten past git's similarity bound the two sides are a deletion and an addition, and the walk the
+  // claim was counted over reads that as no new producer.
+  const dir = shipping(t, ({ write, commit, git }) => {
+    write("src/legacy/b.ts", "export const legacy = 'one two three four five six seven'\n");
+    commit("legacy");
+    git("checkout", "-q", "main");
+    git("merge", "-q", "--ff-only", "feature");
+    git("checkout", "-q", "feature");
+    git("rm", "-q", "src/legacy/b.ts");
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("rewrite");
+  });
+
+  assert.deepEqual(cochangeOf(await check(dir, { baseRef: "main" })), []);
+});
+
+test("a deletion and an addition under one name in different commits of the branch are still one move", async (t) => {
+  // The walk's unit is a first-parent change, and the branch lands as one: there the two are one change.
+  const dir = shipping(t, ({ write, commit, git }) => {
+    write("src/legacy/b.ts", "export const legacy = 'one two three four five six seven'\n");
+    commit("legacy");
+    git("checkout", "-q", "main");
+    git("merge", "-q", "--ff-only", "feature");
+    git("checkout", "-q", "feature");
+    git("rm", "-q", "src/legacy/b.ts");
+    commit("drop legacy");
+    write("src/services/b.ts", "export const b = 1\n");
+    commit("service");
+  });
+
+  assert.deepEqual(cochangeOf(await check(dir, { baseRef: "main" })), []);
 });
 
 test("an edit or a rename into the producer's directory owes nothing", async (t) => {

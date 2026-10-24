@@ -57,6 +57,19 @@ test("the record readers over a transcript's text name its start, its last promp
   ]);
 });
 
+test("a session whose first stamped record is past the head still has a start", (t) => {
+  // Measured: an instructions attachment of 167,656 bytes with its stamp past the first 64 KiB. Read only
+  // that far, the start was null, and the reuse check answered nothing for the life of the session.
+  const at = Date.parse("2026-10-11T04:00:00.000Z");
+  const path = transcript(t, [
+    { type: "permission-mode", permissionMode: "default", sessionId: "s" },
+    { type: "attachment", attachment: { type: "instructions", content: "x".repeat(168 * 1024) }, timestamp: new Date(at).toISOString() },
+    prompted(new Date(at + 1000)),
+  ]);
+
+  assert.equal(sessionStart(path), at);
+});
+
 test("text that cannot be read answers what an unreadable transcript does", () => {
   assert.equal(sessionStartIn(null), null);
   assert.equal(turnStartIn(null), null);

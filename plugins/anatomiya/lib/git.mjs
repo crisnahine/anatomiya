@@ -1433,12 +1433,13 @@ export async function resolveBaseRef(root, ref = null, { head = "HEAD" } = {}) {
  */
 export async function changedSinceWorktree(root, sha) {
   if (!safeRef(sha)) return null;
-  // No `--find-renames`: a rename lands here as both paths, and both are then
+  // `--no-renames`: a rename lands here as both paths, and both are then
   // materialised rather than reused. Cheap, and it keeps the reuse rule simple.
+  // Left to `diff.renames`, on by default since git 2.9, a move named its new path alone.
   //
   // Streamed, because the listing grows with the repository: a pin far enough
   // behind the working tree differs in every path.
-  return pathSet(root, ["diff", "--name-only", "-z", sha, "--"], `which files differ from ${sha}`);
+  return pathSet(root, ["diff", "--no-renames", "--name-only", "-z", sha, "--"], `which files differ from ${sha}`);
 }
 
 /**
@@ -1503,6 +1504,12 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes, signal } = {}
   return remembered(root, [sha], key, ask, (answer) => answer !== null, (paths) => new Set(paths));
 }
 
+// Git's own default for a merge, which it chose as the size an exhaustive
+// rename pass is still worth paying for; a diff's default is 1000. Past it the
+// check's clock bounds the cost, and a diff that runs out of it is reported as
+// unread rather than as a branch that changed nothing.
+export const RENAME_LIMIT = 7000;
+
 /**
  * Renames, added paths and changed paths between two commits, in one pass.
  *
@@ -1517,7 +1524,8 @@ export async function diffRange(root, from, to) {
   // `${from}..` puts a leading dash at the head of the argument, where git
   // reads it as an option.
   if (!safeRef(from) || !safeRef(to)) return null;
-  const args = ["diff", "--find-renames", "--name-status", "-z", `${from}..${to}`, "--"];
+  // Set, not inherited: past the limit every edited move reads as a deletion and an addition.
+  const args = ["-c", `diff.renameLimit=${RENAME_LIMIT}`, "diff", "--find-renames", "--name-status", "-z", `${from}..${to}`, "--"];
   const ask = async () => {
     const renames = new Map();
     const added = new Set();

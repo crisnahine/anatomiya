@@ -88,7 +88,7 @@ test("a path longer than one a filesystem can hold names no place, in constant t
   assert.equal(aboutDir({ tool_name: "Bash", cwd: absurd, tool_input: { command: "ls" } }, "/tmp"), null);
 
   // The notice's own reader takes the same bound one segment deeper, where
-  // `resolveLinks` recurses per segment and a path this long overflowed the
+  // `nativeUpTo` recurses per segment and a path this long overflowed the
   // stack rather than costing seconds.
   assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: absurd } }, "/r"), null);
   assert.equal(targetIn({ tool_name: "Write", cwd: absurd, tool_input: { file_path: "a.js" } }, "/r"), null);

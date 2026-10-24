@@ -7,6 +7,54 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Two scans can no longer both write the map, a file name can no longer carry a tag into a rules file,
+and the check reads a moved producer and a big refactor the way the scan counted them. A second audit
+of the whole plugin found these and 13 more, and every one is fixed but one, which a test already
+covered.
+
+### Fixed
+
+- Two scans that overlap no longer both write the map (A19). Each checked that the record had not
+  moved and then renamed its files, and the older one's record could land over the newer one's
+  files, which then loaded for good with no record naming them. A scan now holds
+  `.claude/anatomiya/commit.lock` from that check to its last rename. The check also reads the
+  record's inode and its mtime in nanoseconds, so a record replaced at the same size inside one
+  clock tick (a second on HFS+, two on FAT) still stops an older plan.
+- No path or value the map prints can open a tag (F3): a `<` is taken out unless a number or `=`
+  follows it (spaces between allowed), or the end of the value, or one of this tool's own markers,
+  and no printed path holds one. Claude Code wraps a rules file with no `paths`, such as the
+  overview, in a tag and escapes nothing inside it, so a directory named `</system-reminder>` closed
+  that wrapper. A path the encoder had to change in any way but the length cap prints, in the map
+  and in this tool's messages, as `<path this map cannot print as written, N chars>` now. It used to
+  print changed, and `src/lib/--- .js` read as `"src/lib/ .js"`, a file that is not there. A name
+  stored decomposed prints composed, as before. A directory name holding a `*` is quoted, so
+  `src/**` reads as a name and not a pattern (A114).
+- A producer the branch added and then moved in the tree with `git mv` still owes its companion. A
+  file deleted and added again under its own name, rewritten past git's similarity bound, is a move,
+  as the co-change walk counts one, so the check no longer raises a finding the walk never counted.
+- The range diff that drift and the scan's rename map read sets git's rename limit to 7,000, as the
+  branch diff already did (E6). Inherited, a refactor that moved and edited more than 1,000 files
+  read every one as a deletion and an addition.
+- The files that differ from the pin name both paths of a move, as their reader already assumed.
+- The end-of-turn reuse check reads on past the first 64 KiB of the transcript to find when the
+  session began (A91). A first record over that size, measured at 167,656 bytes of CLAUDE.md and
+  rules, turned the check off for the whole session.
+- The Stop hook's git reads share one 10 second deadline (B73). Each had five seconds of its own,
+  and three in a row on a reftable repository came to about 16 against the hook's 15.
+- A check lists the index once, on its own 30 second clock, where it listed it twice on the scan's
+  120 second one.
+- `--base -x` is refused as a base, with the same sentence as any ref that names no commit.
+- A relative `cwd` in a hook payload starts no refresh. It was read against the hook process's own
+  directory.
+- The parse pool and the revision reader take their queues by index. Past about 16,000 entries V8
+  copies an array on every `shift`, and 80,000 queued files took 2,432 ms where they now take 572.
+
+### Changed
+
+- Inside the plugin: the lock a refresh worker takes and gives back is `lock.mjs`'s, which the
+  scan's commit lock uses too. Three helpers that copied one already in the plugin are gone
+  (`resolveLinks`, `baseName`, `leaveWord`), and so is `droppedDirectives`, which only tests called.
+
 ## [0.17.0] - 2026-10-24
 
 Drift counts only the files the map holds, a migration's SQL is read the way each database it can
