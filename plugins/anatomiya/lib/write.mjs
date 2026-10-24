@@ -70,8 +70,8 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     const size = tooLargeToPutBack(join(storeDir, basename(leaf)));
     if (size !== null) oversized.push({ at: leaf, size });
   }
-  // The commit's lock too, refused here so a dry run says it: a directory holding entries, or one that
-  // will not list, no commit removes, where an empty one is taken as a dead lock.
+  // The commit's lock too, refused here so a dry run says it. No commit removes a directory that holds
+  // entries or will not list; an empty one is taken as a dead lock.
   if (holdsEntries(join(storeDir, basename(COMMIT_LOCK)))) throw notAFile(COMMIT_LOCK);
   // The facts on disk are the third fact ownership needs, and the record a held
   // area's file was derived from. Read before the new record replaces them, and
