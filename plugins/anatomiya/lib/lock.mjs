@@ -316,8 +316,8 @@ export function leftTokens(lock, judge) {
     .map(({ name }) => name);
 }
 
-// Never removed for this tool: an empty directory at a name of its own goes with `rmdir`, and a link there is never followed.
-function holdsEntries(path) {
+/** Whether a directory holding entries sits at `path`, which no lock of this tool removes: an empty one goes with `rmdir`, and a link there is never followed. */
+export function holdsEntries(path) {
   if (lstatOf(path)?.isDirectory() !== true) return false;
   try {
     const listing = opendirSync(path);

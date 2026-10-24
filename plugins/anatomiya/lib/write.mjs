@@ -5,7 +5,7 @@ import { hasFile, renderArea, renderOverview } from "./render.mjs";
 import { claimsIn } from "./cochange.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBackRecord, writePair } from "./facts.mjs";
 import { HISTORY_FILES } from "./history.mjs";
-import { acquire, commitAge, leftTokens, processAlive, refreshBlockers, release, workerAge } from "./lock.mjs";
+import { acquire, commitAge, holdsEntries, leftTokens, processAlive, refreshBlockers, release, workerAge } from "./lock.mjs";
 import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, isFileAt, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
 import { isWholeArea } from "./slot.mjs";
@@ -64,16 +64,15 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   // and the scan die on a raw `EISDIR` out of the rename.
   for (const leaf of [FACTS_PATH, LAYOUT_PATH]) {
     if (!leafReplaceable(join(storeDir, basename(leaf)))) {
-      throw new Error(`${leaf} is not a file, so the map could not be written: remove it and scan again`);
+      throw notAFile(leaf);
     }
     // No command reads one past the bound, so it is replaced without being read rather than refused.
     const size = tooLargeToPutBack(join(storeDir, basename(leaf)));
     if (size !== null) oversized.push({ at: leaf, size });
   }
-  // The commit's lock too, refused here so a dry run says it: one holding entries no commit removes.
-  if (!leafReplaceable(join(storeDir, basename(COMMIT_LOCK)))) {
-    throw new Error(`${COMMIT_LOCK} is not a file, so the map could not be written: remove it and scan again`);
-  }
+  // The commit's lock too, refused here so a dry run says it: a directory holding entries no commit
+  // removes, where an empty one is taken as a dead lock.
+  if (holdsEntries(join(storeDir, basename(COMMIT_LOCK)))) throw notAFile(COMMIT_LOCK);
   // The facts on disk are the third fact ownership needs, and the record a held
   // area's file was derived from. Read before the new record replaces them, and
   // `null` when there is no record to read, which makes nothing removable.
@@ -241,9 +240,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // dies on EISDIR from inside the atomic replace.
   const occupied = names.filter((name) => audit.occupied.includes(name));
   if (occupied.length) {
-    throw new Error(
-      `${join(target.dir, occupied[0])} is not a file, so the map could not be written: remove it and scan again`
-    );
+    throw notAFile(join(target.dir, occupied[0]));
   }
 
   // Ours, and this run is not rewriting it, so its area is gone or states
@@ -632,7 +629,7 @@ function holdCommit(storeDir, plan) {
   mkdirSync(storeDir, { recursive: true });
   const lock = acquire(join(storeDir, basename(COMMIT_LOCK)), commitAge);
   if (lock === null) throw staleError("another scan is writing the map now");
-  if (lock.blocked) throw new Error(`${COMMIT_LOCK} is not a file, so the map could not be written: remove it and scan again`);
+  if (lock.blocked) throw notAFile(COMMIT_LOCK);
   // A plan from a record another scan has since replaced removes none of that scan's files, which then load for good.
   if (factsStamp(storeDir) !== plan.factsSeen) {
     release(lock);
@@ -640,6 +637,9 @@ function holdCommit(storeDir, plan) {
   }
   return lock;
 }
+
+// A name of the map's own that something other than a file holds, which nothing here removes.
+const notAFile = (at) => new Error(`${at} is not a file, so the map could not be written: remove it and scan again`);
 
 // A refusal the refresh worker passes over, since the other scan's map and record stand.
 const staleError = (why) => Object.assign(new Error(`${why}, so nothing was written: scan again`), { stale: true });

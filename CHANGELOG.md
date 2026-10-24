@@ -43,7 +43,6 @@ covered.
   and three in a row on a reftable repository came to about 16 against the hook's 15.
 - A check lists the index once, on its own 30 second clock, where it listed it twice on the scan's
   120 second one.
-- `--base -x` is refused as a base, with the same sentence as any ref that names no commit.
 - A relative `cwd` in a hook payload starts no refresh. It was read against the hook process's own
   directory.
 - The parse pool and the revision reader take their queues by index. Past about 16,000 entries V8
@@ -51,9 +50,11 @@ covered.
 
 ### Changed
 
-- Inside the plugin: the lock a refresh worker takes and gives back is `lock.mjs`'s, which the
-  scan's commit lock uses too. Three helpers that copied one already in the plugin are gone
-  (`resolveLinks`, `baseName`, `leaveWord`), and so is `droppedDirectives`, which only tests called.
+- Inside the plugin: `check` refuses a base that starts with a dash as one that names no commit,
+  where code calling it got an internal git error; the command line already refused one. The lock a
+  refresh worker takes and gives back is `lock.mjs`'s, which the scan's commit lock uses too. Three
+  helpers that copied one already in the plugin are gone (`resolveLinks`, `baseName`, `leaveWord`),
+  and so is `droppedDirectives`, which only tests called.
 
 ## [0.17.0] - 2026-10-24
 
