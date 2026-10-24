@@ -991,7 +991,7 @@ test("a Ruby file named for a test is one only where a test tree also says so", 
 
   // And what the file itself says still answers before its name is read, which
   // is what keeps this from becoming "a test must declare a case" (H29).
-  assert.equal(isTestFile(file("shipping/request/rest/catalog/get_spec.rb", "ruby", { testCalls: true })), true);
+  assert.equal(isTestFile(file("storefront/request/rest/catalog/get_spec.rb", "ruby", { testCalls: true })), true);
 
   // The dotted and hyphen forms keep answering on the name alone: discourse
   // writes 4,000 tests as `login-test.js` and nothing else in them says so.

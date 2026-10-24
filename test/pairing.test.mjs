@@ -612,7 +612,7 @@ test("an abstract base names no companion", () => {
   // controller. All 56 siblings have one" on a live pull request; the map had
   // the data and could not say it.
   assert.equal(companionOf("app/controllers/api/v1/base_controller.rb", CONTROLLER_SPEC), null);
-  assert.equal(companionOf("app/controllers/api/v1/phone_app/base_controller.rb", CONTROLLER_SPEC), null);
+  assert.equal(companionOf("app/controllers/api/v1/mobile/base_controller.rb", CONTROLLER_SPEC), null);
   assert.equal(companionOf("app/controllers/base.rb", CONTROLLER_SPEC), null);
 });
 
@@ -635,7 +635,7 @@ test("the base is not a site on either side, so the scan and the check agree abo
   const corpus = new Set([
     "app/controllers/api/v1/base_controller.rb",
     "app/controllers/api/v1/products_controller.rb",
-    "spec/controllers/api/v1/projects_controller_spec.rb",
+    "spec/controllers/api/v1/products_controller_spec.rb",
   ]);
 
   const hits = pairingHits(corpus, CONTROLLER_SPEC);

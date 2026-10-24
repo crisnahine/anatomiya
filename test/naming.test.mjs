@@ -1577,7 +1577,7 @@ test("a superclass written relative to its enclosing namespace is the class it r
     "a different name is a different class however it is nested"
   );
   assert.equal(
-    sameConstant("Api::V1::PhoneApp::BaseController", "Api::V1::BaseController", ["Api::V1"]),
+    sameConstant("Api::V1::Mobile::BaseController", "Api::V1::BaseController", ["Api::V1"]),
     false,
     "a scoped name already says which class it means"
   );

@@ -144,7 +144,7 @@ test("two spreads on one host element are two violations, and a member-named ele
   // Counting one site per element reads 2 candidates and hides one of the two
   // divs, understating the non-conforming side exactly where a wrapper spreads
   // twice; reading a member element off its object segment rather than its
-  // property segment misnames <ns.div>. react-front-end measures 2158 of 2176 with the
+  // property segment misnames <ns.div>. A measured React front end reads 2158 of 2176 with the
   // per-attribute shape and GitNexus 0 of 7.
   const h = hits("spread_on_component", SPREADS);
   assert.deepEqual(shape(SPREADS, h), [
@@ -175,7 +175,7 @@ test("a repository with no translation layer produces no candidates, rather than
   // Without the applicability gate bulletproof-react produces 311 candidates
   // across 45 areas, every one non-conforming, and every area file gains a line
   // reading "user-visible text goes through the translation layer: no
-  // convention. 0 of N sites". Measured on a private repository: 4,533 candidates over 100 area
+  // convention. 0 of N sites". Measured on a React front end: 4,533 candidates over 100 area
   // slots without the gate, 66 over 7 with it.
   const bare = `export const A = () => <p>Save changes</p>;`;
   assert.equal(hits("text_translated", bare).length, 0);
@@ -222,7 +222,7 @@ export const A = () => (
 test("whitespace, punctuation and a single letter between tags are not user-visible text", () => {
   // [A-Za-z]{2} misses the Cyrillic string, so a Russian-language repository
   // reads as fully translated and states a convention it does not have. A
-  // trim() alone counts every indentation run: react-front-end holds 5,333 JSX elements and
+  // trim() alone counts every indentation run: a measured React front end holds 5,333 JSX elements and
   // the raw candidate count would be dominated by whitespace, putting the ratio
   // at the mercy of the formatter. oxc does not decode entities either, so
   // \p{L}\p{L} over the raw run matches the "mi" inside &middot;.
@@ -280,7 +280,7 @@ function spread(candidatesPerFile) {
 }
 
 test("the JSX dimensions declare jsx alone, so a mixed area measures them against its .tsx files", () => {
-  // react-front-end's src holds 1,638 .tsx among 2,356 files. Declaring ["js","jsx"] measures
+  // A measured React front end has 1,638 .tsx among 2,356 files under src. Declaring ["js","jsx"] measures
   // every JSX claim against the .ts files it can never speak about and
   // suppresses all five in every mixed area as narrow predicates, which is
   // silent: the counts still print and only the gate name says why.

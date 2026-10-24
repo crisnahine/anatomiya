@@ -7,6 +7,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+The map no longer hands every repository's agent one maintainer's house rule, and this repository
+no longer names a private codebase or quotes a proprietary build.
+
+### Added
+
+- `scripts/private-names.mjs`, a release step: every name, copied line and path this repository
+  shares with the corpus's private repositories and with none of its public ones, named with the
+  files that carry it (G16). The private repositories are named on its command line and the names
+  judged ordinary sit in a list beside the corpus, so nothing here names them.
+- `check:docs` fails a document that quotes a byte offset into a build (G17).
+
+### Removed
+
+- The overview head no longer carries the house rule on comments and pull request titles (A121). It
+  was the same for every map and counted from no repository, so every repository's agent was told
+  one team's conventions. A team that wants it writes it into its own
+  `CLAUDE.md`.
+
+### Changed
+
+- The test fixtures, code comments and documents no longer carry the file, class, table or service
+  names of the two private repositories in the measurement corpus. Those two keep their counts
+  under neutral names, and the README says its sample area file had its file names changed.
+- The research notes and `docs/plugin-contract.md` describe what the Claude Code, Cursor and Copilot
+  builds do instead of quoting their code, their prompts or byte offsets into them, and every
+  conclusion stands.
+- `scripts/check-docs.mjs` fails any tracked Markdown or `.mjs` file holding this machine's home
+  directory. It used to pass over the research and measurement notes and every module, which is
+  how a home directory reached five research notes and a test comment.
+
+### Fixed
+
+- The plugin ships each vendored grammar's MIT license beside it, in `grammars/LICENSES.md`. The
+  seven `.wasm` copies shipped without the notice their license asks every copy to carry, and
+  `scripts/grammars.mjs --check` now refuses a notice that no longer matches its package (B61).
+- `CODE_OF_CONDUCT.md` names the address reports go to. It held a placeholder.
+- `CONTRIBUTING.md` links the code of conduct and the security policy, and the issue chooser sends a
+  security report to the private advisory form, which is now switched on.
+
 ## [0.17.1] - 2026-10-24
 
 Two scans can no longer both write the map, a file name can no longer carry a tag into a rules file,
@@ -3582,7 +3621,7 @@ the report was filed against and re-measured over the 35-repository corpus.
   beside the `t.references` in one `create_table`, brings it to 72 of 76. A key declared only on the
   way down adds nothing going forward and is not counted.
 - One test file answers one source file. `app/services/payments/reports/generate.rb`, which has no spec
-  at all, was credited with the shipping, because the tail below the area root is `reports` on both
+  at all, was credited with the shipping one's, because the tail below the area root is `reports` on both
   sides. The kinds line said 15 where the claim under it said 13, in one generated file about the
   same seventeen files; both read 13 now.
 - The namesake question answers the same whichever directory above the file asks it. A package whose

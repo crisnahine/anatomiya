@@ -4450,7 +4450,7 @@ test("a branch that edits an abstract base is not asked for a spec for it", need
   const dir = repo(t, ({ git, write, commit }) => {
     write("app/controllers/api/v1/base_controller.rb", "class Api::V1::BaseController\nend\n");
     write("app/controllers/api/v1/products_controller.rb", "class Api::V1::ProductsController\nend\n");
-    write("spec/controllers/api/v1/projects_controller_spec.rb", "describe Api::V1::ProductsController do\nend\n");
+    write("spec/controllers/api/v1/products_controller_spec.rb", "describe Api::V1::ProductsController do\nend\n");
     commit("init");
     git("checkout", "-q", "-b", "work");
     write("app/controllers/api/v1/base_controller.rb", "class Api::V1::BaseController\n  def x; end\nend\n");

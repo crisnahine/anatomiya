@@ -49,7 +49,7 @@ the seven grammars the plugin carries as `.wasm` files under `plugins/anatomiya/
 PHP, Go, Java, C#, Rust and Kotlin). Those files are committed to this repository and nothing
 fetches one at install or at run time. Each is a byte-for-byte copy of the file in its grammar's npm
 package, and `plugins/anatomiya/grammars/grammars.json` records the package, the version and the
-SHA-256. `npm run validate` and the test suite refuse a copy that does not hash to its entry, or to
+SHA-256. Each package's MIT license travels with its copy in `plugins/anatomiya/grammars/LICENSES.md`. `npm run validate` and the test suite refuse a copy that does not hash to its entry, or to
 the installed package's file. On your machine `doctor` and `setup` hash each grammar file against
 that manifest and name one that does not match, or a manifest that is not there. A scan does not
 hash: it loads the file that is there, where that is a regular file of at most 32 MB. An entry at a

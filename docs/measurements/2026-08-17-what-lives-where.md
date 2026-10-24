@@ -3,6 +3,9 @@
 Date: 2026-08-17. Corpus acceptance for the `## What lives where` section of the overview, and
 for the two sibling roster lines and the five learned rows that print beside it.
 
+Two of the 35 repositories are private. They are labelled `rails-api` and `react-front-end`, and
+the names of their directories and files below are changed; the counts are not.
+
 `scripts/measure-layout.mjs <corpusDir>` runs it. For every child of the corpus directory that is
 a git repository it scans twice in this process, renders the overview twice, and writes nothing
 into the repository. The `files` argument the overview is handed is the one `writeMap` builds: the

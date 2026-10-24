@@ -1281,6 +1281,34 @@ test("a document carrying the path of the machine it was written on is failed", 
   assert.match(output, /docs\/why\.md: carries the path of the machine it was written on/);
 });
 
+test("a research note and a test module carrying that path are failed too", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  for (const rel of ["docs/research/what-no-row-reads.md", "test/encode.test.mjs"]) {
+    const path = join(dir, rel);
+    writeFileSync(path, `${readFileSync(path, "utf8")}\n// Read from ${join(homedir(), "notes.md")}\n`);
+  }
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/research\/what-no-row-reads\.md: carries the path of the machine it was written on/);
+  assert.match(output, /test\/encode\.test\.mjs: carries the path of the machine it was written on/);
+});
+
+test("a document quoting a byte offset into a build is failed, in either spelling the notes used", needsCheckout, (t) => {
+  // A build's offsets come with the build's code beside them, and neither is this repository's to publish.
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
+  append("docs/research/what-no-row-reads.md", "**read**, offset 160,980,291, the spawn generator.");
+  append("docs/why.md", "The rule walk asks for it (EXEC@7253800).");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/research\/what-no-row-reads\.md: quotes a byte offset into a build/);
+  assert.match(output, /docs\/why\.md: quotes a byte offset into a build/);
+});
+
 // A note about a past release is what a changelog holds: the entry naming a
 // file at the path it had then is true of that release and would be false
 // rewritten to today's.

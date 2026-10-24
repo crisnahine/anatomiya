@@ -582,6 +582,9 @@ const inRecord = (rel) => rel === "DECISIONS.md" || rel.startsWith(`${DECISIONS_
 // today's path in it would be a claim the measurement never made.
 const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
 
+// The two ways a note cited a place in a proprietary build beside its code, `offset 160,980,291` and `EXEC@7253800` (G17).
+const BUILD_OFFSET = /\boffsets? \d{1,3}(?:,\d{3}){2,}\b|@\d{6,}\b/;
+
 // A changelog is both at once, and exempting it whole was the wider half of the
 // rule than the reason for it: its released sections are the past, and the
 // section the next release ships describes the tree in hand. Each plugin has
@@ -1110,12 +1113,15 @@ export function checkDocs() {
   // in the README is how the output is shown to a reader. What may never ship is
   // this machine's own home, which is the one that got into a public repository
   // before: a note written while reading an installed build carried it nine
-  // times, and the net under the generated documents did not reach it.
+  // times, and the net under the generated documents did not reach it. Research
+  // notes and source comments carried it later, so every document and module is read.
   const HOME = homedir();
   for (const rel of tracked) {
-    if (!rel.endsWith(".md") || RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
+    if (!/\.(?:md|mjs)$/.test(rel)) continue;
     const text = read(rel);
     if (HOME && HOME.length > 3) claim(rel, !text.includes(HOME), "carries the path of the machine it was written on");
+    if (rel.endsWith(".md")) claim(rel, !BUILD_OFFSET.test(text), "quotes a byte offset into a build");
+    if (!rel.endsWith(".md") || RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
     for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
       claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
     }

@@ -222,7 +222,7 @@ failed runs, and failed runs still found the right file 72-81% of the time
 
 **Delivery has holes the line cannot close.** The overview reaches the main session and custom
 subagents at launch (vendor claim above). The path-scoped area files it points at do not reach a
-subagent that explores through Bash only: in the 2026-08-16 real-session run on the rails-api repo,
+subagent that explores through Bash only: in the 2026-08-16 real-session run on a measured Rails API,
 the worker's exploration subagents made 54 `cat`/`grep` calls and zero Reads, so no area file
 attached in any of them (the maintainer's session note of 2026-08-16, `anatomiya-real-session-test`
 in auto memory, local, single session). **Measured** locally. A line saying "read it" is the
