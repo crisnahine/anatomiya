@@ -1124,11 +1124,13 @@ export function checkDocs() {
   // times, and the net under the generated documents did not reach it. A note or a
   // comment carries a path as easily as a document, so every tracked text file is read.
   const HOME = homedir();
-  // Behind either separator, escaped or not, in either case where the filesystem folds it, and up to a
-  // name character, so a home of /Users/me does not claim /Users/meg, and a full stop ends it.
+  // A drive's home behind either separator, escaped or not, and a POSIX one behind its own, as JSON may
+  // escape it, and never inside a drive path. From the start of a path, in either case where the filesystem
+  // folds it, and up to a name character, so a home of /Users/me does not claim /Users/meg, and a full stop ends it.
+  const sep = /^[A-Za-z]:/.test(HOME) ? "[\\\\/]+" : "\\\\?/";
   const HOME_AT =
     HOME && HOME.length > 3
-      ? new RegExp(`${HOME.split(/[\\/]+/).map(escapeRe).join("[\\\\/]+")}(?![\\w-])(?!\\.[\\w-])`, process.platform === "linux" ? "" : "i")
+      ? new RegExp(`(?<![\\w.-])(?<![A-Za-z]:)${HOME.split(/[\\/]+/).map(escapeRe).join(sep)}(?![\\w-])(?!\\.[\\w-])`, process.platform === "linux" ? "" : "i")
       : null;
   for (const rel of tracked) {
     if (rel.endsWith(".wasm")) continue;
