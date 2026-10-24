@@ -411,7 +411,7 @@ buys nothing a count does not, and it introduces a second number nobody can chec
 `testsAnything` would need the same treatment or the root-level change is reachable only in
 repositories that already pair three namesakes somewhere.
 
-**Corpus caveat.** Of 35 repositories under `~/Documents/Projects/anatomiya-corpus/`, exactly
+**Corpus caveat.** Of 35 repositories under `anatomiya-corpus/`, exactly
 one carries a record on disk: `microsoft__vscode/.claude/anatomiya/facts.json`. Twelve more have
 a `.claude/` with rules or skills, none with an `anatomiya/` directory. So the corpus answered
 one repository, not 35, and the table above is the whole measurement. Re-running the scan across
@@ -492,4 +492,4 @@ already reports. The closing sentence the notice prints is unchanged: it is meas
 - `plugins/anatomiya/lib/worktree.mjs` (`mainCheckoutOf`), `plugins/anatomiya/lib/hook.mjs` (`ownMap`, `ownLayout`, `echoContext`,
   `windowOf`), `plugins/anatomiya/lib/precedent.mjs`, `DECISIONS.md` row A24
 - `~/front-end/.claude/anatomiya/facts.json`,
-  `~/Documents/Projects/anatomiya-corpus/microsoft__vscode/.claude/anatomiya/facts.json`
+  `anatomiya-corpus/microsoft__vscode/.claude/anatomiya/facts.json`

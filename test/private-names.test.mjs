@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { git, scratch } from "./git-worktrees.mjs";
-import { needsPosixSpecialFiles } from "./platform.mjs";
+import { needsFoldingFilesystem, needsPosixSpecialFiles } from "./platform.mjs";
 import { privateNames } from "../scripts/private-names.mjs";
 
 const RUN = join(import.meta.dirname, "..", "scripts", "private-names.mjs");
@@ -126,9 +126,26 @@ test("a shallow copy of the checked repository, which shares no first commit wit
   git(corpus, "clone", "-q", "--depth", "1", pathToFileURL(repo).href, "owner__shallow");
 
   const { found, skipped } = privateNames({ repo, corpus, privates: ["owner__secret"] });
+  const told = run(corpus, "owner__secret", "--repo", repo);
 
   assert.deepEqual(found, [{ kind: "name", text: "ZebraQuota", files: ["docs/a.md"] }]);
   assert.deepEqual(skipped, ["owner__shallow"]);
+  assert.match(told.stderr, /^passed over owner__shallow: it is a copy of the repository it checks$/m);
+});
+
+test("a shallow clone is refused, since a copy of it in the corpus could not be told apart", (t) => {
+  // Its first commit is the cut, so a full copy whose tip it does not hold read as public and passed on nothing.
+  const { corpus, repo, root } = corpusWith(t, {
+    priv: { "app/models/order.rb": "class ZebraQuota\nend\n" },
+    repo: { "docs/a.md": "ZebraQuota\n" },
+  });
+  git(corpus, "clone", "-q", repo, "owner__mirror");
+  git(repo, "commit", "-q", "--allow-empty", "-m", "second");
+  git(root, "clone", "-q", "--depth", "1", pathToFileURL(repo).href, "shallow");
+
+  const { error } = privateNames({ repo: join(root, "shallow"), corpus, privates: ["owner__secret"] });
+
+  assert.match(error, /shallow\b.* is a shallow clone, so no copy of it in the corpus could be told apart/);
 });
 
 test("a repository with no commit is refused, since no copy of it could be told apart", (t) => {
@@ -162,7 +179,23 @@ test("a tracked file that a FIFO now stands in for is passed over, not read", ne
   rmSync(stuck);
   execFileSync("mkfifo", [stuck]);
 
-  assert.deepEqual(privateNames({ repo, corpus, privates: ["owner__secret"] }).found, []);
+  // In a child on a clock, so a read that blocks fails the test instead of holding the suite.
+  const told = spawnSync(process.execPath, [RUN, corpus, "owner__secret", "--repo", repo], { encoding: "utf8", timeout: 8000 });
+
+  assert.equal(told.status, 0, told.stderr);
+  assert.match(told.stderr, /no name, line or path here is held only by owner__secret/);
+});
+
+test("a lockfile and a binary file are not read as text, though a binary file's path still is", (t) => {
+  // A lockfile names packages, and a binary file's bytes spell nothing anyone wrote.
+  const { corpus, repo } = corpusWith(t, {
+    priv: { "app/models/order.rb": "class ZebraQuota\nend\n" },
+    repo: { "package-lock.json": '{ "name": "ZebraQuota" }\n', "assets/logo.bin": "\0ZebraQuota\n", "docs/a.md": "ZebraQuota\n" },
+  });
+
+  const { found } = privateNames({ repo, corpus, privates: ["owner__secret"] });
+
+  assert.deepEqual(found, [{ kind: "name", text: "ZebraQuota", files: ["docs/a.md"] }]);
 });
 
 test("a name, line or path on the accepted list is not reported", (t) => {
@@ -211,6 +244,16 @@ test("the command refuses a private name the corpus does not hold, and an accept
   const bare = run(corpus);
   assert.equal(bare.status, 2);
   assert.match(bare.stderr, /usage: node scripts\/private-names\.mjs <corpusDir> <private>\.\.\./);
+});
+
+test("an accepted list inside the repository is refused under a path spelled in another case", needsFoldingFilesystem, (t) => {
+  const { corpus, repo, root } = corpusWith(t, {});
+  writeFileSync(join(repo, "accepted.txt"), "x\n");
+
+  const inside = run(corpus, "owner__secret", "--repo", repo, "--accept", join(root, "REPO", "accepted.txt"));
+
+  assert.equal(inside.status, 2);
+  assert.match(inside.stderr, /accepted\.txt sits inside the repository it checks/);
 });
 
 test("a repository git cannot list is refused with a sentence, not a stack", (t) => {

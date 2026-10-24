@@ -36,6 +36,11 @@ const NOTICES = "LICENSES.md";
 const vendoredIn = (root) => join(root, REL.anatomiya, "grammars");
 const installedIn = (root, { package: name, source }) => join(root, "node_modules", name, source);
 
+// A Windows checkout turns this file's line endings to CRLF, and npm installs the licenses with LF.
+const unix = (text) => text.replace(/\r\n/g, "\n");
+
+const LICENSE_FIX = "run npm ci --ignore-scripts, or read the file the package now ships its license in";
+
 /**
  * Each grammar's package license, under the package and the version the
  * lockfile pins, and the packages whose LICENSE is not there. Read off the
@@ -63,9 +68,6 @@ function noticesFor(root, versionOf) {
   return { text: parts.join("\n"), missing };
 }
 
-// A Windows checkout turns this file's line endings to CRLF, and npm installs the licenses with LF.
-const unix = (text) => text.replace(/\r\n/g, "\n");
-
 /** The hash of a file, or null where there is none to read. */
 function sha256Of(path) {
   try {
@@ -90,7 +92,7 @@ export async function vendor(root) {
   // Refused before a copy is written, so a half-vendored set never ships without its licenses.
   const notices = noticesFor(root, locked);
   if (notices.missing.length) {
-    throw new Error(`no LICENSE under node_modules for ${notices.missing.join(", ")}; run npm ci --ignore-scripts, or read the file the package now ships its license in`);
+    throw new Error(`no LICENSE under node_modules for ${notices.missing.join(", ")}; ${LICENSE_FIX}`);
   }
   mkdirSync(dir, { recursive: true });
   const entries = [];
@@ -171,7 +173,7 @@ export function check(root) {
   } catch {}
   // A package that is not installed is already said above, and its license with it.
   for (const name of notices.missing.filter((n) => !uninstalled.has(n))) {
-    problems.push(`node_modules/${name}/LICENSE is not there, so nothing holds ${at}/${NOTICES} to it; run npm ci --ignore-scripts, or read the file the package now ships its license in`);
+    problems.push(`node_modules/${name}/LICENSE is not there, so nothing holds ${at}/${NOTICES} to it; ${LICENSE_FIX}`);
   }
   if (notices.missing.length === 0 && shipped !== notices.text) {
     problems.push(`${at}/${NOTICES} is not the licenses the installed packages carry; run npm run grammars`);

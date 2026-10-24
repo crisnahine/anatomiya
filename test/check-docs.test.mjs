@@ -1317,6 +1317,21 @@ test("a document naming a home directory is failed whosever machine it is, and t
   assert.doesNotMatch(output, /\/Users\/me\//);
 });
 
+test("a measurement naming any home directory is failed, the placeholder too, behind either separator", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
+  append("docs/measurements/2026-08-16-layering-probe.md", "Run from /Users/me/code/app.");
+  append("docs/measurements/2026-08-16-new-row-variance.md", "Run from C:/Users/alice/app.");
+  append("docs/measurements/2026-08-16-vscode-nonnull-2.md", 'Run from "C:\\\\Users\\\\alice\\\\app".');
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /2026-08-16-layering-probe\.md: carries the local path \/Users\/me/);
+  assert.match(output, /2026-08-16-new-row-variance\.md: carries the local path C:\/Users\/alice/);
+  assert.match(output, /2026-08-16-vscode-nonnull-2\.md: carries the local path C:\\\\Users\\\\alice/);
+});
+
 test("this machine's home is caught behind the other separator, escaped, and in another case where the filesystem folds it", needsCheckout, (t) => {
   const dir = repoCopy(t);
   const other = process.platform === "win32" ? homedir().replaceAll("\\", "/") : homedir().replaceAll("/", "\\\\");
@@ -1340,6 +1355,20 @@ test("a home directory written with a drive letter and forward slashes is a home
 
   assert.equal(status, 1, output);
   assert.match(output, /docs\/why\.md: names the home directory C:\/Users\/alice\//);
+});
+
+test("a home directory ending a sentence, or written in another case, is a home directory too", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
+  append("docs/why.md", "Copied from /home/alice. The output sits under /Users/me.");
+  append("docs/how-it-works.md", "Copied from c:\\users\\bob\\notes.md.");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/why\.md: names the home directory \/home\/alice$/m);
+  assert.match(output, /docs\/how-it-works\.md: names the home directory c:\\users\\bob\\$/m);
+  assert.doesNotMatch(output, /\/Users\/me/);
 });
 
 test("the grammars' licenses are third-party text, so no house rule on prose reads them", needsCheckout, (t) => {
@@ -1366,13 +1395,14 @@ test("a research note and a test module carrying that path are failed too", need
   assert.match(output, /test\/encode\.test\.mjs: carries the path of the machine it was written on/);
 });
 
-test("a document quoting a byte offset into a build is failed, in either spelling the notes used", needsCheckout, (t) => {
+test("a document quoting a byte offset into a build is failed, in any spelling the notes used", needsCheckout, (t) => {
   // A build's offsets come with the build's code beside them, and neither is this repository's to publish.
   const dir = repoCopy(t);
   const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
   append("docs/research/what-no-row-reads.md", "**read**, offset 123,456,789, the spawn generator.");
   append("docs/why.md", "The rule walk asks for it (BUNDLE@1234567).");
   append("docs/how-it-works.md", "It sits at offset 1234567.");
+  append("docs/agents/domain.md", "Offset 12,345,678 holds it.");
 
   const { status, output } = check(dir);
 
@@ -1380,6 +1410,7 @@ test("a document quoting a byte offset into a build is failed, in either spellin
   assert.match(output, /docs\/research\/what-no-row-reads\.md: quotes a byte offset into a build/);
   assert.match(output, /docs\/why\.md: quotes a byte offset into a build/);
   assert.match(output, /docs\/how-it-works\.md: quotes a byte offset into a build/);
+  assert.match(output, /docs\/agents\/domain\.md: quotes a byte offset into a build/);
 });
 
 // A note about a past release is what a changelog holds: the entry naming a
