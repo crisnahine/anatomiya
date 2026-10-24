@@ -20,9 +20,11 @@
  * read at a commit, and hands a read it cannot answer to `showBlob`.
  */
 import { execFile, spawn } from "node:child_process";
+import { EventEmitter, once } from "node:events";
 import { existsSync } from "node:fs";
 import { devNull } from "node:os";
 import { join, resolve } from "node:path";
+import { PassThrough } from "node:stream";
 import { promisify } from "node:util";
 
 import { signalChild } from "./child.mjs";
@@ -514,11 +516,86 @@ export async function gitBuffered(
   };
 }
 
+// What answers in git's place where a test scripted it, the latest last; none runs git.
+const standIns = [];
+
+/**
+ * Has `answer(args, { cwd })` stand in for git until the function this returns
+ * is called: `{ code, stdout, stderr }` or `{ signal }`, or a promise of one, is
+ * that call's outcome, and null runs git. Every reader here takes it, the
+ * buffered and the streamed alike, so a test can script a git that could not be
+ * asked without a git of its own on PATH, which Windows does not run. A blob
+ * reader reads through it one call at a time, since a batch child is no outcome
+ * a script can be.
+ */
+export function answerWith(answer) {
+  // Undone in any order, since t.after runs its hooks first in, first out.
+  const mine = { answer };
+  standIns.push(mine);
+  return () => {
+    const at = standIns.indexOf(mine);
+    if (at !== -1) standIns.splice(at, 1);
+  };
+}
+
+const scriptedFor = (args, cwd) => standIns.at(-1)?.answer(args, { cwd }) ?? null;
+
+// A scripted outcome as git leaves one: a git ended by a signal leaves no exit code.
+const outcomeOf = ({ code = 0, signal = null, stdout = "", stderr = "" }) => ({ code: signal === null ? code : null, signal, stdout: Buffer.from(stdout), stderr });
+
+// A scripted outcome as `execFile` hands it over: the bytes, or the error a git that failed or was ended leaves.
+function scriptedRun(args, { encoding, maxBuffer }, answer) {
+  const { code, signal, stdout, stderr } = outcomeOf(answer);
+  const out = encoding === "buffer" ? stdout : stdout.toString(encoding);
+  if (stdout.length > maxBuffer) {
+    return { ok: false, err: Object.assign(new RangeError("stdout maxBuffer length exceeded"), { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }), expired: false };
+  }
+  if (code === 0) return { ok: true, stdout: out, expired: false };
+  const failed = new Error(`Command failed: git ${args.join(" ")}\n${stderr}`);
+  return { ok: false, err: Object.assign(failed, { code, signal, stdout: out, stderr }), expired: false };
+}
+
+// A scripted answer, or null where `timeout` ran out first.
+function withinClock(answer, timeout) {
+  if (!(timeout > 0)) return Promise.resolve(answer);
+  let clock;
+  const ended = new Promise((done) => {
+    clock = setTimeout(() => done(null), timeout);
+  });
+  return Promise.race([Promise.resolve(answer), ended]).finally(() => clearTimeout(clock));
+}
+
+// A scripted outcome as a child that prints it and ends, closing once both pipes are shut, as a killed one does too.
+function scriptedChild(answer) {
+  const child = new EventEmitter();
+  child.stdin = null;
+  child.killed = false;
+  child.kill = () => (child.killed = true);
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  let ended = { code: null, signal: "SIGTERM" };
+  Promise.all([once(child.stdout, "close"), once(child.stderr, "close")]).then(() => child.emit("close", ended.code, ended.signal));
+  Promise.resolve(answer).then((scripted) => {
+    const { code, signal, stdout, stderr } = outcomeOf(scripted);
+    ended = { code, signal };
+    child.stdout.end(stdout);
+    child.stderr.end(stderr);
+  });
+  return child;
+}
+
 /**
  * `execFile` of git on a clock that shuts the pipes and sends SIGTERM, with `expired` set where it fired.
  * Node's own `timeout` is never passed, since it answers with the code git left as Node shut the pipes.
  */
 async function runOnClock(args, options, timeout) {
+  const scripted = scriptedFor(args, options.cwd);
+  if (scripted !== null) {
+    // Past its clock a scripted git is ended as a real one is, so a test can script one that stalls.
+    const answer = await withinClock(scripted, timeout);
+    if (answer !== null) return scriptedRun(args, options, answer);
+    return { ok: false, err: Object.assign(new Error(`Command failed: git ${args.join(" ")}`), { signal: "SIGTERM" }), expired: true };
+  }
   let expired = false;
   let clock = null;
   try {
@@ -554,8 +631,9 @@ export class Unasked extends Error {}
  * signal, a start that failed, a refused argument, a configuration nobody could
  * read) was never an answer to `question`, and decides nothing (F29).
  */
-export function answered(r, question) {
-  if (r.code === null) throw new Unasked(`git could not be asked ${question}: ${failureOf(r)}`);
+function answered(r, question) {
+  // Past the byte bound git did answer, with more than is read: `rootAttributes` in corpus.mjs leaves the working tree's file to decide then.
+  if (r.code === null) throw Object.assign(new Unasked(`git could not be asked ${question}: ${failureOf(r)}`), { oversize: r.oversize });
   return r;
 }
 
@@ -569,6 +647,32 @@ function yesOrNo(r, question) {
   return r;
 }
 
+/**
+ * What git answered `question` with, whatever its exit code: `{ code, stdout,
+ * said }`, `said` being what a call that failed said on one line. It throws
+ * `Unasked` where git gave no exit code, which is no answer and never a no
+ * (F29). `bounds` takes `gitBuffered`'s options.
+ */
+export async function ask(root, args, question, bounds = {}) {
+  const r = answered(await gitBuffered(root, args, bounds), question);
+  return { code: r.code, stdout: r.stdout, said: r.ok ? "" : failureOf(r) };
+}
+
+/** Git's yes (exit code 0) or no (exit code 1) to `question`. Any other answer is none, and throws `Unasked`. */
+export async function askWhether(root, args, question, bounds = {}) {
+  return yesOrNo(await gitBuffered(root, args, bounds), question).ok;
+}
+
+/**
+ * A rejection handler answering `value` for a question git could not be asked
+ * and passing any other failure on: the one way a caller says it carries on
+ * without the answer, which `test/modules.test.mjs` lists with what it does then.
+ */
+export const unaskedAs = (value) => (err) => {
+  if (err instanceof Unasked) return value;
+  throw err;
+};
+
 /** What a failed call said, on one line, less the header Node puts in front; empty where git ended without a word. */
 const saidOf = (r) => String(r.error ?? "").replace(/^Command failed:[^\n]*\n?/, "").split("\n").map((line) => line.trim()).filter(Boolean).join(" ");
 
@@ -577,7 +681,7 @@ const saidOf = (r) => String(r.error ?? "").replace(/^Command failed:[^\n]*\n?/,
  * that ended it. Node heads its message with `Command failed: <argv>`, which
  * names no cause, and a printer that keeps one line of an error keeps that one.
  */
-export function failureOf(r) {
+function failureOf(r) {
   return (saidOf(r) || (r.code === null ? "git did not run" : `git exited ${r.code}`)).slice(0, STDERR_CAP);
 }
 
@@ -589,6 +693,34 @@ export async function caseMagic(root) {
   // Exit code 1 is git saying the key is not set.
   const r = answered(await gitBuffered(root, ["config", "--type=bool", "--get", "core.ignorecase"]), "whether this repository folds case");
   return r.ok && r.stdout.trim() === "true" ? "icase" : "";
+}
+
+/**
+ * The top of the repository `dir` is in, as git prints it, or a refusal worded
+ * by its cause, each of which has its own fix: no git on PATH, no repository
+ * there, or a repository git would not read, with git's own words, where the
+ * line after git's first names the fix, as `safe.directory` does for a checkout
+ * another user owns. `named` is the path the person gave.
+ */
+export async function topLevel(dir, named = dir) {
+  // One bounded answer, so it takes the buffered entry point (F5).
+  const r = await gitBuffered(dir, ["rev-parse", "--show-toplevel"], { maxBytes: 1024 * 1024 });
+  if (r.ok) {
+    const top = r.stdout.trim();
+    // Exit 0 with an empty line is possible; returning "" would resolve every
+    // later path against the process cwd instead of against the repository.
+    if (!top) throw new Error(`not a git repository: ${named}`);
+    return top;
+  }
+  // The directory was just seen, so an ENOENT from the spawn is git itself.
+  if (/\bspawn\b.*\bENOENT\b/.test(r.error ?? "")) {
+    throw new Error("git is not on PATH, and every command reads the repository through it");
+  }
+  const said = saidOf(r).slice(0, 400);
+  if (!said || /not a git repository/i.test(said)) {
+    throw new Error(`not a git repository: ${named}`, { cause: new Error(r.error) });
+  }
+  throw new Error(`git could not read the repository at ${named}: ${said}`);
 }
 
 // Where the subcommand sits: past each `-c` and its value, the one global option `refuse` lets through.
@@ -623,7 +755,8 @@ export function gitStreamed(
 
     let child;
     try {
-      child = spawn("git", call.args, {
+      const scripted = scriptedFor(call.args, root);
+      child = scripted !== null ? scriptedChild(scripted) : spawn("git", call.args, {
         cwd: root,
         stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
         env: call.env,
@@ -1035,7 +1168,7 @@ export function blobReader(
   { timeout = GIT.timeoutMs, env = process.env, lazyFetch = false, closeGrace = CLOSE_GRACE_MS } = {}
 ) {
   const perCall = (path) => showBlob(root, sha, path, { timeout, env, lazyFetch });
-  let fallen = !isSha(sha) || refuse(BATCH) !== null || timeoutRefused(timeout) !== null;
+  let fallen = !isSha(sha) || refuse(BATCH) !== null || timeoutRefused(timeout) !== null || standIns.length > 0;
   let child = null;
   let pending = null;
   let last = Promise.resolve();
@@ -1371,7 +1504,7 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes, signal } = {}
 }
 
 /**
- * Renames and changed paths between two commits, in one pass.
+ * Renames, added paths and changed paths between two commits, in one pass.
  *
  * NUL-delimited because git permits newlines in paths, the same reason the
  * corpus is collected with `ls-files -z`. Rename records arrive as three
@@ -1387,6 +1520,7 @@ export async function diffRange(root, from, to) {
   const args = ["diff", "--find-renames", "--name-status", "-z", `${from}..${to}`, "--"];
   const ask = async () => {
     const renames = new Map();
+    const added = new Set();
     const changed = new Set();
 
     // Streamed for the same reason the two listings above are: the range between
@@ -1397,6 +1531,7 @@ export async function diffRange(root, from, to) {
         args,
         nameStatusReader((row) => {
           changed.add(row.to);
+          if (row.status[0] === "A") added.add(row.to);
           // Both names count as changed: at the pinned commit only the old one
           // exists, and the map is what lets a renamed file find its own baseline
           // instead of reading as greenfield.
@@ -1410,8 +1545,8 @@ export async function diffRange(root, from, to) {
     } catch (err) {
       return refusedOrThrow(err, `what changed from ${from} to ${to}`);
     }
-    return { renames, changed };
+    return { renames, added, changed };
   };
   return remembered(root, [from, to], args, ask, (answer) => answer !== null,
-    (range) => ({ renames: new Map(range.renames), changed: new Set(range.changed) }));
+    (range) => ({ renames: new Map(range.renames), added: new Set(range.added), changed: new Set(range.changed) }));
 }

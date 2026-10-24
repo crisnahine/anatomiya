@@ -1976,11 +1976,13 @@ refresh module that loads the scan; the hook, `refresh.mjs`, only starts it. It 
 lock, read bounded and typed since the directory can come with the repository, and a worker that
 finds it taken leaves word for the holder to run once more after letting go, so a move landing after
 the holder's last look at HEAD is not lost. The lock is the one `lock.mjs` gives the echo too, with
-the worker's own judge of what is dead: a lock whose process is gone, that is older than half an
-hour, that is stamped later than now or that does not parse. Such a lock is taken over by the worker
-that wins the exclusive create of the lock token `refresh.lock.<the dead lock's nonce>`, which
-removes the lock only while it still holds the content judged dead; every worker then makes the one
-create, and the one that takes the lock removes any lock token of another generation beside it.
+the worker's own judge of what is dead: a lock stamped more than half an hour from now, behind or
+ahead, one that does not parse, and within that half hour one whose process is gone. A clock can step
+either way, by as little as 128 ms where ntpd corrects it, so a stamp ahead of the clock is no sign of
+a dead worker. Such a lock is taken over by the worker that wins the exclusive create of the lock
+token `refresh.lock.<the dead lock's nonce>`, which removes the lock only while it still holds the
+content judged dead; every worker then makes the one create, and the one that takes the lock removes
+any lock token of another generation beside it.
 Moving a dead lock aside let two workers hold the lock in 1 of 200 rounds at 3 workers and 11 of 200
 at 8 (A95, A117). A lock token a killed worker left is broken the same way where its mtime is more
 than 62 seconds from the clock. One case is left: a worker killed while it holds a token's own token

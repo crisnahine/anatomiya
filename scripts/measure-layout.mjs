@@ -55,7 +55,8 @@ import {
   TESTS_GROUPS,
   TRUNCATED_LAYOUT,
 } from "../plugins/anatomiya/lib/render-layout.mjs";
-import { statedSide, writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
+import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
+import { statedSide } from "../plugins/anatomiya/lib/slot.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
 import { encodePath } from "../plugins/anatomiya/lib/encode.mjs";
@@ -486,7 +487,7 @@ function checkPathOnDisk(label, root) {
 /** The overview body a real write would put on disk, rendered and not written. */
 export function overviewFor(result) {
   const plan = planMap(result);
-  const body = plan.bodies.get(OVERVIEW_FILE);
+  const body = plan.targets.claude.write.find((w) => w.name === OVERVIEW_FILE)?.body;
   // A scan blind to a language renders nothing at all, and a recount of no
   // overview is not a section this bar may report either way.
   if (body === undefined) fail(`no overview was rendered: the scan read no ${plan.unreadable.join(" or ")} file at all`);

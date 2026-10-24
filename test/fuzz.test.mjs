@@ -23,6 +23,7 @@ test("any parse, corpus and roster a scan can report keeps the overview to forty
           {
             uncovered: 40,
             orphaned: 10,
+            barren: 30,
             others: { foreign: names(others.foreign, "f"), unknown: names(others.unknown, "anatomiya-area-u"), unreadable: names(others.unreadable, "r") },
           }
         );

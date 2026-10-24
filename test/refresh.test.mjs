@@ -14,14 +14,15 @@ import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs
 import { movedByRemote, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
 import { acquire, noteScan, refreshRepository, scanStamp } from "../plugins/anatomiya/lib/refresh-run.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
-import { gitBuffered, Unasked } from "../plugins/anatomiya/lib/git.mjs";
+import { answerWith, Unasked } from "../plugins/anatomiya/lib/git.mjs";
 import { loadTypeScript, runSemantic, verdictStamp } from "../plugins/anatomiya/lib/semantic.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { scanJson } from "../plugins/anatomiya/lib/summary.mjs";
-import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
-import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
+import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { asksById, exitsWhere, scriptGit, unaskedOn, unaskedWhere } from "./git-script.mjs";
+import { needsFoldingFilesystem, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks, needsUnreadableDirs, removeTree } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
 const needsTs = { skip: (await loadTypeScript()) ? false : "typescript is not installed" };
@@ -663,18 +664,18 @@ test("a target git cannot be asked about is left alone as a committed one is", a
   commit(dir, "a second area");
   const asked = [];
   // Git answers every question but whether Cursor's overview is committed.
-  const git = async (root, args, options) => {
-    if (args[0] !== "ls-files" || !args.at(-1).endsWith(".cursor/rules/anatomiya-overview.mdc")) return gitBuffered(root, args, options);
+  t.after(answerWith((args) => {
+    if (args[0] !== "ls-files" || !args.at(-1).endsWith(".cursor/rules/anatomiya-overview.mdc")) return null;
     asked.push(args.at(-1));
-    return { ok: false, code: 128, oversize: false, stdout: "", error: "fatal: index file corrupt" };
-  };
+    return { code: 128, stderr: "fatal: index file corrupt" };
+  }));
   const leftAlone = [];
   const scan = async (root, options) => {
     leftAlone.push(options?.leaveAlone ?? []);
     return runScan(root, options);
   };
 
-  assert.equal((await refreshRepository(dir, { scan, git })).reason, "scanned");
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
 
   assert.equal(asked.length, 1);
   assert.deepEqual(leftAlone, [["cursor"]], "the one nobody could ask about, and not the one git answered for");
@@ -850,6 +851,44 @@ test("a hold that moves while a stopped directory is not yet due keeps the mark,
   age();
   assert.equal(await refresh(), "scanned");
   assert.equal(holder.scans, 2);
+});
+
+test("a directory a scan run by hand left stopped is retried by the refresh after the clock", async (t) => {
+  // Recorded as the refresh's own answer, the hand scan wrote no mark, and
+  // every later refresh answered current over a copy it had left stale.
+  const { dir, overview, holder, state, age, refresh } = await withCursorHeld(t);
+  const before = await scanStamp(dir);
+  const answer = await runScan(dir);
+  await noteScan(dir, before, answer);
+
+  assert.deepEqual(state().stopped, [".cursor/rules"]);
+  holder.held = false;
+  assert.equal(await refresh(), "current", "not before the clock");
+  age();
+
+  assert.equal(await refresh(), "scanned");
+  assert.match(readFileSync(overview, "utf8"), /lib\/services/);
+  assert.equal("stopped" in state(), false);
+});
+
+test("the scan command records the directories it left stopped", needsPosixPermissions, async (t) => {
+  const dir = await scanned(t);
+  await runScan(dir, { targets: ["claude", "cursor"] });
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+  const rules = join(dir, ".cursor", "rules");
+  // A directory nothing may write in, which the scan cannot replace a file in either. Its mode is put back before
+  // the tree is removed.
+  chmodSync(rules, 0o555);
+  let r;
+  try {
+    r = spawnSync(process.execPath, [BIN, "scan", dir], { encoding: "utf8", timeout: 120_000 });
+  } finally {
+    chmodSync(rules, 0o755);
+  }
+
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).stopped, [".cursor/rules"]);
 });
 
 test("a copy committed under another letter case is left alone where the repository folds case", needsFoldingFilesystem, async (t) => {
@@ -3001,22 +3040,22 @@ async function behindItsRemote(t) {
   return { origin, dir };
 }
 
-for (const [what, pattern, said] of [
-  ["HEAD", "*' rev-parse --verify --quiet HEAD^{commit} '*", /^Error: git could not be asked which commit HEAD names: /],
-  ["the remote's tip", "*' rev-parse --verify --quiet origin/HEAD^{commit} '*", /^Error: git could not be asked which commit origin\/HEAD names: /],
-  ["the pinned commit", ASKS_BY_ID, /^Error: git could not be asked whether commit [0-9a-f]{40} is still in this repository: /],
-  ["whether the map is committed", "*' ls-files -z -- '*anatomiya-overview.md*", /^Error: git could not be asked whether this repository commits its map: /],
-  ["whether the repository folds case", "*' --get core.ignorecase '*", /^Error: git could not be asked whether this repository folds case: /],
+for (const [what, matches, said] of [
+  ["HEAD", (line) => line.includes(" rev-parse --verify --quiet HEAD^{commit} "), /^Error: git could not be asked which commit HEAD names: /],
+  ["the remote's tip", (line) => line.includes(" rev-parse --verify --quiet origin/HEAD^{commit} "), /^Error: git could not be asked which commit origin\/HEAD names: /],
+  ["the pinned commit", asksById, /^Error: git could not be asked whether commit [0-9a-f]{40} is still in this repository: /],
+  ["whether the map is committed", (line) => line.includes(" ls-files -z -- ") && line.includes("anatomiya-overview.md"), /^Error: git could not be asked whether this repository commits its map: /],
+  ["whether the repository folds case", (line) => line.includes(" --get core.ignorecase "), /^Error: git could not be asked whether this repository folds case: /],
   // The pin's own reads: a plain refusal of the pin is no pin, and the worker goes on to scan.
-  ["whether the index holds unmerged paths", "*' ls-files --unmerged '*", /^Error: git could not be asked whether the index holds unmerged paths: /],
-  ["whether a merge is in progress", "*' rev-parse --verify --quiet MERGE_HEAD '*", /^Error: git could not be asked whether a merge is in progress: /],
-  ["whether the tree is HEAD's", "*' status '*' --porcelain --untracked-files=no '*", /^Error: git could not be asked whether the working tree matches HEAD: /],
-  ["which files the pin would hold", "*' ls-files -z -- '", /^Error: git ls-files exited SIGTERM/],
+  ["whether the index holds unmerged paths", (line) => line.includes(" ls-files --unmerged "), /^Error: git could not be asked whether the index holds unmerged paths: /],
+  ["whether a merge is in progress", (line) => line.includes(" rev-parse --verify --quiet MERGE_HEAD "), /^Error: git could not be asked whether a merge is in progress: /],
+  ["whether the tree is HEAD's", (line) => line.includes(" status ") && line.includes(" --porcelain --untracked-files=no "), /^Error: git could not be asked whether the working tree matches HEAD: /],
+  ["which files the pin would hold", (line) => line.endsWith(" ls-files -z -- "), /^Error: git ls-files exited SIGTERM/],
 ]) {
-  test(`a refresh that could not ask git for ${what} moves no pin, writes no map and records nothing`, needsGitStub, async (t) => {
+  test(`a refresh that could not ask git for ${what} moves no pin, writes no map and records nothing`, async (t) => {
     const { dir } = await behindItsRemote(t);
     const before = claudeBytes(dir);
-    gitAhead(t, unasked(pattern));
+    scriptGit(t, unaskedWhere(matches));
 
     await assert.rejects(() => refreshRepository(dir), said);
 
@@ -3024,25 +3063,41 @@ for (const [what, pattern, said] of [
   });
 }
 
-test("a pin is not moved back where git could not be asked whether it is the newer one", needsGitStub, async (t) => {
-  const { origin, dir } = await behindItsRemote(t);
-  assert.equal((await refreshRepository(dir)).pinned, true);
-  const later = loadPin(dir).sha;
-  git(origin, "reset", "-q", "--hard", "HEAD~1");
-  git(dir, "fetch", "-q");
-  git(dir, "reset", "-q", "--hard", "origin/main");
-  const before = claudeBytes(dir);
-  gitAhead(t, unasked("*' merge-base --is-ancestor '*"));
+const asksNewer = (line) => line.includes(" merge-base --is-ancestor ");
+for (const [how, script, said] of [
+  ["could not be asked", unaskedWhere(asksNewer), "git was ended by SIGTERM"],
+  ["exits 128 on", exitsWhere(asksNewer, 128), "git exited 128"],
+]) {
+  test(`a pin is not moved back where git ${how} whether it is the newer one`, async (t) => {
+    const { origin, dir } = await behindItsRemote(t);
+    assert.equal((await refreshRepository(dir)).pinned, true);
+    const later = loadPin(dir).sha;
+    git(origin, "reset", "-q", "--hard", "HEAD~1");
+    git(dir, "fetch", "-q");
+    git(dir, "reset", "-q", "--hard", "origin/main");
+    const before = claudeBytes(dir);
+    scriptGit(t, script);
 
-  await assert.rejects(() => refreshRepository(dir), new RegExp(`^Error: git could not be asked whether the pin at ${later} is newer than `));
+    await assert.rejects(() => refreshRepository(dir), new RegExp(`^Error: git could not be asked whether the pin at ${later} is newer than [0-9a-f]{40}: ${said}$`));
+
+    assert.deepEqual(claudeBytes(dir), before);
+  });
+}
+
+test("a git that exits 128 on whether a merge is in progress is no answer, and no pin moves", async (t) => {
+  const { dir } = await behindItsRemote(t);
+  const before = claudeBytes(dir);
+  scriptGit(t, exitsWhere((line) => line.includes(" rev-parse --verify --quiet MERGE_HEAD "), 128));
+
+  await assert.rejects(() => refreshRepository(dir), /^Error: git could not be asked whether a merge is in progress: git exited 128$/);
 
   assert.deepEqual(claudeBytes(dir), before);
 });
 
-test("a commit is held where git could not be asked who this clone commits as", needsGitStub, async (t) => {
+test("a commit is held where git could not be asked who this clone commits as", async (t) => {
   const { dir } = await behindItsRemote(t);
   const pinned = loadPin(dir).sha;
-  gitAhead(t, unasked("*' var GIT_COMMITTER_IDENT '*"));
+  scriptGit(t, unaskedWhere((line) => line.includes(" var GIT_COMMITTER_IDENT ")));
 
   const r = await refreshRepository(dir);
 
@@ -3051,23 +3106,16 @@ test("a commit is held where git could not be asked who this clone commits as", 
   assert.equal(loadPin(dir).sha, pinned);
 });
 
-/** A `case` arm that ends git on the `nth` call matching `pattern`, and on no other. */
-function unaskedOn(t, pattern, nth) {
-  const count = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-count-"))), "n");
-  t.after(() => removeTree(join(count, "..")));
-  return `case " $* " in ${pattern}) echo x >> '${count}'; [ "$(wc -l < '${count}')" -eq ${nth} ] && kill -TERM $$;; esac`;
-}
-
-for (const [what, start, pattern] of [
-  ["which ref the remote's tip is", behindItsRemote, "*' rev-parse --symbolic-full-name '*"],
-  ["how the remote's branch last moved", behindItsRemote, "*' reflog show -n1 '*"],
-  ["how the clone was made", cloned, "*' reflog show '*' main-worktree/HEAD '*"],
+for (const [what, start, matches] of [
+  ["which ref the remote's tip is", behindItsRemote, (line) => line.includes(" rev-parse --symbolic-full-name ")],
+  ["how the remote's branch last moved", behindItsRemote, (line) => line.includes(" reflog show -n1 ")],
+  ["how the clone was made", cloned, (line) => line.includes(" reflog show ") && line.includes(" main-worktree/HEAD ")],
 ]) {
-  test(`a refresh that could not ask git ${what} holds the pin as unread, and says nothing git did not`, needsGitStub, async (t) => {
+  test(`a refresh that could not ask git ${what} holds the pin as unread, and says nothing git did not`, async (t) => {
     const { holdNotice } = await import("../plugins/anatomiya/lib/refresh.mjs");
     const { dir } = await start(t);
     const pinned = loadPin(dir)?.sha ?? null;
-    const calls = gitAhead(t, unasked(pattern));
+    const calls = scriptGit(t, unaskedWhere(matches));
 
     const r = await refreshRepository(dir);
     calls.restore();
@@ -3083,11 +3131,11 @@ for (const [what, start, pattern] of [
   });
 }
 
-test("a pin that could not ask git ends the worker, and any other refusal of the pin is no pin", needsGitStub, async (t) => {
+test("a pin that could not ask git ends the worker, and any other refusal of the pin is no pin", async (t) => {
   const { dir } = await behindItsRemote(t);
   const before = claudeBytes(dir);
   // The worker reads HEAD once before the pin, and the pin reads it for itself.
-  const calls = gitAhead(t, unaskedOn(t, "*' rev-parse --verify --quiet HEAD^{commit} '*", 2));
+  const calls = scriptGit(t, unaskedOn((line) => line.includes(" rev-parse --verify --quiet HEAD^{commit} "), 2));
   await assert.rejects(() => refreshRepository(dir), /^Error: git could not be asked which commit HEAD names: /);
   calls.restore();
   assert.deepEqual(claudeBytes(dir), before, "no pin moved, no map written, nothing recorded");
@@ -3099,12 +3147,12 @@ test("a pin that could not ask git ends the worker, and any other refusal of the
   assert.deepEqual([r.reason, r.pinned, r.held], ["scanned", false, null]);
 });
 
-test("a question that could not be asked after the stamp is read is a failed refresh of that stamp, on record with its text", needsGitStub, async (t) => {
+test("a question that could not be asked after the stamp is read is a failed refresh of that stamp, on record with its text", async (t) => {
   const dir = await scanned(t);
   source(dir, "lib", 8);
   commit(dir, "moved");
   // Asked once before the lock, for whether the map is committed, and once after the stamp, for the other targets.
-  const calls = gitAhead(t, unaskedOn(t, "*' --get core.ignorecase '*", 2));
+  const calls = scriptGit(t, unaskedOn((line) => line.includes(" --get core.ignorecase "), 2));
 
   const r = await refreshRepository(dir);
   calls.restore();
@@ -3116,7 +3164,7 @@ test("a question that could not be asked after the stamp is read is a failed ref
   assert.equal((await refreshRepository(dir)).reason, "failed-before", "and that stamp waits out the retry clock");
 });
 
-test("the word a second worker left is taken when the worker holding the lock throws", needsGitStub, async (t) => {
+test("the word a second worker left is taken when the worker holding the lock throws", async (t) => {
   const { dir } = await behindItsRemote(t);
   const word = join(dir, ".claude", "anatomiya", "refresh.again");
   // Left once the lock is held: by then the worker is past every read before it.

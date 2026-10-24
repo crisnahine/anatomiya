@@ -203,15 +203,24 @@ function entryAt(dir, name) {
 
 const sameEntry = (a, b) => a !== null && b !== null && a.dev === b.dev && a.ino === b.ino;
 /**
- * The filenames the map on disk says this build wrote, or `null` when there is
- * no map to ask.
+ * What the record on disk says of one directory: `names`, the files the map
+ * there holds, or `null` where there is no map to ask, and `removing`, the
+ * files the scan that wrote it was about to remove, an empty set where it names
+ * none, which is every record written before the list.
  *
  * `null` is not an empty set: an empty set says the last scan wrote nothing,
  * and no scan writes nothing. Without the record the third fact is unavailable,
  * so nothing is removable. The same for a Cursor or Copilot directory the
  * record does not name, until a scan is told by name to leave that target out.
+ * The record is renamed before the first removal, so a scan killed between the
+ * two leaves a record that no longer names the file it was removing, and only
+ * `removing` says the file is still ours to remove.
  */
-export function knownNames(facts, target = TARGETS.claude) {
+export function recordFor(facts, target = TARGETS.claude) {
+  return { names: knownNames(facts, target), removing: pendingNames(facts, target) };
+}
+
+function knownNames(facts, target) {
   if (!facts || !Array.isArray(facts.areas)) return null;
   if (!isClaude(target)) {
     // Stored rather than derived: a target has no file for an area it cannot spell.
@@ -225,41 +234,32 @@ export function knownNames(facts, target = TARGETS.claude) {
   return names;
 }
 
-/**
- * The filenames the map on disk was about to remove from one directory: an
- * empty set where it names none, which is every record written before the list.
- *
- * The record is renamed before the first removal, so a scan killed between the
- * two leaves a record that no longer names the file it was removing, and only
- * this list says the file is still ours to remove.
- */
-export function pendingNames(facts, target = TARGETS.claude) {
+function pendingNames(facts, target) {
   const listed = facts?.removing?.[target.id];
   return new Set(Array.isArray(listed) ? listed.filter((n) => isMapName(n, target)) : []);
 }
 
-/** The names among `names` that the map on disk was about to remove from one directory. */
-export function pendingAmong(facts, target, names) {
-  const going = pendingNames(facts, target);
-  return names.filter((name) => going.has(name));
-}
-
 /**
  * Every `.md` in the rules directory, split by which of the three facts it
- * carries. In a Cursor or Copilot directory, only the names under our prefix:
- * the rest is that tool's own rules, which are meant to be there.
+ * carries (A3), as `facts`, the record on disk, names this directory's files.
+ * In a Cursor or Copilot directory, only the names under our prefix: the rest is
+ * that tool's own rules, which are meant to be there.
  *
- *   ours     all three, so this tool may replace or remove it
- *   unknown  our prefix and our key, but the map does not name it
- *   foreign  anything else: someone else's context, loading on every turn
+ *   ours      all three, the map holding it, so this tool may replace or remove it
+ *   removing  all three, the scan that wrote the map about to remove it, so the
+ *             next scan removes it
+ *   unknown   our prefix and our key, and the record names it neither way
+ *   foreign   anything else: someone else's context, loading on every turn
  *
  * Sorted, because two surfaces render this list and the overview has to be
  * byte-stable across scans with no source change. `readdir` order is the
  * filesystem's.
  */
-export function auditRules(root, known = null, target = TARGETS.claude) {
+export function auditRules(root, facts = null, target = TARGETS.claude) {
+  const { names: known, removing: going } = recordFor(facts, target);
   const out = {
     ours: [],
+    removing: [],
     unknown: [],
     foreign: [],
     unreadable: [],
@@ -327,10 +327,12 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
       out.foreign.push(name);
       continue;
     }
-    if (known && known.has(mapped)) out.ours.push(mapped);
+    if (known?.has(mapped)) out.ours.push(mapped);
+    else if (going.has(mapped)) out.removing.push(mapped);
     else out.unknown.push(mapped);
   }
   out.ours.sort();
+  out.removing.sort();
   out.unknown.sort();
   return out;
 }

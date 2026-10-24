@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { ALL_DIMENSIONS } from "./dimensions.mjs";
 import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
-import { statedSide } from "./facts.mjs";
+import { statedSide } from "./slot.mjs";
 import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
 import { dimensionsFor, isFunctionLike, walk } from "./walk.mjs";

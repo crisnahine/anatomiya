@@ -7,6 +7,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Drift counts only the files the map holds, a migration's SQL is read the way each database it can
+run on reads it, a route on a class nested in another no longer takes the outer class's marks, and a
+refresh lock stamped ahead of the clock is judged by its process. An audit of the whole plugin fixed
+16 findings and seven modules were deepened, and a dry-run scan of the 85 corpus repositories produces
+the same map, record and summary as 0.16.1.
+
+### Changed
+
+- Drift counts the map's own files: a pinned file the base changed, or a source file the base added
+  to a mapped area, with a rename counted once (E6). A base that edited ten JSON files beside twelve
+  pinned sources read as 10 of 12 changed and capped every finding at FIX; it now reads 0 of 12, and
+  a pure rename of one of eight pinned files reads 1 of 8 where it read 2. A file the base added is
+  read at the base first, and one a generator wrote, by its header there or by this checkout's
+  `.gitattributes`, counts no more than a JSON file does. The check reads drift alone for its
+  staleness, with no identity read of the pinned population.
+- A migration's SQL is read as PostgreSQL, MySQL and SQLite each read it, and a statement any of the
+  three would run counts (C68). A nested comment, an `E''` or backslash escape, a `#` or `--x`
+  comment, a name in backticks and MySQL's `/*!` no longer hide an `UPDATE`; a `DO` block's code is
+  read as the PL/pgSQL it runs, a literal it `EXECUTE`s included, and a string it builds there is SQL
+  this could not read; and a function or trigger body in a dollar quote is code the database keeps,
+  which 0.16.1 counted as data work. No count moves over the 85 corpus repositories.
+- A `.well-known` mapping or `@FeignClient` on a Java class reaches that class's own routes only,
+  never a class nested in it, and a C# attribute route on a nested class is no route, since ASP.NET
+  Core routes no nested class (C62).
+- A refresh lock stamped ahead of the clock is judged by its process while it is within half an hour
+  of now, either way, and is dead past that whatever its pid names (A95, A117): a clock stepped back
+  let a second worker take a live worker's lock.
+- Whether a merge is in progress and whether the pin is the newer commit are asked as yes or no
+  questions, so a git that refused either stops the pin or the refresh instead of reading as no (F29).
+- Inside the plugin: git is asked by the kind of question (`ask`, `askWhether`, `unaskedAs`), the
+  three facts of ownership are answered once per directory (`auditRules`), the check reads its change
+  set in one call (`branchChange`), the checker's carried verdict is decided in one place
+  (`checkerTurn`), what a run can describe is decided once (`describedRun`), every directory the map
+  goes to has one plan entry of the same shape, and a slot's stored form, side, scope and carry test
+  live in one module (`slot.mjs`). The scan no longer loads the renderer.
+
+### Fixed
+
+- `.claude/settings.local.json` is written to a temporary file and renamed over, so a removal cut
+  short by a full disk or a file-size limit leaves the file as it was rather than empty (A25). A file
+  replaced this way keeps its permission bits, set before a byte is written, so a 0600 settings file
+  holding an `env` secret stays 0600, and so do the pin, the history stores and the refresh record
+  (A115).
+- A scan run by hand records the directories it left stopped at a locked file, as a refresh does
+  (A95).
+- Matching renamed files to the pin and folding small directories were quadratic: 50,000 pinned
+  files match in 36 ms where they took 478, and 60,000 files fold in 320 ms where they took 2,527.
+- The echo writes its batch claim whole, and sweeps a temporary claim a killed hook left.
+- 28 of the 42 tests that put a stub git on `PATH`, and so ran on no Windows runner, script git in
+  the process instead (`answerWith`) and run everywhere.
+
 ## [0.16.1] - 2026-10-23
 
 The JavaScript parser, the tree-sitter runtime and the Flow stripper move to their current versions,

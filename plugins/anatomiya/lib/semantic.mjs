@@ -141,18 +141,19 @@ function sizeAndTime(path) {
 /**
  * The last verdict, where a refresh may hand it to its scan, or null where the
  * checker has to measure with nothing behind it: `recorded` is the last
- * record's tier, `under` the stamp now. Only a degraded verdict under the same
- * stamp: an ok tier's numbers are the claims. One a run finished is carried in
- * place of a run. A failed run measured nothing, so it is handed on with its
- * count, and `standsIn` says from which count it is carried.
+ * record's tier, and `stampNow` reads the stamp now, which only a degraded
+ * verdict asks for, since it reads the root config. Only a degraded verdict
+ * under the same stamp: an ok tier's numbers are the claims. One a run finished
+ * is carried in place of a run. A failed run measured nothing, so it is handed
+ * on with its count, and `checkerTurn` says from which count it is carried.
  *
  * The record is a file anyone on the machine can edit, and what is carried is
  * printed in the always-loaded overview on every refresh after. So only a
  * verdict a scan could have written is handed on, and any other is measured.
  */
-export function carriedVerdict(recorded, under, now = Date.now()) {
+export function carriedVerdict(recorded, stampNow, now = Date.now()) {
   if (recorded?.status !== "degraded" || (recorded.ran !== true && recorded.carried !== true)) return null;
-  if (recorded.measuredUnder !== under) return null;
+  if (recorded.measuredUnder !== stampNow()) return null;
   const { status, reason, measuredAt, measuredUnder } = recorded;
   const typedResolutionRate = recorded.typedResolutionRate ?? null;
   // A record with no count holds no failure a run counted.
@@ -167,26 +168,47 @@ export function carriedVerdict(recorded, under, now = Date.now()) {
  * on its first sighting it would stick. The second costs a repository that
  * always fails one more run: 47 seconds on the 4,099-file workspace measured.
  */
-export const FAILURES_CARRIED = 2;
+const FAILURES_CARRIED = 2;
 
 const TIER_FAILED = "tier-failed";
 
-/** Whether a scan handed `verdict` by a refresh records it in place of running the checker. */
-export function standsIn(verdict) {
-  return verdict.reason !== TIER_FAILED || verdict.failures >= FAILURES_CARRIED;
+/**
+ * The checker's part in one scan, decided once. `handed` is the verdict a
+ * refresh carries, or null, which a scan run by hand always is.
+ *
+ * `carries` is the verdict recorded in place of a run, or null where the
+ * checker measures: a degraded one at once, a failed run's from the second in
+ * a row. `record` gives what the scan writes for the tier: a run's verdict, the
+ * carried one where nothing kept the checker off, or why it did not run. A
+ * failed run counts one more than the failures carried in under the same
+ * stamp, and one under any other, since a new build, install or config may
+ * have fixed what failed.
+ */
+export function checkerTurn(handed) {
+  const carries = handed !== null && (handed.reason !== TIER_FAILED || handed.failures >= FAILURES_CARRIED) ? handed : null;
+  const record = ({ semantic, offReason, measuredAt, measuredUnder }) => {
+    if (semantic) {
+      const before = handed?.measuredUnder === measuredUnder ? handed.failures : 0;
+      const failures = semantic.reason === TIER_FAILED ? before + 1 : 0;
+      return tierRecord({ ...semantic, ran: true, measuredAt, measuredUnder, failures });
+    }
+    if (carries !== null && offReason === null) return tierRecord({ ...carries, carried: true });
+    return tierRecord({ reason: offReason });
+  };
+  return { carries, record };
 }
 
-/**
- * The failures in a row a measuring scan records, this run counted: `last` is
- * the verdict the refresh handed in, or null, and `under` the stamp this run
- * measured under. A run that finished records none, and a failure under
- * another stamp, or with nothing behind it, is the first. A verdict that is no
- * failure counts none.
- */
-export function failuresIn(semantic, last, under) {
-  if (semantic.reason !== TIER_FAILED) return 0;
-  return (last?.measuredUnder === under ? last.failures : 0) + 1;
-}
+// The tier's record in one key order however it was reached, so carrying a verdict changes the record's values and never its shape.
+const tierRecord = ({ ran = false, status = null, reason = null, typedResolutionRate = null, carried = false, measuredAt = null, measuredUnder = null, failures = 0 }) => ({
+  ran,
+  status,
+  reason,
+  typedResolutionRate,
+  carried,
+  measuredAt,
+  measuredUnder,
+  failures,
+});
 
 const LOW_RESOLUTION = "low-resolution";
 const REFUSALS = new Set(Object.values(CONFIG_REFUSALS));

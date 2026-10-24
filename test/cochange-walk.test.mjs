@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { scriptGit, unaskedWhere } from "./git-script.mjs";
 import { needsPathControl, needsShebang, removeTree } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -558,12 +558,12 @@ test("the map a scan wrote is no part of a change, so a repository that commits 
   assert.deepEqual(walk.changes.map((c) => c.touched), [[".claude/rules/house-style.md", "lib/cops/a.rb"]]);
 });
 
-test("a tip git could not be asked for is a walk that failed, and states nothing", needsGitStub, async (t) => {
+test("a tip git could not be asked for is a walk that failed, and states nothing", async (t) => {
   const dir = repo(t, ({ write, commit }) => {
     write("a.rb");
     commit("one");
   });
-  gitAhead(t, unasked("*' rev-parse --verify '*"));
+  scriptGit(t, unaskedWhere((line) => line.includes(" rev-parse --verify ")));
 
   const started = await startCochange(dir, { status: "unpinned" });
 

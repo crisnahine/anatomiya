@@ -1,6 +1,7 @@
 /**
- * A `git` ahead of the real one on this process's own PATH until the test ends,
- * for the readers that take no environment.
+ * A `git` ahead of the real one on this process's own PATH until the test ends:
+ * for a process this one starts, which `git-script.mjs` cannot reach, and for
+ * the runner's own tests, which need a real git ended by a real signal.
  *
  * `script` is shell run before the real git, with `$real` naming it and the
  * call's arguments in `$*` between two spaces. Each call is written down first,

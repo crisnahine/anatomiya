@@ -22,6 +22,7 @@ import { invokedAs, readArgv } from "./entry.mjs";
 // stood here was looser, so a version could pass a tag and fail the branch gate.
 import { SEMVER } from "./validate.mjs";
 import { REL } from "./plugins.mjs";
+import { escapeRe } from "../plugins/anatomiya/lib/paths.mjs";
 
 /**
  * Every plugin this marketplace can release, the tag that releases it, the
@@ -142,7 +143,7 @@ export function releaseFor(tag, releases = RELEASES) {
  */
 export function sectionFor(body, version) {
   if (typeof body !== "string" || typeof version !== "string") return null;
-  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = escapeRe(version);
   // The hyphen and the plus are part of a version rather than boundaries around
   // one, or `0.1.0` matches the `0.1.0-rc.1` heading above it and the release
   // ships the candidate's notes.

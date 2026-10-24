@@ -393,7 +393,7 @@ test("a keyed file that only JavaScript folds onto a map name is somebody's, bes
   put(dir, `${RULES_DIR}/${DOTLESS}`, OWNED);
   if (readdirSync(join(dir, RULES_DIR)).length !== 2) return t.skip("this volume holds the two spellings as one entry");
 
-  for (const known of [new Set([OVERVIEW_FILE]), null]) {
+  for (const known of [naming([OVERVIEW_FILE]), null]) {
     const audit = auditRules(dir, known);
     assert.deepEqual({ ours: audit.ours, unknown: audit.unknown, foreign: audit.foreign }, { ours: [], unknown: [], foreign: [theirs, DOTLESS] });
   }
@@ -428,21 +428,21 @@ test("where the volume folds case, a keyed file spelled as one of the map's name
     writeFileSync(join(dir, RULES_DIR, spelled), OWNED);
     assert.deepEqual(readdirSync(join(dir, RULES_DIR)), [spelled], "the control: one entry, as it was spelled");
 
-    const named = auditRules(dir, new Set([name]));
+    const named = auditRules(dir, naming([name]));
     assert.deepEqual({ ours: named.ours, unknown: named.unknown, foreign: named.foreign }, { ours: [name], unknown: [], foreign: [] }, spelled);
     const unnamed = auditRules(dir, null);
     assert.deepEqual({ ours: unnamed.ours, unknown: unnamed.unknown, foreign: unnamed.foreign }, { ours: [], unknown: [name], foreign: [] }, spelled);
 
     // Without the key it is somebody's, under the spelling the directory holds.
     writeFileSync(join(dir, RULES_DIR, spelled), HAND);
-    const theirs = auditRules(dir, new Set([name]));
+    const theirs = auditRules(dir, naming([name]));
     assert.deepEqual({ ours: theirs.ours, unknown: theirs.unknown, foreign: theirs.foreign }, { ours: [], unknown: [], foreign: [spelled] }, spelled);
   }
   // A name no scan gives a file is nobody's name to fold onto.
   const dir = workspace(t);
   mkdirSync(join(dir, RULES_DIR), { recursive: true });
   writeFileSync(join(dir, RULES_DIR, "Anatomiya-Notes.md"), OWNED);
-  assert.deepEqual(auditRules(dir, new Set([`${PREFIX}notes.md`])).foreign, ["Anatomiya-Notes.md"]);
+  assert.deepEqual(auditRules(dir, naming([`${PREFIX}notes.md`])).foreign, ["Anatomiya-Notes.md"]);
 });
 
 test("a directory of names spelled as area files in another case is audited in linear time", (t) => {
@@ -469,18 +469,50 @@ test("where the volume keeps case apart, a file spelled as one of the map's name
   const dir = mkdtempSync(join(volume.dir, "repo-"));
   mkdirSync(join(dir, RULES_DIR), { recursive: true });
   for (const [spelled] of otherSpellings) writeFileSync(join(dir, RULES_DIR, spelled), OWNED);
-  const known = new Set(otherSpellings.map(([, name]) => name));
+  const known = otherSpellings.map(([, name]) => name);
 
   // Alone, and then beside the map's own files.
   for (const beside of [false, true]) {
     if (beside) for (const name of known) writeFileSync(join(dir, RULES_DIR, name), OWNED);
-    const audit = auditRules(dir, known);
+    const audit = auditRules(dir, naming(known));
     assert.deepEqual(
       { ours: audit.ours, unknown: audit.unknown, foreign: audit.foreign },
       { ours: beside ? [...known].sort() : [], unknown: [UPPER_AREA], foreign: ["Anatomiya-Overview.md"] },
       beside ? "beside the map" : "alone"
     );
   }
+});
+
+/**
+ * A record naming `names` in one directory as a scan writes it, and `removing` as the files it was about to
+ * remove there: Claude Code's files by area id, the overview always among them, another target's by name.
+ */
+function naming(names, target = claude, removing = []) {
+  const going = removing.length ? { removing: { [target.id]: removing } } : {};
+  if (target !== claude) return { areas: [], targets: { [target.id]: names }, ...going };
+  const ids = names.map((n) => new RegExp(`^${PREFIX}area-([0-9a-f]+)\\.md$`).exec(n)?.[1]).filter(Boolean);
+  return { areas: ids.map((id) => ({ id })), ...going };
+}
+
+test("a keyed file the record was about to remove is the scan's to remove, and neither held nor unknown", (t) => {
+  // A scan killed between renaming the record and removing a file left it; the
+  // writer, the check and doctor each sorted it out of the buckets their own way.
+  const dir = workspace(t);
+  const going = `${PREFIX}area-deadbeef.md`;
+  const stray = `${PREFIX}area-0badf00d.md`;
+  for (const name of [OVERVIEW_FILE, going, stray]) put(dir, `${RULES_DIR}/${name}`, OWNED);
+
+  const audit = auditRules(dir, naming([OVERVIEW_FILE], claude, [going]));
+  assert.deepEqual([audit.ours, audit.removing, audit.unknown], [[OVERVIEW_FILE], [going], [stray]]);
+  // With no map on record, the list is still the scan's own word for the file.
+  const bare = auditRules(dir, { removing: { claude: [going] } });
+  assert.deepEqual([bare.ours, bare.removing, bare.unknown], [[], [going], [stray, OVERVIEW_FILE]]);
+  // A file the map holds is held, whatever else the record says of it.
+  assert.deepEqual(auditRules(dir, naming([going], claude, [going])).removing, []);
+  // Another target's list is its own.
+  put(dir, `.cursor/rules/${areaName(cursor, "deadbeef")}`, OWNED);
+  assert.deepEqual(auditRules(dir, naming([], cursor, [areaName(cursor, "deadbeef")]), cursor).removing, [areaName(cursor, "deadbeef")]);
+  assert.deepEqual(auditRules(dir, naming([OVERVIEW_FILE], claude, [going]), cursor).removing, []);
 });
 
 /* --- what a person does about a target that could not be read --- */
@@ -578,7 +610,7 @@ test("the audit of a Cursor directory names our files and the ones holding our n
   put(dir, `.cursor/rules/${OVERVIEW_FILE}`, OWNED);
   mkdirSync(join(dir, ".cursor", "rules", "nested.mdc"));
 
-  const audit = auditRules(dir, new Set([owned]), cursor);
+  const audit = auditRules(dir, naming([owned], cursor), cursor);
   assert.deepEqual(audit.ours, [owned]);
   assert.deepEqual(audit.unknown, [overviewName(cursor)]);
   assert.deepEqual(audit.foreign, [areaName(cursor, "deadbeef")]);
@@ -599,7 +631,7 @@ test("the audit of a Copilot directory reads only .instructions.md under our pre
   put(dir, `.github/instructions/${OVERVIEW_FILE}`, OWNED);
   put(dir, ".github/instructions/team.instructions.md", HAND);
   mkdirSync(join(dir, ".github", "instructions", areaName(copilot, "1a2b3c4d")));
-  const audit = auditRules(dir, new Set([owned]), copilot);
+  const audit = auditRules(dir, naming([owned], copilot), copilot);
   assert.deepEqual(audit.ours, [owned]);
   assert.deepEqual(audit.unknown, []);
   assert.deepEqual(audit.foreign, []);
@@ -620,7 +652,7 @@ test("the audit with no target is the audit of Claude Code's directory, every .m
   put(dir, `${RULES_DIR}/${OVERVIEW_FILE}`, OWNED);
   put(dir, `${RULES_DIR}/team.md`, HAND);
   put(dir, `${RULES_DIR}/notes.mdc`, HAND);
-  const known = new Set([OVERVIEW_FILE]);
+  const known = naming([OVERVIEW_FILE]);
   const audit = auditRules(dir, known);
   assert.deepEqual(audit.ours, [OVERVIEW_FILE]);
   assert.deepEqual(audit.foreign, ["team.md"]);
