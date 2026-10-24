@@ -415,8 +415,8 @@ test("the result file names the repository without a local path in it", () => {
   assert.equal(repoLabel("/tmp/x", "git@github.com:microsoft/vscode.git"), "github.com/microsoft/vscode");
 
   // Whatever it answers, it never carries a home directory.
-  for (const p of ["/Users/crisn/x/y", "/home/crisn/x/y", "C:\\Users\\crisn\\x"]) {
-    assert.doesNotMatch(repoLabel(p, null), /Users|home|crisn/);
+  for (const p of ["/Users/jdoe/x/y", "/home/jdoe/x/y", "C:\\Users\\jdoe\\x"]) {
+    assert.doesNotMatch(repoLabel(p, null), /Users|home|jdoe/);
   }
 });
 

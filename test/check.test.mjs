@@ -149,7 +149,7 @@ function assertExamined(report, path) {
  */
 async function railsish(t, { pin = true } = {}) {
   const dir = repo(t, ({ write, commit }) => {
-    for (const n of ["admin", "user", "hubspot", "cim_share"]) {
+    for (const n of ["admin", "user", "billing", "invoice"]) {
       write(`app/mailers/${n}_mailer.rb`, `class ${n}Mailer < ApplicationMailer\nend\n`);
     }
     for (const n of ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]) {
@@ -181,7 +181,7 @@ test("a test added where its own siblings have none is a finding, and one added 
 
   writeFileSync(join(dir, "spec/services/eta_spec.rb"), "RSpec.describe Eta do\nend\n");
   mkdirSync(join(dir, "spec/mailers"), { recursive: true });
-  writeFileSync(join(dir, "spec/mailers/cim_share_mailer_spec.rb"), "RSpec.describe CimShareMailer do\nend\n");
+  writeFileSync(join(dir, "spec/mailers/invoice_mailer_spec.rb"), "RSpec.describe InvoiceMailer do\nend\n");
   git("add", "-A");
   git("commit", "-qm", "specs");
 
@@ -189,7 +189,7 @@ test("a test added where its own siblings have none is a finding, and one added 
   const found = forKey(report, "test_precedent");
 
   assert.equal(found.length, 1, JSON.stringify(found));
-  assert.equal(found[0].path, "spec/mailers/cim_share_mailer_spec.rb");
+  assert.equal(found[0].path, "spec/mailers/invoice_mailer_spec.rb");
   assert.equal(found[0].severity, "FIX");
   assert.match(found[0].reason, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
 });
@@ -396,14 +396,14 @@ test("a test still sitting in the working tree is asked the same question as a c
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
 
   mkdirSync(join(dir, "spec/mailers"), { recursive: true });
-  writeFileSync(join(dir, "spec/mailers/cim_share_mailer_spec.rb"), "RSpec.describe CimShareMailer do\nend\n");
+  writeFileSync(join(dir, "spec/mailers/invoice_mailer_spec.rb"), "RSpec.describe InvoiceMailer do\nend\n");
   git("mv", "spec/services/zeta_spec.rb", "spec/mailers/zeta_mailer_spec.rb");
 
   const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
   const byPath = new Map(found.map((f) => [f.path, f]));
 
   assert.equal(found.length, 2, JSON.stringify(found));
-  assert.equal(byPath.get("spec/mailers/cim_share_mailer_spec.rb").oldPath, null);
+  assert.equal(byPath.get("spec/mailers/invoice_mailer_spec.rb").oldPath, null);
   assert.equal(byPath.get("spec/mailers/zeta_mailer_spec.rb").oldPath, "spec/services/zeta_spec.rb");
 });
 
@@ -417,7 +417,7 @@ test("an unpinned repository still gets the finding at the ceiling its own heade
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
 
   mkdirSync(join(dir, "spec/mailers"), { recursive: true });
-  writeFileSync(join(dir, "spec/mailers/cim_share_mailer_spec.rb"), "RSpec.describe CimShareMailer do\nend\n");
+  writeFileSync(join(dir, "spec/mailers/invoice_mailer_spec.rb"), "RSpec.describe InvoiceMailer do\nend\n");
   git("add", "-A");
   git("commit", "-qm", "spec");
 
@@ -437,7 +437,7 @@ test("a change that invents a directory and fills it is not excused by its own f
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
 
   mkdirSync(join(dir, "spec/mailers"), { recursive: true });
-  for (const n of ["admin", "user", "hubspot"]) {
+  for (const n of ["admin", "user", "billing"]) {
     writeFileSync(join(dir, `spec/mailers/${n}_mailer_spec.rb`), `RSpec.describe ${n} do\nend\n`);
   }
   git("add", "-A");
@@ -4449,8 +4449,8 @@ test("a branch that edits an abstract base is not asked for a spec for it", need
   // controller a finding against a file the map never counted.
   const dir = repo(t, ({ git, write, commit }) => {
     write("app/controllers/api/v1/base_controller.rb", "class Api::V1::BaseController\nend\n");
-    write("app/controllers/api/v1/listings_controller.rb", "class Api::V1::ListingsController\nend\n");
-    write("spec/controllers/api/v1/listings_controller_spec.rb", "describe Api::V1::ListingsController do\nend\n");
+    write("app/controllers/api/v1/products_controller.rb", "class Api::V1::ProductsController\nend\n");
+    write("spec/controllers/api/v1/products_controller_spec.rb", "describe Api::V1::ProductsController do\nend\n");
     commit("init");
     git("checkout", "-q", "-b", "work");
     write("app/controllers/api/v1/base_controller.rb", "class Api::V1::BaseController\n  def x; end\nend\n");
@@ -4946,7 +4946,7 @@ test("a helper in a directory of components is not judged by the components' nam
     write("src/UserCard.tsx", `export const UserCard = () => <div />\n`);
     commit("init");
     git("checkout", "-q", "-b", "work");
-    write("src/syncStatusTooltip.ts", `export const syncStatusTooltip = (x) => x\n`);
+    write("src/loadStateTooltip.ts", `export const loadStateTooltip = (x) => x\n`);
     write("src/orderList.tsx", `export const orderList = () => <div />\n`);
     commit("add");
   });
@@ -5016,7 +5016,7 @@ test("a map with no learned kind judges every file, which is what an older recor
     write("src/UserCard.tsx", `export const UserCard = () => <div />\n`);
     commit("init");
     git("checkout", "-q", "-b", "work");
-    write("src/syncStatusTooltip.ts", `export const syncStatusTooltip = (x) => x\n`);
+    write("src/loadStateTooltip.ts", `export const loadStateTooltip = (x) => x\n`);
     commit("add");
   });
   facts(dir, {
@@ -5112,7 +5112,7 @@ test("an inherited slot is judged over the population its ancestor measured, not
     write("src/api/keep.tsx", `export const Keep = () => <div />\n`);
     commit("init");
     git("checkout", "-q", "-b", "work");
-    write("src/api/syncStatusTooltip.ts", `export const syncStatusTooltip = (x) => x\n`);
+    write("src/api/loadStateTooltip.ts", `export const loadStateTooltip = (x) => x\n`);
     write("src/api/orderList.tsx", `export const orderList = () => <div />\n`);
     commit("add");
   });

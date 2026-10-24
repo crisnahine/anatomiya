@@ -933,7 +933,7 @@ module Api
   end
 end
 
-class Api::V1::QboController < BaseController
+class Api::V1::SmsController < BaseController
 end
 `,
 };
@@ -1871,7 +1871,7 @@ test("the repository's own client is not an http_through_client site", needsRuby
   };
 
   assert.deepEqual(at("app/clients/client.rb"), []);
-  assert.deepEqual(at("app/services/assembly/request.rb"), []);
+  assert.deepEqual(at("app/services/courier/request.rb"), []);
   assert.ok(at("app/services/payment_service.rb").length > 0, "an ordinary service still counts");
   assert.ok(at("app/models/payment_api.rb").length > 0, "and so does a file that merely mentions the vocabulary");
 });
@@ -1953,7 +1953,7 @@ test("a learned-class hit carries the scope its bare names resolve in", needsRub
   // A superclass is evaluated where the declaration is written, so the compact
   // form is written at the top level and its scope is empty.
   const [base] = hits("class_base", "compact_superclass").filter((h) => h.class);
-  assert.equal(base.self, "Api::V1::QboController");
+  assert.equal(base.self, "Api::V1::SmsController");
   assert.deepEqual(base.nesting, [], "the compact form resolves its superclass at the top level");
 });
 

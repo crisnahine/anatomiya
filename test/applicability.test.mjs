@@ -348,7 +348,7 @@ container = document.createElement("div")`,
   type_alias_prefix: {
     lang: "js",
     applicable: [`export type TBar = 1`, `export type Plain = 2`],
-    inapplicable: [`export interface IFoo { a: string }`, `export type TEFLogonStep = 1`],
+    inapplicable: [`export interface IFoo { a: string }`, `export type TQRScannerStep = 1`],
   },
 
   url_segment_case: {

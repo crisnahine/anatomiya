@@ -9,13 +9,13 @@ a `once` flag, a way to know the text is already in the window.
 The short answer is that the build dedupes nothing, and the three cheap levers it does hand over are
 the `if` gate on a handler, the `PostToolBatch` event, and a `SessionStart` with `source: "compact"`.
 
-Every claim below carries its source, in the three kinds the companion notes use: **read**, a string
-or a function recovered from the installed build with its byte offset; **run**, a captured payload or
+Every claim below carries its source, in the three kinds the companion notes use: **read**, behaviour
+read from the installed build, described here rather than quoted; **run**, a captured payload or
 a command and its output on this machine today; **doc**, a first-party page quoted with its URL.
 
 The build read and run against is **Claude Code 2.1.280**, the file
-`<home>/.local/share/claude/versions/2.1.280`, 217,254,576 bytes. Offsets are into that file and are
-one build's addresses. Every `run` is a headless `claude -p` session against
+`<home>/.local/share/claude/versions/2.1.280`, 217,254,576 bytes. What it does is one build's
+behaviour. Every `run` is a headless `claude -p` session against
 `claude-haiku-4-5-20251001` under `--permission-mode bypassPermissions`, in a throwaway project
 directory under the session scratchpad, with the hooks in that directory's own
 `.claude/settings.json` rather than `--settings`.
@@ -105,7 +105,7 @@ Five things a reader can use:
 
 ### The bill, on a real session
 
-**run**, `~/.claude/projects/-Users-crisn-...-anatomiya/20b342f5-a6b9-45d1-99fa-d40b62889448.jsonl`,
+**run**, `~/.claude/projects/<this repository's project directory>/20b342f5-a6b9-45d1-99fa-d40b62889448.jsonl`,
 10,380,040 bytes, 4,582 entries, an ordinary working session in this repository on 2026-09-02:
 
 | measured | value |
@@ -122,14 +122,10 @@ brief is the right order. What the brief does not say is that the session paid i
 
 ### `once` is real, and does nothing in a settings file
 
-**read**, offset 170,745,727, inside the shared command-handler schema `sd()`:
-
-```js
-once:H().optional().describe("If true, hook runs once and is removed after execution"),
-async:H().optional().describe("If true, hook runs in background without blocking"),
-asyncRewake:H().optional().describe("If true, hook runs in background and wakes the model on exit
-  code 2 (blocking error). Implies async."),
-```
+**read**, inside the shared command-handler schema. `once`, `async` and `asyncRewake` are optional
+booleans side by side. The schema describes `once` as running the hook a single time and then removing
+it, `async` as running it in the background without blocking, and `asyncRewake` as running it in the
+background and waking the model when it exits 2, which implies `async`.
 
 **doc**, [Hooks reference](https://code.claude.com/docs/en/hooks), the handler field table:
 
@@ -151,95 +147,78 @@ route this plugin can take.
 
 ### `suppressOutput` is about the terminal, not the model
 
-**read**, offset 172,029,317, the common (non-event-specific) hook output schema:
+**read**, the common (non-event-specific) hook output schema. Its optional fields include `continue`,
+`suppressOutput`, `stopReason`, `decision` (`approve` or `block`), `systemMessage`, `terminalSequence`
+(a terminal escape sequence such as a desktop notification) and `reason`.
 
-```js
-ZN=p(()=>u({continue:H().optional(),suppressOutput:H().optional(),stopReason:o().optional(),
-  decision:V(["approve","block"]).optional(),systemMessage:o().optional(),
-  terminalSequence:o().optional().describe("A terminal escape sequence (e.g. OSC 9 / OSC 777
-    desktop-notification) …"),reason:o().optional(), …}))
-```
-
-It sits beside `terminalSequence` and `systemMessage`, both display-side. Nothing in the schema or
+`suppressOutput` sits beside `terminalSequence` and `systemMessage`, both display-side. Nothing in the schema or
 the docs makes it a context field, and nothing anywhere in the output union carries a dedupe key, a
 content hash, a TTL, or a "replace my previous context" verb. That was searched for and not found.
 
 ### What each event's output actually allows
 
-**read**, offsets 172,023,800 to 172,029,400, the whole `hookSpecificOutput` union, transcribed for
-the events this plugin touches:
+**read**, the whole `hookSpecificOutput` union. For the events this plugin touches, every field is
+optional apart from `hookEventName`:
 
-```js
-kN = {hookEventName:"UserPromptSubmit", additionalContext?, sessionTitle?, suppressOriginalPrompt?}
-xN = {hookEventName:"SessionStart",     additionalContext?, initialUserMessage?, sessionTitle?,
-                                        watchPaths?, reloadSkills?}
-BN = {hookEventName:"PostToolUse",      additionalContext?, classifierContext?, updatedToolOutput?,
-                                        updatedMCPToolOutput?}
-qN = {hookEventName:"PostToolUseFailure", additionalContext?}
-HN = {hookEventName:"PostToolBatch",    additionalContext?}
-KN = {hookEventName:"Stop",             additionalContext?}
-FN = {hookEventName:"SubagentStop",     additionalContext?}
-```
+| `hookEventName` | fields |
+|---|---|
+| `UserPromptSubmit` | `additionalContext`, `sessionTitle`, `suppressOriginalPrompt` |
+| `SessionStart` | `additionalContext`, `initialUserMessage`, `sessionTitle`, `watchPaths`, `reloadSkills` |
+| `PostToolUse` | `additionalContext`, `classifierContext`, `updatedToolOutput`, `updatedMCPToolOutput` |
+| `PostToolUseFailure` | `additionalContext` |
+| `PostToolBatch` | `additionalContext` |
+| `Stop` | `additionalContext` |
+| `SubagentStop` | `additionalContext` |
 
-and there is **no `PostCompact` entry in that union at all**. Searched for
-`hookEventName:R("PostCompact")`: no hit. The only `R("PostCompact")` in the build is at offset
-172,017,658, in the *input* schema. So `PostCompact` reads a payload and cannot answer with context.
+and there is **no `PostCompact` entry in that union at all**. A search for an output entry keyed on
+`PostCompact` found none. The only place the build pins an event name to `PostCompact` is the *input*
+schema. So `PostCompact` reads a payload and cannot answer with context.
 
-Two of these are worth naming for later work. `PostToolUse.updatedToolOutput` "Replaces the tool
-output before it is sent to the model" (**read**, same block), which is a way to fold a claim into the
-result rather than add a block beside it. And `SessionStart.reloadSkills`, "Re-scan skill and command
-directories after SessionStart hooks complete".
+Two of these are worth naming for later work. `PostToolUse.updatedToolOutput` replaces the tool output
+before the model sees it (**read**, same block), which is a way to fold a claim into the result rather
+than add a block beside it. And `SessionStart.reloadSkills`, which re-scans the skill and command
+directories once the `SessionStart` hooks finish.
 
 ### `PostToolBatch`: one delivery per batch instead of per tool
 
-**read**, offset ~172,012,900, the input schema, with its own describe string:
+**read**, the input schema. It extends the common base with `hook_event_name` set to `PostToolBatch`
+and a `tool_calls` array. Its own description says the event fires once after every call in a batch has
+resolved and before the next model request, and contrasts it with `PostToolUse`, which fires per tool
+and may run concurrently for parallel calls.
 
-```js
-Jw=p(()=>N().and(u({hook_event_name:R("PostToolBatch"),tool_calls:k(Qw())}))
-  .describe("Hook input for the PostToolBatch event. Fired once after every tool call in a batch has
-   resolved, before the next model request. PostToolUse fires per-tool and may run concurrently for
-   parallel tool calls; PostToolBatch fires exactly once with the full batch."))
-```
-
-`Qw` is `{tool_name, tool_input, tool_use_id, tool_response?}`, so the batch payload names every call
-in it. Read, not run: no `PostToolBatch` payload was captured here.
+Each entry in `tool_calls` carries `tool_name`, `tool_input`, `tool_use_id` and an optional
+`tool_response`, so the batch payload names every call in it. Read, not run: no `PostToolBatch` payload was captured here.
 
 ## 3. Every field on every payload this plugin sees, on 2.1.280
 
-**read**, offset 172,009,566, the common base `N()` that every hook input extends:
+**read**, the common base that every hook input extends. `session_id`, `transcript_path` and `cwd` are
+always there. The rest are optional, and the build's field descriptions say this about them:
 
-```js
-N=p(()=>u({session_id:o(),transcript_path:o(),cwd:o(),
-  prompt_id:o().optional().describe("UUID correlating a user prompt with all subsequent events until
-    the next prompt. … Absent until the first user input of the process lifetime."),
-  permission_mode:o().optional(),
-  agent_id:o().optional().describe("Subagent identifier. Present only when the hook fires from within
-    a subagent (e.g., a tool called by an AgentTool worker). Absent for the main thread, even in
-    --agent sessions. Use this field (not agent_type) to distinguish subagent calls from
-    main-thread calls."),
-  agent_type:o().optional().describe('Agent type name (e.g., "general-purpose", "code-reviewer").
-    Present when the hook fires from within a subagent (alongside agent_id), or on the main thread of
-    a session started with --agent (without agent_id).'),
-  effort:u({level:o().describe('Active effort level for the current turn …')}).optional()
-    .describe("… Present for hooks that fire within a tool-use context (PreToolUse, PostToolUse,
-     Stop, SubagentStop, etc.) on a model that supports the effort parameter; absent for
-     session-lifecycle hooks and models without effort support.")}))
-```
+- `prompt_id` ties a user prompt to every event that follows until the next prompt, and is absent
+  until the process sees its first user input.
+- `permission_mode` has no description.
+- `agent_id` is present only when the hook fires inside a subagent, absent on the main thread even in
+  an `--agent` session, and is the field to use, not `agent_type`, to tell subagent calls from
+  main-thread calls.
+- `agent_type` is present inside a subagent, beside `agent_id`, and also on the main thread of a
+  session started with `--agent`, without `agent_id`.
+- `effort` is an object with a `level`. It is present for hooks that fire in a tool-use context
+  (`PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop` and others) on a model that takes the effort
+  parameter, and absent on session-lifecycle hooks and on models without effort support.
 
-and the per-event additions (**read**, offsets 172,010,900 to 172,018,000):
+and the per-event additions (**read**), with `?` marking an optional field:
 
-```js
-Yw = PreToolUse         + {tool_name, tool_input, tool_use_id, mcp_server?}
-$w = PostToolUse        + {tool_name, tool_input, tool_response, tool_use_id, duration_ms?, mcp_server?}
-Xw = PostToolUseFailure + {tool_name, tool_input, tool_use_id, error, is_interrupt?, duration_ms?, mcp_server?}
-rN = SessionStart       + {source: "startup"|"resume"|"clear"|"compact"|"fork", agent_type?, model?,
-                           session_title?, seconds_since_last_response?, context_tokens?}
-cN = PreCompact         + {trigger: "manual"|"auto", custom_instructions (nullable)}
-dN = PostCompact        + {trigger: "manual"|"auto", compact_summary}
-```
+| event | adds |
+|---|---|
+| `PreToolUse` | `tool_name`, `tool_input`, `tool_use_id`, `mcp_server?` |
+| `PostToolUse` | `tool_name`, `tool_input`, `tool_response`, `tool_use_id`, `duration_ms?`, `mcp_server?` |
+| `PostToolUseFailure` | `tool_name`, `tool_input`, `tool_use_id`, `error`, `is_interrupt?`, `duration_ms?`, `mcp_server?` |
+| `SessionStart` | `source` (`startup`, `resume`, `clear`, `compact` or `fork`), `agent_type?`, `model?`, `session_title?`, `seconds_since_last_response?`, `context_tokens?` |
+| `PreCompact` | `trigger` (`manual` or `auto`), `custom_instructions` (nullable) |
+| `PostCompact` | `trigger` (`manual` or `auto`), `compact_summary` |
 
-`duration_ms` is documented in the build as "Tool execution time in milliseconds. Excludes
-permission-prompt and hook time."
+The build describes `duration_ms` as the tool's run time in milliseconds, not counting permission
+prompts or hooks.
 
 ### Captured, so the optional fields are settled
 
@@ -274,8 +253,8 @@ agent_id = None   agent_type = None   effort = None
 ```
 
 **So yes: a `PostToolUse` hook can tell it runs inside a subagent.** `agent_id` present means
-subagent, absent means main thread, and the build's own describe string says to key on that field and
-not on `agent_type`, because `agent_type` is also set on the main thread of an `--agent` session.
+subagent, absent means main thread, and the build's own field description says to key on that field
+and not on `agent_type`, because `agent_type` is also set on the main thread of an `--agent` session.
 `session_id` and `transcript_path` stay the parent's in both, so neither distinguishes anything.
 
 `SessionStart`. Five fields and no more; no `prompt_id`, no `permission_mode`, no `effort`:
@@ -304,18 +283,11 @@ not on `agent_type`, because `agent_type` is also set on the main thread of an `
   "agent_transcript_path": "…" }
 ```
 
-**read**, offset 179,456,275, the builder that makes both, confirming the field set and that
-`last_assistant_message` is the trimmed text of the last assistant message rather than a whole
-message object:
-
-```js
-let he=y?sh(y):void 0, _e=he?Qr(he.message.content,"\n").trim()||void 0:void 0,
-    ve={background_tasks:vPt(h.taskRegistry.all()),session_crons:TPt()},
-    Ee=jl(h.session,ne(),e,h),
-    xe=g?{...Ee,hook_event_name:"SubagentStop",stop_hook_active:s,agent_id:g,
-          agent_transcript_path:Vd(g),agent_type:w??Ee.agent_type??"",last_assistant_message:_e,...ve}
-       :{...Ee,hook_event_name:"Stop",stop_hook_active:s,last_assistant_message:_e,...ve};
-```
+**read**, the builder that makes both. It confirms the field set, and that `last_assistant_message`
+is the last assistant message's text content, joined with newlines and trimmed, rather than a whole
+message object. Both events get the common base, `stop_hook_active`, `last_assistant_message`,
+`background_tasks` and `session_crons`. `SubagentStop` adds `agent_id`, `agent_transcript_path` and
+`agent_type`.
 
 **doc**, [Hooks reference](https://code.claude.com/docs/en/hooks), on why that field is there and the
 transcript is not the answer:
@@ -329,18 +301,13 @@ That matters directly to `reuse.mjs`, which reads its own marks back out of the 
 
 ### The Stop block cap
 
-**read**, offset 184,687,526:
+**read**, the stop-hook loop. It reads the cap from `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`, falling back to
+8, and once the count of consecutive blocks passes the cap it ends the turn with a warning to the user.
+The warning names the count, tells Stop and SubagentStop hooks to check `stop_hook_active` and return
+success while it is true, and names the env var that raises the limit.
 
-```js
-let vt=a.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP??8;
-if(vt>0&&bt>vt)return i("tengu_stop_hook_block_count",{…,hit_cap:!0,…}),
-  yield Gt(`A hook blocked the turn from ending ${bt} consecutive times — overriding and ending turn. `
-    +"For Stop/SubagentStop hooks, check stop_hook_active in the input and return success while it's "
-    +"true. Set CLAUDE_CODE_STOP_HOOK_BLOCK_CAP to raise this limit.","warning"),
-```
-
-**Default 8.** Set it to `0` and the cap is off entirely, since the guard is `vt>0&&bt>vt`. The
-counter is consecutive blocks within a turn; the warning text is the one the user sees. The env var
+**Default 8.** Set it to `0` and the cap is off entirely, since the check only applies when the cap is
+above 0. The counter is consecutive blocks within a turn; the warning is the one the user sees. The env var
 appears in no first-party documentation found.
 
 ## 4. Knowing the map is already in the window
@@ -372,7 +339,7 @@ scan the tail for its own text (or its own sentinel, the way `reuse.mjs` already
       "uuids": [ 9 uuids ], "allUuids": [ 12 uuids ] } },
   "uuid": "00d829a2-f162-4692-851c-ad62d5a85ab6",
   "timestamp": "2026-09-02T02:16:20.715Z", "userType": "external", "entrypoint": "cli",
-  "cwd": "/Users/crisn/Documents/Projects/BESTTOOLFORCODING/anatomiya" }
+  "cwd": "<checkout>" }
 ```
 
 So `type: "system"`, `subtype: "compact_boundary"`, and `compactMetadata.preservedMessages.allUuids`
@@ -424,29 +391,23 @@ in-memory conversation, so the last entry or two may be missing when a hook fire
 
 ### `PreCompact` and `PostCompact`
 
-**read**, offset 179,441,857 (`Mle`) and 179,443,043 (`pXe`), the two runners:
+**read**, the two runners:
 
 - `PreCompact` input `{trigger, custom_instructions}`. Its **stdout is used**: the successful,
   non-blocking hooks' trimmed output is joined and returned as `newCustomInstructions`, which becomes
   the compaction's instructions. A `PreCompact` hook can also block, and the runner collects
   `blockedBy`.
-- `PostCompact` input `{trigger, compact_summary}`, where `compact_summary` is "The conversation
-  summary produced by compaction". Its runner returns only `userDisplayMessage`. There is no
+- `PostCompact` input `{trigger, compact_summary}`, where `compact_summary` is the summary the
+  compaction produced. Its runner returns only `userDisplayMessage`. There is no
   `PostCompact` entry in the `hookSpecificOutput` union, so it cannot return `additionalContext`.
 
 The post-compaction injection route is `SessionStart` with `source: "compact"`, not `PostCompact`.
 
 ## 5. The `if` gate
 
-**read**, offset 170,744,571:
-
-```js
-var gt=p(()=>o().optional().describe('Permission rule syntax to filter when this hook runs
-  (e.g., "Bash(git *)"). Only runs if the tool call matches the pattern. Avoids spawning hooks for
-  non-matching commands.'));
-```
-
-and it is a field of the shared command-handler schema, beside `timeout` and `once`.
+**read**. `if` is an optional string field of the shared command-handler schema, beside `timeout` and
+`once`. The build describes it as a permission rule that the tool call has to match for the hook to
+run, so that no hook process is spawned for a call that does not match.
 
 **doc**, [Hooks reference](https://code.claude.com/docs/en/hooks), the handler table:
 
@@ -454,8 +415,8 @@ and it is a field of the shared command-handler schema, beside `timeout` and `on
 > - tool events only
 
 **run**, measured above: `"if": "Read(**/b.txt)"` on a `"matcher": "*"` handler fired once across
-three `Read` calls, on the matching file only. "Avoids spawning hooks" is the load-bearing phrase:
-this is cheaper than a hook that starts, decides it has nothing to say, and exits.
+three `Read` calls, on the matching file only. Not spawning the hook is the load-bearing part: this is
+cheaper than a hook that starts, decides it has nothing to say, and exits.
 
 ## What is a documented contract
 
@@ -537,8 +498,8 @@ To count what a session spent, walk its JSONL for `type === "attachment"` and
 boundary, look for `subtype === "compact_boundary"` and read
 `compactMetadata.preservedMessages.allUuids`.
 
-The build reads use `LC_ALL=C grep -a -b -o -F '<literal>'` for offsets, then
-`tail -c +$((offset-N)) | head -c M`. The file is 217 MB and a wide context pattern is refused by the
+The build reads use `LC_ALL=C grep -a -b -o -F '<literal>'` to find a known string, then
+`tail -c +$((offset-N)) | head -c M` to read a window around it. The file is 217 MB and a wide context pattern is refused by the
 stock macOS `grep`. `scripts/claude-build.mjs` holds this repository's build reader.
 
 ## Sources
@@ -547,14 +508,11 @@ First-party documentation:
 
 - [Anthropic, Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 
-The installed build, `<home>/.local/share/claude/versions/2.1.280`, 217,254,576 bytes. Named sites:
-the common input schema `N` at 172,009,566; the per-event input schemas `Yw`, `$w`, `Xw`, `Jw`, `rN`,
-`cN`, `dN` between 172,010,900 and 172,018,000; the `hookSpecificOutput` union at 172,023,800 to
-172,029,400, with the common output schema `ZN` at 172,029,317; the command-handler schema `sd` and
-the `if` describe `gt` at 170,743,500 and 170,744,571, with `once` at 170,745,727; the `PreCompact`
-runner `Mle` at 179,441,857 and the `PostCompact` runner `pXe` at 179,443,043; the `SessionStart`
-runner `Qtr` at 179,452,629; the `Stop` / `SubagentStop` builder `Fte` at 179,456,275; the stop-hook
-block cap at 184,687,526.
+The installed build, `<home>/.local/share/claude/versions/2.1.280`, 217,254,576 bytes. Sites read,
+described above rather than quoted: the common input schema; the per-event input schemas, including
+`PostToolBatch`; the `hookSpecificOutput` union and the common output schema; the command-handler
+schema with its `if` and `once` fields; the `PreCompact`, `PostCompact` and `SessionStart` runners; the
+`Stop` / `SubagentStop` input builder; the stop-hook block cap.
 
 This repository:
 
@@ -609,7 +567,7 @@ this. Where a mark can be written into the assistant's own text, read it from th
 the file.
 
 And a hook can now tell a subagent from the main thread: `agent_id` present means subagent, and the
-build's own describe string says to key on that and not on `agent_type`. If the map should not be
+build's own field description says to key on that and not on `agent_type`. If the map should not be
 re-injected into every `Explore` worker's window, that is the one-line test.
 
 ## What was built

@@ -6,6 +6,8 @@
  * `.wasm`, so the plugin carries the `.wasm` alone and the packages stay dev
  * dependencies of the marketplace. The manifest beside the copies records what
  * each one is, and `--check` refuses a copy that is not its package's file.
+ * Each package is MIT, and its license asks that its notice travel with every
+ * copy, so `LICENSES.md` beside them carries each one as its package ships it.
  */
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -29,9 +31,42 @@ export const GRAMMARS = {
 };
 
 const MANIFEST = "grammars.json";
+const NOTICES = "LICENSES.md";
 
 const vendoredIn = (root) => join(root, REL.anatomiya, "grammars");
 const installedIn = (root, { package: name, source }) => join(root, "node_modules", name, source);
+
+// A Windows checkout turns this file's line endings to CRLF, and npm installs the licenses with LF.
+const unix = (text) => text.replace(/\r\n/g, "\n");
+
+const LICENSE_FIX = "run npm ci --ignore-scripts, or read the file the package now ships its license in";
+
+/**
+ * Each grammar's package license, under the package and the version the
+ * lockfile pins, and the packages whose LICENSE is not there. Read off the
+ * packages and not the manifest, so a manifest fault is reported once.
+ */
+function noticesFor(root, versionOf) {
+  const parts = [
+    "# Grammar licenses",
+    "",
+    "Each `.wasm` file in this directory is a copy of the one its npm package ships, and each package's",
+    "license asks that its notice travel with every copy.",
+    "",
+  ];
+  const missing = [];
+  for (const [id, { package: name }] of Object.entries(GRAMMARS)) {
+    let license;
+    try {
+      license = readFileSync(join(root, "node_modules", name, "LICENSE"), "utf8");
+    } catch {
+      missing.push(name);
+      continue;
+    }
+    parts.push(`## ${name} ${versionOf(name)}`, "", `\`${id}.wasm\``, "", "```text", unix(license).trimEnd(), "```", "");
+  }
+  return { text: parts.join("\n"), missing };
+}
 
 /** The hash of a file, or null where there is none to read. */
 function sha256Of(path) {
@@ -54,6 +89,11 @@ export async function vendor(root) {
   await Parser.init();
   const dir = vendoredIn(root);
   const locked = lockedIn(root);
+  // Refused before a copy is written, so a half-vendored set never ships without its licenses.
+  const notices = noticesFor(root, locked);
+  if (notices.missing.length) {
+    throw new Error(`no LICENSE under node_modules for ${notices.missing.join(", ")}; ${LICENSE_FIX}`);
+  }
   mkdirSync(dir, { recursive: true });
   const entries = [];
   for (const [id, grammar] of Object.entries(GRAMMARS)) {
@@ -66,6 +106,7 @@ export async function vendor(root) {
     entries.push({ id, package: grammar.package, version, source: grammar.source, file, sha256, abi: abiVersion });
   }
   writeFileSync(join(dir, MANIFEST), `${JSON.stringify(entries, null, 2)}\n`);
+  writeFileSync(join(dir, NOTICES), notices.text);
   return entries;
 }
 
@@ -88,7 +129,8 @@ export function check(root) {
   }
 
   const problems = [];
-  const listed = new Set([MANIFEST]);
+  const listed = new Set([MANIFEST, NOTICES]);
+  const uninstalled = new Set();
   for (const entry of entries) {
     const grammar = typeof entry?.id === "string" && Object.hasOwn(GRAMMARS, entry.id) ? GRAMMARS[entry.id] : null;
     if (grammar === null) {
@@ -112,7 +154,10 @@ export function check(root) {
     else if (vendored !== entry.sha256) problems.push(`${at}/${file} does not hash to its manifest entry`);
     const installed = sha256Of(installedIn(root, grammar));
     const named = `node_modules/${grammar.package}/${grammar.source}`;
-    if (installed === null) problems.push(`${named} is not installed, so nothing holds ${file} to it; run npm ci --ignore-scripts`);
+    if (installed === null) {
+      uninstalled.add(grammar.package);
+      problems.push(`${named} is not installed, so nothing holds ${file} to it; run npm ci --ignore-scripts`);
+    }
     else if (installed !== entry.sha256) problems.push(`${named} does not hash to the manifest entry for ${entry.id}`);
     // A lockfile moved with no install after it leaves the old package's file here under the new version.
     const has = installed === null ? version : manifestVersion(join(root, "node_modules", grammar.package), grammar.package);
@@ -120,6 +165,18 @@ export function check(root) {
   }
   for (const id of Object.keys(GRAMMARS)) {
     if (!listed.has(`${id}.wasm`)) problems.push(`${id} has no manifest entry in ${at}/${MANIFEST}`);
+  }
+  const notices = noticesFor(root, locked);
+  let shipped = null;
+  try {
+    shipped = unix(readFileSync(join(dir, NOTICES), "utf8"));
+  } catch {}
+  // A package that is not installed is already said above, and its license with it.
+  for (const name of notices.missing.filter((n) => !uninstalled.has(n))) {
+    problems.push(`node_modules/${name}/LICENSE is not there, so nothing holds ${at}/${NOTICES} to it; ${LICENSE_FIX}`);
+  }
+  if (notices.missing.length === 0 && shipped !== notices.text) {
+    problems.push(`${at}/${NOTICES} is not the licenses the installed packages carry; run npm run grammars`);
   }
   // A link hashes as its target here and ships as a link, which an installed plugin cannot follow.
   for (const found of readdirSync(dir, { withFileTypes: true }).sort((a, b) => byCode(a.name, b.name))) {

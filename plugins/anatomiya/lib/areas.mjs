@@ -509,7 +509,7 @@ function reachable(area, uncounted, bare) {
  *
  * One recursive glob from the area root was wrong wherever a deeper directory
  * became its own area. `app/workers/workers/**` matched
- * `app/workers/workers/google`, which had measured the same dimension over its
+ * `app/workers/workers/imports`, which had measured the same dimension over its
  * own files and been suppressed by the ratio gate at 0.64; the ancestor's
  * directive was then delivered to the directory that failed the gate, counted
  * over a population that directory is not part of. The gates stop a claim being

@@ -649,13 +649,13 @@ test("prefixClass answers for a name that can say, and says nothing for one that
   assert.equal(prefixClass("Comment"), "none");
   assert.equal(prefixClass("iFoo"), "none");
   // Three leading capitals reads both ways and the classifier cannot tell
-  // which: `IEFLogon` is `I` on the `EFLogon` of the directory it sits in, and
+  // which: `IQRScanner` is `I` on the `QRScanner` of the directory it sits in, and
   // `IOStream` is an acronym carrying no prefix. Charged as a violation, the
-  // only way to comply was to write `IIEFLogon`.
+  // only way to comply was to write `IIQRScanner`.
   assert.equal(prefixClass("IO"), null, "a two-letter acronym cannot say");
   assert.equal(prefixClass("IOStream"), null, "and neither can a three-letter one");
-  assert.equal(prefixClass("IEFLogon"), null);
-  assert.equal(prefixClass("TEFLogonStep"), null);
+  assert.equal(prefixClass("IQRScanner"), null);
+  assert.equal(prefixClass("TQRScannerStep"), null);
 });
 
 test("prefixClass says nothing for two capitals and a digit", async () => {
@@ -742,7 +742,7 @@ test("interface_prefix and type_alias_prefix vote per declared name", async () =
   const t = await astHits("type_alias_prefix", `
     type TBar = 1
     type Plain = 2
-    type TEFLogonStep = 3
+    type TQRScannerStep = 3
   `);
   assert.equal(t.length, 2);
   assert.deepEqual(t.map((x) => x.class), ["T", "none"]);
@@ -1577,7 +1577,7 @@ test("a superclass written relative to its enclosing namespace is the class it r
     "a different name is a different class however it is nested"
   );
   assert.equal(
-    sameConstant("Api::V1::ChromeExtension::BaseController", "Api::V1::BaseController", ["Api::V1"]),
+    sameConstant("Api::V1::PhoneApp::BaseController", "Api::V1::BaseController", ["Api::V1"]),
     false,
     "a scoped name already says which class it means"
   );
@@ -1588,9 +1588,9 @@ test("a controller area counts the relative and the scoped spelling as one base"
   // above the 0.90 gate together, under it counted apart.
   const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const scoped = Array.from({ length: 8 }, (_, i) => `app/controllers/api/v1/s${i}.rb`);
-  const relative = ["app/controllers/api/v1/qbo_controller.rb", "app/controllers/api/v1/notes_controller.rb"];
+  const relative = ["app/controllers/api/v1/sms_controller.rb", "app/controllers/api/v1/notes_controller.rb"];
   const rels = [...scoped, ...relative];
-  // `module Api::V1; class QboController`, which is how the four relative ones
+  // `module Api::V1; class SmsController`, which is how the four relative ones
   // are written: the nesting is what the bare superclass resolves against.
   const className = (rel) => `Api::V1::${rel.slice(rel.lastIndexOf("/") + 1, -3)}`;
   const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
@@ -1615,7 +1615,7 @@ test("a controller area counts the relative and the scoped spelling as one base"
 
 test("a compact class name resolves its superclass at the top level, not inside itself", async () => {
   // Ruby evaluates the superclass expression in the scope the class is written
-  // in. `class Api::V1::Qbo < BaseController` is written at the top level, so
+  // in. `class Api::V1::Sms < BaseController` is written at the top level, so
   // the bare name is `::BaseController`; only bodies actually nested in
   // `module Api::V1` resolve it to `Api::V1::BaseController`. The site's own
   // qualified name cannot tell the two apart, because both read back alike.

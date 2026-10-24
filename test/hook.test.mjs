@@ -917,7 +917,7 @@ function railsish(t) {
 test("the declared notice, run the way the loader runs it, answers for the path about to be written", (t) => {
   const dir = railsish(t);
 
-  const run = fireNotice(dir, join(dir, "spec/mailers/cim_share_mailer_spec.rb"));
+  const run = fireNotice(dir, join(dir, "spec/mailers/invoice_mailer_spec.rb"));
 
   assert.equal(run.status, 0, run.signal === null ? run.stderr : `killed by ${run.signal}: the hook did not answer`);
   const answer = JSON.parse(run.stdout);
@@ -935,11 +935,11 @@ test("a path something is already at is not a path being chosen", (t) => {
   // The directory holds no other test either way, which is what keeps this case
   // on the guard it is named for rather than on the one a level below it.
   const dir = railsish(t);
-  const spec = join(dir, "spec/mailers/cim_share_mailer_spec.rb");
+  const spec = join(dir, "spec/mailers/invoice_mailer_spec.rb");
 
   assert.match(JSON.parse(fireNotice(dir, spec).stdout).hookSpecificOutput.additionalContext, /holds no other test/);
 
-  writeFileSync(spec, "RSpec.describe CimShareMailer do; end\n");
+  writeFileSync(spec, "RSpec.describe InvoiceMailer do; end\n");
   assert.deepEqual(JSON.parse(fireNotice(dir, spec).stdout), {});
 });
 
@@ -984,7 +984,7 @@ test("the notice answers an object and exits 0 for anything it cannot decide", (
 
 test("the notice answers an object and exits 0 with no event, no payload and a payload past the bound", (t) => {
   const dir = railsish(t);
-  const spec = join(dir, "spec/mailers/cim_share_mailer_spec.rb");
+  const spec = join(dir, "spec/mailers/invoice_mailer_spec.rb");
 
   assert.deepEqual(JSON.parse(fireNotice(dir, spec, null).stdout), {}, "no event name");
 
@@ -1155,7 +1155,7 @@ test("settings this did not write are left exactly as they were", (t) => {
   const mine = {
     permissions: { allow: ["Bash(bundle exec rspec:*)"], deny: [], ask: [] },
     hooks: {
-      PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "bash ./block-heroku.sh" }] }],
+      PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "bash ./block-deploy.sh" }] }],
       PostToolUse: [
         { matcher: "Edit", hooks: [{ type: "command", command: "bash ./fmt.sh" }] },
         { matcher: "*", hooks: [{ type: "command", command: HOOK_COMMAND }] },

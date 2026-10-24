@@ -10,7 +10,7 @@ Every claim below carries its source. Three kinds of source were used, and nothi
 | Source | How it is cited |
 |---|---|
 | Anthropic's documentation | The `.md` URL, its section heading, and the line number in the raw Markdown fetched 2026-08-23 |
-| The installed CLI binary | `~/.local/share/claude/versions/2.1.241`, plus the exact symbol or string found in it |
+| The installed CLI build | Version 2.1.241. Its behaviour is described in plain words, never quoted |
 | Behaviour of `claude plugin validate` | The fixture and the verbatim output |
 
 The docs moved: `docs.claude.com/en/docs/claude-code/plugins` returns `301` to
@@ -46,9 +46,10 @@ Three, and validation fails without any of them
 A set of marketplace names is reserved for Anthropic and is re-checked on every load, not only when the
 marketplace is added, so a name can become reserved under an already-registered marketplace and stop it
 loading (L165-169). The list includes `claude-plugins-official`, `anthropic-plugins`, `agent-skills`,
-`first-party-plugins` and `healthcare`, and a regex blocks names that impersonate those. The same reserved
-strings appear in the binary alongside the pattern
-`(?:official[^a-z0-9]*(anthropic|claude)|(?:anthropic|claude)[^a-z0-9]*official|...)`.
+`first-party-plugins` and `healthcare`, and a pattern blocks names that impersonate those. The 2.1.241
+build checks the same reserved names, and among the forms its pattern blocks is any name that pairs
+`official` with `anthropic` or `claude`, in either order, with only non-alphanumeric characters between
+them.
 
 ### Optional fields
 
@@ -127,12 +128,10 @@ The marketplaces page addresses the case directly under "Advanced plugin entries
 > of the listed paths exist, the default scan runs instead.
 
 So a root-sourced entry **inverts the `skills` rule**. Everywhere else `skills` adds to the default
-`skills/` scan; under a marketplace-root source, naming subdirectories replaces it. The same exception is
-written into the CLI's own schema description, recovered from the binary:
-
-> Path to a skill directory, relative to the plugin root ("." / "./" denote the plugin root itself). Loaded
-> in addition to the skills/ directory (except: for a marketplace entry whose source resolves to the
-> marketplace root, declaring a specific subdirectory replaces the skills/ scan).
+`skills/` scan; under a marketplace-root source, naming subdirectories replaces it. The 2.1.241 build's
+own schema for `skills` states the same exception: a skill path is relative to the plugin root, `"."` and
+`"./"` both mean the root itself, and a listed path adds to the `skills/` scan except in a marketplace
+entry whose source is the marketplace root, where a specific subdirectory replaces the scan.
 
 Confirmed by validating a two-plugin fixture, one entry at `"./"` and one at `"./second"`:
 
@@ -152,8 +151,9 @@ derives the plugin name from the directory name"
 
 If present, `name` is the only required field (L460). Kebab-case, no spaces. It is what namespaces every
 component: agent `agent-creator` in plugin `plugin-dev` appears as `plugin-dev:agent-creator` (L466-468).
-The binary enforces `^[a-z0-9](?:[a-z0-9._-]*[a-z0-9_-])?$` and rejects empty names, spaces, and path
-separators with dedicated messages.
+The 2.1.241 build allows only lowercase letters, digits, dots, underscores and hyphens, requires the name
+to start with a letter or digit and not to end with a dot. Anything else is rejected, and empty names,
+spaces and path separators each get a dedicated message.
 
 When a marketplace entry lists the plugin under a different name, **the marketplace entry name wins** for
 `enabledPlugins` keys and `/plugin` (L464).
@@ -222,15 +222,14 @@ which names it explicitly (L643).
 Every path field accepts either (L651: "Multiple paths can be specified as arrays"). The three merge-rule
 fields additionally accept an object, which is the config inline rather than a path to it (L531-534).
 
-The CLI's schema, read out of the binary, shows `mcpServers` accepting more forms than the docs table lists:
-a path string, an MCPB or DXT bundle path or URL, an inline map keyed by server name, or an array mixing all
-three. The binary carries the messages `MCPB file path must end with .mcpb or .dxt` and
-`Path to MCPB file relative to plugin root`. The `.mcpb`/`.dxt` form is not in the docs table.
+The 2.1.241 build's schema accepts more forms for `mcpServers` than the docs table lists: a path string,
+an MCPB or DXT bundle path or URL relative to the plugin root, an inline map keyed by server name, or an
+array mixing all three. The schema also checks that a bundle path ends in `.mcpb` or `.dxt`. That
+form is not in the docs table.
 
-The same schema shows `commands` entries may be **objects**, not only path strings, with keys
-`source` (a file path) or `content` (inline Markdown, and "Command must have either "source" (file path) or
-"content" (inline markdown), but not both"), plus `description`, `argument-hint`, `model` and
-`allowed-tools`. The docs describe `commands` only as `string|array`.
+The same schema accepts `commands` entries as **objects**, not only path strings. An object carries
+either `source` (a file path) or `content` (inline Markdown), never both, plus `description`,
+`argument-hint`, `model` and `allowed-tools`. The docs describe `commands` only as `string|array`.
 
 ### Paths pointing outside the plugin root
 
@@ -248,8 +247,8 @@ Validated with `"agents": "../outside/agents"`:
 ✘ Validation failed
 ```
 
-The binary carries the matching runtime message:
-`Paths in plugin.json must not use ".." to reference files outside the plugin directory`.
+The runtime loader refuses the same path, saying that a path in `plugin.json` may not use `..` to
+reach outside the plugin directory.
 
 There is a second, independent reason it cannot work: the plugin is **copied** into
 `~/.claude/plugins/cache`, so files outside its directory are simply not there (L813-815). Even if the path
@@ -307,16 +306,12 @@ There are three variables, not one:
 that survives updates, at `~/.claude/plugins/data/{id}/`), and `${CLAUDE_PROJECT_DIR}` (the project root)
 (L677-681).
 
-The implementation is one function in the binary, and it substitutes all three together:
-
-```js
-function _1e(e,t){let r=(o)=>o,n=e.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g,()=>r(t.path));
-if(n=n.replace(/\$\{CLAUDE_PROJECT_DIR\}/g,()=>r(fl())),t.source){let o=t.source;
-n=n.replace(/\$\{CLAUDE_PLUGIN_DATA\}/g,()=>r(Bgt(o)))}return n}
-```
+In the 2.1.241 build one helper substitutes all three together. It replaces `${CLAUDE_PLUGIN_ROOT}`
+with the plugin path and `${CLAUDE_PROJECT_DIR}` with the project root, and it replaces
+`${CLAUDE_PLUGIN_DATA}` only when the plugin has a source.
 
 Whether a given field is substituted is therefore a question of whether the loader passes that field through
-`_1e`. Each surface, answered separately.
+that helper. Each surface, answered separately.
 
 ### Hook commands: yes
 
@@ -329,20 +324,12 @@ quotes (L462, L596).
 
 ### Command Markdown files: yes
 
-The docs table says only "Skill and agent content" (L687), which reads as though flat `commands/*.md` files
-are excluded. They are not. The binary handles both through one function, and the branch label proves the
-scope:
-
-```js
-u=$me(a.description,e),u=c??Stt(l,i?"Plugin skill":"Plugin command"),
-p=Gq.dirname(t.filePath),f=(Y)=>{let W=_1e(Y,{path:o,source:r});
-if(s.isSkillMode)W=W.replace(/\$\{CLAUDE_SKILL_DIR\}/g,()=>p);return W}
-```
-
-The `"Plugin skill" : "Plugin command"` ternary is the same code path for both. `_1e` runs either way. The
-same closure is applied to the `allowed-tools` frontmatter value, so the variable resolves in frontmatter as
-well as body text. `${CLAUDE_SKILL_DIR}` is a fourth variable that exists **only** in skill mode and is not
-in the documented table.
+The docs table says only "Skill and agent content" (L687), which reads as though flat
+`commands/*.md` files are excluded. They are not. In the 2.1.241 build one code path loads both
+skills and commands, choosing only a label between them, and the substitution helper runs either
+way. The same substitution is applied to the `allowed-tools` frontmatter value, so the variable
+resolves in frontmatter as well as body text. `${CLAUDE_SKILL_DIR}` is a fourth variable that the
+same code path replaces **only** in skill mode, and it is not in the documented table.
 
 ### Skill files: yes
 
@@ -350,8 +337,8 @@ L687, "Skill and agent content: anywhere the placeholder appears". Same code pat
 
 ### Agent files: yes
 
-L687. The binary shows agent bodies going through the same helper:
-`C=_1e(u.trim(),{path:o,source:n})`, followed by a `userConfig` substitution pass.
+L687. In the 2.1.241 build the trimmed agent body goes through the same helper, followed by a
+`userConfig` substitution pass.
 
 ### Inside `plugin.json` itself: split, and this is the trap
 
@@ -387,19 +374,12 @@ The hooks page repeats it for both hook forms: "both export them as the environm
 `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, and `CLAUDE_PLUGIN_DATA` on the spawned process, so a script can
 read `process.env.CLAUDE_PLUGIN_ROOT` regardless of how it was launched" (hooks.md L487).
 
-The binary shows the environment being assembled:
-
-```js
-F={...nO(),...uir(o),CLAUDE_PROJECT_DIR:k(A)}, ...
-if(u){if(F.CLAUDE_PLUGIN_ROOT=k(u),d)F.CLAUDE_PLUGIN_DATA=k(Bgt(d))}
-if(Object.assign(F,oph(d)),x)for(let[xe,Fe]of Object.entries(x)){
-let Ye=xe.replace(/[^A-Za-z0-9_]/g,"_").toUpperCase();F[`CLAUDE_PLUGIN_OPTION_${Ye}`]=String(Fe)}
-```
-
-`CLAUDE_PLUGIN_ROOT` is set only when the hook belongs to a plugin (`if(u)`), and `CLAUDE_PLUGIN_DATA` only
-when the plugin has a source. `userConfig` values arrive as `CLAUDE_PLUGIN_OPTION_<KEY>` in the same
-environment. Monitor processes are the exception: they do not get the `CLAUDE_PLUGIN_OPTION_*` variables
-(plugins-reference.md L319).
+The 2.1.241 build assembles that environment from layers it computes, and sets `CLAUDE_PROJECT_DIR`.
+`CLAUDE_PLUGIN_ROOT` is set only when the hook belongs to a plugin, and `CLAUDE_PLUGIN_DATA` only
+when the plugin also has a source. `userConfig` values arrive as `CLAUDE_PLUGIN_OPTION_<KEY>` in the
+same environment, where the key is uppercased and every character outside letters, digits and
+underscore becomes an underscore. Monitor processes are the exception: they do not get the
+`CLAUDE_PLUGIN_OPTION_*` variables (plugins-reference.md L319).
 
 ### Summary
 
@@ -407,15 +387,15 @@ environment. Monitor processes are the exception: they do not get the `CLAUDE_PL
 |---|---|---|
 | Hook `command` and `args` | yes | plugins-reference L688, hooks L460-462 |
 | Monitor `command` | yes | plugins-reference L688, L317 |
-| Skill content and frontmatter | yes | plugins-reference L687, binary `_1e` call site |
-| Command Markdown content | yes | binary, `"Plugin skill" : "Plugin command"` branch |
-| Agent content | yes | plugins-reference L687, binary `_1e(u.trim(), ...)` |
+| Skill content and frontmatter | yes | plugins-reference L687, 2.1.241 build behaviour |
+| Command Markdown content | yes | 2.1.241 build: one code path serves skills and commands |
+| Agent content | yes | plugins-reference L687, 2.1.241 build behaviour |
 | MCP stdio `command`, `args`, `env` | yes | plugins-reference L689 |
 | MCP http/sse/ws `url`, `headers`, `headersHelper` | yes | plugins-reference L690 |
 | LSP `command`, `args`, `env`, `workspaceFolder` | yes | plugins-reference L691 |
 | Inline `hooks` / `mcpServers` / `lspServers` in plugin.json | yes | plugin-marketplaces L591-617 |
 | Manifest path fields in plugin.json | **no, refused** | `claude plugin validate` output above |
-| Environment of a spawned hook | **yes, as a real env var** | plugins-reference L683, hooks L487, binary |
+| Environment of a spawned hook | **yes, as a real env var** | plugins-reference L683, hooks L487, 2.1.241 build behaviour |
 
 One caveat worth carrying: `${CLAUDE_PLUGIN_ROOT}` changes on every plugin update, and the old directory
 stays on disk only for a grace period. Never write state there; that is what `${CLAUDE_PLUGIN_DATA}` is for
@@ -489,9 +469,8 @@ Seconds before the hook is cancelled (hooks.md L422). The defaults are per type 
 | `prompt` | 30 seconds | |
 | `agent` | 60 seconds | |
 
-The 600-second default is in the binary as `var eb=600000` (milliseconds), applied at
-`D=e.timeout?e.timeout*1000:eb`. So `timeout` is read in seconds and multiplied by 1000, and the fallback is
-600000 ms.
+The 2.1.241 build's default is 600 seconds, held in milliseconds. A set `timeout` is read in seconds and
+multiplied by 1000, and an unset one falls back to the 600-second default.
 
 Two traps. First, a timed-out `command`, `http` or `mcp_tool` hook is cancelled, **its output is discarded,
 and it renders no decision**; on `PreToolUse` the tool call proceeds through the normal permission flow. "Don't
@@ -669,10 +648,10 @@ Resolution order, first one set wins, for every source type except `command` (L1
 
 ### Is it semver-checked?
 
-**No.** The schema describes it as "Semantic version (e.g., 1.2.3) following semver.org specification", and
-the documentation advises semver, but nothing enforces it: "If you use explicit versions, follow semantic
-versioning" (L1320) is advice, not a rule. The version behaves as an **opaque string** whose only job is
-equality comparison against the installed one. Anthropic's own marketplace carries entries with no version at
+**No.** The 2.1.241 build's schema labels it a semantic version, and the documentation advises
+semver, but nothing enforces it: "If you use explicit versions, follow semantic versioning" (L1320)
+is advice, not a rule. The version behaves as an **opaque string** whose only job is equality
+comparison against the installed one. Anthropic's own marketplace carries entries with no version at
 all, which the resolution order handles by falling through to the commit SHA.
 
 The consequence is the one that catches people: setting `version` **pins** the plugin. "Users get updates only
@@ -776,15 +755,15 @@ manifests, and SchemaStore is a third party, so it was not treated as authoritat
 
 **No bundled schema or type file ships with the CLI.** `claude` is a single Mach-O executable
 (`~/.local/share/claude/versions/2.1.241`, 325 MB, arm64). There is no package directory, no
-`node_modules`, no `.d.ts`, no `.schema.json` alongside it. The schema quoted in this document was recovered
-by running `strings` over that binary, which yields the minified loader source and the Zod schema
-descriptions. That is a primary source, but it is a compiled artifact read indirectly, and identifier names
-in it are minified (`_1e`, `eb`, `ymv`), so a future build can rename them.
+`node_modules`, no `.d.ts`, no `.schema.json` alongside it. What this document says about the build's
+schema and loader comes from inspecting that compiled build, and it is described here in plain words
+rather than quoted. That is a primary source, but it is read indirectly, its internal names are minified,
+and a future build can change any of it without notice.
 
-**Whether `${CLAUDE_PLUGIN_ROOT}` is substituted in a `commands/*.md` file is inferred from the binary, not
-stated in the docs.** The documented table lists only "Skill and agent content" (plugins-reference.md L687).
-The binary shows one code path serving both, labelled `"Plugin skill" : "Plugin command"`. This was not
-confirmed by executing a command file end to end.
+**Whether `${CLAUDE_PLUGIN_ROOT}` is substituted in a `commands/*.md` file is inferred from the
+build, not stated in the docs.** The documented table lists only "Skill and agent content"
+(plugins-reference.md L687). In the 2.1.241 build one code path serves both skills and commands.
+This was not confirmed by executing a command file end to end.
 
 **The runtime behaviour of an unknown hook `type` was tested through `claude plugin validate`, not through a
 live session.** Validation rejects it with a precise error path. Whether the runtime loader skips only the

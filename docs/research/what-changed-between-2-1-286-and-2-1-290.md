@@ -8,15 +8,14 @@ directory do not already settle are listed.
 
 Every claim carries its source, in the three kinds the companion notes use:
 
-- **read**: a string or a function recovered from an installed build, with its byte offset
+- **read**: behaviour read from an installed build, described here rather than quoted
 - **run**: a command and its output on this machine, on 2026-10-06
 - **doc**: a first-party page, quoted, with its URL
 
 The builds read are **Claude Code 2.1.290**, `~/.local/share/claude/versions/2.1.290`,
 233,260,816 bytes (`claude --version` prints `2.1.290 (Claude Code)`), and, for comparison,
 **2.1.286** (225,167,728 bytes), **2.1.287** and **2.1.289**, all still on disk in the same
-directory. Offsets are into the 2.1.290 file unless a line says otherwise. Identifiers are minified and
-change between builds, so an offset is one build's address.
+directory. A read is of the 2.1.290 file unless a line says otherwise, and holds for that one build.
 
 The changelog was read from the copy Claude Code keeps at `~/.claude/cache/changelog.md` (fetched
 2026-10-06 07:39 local). **run**: `curl` of
@@ -58,7 +57,7 @@ row in `KEPT` fixes it.
    echo's once-per-window rule. They do not replace the settings hooks today: they are off under
    `--bare`, `--safe-mode`, `disableAllHooks`, organization policy and a remote switch, they need
    2.1.287, and their file API stops at 4 MiB, which one measured record already exceeds.
-4. **A remote flag can switch off project rules.** 2.1.286 to 2.1.290 all carry `tengu_paper_halyard`.
+4. **A remote flag can switch off project rules.** 2.1.286 to 2.1.290 all carry it.
    When it is on, Project and Local memory, which is where `.claude/rules/anatomiya-*.md` sits, is
    filtered out at startup and at the nested load. It is off for this account. If it ever turns on,
    the echo hook is the only channel left, which is one more reason to keep it.
@@ -79,22 +78,16 @@ row in `KEPT` fixes it.
 > Path-scoped rules trigger when Claude uses the Read, Write, or Edit tool on a file matching the
 > pattern, not on every tool use.
 
-**read**, the two new call sites. Both push the written path onto the same trigger list the Read tool
-fills, after the write has succeeded and after the "staged for review" early return:
+**read**, the two new call sites. The Write tool and the Edit tool now each add the written path to
+the same nested-memory trigger list the Read tool fills, once per path, through a small shared helper.
+Both do it after the write has succeeded and after the early return for a change staged for review,
+and only when the call is not a remote one. The Read tool's own addition to that list is unchanged.
 
-- offset 190,566,700, the Write tool:
-  `...remedy:{kind:"staged_for_review",path:Y?.path??W}};if(r.remoteCall===void 0)ioe(r.nestedMemoryAttachmentTriggers,W);`
-- offset 193,862,099, the Edit tool:
-  `...remedy:{kind:"staged_for_review",path:ke?.path??he}};if(n.remoteCall===void 0)ioe(n.nestedMemoryAttachmentTriggers,he)`
-- offset 190,514,509, the helper: `function ioe(e,n){if(e&&!e.includes(n))e.push(n)}`
-- offset 193,263,075, the Read tool's own push, unchanged: `let Xe=g.nestedMemoryAttachmentTriggers;if(Xe&&!Xe.includes(Ne))Xe.push(Ne);`
-
-**run**: a regex for `<name>(<x>.nestedMemoryAttachmentTriggers,<y>)` finds both sites in 2.1.289
-and 2.1.290 and none in 2.1.286 or 2.1.287. NotebookEdit has no such site, so a notebook write still loads
+**run**: a search for a call that adds a path to that trigger list finds both sites in 2.1.289 and
+2.1.290 and none in 2.1.286 or 2.1.287. NotebookEdit has no such site, so a notebook write still loads
 nothing.
 
-**read**, offset 193,354,959: the list is drained in the attachment pass
-(`Al("nested_memory",()=>Cln(...))`, `Cln` at 193,389,498), the same pass
+**read**: the list is drained in the attachment pass, in its nested-memory step, the same pass
 `docs/research/when-a-hook-can-refresh-the-map.md` traced for Read. So the area file arrives with
 the next request after the write, never before it.
 
@@ -138,18 +131,22 @@ area-file deliveries per window with this hook and stop inferring them from tran
 
 ## 2. What did not change in the hook wire contract
 
-**read**, the event list, identical in both builds (2.1.286 and 2.1.290):
-`["PreToolUse","PostToolUse","PostToolUseFailure","PostToolBatch","Notification","UserPromptSubmit","UserPromptExpansion","SessionStart","SessionEnd","Stop","StopFailure","SubagentStart","SubagentStop","PreCompact","PostCompact","PreModelSwitch","PostModelSwitch","PermissionRequest","PermissionDenied","Setup","TeammateIdle","TaskCreated","TaskCompleted","Elicitation","ElicitationResult","ConfigChange","WorktreeCreate","WorktreeRemove","InstructionsLoaded","CwdChanged","FileChanged","DirectoryAdded","MessageDisplay"]`.
+**read**, the hook event list, identical in both builds (2.1.286 and 2.1.290): PreToolUse,
+PostToolUse, PostToolUseFailure, PostToolBatch, Notification, UserPromptSubmit, UserPromptExpansion,
+SessionStart, SessionEnd, Stop, StopFailure, SubagentStart, SubagentStop, PreCompact, PostCompact,
+PreModelSwitch, PostModelSwitch, PermissionRequest, PermissionDenied, Setup, TeammateIdle, TaskCreated,
+TaskCompleted, Elicitation, ElicitationResult, ConfigChange, WorktreeCreate, WorktreeRemove,
+InstructionsLoaded, CwdChanged, FileChanged, DirectoryAdded and MessageDisplay, 33 in all.
 No settings-hook event was added or removed in the range.
 
-**read**, the common envelope, offset 192,684,587 (`yd`, 2.1.290) against 185,940,288 (`kc`,
-2.1.286): both return
-`{session_id,transcript_path,cwd,scratchpad_dir,prompt_id,permission_mode,agent_id,agent_type,effort}`
-in that order. `cwd` is still in front of the bulk, which `test/hook-contract.test.mjs` "the fields
+**read**, the common envelope, 2.1.290 against 2.1.286: both build the fields `session_id`,
+`transcript_path`, `cwd`, `scratchpad_dir`, `prompt_id`, `permission_mode`, `agent_id`, `agent_type`
+and `effort`, in that order. `cwd` is still in front of the bulk, which `test/hook-contract.test.mjs` "the fields
 these hooks read come before the bulk" depends on.
 
-**read**, the Stop payload, offset 192,673,065 (2.1.290) against 185,930,064 (2.1.286): both build
-`{...envelope,hook_event_name:"Stop",stop_hook_active,last_assistant_message,...}`. There is still no
+**read**, the Stop payload, 2.1.290 against 2.1.286: both build the envelope, then
+`hook_event_name` set to `Stop`, then `stop_hook_active` and `last_assistant_message`, and a few more
+fields after them. There is still no
 tool list in it, so the reuse reason's last sentence ("If this session has no subagent tool, run that
 search yourself.") is still needed.
 
@@ -194,9 +191,9 @@ or folders, and to install plugin dependencies only from registry packages."
 `https://registry.npmjs.org/`. None is a git or folder source, so the rule refuses nothing anatomiya
 ships.
 
-**read**, offset 193,623,622: the install command is unchanged from 2.1.286 (offset 187,263,520
-there): `["ci","--ignore-scripts","--workspaces=false","--no-audit","--no-fund"]` with a 60,000 ms
-limit, chosen by the lockfile found beside the manifest. `docs/research/what-a-hook-reads-and-what-an-install-runs.md`
+**read**: the install command is unchanged from 2.1.286. It runs `npm ci --ignore-scripts
+--workspaces=false --no-audit --no-fund` with a 60,000 ms limit, chosen by the lockfile found beside
+the manifest. `docs/research/what-a-hook-reads-and-what-an-install-runs.md`
 still holds.
 
 **doc**, changelog, 2.1.287: "Improved plugin listings to note when a plugin's dependencies were not
@@ -266,13 +263,13 @@ What this means for each pin:
 is "the build carries no engine-shaped variable this run has not decided about", naming
 `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENTN`. **run**:
 `overridesEngine("CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT")` is `true` (it is
-`scripts/ab/engine.mjs:50`), and the same name with a trailing `N` is `false`. **read**, offset
-78,396,956: the string table stores the name followed by the next entry's length byte `N`, the same
+`scripts/ab/engine.mjs:50`), and the same name with a trailing `N` is `false`. **read**: the
+string table stores the name followed by the next entry's length byte `N`, the same
 artifact `KEPT` already lists for `CLAUDE_CODE_EFFORT_LEVEL_` (2.1.285) and two `...E` names
 (2.1.286). **run**: the variable itself is present in 2.1.286, 2.1.287, 2.1.289 and 2.1.290 (6 hits
-each), so only the byte after it moved. **read**, offset 74,407,642, what it does: "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1
-restores the previous wait-for-the-API behavior", in a message about the context window assumed for
-a model Claude Code does not recognize. The scrub is right. The test needs one `KEPT` row.
+each), so only the byte after it moved. **read**, what it does: a message about the context window
+assumed for a model Claude Code does not recognize says that setting it to 1 brings back the earlier
+behaviour of waiting for the API. The scrub is right. The test needs one `KEPT` row.
 
 ## 5. Claude Mods
 
@@ -329,18 +326,17 @@ and `InstructionsLoaded` (section 1) already gives most of it without a mod.
 
 ## 6. A remote switch over project rules
 
-**read**, offset 190,493,654 (`rQn`) and 190,493,254 (`J1r`), the startup memory filter:
-`if((e.type==="Project"||e.type==="Local")&&k("tengu_paper_halyard",!1))return!1;`
+**read** from the build: the startup memory filter drops every Project and Local memory file when the
+remote feature flag that gates it is on, and the flag defaults to off. The nested load that
+delivers area files reads the same flag and, when it is on, filters Project and Local files out of
+what it delivers.
 
-**read**, offset 193,380,766 (`qln`), the nested load that delivers area files:
-`M=k("tengu_paper_halyard",!1);for await(let W of jTr(...))h.push(...await Eln(W.filter((V)=>!M||V.type!=="Project"&&V.type!=="Local"),...))`
-
-`k(name,false)` reads a remote feature flag with `false` as the default. When it is on, both the
-unconditional overview and every path-scoped area file under `.claude/rules/` are dropped, since both
-are Project memory. **run**: the flag is in 2.1.286, 2.1.287, 2.1.289 and 2.1.290 (3 hits each), and
-it is absent from the 818 cached flags in `~/.claude.json` (`cachedGrowthBookFeatures`), so it is off
-for this account. The same function takes a second path, `Xne.peek(n.session)?.readFor`, which reads
-like a provider that takes over instruction loading. Where that provider comes from was not traced.
+When the flag is on, both the unconditional overview and every path-scoped area file under
+`.claude/rules/` are dropped, since both are Project memory. **run**: the flag is in 2.1.286, 2.1.287,
+2.1.289 and 2.1.290 (3 hits each), and it is absent from the 818 cached flags in `~/.claude.json`
+(`cachedGrowthBookFeatures`), so it is off for this account. The nested load also takes a second,
+per-session source of instruction files, which reads like a provider that takes over instruction
+loading. Where that provider comes from was not traced.
 
 Nothing to change. It is a reason to keep the echo hook as the second channel and not fold it into the
 rules, and the one-line test for it is cheap: a cached-flags check in `/anatomiya:doctor` could say
@@ -374,9 +370,9 @@ Worth a measurement before any change.
 > directory at the worktree's root as it reads files there
 
 **doc**, changelog, 2.1.286: "Fixed subagents spawned with worktree isolation loading the project
-CLAUDE.md and its imports a second time from the worktree copy on their first file read". **read**,
-offset 193,378,464 (`Gln`): the nested walk computes a `checkoutTargetPath` for a file inside a linked
-worktree, separate from the file's own path. Read together, these suggest a worktree-isolated subagent
+CLAUDE.md and its imports a second time from the worktree copy on their first file read". **read**:
+the nested walk computes a checkout target path for a file inside a linked worktree, separate from
+the file's own path. Read together, these suggest a worktree-isolated subagent
 gets the main checkout's unconditional rules (the overview) from its parent. That would make part of
 anatomiya's worktree wording ("Claude Code loads no rule file from the main checkout into a worktree",
 `docs/how-it-works.md`) wrong for this one case, the isolated subagent. Whether the main checkout's
@@ -426,7 +422,7 @@ Only items that touch anatomiya and are not already written up in this directory
    `effort: medium`, read-only tools), name it in `reuseReason`, and measure against A91. Adds one
    file and one validated path in `scripts/validate.mjs`. It loses the measured wording until the
    new one is measured.
-7. **Watch, no code:** mods (section 5), `tengu_paper_halyard` (section 6), and one live run of a
+7. **Watch, no code:** mods (section 5), the remote flag (section 6), and one live run of a
    worktree-isolated subagent to settle section 7's wording. If the flag ever matters, a cached-flags
    line in `/anatomiya:doctor` is the cheapest guard.
 
@@ -438,7 +434,7 @@ Only items that touch anatomiya and are not already written up in this directory
 - **Whether the 2.1.290 "plugin hooks ... clipped" line touches settings-hook `additionalContext`.**
   The changelog groups it with mods, and the hooks doc still describes the 10,000-character
   save-to-file rule. The build was not traced for it.
-- **What `tengu_paper_halyard` is for**, and what sets `readFor`. Only the gate and the filter were
+- **What the remote flag of section 6 is for**, and what sets the second instruction source in section 6. Only the gate and the filter were
   read. The flag's purpose is not documented.
 - **Worktree-isolated subagents and area files** (section 7) need a live run.
 - **How Opus 5.5 treats a Stop hook's block reason** is unmeasured. The prompting guide speaks about

@@ -981,7 +981,7 @@ test("a Ruby file named for a test is one only where a test tree also says so", 
   // `test/`. Neither declares a case and neither sits in a test tree.
   const read = { testRunner: null, testCalls: false, empty: false };
 
-  assert.equal(isTestFile(file("lib/rubocop/custom_cops/sleep_without_unless_test.rb", "ruby", read)), false);
+  assert.equal(isTestFile(file("lib/rubocop/custom_cops/freeze_time_outside_test.rb", "ruby", read)), false);
   assert.equal(isTestFile(file("Library/Homebrew/software_spec.rb", "ruby", read)), false);
 
   // The address is the corroboration, and every segment of it counts.
@@ -991,7 +991,7 @@ test("a Ruby file named for a test is one only where a test tree also says so", 
 
   // And what the file itself says still answers before its name is read, which
   // is what keeps this from becoming "a test must declare a case" (H29).
-  assert.equal(isTestFile(file("shopify/request/rest/shop/get_spec.rb", "ruby", { testCalls: true })), true);
+  assert.equal(isTestFile(file("storefront/request/rest/catalog/get_spec.rb", "ruby", { testCalls: true })), true);
 
   // The dotted and hyphen forms keep answering on the name alone: discourse
   // writes 4,000 tests as `login-test.js` and nothing else in them says so.
@@ -1029,9 +1029,9 @@ test("a namesake root tie breaks by code units, not locale", () => {
 
 test("a spec the parse read and found no case in is not a test file", () => {
   // a measured Rails API:
-  // spec/services/.../one_off/multiple_changes_spec.rb is commented out top to
+  // spec/services/.../one_off/bulk_update_spec.rb is commented out top to
   // bottom, so the runner collects nothing from it, and it still made
-  // app/services/.../multiple_changes.rb read as covered.
+  // app/services/.../bulk_update.rb read as covered.
   const empty = { testRunner: null, testCalls: false, empty: true };
   assert.equal(isTestFile(file("spec/models/user_spec.rb", "ruby", empty)), false);
   assert.equal(isTestFile(file("src/a.test.ts", "js", empty)), false);

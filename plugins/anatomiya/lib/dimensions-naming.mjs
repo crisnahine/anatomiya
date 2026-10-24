@@ -50,10 +50,10 @@ export function claimFor(dim, cls, kind) {
  *
  * The second capital is what separates a prefix from a word: `IComment` votes
  * `I`. Three or more leading capitals is the shape that reads both ways -
- * `IOStream` is an acronym carrying no prefix, and `IEFLogon` is `I` on the
- * `EFLogon` of the directory it sits in - so it votes for neither rather than
+ * `IOStream` is an acronym carrying no prefix, and `IQRScanner` is `I` on the
+ * `QRScanner` of the directory it sits in - so it votes for neither rather than
  * being charged with the prefix it may already carry. Charged, the only way to
- * comply with a stated `I` claim was to write `IIEFLogon`.
+ * comply with a stated `I` claim was to write `IIQRScanner`.
  *
  * A name that is nothing but two capitals cannot say either: `IO` is the type
  * of that name, and reading it as `I` on an `O` or as a word are the same two

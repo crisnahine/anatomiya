@@ -31,10 +31,10 @@ test("a test added where its own siblings have none is a finding", () => {
     root("spec/services", { files: 6, testRoot: true }),
   ];
 
-  const found = precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots);
+  const found = precedentFindings(["spec/mailers/invoice_mailer_spec.rb"], roots);
 
   assert.equal(found.length, 1);
-  assert.equal(found[0].path, "spec/mailers/cim_share_mailer_spec.rb");
+  assert.equal(found[0].path, "spec/mailers/invoice_mailer_spec.rb");
   assert.equal(found[0].area, "app/mailers");
   assert.equal(found[0].severity, "FIX");
   assert.equal(found[0].dimension, "test_precedent");
@@ -88,7 +88,7 @@ test("a repository that tests nothing yet is starting, not deviating", () => {
     root("app/services", { files: 6, companions: { with: 0, of: 6, root: null } }),
   ];
 
-  assert.deepEqual(precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots), []);
+  assert.deepEqual(precedentFindings(["spec/mailers/invoice_mailer_spec.rb"], roots), []);
 });
 
 test("a source root too small to have said anything is not precedent", () => {
@@ -99,7 +99,7 @@ test("a source root too small to have said anything is not precedent", () => {
     root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
   ];
 
-  assert.deepEqual(precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots), []);
+  assert.deepEqual(precedentFindings(["spec/mailers/invoice_mailer_spec.rb"], roots), []);
 });
 
 test("a file that is not a test is not asked the question", () => {
@@ -128,11 +128,11 @@ test("a run that cannot say what is newly added states the same finding as a NIT
     root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
   ];
 
-  const [capped] = precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots, { fresh: false });
+  const [capped] = precedentFindings(["spec/mailers/invoice_mailer_spec.rb"], roots, { fresh: false });
   assert.equal(capped.severity, "NIT");
   assert.match(capped.reason, /this run could not establish/);
 
-  const [full] = precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots);
+  const [full] = precedentFindings(["spec/mailers/invoice_mailer_spec.rb"], roots);
   assert.equal(full.severity, "FIX");
 });
 
@@ -144,7 +144,7 @@ test("the principle and the finding refuse on the same floor", () => {
     root("app/mailers", { files: of, companions: { with: 0, of, root: null } }),
     root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
   ];
-  const spec = "spec/mailers/cim_share_mailer_spec.rb";
+  const spec = "spec/mailers/invoice_mailer_spec.rb";
 
   assert.equal(precedentFindings([spec], at(PRECEDENT_FLOOR)).length, 1);
   assert.ok(principleKeys({ tests: [], roots: at(PRECEDENT_FLOOR) }).includes("test_precedent"));
@@ -165,9 +165,9 @@ test("a write into a directory with no precedent is worth a word before it happe
     ],
   };
 
-  const said = noticeFor("spec/mailers/cim_share_mailer_spec.rb", layout);
+  const said = noticeFor("spec/mailers/invoice_mailer_spec.rb", layout);
 
-  assert.match(said, /spec\/mailers\/cim_share_mailer_spec\.rb/);
+  assert.match(said, /spec\/mailers\/invoice_mailer_spec\.rb/);
   assert.match(said, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
   assert.match(said, /Nothing here was matched to a test by name/);
 });
@@ -234,10 +234,10 @@ test("a directory holding tests that pair with nothing is told so, not told it h
     root("src/utils", { files: 6, companions: { with: 6, of: 6, root: "src/utils/__tests__" } }),
   ];
 
-  const [found] = precedentFindings(["src/pages/Listing/__tests__/nda.test.ts"], roots);
+  const [found] = precedentFindings(["src/pages/Product/__tests__/reviews.test.ts"], roots);
   assert.match(found.reason, /elsewhere in it 2 vitest specs under __tests__, none of them a namesake/);
 
-  const said = noticeFor("src/pages/Listing/__tests__/nda.test.ts", { roots });
+  const said = noticeFor("src/pages/Product/__tests__/reviews.test.ts", { roots });
   assert.match(said, /elsewhere in it 2 vitest specs under __tests__, none of them a namesake/);
 });
 
@@ -344,7 +344,7 @@ test("a directory that already holds a test is its own precedent, and the neares
   const holdsTest = (dir) => dir === "src/pages/helpers/__tests__";
 
   assert.deepEqual(precedentFindings(["src/pages/helpers/__tests__/slug.test.ts"], roots, { holdsTest }), []);
-  assert.equal(precedentFindings(["src/pages/Listing/__tests__/nda.test.ts"], roots, { holdsTest }).length, 1);
+  assert.equal(precedentFindings(["src/pages/Product/__tests__/reviews.test.ts"], roots, { holdsTest }).length, 1);
 });
 
 test("the finding names the directory that has nothing in it, which is the signal", () => {
@@ -355,7 +355,7 @@ test("the finding names the directory that has nothing in it, which is the signa
     root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
   ];
 
-  const [found] = precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots);
+  const [found] = precedentFindings(["spec/mailers/invoice_mailer_spec.rb"], roots);
 
   assert.match(found.reason, /^spec\/mailers holds no other test; app\/mailers: 0 of 4 \.rb files have a namesake test$/);
 });
@@ -374,7 +374,7 @@ test("a directory with a habit of its own is not one with no precedent", () => {
     root("src/utils", { files: 6, companions: { with: 6, of: 6, root: "src/utils/__tests__" } }),
   ];
 
-  assert.deepEqual(precedentFindings(["src/pages/Listing/__tests__/nda.test.ts"], roots), []);
+  assert.deepEqual(precedentFindings(["src/pages/Product/__tests__/reviews.test.ts"], roots), []);
 });
 
 test("a test moved into a directory with no precedent carries where it came from", () => {
@@ -455,7 +455,7 @@ test("a repository whose only namesakes are one or two is starting, not deviatin
     root("app/services", { files: 6, companions: { with: 2, of: 6, root: "spec/services" } }),
   ];
 
-  assert.deepEqual(precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots), []);
+  assert.deepEqual(precedentFindings(["spec/mailers/invoice_mailer_spec.rb"], roots), []);
 });
 
 test("a notice answered from a worktree's main checkout says where it was counted", () => {
@@ -464,12 +464,12 @@ test("a notice answered from a worktree's main checkout says where it was counte
     root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
   ];
 
-  const said = noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots }, { from: "/work/app" });
+  const said = noticeFor("spec/mailers/invoice_mailer_spec.rb", { roots }, { from: "/work/app" });
   assert.match(said, /\n  Counted from this repository's main checkout at \/work\/app, not this worktree\.$/);
-  assert.doesNotMatch(noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots }), /main checkout/);
+  assert.doesNotMatch(noticeFor("spec/mailers/invoice_mailer_spec.rb", { roots }), /main checkout/);
 
   // The path is the machine's, and names the checkout to open: each character that prints nothing is a space, and nothing else moves.
-  const hidden = noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots }, { from: "/work/proj\u202e\u0007gpj\u200b plain/日本語の長いディレクトリ" });
+  const hidden = noticeFor("spec/mailers/invoice_mailer_spec.rb", { roots }, { from: "/work/proj\u202e\u0007gpj\u200b plain/日本語の長いディレクトリ" });
   assert.ok(hidden.endsWith("\n  Counted from this repository's main checkout at /work/proj  gpj  plain/日本語の長いディレクトリ, not this worktree."), JSON.stringify(hidden));
 });
 
@@ -480,7 +480,7 @@ test("the principle and the finding read the same namesake floor", () => {
     root("app/mailers", { files: 9, companions: { with: withTest, of: 9, root: null } }),
     root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
   ];
-  const spec = "spec/mailers/cim_share_mailer_spec.rb";
+  const spec = "spec/mailers/invoice_mailer_spec.rb";
 
   assert.equal(precedentFindings([spec], at(PRECEDENT_FLOOR - 1)).length, 1);
   assert.ok(principleKeys({ tests: [], roots: at(PRECEDENT_FLOOR - 1) }).includes("test_precedent"));
@@ -554,14 +554,14 @@ test("a finding names the directories it turns on, which a change that made one 
   const turnsOn = (rel, among = roots) => precedentFindings([rel], among)[0].turnsOn;
 
   // The directory asked about is the one the tail was shortened past.
-  assert.deepEqual(turnsOn("src/pages/Listing/__tests__/form.test.ts"), [{ dir: "src/pages/Listing", family: "js" }]);
+  assert.deepEqual(turnsOn("src/pages/Product/__tests__/form.test.ts"), [{ dir: "src/pages/Product", family: "js" }]);
   // A tail a root answers whole is that root's own directory, which a change adding a test to it did not create.
   assert.deepEqual(turnsOn("src/pages/__tests__/form.test.ts"), []);
 
   // The family asked about is the one the root counts, and the test's own where the map recorded no extension.
   const counting = (ext) => [roots[0], { ...roots[1], companions: { ...roots[1].companions, ext } }];
-  assert.equal(turnsOn("src/pages/Listing/__tests__/form.test.ts", counting(".vue"))[0].family, "js");
-  assert.equal(turnsOn("src/pages/Listing/form_spec.rb")[0].family, "ruby");
+  assert.equal(turnsOn("src/pages/Product/__tests__/form.test.ts", counting(".vue"))[0].family, "js");
+  assert.equal(turnsOn("src/pages/Product/form_spec.rb")[0].family, "ruby");
 });
 
 test("a root answers a test only in the family the test is written in", () => {
@@ -696,7 +696,7 @@ test("a precedent finding and a co-change claim share one notice under one heade
     root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
   ];
   const claim = shipsWith({ producer: "spec/mailers/*_spec.rb", companion: { kind: "edits", path: "spec/support/mailers.rb" } });
-  const said = noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots, cochange: { claims: [claim] } });
+  const said = noticeFor("spec/mailers/invoice_mailer_spec.rb", { roots, cochange: { claims: [claim] } });
 
   assert.equal(said.match(/^anatomiya: /gm).length, 1);
   assert.match(said, /app\/mailers: 0 of 4/);

@@ -32,7 +32,7 @@ async function withCopy(run) {
     cpSync(VENDORED, join(root, REL.anatomiya, "grammars"), { recursive: true });
     cpSync(join(ROOT, "package-lock.json"), join(root, "package-lock.json"));
     for (const { package: name, source } of Object.values(GRAMMARS)) {
-      for (const file of [source, "package.json"]) cpSync(join(ROOT, "node_modules", name, file), join(root, "node_modules", name, file));
+      for (const file of [source, "package.json", "LICENSE"]) cpSync(join(ROOT, "node_modules", name, file), join(root, "node_modules", name, file));
     }
     return await run(root, join(root, REL.anatomiya, "grammars"));
   } finally {
@@ -76,6 +76,42 @@ test("every vendored file hashes to its manifest entry", () => {
 
 test("the vendored set is the one the installed packages hold", () => {
   assert.deepEqual(check(ROOT), []);
+});
+
+test("every vendored grammar ships with its package's license, as that license asks of a copy", () => {
+  const notices = readFileSync(join(VENDORED, "LICENSES.md"), "utf8").replace(/\r\n/g, "\n");
+  for (const entry of manifest()) {
+    const license = readFileSync(join(ROOT, "node_modules", entry.package, "LICENSE"), "utf8").replace(/\r\n/g, "\n").trimEnd();
+    assert.ok(notices.includes(`## ${entry.package} ${entry.version}`), entry.package);
+    assert.ok(notices.includes(license), `${entry.package}'s license text`);
+  }
+});
+
+test("a package installed without its LICENSE is said once, by name", async () => {
+  await oneProblem((root) => rmSync(join(root, "node_modules", "tree-sitter-go", "LICENSE")), /node_modules\/tree-sitter-go\/LICENSE is not there/);
+});
+
+test("vendoring refuses before it writes anything when a package's license is missing", async () => {
+  await withCopy(async (root, dir) => {
+    rmSync(join(root, "node_modules", "tree-sitter-go", "LICENSE"));
+    const before = readFileSync(join(dir, "grammars.json"), "utf8");
+    await assert.rejects(vendor(root), /tree-sitter-go/);
+    assert.equal(readFileSync(join(dir, "grammars.json"), "utf8"), before);
+  });
+});
+
+test("a license notice that no longer matches its package is refused, and a lost one too", async () => {
+  await oneProblem((root, dir) => writeFileSync(join(dir, "LICENSES.md"), "# Grammar licenses\n"), /LICENSES\.md is not the licenses the installed packages carry/);
+  await oneProblem((root, dir) => rmSync(join(dir, "LICENSES.md")), /LICENSES\.md is not the licenses the installed packages carry/);
+});
+
+test("a package license installed with CRLF line endings still matches its notice", async () => {
+  await withCopy((root) => {
+    const license = join(root, "node_modules", "tree-sitter-go", "LICENSE");
+    writeFileSync(license, readFileSync(license, "utf8").replace(/\r?\n/g, "\r\n"));
+
+    assert.deepEqual(check(root), []);
+  });
 });
 
 test("a copy of the tree is clean, so each refusal below is the one change made to it", async () => {

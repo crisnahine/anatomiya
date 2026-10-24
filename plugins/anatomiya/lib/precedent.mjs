@@ -58,7 +58,7 @@ export function isTestPath(rel) {
 /**
  * The part of a test's path that names what it tests.
  *
- * `spec/mailers/cim_share_mailer_spec.rb` is about `mailers`, and
+ * `spec/mailers/invoice_mailer_spec.rb` is about `mailers`, and
  * `src/pages/Foo/__tests__/bar.test.ts` is about `src/pages/Foo`. The tree word
  * goes because it names where tests live rather than what they cover, which is
  * the same reason `companionRoot` drops it going the other way.
@@ -84,8 +84,8 @@ const countsAreNumbers = (r) =>
  * Matched on the tail rather than the whole path, so `spec/mailers` reaches
  * `app/mailers` without either naming the other. The tail is shortened a
  * segment at a time, because a root is a folded directory and a test sits under
- * whichever leaf it is about: `spec/services/nda_agreements` is about
- * `app/services`, and `src/pages/Listing/__tests__` is about `src/pages`, which
+ * whichever leaf it is about: `spec/services/order_exports` is about
+ * `app/services`, and `src/pages/Product/__tests__` is about `src/pages`, which
  * is the directory the miss this rule was written for was in.
  *
  * A tail more than one root answers to is answered by none of them where any

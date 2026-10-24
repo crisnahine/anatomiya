@@ -5,7 +5,7 @@
  * Lives here rather than in `lib/`, because nothing the plugin ships needs it:
  * `plugins/anatomiya/bin/anatomiya.mjs` runs at module scope on purpose.
  */
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -37,6 +37,15 @@ export function realOf(path) {
     return realpathSync(path);
   } catch {
     return path;
+  }
+}
+
+/** Whether a path is a regular file once links are followed: a directory exists and runs nothing, and an error is a no. */
+export function isFile(path) {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
   }
 }
 

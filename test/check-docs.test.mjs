@@ -1281,6 +1281,153 @@ test("a document carrying the path of the machine it was written on is failed", 
   assert.match(output, /docs\/why\.md: carries the path of the machine it was written on/);
 });
 
+test("a sibling of this machine's home is not its home", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "test", "encode.test.mjs");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n// Read from ${homedir()}x/notes.md\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 0, output);
+  assert.doesNotMatch(output, /carries the path of the machine/);
+});
+
+test("a home path that ends a sentence is failed, and one in a file that is neither a document nor a module", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n${line}\n`);
+  append("docs/why.md", `The notes were read from ${homedir()}.`);
+  append("test/fuzz.js", `// copied from ${homedir()}/fuzz.js`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/why\.md: carries the path of the machine it was written on/);
+  assert.match(output, /test\/fuzz\.js: carries the path of the machine it was written on/);
+});
+
+test("a document naming a home directory is failed whosever machine it is, and the placeholder home is not", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "docs", "why.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n\nRead from /home/alice/notes.md, as /Users/me/code/app shows.\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/why\.md: names the home directory \/home\/alice\//);
+  assert.doesNotMatch(output, /\/Users\/me\//);
+});
+
+test("a measurement naming any home directory is failed, the placeholder too, behind either separator", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
+  append("docs/measurements/2026-08-16-layering-probe.md", "Run from /Users/me/code/app.");
+  append("docs/measurements/2026-08-16-new-row-variance.md", "Run from C:/Users/alice/app.");
+  append("docs/measurements/2026-08-16-vscode-nonnull-2.md", 'Run from "C:\\\\Users\\\\alice\\\\app".');
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /2026-08-16-layering-probe\.md: carries the local path \/Users\/me/);
+  assert.match(output, /2026-08-16-new-row-variance\.md: carries the local path C:\/Users\/alice/);
+  assert.match(output, /2026-08-16-vscode-nonnull-2\.md: carries the local path C:\\\\Users\\\\alice/);
+});
+
+test("this machine's home is caught behind the other separator, escaped, and in another case where the filesystem folds it", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const other = process.platform === "win32" ? homedir().replaceAll("\\", "/") : homedir().replaceAll("/", "\\/");
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n${line}\n`);
+  append("test/encode.test.mjs", `// copied from "${other}" in a string literal`);
+  if (process.platform !== "linux") append("test/fuzz.js", `// copied from ${homedir().toUpperCase()}/x`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /test\/encode\.test\.mjs: carries the path of the machine it was written on/);
+  if (process.platform !== "linux") assert.match(output, /test\/fuzz\.js: carries the path of the machine it was written on/);
+});
+
+test("a Windows path or a URL that spells this machine's home's names is not this machine's home", { ...needsCheckout, ...(process.platform === "win32" ? { skip: "this machine's home is a Windows path here" } : {}) }, (t) => {
+  // A macOS runner's home spells the same names as the Windows runner's 8.3 temp path, and comments naming that path failed there.
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n${line}\n`);
+  append("test/encode.test.mjs", `// tmpdir() answers C:${homedir().replaceAll("/", "\\").toUpperCase()}~1\\Temp on Windows`);
+  append("test/fuzz.js", `// see https://example.test${homedir()}/notes`);
+  append("test/hook.test.mjs", `// "C:${homedir().toUpperCase()}~1/AppData/Local/Temp"`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 0, output);
+});
+
+test("a home directory written with a drive letter and forward slashes is a home directory too", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "docs", "why.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n\nCopied from C:/Users/alice/notes.md.\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/why\.md: names the home directory C:\/Users\/alice\//);
+});
+
+test("a drive home written in lower case is a home directory, and a path that only holds users/ or home/ is not", needsCheckout, (t) => {
+  // The documents describe Rails and JavaScript repositories, whose views, routes and pages say users and home.
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
+  append("docs/how-it-works.md", "Copied from c:\\users\\bob\\notes.md.");
+  append("docs/why.md", "Rails renders `app/views/users/show.html.erb` for `GET /api/users/:id`, `pages/home/index.tsx` is a page, and https://x.test/users/alice/repos a URL.");
+  append("docs/measurements/2026-08-16-vscode.md", "Read `app/views/users/index.html.erb` and `src/home/feed.ts`.");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/how-it-works\.md: names the home directory c:\\users\\bob\\$/m);
+  assert.doesNotMatch(output, /docs\/why\.md:/);
+  assert.doesNotMatch(output, /2026-08-16-vscode\.md:/);
+});
+
+test("the grammars' licenses are third-party text, so no house rule on prose reads them", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, REL.anatomiya, "grammars", "LICENSES.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\nSee offset 123,456,789 and /home/alice/LICENSE.\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 0, output);
+});
+
+test("a research note and a test module carrying that path are failed too", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  for (const rel of ["docs/research/what-no-row-reads.md", "test/encode.test.mjs"]) {
+    const path = join(dir, rel);
+    writeFileSync(path, `${readFileSync(path, "utf8")}\n// Read from ${join(homedir(), "notes.md")}\n`);
+  }
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/research\/what-no-row-reads\.md: carries the path of the machine it was written on/);
+  assert.match(output, /test\/encode\.test\.mjs: carries the path of the machine it was written on/);
+});
+
+test("a document quoting a byte offset into a build is failed, in any spelling the notes used", needsCheckout, (t) => {
+  // A build's offsets come with the build's code beside them, and neither is this repository's to publish.
+  const dir = repoCopy(t);
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
+  append("docs/research/what-no-row-reads.md", "**read**, offset 123,456,789, the spawn generator.");
+  append("docs/why.md", "The rule walk asks for it (BUNDLE@1234567).");
+  append("docs/how-it-works.md", "It sits at offset 1234567.");
+  append("docs/agents/domain.md", "Offset 12,345,678 holds it.");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/research\/what-no-row-reads\.md: quotes a byte offset into a build/);
+  assert.match(output, /docs\/why\.md: quotes a byte offset into a build/);
+  assert.match(output, /docs\/how-it-works\.md: quotes a byte offset into a build/);
+  assert.match(output, /docs\/agents\/domain\.md: quotes a byte offset into a build/);
+});
+
 // A note about a past release is what a changelog holds: the entry naming a
 // file at the path it had then is true of that release and would be false
 // rewritten to today's.

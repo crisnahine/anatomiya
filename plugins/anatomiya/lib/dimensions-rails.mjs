@@ -285,7 +285,7 @@ function columnBlockTable(n, ctx) {
 
 /**
  * The table name Rails derives from a reference name, both spellings a
- * repository writes: `:listing` owes `listings`, `:company` owes `companies`,
+ * repository writes: `:project` owes `projects`, `:company` owes `companies`,
  * `:address` owes `addresses`.
  *
  * Three rules, not an inflector. A table whose name is irregular or uncountable
@@ -302,8 +302,8 @@ function pluralOf(name) {
 /**
  * Every foreign key this migration declares as a statement of its own.
  *
- * `add_reference :ticket_comments, :user` followed by
- * `add_foreign_key :ticket_comments, :users` declares exactly what
+ * `add_reference :issue_comments, :user` followed by
+ * `add_foreign_key :issue_comments, :users` declares exactly what
  * `foreign_key: true` declares inline, and a measured Rails API writes 167 of
  * them against 12 inline options. Read as the inline option alone, a reference
  * the migration does constrain reads as a violation.

@@ -11,7 +11,7 @@ Every claim carries its source, in two kinds:
 - **code**: a file and line in this repository at `89c17085`
 - **probe**: a throwaway script run read-only over the corpus, named by its path and command
 
-The corpus is the 35 checkouts under `~/Documents/Projects/anatomiya-corpus`, at whatever commit
+The corpus is the 35 checkouts under `anatomiya-corpus/`, at whatever commit
 each was checked out at on 2026-10-20. Nothing in them was modified. The probes import
 `classifyWord`, `isCorpusPath`, `isDenied`, `isExcludedDir` and `wilsonLower` from a copy of this
 repository made with `git archive HEAD`, so a probe's corpus filter and word classes are the tool's
@@ -402,7 +402,7 @@ node area.mjs object_key.case --repos
 ### 4.7 Rails views: full keys against lazy lookup
 
 ```
-for d in ~/Documents/Projects/anatomiya-corpus/*/; do node probe-lazy.mjs ${d%/}; done
+for d in anatomiya-corpus/*/; do node probe-lazy.mjs ${d%/}; done
 ```
 
 Sites: literal `t(...)` keys in `app/views/**/*.{erb,haml,slim}`. Full keys hold at 0.90 in 8 of
@@ -425,7 +425,7 @@ node area.mjs classname.token --repos
 ### 4.9 Locale key parity
 
 ```
-for d in ~/Documents/Projects/anatomiya-corpus/*/; do rvm 3.4.10 do ruby probe-locales.rb ${d%/}; done
+for d in anatomiya-corpus/*/; do rvm 3.4.10 do ruby probe-locales.rb ${d%/}; done
 ```
 
 A locale set is the files that share a path once the locale code is replaced, under a `locales`,
@@ -534,7 +534,7 @@ is a default and a row would add little, or nothing holds.
 
 ## Route declarations in the language corpus
 
-Measured on 2026-10-20 over `~/Documents/Projects/anatomiya-corpus-langs`, to see whether the seven
+Measured on 2026-10-20 over `anatomiya-corpus-langs`, to see whether the seven
 tree-sitter languages could carry a URL row. Each pattern is a common route form of its language,
 and every path holding `test`, `docs`, `example` or `fixture` is left out (with `stub` for PHP and
 `_test.go` for Go):

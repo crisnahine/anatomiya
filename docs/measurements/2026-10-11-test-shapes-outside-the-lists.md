@@ -50,5 +50,5 @@ inherits `TestQueue::TestFramework::RSpec`.
 Wider, for shapes the scanned trees hold outside the export clause's reach: vscode's `suite` (28
 files, every one named `.test.ts` or `.test.tsx` and so a test by its name), `ssuite` and
 `ssuite.optional` (2, `.stest.ts`), `flakySuite` (1, `diskFileService.integrationTest.ts`),
-angular's `runInEachFileSystem` (3, all `_spec.ts`), and appsmith and the EF client's
+angular's `runInEachFileSystem` (3, all `_spec.ts`), and appsmith and the measured React front end's
 `Cypress.Commands.add` (7, support files).
