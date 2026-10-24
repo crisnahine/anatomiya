@@ -175,7 +175,7 @@ test("a repository with no translation layer produces no candidates, rather than
   // Without the applicability gate bulletproof-react produces 311 candidates
   // across 45 areas, every one non-conforming, and every area file gains a line
   // reading "user-visible text goes through the translation layer: no
-  // convention. 0 of N sites". Measured on a React front end: 4,533 candidates over 100 area
+  // convention. 0 of N sites". On a measured React front end: 4,533 candidates over 100 area
   // slots without the gate, 66 over 7 with it.
   const bare = `export const A = () => <p>Save changes</p>;`;
   assert.equal(hits("text_translated", bare).length, 0);

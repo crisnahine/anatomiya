@@ -147,7 +147,7 @@ nothing else. The `PreToolUse` output takes `hookEventName` and four optional fi
 `permissionDecision`, `permissionDecisionReason`, `updatedInput` (a record of arbitrary values) and
 `additionalContext`.
 
-All three match what the issue quotes.
+All three match the issue's quotes byte for byte.
 
 ### Every event, not just those two
 
@@ -324,8 +324,8 @@ site both.
 
 **read** from the build, the built-in roster: empty when built-ins are switched off, a separate set in
 coordinator mode, and otherwise `general-purpose` always, then `statusline-setup`, the `claude`
-catch-all (loaded from another chunk), `Explore` and `Plan`, and the web-reading agent, each behind its
-own runtime check, and `claude-code-guide` unless `CLAUDE_CODE_ENTRYPOINT` names one of the SDKs.
+catch-all (loaded from another chunk), `Explore` and `Plan` behind one runtime check, the web-reading agent behind
+its own, and `claude-code-guide` unless `CLAUDE_CODE_ENTRYPOINT` names one of the SDKs.
 
 | `agentType` | `omitClaudeMd` | `appendSystemPrompt` | `model` |
 |---|---|---|---|

@@ -164,10 +164,10 @@ does not parse turns the published path off, with a log line saying so.
 A `file:` URL is an accepted scheme on the environment path. A separate check tests for exactly that
 scheme, with no policy-origin check, so the variable can also point the catalog at a local file.
 
-**read**: the document is signature-checked, so an arbitrary URL cannot inject arbitrary rows. Unless
-a managed catalog public key and a managed catalog URL are both set, the document verifies against
-the trust roots compiled into the build. A managed key with no managed URL logs that the env-named URL
-verifies against the compiled roots only.
+**read**: the document is signature-checked, so an arbitrary URL cannot inject arbitrary rows. In
+hosted mode, or with no managed catalog public key set, the document verifies against the trust roots
+compiled into the build. A managed key with no managed URL verifies against the compiled roots too, and
+logs that the env-named URL verifies against them only.
 
 The env-named URL verifies against the compiled trust roots. That is a security property, not a
 determinism one. A signed document served from a different URL, an older signed document, or a pinned

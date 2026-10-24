@@ -93,7 +93,7 @@ string, ignoring case. The other strips every `[1m]` or `[2m]` anywhere in it.
 The window lookup, also **read**, works like this. A model string carrying `[1m]` gets a 1M local
 window, unless `CLAUDE_CODE_DISABLE_1M_CONTEXT` is set. So does one whose request already carries the
 `context-1m-2025-08-07` beta, and so does a model with a native 1M window on a provider that serves it.
-Anything else gets the default of 200000.
+The lookup's last fallback is a default of 200000.
 
 That `claude-opus-5[1m]` is a string the build knows by name is settled by **read**: the router that
 picks a refusal fallback compares the model against `claude-opus-5` and `claude-opus-5[1m]` as two
@@ -241,7 +241,7 @@ There is a second, undocumented settings key. **read** from the build: when a re
 on and settings do not set `ultracode: true`, the settings reader also builds a per-model table from
 `modelSettings`, taking each entry's `effortLevel`.
 
-`modelSettings` is a per-model effort table, gated on that remote flag (`tengu_russet_plover`), absent from the settings
+`modelSettings` is a per-model effort table, gated on that remote flag, absent from the settings
 reference. It works on this machine: **run** p6, with settings
 `{"modelSettings":{"claude-opus-5":{"effortLevel":"xhigh"}}}` and no `--effort`, sent
 `{"effort":"xhigh"}`. **read** from the build, the table's keys are canonicalised with the `[1m]`
