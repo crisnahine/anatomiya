@@ -1318,13 +1318,31 @@ test("the hook is silent wherever it has nothing to ask", async (t) => {
   }
 });
 
+test("the stop's git reads share one deadline, so reads in a row cannot add up past it", async (t) => {
+  // Each read had five seconds of its own, and on reftable three ran in a row: about 16 s against 15.
+  const { dir, write } = repo(t);
+  write("src/a.ts", "export const one = 1;\nexport function x() {}\nexport const two = 2;\n");
+  assert.equal((await pendingChange(dir)).length, 1, "the control: read in time, the edit asks");
+  // git itself, the first reads at once and the diff of added lines 2.3 s in, past a 2 s deadline.
+  const started = performance.now();
+  const late = (args, cwd) => {
+    const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+    const answer = { code: r.status, stdout: r.stdout, stderr: r.stderr };
+    return args.includes("diff") ? new Promise((done) => setTimeout(() => done(answer), Math.max(0, 2300 - (performance.now() - started)))) : answer;
+  };
+  const calls = scriptGit(t, (args, _line, cwd) => late(args, cwd));
+
+  assert.equal(await pendingChange(dir, { gitBy: started + 2000 }), null, "the diff ran past the stop's deadline");
+  assert.ok(calls().some((c) => c.includes(" diff ")), "and the first reads answered in time, so the diff was asked");
+});
+
 test("the git reads fit inside the time the hook asks Claude Code for", () => {
-  // A hook killed at its timeout answers nothing at all. The payload wait, both
-  // git reads and the stop's reading of its files have to end first, with a
+  // A hook killed at its timeout answers nothing at all. The payload wait, the
+  // stop's git reads and its reading of its files have to end first, with a
   // second to spare for the rest.
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks.Stop[0].hooks[0].timeout;
 
-  assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + REUSE_PARSE_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} + ${REUSE_PARSE_MS} against ${declared}s`);
+  assert.ok(PAYLOAD_WAIT_MS + REUSE_GIT_MS + REUSE_PARSE_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + ${REUSE_GIT_MS} + ${REUSE_PARSE_MS} against ${declared}s`);
 });
 
 test("a checkout whose attributes git could not be asked for asks nothing, and the next one is still asked about", async (t) => {

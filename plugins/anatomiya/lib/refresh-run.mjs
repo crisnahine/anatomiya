@@ -3,15 +3,15 @@
  * by the `refresh` hook. Apart from the hook so a session start does not load
  * the scan to answer with a watch list.
  */
-import { createHash, randomBytes } from "node:crypto";
-import { closeSync, lstatSync, openSync, rmdirSync, unlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { lstatSync, rmdirSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { gitRoot } from "./corpus.mjs";
 import { readFacts, readRecord } from "./facts.mjs";
-import { createdAlone, lockContent, refreshBlockers, removeLeftTokens, takeDeadLock, workerAge } from "./lock.mjs";
+import { acquire, createdAlone, refreshBlockers, release } from "./lock.mjs";
 import { atomic, quietUnlink } from "./store.mjs";
 import { ask, askWhether, BASE_REFS, Unasked, caseMagic, commitAt, gitStreamed, headSha, operationUnfinished, shaReachable, unaskedAs } from "./git.mjs";
 import { buildVersion } from "./readiness.mjs";
@@ -99,7 +99,12 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   if (!lock) {
     // The holder may be past its last look at HEAD. It reads this after letting
     // go and runs again, so the move that started this worker is not lost.
-    leaveWord(again);
+    // Exclusive, so a link planted at the path is never followed; one already there says the same thing.
+    try {
+      createdAlone(again);
+    } catch {
+      // Not left, and this worker still answers busy below; the next move of HEAD starts another.
+    }
     lock = acquire(lockPath);
     if (!lock) return { reason: "busy", pinned: false };
   }
@@ -517,50 +522,6 @@ function writeState(store, { stamp, ok, error, pinned = null, held = null, stopp
 }
 
 const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.[key] ?? null) === (b?.[key] ?? null));
-
-/**
- * Take the lock, or answer null when a live worker holds it.
- *
- * Created exclusively, so two workers cannot both create it. One whose owner is
- * gone, or which is older than any scan runs, is broken by the one worker
- * holding the lock token named by its nonce (`takeDeadLock`), and taken by the
- * one create after. A lock token a worker died holding names a generation that is gone
- * once this one holds the lock, so it is removed here.
- *
- * Answers `{ blocked }` where an entry that is no regular file holds a name and
- * could not be removed: no worker lets go of that, so it is not a lock taken. A
- * lock file the system refuses to unlink is one, and answers null.
- */
-export function acquire(path) {
-  const nonce = randomBytes(8).toString("hex");
-  const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce });
-  try {
-    if (!createdAlone(path, content) && !takeDeadLock(path, workerAge, content)) return null;
-  } catch (err) {
-    return typeof err?.blocked === "string" ? { blocked: err.blocked } : null;
-  }
-  removeLeftTokens(path, nonce);
-  return { path, content };
-}
-
-/**
- * Give the lock back, but only while it is still this worker's. A takeover
- * can leave the entry at the lock's path belonging to another worker (three
- * interleaving over one stale lock), and unlinking by path then freed a live
- * worker's lock for a fourth to take.
- */
-function release(lock) {
-  if (lockContent(lock.path) === lock.content) quietUnlink(lock.path);
-}
-
-// Exclusive, so a link planted at the path is never followed.
-function leaveWord(path) {
-  try {
-    closeSync(openSync(path, "wx"));
-  } catch {
-    // Already left, which says the same thing.
-  }
-}
 
 function takeWord(path) {
   try {

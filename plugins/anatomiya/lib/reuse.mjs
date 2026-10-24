@@ -27,8 +27,11 @@ import { sessionStartIn } from "./transcript.mjs";
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
 
-/** How long each git read may take, inside the timeout the hook declares. */
-export const REUSE_GIT_MS = 5000;
+/** How long one stop's git reads may take together, inside the timeout the hook declares. */
+export const REUSE_GIT_MS = 10_000;
+
+// What is left of the stop's git time; a read is asked only while some is, since a timeout of 0 is none.
+const leftOf = (gitBy) => Math.ceil(gitBy - performance.now());
 
 const REASON_OPENING = "Before you finish, give one subagent this change's diff";
 
@@ -140,21 +143,23 @@ export function reuseRecord(files) {
  * about. The commits are found in the reflog rather than in state this writes,
  * since a marker file would be one more change `git status` reports (A91).
  */
-export async function pendingChange(root, { since = null, turnStart = null, calls = null, parsing = { deadline: null } } = {}) {
+export async function pendingChange(root, { since = null, turnStart = null, calls = null, parsing = { deadline: null }, gitBy = performance.now() + REUSE_GIT_MS } = {}) {
   // git names every path from the top of the checkout, which is where a scan
   // writes its record. A record further down came with a copy of another
   // project, and joined against it git's paths name files nobody changed.
   if (!isPathTaken(join(root, ".git"))) return null;
-  // Asked beside the status read rather than after it, so the hook still makes
-  // two git reads in a row inside the time it declares. The corpus's own
-  // refusals past the path are asked the way `check` asks them: a generated
-  // file or a link holds nothing anybody wrote here by hand.
+  // Asked beside the status read rather than after it, so fewer reads run in a
+  // row against the stop's one deadline. The corpus's own refusals past the
+  // path are asked the way `check` asks them: a generated file or a link holds
+  // nothing anybody wrote here by hand.
+  const timeout = leftOf(gitBy);
+  if (timeout <= 0) return null;
   const [pending, gitdir, dropOf] = await Promise.all([
-    pendingPaths(root, { timeout: REUSE_GIT_MS }),
-    gitDir(root),
+    pendingPaths(root, { timeout }),
+    gitDir(root, timeout),
     // The hook reads every checkout of a stop together: one whose attributes git could not be asked for
     // asks nothing, as one whose status git would not give does, and the others are still read.
-    corpusDrop(root, { timeout: REUSE_GIT_MS }).catch((err) => {
+    corpusDrop(root, { timeout }).catch((err) => {
       if (err instanceof Unasked) return null;
       throw err;
     }),
@@ -163,10 +168,12 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   // One diff from before the turn's first commit to the tree reads what it
   // committed and what it left uncommitted together, so the reads in a row
   // stay two however many commits the turn made.
-  const base = turnStart === null ? null : await committedSince(root, gitdir, turnStart, calls);
+  const base = turnStart === null ? null : await committedSince(root, gitdir, turnStart, calls, gitBy);
   if (pending.present.length === 0 && base === null) return null;
   const edited = base !== null || pending.present.some((p) => p.status === "M");
-  const ranges = edited ? await addedRanges(root, base ?? "HEAD", null, { timeout: REUSE_GIT_MS }) : new Map();
+  const left = leftOf(gitBy);
+  if (edited && left <= 0) return null;
+  const ranges = edited ? await addedRanges(root, base ?? "HEAD", null, { timeout: left }) : new Map();
   if (ranges === null) return null;
 
   // A committed file is in the diff and nowhere in the status, and reads as an
@@ -216,8 +223,8 @@ export async function pendingChange(root, { since = null, turnStart = null, call
  * finished, and it holds the reflog. A git directory nobody can name asks
  * nothing: the status read beside this one fails the same way.
  */
-async function gitDir(root) {
-  const r = await ask(root, ["rev-parse", "--absolute-git-dir"], "where this checkout's git directory is", { timeout: REUSE_GIT_MS }).catch(unaskedAs(null));
+async function gitDir(root, timeout) {
+  const r = await ask(root, ["rev-parse", "--absolute-git-dir"], "where this checkout's git directory is", { timeout }).catch(unaskedAs(null));
   const dir = r?.code === 0 ? r.stdout.trim() : "";
   return dir === "" ? null : dir;
 }
@@ -239,8 +246,8 @@ async function gitDir(root) {
  * off the file alone, a turn that committed everything it wrote was never
  * asked about on reftable.
  */
-async function committedSince(root, gitdir, turnStart, calls) {
-  const entries = headMoves(gitdir) ?? (await headMovesFromGit(root));
+async function committedSince(root, gitdir, turnStart, calls, gitBy) {
+  const entries = headMoves(gitdir) ?? (await headMovesFromGit(root, gitBy));
   if (entries === null) return null;
   let run = null;
   for (const { from, to, seconds, message } of entries) {
@@ -274,13 +281,15 @@ const REFLOG_ASKED = 256;
  * and not the one it moved from, which is the entry before it; the oldest one
  * asked has no such entry and cannot start a run.
  */
-async function headMovesFromGit(root) {
+async function headMovesFromGit(root, gitBy) {
   // No moves read, so no commit is charged to the turn.
+  const timeout = leftOf(gitBy);
+  if (timeout <= 0) return null;
   const r = await ask(
     root,
     ["log", "-g", `--max-count=${REFLOG_ASKED}`, "--date=unix", "--format=%H %gd %gs", "HEAD"],
     "how HEAD moved lately",
-    { timeout: REUSE_GIT_MS }
+    { timeout }
   ).catch(unaskedAs(null));
   if (r?.code !== 0) return null;
   const moves = [];
@@ -294,11 +303,20 @@ async function headMovesFromGit(root) {
 
 const lineCount = (text) => (text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0));
 
-/** When this session's transcript began, off its head (`sessionStartIn`), or null where it cannot be read. */
+/**
+ * When this session's transcript began, off its head (`sessionStartIn`), or null where it cannot be read.
+ *
+ * The head grows until it holds a stamp: the first stamped record can be an instructions attachment
+ * holding every CLAUDE.md and rules file, measured at 167,656 bytes, with its stamp past the first 64 KiB.
+ */
 export function sessionStart(transcriptPath) {
   if (typeof transcriptPath !== "string" || transcriptPath === "") return null;
-  const entry = readHead(transcriptPath, TRANSCRIPT_HEAD);
-  return entry.kind === "file" ? sessionStartIn(entry.head) : null;
+  for (let bytes = TRANSCRIPT_HEAD; ; bytes *= 4) {
+    const entry = readHead(transcriptPath, bytes);
+    if (entry.kind !== "file") return null;
+    const at = sessionStartIn(entry.head);
+    if (at !== null || entry.size <= bytes || bytes >= TRANSCRIPT_MOST) return at;
+  }
 }
 
 /**

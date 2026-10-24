@@ -104,7 +104,7 @@ export async function runReuse(cwd, payload) {
   if (checkouts.length === 0) return {};
   // Loaded here: the change it reads comes from the check, which the echo and
   // the notice must not pay for on every tool call.
-  const { askedMarksIn, continuedByReuseIn, pendingChange, reuseReason, reuseRecord, sessionStart, TRANSCRIPT_MOST } = await import("./reuse.mjs");
+  const { askedMarksIn, continuedByReuseIn, pendingChange, reuseReason, reuseRecord, sessionStart, REUSE_GIT_MS, TRANSCRIPT_MOST } = await import("./reuse.mjs");
   // Both halves of "once per change, and only this session's work" are read off
   // the transcript: when the session began and which tool calls it made, and
   // what it already asked. One that cannot be read says neither, so nothing is
@@ -118,9 +118,10 @@ export async function runReuse(cwd, payload) {
   const calls = toolCallsIn(before);
   // Let go before the git reads, so two 64 MiB tails are never held at once.
   before = null;
-  // One parse budget for the whole stop, however many checkouts it reads.
+  // One parse budget and one git deadline for the whole stop, however many checkouts it reads.
   const parsing = { deadline: null };
-  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls, parsing })));
+  const gitBy = performance.now() + REUSE_GIT_MS;
+  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn, calls, parsing, gitBy })));
   const change = checkouts.flatMap((c, i) => (changes[i] ?? []).map((file) => ({ ...file, path: c.prefix + file.path })));
   if (change.length === 0) return {};
   // Read again past the git reads, which take seconds: an ask or a record

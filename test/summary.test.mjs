@@ -406,7 +406,7 @@ test("each directory holding entries that stops a refresh is said in a line of i
   // The path goes through the encoder, as every path the summary prints does.
   const forged = scanLines(scanSummary(result(), plan({ refreshBlocked: ["a\nb"] })));
   assert.equal(forged.some((line) => line.includes("\n")), false, forged.join("\n"));
-  assert.equal(forged.some((line) => line.startsWith('"a b" is a directory holding entries')), true, forged.join("\n"));
+  assert.equal(forged.some((line) => line.startsWith('"<path this map cannot print as written, 3 chars>" is a directory holding entries')), true, forged.join("\n"));
   for (const none of [plan(), plan({ refreshBlocked: [] })]) {
     assert.equal("refreshBlocked" in scanSummary(result(), none), false);
     assert.equal(scanLines(scanSummary(result(), none)).some((line) => line.includes("refresh.")), false);
@@ -1127,7 +1127,7 @@ test("a pin that gains a root area names it in words, and a directory of that na
       { id: "id0", path: "lib", files: [{ rel: "lib/a.js" }, { rel: "lib/b.js" }] },
       rootAt("."),
       { ...rootAt("the repository root"), id: "named" },
-      // The encoder prints two spaces as one, so this name reads as the root's words too.
+      // The encoder would print two spaces as one, so this name prints as a marker, not as the root's words.
       { id: "spaced", path: "the  repository root", files: [{ rel: "c.go" }] },
     ],
     { sha: "abcdef1234567890abcdef1234567890abcdef12", corpus: 7 }
@@ -1137,7 +1137,7 @@ test("a pin that gains a root area names it in words, and a directory of that na
 
   assert.ok(lines.includes('"the repository root" (new area)  +2 -0'), lines.join("\n"));
   assert.ok(lines.includes('"./the repository root" (new area)  +2 -0'), lines.join("\n"));
-  assert.ok(lines.includes('"./the repository root" (new area)  +1 -0'), lines.join("\n"));
+  assert.ok(lines.includes('"<path this map cannot print as written, 20 chars>" (new area)  +1 -0'), lines.join("\n"));
   assert.equal(lines.filter((l) => l.startsWith('"the repository root"')).length, 1, lines.join("\n"));
   assert.ok(!lines.some((l) => l.startsWith('"."')), lines.join("\n"));
   // The record keeps the path, which is what the pin and the facts are keyed by.

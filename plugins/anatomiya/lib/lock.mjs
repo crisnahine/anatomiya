@@ -11,7 +11,7 @@
  * judge, asked again under that lock token, still answers it dead with the same
  * `identity` (the generation where it gives none).
  */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { closeSync, linkSync, lstatSync, opendirSync, openSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
@@ -68,6 +68,41 @@ function openedAlone(path) {
 // Seven waits doubling from 1 ms: 127 ms asked for, longer on a coarse timer.
 const DELETING_RETRIES = 7;
 const PAUSE = new Int32Array(new SharedArrayBuffer(4));
+
+/**
+ * Take the lock at `path`, or answer null when a live holder has it: the refresh worker for a scan, a scan for its commit.
+ *
+ * Created exclusively, so two holders cannot both create it. One that `judge`
+ * finds dead is broken by the one caller holding the lock token named by its
+ * nonce (`takeDeadLock`), and taken by the one create after. A lock token a
+ * holder died holding names a generation that is gone once this one holds the
+ * lock, so it is removed here.
+ *
+ * Answers `{ blocked }` where an entry that is no regular file holds a name and
+ * could not be removed: no holder lets go of that, so it is not a lock taken. A
+ * lock file the system refuses to unlink is one, and answers null.
+ */
+export function acquire(path, judge = workerAge) {
+  const nonce = randomBytes(8).toString("hex");
+  const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce });
+  try {
+    if (!createdAlone(path, content) && !takeDeadLock(path, judge, content)) return null;
+  } catch (err) {
+    return typeof err?.blocked === "string" ? { blocked: err.blocked } : null;
+  }
+  removeLeftTokens(path, nonce);
+  return { path, content };
+}
+
+/**
+ * Give the lock back, but only while it is still this holder's. A takeover
+ * can leave the entry at the lock's path belonging to another holder (three
+ * interleaving over one stale lock), and unlinking by path then freed a live
+ * holder's lock for a fourth to take.
+ */
+export function release(lock) {
+  if (lockContent(lock.path) === lock.content) quietUnlink(lock.path);
+}
 
 /**
  * Breaks the lock where `judge` finds it dead, then makes the one create of it; true where this call holds it.
@@ -154,8 +189,8 @@ const TOKEN_AGE = mtimeAge({ heldMostMs: 60_000, slackMs: 2000 });
 const lockEntry = (path) => readHead(path, 256);
 const contentOf = (entry) => (entry.kind === "file" ? entry.head : null);
 
-/** What the refresh worker's lock at `path` holds, or null where the entry is no regular file. */
-export const lockContent = (path) => contentOf(lockEntry(path));
+/** What the lock at `path` holds, or null where the entry is no regular file. */
+const lockContent = (path) => contentOf(lockEntry(path));
 
 /**
  * The refresh worker's judge, over the lock's `{pid, at, nonce}`: dead where it does not parse, its pid is
@@ -174,14 +209,25 @@ export const ownerAge = ({ staleMs, now = Date.now, alive = processAlive }) => (
   return ownerGone(content, staleMs, now, alive) ? { live: false, generation, identity } : { live: true, generation };
 };
 
+const HELD_MOST_MS = 30 * 60 * 1000;
+// A commit holds its lock for its renames alone, so a dead holder whose pid was reused waits out minutes, not half an hour.
+const COMMIT_HELD_MOST_MS = 5 * 60 * 1000;
+
 /**
  * The refresh worker's lock as the worker and the scan's store sweep both judge it. A worker holds it
  * for one scan, and the largest measured takes about two minutes, so a lock older than half an hour
  * belongs to a worker that is not coming back, whatever its pid now names.
  */
-export const workerAge = ownerAge({ staleMs: 30 * 60 * 1000 });
+export const workerAge = ownerAge({ staleMs: HELD_MOST_MS });
 
-// What the refresh worker writes as a nonce, and so the one shape its lock tokens are named by.
+/**
+ * A scan's commit lock as its commit judges it: the refresh worker's judge, but a lock naming this
+ * process is dead too. A commit runs to its end before another in the process starts, so such a lock
+ * is one its release could not remove, as Windows refuses while an indexer holds the file open.
+ */
+export const commitAge = ownerAge({ staleMs: COMMIT_HELD_MOST_MS, alive: (pid) => pid !== process.pid && processAlive(pid) });
+
+// What `acquire` writes as a nonce, and so the one shape its lock tokens are named by.
 const GENERATION = /^[0-9a-f]{16}$/;
 
 function nonceOf(content) {

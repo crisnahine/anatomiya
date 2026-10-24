@@ -77,7 +77,7 @@ const KINDS_LINES = 2;
 const spellGlob = (g, anchored) => globText(g, (dir) => encodePath(dir).slice(1, -1), anchored);
 
 // An area's directory, said the way the overview's root lines say theirs.
-const nameOf = (p) => nameText(encode(p));
+const nameOf = (p) => nameText(sanitisePath(p));
 
 // A pattern as a sentence names it, its directory said as the layout lines say one.
 const sayGlob = (g, anchored) => globText(g, (dir) => nameText(sanitisePath(dir)), anchored);
@@ -722,14 +722,9 @@ function fit({ rows, budget, directed }) {
  * you are the first to break it". Three slots on a measured repository reached
  * it on a directive sentence that appears nowhere in the file the agent reads,
  * and fifteen more on a counts line that went the same way.
- */
-export function droppedDirectives(area) {
-  return new Set(droppedSlots(area).keys());
-}
-
-/**
- * The same slots, each marked `named` where the notice still prints its
- * sentence without counts, and `unnamed` where the file says nothing of it.
+ *
+ * Each is marked `named` where the notice still prints its sentence without
+ * counts, and `unnamed` where the file says nothing of it.
  */
 export function droppedSlots(area, cochange = []) {
   const { rows, kept, names, unsaid = [] } = fit(areaBlocks(area, cochange));

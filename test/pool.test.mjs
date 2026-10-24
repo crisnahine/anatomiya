@@ -465,6 +465,70 @@ process.send({ ready: true, engine: "stub", version: "1" });
   }
 });
 
+test("a worker reply that names no file is charged to the file it was handed", async (t) => {
+  // Kept as sent, it landed in the caller's result map under the key `undefined`.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-malformed-worker-"));
+  t.after(() => removeTree(dir));
+  const worker = join(dir, "stub-worker.mjs");
+  writeFileSync(worker, `process.on("message", () => process.send({ ok: true }));\nprocess.send({ ready: true, engine: "stub", version: "1" });\n`);
+  const f = file(dir, "a.py", "x = 1\n");
+
+  const pool = createPool({ size: 1, worker, engine: "stub" });
+  try {
+    const { attempts, ...r } = await pool.parse(f);
+    assert.deepEqual(r, { rel: "a.py", ok: false, error: "malformed worker reply" });
+    assert.equal(attempts, 1);
+  } finally {
+    await pool.close();
+  }
+});
+
+test("a file a worker could not be sent is answered at once, not when the worker exits", { timeout: 30_000 }, async (t) => {
+  // This worker lets go of its channel and lives on: charged only at its exit, the file waited on it.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-deaf-worker-"));
+  t.after(() => removeTree(dir));
+  const worker = join(dir, "stub-worker.mjs");
+  // It says when it has let go, so the file is handed over only once no send can reach it.
+  const gone = join(dir, "disconnected");
+  writeFileSync(worker, `const { writeFileSync } = await import("node:fs");\nprocess.send({ ready: true, engine: "stub", version: "1" }, () => { process.disconnect(); writeFileSync(${JSON.stringify(gone)}, ""); });\nsetTimeout(() => {}, 60_000);\n`);
+
+  const pool = createPool({ size: 1, worker, engine: "stub" });
+  try {
+    while (!existsSync(gone)) await new Promise((done) => setTimeout(done, 10));
+    // The parent reads the closed channel on its next turn of the loop.
+    await new Promise((done) => setTimeout(done, 50));
+    const started = performance.now();
+    const { attempts, ...r } = await pool.parse(file(dir, "a.py", "x = 1\n"));
+    assert.deepEqual(r, { rel: "a.py", ok: false, error: "worker channel closed" });
+    assert.ok(performance.now() - started < GUARDS.timeoutMs, "answered before the file's own clock ran out");
+  } finally {
+    await pool.close();
+  }
+});
+
+test("files queued past what a worker takes are answered in the order they came, and a close answers the rest", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-order-worker-"));
+  t.after(() => removeTree(dir));
+  const worker = join(dir, "stub-worker.mjs");
+  writeFileSync(worker, `process.on("message", ({ rel }) => process.send({ rel, ok: true }));\nprocess.send({ ready: true, engine: "stub", version: "1" });\n`);
+  const f = file(dir, "a.py", "x = 1\n");
+  const files = Array.from({ length: 50 }, (_, i) => ({ ...f, rel: `f${i}.py` }));
+
+  const pool = createPool({ size: 1, worker, engine: "stub" });
+  const order = [];
+  try {
+    await Promise.all(files.map((x) => pool.parse(x).then((r) => order.push(r.rel))));
+    assert.deepEqual(order, files.map((x) => x.rel));
+    const late = files.map((x) => pool.parse({ ...x, rel: `late-${x.rel}` }));
+    await pool.close();
+    const answered = await Promise.all(late);
+    assert.ok(answered.every((r) => r.rel.startsWith("late-")), "every queued file is answered under its own name");
+    assert.ok(answered.some((r) => r.error === "pool closed"), "and the ones still queued at the close say so");
+  } finally {
+    await pool.close();
+  }
+});
+
 // Bounded, because a worker that is not replaced answers nothing and the files behind it wait for ever.
 test("a worker that says it cannot go on finishes its file and is replaced before it is handed another", { timeout: 60_000 }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-retire-worker-"));
