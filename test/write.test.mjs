@@ -224,6 +224,21 @@ test("an empty directory at the commit lock's name is taken as a dead lock, as a
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a link at the commit lock's name is removed as a dead lock, and what it points at is left alone", needsSymlinks, (t) => {
+  const dir = workspace(t);
+  const outside = elsewhere(t);
+  mkdirSync(join(outside, "kept"));
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  symlinkSync(outside, join(dir, STORE, "commit.lock"));
+
+  writeMap(result(dir, [a, area("src/api")]));
+
+  assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), ["src/api", "src/services"]);
+  assert.equal(existsSync(join(dir, STORE, "commit.lock")), false);
+  assert.deepEqual(readdirSync(outside), ["kept"]);
+});
+
 test("a commit breaks the lock a killed scan left", () => {
   const dir = workspace();
   const a = area("src/services");

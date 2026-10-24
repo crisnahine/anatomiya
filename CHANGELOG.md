@@ -50,11 +50,11 @@ covered.
 
 ### Changed
 
-- Inside the plugin: `check` refuses a base that starts with a dash as one that names no commit,
-  where code calling it got an internal git error; the command line already refused one. The lock a
-  refresh worker takes and gives back is `lock.mjs`'s, which the scan's commit lock uses too. Three
-  helpers that copied one already in the plugin are gone (`resolveLinks`, `baseName`, `leaveWord`),
-  and so is `droppedDirectives`, which only tests called.
+- `check` called from code with a base that starts with a dash refuses it as a base that names no
+  commit, where it threw an internal git error; the command line already refused one.
+- Inside the plugin: the lock a refresh worker takes and gives back is `lock.mjs`'s, which the
+  scan's commit lock uses too. Three helpers that copied one already in the plugin are gone
+  (`resolveLinks`, `baseName`, `leaveWord`), and so is `droppedDirectives`, which only tests called.
 
 ## [0.17.0] - 2026-10-24
 
