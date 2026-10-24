@@ -9,13 +9,14 @@
  * line, so this file never lists them.
  */
 import { execFileSync } from "node:child_process";
-import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { invokedAs, readArgv, realOf } from "./entry.mjs";
 import { ROOT } from "./plugins.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { realpathOf } from "../plugins/anatomiya/lib/rules.mjs";
+import { shippedBytes } from "../plugins/anatomiya/lib/tree-sitter-runtime.mjs";
 import { contains } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
 // Two passes, because one alternation would take `read` out of `read-only`.
@@ -34,21 +35,13 @@ const tracked = (dir) => listed(dir);
 // The checked repository's own list holds what is written and not yet added too, which the next commit publishes.
 const ownFiles = (dir) => listed(dir, "--cached", "--others", "--exclude-standard");
 
-/** A regular file's text, or null for a link, a FIFO, one too big to be a source file or one holding a NUL. */
+/** A regular file's text, or null for a link, a FIFO, one too big to be a source file, one holding a NUL or one that cannot be read. */
 function textOf(path) {
-  let fd;
   try {
-    // Typed through the handle it is read from, so the file read is the file typed. O_NOFOLLOW passes over a link,
-    // whose published text is its target's path, and O_NONBLOCK a FIFO; both fold to 0 on Windows.
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    const seen = fstatSync(fd);
-    if (!seen.isFile() || seen.size > 2_000_000) return null;
-    const buf = readFileSync(fd);
-    return buf.subarray(0, 8192).includes(0) ? null : buf.toString("utf8");
+    const buf = shippedBytes(path, 2_000_000);
+    return buf === null || buf.subarray(0, 8192).includes(0) ? null : buf.toString("utf8");
   } catch {
     return null;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
   }
 }
 
