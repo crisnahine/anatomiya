@@ -523,14 +523,15 @@ _Avoid_: claim (alone: that is a dimension's sentence), marker, token
 **Lock token**:
 What gives one call the right to break a dead lock, for one generation of that lock: the lock file
 found dead, told apart from a later lock at the same name. The echo's lock beside a **batch claim**,
-and the refresh's lock and a scan's commit lock in the **store**, are each broken through one. A
+and the refresh's lock and a scan's **commit lock** in the **store**, are each broken through one. A
 lock token whose maker died is a dead lock too, broken through a lock token of its own, which is
 written "a token's own token".
 _Avoid_: token (alone, but for that one phrase), lock (alone: that is the file it breaks)
 
 **Commit lock**:
-`commit.lock` in the **store**, which a scan holds from its check that no other scan replaced the
-record since its plan to its last rename, so two scans that overlap cannot both write the map.
+`commit.lock` in the **store**. A scan takes it before it checks that no other scan has replaced the
+record since its plan, and holds it to its last rename, so two scans that overlap cannot both write
+the map.
 _Avoid_: write lock, scan lock, refresh lock (that is the worker's, held for a whole scan)
 
 **Store**:
