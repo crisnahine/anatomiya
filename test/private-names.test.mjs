@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { git, scratch } from "./git-worktrees.mjs";
-import { needsFoldingFilesystem, needsPosixSpecialFiles } from "./platform.mjs";
+import { needsFoldingFilesystem, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
 import { privateNames } from "../scripts/private-names.mjs";
 
 const RUN = join(import.meta.dirname, "..", "scripts", "private-names.mjs");
@@ -196,6 +196,16 @@ test("a lockfile and a binary file are not read as text", (t) => {
   const { found } = privateNames({ repo, corpus, privates: ["owner__secret"] });
 
   assert.deepEqual(found, [{ kind: "name", text: "ZebraQuota", files: ["docs/a.md"] }]);
+});
+
+test("a tracked link is passed over, not read through, since what it publishes is its target's path", needsSymlinks, (t) => {
+  const { corpus, repo, root } = corpusWith(t, { priv: { "app/models/order.rb": "class ZebraQuota\nend\n" } });
+  writeFileSync(join(root, "outside.md"), "ZebraQuota\n");
+  symlinkSync(join(root, "outside.md"), join(repo, "linked.md"));
+  git(repo, "add", "linked.md");
+  git(repo, "commit", "-qm", "link");
+
+  assert.deepEqual(privateNames({ repo, corpus, privates: ["owner__secret"] }).found, []);
 });
 
 test("a name, line or path on the accepted list is not reported", (t) => {
