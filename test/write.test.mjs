@@ -211,6 +211,19 @@ test("a directory at the commit lock's name is refused by the plan, so a dry run
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("an empty directory at the commit lock's name is taken as a dead lock, as at the refresh lock's", () => {
+  const dir = workspace();
+  const a = area("src/services");
+  writeMap(result(dir, [a]));
+  mkdirSync(join(dir, STORE, "commit.lock"));
+
+  writeMap(result(dir, [a, area("src/api")]));
+
+  assert.deepEqual(readFacts(dir).areas.map((x) => x.path).sort(), ["src/api", "src/services"]);
+  assert.equal(existsSync(join(dir, STORE, "commit.lock")), false);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a commit breaks the lock a killed scan left", () => {
   const dir = workspace();
   const a = area("src/services");
