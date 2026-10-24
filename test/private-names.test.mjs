@@ -21,7 +21,7 @@ function committed(dir, files) {
 }
 
 /** A corpus of one private and one public repository, and the repository checked against it. */
-function layout(t, { priv = {}, pub = {}, repo = {} }) {
+function corpusWith(t, { priv = {}, pub = {}, repo = {} }) {
   const root = scratch(t, "anatomiya-private-");
   const corpus = join(root, "corpus");
   committed(join(corpus, "owner__secret"), { "README.md": "private\n", ...priv });
@@ -30,7 +30,7 @@ function layout(t, { priv = {}, pub = {}, repo = {} }) {
 }
 
 test("a name only a private repository shares with this one is reported, with the file that carries it", (t) => {
-  const { corpus, repo } = layout(t, {
+  const { corpus, repo } = corpusWith(t, {
     priv: { "app/models/order.rb": "class ZebraQuota\n  def common_helper; end\nend\n" },
     pub: { "lib/common.rb": "def common_helper; end\n" },
     repo: { "test/a.test.mjs": "// ZebraQuota and common_helper\n" },
@@ -44,9 +44,9 @@ test("a name only a private repository shares with this one is reported, with th
 test("a path only a private repository holds is reported once, at its longest, and a path a public one holds is not", (t) => {
   // Every segment here is an ordinary word a public repository could hold, so
   // the name pass passes it: what gives the codebase away is the path.
-  const { corpus, repo } = layout(t, {
+  const { corpus, repo } = corpusWith(t, {
     priv: { "app/services/ledger/sync/fetch.rb": "x\n", "app/models/user.rb": "x\n" },
-    pub: { "app/models/user.rb": "x\n", "app/services/ledger/sync/README": "x\n" },
+    pub: { "app/models/user.rb": "x\n", "app/services/ledger/sync/README": "fetch\n" },
     repo: { "docs/note.md": "Read `app/services/ledger/sync/fetch.rb` and `app/models/user.rb`.\n" },
   });
 
@@ -58,7 +58,7 @@ test("a path only a private repository holds is reported once, at its longest, a
 test("a line copied out of a private repository is reported, wherever a fixture string puts it", (t) => {
   // The copied line holds only ordinary names, so only the line itself gives it
   // away. A line a public repository also holds is the framework's, not theirs.
-  const { corpus, repo } = layout(t, {
+  const { corpus, repo } = corpusWith(t, {
     priv: {
       "db/migrate/1_add.rb": "class Add\n    add_index :tickets, :status, algorithm: :concurrently\n    t.timestamps null: false, default: nil\nend\n",
     },
@@ -74,9 +74,36 @@ test("a line copied out of a private repository is reported, wherever a fixture 
   assert.deepEqual(found, [{ kind: "line", text: "add_index :tickets, :status, algorithm: :concurrently", files: ["test/m.test.mjs"] }]);
 });
 
+test("a private file's own name is reported where this repository spells it, though no text of theirs does", (t) => {
+  // The name sits in the private repository's path alone; a copy of it here is still theirs.
+  const { corpus, repo } = corpusWith(t, {
+    priv: { "app/services/reports/ledger_rollup.rb": "x\n" },
+    pub: { "app/services/billing/charge.rb": "x\n", "spec/services/billing/charge_spec.rb": "x\n", "lib/ledger.rb": "ledger reports\n" },
+    repo: { "test/a.test.mjs": "// spec/services/.../ledger_rollup_spec.rb made app/services/.../ledger_rollup.rb read as covered\n" },
+  });
+
+  const { found } = privateNames({ repo, corpus, privates: ["owner__secret"] });
+
+  assert.deepEqual(found, [{ kind: "name", text: "ledger_rollup", files: ["test/a.test.mjs"] }]);
+});
+
+test("a copy of the checked repository in the corpus is passed over, not read as a public one holding every name", (t) => {
+  // Read as public, the copy holds every name this repository spells, and the check went quiet.
+  const { corpus, repo } = corpusWith(t, {
+    priv: { "app/models/order.rb": "class ZebraQuota\nend\n" },
+    repo: { "docs/a.md": "ZebraQuota\n" },
+  });
+  git(corpus, "clone", "-q", repo, "owner__mirror");
+
+  const { found, skipped } = privateNames({ repo, corpus, privates: ["owner__secret"] });
+
+  assert.deepEqual(found, [{ kind: "name", text: "ZebraQuota", files: ["docs/a.md"] }]);
+  assert.deepEqual(skipped, ["owner__mirror"]);
+});
+
 test("a tracked file that a FIFO now stands in for is passed over, not read", needsPosixSpecialFiles, (t) => {
   // Read, a FIFO holds the process until something writes to it, and nothing will.
-  const { corpus, repo } = layout(t, {
+  const { corpus, repo } = corpusWith(t, {
     priv: { "app/models/stuck.rb": "class StuckQuota\nend\n" },
     repo: { "docs/a.md": "StuckQuota\n" },
   });
@@ -88,8 +115,9 @@ test("a tracked file that a FIFO now stands in for is passed over, not read", ne
 });
 
 test("a name, line or path on the accepted list is not reported", (t) => {
-  const { corpus, repo } = layout(t, {
+  const { corpus, repo } = corpusWith(t, {
     priv: { "app/models/order.rb": "class ZebraQuota\nend\n", "lib/ledger/sync.rb": "x\n" },
+    pub: { "lib/README": "ledger sync sits\n" },
     repo: { "docs/a.md": "ZebraQuota sits in lib/ledger/sync.rb\n" },
   });
 
@@ -104,7 +132,7 @@ const RUN = join(import.meta.dirname, "..", "scripts", "private-names.mjs");
 const run = (...args) => spawnSync(process.execPath, [RUN, ...args], { encoding: "utf8" });
 
 test("the command exits 1 naming each finding and its files, and 0 once each is accepted", (t) => {
-  const { corpus, repo, root } = layout(t, {
+  const { corpus, repo, root } = corpusWith(t, {
     priv: { "app/models/order.rb": "class ZebraQuota\nend\n" },
     repo: { "test/a.test.mjs": "// ZebraQuota\n", "docs/b.md": "ZebraQuota\n" },
   });
@@ -123,7 +151,7 @@ test("the command exits 1 naming each finding and its files, and 0 once each is 
 
 test("the command refuses a private name the corpus does not hold, and an accepted list kept inside the repository", (t) => {
   // A list tracked here would itself name what it hides.
-  const { corpus, repo } = layout(t, {});
+  const { corpus, repo } = corpusWith(t, {});
   writeFileSync(join(repo, "accepted.txt"), "x\n");
 
   const missing = run(corpus, "owner__absent", "--repo", repo);
@@ -140,7 +168,7 @@ test("the command refuses a private name the corpus does not hold, and an accept
 });
 
 test("a repository git cannot list is refused with a sentence, not a stack", (t) => {
-  const { corpus, root } = layout(t, {});
+  const { corpus, root } = corpusWith(t, {});
   const plain = join(root, "plain");
   mkdirSync(plain);
 

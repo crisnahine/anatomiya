@@ -408,8 +408,8 @@ const aliasOf = (name) => ALIASES.get(name) ?? name;
  * A bare constant resolves against the nesting the class is *written* in, and
  * `nesting` is `Module.nesting` for the site: the scopes, innermost first. The difference is
  * the whole of it: Ruby evaluates a superclass expression in the scope holding
- * the declaration, so `module Api::V1; class Qbo < BaseController` names
- * `Api::V1::BaseController` while `class Api::V1::Qbo < BaseController`, written
+ * the declaration, so `module Api::V1; class Sms < BaseController` names
+ * `Api::V1::BaseController` while `class Api::V1::Sms < BaseController`, written
  * at the top level, names `::BaseController`. Both read back as the same
  * qualified name, so the site's own name cannot tell them apart and the
  * enclosing bodies have to be carried separately.

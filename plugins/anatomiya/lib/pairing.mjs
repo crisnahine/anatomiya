@@ -136,8 +136,8 @@ export function companionRoot(corpus, { from, to, ext, companionSuffix }, prefix
  * among them, as the prior the row is written with.
  *
  * A candidate is what a corpus file adds after a producer's whole tail, so
- * `app/models/address.rb` beside `spec/models/address_model_spec.rb` offers
- * `_model_spec.rb`. Never one holding a separator: `spec/models/address/foo_spec.rb`
+ * `app/models/badge.rb` beside `spec/models/badge_model_spec.rb` offers
+ * `_model_spec.rb`. Never one holding a separator: `spec/models/badge/foo_spec.rb`
  * is a file in a directory named after the producer, not a file named after it.
  */
 function companionSuffixes(corpus, { from, ext, companionSuffix }, root) {
@@ -160,7 +160,7 @@ function companionSuffixes(corpus, { from, ext, companionSuffix }, root) {
     const dir = cut === -1 ? "" : rest.slice(0, cut + 1);
     const base = rest.slice(cut + 1);
     // The longest producer name this file extends, so a repository holding both
-    // `address` and `address_model` reads the companion as the longer one's.
+    // `badge` and `badge_model` reads the companion as the longer one's.
     for (let k = base.length - companionSuffix.length; k > 0; k--) {
       if (!tails.has(dir + base.slice(0, k))) continue;
       const suffix = base.slice(k);

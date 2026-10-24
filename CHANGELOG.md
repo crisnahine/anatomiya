@@ -25,11 +25,11 @@ no longer names a private codebase or quotes a proprietary build.
 - The overview head no longer carries the house rule on comments and pull request titles (A121). It
   was the same for every map and counted from no repository, so every repository's agent was told
   one team's conventions. A team that wants it writes it into its own
-  `CLAUDE.md`.
+  `CLAUDE.md`. A map written before 0.18.0 keeps the line until its next scan.
 
 ### Changed
 
-- The test fixtures, code comments and documents no longer carry the file, class, table or service
+- The test fixtures, code comments, documents and earlier changelog entries no longer carry the file, class, table or service
   names of the two private repositories in the measurement corpus. Those two keep their counts
   under neutral names, and the README says its sample area file had its file names changed.
 - The research notes and `docs/plugin-contract.md` describe what the Claude Code, Cursor and Copilot
@@ -1719,7 +1719,7 @@ directory above your checkouts.
   that base inherits the learned class in the same area. The map already counted them as conforming.
   A class the branch moves off the learned base now stops carrying its subclasses in the check.
 - `check` judges a learned base or mixin the way the map does. A superclass or mixin written bare
-  inside a namespace resolves as in the map, so `module Api::V1` with `class Qbo < BaseController`
+  inside a namespace resolves as in the map, so `module Api::V1` with `class Sms < BaseController`
   is no longer a finding under a learned `Api::V1::BaseController`.
 - `module_include` treated `Sidekiq::Worker` and `Sidekiq::Job` as two modules, so `check` gave a
   MUST-FIX to a worker including `Sidekiq::Job` in a directory that writes `Sidekiq::Worker`. The
@@ -3608,10 +3608,10 @@ the report was filed against and re-measured over the 35-repository corpus.
 ### Fixed
 
 - A superclass written bare inside its namespace is the class it resolves to. `module Api::V1; class
-  Qbo < BaseController` names `Api::V1::BaseController`, and counted as a second class it took a
+  Sms < BaseController` names `Api::V1::BaseController`, and counted as a second class it took a
   59-of-64 convention to 55 of 64: the strongest fact in the largest controller area, inverted. Only
   a bare name resolves, and only against the scopes the declaration is written in, so the compact
-  `class Api::V1::Qbo < BaseController` still names the top-level class as Ruby does.
+  `class Api::V1::Sms < BaseController` still names the top-level class as Ruby does.
 - An obligation learns what its companions are called, not only where they live. A repository
   spelling the majority of `spec/models` as `<name>_model_spec.rb` read 46 of 166 and reads 95: a
   repository that specs 57% of its models was described as one that specs 28%. The roster learns the
@@ -4954,7 +4954,7 @@ is rewritten by the next scan; `facts.json` moves to schema 3, where `glob` beco
 - An ancestor area's glob matched its descendants, so a claim a deeper area had been refused was
   delivered to it anyway. `app/workers/workers/**` matched `app/workers/workers/imports`, whose own
   area measured the same dimension at 14 of 22 and was suppressed by the ratio gate; the ancestor's
-  directive, counted over 125 files that do not include any of google's, arrived on every read there
+  directive, counted over 125 files that do not include any of imports', arrived on every read there
   and contradicted it. The gates decide where a claim may be stated and the delivery channel was
   walking around them. An area sharing a root with a deeper area now emits either one glob per
   directory it holds files in, or one recursive glob and a negation per foreign subtree, whichever is

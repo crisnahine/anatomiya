@@ -652,7 +652,6 @@ test("the overview tells the agent to follow this repository's own practice and 
     lines[at - 1],
     "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify."
   );
-  // No house rule follows it: every line of the head is either counted or about how to read the map.
   assert.equal(lines[at + 1], "", "it closes the block of behavioural lines");
 });
 

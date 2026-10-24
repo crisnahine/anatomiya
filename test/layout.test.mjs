@@ -1031,7 +1031,7 @@ test("a spec the parse read and found no case in is not a test file", () => {
   // a measured Rails API:
   // spec/services/.../one_off/bulk_update_spec.rb is commented out top to
   // bottom, so the runner collects nothing from it, and it still made
-  // app/services/.../multiple_changes.rb read as covered.
+  // app/services/.../bulk_update.rb read as covered.
   const empty = { testRunner: null, testCalls: false, empty: true };
   assert.equal(isTestFile(file("spec/models/user_spec.rb", "ruby", empty)), false);
   assert.equal(isTestFile(file("src/a.test.ts", "js", empty)), false);

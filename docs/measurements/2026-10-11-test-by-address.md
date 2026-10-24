@@ -75,7 +75,7 @@ less the files put back.
 | calcom/cal.diy | packages/features | 697 | 695 | 1 net | 1 |
 | calcom/cal.diy | packages/app-store | 648 | 646 | 2 net | 0 |
 | element-plus/element-plus | packages/components | 749 | 745 | 0 net | 4 |
-| a measured React front end | src/utils | 59 | 58 | 0 | 1 (`eventReporting.js`) |
+| a measured React front end | src/utils | 59 | 58 | 0 | 1 (`metrics.js`) |
 | microsoft/vscode | extensions | 2621 | 2256 | 353 (`src/test` helpers) | 12 |
 | prisma/prisma | examples | 236 | 231 | 5 | 0 |
 | react/react | compiler | 238 | 237 | 0 net | 1 |
