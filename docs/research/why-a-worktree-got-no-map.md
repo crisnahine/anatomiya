@@ -485,7 +485,7 @@ already reports. The closing sentence the notice prints is unchanged: it is meas
 - https://code.claude.com/docs/en/hooks: hooks in subagents, `cwd` / `transcript_path` /
   `agent_id`, `WorktreeCreate` / `WorktreeRemove`
 - `~/.local/share/claude/versions/2.1.280`, read for the worktree exclusion helpers and their
-  call sites, `.worktreeinclude` and the `tengu_worktree_*` flags, described rather than quoted
+  call sites, `.worktreeinclude` and the worktree feature flags, described rather than quoted
 - `git help worktree`, `git help gitrepository-layout`, git 2.54.0 (Apple Git-157)
 - Fixtures under `mktemp -d`: plain worktree, `--relative-paths`, `--separate-git-dir`, bare
   clone, `core.worktree` redirect; `echoContext` / `ownLayout` / `noticeFor` called directly

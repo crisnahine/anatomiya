@@ -1317,6 +1317,41 @@ test("a document naming a home directory is failed whosever machine it is, and t
   assert.doesNotMatch(output, /\/Users\/me\//);
 });
 
+test("this machine's home is caught behind the other separator, escaped, and in another case where the filesystem folds it", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const other = process.platform === "win32" ? homedir().replaceAll("\\", "/") : homedir().replaceAll("/", "\\\\");
+  const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n${line}\n`);
+  append("test/encode.test.mjs", `// copied from "${other}" in a string literal`);
+  if (process.platform !== "linux") append("test/fuzz.js", `// copied from ${homedir().toUpperCase()}/x`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /test\/encode\.test\.mjs: carries the path of the machine it was written on/);
+  if (process.platform !== "linux") assert.match(output, /test\/fuzz\.js: carries the path of the machine it was written on/);
+});
+
+test("a home directory written with a drive letter and forward slashes is a home directory too", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "docs", "why.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n\nCopied from C:/Users/alice/notes.md.\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/why\.md: names the home directory C:\/Users\/alice\//);
+});
+
+test("the grammars' licenses are third-party text, so no house rule on prose reads them", needsCheckout, (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, REL.anatomiya, "grammars", "LICENSES.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\nSee offset 123,456,789 and /home/alice/LICENSE.\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 0, output);
+});
+
 test("a research note and a test module carrying that path are failed too", needsCheckout, (t) => {
   const dir = repoCopy(t);
   for (const rel of ["docs/research/what-no-row-reads.md", "test/encode.test.mjs"]) {
@@ -1337,12 +1372,14 @@ test("a document quoting a byte offset into a build is failed, in either spellin
   const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
   append("docs/research/what-no-row-reads.md", "**read**, offset 123,456,789, the spawn generator.");
   append("docs/why.md", "The rule walk asks for it (BUNDLE@1234567).");
+  append("docs/how-it-works.md", "It sits at offset 1234567.");
 
   const { status, output } = check(dir);
 
   assert.equal(status, 1, output);
   assert.match(output, /docs\/research\/what-no-row-reads\.md: quotes a byte offset into a build/);
   assert.match(output, /docs\/why\.md: quotes a byte offset into a build/);
+  assert.match(output, /docs\/how-it-works\.md: quotes a byte offset into a build/);
 });
 
 // A note about a past release is what a changelog holds: the entry naming a

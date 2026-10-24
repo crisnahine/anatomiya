@@ -62,7 +62,7 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] Where the corpus holds private repositories,
       `node scripts/private-names.mjs <corpusDir> <private>... --accept <list>` exits 0. It names every
       name, copied line and path this repository shares with them and with no public repository, and
-      the file it reports in. Rename what it finds, or add a name judged ordinary to the list, which
+      the files that carry each. Rename what it finds, or add a name judged ordinary to the list, which
       lives beside the corpus and never in this repository: the script refuses one inside it (G16).
 - [ ] The corpus run reports no findings, for a change that touches counting. Leave the checkout
       alone while it runs: it shells out to the binary in the working tree per repository, so a file

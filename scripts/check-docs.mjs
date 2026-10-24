@@ -584,10 +584,13 @@ const inRecord = (rel) => rel === "DECISIONS.md" || rel.startsWith(`${DECISIONS_
 const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
 
 // The two ways a note cited a place in a proprietary build beside its code, `offset 123,456,789` and `BUNDLE@1234567` (G17).
-const BUILD_OFFSET = /\boffsets? \d{1,3}(?:,\d{3}){2,}\b|@\d{6,}\b/;
+const BUILD_OFFSET = /\boffsets? \d{1,3}(?:,\d{3}){2,}\b|\boffsets? \d{6,}\b|@\d{6,}\b/;
 
 // A home directory, less `/Users/me`, the placeholder the README shows output under.
-const HOME_SHAPED = /(?:\/Users|\/home)\/(?!me\/)[^\s/`'"<>)]+\/|[A-Z]:\\Users\\(?!me\\)[^\s\\`'"<>)]+\\/;
+const HOME_SHAPED = /(?:\/Users|\/home|[A-Za-z]:[\\/]+Users)[\\/]+(?!me[\\/])[^\s\\/`'"<>)]+[\\/]/;
+
+// Text this repository ships and does not write, which no rule on house prose reads.
+const THIRD_PARTY = new Set([`${REL.anatomiya}/grammars/LICENSES.md`]);
 
 // A changelog is both at once, and exempting it whole was the wider half of the
 // rule than the reason for it: its released sections are the past, and the
@@ -1117,16 +1120,20 @@ export function checkDocs() {
   // in the README is how the output is shown to a reader. What may never ship is
   // this machine's own home, which is the one that got into a public repository
   // before: a note written while reading an installed build carried it nine
-  // times, and the net under the generated documents did not reach it. Research
-  // notes and source comments carried it later, so every document and module is read.
+  // times, and the net under the generated documents did not reach it. A note or a
+  // comment carries a path as easily as a document, so every tracked text file is read.
   const HOME = homedir();
-  // Up to a name character, so a home of /Users/me does not claim /Users/meg, and a full stop ends it.
-  const HOME_AT = HOME && HOME.length > 3 ? new RegExp(`${escapeRe(HOME)}(?![\\w-])(?!\\.[\\w-])`) : null;
+  // Behind either separator, escaped or not, in either case where the filesystem folds it, and up to a
+  // name character, so a home of /Users/me does not claim /Users/meg, and a full stop ends it.
+  const HOME_AT =
+    HOME && HOME.length > 3
+      ? new RegExp(`${HOME.split(/[\\/]+/).map(escapeRe).join("[\\\\/]+")}(?![\\w-])(?!\\.[\\w-])`, process.platform === "linux" ? "" : "i")
+      : null;
   for (const rel of tracked) {
     if (rel.endsWith(".wasm")) continue;
     const text = read(rel);
     if (HOME_AT) claim(rel, !HOME_AT.test(text), "carries the path of the machine it was written on");
-    if (!rel.endsWith(".md")) continue;
+    if (!rel.endsWith(".md") || THIRD_PARTY.has(rel)) continue;
     claim(rel, !BUILD_OFFSET.test(text), "quotes a byte offset into a build");
     // CI runs on a runner's home, so another machine's home is caught by its shape; the measurements have their own net above.
     const named = rel.startsWith("docs/measurements/") ? null : text.match(HOME_SHAPED);
@@ -1138,7 +1145,7 @@ export function checkDocs() {
   }
   // CONTRIBUTING bars a word on an `_Avoid_` line from a claim, a test name and a comment, and the
   // documents keep to it as well.
-  const written = [...tracked].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md");
+  const written = [...tracked].filter((rel) => /\.(?:md|mjs)$/.test(rel) && rel !== "CONTEXT.md" && !THIRD_PARTY.has(rel));
   for (const { rel, line, word, term } of avoidedWords(glossary.terms, written.map((rel) => [rel, CHANGELOG.test(rel) ? unreleased(read(rel)) : read(rel)]))) {
     claim(`${rel}:${line}`, false, `says "${word}", a word the ${term} entry in CONTEXT.md displaces`);
   }

@@ -20,18 +20,12 @@ no longer names a private repository's code or quotes a proprietary build.
   judged ordinary sit in a list beside the corpus, so nothing here names them.
 - `check:docs` fails a document that quotes a byte offset into a build (G17).
 
-### Removed
-
-- The overview head no longer carries the house rule on comments and pull request titles (A121). It
-  was the same for every map and counted from no repository, so every repository's agent was told
-  one team's conventions. A team that wants it writes it into its own `CLAUDE.md`. A map written
-  before 0.18.0 keeps the line until its next scan.
-
 ### Changed
 
-- The test fixtures, code comments, documents and earlier changelog entries no longer carry the file,
-  class, table or service names of the two private repositories in the measurement corpus. Those two keep their counts
-  under neutral names, and the README says its sample area file had its file names changed.
+- The test fixtures, code comments, documents and earlier changelog entries no longer carry the
+  file, class, table or service names of the two private repositories in the measurement corpus.
+  Those two keep their counts under neutral names, and the README says its sample area file had its
+  file names changed.
 - The research notes and `docs/plugin-contract.md` describe what the Claude Code, Cursor and Copilot
   builds do instead of quoting their code, their prompts or byte offsets into them, and every
   conclusion stands.
@@ -39,6 +33,14 @@ no longer names a private repository's code or quotes a proprietary build.
   any document naming a home directory other than the `/Users/me` placeholder, so a run on a CI
   runner still catches a contributor's. It used to pass over the research and measurement notes and
   every module, which is how a home directory reached five research notes and two test files.
+
+### Removed
+
+- The overview head no longer carries the house rule on comments and pull request titles (A121). It
+  was the same for every map and counted from no repository, so every repository's agent was told
+  one team's conventions. A team that wants it writes it into its own `CLAUDE.md`. An overview at
+  its forty lines spends the freed line on the sections below the head, most often one more root in
+  "What lives where". A map written before 0.18.0 keeps the line until its next scan.
 
 ### Fixed
 
@@ -3092,11 +3094,11 @@ after it are not comparable line for line.
   checkout prints every claim as a count. How much of the window there is goes to the terminal
   alone: the overview owes byte-stability between scans of unchanged source, and a fixed-depth
   boundary slides forward with every commit that lands upstream. Decision D11.
-- The empty-tail mirror is asked in both directions. `app/widgets` is a Rails autoload root, so stripping
-  the tree words left `widgets/widgets` against `widgets` and every file sitting directly there read untested:
-  `0 of 13`, `0 of 11`, `0 of 8` where the specs exist and describe the right constants. Measured
-  over the whole corpus, 6,849 areas of which 4,886 carry a companion count: 24 gain on this row's
-  own account, every one hand-verified, and none drops. Decision H34.
+- The empty-tail mirror is asked in both directions. `app/widgets` is a Rails autoload root, so
+  stripping the tree words left `widgets/widgets` against `widgets` and every file sitting directly
+  there read untested: `0 of 13`, `0 of 11`, `0 of 8` where the specs exist and describe the right
+  constants. Measured over the whole corpus, 6,849 areas of which 4,886 carry a companion count: 24
+  gain on this row's own account, every one hand-verified, and none drops. Decision H34.
 - A Ruby file named `_spec.rb` or `_test.rb` is a test only where a test tree above it agrees. A
   RuboCop cop named for the `Rails.env.test?` guard it enforces printed a test group of its own in
   the file that loads every turn, telling a reader to mirror a shape the repository does not have.
@@ -3623,10 +3625,10 @@ the report was filed against and re-measured over the 35-repository corpus.
   option alone the row said 43 of 76; the block form the repository actually uses, `t.foreign_key`
   beside the `t.references` in one `create_table`, brings it to 72 of 76. A key declared only on the
   way down adds nothing going forward and is not counted.
-- One test file answers one source file. `app/services/payments/reports/generate.rb`, which has no spec
-  at all, was credited with the shipping one's, because the tail below the area root is `reports` on both
-  sides. The kinds line said 15 where the claim under it said 13, in one generated file about the
-  same seventeen files; both read 13 now.
+- One test file answers one source file. `app/services/payments/reports/generate.rb`, which has no
+  spec at all, was credited with the shipping service's, because the tail below the area root is
+  `reports` on both sides. The kinds line said 15 where the claim under it said 13, in one generated
+  file about the same seventeen files; both read 13 now.
 - The namesake question answers the same whichever directory above the file asks it. A package whose
   tail is only tree words read 0 of 2 where the directory above it and the directory below it both
   read 2 of 2.
@@ -4955,11 +4957,11 @@ is rewritten by the next scan; `facts.json` moves to schema 3, where `glob` beco
 - An ancestor area's glob matched its descendants, so a claim a deeper area had been refused was
   delivered to it anyway. `app/workers/workers/**` matched `app/workers/workers/imports`, whose own
   area measured the same dimension at 14 of 22 and was suppressed by the ratio gate; the ancestor's
-  directive, counted over 125 files that do not include any of imports', arrived on every read there
+  directive, counted over 125 files that include no file under imports, arrived on every read there
   and contradicted it. The gates decide where a claim may be stated and the delivery channel was
   walking around them. An area sharing a root with a deeper area now emits either one glob per
-  directory it holds files in, or one recursive glob and a negation per foreign subtree, whichever is
-  shorter. Measured on a 5,495-file Rails repository, 156 areas: 37 areas over-reached, by 2,425
+  directory it holds files in, or one recursive glob and a negation per foreign subtree, whichever
+  is shorter. Measured on a 5,495-file Rails repository, 156 areas: 37 areas over-reached, by 2,425
   files in the worst case; the rewritten map is exact on all 857,220 file-area pairs, costs 298
   patterns in total, and leaves the other 119 areas on the single glob they had before.
 - A file that no area holds no longer receives an ancestor's directives either. That covers the two

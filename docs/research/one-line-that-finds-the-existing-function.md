@@ -95,7 +95,7 @@ trigger, scope, and exit condition.
 
 The angle is one shared piece of text, three short clauses long: flag new code that redoes something
 the codebase already has, search the shared and utility modules and the files next to the change, and
-name the existing helper to call instead.
+point at the function that already exists.
 
 In `/simplify` it is one of four angles. The prompt launches four independent review agents at once,
 passes each the diff and one angle, and has each return findings with a file, a line, a one-line
@@ -111,14 +111,14 @@ calls itself recall mode: one vote that was not refuted keeps a finding, and unc
 reason to drop one.
 
 The low-effort `/code-review` shows the ceiling of a diff-only pass. It reads only the unified diff in
-one tool call, with no subagents and no full-file reads, and flags new code that duplicates an existing
-helper only when that helper is visible in the diff context.
+one tool call, with no subagents and no full-file reads, and it can flag a duplicate only of a function
+the diff itself shows.
 
 What the shipped wording does and does not say:
 
 - It scopes the search by place (shared and utility modules, and files next to the change), not by
   behaviour.
-- It asks for a named answer (name the existing helper), which is a per-finding evidence rule.
+- It asks for a named answer, the function that already exists, which is a per-finding evidence rule.
 - It does not enumerate the added functions. It hands the diff to the reader.
 - It separates finding from fixing, and puts the finding in a reader that did not write the code.
 
@@ -304,7 +304,7 @@ inference. The argument against: a vaguer search instruction invites the tool ov
 
 **Vendor guidance favours it.** "Have Claude show evidence rather than asserting success" (Claude Code
 best practices). "If it can't find a quote, it must retract the claim" (reduce hallucinations). The shipped
-wording asks the reader to name the existing helper to call instead. **Vendor claim.**
+wording asks the reader to point at the function that already exists. **Vendor claim.**
 
 **The cost is also first-party.** The Opus 5 page says to remove explicit verification instructions
 because they "cause over-verification". A per-item written log is a verification instruction by shape.
@@ -360,8 +360,8 @@ run `git diff -U0` itself and name the added functions. That turns lever 1 from 
 into "check each of these", the per-item shape CoVe and TICK measured, without the recall step the decay
 studies say loses items. Inference from the sources, not measured.
 
-**A hunk-only view is not enough to find the original.** The low-effort `/code-review` flags only new
-code that duplicates an existing helper visible in the diff context. The original of a Type-4 clone is
+**A hunk-only view is not enough to find the original.** The low-effort `/code-review` can flag a
+duplicate only of a function the diff itself shows. The original of a Type-4 clone is
 by definition somewhere else. The list of added functions tells the model what to check; it does not do
 the search. **Vendor claim** (build text) plus inference.
 
@@ -445,7 +445,7 @@ will never resolve") and CoVe's lost positives both argue for.
 - "grep shared and utility modules, files near the change": the shipped Reuse angle's scope, in this
   note's own words.
 - "and code making the same calls": lever 2, added. Unmeasured.
-- "name any existing function": the shipped angle's rule to name the existing helper.
+- "name any existing function": the shipped angle's rule to point at the function that already exists.
 - "one subagent": the Opus 5 page's "If one subagent can complete the task, use one rather than several".
 - Risk to watch: the Opus 5 page says to remove "use a subagent to verify". This is the candidate most
   likely to cost more tokens.

@@ -57,7 +57,7 @@ row in `KEPT` fixes it.
    echo's once-per-window rule. They do not replace the settings hooks today: they are off under
    `--bare`, `--safe-mode`, `disableAllHooks`, organization policy and a remote switch, they need
    2.1.287, and their file API stops at 4 MiB, which one measured record already exceeds.
-4. **A remote flag can switch off project rules.** 2.1.286 to 2.1.290 all carry `tengu_paper_halyard`.
+4. **A remote flag can switch off project rules.** 2.1.286 to 2.1.290 all carry it.
    When it is on, Project and Local memory, which is where `.claude/rules/anatomiya-*.md` sits, is
    filtered out at startup and at the nested load. It is off for this account. If it ever turns on,
    the echo hook is the only channel left, which is one more reason to keep it.
@@ -327,7 +327,7 @@ and `InstructionsLoaded` (section 1) already gives most of it without a mod.
 ## 6. A remote switch over project rules
 
 **read** from the build: the startup memory filter drops every Project and Local memory file when the
-remote feature flag `tengu_paper_halyard` is on, and the flag defaults to off. The nested load that
+remote feature flag that gates it is on, and the flag defaults to off. The nested load that
 delivers area files reads the same flag and, when it is on, filters Project and Local files out of
 what it delivers.
 
@@ -422,7 +422,7 @@ Only items that touch anatomiya and are not already written up in this directory
    `effort: medium`, read-only tools), name it in `reuseReason`, and measure against A91. Adds one
    file and one validated path in `scripts/validate.mjs`. It loses the measured wording until the
    new one is measured.
-7. **Watch, no code:** mods (section 5), `tengu_paper_halyard` (section 6), and one live run of a
+7. **Watch, no code:** mods (section 5), the remote flag (section 6), and one live run of a
    worktree-isolated subagent to settle section 7's wording. If the flag ever matters, a cached-flags
    line in `/anatomiya:doctor` is the cheapest guard.
 
@@ -434,7 +434,7 @@ Only items that touch anatomiya and are not already written up in this directory
 - **Whether the 2.1.290 "plugin hooks ... clipped" line touches settings-hook `additionalContext`.**
   The changelog groups it with mods, and the hooks doc still describes the 10,000-character
   save-to-file rule. The build was not traced for it.
-- **What `tengu_paper_halyard` is for**, and what sets the second instruction source in section 6. Only the gate and the filter were
+- **What the remote flag of section 6 is for**, and what sets the second instruction source in section 6. Only the gate and the filter were
   read. The flag's purpose is not documented.
 - **Worktree-isolated subagents and area files** (section 7) need a live run.
 - **How Opus 5.5 treats a Stop hook's block reason** is unmeasured. The prompting guide speaks about

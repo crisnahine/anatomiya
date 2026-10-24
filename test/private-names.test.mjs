@@ -9,6 +9,11 @@ import { git, scratch } from "./git-worktrees.mjs";
 import { needsPosixSpecialFiles } from "./platform.mjs";
 import { privateNames } from "../scripts/private-names.mjs";
 
+const RUN = join(import.meta.dirname, "..", "scripts", "private-names.mjs");
+
+/** The command's exit code, stdout and stderr. */
+const run = (...args) => spawnSync(process.execPath, [RUN, ...args], { encoding: "utf8" });
+
 /** A committed repository at `dir` holding `files`, a map of path to contents. */
 function committed(dir, files) {
   for (const [rel, body] of Object.entries(files)) {
@@ -138,6 +143,15 @@ test("a repository with no commit is refused, since no copy of it could be told 
   assert.match(refused.stderr, /^git cannot read the first commit of .*empty/);
 });
 
+test("a file written here and not yet added is read too, since the next commit publishes it", (t) => {
+  const { corpus, repo } = corpusWith(t, { priv: { "app/models/order.rb": "class ZebraQuota\nend\n" } });
+  writeFileSync(join(repo, "draft.md"), "ZebraQuota\n");
+
+  const { found } = privateNames({ repo, corpus, privates: ["owner__secret"] });
+
+  assert.deepEqual(found, [{ kind: "name", text: "ZebraQuota", files: ["draft.md"] }]);
+});
+
 test("a tracked file that a FIFO now stands in for is passed over, not read", needsPosixSpecialFiles, (t) => {
   // Read, a FIFO holds the process until something writes to it, and nothing will.
   const { corpus, repo } = corpusWith(t, {
@@ -162,11 +176,6 @@ test("a name, line or path on the accepted list is not reported", (t) => {
 
   assert.deepEqual(privateNames({ repo, corpus, privates: ["owner__secret"], accepted }).found, []);
 });
-
-const RUN = join(import.meta.dirname, "..", "scripts", "private-names.mjs");
-
-/** The command's exit code, stdout and stderr. */
-const run = (...args) => spawnSync(process.execPath, [RUN, ...args], { encoding: "utf8" });
 
 test("the command exits 1 naming each finding and its files, and 0 once each is accepted", (t) => {
   const { corpus, repo, root } = corpusWith(t, {

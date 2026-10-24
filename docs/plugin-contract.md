@@ -224,12 +224,12 @@ fields additionally accept an object, which is the config inline rather than a p
 
 The 2.1.241 build's schema accepts more forms for `mcpServers` than the docs table lists: a path string,
 an MCPB or DXT bundle path or URL relative to the plugin root, an inline map keyed by server name, or an
-array mixing all three. A bundle path with the wrong extension fails with the user-facing message
-`MCPB file path must end with .mcpb or .dxt`. The `.mcpb`/`.dxt` form is not in the docs table.
+array mixing all three. The schema also checks that a bundle path ends in `.mcpb` or `.dxt`. That
+form is not in the docs table.
 
-The same schema accepts `commands` entries as **objects**, not only path strings. An object carries either
-`source` (a file path) or `content` (inline Markdown), never both, plus `description`, `argument-hint`,
-`model` and `allowed-tools`. The docs describe `commands` only as `string|array`.
+The same schema accepts `commands` entries as **objects**, not only path strings. An object carries
+either `source` (a file path) or `content` (inline Markdown), never both, plus `description`,
+`argument-hint`, `model` and `allowed-tools`. The docs describe `commands` only as `string|array`.
 
 ### Paths pointing outside the plugin root
 
@@ -247,8 +247,8 @@ Validated with `"agents": "../outside/agents"`:
 ✘ Validation failed
 ```
 
-The runtime loader refuses the same path, with the message
-`Paths in plugin.json must not use ".." to reference files outside the plugin directory`.
+The runtime loader refuses the same path, saying that a path in `plugin.json` may not use `..` to
+reach outside the plugin directory.
 
 There is a second, independent reason it cannot work: the plugin is **copied** into
 `~/.claude/plugins/cache`, so files outside its directory are simply not there (L813-815). Even if the path
@@ -306,9 +306,9 @@ There are three variables, not one:
 that survives updates, at `~/.claude/plugins/data/{id}/`), and `${CLAUDE_PROJECT_DIR}` (the project root)
 (L677-681).
 
-In the 2.1.241 build one helper substitutes all three together. It replaces `${CLAUDE_PLUGIN_ROOT}` with
-the plugin path and `${CLAUDE_PROJECT_DIR}` with the project root, and it replaces `${CLAUDE_PLUGIN_DATA}`
-only when the plugin has a source.
+In the 2.1.241 build one helper substitutes all three together. It replaces `${CLAUDE_PLUGIN_ROOT}`
+with the plugin path and `${CLAUDE_PROJECT_DIR}` with the project root, and it replaces
+`${CLAUDE_PLUGIN_DATA}` only when the plugin has a source.
 
 Whether a given field is substituted is therefore a question of whether the loader passes that field through
 that helper. Each surface, answered separately.
@@ -324,12 +324,12 @@ quotes (L462, L596).
 
 ### Command Markdown files: yes
 
-The docs table says only "Skill and agent content" (L687), which reads as though flat `commands/*.md` files
-are excluded. They are not. In the 2.1.241 build one code path loads both skills and commands, choosing
-only a label between them, and the substitution helper runs either way. The same substitution is applied
-to the `allowed-tools` frontmatter value, so the variable resolves in frontmatter as well as body text.
-`${CLAUDE_SKILL_DIR}` is a fourth variable that the same code path replaces **only** in skill mode, and it
-is not in the documented table.
+The docs table says only "Skill and agent content" (L687), which reads as though flat
+`commands/*.md` files are excluded. They are not. In the 2.1.241 build one code path loads both
+skills and commands, choosing only a label between them, and the substitution helper runs either
+way. The same substitution is applied to the `allowed-tools` frontmatter value, so the variable
+resolves in frontmatter as well as body text. `${CLAUDE_SKILL_DIR}` is a fourth variable that the
+same code path replaces **only** in skill mode, and it is not in the documented table.
 
 ### Skill files: yes
 
@@ -337,8 +337,8 @@ L687, "Skill and agent content: anywhere the placeholder appears". Same code pat
 
 ### Agent files: yes
 
-L687. In the 2.1.241 build the trimmed agent body goes through the same helper, followed by a `userConfig`
-substitution pass.
+L687. In the 2.1.241 build the trimmed agent body goes through the same helper, followed by a
+`userConfig` substitution pass.
 
 ### Inside `plugin.json` itself: split, and this is the trap
 
@@ -374,13 +374,12 @@ The hooks page repeats it for both hook forms: "both export them as the environm
 `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, and `CLAUDE_PLUGIN_DATA` on the spawned process, so a script can
 read `process.env.CLAUDE_PLUGIN_ROOT` regardless of how it was launched" (hooks.md L487).
 
-The 2.1.241 build assembles that environment from Claude Code's own environment and further layers it
-computes, and sets `CLAUDE_PROJECT_DIR`.
-`CLAUDE_PLUGIN_ROOT` is set only when the hook belongs to a plugin, and `CLAUDE_PLUGIN_DATA` only when the
-plugin also has a source. `userConfig` values arrive as `CLAUDE_PLUGIN_OPTION_<KEY>` in the same
-environment, where the key is uppercased and every character outside letters, digits and underscore
-becomes an underscore. Monitor processes are the exception: they do not get the `CLAUDE_PLUGIN_OPTION_*` variables
-(plugins-reference.md L319).
+The 2.1.241 build assembles that environment from layers it computes, and sets `CLAUDE_PROJECT_DIR`.
+`CLAUDE_PLUGIN_ROOT` is set only when the hook belongs to a plugin, and `CLAUDE_PLUGIN_DATA` only
+when the plugin also has a source. `userConfig` values arrive as `CLAUDE_PLUGIN_OPTION_<KEY>` in the
+same environment, where the key is uppercased and every character outside letters, digits and
+underscore becomes an underscore. Monitor processes are the exception: they do not get the
+`CLAUDE_PLUGIN_OPTION_*` variables (plugins-reference.md L319).
 
 ### Summary
 
@@ -649,9 +648,10 @@ Resolution order, first one set wins, for every source type except `command` (L1
 
 ### Is it semver-checked?
 
-**No.** The 2.1.241 build's schema labels it a semantic version, and the documentation advises semver, but nothing enforces it: "If you use explicit versions, follow semantic
-versioning" (L1320) is advice, not a rule. The version behaves as an **opaque string** whose only job is
-equality comparison against the installed one. Anthropic's own marketplace carries entries with no version at
+**No.** The 2.1.241 build's schema labels it a semantic version, and the documentation advises
+semver, but nothing enforces it: "If you use explicit versions, follow semantic versioning" (L1320)
+is advice, not a rule. The version behaves as an **opaque string** whose only job is equality
+comparison against the installed one. Anthropic's own marketplace carries entries with no version at
 all, which the resolution order handles by falling through to the commit SHA.
 
 The consequence is the one that catches people: setting `version` **pins** the plugin. "Users get updates only
@@ -760,10 +760,10 @@ schema and loader comes from inspecting that compiled build, and it is described
 rather than quoted. That is a primary source, but it is read indirectly, its internal names are minified,
 and a future build can change any of it without notice.
 
-**Whether `${CLAUDE_PLUGIN_ROOT}` is substituted in a `commands/*.md` file is inferred from the build, not
-stated in the docs.** The documented table lists only "Skill and agent content" (plugins-reference.md L687).
-In the 2.1.241 build one code path serves both skills and commands. This was not confirmed by executing a
-command file end to end.
+**Whether `${CLAUDE_PLUGIN_ROOT}` is substituted in a `commands/*.md` file is inferred from the
+build, not stated in the docs.** The documented table lists only "Skill and agent content"
+(plugins-reference.md L687). In the 2.1.241 build one code path serves both skills and commands.
+This was not confirmed by executing a command file end to end.
 
 **The runtime behaviour of an unknown hook `type` was tested through `claude plugin validate`, not through a
 live session.** Validation rejects it with a precise error path. Whether the runtime loader skips only the

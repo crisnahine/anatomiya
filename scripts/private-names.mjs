@@ -5,8 +5,8 @@
  * The corpus holds real repositories, and some of them are private. Every
  * fixture, comment and document here is public, so a class, a table or a path
  * lifted from a private one reads as that repository to anyone who knows it, and
- * three rounds of renaming by eye each found more. The private repositories are
- * named on the command line, so this file never lists them.
+ * renaming by eye misses some. The private repositories are named on the command
+ * line, so this file never lists them.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
@@ -18,6 +18,8 @@ import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { contains } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
 // Two passes, because one alternation would take `read` out of `read-only`.
+// shortcut: a name compares in its own case and from four characters, so `zebra_quota` is not `ZebraQuota`
+// and a three-letter name is never read; compare folded forms if a renamed private name gets through.
 const SNAKE = /[A-Za-z][A-Za-z0-9_]{3,}/g;
 const KEBAB = /[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+/g;
 const PATH = /[A-Za-z0-9_.@[\]-]+(?:\/[A-Za-z0-9_.@[\]-]+)+/g;
@@ -26,7 +28,11 @@ const LOCKFILE = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|
 // Shorter lines are framework boilerplate everywhere.
 const LINE_FLOOR = 24;
 
-const tracked = (dir) => execFileSync("git", ["-C", dir, "ls-files", "-z"], { maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "pipe"] }).toString().split("\0").filter(Boolean);
+const listed = (dir, ...flags) =>
+  execFileSync("git", ["-C", dir, "ls-files", "-z", ...flags], { maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "pipe"] }).toString().split("\0").filter(Boolean);
+const tracked = (dir) => listed(dir);
+// The checked repository's own list holds what is written and not yet added too, which the next commit publishes.
+const ownFiles = (dir) => listed(dir, "--cached", "--others", "--exclude-standard");
 
 /** A regular file's text, or null for a link, a FIFO, one too big to be a source file or one holding a NUL. */
 function textOf(path) {
@@ -40,9 +46,9 @@ function textOf(path) {
   }
 }
 
-/** Every tracked text file of `dir` but its lockfiles, one at a time, so a large repository is never held whole. */
-function* textsOf(dir) {
-  for (const rel of tracked(dir)) {
+/** Every text file of `dir` the list names but its lockfiles, one at a time, so a large repository is never held whole. */
+function* textsOf(dir, files = tracked(dir)) {
+  for (const rel of files) {
     if (LOCKFILE.test(rel)) continue;
     const text = textOf(join(dir, rel));
     if (text !== null) yield { rel, text };
@@ -151,7 +157,8 @@ export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
   const others = children.filter((c) => !privates.includes(c));
   const skipped = others.filter((c) => copyOf(join(corpus, c), repo, repoRoots));
   const publics = others.filter((c) => !skipped.includes(c)).map((c) => join(corpus, c));
-  const mine = textsOf(repo);
+  const files = ownFiles(repo);
+  const mine = textsOf(repo, files);
 
   const names = new Map();
   const lines = new Map();
@@ -162,7 +169,7 @@ export function privateNames({ repo, corpus, privates, accepted = new Set() }) {
     for (const path of text.match(PATH) ?? []) add(spelled, path, rel);
   }
   // A file's own path spells names too, a binary file's included.
-  for (const rel of tracked(repo)) {
+  for (const rel of files) {
     for (const name of namesIn(rel)) add(names, name, rel);
     add(spelled, rel, rel);
   }

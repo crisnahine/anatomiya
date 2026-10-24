@@ -134,7 +134,7 @@ already held, so nothing is read from disk. Every call site of the invalidation 
 | reason | what triggers it | walk cleared too |
 |---|---|---|
 | `compaction` | auto or manual compaction | yes, compaction throws the walk away beside it |
-| (clear) | `/clear`, which resets the session, runs the compaction cleanup, then clears the walk and re-arms `session_start` | yes |
+| (clear) | `/clear`: one step this note does not name, then the compaction routine, then the walk clear that re-arms `session_start` | yes |
 | `directory_added` | `/add-dir`, `--add-dir`, the SDK's `register_repo_root` | yes, the walk is cleared first |
 | `policy_refresh` | managed `CLAUDE.md`, managed rules or related policy settings change | yes, the walk is cleared first |
 | `settings_sync` | settings applied from the user's machine | yes, the memory files are cleared beside it |
@@ -352,7 +352,7 @@ after the grace period it sends SIGKILL to the process group and to the descenda
 
 The signal helper first lists the hook's descendants by walking `ps` output from its pid. It then sends
 the signal to `-pid` (the process group), falling back to the pid, and then to each listed descendant.
-The constants are exit codes 137 and 143, a 1,500 ms grace period and a 100 ms check. So a timeout is
+The constants are 137 and 143, a 1,500 ms grace period and a 100 ms check. So a timeout is
 **SIGTERM to the process group and to every descendant still parented under the hook, then SIGKILL to
 the group and those descendants after 1,500 ms** if any is still alive (checked every 100 ms). A child
 that has double-forked away from the hook's parentage and left the group is outside both lists.
