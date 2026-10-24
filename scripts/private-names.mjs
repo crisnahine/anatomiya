@@ -9,12 +9,13 @@
  * line, so this file never lists them.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { invokedAs, readArgv, realOf } from "./entry.mjs";
 import { ROOT } from "./plugins.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
+import { realpathOf } from "../plugins/anatomiya/lib/rules.mjs";
 import { contains } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
 // Two passes, because one alternation would take `read` out of `read-only`.
@@ -234,7 +235,7 @@ function main(argv) {
   let accepted = new Set();
   if (read.values.accept !== undefined) {
     // In the filesystem's own spelling, or a path written in another case reads as one outside.
-    if (contains(realOf(repo, realpathSync.native), realOf(resolve(read.values.accept), realpathSync.native))) {
+    if (contains(realpathOf(repo), realpathOf(resolve(read.values.accept)))) {
       refuse(`${read.values.accept} sits inside the repository it checks, so it would name what it hides`);
     }
     try {

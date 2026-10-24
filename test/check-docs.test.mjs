@@ -1357,18 +1357,20 @@ test("a home directory written with a drive letter and forward slashes is a home
   assert.match(output, /docs\/why\.md: names the home directory C:\/Users\/alice\//);
 });
 
-test("a home directory ending a sentence, or written in another case, is a home directory too", needsCheckout, (t) => {
+test("a drive home written in lower case is a home directory, and a path that only holds users/ or home/ is not", needsCheckout, (t) => {
+  // The documents describe Rails and JavaScript repositories, whose views, routes and pages say users and home.
   const dir = repoCopy(t);
   const append = (rel, line) => writeFileSync(join(dir, rel), `${readFileSync(join(dir, rel), "utf8")}\n\n${line}\n`);
-  append("docs/why.md", "Copied from /home/alice. The output sits under /Users/me.");
   append("docs/how-it-works.md", "Copied from c:\\users\\bob\\notes.md.");
+  append("docs/why.md", "Rails renders `app/views/users/show.html.erb` for `GET /api/users/:id`, `pages/home/index.tsx` is a page, and https://x.test/users/alice/repos a URL.");
+  append("docs/measurements/2026-08-16-vscode.md", "Read `app/views/users/index.html.erb` and `src/home/feed.ts`.");
 
   const { status, output } = check(dir);
 
   assert.equal(status, 1, output);
-  assert.match(output, /docs\/why\.md: names the home directory \/home\/alice$/m);
   assert.match(output, /docs\/how-it-works\.md: names the home directory c:\\users\\bob\\$/m);
-  assert.doesNotMatch(output, /\/Users\/me/);
+  assert.doesNotMatch(output, /docs\/why\.md:/);
+  assert.doesNotMatch(output, /2026-08-16-vscode\.md:/);
 });
 
 test("the grammars' licenses are third-party text, so no house rule on prose reads them", needsCheckout, (t) => {

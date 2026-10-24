@@ -586,8 +586,9 @@ const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
 // The ways a note cited a place in a proprietary build beside its code: `offset 123,456,789`, `offset 1234567` and `BUNDLE@1234567` (G17).
 const BUILD_OFFSET = /\boffsets? \d{1,3}(?:,\d{3}){2,}\b|\boffsets? \d{6,}\b|@\d{6,}\b/i;
 
-// A home directory, less `/Users/me`, the placeholder the README shows output under; a full stop ends the name.
-const HOME_SHAPED = /(?:\/Users|\/home|[A-Za-z]:[\\/]+Users)[\\/]+(?!me(?:[\\/]|(?![\w-])(?!\.[\w-])))[^\s\\/`'"<>)]+?(?:[\\/]|(?![\w-])(?!\.[\w-]))/i;
+// A path under a home directory, less `/Users/me`, the placeholder the README shows output under. It starts
+// a path, so the `users/` of a view or a route is none.
+const HOME_SHAPED = /(?<![\w.-])(?:\/Users|\/home|[A-Za-z]:[\\/]+[Uu]sers)[\\/]+(?!me[\\/])[^\s\\/`'"<>)]+[\\/]/;
 
 // Text this repository ships and does not write, which no rule on house prose reads.
 const THIRD_PARTY = new Set([`${REL.anatomiya}/grammars/LICENSES.md`]);
@@ -1094,7 +1095,7 @@ export function checkDocs() {
   // the net under it.
   for (const rel of readdirSync(join(root, "docs/measurements")).filter((f) => f.endsWith(".md"))) {
     const text = read(join("docs/measurements", rel));
-    const hit = text.match(/(?:\/Users|\/home|[A-Za-z]:[\\/]+Users)[\\/]+[^\s\\/]+/i);
+    const hit = text.match(/(?<![\w.-])(?:\/Users|\/home|[A-Za-z]:[\\/]+[Uu]sers)[\\/]+[^\s\\/]+/);
     claim(`docs/measurements/${rel}`, !hit, `carries the local path ${hit ? hit[0] : ""}`);
   }
 
