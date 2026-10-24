@@ -456,6 +456,301 @@ class Fix6 < ActiveRecord::Migration[7.2]
 end
 `,
 
+  sql_function_body: `
+class Fn1 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      CREATE FUNCTION f() RETURNS trigger
+      AS $body$ BEGIN
+        PERFORM 1;
+        UPDATE counters SET n = 1;
+        RETURN NEW;
+      END $body$ LANGUAGE plpgsql;
+    SQL
+  end
+end
+`,
+
+  sql_do_line_comment: `
+class Dc1 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN
+        -- backfill the column
+        UPDATE users SET a = 1;
+      END $$;
+    SQL
+  end
+end
+`,
+  sql_do_block_comment: `
+class Dc2 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN /* go */
+        UPDATE users SET a = 1;
+      END $$;
+    SQL
+  end
+end
+`,
+  sql_do_loop_comment: `
+class Dc3 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ DECLARE r record; BEGIN
+        FOR r IN SELECT id FROM u
+        LOOP -- each
+          UPDATE u SET a = 1;
+        END LOOP;
+      END $$;
+    SQL
+  end
+end
+`,
+  sql_do_raise_notice: `
+class Dc4 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN
+        RAISE NOTICE 'begin delete';
+      END $$;
+    SQL
+  end
+end
+`,
+  sql_do_execute_literal: `
+class Ex1 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN
+        EXECUTE 'UPDATE users SET a = 1';
+      END $$;
+    SQL
+  end
+end
+`,
+  sql_do_execute_built: `
+class Ex2 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN
+        EXECUTE format('UPDATE %I', t);
+      END $$;
+    SQL
+  end
+end
+`,
+  sql_do_execute_ddl: `
+class Ex3 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN
+        EXECUTE 'ALTER TABLE t ADD b int';
+      END $$;
+    SQL
+  end
+end
+`,
+  sql_do_block: `
+class Fn2 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN
+        UPDATE users SET a = 1;
+      END $$;
+    SQL
+  end
+end
+`,
+
+  sql_do_block_loop: `
+class Fn3 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ DECLARE r record;
+      BEGIN
+        FOR r IN SELECT id FROM t LOOP
+          UPDATE t SET a = 1;
+        END LOOP;
+      END $$;
+    SQL
+  end
+end
+`,
+
+  sql_do_block_ddl: `
+class Fn4 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN
+        ALTER TABLE a ADD CONSTRAINT f
+          FOREIGN KEY (b) REFERENCES c
+          ON DELETE CASCADE;
+      EXCEPTION WHEN duplicate_object
+        THEN NULL;
+      END $$;
+    SQL
+  end
+end
+`,
+
+  sql_dollar_in_name: `
+class Fn5 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      ALTER TABLE t ADD price$x$ int;
+      UPDATE t SET b = 1;
+    SQL
+  end
+end
+`,
+
+  sql_nested_comment: `
+class Lex1 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      /* a /* b */ c */
+      UPDATE b SET x = 1;
+    SQL
+  end
+end
+`,
+
+  sql_flat_comment: `
+class Lex2 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      /* a /* b */
+      UPDATE b SET x = 1;
+    SQL
+  end
+end
+`,
+
+  sql_escape_string: `
+class Lex3 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      SELECT E'\\\\'';
+      UPDATE t SET a = 1;
+    SQL
+  end
+end
+`,
+
+  sql_backslash_quote: `
+class Lex4 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      ALTER TABLE t COMMENT = 'a\\\\'s';
+      UPDATE t SET a = 1;
+    SQL
+  end
+end
+`,
+
+  sql_hash_comment: `
+class Lex5 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      ALTER TABLE t ADD x int;
+      # it's done
+      UPDATE t SET a = 1;
+    SQL
+  end
+end
+`,
+
+  sql_dashes_without_space: `
+class Lex6 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      SELECT 1--1;
+      UPDATE t SET a = 1;
+    SQL
+  end
+end
+`,
+
+  sql_bang_comment: `
+class Lex7 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      /*!40000 DELETE FROM t */;
+    SQL
+  end
+end
+`,
+
+  sql_backtick_name: `
+class Lex8 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      ALTER TABLE \`a's\` ADD x int;
+      UPDATE t SET a = 1;
+    SQL
+  end
+end
+`,
+
+  sql_escape_string_literal: `
+class Lex10 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      COMMENT ON TABLE t IS E'it\\\\'s;
+      UPDATE t SET a = 1';
+    SQL
+  end
+end
+`,
+
+  sql_name_then_quote: `
+class Lex11 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      SELECT nonE'\\\\';
+      UPDATE t SET a = 1; --';
+    SQL
+  end
+end
+`,
+
+  sql_cut_function_body: `
+class Fn6 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      CREATE FUNCTION f() RETURNS trigger
+      AS $$ BEGIN
+        PERFORM aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;
+        PERFORM 1;
+        UPDATE t SET a = 1;
+      END $$ LANGUAGE plpgsql;
+    SQL
+  end
+end
+`,
+
+  sql_do_block_interpolated: `
+class Fn7 < ActiveRecord::Migration[7.2]
+  def up
+    execute <<~SQL
+      DO $$ BEGIN
+        #{statement};
+      END $$;
+    SQL
+  end
+end
+`,
+
+  sql_leading_interpolation: `
+class Lex9 < ActiveRecord::Migration[7.2]
+  def up
+    execute "#{lock}; UPDATE users SET a = 1"
+  end
+end
+`,
+
   sql_named_local: `
 class Fix7 < ActiveRecord::Migration[7.2]
   def up
@@ -1659,8 +1954,9 @@ test("a leading SQL comment does not hide the verb, and MERGE rewrites rows", ne
 
 test("every SQL statement is read, not only the first", needsRuby, () => {
   // Only the first statement's verb was tested, so a backfill after a SET or an
-  // ALTER in the same string was stated as leaving data alone. A trigger body's
-  // UPDATE counts too, the side this check already errs on.
+  // ALTER in the same string was stated as leaving data alone. A function whose
+  // `AS $$` the string cap cut off reads its body as statements, the side this
+  // check errs on.
   for (const name of ["sql_set_then_update", "sql_ddl_then_update", "sql_trigger_body"]) {
     assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
   }
@@ -1673,6 +1969,45 @@ test("every SQL statement is read, not only the first", needsRuby, () => {
   }
   // A `;` inside a block comment ends no statement either.
   assert.deepEqual(counts("migration_schema_only", "sql_block_comment_semicolon"), { candidates: 1, conforming: 1 });
+});
+
+test("a function body is code the database keeps, and a DO block's runs as the migration does", needsRuby, () => {
+  // Split on the `;` inside `$$ ... $$`, a trigger's UPDATE read as data work,
+  // and a DO block's UPDATE right after its BEGIN read as none.
+  for (const name of ["sql_function_body", "sql_do_block_ddl", "sql_escape_string_literal"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 1 }, name);
+  }
+  // A body the string cap cut is read no further, and a DO block's statement this cannot read is SQL this could not read.
+  for (const name of ["sql_cut_function_body", "sql_do_block_interpolated"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 0, conforming: 0 }, name);
+  }
+  for (const name of ["sql_do_block", "sql_do_block_loop", "sql_dollar_in_name"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+  }
+  // EXECUTE runs a string as a statement: a literal is read as the statement it holds, and one built at run time may
+  // be any statement, so it is SQL this could not read.
+  assert.deepEqual(counts("migration_schema_only", "sql_do_execute_literal"), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("migration_schema_only", "sql_do_execute_built"), { candidates: 0, conforming: 0 });
+  assert.deepEqual(counts("migration_schema_only", "sql_do_execute_ddl"), { candidates: 1, conforming: 1 });
+  // A statement starts after BEGIN, THEN, ELSE and LOOP in code alone: a comment after one hides no UPDATE, and a
+  // word inside a string starts nothing.
+  for (const name of ["sql_do_line_comment", "sql_do_block_comment", "sql_do_loop_comment"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+  }
+  assert.deepEqual(counts("migration_schema_only", "sql_do_raise_notice"), { candidates: 1, conforming: 1 });
+});
+
+test("SQL is read as each database a migration can run on reads it, and a statement any of them runs counts", needsRuby, () => {
+  // PostgreSQL nests block comments and reads `E''` escapes; MySQL escapes with a
+  // backslash in any quote, comments with `#` and with `-- ` only, names in
+  // backticks and runs `/*!` as code; SQLite does none of the first two. Read
+  // one way, each of these hid an UPDATE another database runs.
+  // `E` opens an escape string only where it starts a token.
+  for (const name of ["sql_nested_comment", "sql_flat_comment", "sql_escape_string", "sql_backslash_quote", "sql_hash_comment", "sql_dashes_without_space", "sql_bang_comment", "sql_backtick_name", "sql_name_then_quote"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+  }
+  // An interpolation that opens the string is a statement this cannot read, and the UPDATE after it is still one.
+  assert.deepEqual(counts("migration_schema_only", "sql_leading_interpolation"), { candidates: 1, conforming: 0 });
 });
 
 test("a string the Ruby tree cut short with no data statement before the cut is SQL this could not read", needsRuby, () => {

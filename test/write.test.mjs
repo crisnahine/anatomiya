@@ -71,12 +71,18 @@ function result(root, areas) {
     parse: { parsed: files, crashed: 0, skipped: 0 },
     suppressAll: false,
     areas,
+    held: [],
+    readNothing: false,
   };
 }
 
 const rules = (dir) => join(dir, RULES);
 const listRules = (dir) => readdirSync(rules(dir)).sort();
 const readFacts = (dir) => JSON.parse(readFileSync(join(dir, STORE, "facts.json"), "utf8"));
+// Claude Code's entry on a plan, the names it writes there, and their bodies.
+const claudeOf = (plan) => plan.targets.claude;
+const written = (plan) => claudeOf(plan).write.map((w) => w.name);
+const bodiesOf = (plan) => new Map(claudeOf(plan).write.map((w) => [w.name, w.body]));
 
 test("files land in .claude/rules with the facts beside them", () => {
   const dir = workspace();
@@ -88,12 +94,13 @@ test("files land in .claude/rules with the facts beside them", () => {
   const plan = writeMap(result(dir, [a, b, quiet]));
 
   assert.deepEqual(listRules(dir), [areaFilename(b), areaFilename(a), "anatomiya-overview.md"].sort());
-  assert.deepEqual(plan.write.sort(), listRules(dir));
+  assert.deepEqual(written(plan).sort(), listRules(dir));
   assert.ok(existsSync(join(dir, STORE, "facts.json")), "the facts are on disk beside the files");
   assert.equal(plan.uncovered, 20, "an area's own files are never counted as uncovered");
   // The scan says how many of those discovery could not place; the rest sit in
   // an area that counted nothing, and the overview names the two apart.
   assert.equal(plan.orphaned, 8, "the split reaches the plan, not just the render");
+  assert.equal(plan.barren, 12, "both halves of it, so no surface splits it again");
 
   // Everything a scan can leave untracked: a third thing written without a
   // third line here is a dirty `git status` for anyone who followed the
@@ -109,6 +116,16 @@ test("files land in .claude/rules with the facts beside them", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("more orphans than uncovered files is never more than the uncovered files, nor a negative count beside them", (t) => {
+  const dir = workspace(t);
+  const scan = result(dir, [area("src/services")]);
+  scan.corpus.orphaned = 25;
+
+  const plan = planMap(scan);
+
+  assert.deepEqual([plan.uncovered, plan.orphaned, plan.barren], [20, 20, 0]);
+});
+
 test("a plan carries every body it would write, and puts none of them on disk", () => {
   // The measurement harness held its own copy of this derivation, because the
   // only way to see a body was to write it. A plan that renders is the one
@@ -119,11 +136,11 @@ test("a plan carries every body it would write, and puts none of them on disk", 
 
   const plan = planMap(result(dir, [a, quiet]));
 
-  assert.deepEqual([...plan.bodies.keys()], ["anatomiya-overview.md", areaFilename(a)]);
-  assert.deepEqual(plan.write, [...plan.bodies.keys()]);
+  assert.deepEqual([...bodiesOf(plan).keys()], ["anatomiya-overview.md", areaFilename(a)]);
+  assert.deepEqual(written(plan), [...bodiesOf(plan).keys()]);
   assert.equal(plan.blind, false);
   assert.equal(plan.root, dir);
-  assert.match(plan.bodies.get(areaFilename(a)), /catch blocks use the error they caught/);
+  assert.match(bodiesOf(plan).get(areaFilename(a)), /catch blocks use the error they caught/);
   assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -135,7 +152,7 @@ test("a plan made by one call is committed by the other", () => {
   const plan = commitMap(dir, planMap(result(dir, [a])));
 
   assert.deepEqual(listRules(dir), [areaFilename(a), "anatomiya-overview.md"].sort());
-  assert.equal(readFileSync(join(rules(dir), areaFilename(a)), "utf8"), plan.bodies.get(areaFilename(a)));
+  assert.equal(readFileSync(join(rules(dir), areaFilename(a)), "utf8"), bodiesOf(plan).get(areaFilename(a)));
   assert.ok(existsSync(join(dir, STORE, "facts.json")), "the facts are on disk beside the files");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -374,7 +391,7 @@ test("a dry run writes nothing at all", () => {
 
   const plan = writeMap(result(dir, [area("src/services")]), { dryRun: true });
 
-  assert.equal(plan.write.length, 2);
+  assert.equal(written(plan).length, 2);
   assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory, so neither the record nor the layout file");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -388,7 +405,7 @@ test("a dry run over an existing map removes nothing", () => {
 
   const plan = writeMap(result(dir, [stays]), { dryRun: true });
 
-  assert.deepEqual(plan.remove, [areaFilename(goes)]);
+  assert.deepEqual(claudeOf(plan).remove, [areaFilename(goes)]);
   assert.ok(existsSync(join(rules(dir), areaFilename(goes))), "still on disk");
   assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), before, "facts untouched too");
   rmSync(dir, { recursive: true, force: true });
@@ -410,10 +427,15 @@ test("a scan that could not read a whole language removes nothing", () => {
 
   const blind = result(dir, []);
   blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+  blind.readNothing = true;
+  // As the scan hands it over: every area holds a file of the language it read none of.
+  blind.held = [models, services].map(({ id, path, fileCount }) => ({ id, path, fileCount }));
   const plan = writeMap(blind);
 
-  assert.deepEqual(plan.remove, [], "a map this run cannot speak for is left alone");
-  assert.deepEqual(plan.write, [], "and not half-rewritten either");
+  assert.deepEqual(plan.held, [], "a run that writes nothing carries no record either");
+  assert.equal(plan.uncovered, blind.corpus.files, "and describes none of the files");
+  assert.deepEqual(claudeOf(plan).remove, [], "a map this run cannot speak for is left alone");
+  assert.deepEqual(written(plan), [], "and not half-rewritten either");
   assert.deepEqual(plan.unreadable, ["ruby"], "the caller is told which language went unread");
   assert.ok(existsSync(join(rules(dir), areaFilename(models))), "both area files are still there");
   assert.ok(existsSync(join(rules(dir), areaFilename(services))));
@@ -449,8 +471,8 @@ test("a run that read one language and not the other writes the first and leaves
   const plan = writeMap(partial);
 
   assert.equal(plan.blind, false, "something was read, so something is written");
-  assert.deepEqual(plan.write.sort(), [areaFilename(services), "anatomiya-overview.md"].sort());
-  assert.deepEqual(plan.remove, [], "the area this run could not read is not removed as gone");
+  assert.deepEqual(written(plan).sort(), [areaFilename(services), "anatomiya-overview.md"].sort());
+  assert.deepEqual(claudeOf(plan).remove, [], "the area this run could not read is not removed as gone");
   assert.equal(readFileSync(join(rules(dir), areaFilename(models)), "utf8"), modelsBefore, "nor rewritten");
   assert.match(readFileSync(join(rules(dir), areaFilename(services)), "utf8"), /22 of 22/, "while the rest is");
   // The check reads the record rather than the map, and a record that dropped
@@ -468,11 +490,12 @@ test("a blind run creates no directory either", () => {
   const dir = workspace();
   const blind = result(dir, []);
   blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+  blind.readNothing = true;
 
   const plan = writeMap(blind);
 
   assert.equal(plan.blind, true);
-  assert.deepEqual(plan.write, []);
+  assert.deepEqual(written(plan), []);
   assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -486,7 +509,7 @@ test("a file of ours that this scan no longer covers is removed", () => {
 
   const plan = writeMap(result(dir, [stays]));
 
-  assert.deepEqual(plan.remove, [areaFilename(goes)]);
+  assert.deepEqual(claudeOf(plan).remove, [areaFilename(goes)]);
   assert.deepEqual(listRules(dir), [areaFilename(stays), "anatomiya-overview.md"].sort());
   rmSync(dir, { recursive: true, force: true });
 });
@@ -503,8 +526,8 @@ test("a prefixed file without our key is reported and left alone", () => {
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.deepEqual(plan.foreign, ["anatomiya-area-deadbeef.md"]);
-  assert.deepEqual(plan.remove, []);
+  assert.deepEqual(claudeOf(plan).foreign, ["anatomiya-area-deadbeef.md"]);
+  assert.deepEqual(claudeOf(plan).remove, []);
   assert.equal(readFileSync(impostor, "utf8"), body, "untouched, byte for byte");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -520,8 +543,8 @@ test("a file in .claude/rules that is not ours is reported as unattributed conte
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.deepEqual(plan.foreign, ["house-style.md"]);
-  assert.deepEqual(plan.unknown, []);
+  assert.deepEqual(claudeOf(plan).foreign, ["house-style.md"]);
+  assert.deepEqual(claudeOf(plan).unknown, []);
   assert.equal(readFileSync(theirs, "utf8"), body, "reported, not touched");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -687,7 +710,7 @@ test("an area whose every dimension was suppressed still gets a file", () => {
 
   const plan = writeMap(result(dir, [a]));
 
-  assert.deepEqual(plan.write.sort(), [areaFilename(a), "anatomiya-overview.md"].sort());
+  assert.deepEqual(written(plan).sort(), [areaFilename(a), "anatomiya-overview.md"].sort());
   const text = readFileSync(join(rules(dir), areaFilename(a)), "utf8");
   assert.match(text, /3 of 5 sites \(evidence\)/);
   rmSync(dir, { recursive: true, force: true });
@@ -698,8 +721,8 @@ test("a repository with no area at all still gets an overview", () => {
 
   const plan = writeMap(result(dir, []));
 
-  assert.deepEqual(plan.write, ["anatomiya-overview.md"]);
-  assert.deepEqual(plan.remove, []);
+  assert.deepEqual(written(plan), ["anatomiya-overview.md"]);
+  assert.deepEqual(claudeOf(plan).remove, []);
   assert.equal(plan.uncovered, 20);
   assert.deepEqual(readFacts(dir).areas, []);
   assert.ok(isOwned(readFileSync(join(rules(dir), "anatomiya-overview.md"), "utf8")));
@@ -715,7 +738,7 @@ test("a second scan that states nothing removes the file the first one wrote", (
 
   const plan = writeMap(result(dir, [area("src/services", [])]));
 
-  assert.deepEqual(plan.remove, [areaFilename(before)]);
+  assert.deepEqual(claudeOf(plan).remove, [areaFilename(before)]);
   assert.deepEqual(listRules(dir), ["anatomiya-overview.md"]);
   assert.equal(readFacts(dir).areas.length, 1, "the area is still counted, it just states nothing");
   rmSync(dir, { recursive: true, force: true });
@@ -775,8 +798,8 @@ test("a prefixed file carrying our frontmatter survives a scan that never wrote 
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.deepEqual(plan.remove, [], "no map named it, so nothing may remove it");
-  assert.deepEqual(plan.unknown, [`${PREFIX}area-99999999.md`], "reported instead");
+  assert.deepEqual(claudeOf(plan).remove, [], "no map named it, so nothing may remove it");
+  assert.deepEqual(claudeOf(plan).unknown, [`${PREFIX}area-99999999.md`], "reported instead");
   assert.equal(readFileSync(orphan, "utf8"), body, "left byte for byte");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -791,8 +814,8 @@ test("a second scan removes the area file the first one wrote and this one did n
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.deepEqual(plan.remove, [areaFilename(area("src/api"))]);
-  assert.deepEqual(plan.unknown, []);
+  assert.deepEqual(claudeOf(plan).remove, [areaFilename(area("src/api"))]);
+  assert.deepEqual(claudeOf(plan).unknown, []);
   assert.equal(existsSync(join(rules(dir), areaFilename(area("src/api")))), false);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -808,8 +831,8 @@ test("a deleted facts record makes every area file unremovable rather than remov
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.deepEqual(plan.remove, []);
-  assert.deepEqual(plan.unknown, [areaFilename(area("src/api"))]);
+  assert.deepEqual(claudeOf(plan).remove, []);
+  assert.deepEqual(claudeOf(plan).unknown, [areaFilename(area("src/api"))]);
   assert.equal(existsSync(join(rules(dir), areaFilename(area("src/api")))), true);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -824,7 +847,7 @@ test("a file this run is rewriting is not also reported as unknown", () => {
 
   const plan = writeMap(result(dir, [mine]));
 
-  assert.deepEqual(plan.unknown, []);
+  assert.deepEqual(claudeOf(plan).unknown, []);
   assert.ok(readFileSync(join(rules(dir), areaFilename(mine)), "utf8").includes("catch blocks"));
   rmSync(dir, { recursive: true, force: true });
 });
@@ -869,7 +892,7 @@ test("every name a scan plans is a bare file under the rules directory", () => {
 
   const plan = writeMap(result(dir, [area("src/services"), area("lib/http/client")]), { dryRun: true });
 
-  for (const name of plan.write) {
+  for (const name of written(plan)) {
     assert.ok(name.startsWith(PREFIX) && name.endsWith(".md"), name);
     assert.equal(name.includes("/"), false, name);
     assert.equal(name.includes("\\"), false, name);
@@ -947,7 +970,7 @@ function scanSequences(t, seed, runs) {
       const targets = pick(sets);
       const areas = pool.filter(() => chance(0.5)).map((p) => area(p));
       const scan = result(dir, areas);
-      if (blind) scan.parse = { ...scan.parse, unreadable: ["ruby"] };
+      if (blind) Object.assign(scan, { parse: { ...scan.parse, unreadable: ["ruby"] }, readNothing: true });
 
       const where = `run ${run} step ${step} targets ${JSON.stringify(targets)}`;
       const before = snapshot(dir);
@@ -983,14 +1006,8 @@ function scanSequences(t, seed, runs) {
         if (before.size !== after.size) problems.push(`${where}: a dry run wrote`);
         continue;
       }
-      const wrote = [
-        ...plan.write.map((n) => `${RULES}/${n}`),
-        ...Object.values(plan.targets).flatMap((t) => t.write.map((w) => `${t.dir}/${w.name}`)),
-      ];
-      const removed = [
-        ...plan.remove.map((n) => `${RULES}/${n}`),
-        ...Object.values(plan.targets).flatMap((t) => t.remove.map((n) => `${t.dir}/${n}`)),
-      ];
+      const wrote = Object.values(plan.targets).flatMap((t) => t.write.map((w) => `${t.dir}/${w.name}`));
+      const removed = Object.values(plan.targets).flatMap((t) => t.remove.map((n) => `${t.dir}/${n}`));
       for (const name of wrote) {
         if (!after.has(name)) problems.push(`${where}: ${name} never landed`);
         written.add(name);
@@ -1092,7 +1109,7 @@ test("a rules directory linked to a real directory inside .claude is fine", () =
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.equal(plan.write.length, 2);
+  assert.equal(written(plan).length, 2);
   assert.ok(existsSync(join(dir, ".claude", "actual-rules", "anatomiya-overview.md")));
   rmSync(dir, { recursive: true, force: true });
 });
@@ -1116,8 +1133,8 @@ test("only the head of a rules file is read to test its frontmatter", () => {
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.deepEqual(plan.unknown, [`${PREFIX}head.md`], "the key at byte zero is found");
-  assert.deepEqual(plan.foreign, [`${PREFIX}tail.md`], "a key past the cap is never reached");
+  assert.deepEqual(claudeOf(plan).unknown, [`${PREFIX}head.md`], "the key at byte zero is found");
+  assert.deepEqual(claudeOf(plan).foreign, [`${PREFIX}tail.md`], "a key past the cap is never reached");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -1144,8 +1161,8 @@ test("an area file whose cover is longer than a short head is still ours", () =>
 
   assert.ok(written.length > 8 * 1024, `the fixture is only ${written.length} bytes`);
   assert.ok(isOwned(written), "the whole file carries our key");
-  assert.deepEqual(plan.foreign, [], "our own output is not somebody else's");
-  assert.deepEqual(plan.remove, [areaFilename(wide)], "and it is removable");
+  assert.deepEqual(claudeOf(plan).foreign, [], "our own output is not somebody else's");
+  assert.deepEqual(claudeOf(plan).remove, [areaFilename(wide)], "and it is removable");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -1157,8 +1174,8 @@ test("a rules entry that is not a regular file is not a rule file", () => {
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.deepEqual(plan.foreign, [], "a directory is not a file in the directory");
-  assert.deepEqual(plan.unknown, []);
+  assert.deepEqual(claudeOf(plan).foreign, [], "a directory is not a file in the directory");
+  assert.deepEqual(claudeOf(plan).unknown, []);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -1209,8 +1226,8 @@ test("a hand-written file holding a planned name is not called somebody else's",
   const first = readFileSync(join(rules(dir), `${PREFIX}overview.md`), "utf8");
   const second = (writeMap(result(dir, [mine])), readFileSync(join(rules(dir), `${PREFIX}overview.md`), "utf8"));
 
-  assert.deepEqual(plan.foreign, [], "this run wrote it, so it is not somebody else's");
-  assert.deepEqual(plan.replaced, [areaFilename(mine)], "and the caller is told the name was taken");
+  assert.deepEqual(claudeOf(plan).foreign, [], "this run wrote it, so it is not somebody else's");
+  assert.deepEqual(claudeOf(plan).replaced, [areaFilename(mine)], "and the caller is told the name was taken");
   assert.equal(first, second, "the overview is byte-stable across two scans");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -1227,8 +1244,8 @@ test("a fifo in the rules directory is a shape, and the open does not hang on it
   const t = Date.now();
   const plan = writeMap(result(dir, [area("src/services")]));
   assert.ok(Date.now() - t < 5000, "the open returned");
-  assert.deepEqual(plan.foreign, [], "a fifo is not somebody else's rule file");
-  assert.deepEqual(plan.unreadableRules, [], "and it is not a file this tool failed to read");
+  assert.deepEqual(claudeOf(plan).foreign, [], "a fifo is not somebody else's rule file");
+  assert.deepEqual(claudeOf(plan).unreadableRules, [], "and it is not a file this tool failed to read");
 
   rmSync(dir, { recursive: true, force: true });
 });
@@ -1245,8 +1262,8 @@ test("a socket in the rules directory is a shape on every platform, not an unrea
   await new Promise((resolve, reject) => server.listen(sock, resolve).once("error", reject));
   try {
     const plan = writeMap(result(dir, [area("src/services")]));
-    assert.deepEqual(plan.foreign, [], "a socket is not somebody else's rule file");
-    assert.deepEqual(plan.unreadableRules, [], "and it is not a file this tool failed to read");
+    assert.deepEqual(claudeOf(plan).foreign, [], "a socket is not somebody else's rule file");
+    assert.deepEqual(claudeOf(plan).unreadableRules, [], "and it is not a file this tool failed to read");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await removeTree(dir);
@@ -1320,7 +1337,7 @@ test("a symlinked rule file is reported like the regular file it loads as", () =
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.deepEqual(plan.foreign, ["linked.md"]);
+  assert.deepEqual(claudeOf(plan).foreign, ["linked.md"]);
   const overview = readFileSync(join(rules(dir), `${PREFIX}overview.md`), "utf8");
   assert.match(overview, /^- "linked\.md"$/m);
   rmSync(dir, { recursive: true, force: true });
@@ -1338,7 +1355,7 @@ test("a symlink holding a generated name is replaced, not refused", () => {
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
-  assert.ok(plan.write.includes(`${PREFIX}overview.md`));
+  assert.ok(written(plan).includes(`${PREFIX}overview.md`));
   assert.match(readFileSync(join(rules(dir), `${PREFIX}overview.md`), "utf8"), /# Repository map/);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -1377,9 +1394,9 @@ test("a rule file this tool cannot open is neither ours nor somebody else's", ne
 
   const plan = writeMap(result(dir, [mine]));
 
-  assert.deepEqual(plan.foreign, [], "authorship nobody checked is not asserted");
-  assert.deepEqual(plan.unreadableRules, [stale], "it is reported as what it is");
-  assert.deepEqual(plan.remove, [], "and never removed on a guess");
+  assert.deepEqual(claudeOf(plan).foreign, [], "authorship nobody checked is not asserted");
+  assert.deepEqual(claudeOf(plan).unreadableRules, [stale], "it is reported as what it is");
+  assert.deepEqual(claudeOf(plan).remove, [], "and never removed on a guess");
   const overview = readFileSync(join(rules(dir), `${PREFIX}overview.md`), "utf8");
   assert.match(overview, /could not be read, so whose it is is unknown/);
   assert.doesNotMatch(overview, new RegExp(`- "${stale}"`), "not named as somebody else's");
@@ -1400,9 +1417,9 @@ test("a rules directory that cannot be listed is not one holding nothing", needs
   chmodSync(rules(dir), 0o755);
   const seeing = writeMap(result(dir, [area("src/services")]), { dryRun: true });
 
-  assert.equal(blind.listed, false, "the caller is told nothing was listed");
-  assert.deepEqual(blind.remove, [], "and nothing is removed off an empty listing");
-  assert.equal(seeing.listed, true, "and a directory it could list says so");
+  assert.equal(claudeOf(blind).listed, false, "the caller is told nothing was listed");
+  assert.deepEqual(claudeOf(blind).remove, [], "and nothing is removed off an empty listing");
+  assert.equal(claudeOf(seeing).listed, true, "and a directory it could list says so");
 
   rmSync(dir, { recursive: true, force: true });
 });
@@ -1417,8 +1434,8 @@ test("a rules directory that does not exist yet was looked in, not refused", () 
 
   const first = writeMap(result(dir, [area("src/services")]), { dryRun: true });
 
-  assert.equal(first.listed, true, "nothing is there, and that is an answer");
-  assert.deepEqual(first.remove, []);
+  assert.equal(claudeOf(first).listed, true, "nothing is there, and that is an answer");
+  assert.deepEqual(claudeOf(first).remove, []);
 
   rmSync(dir, { recursive: true, force: true });
 });
@@ -1649,23 +1666,36 @@ async function watched(t, name) {
 }
 
 const BEFORE_PLAN = {
-  write: ["anatomiya-overview.md", "anatomiya-area-5c06cdf8.md"],
-  remove: [],
-  staged: [],
   storeStaged: [],
-  foreign: [],
-  unknown: [],
-  replaced: [],
-  unreadableRules: [],
-  listed: true,
   uncovered: 20,
   orphaned: 8,
+  barren: 12,
   unreadable: [],
   held: [],
   blind: false,
 };
 // `staged` and `storeStaged` are the temporary files an earlier run left: none where no scan stopped.
-const BEFORE_KEYS = ["write", "remove", "staged", "storeStaged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "uncovered", "orphaned", "unreadable", "held", "bodies", "blind", "root", "factsSeen", "result"];
+const BEFORE_KEYS = ["storeStaged", "uncovered", "orphaned", "barren", "unreadable", "held", "blind", "root", "factsSeen", "result", "targets"];
+// Claude Code's directory, which the plan carried at its root before every directory had an entry of its own.
+const BEFORE_CLAUDE = {
+  dir: ".claude/rules",
+  state: "on",
+  reason: null,
+  on: true,
+  named: true,
+  was: [],
+  first: false,
+  remove: [],
+  staged: [],
+  foreign: [],
+  unknown: [],
+  replaced: [],
+  unreadableRules: [],
+  listed: true,
+  unfiled: [],
+  names: ["anatomiya-area-5c06cdf8.md", "anatomiya-overview.md"],
+  pending: [],
+};
 const BEFORE_AREA = `---
 generator: anatomiya
 paths:
@@ -1750,20 +1780,36 @@ const BEFORE_FACTS = {
   ],
 };
 
+test("every directory the map goes to has the same plan entry, Claude Code's among them, and the root holds the run's facts alone", (t) => {
+  const dir = workspace(t);
+  const plan = writeMap(result(dir, [area("src/services")]), { dryRun: true, targets: ["claude", "cursor"] });
+
+  assert.deepEqual(Object.keys(plan.targets), ["claude", "cursor", "copilot"]);
+  const fields = (id) => Object.keys(plan.targets[id]).sort();
+  assert.deepEqual(fields("claude"), fields("cursor"));
+  assert.deepEqual(fields("claude"), fields("copilot"));
+  assert.deepEqual(plan.targets.claude.write.map((w) => w.name), ["anatomiya-overview.md", areaFilename(area("src/services"))]);
+  for (const field of ["write", "remove", "staged", "foreign", "unknown", "replaced", "unreadableRules", "listed", "bodies"]) {
+    assert.equal(field in plan, false, `${field} is a directory's, so it is on that directory's entry`);
+  }
+});
+
 test("with no target asked for and none on, the plan and the disk are what they were", (t) => {
-  // Every literal here was captured from the build before a second directory existed.
+  // The bodies, the disk and the record were captured from the build before a second directory existed.
   const dir = workspace(t);
   const scan = result(dir, [area("src/services"), area("src/types", [])]);
 
   const plan = writeMap(scan);
 
-  const { bodies, result: planned, root, factsSeen, targets, ...fields } = plan;
+  const { result: planned, root, factsSeen, targets, ...fields } = plan;
   assert.deepEqual(fields, BEFORE_PLAN);
-  assert.deepEqual(Object.keys(plan).filter((k) => k !== "targets"), BEFORE_KEYS);
+  assert.deepEqual(Object.keys(plan), BEFORE_KEYS);
   assert.equal(root, dir);
   assert.equal(factsSeen, null, "no record was there to read");
   assert.equal(planned, scan, "the scan itself, with nothing added to it");
-  assert.deepEqual([...bodies], [["anatomiya-overview.md", BEFORE_OVERVIEW], ["anatomiya-area-5c06cdf8.md", BEFORE_AREA]]);
+  const { write, ...claude } = targets.claude;
+  assert.deepEqual(claude, BEFORE_CLAUDE);
+  assert.deepEqual(write.map(({ name, body }) => [name, body]), [["anatomiya-overview.md", BEFORE_OVERVIEW], ["anatomiya-area-5c06cdf8.md", BEFORE_AREA]]);
   assert.deepEqual(Object.keys(tree(dir)), [
     ".claude/",
     ".claude/anatomiya/",
@@ -2468,7 +2514,7 @@ test("a foreign overview does not turn a target on", (t) => {
   for (const target of OTHERS) {
     assert.deepEqual({ state: left.targets[target.id].state, on: left.targets[target.id].on }, { state: "off", on: false });
     assert.deepEqual(left.targets[target.id].foreign, [overviewName(target)], "said to be somebody else's");
-    assert.deepEqual(Object.keys(left.targets[target.id]).filter((k) => k === "replaced" || k === "listed"), [], "only Claude Code's directory has a file replaced or a listing to report");
+    assert.deepEqual(left.targets[target.id].replaced, [], "a file in another tool's directory is never written over");
     assert.deepEqual(namesIn(dir, target), [overviewName(target)]);
     assert.equal(readFileSync(join(dir, target.dir, overviewName(target)), "utf8"), HAND);
   }
@@ -2679,7 +2725,7 @@ const otherCase = (b) => [
   ["Anatomiya-Overview.md", overviewName(claude)],
   [areaName(claude, b.id).replace(b.id, b.id.toUpperCase()), areaName(claude, b.id)],
 ];
-const others = (plan) => ({ replaced: plan.replaced, foreign: plan.foreign, unknown: plan.unknown, remove: plan.remove });
+const others = (plan) => ({ replaced: claudeOf(plan).replaced, foreign: claudeOf(plan).foreign, unknown: claudeOf(plan).unknown, remove: claudeOf(plan).remove });
 const NONE_OTHER = "Any other file there was not written by this tool.";
 
 test("where the volume folds case, a file in .claude/rules spelled as one of the map's names is replaced, and the scan says so once", needsFoldingFilesystem, (t) => {
@@ -2711,7 +2757,7 @@ test("where the volume folds case, a file in .claude/rules spelled as one of the
 
     // An area that is gone takes its file with it, whatever case the directory spells the name in.
     const without = writeMap(result(dir, [a]));
-    assert.deepEqual(without.remove, [areaName(claude, b.id)], theirs);
+    assert.deepEqual(claudeOf(without).remove, [areaName(claude, b.id)], theirs);
     assert.equal(listRules(dir).length, 2, theirs);
   }
 });
@@ -2726,7 +2772,7 @@ test("where the volume folds case, a file that cannot be read under one of the m
     chmodSync(join(rules(dir), theirs), 0o000);
 
     const plan = writeMap(result(dir, [a, b]));
-    assert.deepEqual({ ...others(plan), unreadableRules: plan.unreadableRules }, { replaced: [], foreign: [], unknown: [], remove: [], unreadableRules: [] }, theirs);
+    assert.deepEqual({ ...others(plan), unreadableRules: claudeOf(plan).unreadableRules }, { replaced: [], foreign: [], unknown: [], remove: [], unreadableRules: [] }, theirs);
     assert.ok(isOwned(readFileSync(join(rules(dir), theirs), "utf8")), theirs);
   }
 });
@@ -3080,7 +3126,7 @@ test("an area that went away is removed from every target", (t) => {
 
   const plan = writeMap(result(dir, [stays]));
 
-  assert.deepEqual(plan.remove, [areaFilename(goes)]);
+  assert.deepEqual(claudeOf(plan).remove, [areaFilename(goes)]);
   assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, stays));
   for (const t of OTHERS) {
     assert.deepEqual(plan.targets[t.id].remove, [areaName(t, goes.id)]);
@@ -3113,7 +3159,7 @@ test("an area no pattern of which Copilot can be given has no file there, and a 
   }
   // Claude Code takes the pattern quoted, so its file stays.
   assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, q));
-  assert.deepEqual(plan.remove, []);
+  assert.deepEqual(claudeOf(plan).remove, []);
 });
 
 test("a target directory that became a link after the plan was made refuses the commit", needsSymlinks, (t) => {
@@ -3136,6 +3182,7 @@ test("a run that read nothing writes and removes nothing in any directory", (t) 
   const blind = () => {
     const scan = result(dir, []);
     scan.parse = { ...scan.parse, crashed: scan.corpus.files, unreadable: ["ruby"] };
+    scan.readNothing = true;
     return scan;
   };
 
@@ -3150,6 +3197,7 @@ test("a run that read nothing writes and removes nothing in any directory", (t) 
   const fresh = workspace(t);
   const first = result(fresh, []);
   first.parse = { ...first.parse, crashed: first.corpus.files, unreadable: ["ruby"] };
+  first.readNothing = true;
   writeMap(first, { targets: ALL });
   assert.deepEqual(tree(fresh), {});
 });
@@ -3670,13 +3718,11 @@ test("a temporary file an earlier run left is removed from every directory this 
   plant();
 
   const dry = writeMap(result(dir, [a]), { dryRun: true });
-  assert.deepEqual(dry.staged, left(TARGETS.claude));
-  for (const target of OTHERS) assert.deepEqual(dry.targets[target.id].remove, left(target), target.id);
+  for (const target of EVERY_TARGET) assert.deepEqual(dry.targets[target.id].staged, left(target), target.id);
   for (const target of EVERY_TARGET) assert.equal(namesIn(dir, target).length, 2 + 2 + 3, "a dry run removes nothing");
 
   const plan = writeMap(result(dir, [a]));
-  assert.deepEqual(plan.staged, left(TARGETS.claude));
-  assert.deepEqual(plan.remove, [], "no area file went");
+  for (const target of EVERY_TARGET) assert.deepEqual([plan.targets[target.id].staged, plan.targets[target.id].remove], [left(target), []], `${target.id}: no area file went`);
   for (const target of EVERY_TARGET) assert.deepEqual(namesIn(dir, target), [...mapOf(target, a), ...kept(target)].sort(), target.id);
   for (const target of OTHERS) assert.deepEqual(readFacts(dir).targets[target.id], mapOf(target, a), "the record names the map and nothing else");
 
@@ -3684,19 +3730,19 @@ test("a temporary file an earlier run left is removed from every directory this 
   plant();
   const off = writeMap(result(dir, [a]), { targets: ["claude"] });
   for (const target of OTHERS) {
-    assert.deepEqual(off.targets[target.id].remove, [...mapOf(target, a), ...left(target)]);
+    assert.deepEqual([off.targets[target.id].remove, off.targets[target.id].staged], [mapOf(target, a), left(target)]);
     assert.deepEqual(namesIn(dir, target), kept(target).sort(), target.id);
   }
   plant();
   const plain = writeMap(result(dir, [a]));
   for (const target of OTHERS) {
-    assert.deepEqual(plain.targets[target.id].remove, [], target.id);
+    assert.deepEqual([plain.targets[target.id].remove, plain.targets[target.id].staged], [[], []], target.id);
     assert.deepEqual(namesIn(dir, target), [...left(target), ...kept(target)].sort(), target.id);
   }
   // Left out by name again: nothing of the map's is there, and the temporary files still go.
   const again = writeMap(result(dir, [a]), { targets: ["claude"] });
   for (const target of OTHERS) {
-    assert.deepEqual(again.targets[target.id].remove, left(target), target.id);
+    assert.deepEqual([again.targets[target.id].remove, again.targets[target.id].staged], [[], left(target)], target.id);
     assert.deepEqual(namesIn(dir, target), kept(target).sort(), target.id);
   }
 });
@@ -3709,11 +3755,12 @@ test("a run that read no file of a language removes no temporary file either", (
   for (const target of EVERY_TARGET) writeFileSync(join(dir, target.dir, stagedName(overviewName(target), pid)), "half a map\n");
   const blind = result(dir, []);
   blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+  blind.readNothing = true;
 
   const plan = writeMap(blind);
 
   assert.equal(plan.blind, true);
-  assert.deepEqual(plan.staged, []);
+  assert.deepEqual(claudeOf(plan).staged, []);
   for (const target of OTHERS) assert.deepEqual(plan.targets[target.id].remove, [], target.id);
   for (const target of EVERY_TARGET) assert.ok(namesIn(dir, target).includes(stagedName(overviewName(target), pid)), target.id);
 });
@@ -3729,7 +3776,7 @@ test("a scan that clears a target whose overview was deleted takes the temporary
 
   const plan = writeMap(result(dir, [a]));
 
-  assert.deepEqual(plan.targets.cursor.remove, [areaName(cursor, a.id), left]);
+  assert.deepEqual([plan.targets.cursor.remove, plan.targets.cursor.staged], [[areaName(cursor, a.id)], [left]]);
   assert.deepEqual(namesIn(dir, cursor), []);
 });
 
@@ -3741,7 +3788,7 @@ test("a temporary file a running scan staged is left for that scan to rename", (
 
   const plan = writeMap(result(dir, [a]));
 
-  assert.deepEqual(plan.staged, []);
+  assert.deepEqual(claudeOf(plan).staged, []);
   for (const target of EVERY_TARGET) assert.ok(namesIn(dir, target).includes(stagedName(overviewName(target), process.pid)), target.id);
 });
 
@@ -3755,7 +3802,7 @@ test("a temporary file staged by a process this user may not signal is left, sin
 
   const plan = writeMap(result(dir, [a]), { targets: ALL });
 
-  assert.deepEqual([plan.staged, plan.storeStaged], [[], []]);
+  assert.deepEqual([claudeOf(plan).staged, plan.storeStaged], [[], []]);
   for (const path of at) assert.equal(existsSync(path), true, path);
 });
 
@@ -3771,8 +3818,7 @@ function nonFileAtAStagedName(t, make) {
 
   for (const targets of [null, ALL, ["claude"]]) {
     const plan = writeMap(result(dir, [a]), { targets });
-    assert.deepEqual(plan.staged, []);
-    for (const target of OTHERS) assert.deepEqual(plan.targets[target.id].remove.filter((n) => n.includes(".tmp-")), [], target.id);
+    for (const target of EVERY_TARGET) assert.deepEqual(plan.targets[target.id].staged, [], target.id);
     assert.deepEqual(shapes(), before, "the entry is what it was");
   }
 }
@@ -3846,7 +3892,7 @@ function leftoverInEach(t) {
   const assertLeft = (plan, went = []) => {
     const b = area("src/api");
     assert.deepEqual([plan.storeStaged, plan.storeStagedLeft], [went, [left.store]]);
-    assert.deepEqual([plan.staged, plan.stagedLeft], [[], [left.claude]]);
+    assert.deepEqual([claudeOf(plan).staged, claudeOf(plan).stagedLeft], [[], [left.claude]]);
     assert.deepEqual(listRules(dir), [...mapOf(TARGETS.claude, a, b), left.claude].sort());
     assert.deepEqual(readdirSync(join(dir, STORE)).sort(), ["facts.json", left.store, "layout.json"].sort());
     for (const target of OTHERS) {
@@ -3878,8 +3924,8 @@ test("a temporary file an earlier run left that cannot be removed is left where 
   }
 
   const plan = scanned();
-  assert.deepEqual([plan.storeStaged, plan.staged, "storeStagedLeft" in plan, "stagedLeft" in plan], [[left.store], [left.claude], false, false], "let go, the next scan removes each and says nothing of any left");
-  for (const target of OTHERS) assert.deepEqual([plan.targets[target.id].remove, plan.targets[target.id].foreign], [[left[target.id]], []], target.id);
+  assert.deepEqual([plan.storeStaged, claudeOf(plan).staged, "storeStagedLeft" in plan, "stagedLeft" in claudeOf(plan)], [[left.store], [left.claude], false, false], "let go, the next scan removes each and says nothing of any left");
+  for (const target of OTHERS) assert.deepEqual([plan.targets[target.id].staged, plan.targets[target.id].foreign], [[left[target.id]], []], target.id);
 });
 
 test("a temporary file that cannot be removed beside a locked file of the map leaves the directory unknown, and is not counted", async (t) => {
@@ -3908,13 +3954,13 @@ test("a temporary file that cannot be removed beside a locked file of the map le
           said
         );
         assert.deepEqual(tree(join(dir, target.dir)), theirs, `${said}: every entry there as it was, the leftover with them`);
-        assert.deepEqual(["stagedLeft" in plan, "storeStagedLeft" in plan], [false, false], said);
+        assert.deepEqual(["stagedLeft" in claudeOf(plan), "storeStagedLeft" in plan], [false, false], said);
         assert.deepEqual(readFacts(dir).targets, { [target.id]: mapOf(target, a, b), [other.id]: mapOf(other, a, c) }, `${said}: the record names the files still there`);
         assert.deepEqual(listRules(dir), mapOf(TARGETS.claude, a, c), `${said}: Claude Code's map moved`);
         assert.deepEqual(namesIn(dir, other), mapOf(other, a, c), said);
 
         const healed = writeMap(result(dir, [a, c]));
-        assert.deepEqual(healed.targets[target.id].remove, [areaName(target, b.id), left], said);
+        assert.deepEqual([healed.targets[target.id].remove, healed.targets[target.id].staged], [[areaName(target, b.id)], [left]], said);
         assert.deepEqual(namesIn(dir, target), mapOf(target, a, c), `${said}: let go, the next scan writes it and takes the leftover`);
       }
     }
@@ -3957,6 +4003,7 @@ test("a temporary file an earlier run left in the store is removed, and nothing 
 
   const blind = result(dir, []);
   blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+  blind.readNothing = true;
   assert.deepEqual(writeMap(blind).storeStaged, []);
   assert.deepEqual(temps(), [...left, ...kept].sort(), "nor does a run that read no file of a language");
 
@@ -4296,7 +4343,7 @@ test("a scan killed after any rename or removal is finished by the next plain sc
     assert.deepEqual(namesIn(dir, claude), [...mapOf(claude, a, c), stray].sort(), `killed after step ${at}`);
     for (const target of OTHERS) assert.deepEqual(namesIn(dir, target), mapOf(target, a, c), `${target.id}, killed after step ${at}`);
     assert.deepEqual(readdirSync(join(dir, STORE)).sort(), ["facts.json", "layout.json"], `killed after step ${at}`);
-    assert.deepEqual(plan.unknown, [stray], `killed after step ${at}: the stray is left and reported`);
+    assert.deepEqual(claudeOf(plan).unknown, [stray], `killed after step ${at}: the stray is left and reported`);
     assert.equal("removing" in readFacts(dir), false, `killed after step ${at}: a finished scan has nothing left to remove`);
   }
   // Two store files and three in each directory renamed, one area file removed from each, and the record written again.
@@ -4382,7 +4429,7 @@ test("a name to remove that a scan never gives a file is not removed", (t) => {
   const plan = writeMap(result(dir, [a]));
 
   assert.equal(existsSync(join(rules(dir), "anatomiya-notes.md")), true);
-  assert.deepEqual(plan.unknown, ["anatomiya-notes.md"]);
+  assert.deepEqual(claudeOf(plan).unknown, ["anatomiya-notes.md"]);
 });
 
 // Hand-counted, not imported: a bound read off the module under test moves with it.
@@ -4464,6 +4511,7 @@ test("a record or its layout file past the bound is replaced without being read,
     tooLarge(join(dir, at));
     const blind = result(dir, [a, b]);
     blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+    blind.readNothing = true;
     assert.equal("oversized" in writeMap(blind), false, `${leaf}: a blind run writes nothing, so it replaces nothing either`);
     assert.equal(statSync(join(dir, at)).size, TOO_LARGE, `${leaf}: and leaves it`);
     const plan = writeMap(result(dir, [a, b]));

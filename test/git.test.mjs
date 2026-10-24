@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +14,7 @@ import { killPidIn, needsBatchZ, needsPosixPaths, needsShebang } from "./platfor
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
 import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
-import { Unasked, blobReader, caseMagic, changedSinceWorktree, commitAt, diffRange, filesAt, gitBuffered, gitStreamed, headSha, isSha, mergeBase, nameStatusReader, parsePorcelainRows, shaReachable, showBlob, resolveBaseRef } from "../plugins/anatomiya/lib/git.mjs";
+import { Unasked, answerWith, ask, askWhether, blobReader, caseMagic, changedSinceWorktree, commitAt, diffRange, filesAt, gitBuffered, gitStreamed, headSha, isSha, mergeBase, nameStatusReader, parsePorcelainRows, shaReachable, showBlob, resolveBaseRef, topLevel, unaskedAs } from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -2537,3 +2537,104 @@ test("a blob git could not be asked for is unasked, never absent, through either
   const batched = await reader.read("a.ts");
   assert.deepEqual([batched.ok, batched.reason], [false, "unasked"]);
 });
+
+/* --- a question asked by its kind, and a git scripted in git's place --- */
+
+test("ask answers with git's exit code and what it printed, whatever the code, and throws where git gave none", async (t) => {
+  const { dir } = repo(t);
+  assert.deepEqual(await ask(dir, ["rev-parse", "--is-shallow-repository"], "whether this clone is shallow"), { code: 0, stdout: "false\n", said: "" });
+  const missing = await ask(dir, ["rev-parse", "--verify", "--quiet", "nothing-here^{commit}"], "which commit nothing-here names");
+  assert.deepEqual([missing.code, missing.stdout], [1, ""]);
+  assert.equal(missing.said, "git exited 1", "a code git left with nothing said is still worded");
+
+  const restore = answerWith((args) => (args.includes("--is-shallow-repository") ? { signal: "SIGTERM" } : null));
+  t.after(restore);
+  await assert.rejects(ask(dir, ["rev-parse", "--is-shallow-repository"], "whether this clone is shallow"), (err) => err instanceof Unasked && /^git could not be asked whether this clone is shallow: .*SIGTERM/.test(err.message));
+});
+
+test("askWhether is git's yes or no, and anything else is no answer", async (t) => {
+  const { dir } = repo(t);
+  const asked = (args) => askWhether(dir, args, "whether it holds");
+  assert.equal(await asked(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]), true);
+  assert.equal(await asked(["rev-parse", "--verify", "--quiet", "nothing-here^{commit}"]), false);
+  t.after(answerWith((args) => (args.includes("refused") ? { code: 128, stderr: "fatal: not today" } : null)));
+  await assert.rejects(asked(["rev-parse", "--verify", "--quiet", "refused"]), (err) => err instanceof Unasked && /fatal: not today/.test(err.message));
+});
+
+test("a question git could not be asked answers what the caller chose for it, and any other failure passes on", async () => {
+  assert.equal(await Promise.reject(new Unasked("x")).catch(unaskedAs(null)), null);
+  await assert.rejects(Promise.reject(new Error("refused")).catch(unaskedAs(null)), /refused/);
+});
+
+test("a git scripted in git's place answers the buffered and the streamed reads, and the rest go to git", async (t) => {
+  const { dir } = repo(t);
+  const seen = [];
+  const restore = answerWith((args) => {
+    seen.push(args.join(" "));
+    if (args.includes("ls-files")) return { stdout: "a.ts\0b.ts\0" };
+    if (args.includes("cat-file")) return { signal: "SIGTERM" };
+    if (args.includes("log")) return { code: 128, stderr: "fatal: bad revision" };
+    return null;
+  });
+  const fields = [];
+  await gitStreamed(dir, ["ls-files", "-z", "--"], (f) => { if (f) fields.push(f); });
+  assert.deepEqual(fields, ["a.ts", "b.ts"]);
+  await assert.rejects(gitStreamed(dir, ["cat-file", "--batch-check"], () => {}), (err) => err instanceof Unasked);
+  await assert.rejects(gitStreamed(dir, ["log", "--format=%H"], () => {}), (err) => !(err instanceof Unasked) && /exited 128: fatal: bad revision/.test(err.message));
+  assert.equal((await ask(dir, ["rev-parse", "--is-shallow-repository"], "whether this clone is shallow")).stdout, "false\n", "an unscripted call runs git");
+  // A blob is read through the scripted git too, which the batch reader cannot be.
+  await assert.rejects(Promise.resolve(blobReader(dir, "0".repeat(40)).read("a.ts")).then((r) => { if (r.reason === "unasked") throw new Unasked(r.error); return r; }), (err) => err instanceof Unasked);
+  restore();
+  assert.ok(seen.some((s) => s.startsWith("ls-files")) && seen.some((s) => s.startsWith("rev-parse")));
+  const after = [];
+  await gitStreamed(dir, ["ls-files", "-z", "--"], (f) => { if (f) after.push(f); });
+  assert.notDeepEqual(after, ["a.ts", "b.ts"], "the stand-in is gone once restored");
+});
+
+test("a scripted git that never answers is ended by its clock, as a stalled git is", { timeout: 10_000 }, async (t) => {
+  const { dir } = repo(t);
+  t.after(answerWith((args) => (args.includes("--is-shallow-repository") ? new Promise(() => {}) : null)));
+
+  await assert.rejects(ask(dir, ["rev-parse", "--is-shallow-repository"], "whether this clone is shallow", { timeout: 50 }), (err) => err instanceof Unasked && /after 50 ms/.test(err.message));
+});
+
+test("two scripted gits undone in the order t.after runs them leave neither behind", async (t) => {
+  const { dir } = repo(t);
+  const shallow = () => ask(dir, ["rev-parse", "--is-shallow-repository"], "whether this clone is shallow");
+  const asked = (outcome) => (args) => (args.includes("--is-shallow-repository") ? outcome : null);
+  const first = answerWith(asked({ signal: "SIGTERM" }));
+  const second = answerWith(asked({ code: 128, stderr: "fatal: the second" }));
+  first();
+  assert.equal((await shallow()).said, "fatal: the second", "undoing the first leaves the second answering");
+  second();
+  assert.equal((await shallow()).stdout, "false\n", "undoing both leaves git");
+});
+
+test("a scripted blob is handed over as the bytes it was scripted with", async (t) => {
+  const { dir } = repo(t);
+  const bytes = Buffer.from([0xff, 0xfe, 0x00, 0x61]);
+  t.after(answerWith((args) => (args.includes("cat-file") ? { stdout: bytes } : null)));
+  assert.deepEqual(await showBlob(dir, "a".repeat(40), "a.ts"), { ok: true, content: bytes });
+});
+
+test("a repository top git names as an empty line is no repository, never the directory the process runs in", async (t) => {
+  const { dir } = repo(t);
+  // git prints forward slashes on Windows, so the answer is held to a real path as `gitRoot` holds it.
+  assert.equal(realpathSync.native(await topLevel(dir)), realpathSync.native(dir));
+  t.after(answerWith((args) => (args.includes("--show-toplevel") ? { stdout: "\n" } : null)));
+  await assert.rejects(topLevel(dir, "there"), /^Error: not a git repository: there$/);
+});
+
+test("a scripted read past its bound is refused as one past the bound, and a caller that stops a scripted stream is answered", async (t) => {
+  const { dir } = repo(t);
+  t.after(answerWith((args) => (args.includes("cat-file") ? { stdout: "x".repeat(64) } : args.includes("ls-files") ? { stdout: "a\0b\0c\0" } : null)));
+  const r = await gitBuffered(dir, ["cat-file", "blob", "HEAD:a.ts"], { maxBytes: 16 });
+  assert.deepEqual([r.ok, r.oversize, r.code], [false, true, null]);
+  const seen = [];
+  await gitStreamed(dir, ["ls-files", "-z", "--"], (f) => {
+    seen.push(f);
+    return false;
+  });
+  assert.deepEqual(seen, ["a"]);
+});
+

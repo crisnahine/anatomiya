@@ -22,8 +22,9 @@ import { areaFilename, isOwned, GENERATOR } from "../plugins/anatomiya/lib/rules
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { PRECEDENT_FLOOR, principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { areaLabel, discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
-import { extOrName } from "../plugins/anatomiya/lib/paths.mjs";
+import { escapeRe, extOrName } from "../plugins/anatomiya/lib/paths.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
+import { askedScope } from "../plugins/anatomiya/lib/reduce.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
 import { TARGETS, isClaude } from "../plugins/anatomiya/lib/targets.mjs";
 import { claudeCodeReaches } from "./paths-reader.mjs";
@@ -46,6 +47,9 @@ const dim = (o = {}) => ({
   ...o,
 });
 
+// The files a scan describes nothing of, split as the writer splits them: orphaned unless named otherwise.
+const uncoveredFiles = (uncovered, orphaned = uncovered) => ({ uncovered, orphaned, barren: uncovered - orphaned });
+
 const area = (o = {}) => {
   const built = {
     id: "aabbccdd",
@@ -55,14 +59,16 @@ const area = (o = {}) => {
     dimensions: [dim()],
     ...o,
   };
-  // A single-language area comes out of the reducer with a denominator equal to
-  // its file count, and the renderer divides by that rather than by the area.
-  return {
+  const counted = {
     // Three files of each language named, unless the test counts them itself.
     ...(built.extsByLang ? { filesByLang: Object.fromEntries(Object.keys(built.extsByLang).map((lang) => [lang, 3])) } : {}),
     ...built,
-    dimensions: built.dimensions.map((d) => ({ langFileCount: built.fileCount, ...d })),
   };
+  // A single-language area comes out of the reducer with a denominator equal to
+  // its file count, and the renderer divides by that rather than by the area.
+  // Where the area carries the scan's language counts, each slot is scoped as the scan scopes it.
+  const scoped = (d) => (counted.extsByLang && d.scope === undefined ? { scope: askedScope(counted, d) } : {});
+  return { ...counted, dimensions: built.dimensions.map((d) => ({ langFileCount: built.fileCount, ...scoped(d), ...d })) };
 };
 
 const result = (o = {}) => ({
@@ -247,7 +253,7 @@ test("a solo repository's directive line does not read as team agreement", () =>
 
 test("a file this tool generated is recognised by its frontmatter key", () => {
   assert.equal(isOwned(renderArea(area())), true);
-  assert.equal(isOwned(renderOverview(result(), { uncovered: 30 })), true);
+  assert.equal(isOwned(renderOverview(result(), uncoveredFiles(30))), true);
   assert.equal(areaFilename(area()), "anatomiya-area-aabbccdd.md");
 });
 
@@ -458,7 +464,7 @@ test("a slot's scope clause is built once however many findings print it", () =>
   assert.equal(first, "one sentence, in .ts files: no convention. 4 of 4 sites (evidence)");
   assert.equal(second, "another sentence, in .ts files: no convention. 4 of 4 sites (evidence)");
   unstatedLine({}, slot, "a third.");
-  assert.ok(reads > once, "another area builds its own");
+  assert.equal(reads, once, "the clause is the slot's own, so no other area builds it again");
 });
 
 test("an unstated line whose record lost its gate names the one check reports", () => {
@@ -476,7 +482,7 @@ test("the overview says what a no convention line means", () => {
   // The gate name in parentheses is the only reason printed, and "no convention.
   // 73 of 73 sites" reads as a denial of a habit every site follows without it.
   // On the line that says what a claim is, so it costs the bound no line.
-  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const lines = renderOverview(result(), uncoveredFiles(30)).split("\n");
   const at = lines.indexOf(
     'A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.'
   );
@@ -538,13 +544,13 @@ test("a gate that failed because git did not answer says so", () => {
 test("a one-author repository says so once in the overview", () => {
   // A5 holds while the count holds: the line is stable across scans of
   // unchanged source, and it is what stops a solo map reading as a team's.
-  const solo = renderOverview(result({ authors: { files: 9, error: null, repo: 1 } }), { uncovered: 30 });
+  const solo = renderOverview(result({ authors: { files: 9, error: null, repo: 1 } }), uncoveredFiles(30));
   assert.match(solo, /^This repository has one author, so every claim below is that author's practice\.$/m);
 
-  const team = renderOverview(result({ authors: { files: 9, error: null, repo: 4 } }), { uncovered: 30 });
+  const team = renderOverview(result({ authors: { files: 9, error: null, repo: 4 } }), uncoveredFiles(30));
   assert.ok(!/one author/.test(team));
 
-  assert.doesNotThrow(() => renderOverview(result(), { uncovered: 30 }));
+  assert.doesNotThrow(() => renderOverview(result(), uncoveredFiles(30)));
 });
 
 test("a window of history says so, and does not say whose repository it is", () => {
@@ -552,7 +558,7 @@ test("a window of history says so, and does not say whose repository it is", () 
   // team is. The sentence above printed 644 times over a repository with
   // fifteen, and nothing anywhere said the history was a window.
   const overview = (shallow) =>
-    renderOverview(result({ authors: { files: 9, error: null, repo: 1, shallow } }), { uncovered: 30 });
+    renderOverview(result({ authors: { files: 9, error: null, repo: 1, shallow } }), uncoveredFiles(30));
   const out = overview({ commits: 1, oldest: "2026-01-22T00:43:30Z" });
 
   assert.match(out, /^history truncated: shallow clone, so author counts are a floor$/m);
@@ -571,7 +577,7 @@ test("a history that could not be read at all is not described as a window", () 
   // so both are true at once. Every slot below then carries `history could not
   // be read` under a head saying the window was the reason.
   const both = { files: 0, error: "git log failed", repo: null, shallow: { commits: 1, oldest: null } };
-  const out = renderOverview(result({ authors: both }), { uncovered: 30 });
+  const out = renderOverview(result({ authors: both }), uncoveredFiles(30));
 
   assert.doesNotMatch(out, /history truncated/);
 });
@@ -609,10 +615,10 @@ test("the terminal is the surface that says how much of the history there is", (
 test("the overview is byte-stable across scans of unchanged source", () => {
   // A5: the token economics only work on a cached read, so nothing that moves
   // per commit may reach the overview.
-  const first = renderOverview(result(), { uncovered: 30 });
+  const first = renderOverview(result(), uncoveredFiles(30));
   const second = renderOverview(
     result({ scannedAt: "2026-06-30T23:59:59.000Z", durationMs: 98_765 }),
-    { uncovered: 30 }
+    uncoveredFiles(30)
   );
 
   assert.equal(Buffer.compare(Buffer.from(first), Buffer.from(second)), 0);
@@ -624,7 +630,7 @@ test("the overview tells the agent to read, grep or run the code when unsure, an
   // One constant sentence beside the read-before-editing line: it names the
   // three tools the agent already has and permits the abstention, and it must
   // never carry a count or a date (A5).
-  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const lines = renderOverview(result(), uncoveredFiles(30)).split("\n");
   const at = lines.indexOf(
     "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify."
   );
@@ -636,7 +642,7 @@ test("the overview tells the agent to follow this repository's own practice and 
   // The third constant sentence, and the only one about what to do with a
   // change instead of what to read first. Scoped by a trigger clause, because
   // removing the equivalent scope guard is measured to move the rate (A42).
-  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const lines = renderOverview(result(), uncoveredFiles(30)).split("\n");
   const at = lines.indexOf(
     "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion."
   );
@@ -649,7 +655,7 @@ test("the overview tells the agent to follow this repository's own practice and 
 });
 
 test("the overview says how comments and pull request titles are written, closing the block of behavioural lines", () => {
-  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const lines = renderOverview(result(), uncoveredFiles(30)).split("\n");
   const at = lines.indexOf(HOUSE_RULES_LINE);
   assert.ok(at > 0, "the sentence is in the overview");
   assert.equal(lines[at - 1], "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.");
@@ -660,7 +666,7 @@ test("a truncated scan still tells the agent how to work, because the head is no
   // The three head sentences are the half of the file that holds when the
   // counts do not. A truncated scan states no directive, and that is a
   // different thing from saying nothing about how to work.
-  const out = renderOverview(result({ suppressAll: true }), { uncovered: 30 });
+  const out = renderOverview(result({ suppressAll: true }), uncoveredFiles(30));
 
   assert.match(out, /^Read a file before editing it: /m);
   assert.match(out, /^When unsure what this code does, /m);
@@ -685,7 +691,7 @@ test("a repository with more areas than the overview lists summarises the tail",
     })),
   });
 
-  const out = renderOverview(many, { uncovered: 0 });
+  const out = renderOverview(many, uncoveredFiles(0));
 
   assert.match(out, /^## Areas \(260\)$/m, "the count is the truth, not the listing's length");
   assert.equal((out.match(/^- src\/mod\d+ — /gm) || []).length, 10, "only the areas that state something are named");
@@ -704,7 +710,7 @@ test("an overview below the limit names only the areas that state something", ()
         area({ id: "a3", path: "src/quiet", dimensions: [dim({ directive: false })] }),
       ],
     }),
-    { uncovered: 0 }
+    uncoveredFiles(0)
   );
 
   assert.match(out, /^## Areas \(3\)$/m, "the count is the truth, not the listing's length");
@@ -714,7 +720,7 @@ test("an overview below the limit names only the areas that state something", ()
 });
 
 test("an overview collapses nothing when every area states something", () => {
-  const out = renderOverview(result(), { uncovered: 30 });
+  const out = renderOverview(result(), uncoveredFiles(30));
 
   assert.equal((out.match(/^- \S+ — \d+ files, \d+ stated$/gm) || []).length, result().areas.length);
   assert.ok(!/more areas/.test(out), "there is no tail to summarise");
@@ -723,7 +729,7 @@ test("an overview collapses nothing when every area states something", () => {
 test("the overview names every generated file and disowns the rest", () => {
   // A4: .claude/rules/ is a repository directory, so a clone can ship a rule
   // file that loads on every turn from the moment of clone.
-  const out = renderOverview(result(), { uncovered: 30 });
+  const out = renderOverview(result(), uncoveredFiles(30));
 
   assert.match(out, /^Generated files: 3 under \.claude\/rules\/anatomiya-\*\.md$/m);
   assert.match(out, /^Any other file there was not written by this tool\.$/m);
@@ -732,7 +738,7 @@ test("the overview names every generated file and disowns the rest", () => {
 });
 
 test("an overview of a repository with no areas names only itself", () => {
-  const out = renderOverview(result({ areas: [] }), { uncovered: 0 });
+  const out = renderOverview(result({ areas: [] }), uncoveredFiles(0));
 
   assert.match(out, /^## Areas \(0\)$/m);
   assert.match(out, /^Generated files: 1 under \.claude\/rules\/anatomiya-\*\.md$/m);
@@ -746,18 +752,18 @@ test("a file with no area and a file whose area counted nothing are different fa
   // one sentence, and it was only ever true of the first: six .js files holding
   // JSX in one directory were reported as "too few per directory" at a floor of
   // three, and a synthetic Rails repo said it of two 40-file test trees.
-  const out = renderOverview(result(), { uncovered: 30, orphaned: 12 });
+  const out = renderOverview(result(), uncoveredFiles(30, 12));
 
   assert.match(out, /^- 12 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m);
   assert.match(out, /^- 18 source files sit in a directory nothing was counted in$/m);
 });
 
 test("one cause states one line, not a zero beside it", () => {
-  const all = renderOverview(result(), { uncovered: 9, orphaned: 9 });
+  const all = renderOverview(result(), uncoveredFiles(9, 9));
   assert.match(all, /^- 9 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m);
   assert.ok(!/nothing was counted in/.test(all), "no second line when every uncovered file is an orphan");
 
-  const none = renderOverview(result(), { uncovered: 9, orphaned: 0 });
+  const none = renderOverview(result(), uncoveredFiles(9, 0));
   assert.match(none, /^- 9 source files sit in a directory nothing was counted in$/m);
   assert.ok(!/sit in no area/.test(none), "and none the other way");
 });
@@ -770,7 +776,7 @@ test("the overview reports what the parser could not read", () => {
   // measures the machine and stays on the summary alone.
   const out = renderOverview(
     result({ parse: { parsed: 80, crashed: 7, skipped: 3, failed: 5, syntaxErrors: 9 } }),
-    { uncovered: 12 }
+    uncoveredFiles(12)
   );
 
   assert.match(out, /^- 12 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m);
@@ -830,7 +836,7 @@ test("a truncated scan names no area, because a truncated scan states nothing", 
   const silent = (path) => area({ path, dimensions: [dim({ states: null, directive: false })] });
   const out = renderOverview(
     result({ suppressAll: true, areas: [silent("src/a"), silent("src/b"), silent("src/c")] }),
-    { uncovered: 5 }
+    uncoveredFiles(5)
   );
 
   assert.match(out, /^## Areas \(3\)$/m);
@@ -843,7 +849,7 @@ test("a truncated scan names no area, because a truncated scan states nothing", 
 test("a truncated scan says so before any count is read", () => {
   // F7: rendering an arbitrary subset like a complete scan is worse than
   // reporting nothing.
-  const out = renderOverview(result({ suppressAll: true }), { uncovered: 30 });
+  const out = renderOverview(result({ suppressAll: true }), uncoveredFiles(30));
   assert.match(out, /The scan was truncated, so no directive is stated\./);
 });
 
@@ -1010,7 +1016,7 @@ test("the overview counts an area that states an inverse", () => {
         }),
       ],
     }),
-    { uncovered: 0 }
+    uncoveredFiles(0)
   );
 
   assert.match(out, /^- tests\/synthesizers — 14 files, 2 stated$/m);
@@ -1109,7 +1115,7 @@ test("an overview that names no area does not offer more of them", () => {
   const silent = dim({ states: null, directive: false, gate: "ratio" });
   const out = renderOverview(
     result({ areas: [area({ dimensions: [silent] }), area({ id: "11223344", path: "src/api", dimensions: [silent] })] }),
-    { uncovered: 0 }
+    uncoveredFiles(0)
   );
 
   assert.doesNotMatch(out, /and 2 more areas/, "nothing was listed, so nothing can be more");
@@ -1120,7 +1126,7 @@ test("a single unnamed area is one area, not '1 areas'", () => {
   // The overview loads on every turn, so its one grammatical slip is read every
   // turn too.
   const silent = dim({ states: null, directive: false, gate: "ratio" });
-  const out = renderOverview(result({ areas: [area({ dimensions: [silent] })] }), { uncovered: 0 });
+  const out = renderOverview(result({ areas: [area({ dimensions: [silent] })] }), uncoveredFiles(0));
 
   assert.match(out, /^- 1 area in its own file, loaded when you read one of its files$/m);
 });
@@ -1210,8 +1216,7 @@ test("the overview stays inside the bound however many areas state something", (
   });
 
   const out = renderOverview(many, {
-    uncovered: 40,
-    orphaned: 10,
+    ...uncoveredFiles(40, 10),
     others: { foreign: Array.from({ length: 20 }, (_, i) => `vendor-${i}.md`) },
   });
 
@@ -1227,7 +1232,7 @@ test("the overview names the rule files this tool did not write", () => {
   // file with no `paths` key that loads unconditionally from the moment of
   // clone. The overview is what loads beside it.
   const out = renderOverview(result(), {
-    uncovered: 30,
+    ...uncoveredFiles(30),
     others: { foreign: ["house-style.md", "vendor-rules.md"] },
   });
 
@@ -1239,8 +1244,8 @@ test("the overview names the rule files this tool did not write", () => {
 test("a clean rules directory costs the overview nothing", () => {
   // Naming the others rather than enumerating ours is what keeps this free on
   // the repositories where nothing is wrong, which is most of them.
-  const clean = renderOverview(result(), { uncovered: 30, others: [] });
-  const absent = renderOverview(result(), { uncovered: 30 });
+  const clean = renderOverview(result(), { ...uncoveredFiles(30), others: [] });
+  const absent = renderOverview(result(), uncoveredFiles(30));
 
   assert.equal(clean, absent);
   assert.match(clean, /^Any other file there was not written by this tool\.$/m);
@@ -1250,7 +1255,7 @@ test("a foreign filename reaches the overview through the encoder", () => {
   // F4: the name comes off the filesystem, so it is repository-controlled like
   // any other value rendered into a file the agent loads.
   const out = renderOverview(result(), {
-    uncovered: 30,
+    ...uncoveredFiles(30),
     others: { foreign: ["evil\n---\ngenerator: anatomiya\n# policy.md"] },
   });
 
@@ -1263,7 +1268,7 @@ test("a long list of foreign files is counted rather than named in full", () => 
   // Past a handful the fact is that the directory is somebody else's, and the
   // names stop being the useful part of it.
   const out = renderOverview(result(), {
-    uncovered: 30,
+    ...uncoveredFiles(30),
     others: { foreign: Array.from({ length: 15 }, (_, i) => `other-${i}.md`) },
   });
 
@@ -1327,8 +1332,7 @@ test("the overview holds the bound when every area states something", () => {
 
   for (const n of [1, 2, 3, 4, 5, 10, 50, 199, 200, 201, 400]) {
     const out = renderOverview(many(n), {
-      uncovered: 40,
-      orphaned: 10,
+      ...uncoveredFiles(40, 10),
       others: { foreign: Array.from({ length: 6 }, (_, i) => `v${i}.md`) },
     });
     const lines = out.trimEnd().split("\n").length;
@@ -1346,7 +1350,7 @@ test("the overview does not claim it failed to write its own output", () => {
   // Only the foreign ones are named. Ours are counted: the reader's move is the
   // same whichever file it is, and this section is paid for every turn.
   const out = renderOverview(result(), {
-    uncovered: 30,
+    ...uncoveredFiles(30),
     others: { foreign: ["house-style.md"], unknown: ["anatomiya-area-cafe.md"] },
   });
 
@@ -1359,9 +1363,9 @@ test("the overview does not claim it failed to write its own output", () => {
 test("only the sentence a repository has earned is printed", () => {
   // Neither line costs an always-loaded byte on a repository where nothing is
   // wrong, which is most of them.
-  const clean = renderOverview(result(), { uncovered: 30, others: { foreign: [], unknown: [] } });
-  const onlyForeign = renderOverview(result(), { uncovered: 30, others: { foreign: ["house.md"] } });
-  const onlyOurs = renderOverview(result(), { uncovered: 30, others: { unknown: ["anatomiya-area-cafe.md"] } });
+  const clean = renderOverview(result(), { ...uncoveredFiles(30), others: { foreign: [], unknown: [] } });
+  const onlyForeign = renderOverview(result(), { ...uncoveredFiles(30), others: { foreign: ["house.md"] } });
+  const onlyOurs = renderOverview(result(), { ...uncoveredFiles(30), others: { unknown: ["anatomiya-area-cafe.md"] } });
 
   assert.match(clean, /^Any other file there was not written by this tool\.$/m);
   assert.doesNotMatch(onlyForeign, /written by an earlier scan/);
@@ -1426,8 +1430,7 @@ test("the overview holds its bound over every section that can grow, not just th
               areas: Array.from({ length: areas }, (_, i) => areaOf(i)),
             },
             {
-              uncovered: 40,
-              orphaned: 10,
+              ...uncoveredFiles(40, 10),
               others: {
                 foreign: Array.from({ length: nForeign }, (_, i) => `f${i}.md`),
                 unknown: Array.from({ length: nUnknown }, (_, i) => `u${i}.md`),
@@ -1467,7 +1470,7 @@ test("a file whose ownership could not be established is neither ours nor theirs
   // through the frontmatter test as if it had been read: a mode-000 area file
   // of our own came back as somebody else's, and the always-loaded file said so.
   const out = renderOverview(result(), {
-    uncovered: 30,
+    ...uncoveredFiles(30),
     others: { foreign: ["house.md"], unreadable: ["anatomiya-area-cafe.md"] },
   });
 
@@ -1571,7 +1574,7 @@ test("a file a grammar could not read is not said to hold bad syntax, and a file
 });
 
 test("the overview says the same of a grammar's unread files, on the line that counts them", () => {
-  const tail = (parse) => renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0, failed: 0, ...parse } }), { uncovered: 0 });
+  const tail = (parse) => renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0, failed: 0, ...parse } }), uncoveredFiles(0));
   const note = "That is a syntax error or syntax the grammar does not cover; the files may be fine.";
 
   const serilog = tail({ syntaxErrors: 18, rejections: { grammar: 18 } });
@@ -1594,7 +1597,7 @@ test("files read with one branch of their conditionals are counted on the summar
   assert.deepEqual(unexaminedLines({ oneBranch: 0 }), []);
   assert.deepEqual(unexaminedLines({ syntaxErrors: 1, rejections: { grammar: 1 }, oneBranch: 2 }).length, 2);
 
-  const tail = renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0, failed: 0, syntaxErrors: 0, oneBranch: 17 } }), { uncovered: 0 });
+  const tail = renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0, failed: 0, syntaxErrors: 0, oneBranch: 17 } }), uncoveredFiles(0));
   assert.match(tail, new RegExp(`^- ${many}$`, "m"));
 });
 
@@ -1624,7 +1627,7 @@ test("the whole untracked sentence agrees at one, clauses included", () => {
   // again". Pronoun-free is what makes both surfaces safe at any count.
   const overview = renderOverview(
     result({ corpus: { files: 0, untracked: 1, truncated: false, dropped: {} }, areas: [] }),
-    { uncovered: 0, orphaned: 0 }
+    uncoveredFiles(0, 0)
   );
 
   assert.match(overview, /1 source file in the working tree is untracked/);
@@ -1659,7 +1662,7 @@ test("a stated claim the model writes by default renders as a counts line, not a
 
 test("an area whose only stated claim matches the model default is counted, not named, in the overview", () => {
   const one = area({ dimensions: [dim({ states: "claim", matchesDefault: true })] });
-  const out = renderOverview(result({ areas: [one] }), { uncovered: 0 });
+  const out = renderOverview(result({ areas: [one] }), uncoveredFiles(0));
   assert.ok(!out.includes("src/services —"), out);
   assert.ok(out.includes("1 area in its own file"), out);
 });
@@ -2036,7 +2039,7 @@ test("a repository with nothing above the floor prints no roster at all", () => 
 
   assert.deepEqual(renderLayout(empty), []);
   assert.deepEqual(renderLayout(null), [], "an older record carries no layout");
-  assert.doesNotMatch(renderOverview(result(), { uncovered: 30 }), /What lives where/);
+  assert.doesNotMatch(renderOverview(result(), uncoveredFiles(30)), /What lives where/);
 });
 
 test("leftovers below the floor are counted as files, not as directories", () => {
@@ -2126,7 +2129,7 @@ test("a forty-package monorepo prints seven roots and folds the rest", () => {
 });
 
 test("the roster leaves the overview room for its areas and its bound", () => {
-  const out = renderOverview(result({ layout: monorepoLayout() }), { uncovered: 30 });
+  const out = renderOverview(result({ layout: monorepoLayout() }), uncoveredFiles(30));
 
   assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
   assert.equal((out.match(/^- \S+ — \d+ files, \d+ stated$/gm) || []).length, 2, "every area is still named");
@@ -2134,10 +2137,10 @@ test("the roster leaves the overview room for its areas and its bound", () => {
 });
 
 test("the roster is byte-stable across two scans of unchanged source", () => {
-  const first = renderOverview(result({ layout: clientLayout() }), { uncovered: 30 });
+  const first = renderOverview(result({ layout: clientLayout() }), uncoveredFiles(30));
   const second = renderOverview(
     result({ layout: clientLayout(), scannedAt: "2026-06-30T23:59:59.000Z", durationMs: 98_765 }),
-    { uncovered: 30 }
+    uncoveredFiles(30)
   );
 
   assert.equal(Buffer.compare(Buffer.from(first), Buffer.from(second)), 0);
@@ -2151,7 +2154,7 @@ test("the overview names a language it has no dimension for", () => {
     more: { roots: 0, files: 0 },
   });
 
-  const out = renderOverview(result({ layout }), { uncovered: 30 });
+  const out = renderOverview(result({ layout }), uncoveredFiles(30));
 
   assert.match(out, /^- 2077 files hold a language this map does not read \(2077 \.swift\)$/m);
 });
@@ -2167,13 +2170,13 @@ test("an unread language sums across every directory that holds it", () => {
     more: { roots: 0, files: 0 },
   });
 
-  const out = renderOverview(result({ layout }), { uncovered: 30 });
+  const out = renderOverview(result({ layout }), uncoveredFiles(30));
 
   assert.match(out, /^- 1016 files hold a language this map does not read \(1016 \.swift\)$/m);
 });
 
 test("a repository read in full carries no unread-language row", () => {
-  const out = renderOverview(result({ layout: clientLayout() }), { uncovered: 30 });
+  const out = renderOverview(result({ layout: clientLayout() }), uncoveredFiles(30));
   assert.doesNotMatch(out, /a language this map does not read/);
 });
 
@@ -2181,7 +2184,7 @@ test("component files are counted under the one part of them that is read, by th
   // The count is every component in the corpus, one the parser rejected and one
   // with no script included, so the line may not say any of them was read.
   const overview = (scriptOnly) =>
-    renderOverview(result({ corpus: { files: 90, truncated: false, dropped: {}, ...(scriptOnly ? { scriptOnly } : {}) } }), { uncovered: 0 });
+    renderOverview(result({ corpus: { files: 90, truncated: false, dropped: {}, ...(scriptOnly ? { scriptOnly } : {}) } }), uncoveredFiles(0));
 
   assert.match(
     overview([[".vue", 9], [".svelte", 8]]),
@@ -2198,18 +2201,18 @@ test("configuration, data and prose files are said to go unopened, apart from th
   // 34% of the measured corpus's tracked files are never parsed, and a map
   // silent about them reads as one that checked them.
   const corpus = { files: 90, truncated: false, dropped: {}, otherExts: [[".md", 40], [".json", 9], [".yml", 4], [".toml", 1], [".gjs", 3]] };
-  const out = renderOverview(result({ corpus }), { uncovered: 0 });
+  const out = renderOverview(result({ corpus }), uncoveredFiles(0));
 
   // One line for both, so the overview's bound holds with every other line on.
   assert.match(out, /^- 3 files hold a language this map does not read \(3 \.gjs\); 54 configuration, data or prose files are counted by extension, and no row reads them \(\.md, \.json, \.yml\)$/m);
-  const one = renderOverview(result({ corpus: { ...corpus, otherExts: [[".json", 1]] } }), { uncovered: 0 });
+  const one = renderOverview(result({ corpus: { ...corpus, otherExts: [[".json", 1]] } }), uncoveredFiles(0));
   assert.match(one, /^- 1 configuration, data or prose file is counted by extension, and no row reads it \(\.json\)$/m);
-  const none = renderOverview(result({ corpus: { ...corpus, otherExts: [] } }), { uncovered: 0 });
+  const none = renderOverview(result({ corpus: { ...corpus, otherExts: [] } }), uncoveredFiles(0));
   assert.doesNotMatch(none, /no row reads/);
 });
 
 test("the overview says which strings a row reads, whatever the repository holds", () => {
-  const out = renderOverview(result({ corpus: { files: 1, truncated: false, dropped: {}, otherExts: [] } }), { uncovered: 0 });
+  const out = renderOverview(result({ corpus: { files: 1, truncated: false, dropped: {}, otherExts: [] } }), uncoveredFiles(0));
   const line = "- memory, GC and I/O behaviour: runtime only, nothing static to count; a string is read only as an import path, JSX text, a doc comment, a quoted object key, a few Rails arguments (migration options, table and column names and SQL, method names, a spec's subject) or the URL path a route declares in JavaScript, Ruby, Python, Java, C# or Rust; i18n keys, CSS classes, event names, messages, links and request paths are not";
   assert.ok(out.split("\n").includes(line), out);
 });
@@ -2217,7 +2220,7 @@ test("the overview says which strings a row reads, whatever the repository holds
 test("a template, a stylesheet and a shell script are named among what this map does not read", () => {
   // A Rails fixture printed no word about its twelve unread .erb and .css files.
   const corpus = { files: 90, truncated: false, dropped: {}, otherExts: [[".md", 40], [".json", 9], [".css", 6], [".erb", 6], [".sh", 2]] };
-  const out = renderOverview(result({ corpus }), { uncovered: 0 });
+  const out = renderOverview(result({ corpus }), uncoveredFiles(0));
 
   assert.match(out, /^- 14 files hold a language this map does not read \(6 \.css, 6 \.erb, 2 \.sh\); 49 configuration, data or prose files /m);
   assert.deepEqual(
@@ -2238,11 +2241,11 @@ test("files dropped as generated are named, since nothing else in the map says t
   // `collect` drops them before anything counts, so without this row a reader
   // who knows the directory is there sees a map that has never heard of it.
   const dropped = { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 24 };
-  const out = renderOverview(result({ corpus: { dropped } }), { uncovered: 30 });
+  const out = renderOverview(result({ corpus: { dropped } }), uncoveredFiles(30));
 
   assert.match(out, /^- 24 files say a generator wrote them, so nothing here is counted from them$/m);
   assert.doesNotMatch(
-    renderOverview(result({}), { uncovered: 30 }),
+    renderOverview(result({}), uncoveredFiles(30)),
     /say a generator wrote them/,
     "a repository with none carries no row"
   );
@@ -2567,7 +2570,7 @@ test("the roster gives up root lines rather than push the overview past its boun
       authors: { files: 9, error: null, repo: 1 },
       parse: { parsed: 80, crashed: 3, failed: 4 },
     }),
-    { uncovered: 40, orphaned: 10 }
+    uncoveredFiles(40, 10)
   );
 
   assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
@@ -2586,7 +2589,7 @@ test("the roster holds the bound against every line the tail can grow", () => {
       parse: { parsed: 80, crashed: 3, failed: 4, syntaxErrors: 5, skipped: 2, missingStripper: true },
       semantic: { ran: true, status: "degraded", reason: "no tsconfig", typedResolutionRate: 0.2 },
     }),
-    { uncovered: 40, orphaned: 10 }
+    uncoveredFiles(40, 10)
   );
 
   assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
@@ -2726,7 +2729,7 @@ test("a directory name that reads as words is printed quoted, and a plain path a
 test("an area whose directory reads as words is quoted where it is listed and where its file is headed", () => {
   const spaced = area({ path: "my pkg", globs: [globEntry("my pkg", ["go"])] });
 
-  assert.match(renderOverview(result({ areas: [spaced] }), { uncovered: 0 }), /^- "my pkg" — 40 files, 1 stated$/m);
+  assert.match(renderOverview(result({ areas: [spaced] }), uncoveredFiles(0)), /^- "my pkg" — 40 files, 1 stated$/m);
   assert.ok(renderArea(spaced).split("\n").includes('# "my pkg"  40 files'));
 });
 
@@ -2823,8 +2826,8 @@ test("the overview does not carry the crash count, which measures the machine", 
   // moves with load rather than with the tree. Three consecutive scans of an
   // unchanged 2,486-file repository produced two different overviews, and they
   // differed by two lines: the crash line, and the area listing entry it cost.
-  const busy = renderOverview(result({ parse: { parsed: 89, crashed: 1, skipped: 0 } }), { uncovered: 30 });
-  const quiet = renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0 } }), { uncovered: 30 });
+  const busy = renderOverview(result({ parse: { parsed: 89, crashed: 1, skipped: 0 } }), uncoveredFiles(30));
+  const quiet = renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0 } }), uncoveredFiles(30));
 
   assert.equal(Buffer.compare(Buffer.from(busy), Buffer.from(quiet)), 0, busy);
   assert.doesNotMatch(busy, /crashed the parser/);
@@ -2836,7 +2839,7 @@ test("the overview keeps the three causes that are facts about the tree", () => 
   // why. Rejected syntax and the size cap are the branch's own code.
   const out = renderOverview(
     result({ parse: { parsed: 60, crashed: 4, failed: 3, syntaxErrors: 2, skipped: 1 } }),
-    { uncovered: 30 }
+    uncoveredFiles(30)
   );
 
   assert.match(out, /(?:^- |; )3 files could not be parsed(?:;|$)/m, out);
@@ -2889,7 +2892,7 @@ test("the summary and the overview word a degraded tier with one sentence", () =
 test("the overview says a degraded tier through the shared sentence", () => {
   const out = renderOverview(
     result({ semantic: { ran: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.1495 } }),
-    { uncovered: 0 }
+    uncoveredFiles(0)
   );
 
   assert.match(out, /^- type-checked claims are not counted: 15% of type lookups resolved \(low-resolution\)$/m, out);
@@ -2897,8 +2900,8 @@ test("the overview says a degraded tier through the shared sentence", () => {
 
 test("the overview says a carried verdict in the same one line", () => {
   const semantic = { ran: false, carried: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.1495, measuredAt: "2026-10-08T01:02:03.000Z" };
-  const measured = renderOverview(result({ semantic: { ...semantic, ran: true, carried: false } }), { uncovered: 0 });
-  const out = renderOverview(result({ semantic }), { uncovered: 0 });
+  const measured = renderOverview(result({ semantic: { ...semantic, ran: true, carried: false } }), uncoveredFiles(0));
+  const out = renderOverview(result({ semantic }), uncoveredFiles(0));
 
   assert.match(out, /^- type-checked claims are not counted: 15% of type lookups resolved when measured 2026-10-08 UTC \(low-resolution\)$/m, out);
   assert.equal(out.replace(" when measured 2026-10-08 UTC", ""), measured, "a carried verdict and a measured one differ by more than the mark");
@@ -2906,8 +2909,8 @@ test("the overview says a carried verdict in the same one line", () => {
 
 test("the overview says a carried failure in the one line a failure has, with the day beside it", () => {
   const semantic = { ran: false, carried: true, status: "degraded", reason: "tier-failed", typedResolutionRate: null, measuredAt: "2026-10-08T01:02:03.000Z", failures: 2 };
-  const measured = renderOverview(result({ semantic: { ...semantic, ran: true, carried: false } }), { uncovered: 0 });
-  const out = renderOverview(result({ semantic }), { uncovered: 0 });
+  const measured = renderOverview(result({ semantic: { ...semantic, ran: true, carried: false } }), uncoveredFiles(0));
+  const out = renderOverview(result({ semantic }), uncoveredFiles(0));
 
   assert.match(measured, /^- type-checked claims are not counted: no type lookups resolved \(tier-failed\)$/m, measured);
   assert.match(out, /^- type-checked claims are not counted: no type lookups resolved when measured 2026-10-08 UTC \(tier-failed\)$/m, out);
@@ -3532,14 +3535,14 @@ test("a file in no area is not said to be there for having too few neighbours", 
   // Only the second was ever the sentence: four .js files at the root beside a
   // 3-file `src/` read "(too few per directory)" while the layout said "and 4
   // files at the repository root", and six files in `[x]/` said it too.
-  const out = renderOverview(result(), { uncovered: 4, orphaned: 4 });
+  const out = renderOverview(result(), uncoveredFiles(4, 4));
 
   assert.doesNotMatch(out, /too few per directory/);
   assert.match(
     out,
     /^- 4 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m
   );
-  const one = renderOverview(result(), { uncovered: 1, orphaned: 1 });
+  const one = renderOverview(result(), uncoveredFiles(1, 1));
   assert.match(one, /^- 1 source file sits in no area \(/m);
 });
 
@@ -3571,7 +3574,7 @@ test("the tests line counts a level-only root over the level it counted", () => 
 test("a count of one agrees with its verb on every Not covered line", () => {
   const out = renderOverview(
     result({ corpus: { files: 90, truncated: false, dropped: { generated: 1 }, otherExts: [[".swift", 1]] } }),
-    { uncovered: 0 }
+    uncoveredFiles(0)
   );
 
   assert.match(out, /^- 1 file holds a language this map does not read \(1 \.swift\); 1 file says a generator wrote it, so nothing here is counted from it$/m);
@@ -3583,8 +3586,7 @@ test("one foreign rule file the budget cannot name is one file", () => {
   // The layout fills whatever the bound leaves, which is what leaves the
   // foreign listing no room to name the file.
   const out = renderOverview(result({ layout: clientLayout() }), {
-    uncovered: 30,
-    orphaned: 12,
+    ...uncoveredFiles(30, 12),
     others: { foreign: ["a.md"], unknown: ["anatomiya-area-cafe.md"], unreadable: ["b.md"] },
   });
   assert.ok(!out.includes("file(s)"), out);
@@ -3602,7 +3604,7 @@ test("a candidate count of one is one site", () => {
 test("an overview with no area says no directory made one, and claims nothing below", () => {
   // `## Areas (0)` over two blank lines, and a one-author repository's
   // "every claim below is that author's practice" over no claims at all.
-  const out = renderOverview(result({ areas: [], authors: { files: 9, error: null, repo: 1 } }), { uncovered: 0 });
+  const out = renderOverview(result({ areas: [], authors: { files: 9, error: null, repo: 1 } }), uncoveredFiles(0));
 
   assert.match(out, /^## Areas \(0\)\n\nNo directory became an area, so nothing here states a claim\.\n\n## Not covered$/m);
   assert.doesNotMatch(out, /every claim below/);
@@ -3791,7 +3793,7 @@ test("a claim asked of every extension the area holds names none of them", () =>
 test("a row asked of JSX alone is scoped to the extensions a file holding JSX may carry", () => {
   const jsxRow = REGISTRY.find((d) => d.langs.length === 1 && d.langs[0] === "jsx" && /\w$/.test(d.claim));
   const row = (askedExts) => dim({ key: jsxRow.key, claim: jsxRow.claim, askedExts });
-  const line = (exts) => new RegExp(`^${jsxRow.claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, in ${exts} files$`, "m");
+  const line = (exts) => new RegExp(`^${escapeRe(jsxRow.claim)}, in ${exts} files$`, "m");
 
   assert.match(renderArea(area({ extsByLang: { js: [".js"], ruby: [".rb", "Gemfile"] }, dimensions: [row([".js"])] })), line("\\.js"));
   assert.match(
@@ -3829,32 +3831,32 @@ test("three extensions read as a series, in one order whatever order the files c
 
 const rescueRow = () => dim({ key: "rescue_uses_error", claim: "rescue blocks use the error they caught" });
 // The row was asked of every file but those of the language listed first.
-const scopeOf = (extsByLang, row = constRow()) =>
+const clauseFor = (extsByLang, row = constRow()) =>
   renderArea(area({ extsByLang, dimensions: [{ ...row, askedExts: Object.values(extsByLang).slice(1).flat() }] })).match(/, in .*$/m)?.[0];
 
 test("a file with no extension is named in the scope, after the extensions", () => {
   const js = [".js"];
 
-  assert.equal(scopeOf({ js, ruby: [".rb", "Gemfile", ".gemspec"] }, rescueRow()), ", in .gemspec and .rb files and Gemfile");
-  assert.equal(scopeOf({ js, ruby: ["Rakefile", "Gemfile"] }, rescueRow()), ", in Gemfile and Rakefile");
-  assert.equal(scopeOf({ js, ruby: ["Rakefile", ".rb", "Gemfile"] }, rescueRow()), ", in .rb files and Gemfile and Rakefile");
-  assert.equal(scopeOf({ js, ruby: ["Rakefile", ".ru", ".rb", ".rake"] }, rescueRow()), ", in .rake, .rb and .ru files and Rakefile");
+  assert.equal(clauseFor({ js, ruby: [".rb", "Gemfile", ".gemspec"] }, rescueRow()), ", in .gemspec and .rb files and Gemfile");
+  assert.equal(clauseFor({ js, ruby: ["Rakefile", "Gemfile"] }, rescueRow()), ", in Gemfile and Rakefile");
+  assert.equal(clauseFor({ js, ruby: ["Rakefile", ".rb", "Gemfile"] }, rescueRow()), ", in .rb files and Gemfile and Rakefile");
+  assert.equal(clauseFor({ js, ruby: ["Rakefile", ".ru", ".rb", ".rake"] }, rescueRow()), ", in .rake, .rb and .ru files and Rakefile");
 });
 
 test("the scope lists extensions by code point, with and before the last and no comma before it", () => {
   const ruby = [".rb"];
 
-  assert.equal(scopeOf({ ruby, js: [".ts"] }), ", in .ts files");
-  assert.equal(scopeOf({ ruby, js: [".ts", ".js"] }), ", in .js and .ts files");
-  assert.equal(scopeOf({ ruby, js: [".ts", ".cjs"], jsx: [".tsx", ".JSX"] }), ", in .JSX, .cjs, .ts and .tsx files");
+  assert.equal(clauseFor({ ruby, js: [".ts"] }), ", in .ts files");
+  assert.equal(clauseFor({ ruby, js: [".ts", ".js"] }), ", in .js and .ts files");
+  assert.equal(clauseFor({ ruby, js: [".ts", ".cjs"], jsx: [".tsx", ".JSX"] }), ", in .JSX, .cjs, .ts and .tsx files");
 });
 
 test("a declaration file is a TypeScript file in the scope, named once", () => {
   const ruby = [".rb"];
 
-  assert.equal(scopeOf({ ruby, js: [".d.ts", ".ts"] }), ", in .ts files");
-  assert.equal(scopeOf({ ruby, js: [".ts", ".d.ts", ".js"] }), ", in .js and .ts files");
-  assert.equal(scopeOf({ ruby, js: [".d.mts", ".d.cts", ".d.ts"] }), ", in .cts, .mts and .ts files");
+  assert.equal(clauseFor({ ruby, js: [".d.ts", ".ts"] }), ", in .ts files");
+  assert.equal(clauseFor({ ruby, js: [".ts", ".d.ts", ".js"] }), ", in .js and .ts files");
+  assert.equal(clauseFor({ ruby, js: [".d.mts", ".d.cts", ".d.ts"] }), ", in .cts, .mts and .ts files");
 });
 
 test("the scope goes inside a sentence's full stop and after any other mark a claim ends on", () => {
@@ -3937,7 +3939,7 @@ const noted = () =>
     parse: { parsed: 90, crashed: 0, skipped: 1, syntaxErrors: 2 },
     areas: [area(), area({ id: "11223344", path: "src/api", fileCount: 20, dimensions: [dim({ directive: false, gate: "ratio" })] })],
   });
-const NOTED_FILES = { uncovered: 30, orphaned: 12, others: { foreign: ["house.md"] } };
+const NOTED_FILES = { ...uncoveredFiles(30, 12), others: { foreign: ["house.md"] } };
 
 // Captured from the renderer before it took a target, and kept as written.
 const CLAUDE_OVERVIEW = [
@@ -4067,7 +4069,7 @@ test("only the claude overview goes without the line saying what wrote it", () =
   assert.equal(claude.wrote, null);
   assert.ok(!renderOverview(noted(), NOTED_FILES).includes("Written by"));
   for (const target of [cursor, copilot]) {
-    const lines = renderOverview(result(), { uncovered: 0 }, target).split("\n");
+    const lines = renderOverview(result(), uncoveredFiles(0), target).split("\n");
     assert.deepEqual(lines.slice(lines.indexOf("# Repository map"), lines.indexOf("# Repository map") + 3), ["# Repository map", "", WROTE], target.id);
   }
 });
@@ -4075,7 +4077,7 @@ test("only the claude overview goes without the line saying what wrote it", () =
 test("several unnamed areas are listed in each reader's own words", () => {
   const silent = (id) => area({ id, path: `src/${id}`, dimensions: [dim({ directive: false, gate: "ratio" })] });
   const many = result({ areas: [silent("a"), silent("b"), silent("c")] });
-  const tail = (target) => renderOverview(many, { uncovered: 0 }, target).split("\n").find((l) => l.startsWith("- 3 areas"));
+  const tail = (target) => renderOverview(many, uncoveredFiles(0), target).split("\n").find((l) => l.startsWith("- 3 areas"));
   assert.equal(tail(claude), "- 3 areas, each in its own file, loaded when you read one of its files");
   assert.equal(tail(cursor), "- 3 areas, each in its own file, whose `globs:` names its files");
   assert.equal(tail(copilot), "- 3 areas, each in its own file, whose `applyTo:` names its files");
@@ -4157,7 +4159,7 @@ test("an area no pattern of which can be written has no file outside claude", ()
 test("an overview lists and counts only the areas its target has a file for, and names the rest", () => {
   const areas = [area(), unwritable("lib/odd"), unwritable("lib/`odder`")];
   const section = (target, list = areas) => {
-    const lines = renderOverview(result({ areas: list }), { uncovered: 0 }, target).split("\n");
+    const lines = renderOverview(result({ areas: list }), uncoveredFiles(0), target).split("\n");
     return [...lines.slice(lines.findIndex((l) => l.startsWith("## Areas")), lines.indexOf("## Not covered") - 1), lines.at(-3)];
   };
   assert.deepEqual(section(claude), [
@@ -4228,7 +4230,7 @@ const toggled = (on, { unfiled = false, others = true, layout = false, n = 1, un
     semantic: b.degraded ? { ran: true, status: "degraded", reason: "no tsconfig", typedResolutionRate: null } : null,
     areas: [...Array.from({ length: n }, (_, i) => area({ id: `a${i}`, path: `src/a${i}` })), ...(unfiled ? [unwritable("lib/odd")] : [])],
   });
-  const files = { uncovered: (b.orphaned ? 3 : 0) + (b.barren ? 4 : 0), orphaned: b.orphaned ? 3 : 0, others: others ? ALL_OTHERS : {} };
+  const files = { uncovered: (b.orphaned ? 3 : 0) + (b.barren ? 4 : 0), orphaned: b.orphaned ? 3 : 0, barren: b.barren ? 4 : 0, others: others ? ALL_OTHERS : {} };
   return [scan, files];
 };
 const height = (out) => out.split("\n").length - 1;
@@ -4564,7 +4566,7 @@ test("the root area is named in words wherever areas are named, and a directory 
 });
 
 test("the overview lists the root area and a directory of its name on two lines a reader can tell apart", () => {
-  const out = renderOverview(result({ areas: [rootArea(), namedLikeRoot(), area()] }), { uncovered: 0 });
+  const out = renderOverview(result({ areas: [rootArea(), namedLikeRoot(), area()] }), uncoveredFiles(0));
 
   assert.match(out, /^## Areas \(3\)$/m);
   assert.match(out, /^- the repository root — 40 files, 1 stated$/m);
@@ -4591,7 +4593,7 @@ test("the root area's own file is headed by its name and scoped to the root alon
 
 test("a root area a reader has no file for is named in words on the line that says so", () => {
   const unwritten = rootArea({ globs: [{ negated: false, dir: "", tail: "a,b.go" }] });
-  const out = renderOverview(result({ areas: [area(), unwritten] }), { uncovered: 0 }, cursor);
+  const out = renderOverview(result({ areas: [area(), unwritten] }), uncoveredFiles(0), cursor);
 
   assert.match(out, /^- 1 area has no pattern Cursor can be given, so no file here covers it: the repository root\.$/m);
 });
@@ -4599,11 +4601,11 @@ test("a root area a reader has no file for is named in words on the line that sa
 test("an overview with a root area stays inside its bound and is the same over shuffled areas", () => {
   const areas = [rootArea(), namedLikeRoot(), ...Array.from({ length: 60 }, (_, i) => area({ id: `a${i}`, path: `pkg/p${String(i).padStart(2, "0")}` }))];
   for (const target of [claude, cursor, copilot]) {
-    const out = renderOverview(result({ areas }), { uncovered: 3 }, target);
+    const out = renderOverview(result({ areas }), uncoveredFiles(3), target);
     const lines = out.trimEnd().split("\n");
     const body = lines.slice(lines.indexOf("---", 1) + 1);
     assert.ok(body.length <= (isClaude(target) ? 40 : 43), `${target.id}: ${body.length} lines`);
-    assert.equal(renderOverview(result({ areas }), { uncovered: 3 }, target), out, "and twice over is the same bytes");
+    assert.equal(renderOverview(result({ areas }), uncoveredFiles(3), target), out, "and twice over is the same bytes");
   }
 });
 
@@ -4711,7 +4713,7 @@ test("the overview counts a co-change claim an area file prints as stated there,
       areas: [area({ id: "a1" }), area({ id: "a2", path: "src/silent", dimensions: [dim({ directive: false })] })],
       layout: layout(claims),
     }),
-    { uncovered: 0 }
+    uncoveredFiles(0)
   );
   assert.match(out, /^- src\/services — 40 files, 2 stated$/m, out);
   assert.match(out, /^- src\/silent — 40 files, 1 stated$/m, out);
@@ -4744,7 +4746,7 @@ test("a model-default slot's counts line can give way to a co-change block, and 
 });
 
 test("a joined Not covered line keeps a note's own sentence at its end", () => {
-  const out = renderOverview(result({ parse: { parsed: 90, crashed: 0, failed: 0, skipped: 2, syntaxErrors: 5, rejections: { grammar: 2, syntax: 3 } } }), { uncovered: 0 });
+  const out = renderOverview(result({ parse: { parsed: 90, crashed: 0, failed: 0, skipped: 2, syntaxErrors: 5, rejections: { grammar: 2, syntax: 3 } } }), uncoveredFiles(0));
   const line = out.split("\n").find((l) => l.includes("could not be read by this tool's grammar"));
   assert.ok(line.endsWith("the files may be fine."), line);
   assert.ok(!line.includes(".;"), line);

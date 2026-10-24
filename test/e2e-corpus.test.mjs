@@ -114,8 +114,12 @@ test("the record the scan really writes answers every field the harness reads", 
           parse: { crashed: 0, failed: 0, syntaxErrors: 0, skipped: 0, missingStripper: false },
           authors: { error: null },
         },
-        { write: ["anatomiya-overview.md"], remove: [], foreign: [], unknown: [], replaced: [],
-          unreadableRules: [], listed: true, uncovered: 0, orphaned: 0, unreadable: [], held: [], blind: false }
+        {
+          uncovered: 0, orphaned: 0, barren: 0, unreadable: [], held: [], blind: false,
+          targets: {
+            claude: { write: [{ name: "anatomiya-overview.md", body: "" }], remove: [], staged: [], foreign: [], unknown: [], replaced: [], unreadableRules: [], listed: true },
+          },
+        }
       )
     )
   );

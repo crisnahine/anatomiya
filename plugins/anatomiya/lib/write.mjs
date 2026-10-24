@@ -1,13 +1,14 @@
 import { lstatSync, mkdirSync, readdirSync, rmdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { PIN_PATH } from "./baseline.mjs";
-import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
+import { hasFile, renderArea, renderOverview } from "./render.mjs";
 import { claimsIn } from "./cochange.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, putBackRecord, writePair } from "./facts.mjs";
 import { HISTORY_FILES } from "./history.mjs";
 import { leftTokens, processAlive, refreshBlockers, workerAge } from "./lock.mjs";
 import { LOCKED, MOVE_IT, PUT_BACK, UNLOCK, isFileAt, movedAway, quietUnlink, replaceAll, stagedInStore, tooLarge, tooLargeSentence, tooLargeToPutBack, writeTemp } from "./store.mjs";
 import { byCode } from "./paths.mjs";
+import { isWholeArea } from "./slot.mjs";
 import {
   REFRESH_LOCK,
   REFRESH_STATE,
@@ -15,14 +16,13 @@ import {
   STORE_DIR,
   areaFilename,
   auditRules,
+  recordFor,
   blockedOnTheWay,
   foldedOnto,
   isGeneratedName,
   isMapName,
-  knownNames,
   leafReplaceable,
   outsideClaude,
-  pendingNames,
   resolveInside,
   resolveRulesDir,
   resolveTargetDir,
@@ -79,86 +79,35 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
   const others = otherTargets(result.root, targets, previous, leaveAlone);
 
   const withDirectives = result.areas.filter((a) => a.dimensions.length > 0);
-
-  // A run that read no file of a language cannot describe what that language
-  // holds, so it does not write over a run that could. Every file of it is
-  // charged as a failure, every area holding one counts nothing and would be
-  // removed as gone. `env -i PATH=/usr/bin:/bin` on a Rails repository is the
-  // whole of it: three correct area files deleted in the same run that reports
-  // it could not read one.
-  //
-  // Decided per language (B41). The scan holds every area that has a file of
-  // such a language in it, and those are neither written nor removed, while
-  // everything else is written as usual: a TypeScript repository with one
-  // Gemfile got no map at all on a machine without Ruby. Only a run that read
-  // no file of any language writes nothing, since the overview would then be
-  // rewritten from nothing beside area files that still load. A result that
-  // does not say which areas its unread language touched cannot be written in
-  // part, so it is blind whole. A repository holding none of a language is not
-  // blind to it, so an empty corpus still writes and still cleans up.
+  const { blind, held, carried, described, files } = describedRun(result, previous);
+  const { uncovered, orphaned, barren } = files;
   const unreadable = result.parse.unreadable || [];
-  const blind = unreadable.length > 0 && (result.held === undefined || result.readNothing === true);
-  const held = blind ? [] : result.held ?? [];
-  const heldNames = new Set(held.map(areaFilename));
-
-  // A held area keeps the record its file was rendered from, or the check reads
-  // a map without it and the file loads with nothing on disk deriving it. Only
-  // from a record of this build's own shape: an older one read into this one
-  // would be stamped with a schema it was not written under.
-  const carried =
-    previous?.schema === FACTS_SCHEMA
-      ? previous.areas.filter((a) => isWholeArea(a) && heldNames.has(areaFilename(a)))
-      : [];
-  const described = carried.length
-    ? { ...result, areas: [...result.areas, ...carried].sort((a, b) => byCode(a.path, b.path)) }
-    : result;
-
-  // A held area whose record was carried still describes its files, so they
-  // are not uncovered. One with no record to carry describes nothing this run.
-  const carriedIds = new Set(carried.map((a) => a.id));
-  const heldCovered = held.filter((a) => carriedIds.has(a.id)).reduce((s, a) => s + a.fileCount, 0);
-  const uncovered = result.corpus.files - result.areas.reduce((s, a) => s + a.fileCount, 0) - heldCovered;
-  // Of those, the ones discovery found nowhere to put. The remainder sit in an
-  // area that was discovered and then dropped for counting nothing, which is a
-  // parse failure or a language with no dimension, not a directory too small.
-  const { orphaned } = splitUncovered(uncovered, result.corpus.orphaned ?? uncovered);
 
   // Every directory is audited before any body is rendered: a name that cannot
   // be written refuses the scan, and 151 area bodies rendered to be discarded
-  // is work a repository should not be able to ask for.
+  // is work a repository should not be able to ask for. Claude Code's is in
+  // every set and always on, as a directory asked for by name is.
   const scan = { root: result.root, previous, blind, held, areas: withDirectives };
-  const claude = auditTarget(TARGETS.claude, { on: true }, scan);
-  const rest = others.map((o) => (untouched(o) ? o : audited(o, scan)));
-
-  const files = { uncovered, orphaned };
-  const bodies = renderTarget(TARGETS.claude, claude, described, files);
+  const claude = { target: TARGETS.claude, state: "on", reason: null, explicit: true, on: true };
+  const laid = [claude, ...others].map((o) => (untouched(o) ? o : audited(o, scan)));
   // Every other overview is laid out against what Claude Code's directory holds.
-  const claudeFiles = overviewFiles(claude, files);
+  const claudeFiles = overviewFiles(laid[0], files);
 
   const refreshBlocked = refreshBlockers(storeDir).map((name) => `${STORE_DIR}/${name}`);
 
   return {
-    write: [...bodies.keys()],
-    remove: claude.stale,
-    // The temporary files an earlier run left in Claude Code's directory, removed with the rest.
-    staged: claude.staged,
-    // And the ones a scan, a refresh, a pin or a lock left in the store, where the record is megabytes on a large repository.
+    // The temporary files a scan, a refresh, a pin or a lock left in the store, where the record is megabytes on a large repository.
     storeStaged: blind ? [] : leftInStore(storeDir),
     // Only where it is: a refresh never says so to a person, and a scan is what one runs over a stale map.
     ...(refreshBlocked.length > 0 ? { refreshBlocked } : {}),
     // The record and layout file past the bound this replaces without reading, only where there is one.
     ...(oversized.length > 0 && !blind ? { oversized } : {}),
-    foreign: claude.foreign,
-    unknown: claude.unknown,
-    replaced: claude.replaced,
-    unreadableRules: claude.unreadableRules,
-    listed: claude.listed,
     uncovered,
     orphaned,
+    barren,
     unreadable,
     // The area files left as the last scan that could read them wrote them.
     held: carried.map(areaFilename),
-    bodies,
     blind,
     root: result.root,
     factsSeen,
@@ -166,11 +115,11 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
     // measured, because the facts record is derived from the whole of it and
     // the committer is handed a plan rather than a scan.
     result: described,
-    // The same fields for each other directory, and why one was left alone.
+    // What this run does in each directory the map goes to, and why one was left alone.
     targets: Object.fromEntries(
-      rest.map((o) => {
+      laid.map((o) => {
         // What the record on disk says of this directory: the files it holds and the ones it was about to remove.
-        const onRecord = { was: recorded(previous, o.target), pending: [...pendingNames(previous, o.target)].sort() };
+        const onRecord = { was: recorded(previous, o.target), pending: [...recordFor(previous, o.target).removing].sort() };
         return [o.target.id, untouched(o) ? untouchedPlan(o, onRecord) : targetPlan(o, described, files, claudeFiles, onRecord)];
       })
     ),
@@ -204,7 +153,7 @@ function otherTargets(root, asked, previous, leaveAlone) {
       if (asked?.includes(target.id)) {
         throw new Error(`${reason}, so ${target.dir} could not be written and nothing was written anywhere: ${remedy} and scan again`);
       }
-      if (explicit && knownNames(previous, target)?.size) {
+      if (explicit && recordFor(previous, target).names?.size) {
         throw new Error(`${reason}, so ${target.dir} could not be turned off and nothing was written anywhere: ${remedy} and scan again`);
       }
       return { target, state, reason, remedy, explicit, on: false };
@@ -245,10 +194,9 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     if (!isGeneratedName(name, target)) throw new Error(`refusing to write outside ${target.dir}: ${name}`);
   }
 
+  const audit = auditRules(root, previous, target);
   // A name the record was about to remove is still ours: a scan killed before the removal left it there.
-  const known = knownNames(previous, target);
-  const pending = pendingNames(previous, target);
-  const audit = auditRules(root, pending.size ? new Set([...(known ?? []), ...pending]) : known, target);
+  const ours = [...audit.ours, ...audit.removing].sort();
   // Cursor's and Copilot's directories are where people write rules by hand, so
   // a file there that does not say this tool wrote it is never written over,
   // whatever its name. Named, the target cannot be written as asked and the
@@ -302,7 +250,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // can hold the files and not the record, and then no scan could turn it off.
   // The key decides there, for a name a scan gives a file: a copy somebody
   // kept under another name carries the key too.
-  const mine = explicit && !on ? [...audit.ours, ...audit.unknown.filter((f) => isMapName(f, target))].sort() : audit.ours;
+  const mine = explicit && !on ? [...ours, ...audit.unknown.filter((f) => isMapName(f, target))].sort() : ours;
   const stale = blind ? [] : mine.filter((f) => !planned.has(f) && (!on || !heldNames.has(f)));
   // Ours and held, so still ours after this run: the next record has to go on naming it.
   const kept = mine.filter((f) => !planned.has(f) && !stale.includes(f) && heldNames.has(f));
@@ -335,7 +283,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   return {
     filed,
     // On with no flag and no file of ours on record: the overview somebody committed is all that asked.
-    first: !isClaude(target) && on && !explicit && !knownNames(previous, target)?.size,
+    first: on && !explicit && !recordFor(previous, target).names?.size,
     // The areas whose name somebody else's file holds, and the held ones this
     // directory has no file of, for the overview to leave out.
     left: [...wanted.filter((a) => taken.includes(nameOf(a))), ...held.filter((a) => !kept.includes(nameOf(a)))].map((a) => a.id),
@@ -408,11 +356,14 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
     was: onRecord.was,
     first: laid.first,
     write: [...bodies].map(([name, body]) => ({ name, body })),
-    // A temporary file an earlier run left is counted with what this one removes.
-    remove: [...laid.stale, ...laid.staged],
+    remove: laid.stale,
+    // The temporary files an earlier run left there, removed with the rest.
+    staged: laid.staged,
     foreign: laid.foreign,
     unknown: laid.unknown,
+    replaced: laid.replaced,
     unreadableRules: laid.unreadableRules,
+    listed: laid.listed,
     // The areas the overview there says no file covers.
     unfiled: bodies.size ? described.areas.filter((a) => !hasFile(a, target)).map((a) => a.path) : [],
     // Every file of ours the directory holds once this is committed, for the record.
@@ -424,12 +375,12 @@ function targetPlan({ target, state, reason, on, explicit, ...laid }, described,
 
 // The record goes on naming what it named, or none of it could be removed once the directory reads again.
 function untouchedPlan({ target, state, reason, remedy, on, leftAlone, unwritable }, onRecord) {
-  const none = { first: false, write: [], remove: [], foreign: [], unknown: [], unreadableRules: [], unfiled: [] };
+  const none = { first: false, write: [], remove: [], staged: [], foreign: [], unknown: [], replaced: [], unreadableRules: [], listed: false, unfiled: [] };
   return { dir: target.dir, state, reason, ...(remedy ? { remedy } : {}), on, ...(leftAlone ? { leftAlone } : {}), ...(unwritable ? { unwritable } : {}), ...none, names: onRecord.was, pending: onRecord.pending };
 }
 
 // The files of ours the record on disk names in one directory, sorted.
-const recorded = (previous, target) => [...(knownNames(previous, target) ?? [])].sort();
+const recorded = (previous, target) => [...(recordFor(previous, target).names ?? [])].sort();
 
 // The files a scan, a refresh, a pin, a lock create and a history walk stage in the store, by name.
 const STORE_STAGED = [...[FACTS_PATH, LAYOUT_PATH, REFRESH_STATE, PIN_PATH, REFRESH_LOCK].map((path) => basename(path)), ...Object.values(HISTORY_FILES)];
@@ -456,41 +407,53 @@ function leftInStore(dir) {
   return [...staged, ...leftTokens(join(dir, basename(REFRESH_LOCK)), workerAge), ...asides].sort();
 }
 
+/**
+ * What this run can describe, as the scan decided it (B41). A run that read no
+ * file of a language cannot describe what that language holds, so it does not
+ * write over a run that could: every area holding such a file is held, neither
+ * written nor removed, and keeps the record its file was rendered from, while
+ * everything else is written as usual. Only a run that read no file at all is
+ * blind and writes nothing, since the overview would then be rewritten from
+ * nothing beside area files that still load. `env -i PATH=/usr/bin:/bin` on a
+ * Rails repository was the whole of it: three correct area files deleted in the
+ * run that reported it could not read one, and a TypeScript repository with one
+ * Gemfile got no map at all on a machine without Ruby.
+ *
+ * `described` is the scan with the carried records beside what it measured,
+ * and `files` how the files it describes nothing of divide.
+ */
+function describedRun(result, previous) {
+  const blind = result.readNothing;
+  const held = blind ? [] : result.held;
+  const heldNames = new Set(held.map(areaFilename));
+  // Only from a record of this build's own shape: an older one read into this
+  // one would be stamped with a schema it was not written under.
+  const carried =
+    previous?.schema === FACTS_SCHEMA
+      ? previous.areas.filter((a) => isWholeArea(a) && heldNames.has(areaFilename(a)))
+      : [];
+  const described = carried.length
+    ? { ...result, areas: [...result.areas, ...carried].sort((a, b) => byCode(a.path, b.path)) }
+    : result;
+  // A held area whose record was carried still describes its files, so they
+  // are not uncovered. One with no record to carry describes nothing this run.
+  const carriedIds = new Set(carried.map((a) => a.id));
+  const heldCovered = held.filter((a) => carriedIds.has(a.id)).reduce((s, a) => s + a.fileCount, 0);
+  const uncovered = result.corpus.files - result.areas.reduce((s, a) => s + a.fileCount, 0) - heldCovered;
+  // Of those, the ones discovery found nowhere to put. The rest sit in an area
+  // that was discovered and then dropped for counting nothing, which is a parse
+  // failure or a language with no dimension, not a directory too small.
+  return { blind, held, carried, described, files: { uncovered, ...splitUncovered(uncovered, result.corpus.orphaned) } };
+}
+
+/** How the uncovered files divide, decided once so the summary and the overview print the same two numbers. */
+function splitUncovered(uncovered, orphaned) {
+  const placed = Math.min(orphaned, uncovered);
+  return { orphaned: placed, barren: uncovered - placed };
+}
+
 // Nobody read it, or the caller said to leave it alone: neither is written, cleared or turned off.
 const untouched = (o) => o.state === "unknown" || o.leftAlone === true;
-
-/**
- * Whether a held area's record on disk is whole enough to carry.
- *
- * The record is committed, so it is the repository's to edit, and what a carried
- * area goes through next is the overview's renderer and the record's own writer,
- * both of which read every dimension. Only the array was checked, and
- * `dimensions: [null]` took the scan down with "Cannot read properties of null
- * (reading 'states')". An area that is not whole is not carried: it is then held
- * with no record, which the overview already counts as uncovered.
- */
-function isWholeArea(a) {
-  return isPlain(a)
-    && typeof a.id === "string"
-    && typeof a.path === "string"
-    && Number.isFinite(a.fileCount)
-    && Array.isArray(a.dimensions)
-    && a.dimensions.every(isWholeDimension);
-}
-
-function isWholeDimension(d) {
-  return isPlain(d)
-    && typeof d.key === "string"
-    && Number.isFinite(d.candidates)
-    && Number.isFinite(d.conforming)
-    && Array.isArray(d.exceptions)
-    && (d.states === undefined || d.states === null || d.states === "claim" || d.states === "counter")
-    && (d.counterClaim === undefined || typeof d.counterClaim === "string")
-    && (d.counterExceptions === undefined || Array.isArray(d.counterExceptions))
-    && (d.baseline === undefined || isPlain(d.baseline));
-}
-
-const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
 /** The record's size and time, as a plan read it, or null where there was none to read. */
 function factsStamp(storeDir) {
@@ -536,8 +499,12 @@ export function commitMap(root, plan) {
     if (dir === null) throw movedAway(t.dir, did);
     return dir;
   };
-  const all = Object.entries(plan.targets)
-    .filter(([, t]) => t.write.length > 0 || t.remove.length > 0)
+  // Claude Code's directory is the one resolved above, and commits with the record: a refusal there is the scan's.
+  const claudeId = TARGET_IDS.find((id) => isClaude(TARGETS[id]));
+  const claude = plan.targets[claudeId];
+  const besides = Object.entries(plan.targets).filter(([id]) => !isClaude(TARGETS[id]));
+  const all = besides
+    .filter(([, t]) => t.write.length > 0 || t.remove.length > 0 || t.staged.length > 0)
     .map(([id, t]) => ({ ...t, id, at: own(id, t, UNTOUCHED) }));
 
   // Facts too, and with the rest: `check` reads facts.json, so new facts beside
@@ -567,35 +534,30 @@ export function commitMap(root, plan) {
     }
     const others = all.filter((t) => !refused.has(t.id));
 
-    const names = Object.fromEntries(Object.entries(plan.targets).map(([id, t]) => [id, refused.has(id) ? t.was : t.names]));
+    // Claude Code's files are the record's own areas, so the record names only the other directories' files.
+    const names = Object.fromEntries(besides.map(([id, t]) => [id, refused.has(id) ? t.was : t.names]));
     // Every map file this scan removes, by directory, so a scan killed after the record's rename has them finished by the next.
     // A directory it removes nothing from goes on naming what the record on disk had left there.
     const carried = (id, stopped) => untouched(plan.targets[id]) || refused.has(id) || stopped.has(id);
     const removing = (stopped, done = false) =>
-      Object.fromEntries(
-        TARGET_IDS.map((id) => {
-          if (isClaude(TARGETS[id])) return [id, done ? [] : plan.remove];
-          const t = plan.targets[id];
-          return [id, carried(id, stopped) ? t.pending : done ? [] : t.remove.filter((n) => isMapName(n, TARGETS[id]))];
-        })
-      );
+      Object.fromEntries(TARGET_IDS.map((id) => [id, carried(id, stopped) ? plan.targets[id].pending : done ? [] : plan.targets[id].remove]));
     const holding = (stopped) => Object.fromEntries(Object.entries(names).map(([id, now]) => [id, stopped.has(id) ? plan.targets[id].was : now]));
     const recordTemp = stage(factsPath, factsJson(plan.result, names, removing(new Set())), STORE_DIR);
     staged.push([recordTemp, factsPath]);
     // In the order they are renamed: the record, its layout file, then each directory in turn.
     staged.push([stage(join(storeDir, basename(LAYOUT_PATH)), stampedLayout(plan.result.layout, recordTemp), STORE_DIR), join(storeDir, basename(LAYOUT_PATH))]);
-    for (const [name, body] of plan.bodies) staged.push([stage(join(rulesDir, name), body, RULES_DIR), join(rulesDir, name)]);
+    for (const { name, body } of claude.write) staged.push([stage(join(rulesDir, name), body, RULES_DIR), join(rulesDir, name)]);
     const removals = [
       ...plan.storeStaged.map((f) => join(storeDir, f)),
-      ...[...plan.remove, ...plan.staged].map((f) => join(rulesDir, f)),
-      ...others.flatMap((t) => t.remove.map((f) => join(t.at, f))),
+      ...[...claude.remove, ...claude.staged].map((f) => join(rulesDir, f)),
+      ...others.flatMap((t) => [...t.remove, ...t.staged].map((f) => join(t.at, f))),
     ];
     // A temporary file holds nothing worth putting back, and its size is whatever
     // the repository made it: 1.5 GB sparse at such a name took a scan to 1,535 MB.
     const leftover = new Set([
       ...plan.storeStaged.map((f) => join(storeDir, f)),
-      ...plan.staged.map((f) => join(rulesDir, f)),
-      ...others.flatMap((t) => t.remove.filter((f) => stagedBy(f, TARGETS[t.id]) !== null).map((f) => join(t.at, f))),
+      ...claude.staged.map((f) => join(rulesDir, f)),
+      ...others.flatMap((t) => t.staged.map((f) => join(t.at, f))),
     ]);
     // And once more with everything staged: writing the bodies is the long part,
     // and a link put at a directory meanwhile is where the renames would land.
@@ -635,14 +597,15 @@ export function commitMap(root, plan) {
     const leftIn = (dir) => left.filter((path) => dirname(path) === dir).map((path) => basename(path));
     const without = (names, gone) => names.filter((name) => !gone.includes(name));
     const unwritten = (remedy) => ([id, reason]) => [id, untouchedPlan({ target: TARGETS[id], state: "unknown", reason, remedy, on: false, unwritable: true }, plan.targets[id])];
-    // A leftover that would not go is one more entry the directory holds that this scan neither wrote nor removed.
+    // A leftover that would not go is one more entry another tool's directory holds that this scan neither wrote nor
+    // removed. In Claude Code's it is said as one, since the map's own directory holds nothing else of ours.
     const littered = others
       .filter((t) => !stopped.has(t.id) && leftIn(t.at).length > 0)
-      .map((t) => [t.id, { ...plan.targets[t.id], remove: without(t.remove, leftIn(t.at)), foreign: [...t.foreign, ...leftIn(t.at)].sort() }]);
+      .map((t) => [t.id, { ...plan.targets[t.id], staged: without(t.staged, leftIn(t.at)), foreign: [...t.foreign, ...leftIn(t.at)].sort() }]);
     const [inRules, inStore] = [leftIn(rulesDir), leftIn(storeDir)];
+    if (inRules.length > 0) littered.push([claudeId, { ...claude, staged: without(claude.staged, inRules), stagedLeft: inRules }]);
     return {
       ...plan,
-      ...(inRules.length > 0 ? { staged: without(plan.staged, inRules), stagedLeft: inRules } : {}),
       ...(inStore.length > 0 ? { storeStaged: without(plan.storeStaged, inStore), storeStagedLeft: inStore } : {}),
       targets: { ...plan.targets, ...Object.fromEntries([...littered, ...[...refused].map(unwritten(PERMIT)), ...[...stopped].map(unwritten(UNLOCK))]) },
     };

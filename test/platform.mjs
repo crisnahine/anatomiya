@@ -47,6 +47,10 @@ export const needsColonInNames = WINDOWS
   ? { skip: "Windows refuses a colon in a file name, so the fixture cannot exist" }
   : {};
 
+export const needsFileSizeLimit = WINDOWS
+  ? { skip: "Windows has no file size limit a child can be started under, so a write the disk refuses cannot be staged" }
+  : {};
+
 export const needsShebang = WINDOWS
   ? { skip: "Windows does not execute a shebang, so the stub interpreter cannot run" }
   : {};

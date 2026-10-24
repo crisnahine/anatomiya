@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ASKS_BY_ID, gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { asksById, scriptGit, unaskedWhere } from "./git-script.mjs";
 import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles, removeTree } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 
 import {
   buildPin, loadPin, readPin, writePin, pinDelta, pinTarget, formatDelta,
@@ -254,7 +255,7 @@ test("a squashed-away baseline commit drops every directive to counts", async (t
   assert.equal(population.status, "unreachable");
 });
 
-test("a pinned commit git could not be asked about is not read as gone", needsGitStub, async (t) => {
+test("a pinned commit git could not be asked about is not read as gone", async (t) => {
   const files = ["src/a/x.ts", "src/a/y.ts"];
   let sha;
   const dir = repo(t, (d, { write, commit }) => {
@@ -264,16 +265,16 @@ test("a pinned commit git could not be asked about is not read as gone", needsGi
   const pin = buildPin([area("src/a", files)], { sha });
   assert.equal((await resolve(dir, { pin, baseRef: "main" })).status, "ok");
 
-  gitAhead(t, unasked(ASKS_BY_ID));
+  scriptGit(t, unaskedWhere(asksById));
 
   await assert.rejects(() => resolve(dir, { pin, baseRef: "main" }), new RegExp(`git could not be asked whether commit ${sha} is still in this repository`));
 });
 
 for (const [what, asks] of [
-  ["the commit the pin and HEAD share", (pinned) => `*' merge-base ${pinned} HEAD '*`],
-  ["the commit the pin and the base share", (pinned, tip) => `*' merge-base ${pinned} ${tip} '*`],
+  ["the commit the pin and HEAD share", (pinned) => ` merge-base ${pinned} HEAD `],
+  ["the commit the pin and the base share", (pinned, tip) => ` merge-base ${pinned} ${tip} `],
 ]) {
-  test(`${what}, where git could not be asked for it, stops the baseline and is not read as none`, needsGitStub, async (t) => {
+  test(`${what}, where git could not be asked for it, stops the baseline and is not read as none`, async (t) => {
     const files = ["src/a/x.ts", "src/a/y.ts"];
     let pinned, tip;
     const dir = repo(t, (d, { write, commit }) => {
@@ -284,7 +285,7 @@ for (const [what, asks] of [
     });
     const pin = buildPin([area("src/a", files)], { sha: pinned });
 
-    gitAhead(t, unasked(asks(pinned, tip)));
+    scriptGit(t, unaskedWhere((line) => line.includes(asks(pinned, tip))));
 
     await assert.rejects(() => resolve(dir, { pin, baseRef: "main" }), /git could not be asked for the merge base of/);
   });
@@ -572,6 +573,34 @@ test("a file that only moved to another area neither enters nor leaves the popul
   assert.doesNotMatch(printed, /^ {2}- /m, "nothing is listed as leaving");
 });
 
+// --- which pinned area a current one descends from ---
+
+/** A resolved pin of `count` areas of `each` files, and the current areas holding the same files. */
+function pinnedTree(count, each) {
+  const pinned = Array.from({ length: count }, (_, a) => area(`src/d${a}`, Array.from({ length: each }, (_, i) => `src/d${a}/f${i}.ts`)));
+  const areas = new Map(pinned.map((p) => [p.path, { id: p.id, path: p.path, files: new Set(p.files.map((f) => f.rel)) }]));
+  return { state: { countsOnly: false, status: "ok", renames: new Map(), sinceFork: new Set(), areas }, current: pinned };
+}
+
+test("a current area is matched to the pinned area holding most of its files, the first in pin order on a tie", () => {
+  const { state } = pinnedTree(0, 0);
+  state.areas.set("src/a", { id: "a", path: "src/a", files: new Set(["src/a/x.ts", "src/a/y.ts"]) });
+  state.areas.set("src/b", { id: "b", path: "src/b", files: new Set(["src/b/x.ts", "src/b/y.ts"]) });
+
+  assert.equal(baselinePopulation(state, area("src/c", ["src/b/x.ts", "src/a/x.ts"])).areaPath, "src/a");
+  assert.equal(baselinePopulation(state, area("src/c", ["src/a/x.ts", "src/b/x.ts", "src/b/y.ts"])).areaPath, "src/b");
+  assert.equal(baselinePopulation(state, area("src/c", ["src/c/new.ts"])).status, "postdates-baseline");
+});
+
+test("matching every area to its pinned one grows with the files, not the areas times the files", () => {
+  // Each area was looked up in every pinned area: 500 areas over 50,000 files took 0.5 s a scan.
+  const { state, current } = pinnedTree(400, 20);
+  assert.equal(current.every((a) => baselinePopulation(state, a).areaPath === a.path), true, "the control: each finds its own");
+
+  const ratio = doublingRatio((count) => { const tree = pinnedTree(count, 20); return () => { for (const a of tree.current) baselinePopulation(tree.state, a); }; }, 200);
+  assert.ok(ratio < LINEAR, `twice the areas took ${ratio.toFixed(2)} times as long`);
+});
+
 // --- E6: drift is measured to the base ref, never to HEAD ---
 
 test("the branch's own changes are not map drift", async (t) => {
@@ -651,6 +680,175 @@ test("a squash merge is not drift: the base holds the same bytes the pin does", 
   const state = await resolve(dir, { pin, baseRef: "main" });
 
   assert.equal(state.drift.total, 0, "the base's bytes are the pin's bytes");
+});
+
+test("a file a generator wrote that the base added is no drift, whether its head or the attributes say so", async (t) => {
+  // Read off the path alone, two clients a generator stamped, added on main beside
+  // eight pinned sources, were 2 of 8 changed, which is the cap.
+  const files = Array.from({ length: 8 }, (_, i) => `src/app/a${i}.ts`);
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const [i, rel] of files.entries()) write(rel, `export const a${i} = ${i};\n`);
+    write(".gitattributes", "src/app/marked.ts linguist-generated\n");
+    sha = commit("init");
+    write("src/app/schema.gen.ts", "// @generated\nexport const s = 1;\n");
+    write("src/app/client.ts", "// Code generated by protoc-gen-ts. DO NOT EDIT.\nexport const c = 1;\n");
+    write("src/app/marked.ts", "export const m = 1;\n");
+    commit("main adds what a generator wrote");
+    git("checkout", "-q", "-b", "work");
+  });
+  const pin = buildPin([area("src/app", files)], { sha });
+
+  assert.equal((await resolve(dir, { pin, baseRef: "main" })).drift.total, 0);
+
+  // The control: a file somebody wrote, added the same way, still moves it.
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("checkout", "-q", "main");
+  writeFileSync(join(dir, "src/app/hand.ts"), "export const h = 1;\n");
+  git("add", "-A");
+  git("commit", "-qm", "main adds a file by hand");
+  git("checkout", "-q", "-B", "work", "main");
+  assert.equal((await resolve(dir, { pin, baseRef: "main" })).drift.total, 1);
+});
+
+test("a file the base added that git could not be asked for stops the drift, never reads as one nobody generated", async (t) => {
+  const files = Array.from({ length: 8 }, (_, i) => `src/app/a${i}.ts`);
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const [i, rel] of files.entries()) write(rel, `export const a${i} = ${i};\n`);
+    sha = commit("init");
+    write("src/app/schema.gen.ts", "// @generated\nexport const s = 1;\n");
+    commit("main adds what a generator wrote");
+    git("checkout", "-q", "-b", "work");
+  });
+  const pin = buildPin([area("src/app", files)], { sha });
+  scriptGit(t, unaskedWhere((line) => line.includes(" cat-file ") && line.includes("src/app/schema.gen.ts")));
+
+  await assert.rejects(resolve(dir, { pin, baseRef: "main" }), /git could not be asked/);
+});
+
+test("a file the map never counted is no drift, and a source file the base added is", async (t) => {
+  // The share's denominator is the pinned source population, and every changed
+  // path under an area's directory was its numerator: ten JSON edits beside
+  // twelve source files read as 10 of 12 and capped every finding at FIX.
+  const files = Array.from({ length: 12 }, (_, i) => `src/f${i}.js`);
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const rel of files) write(rel, CONFORMING);
+    for (let i = 0; i < 10; i++) write(`src/data/d${i}.json`, "{}\n");
+    write("src/README.md", "# src\n");
+    write("src/__fixtures__/x.js", CONFORMING);
+    // Source the pin left out: a generator's output is counted nowhere.
+    write("src/schema.ts", "// @generated\nexport const a = 1;\n");
+    sha = commit("init");
+
+    for (let i = 0; i < 10; i++) write(`src/data/d${i}.json`, '{"a":1}\n');
+    write("src/data/added.json", "{}\n");
+    write("src/README.md", "# src, again\n");
+    write("src/__fixtures__/x.js", VIOLATING);
+    write("src/__fixtures__/added.js", VIOLATING);
+    write("src/schema.ts", "// @generated\nexport const a = 2;\n");
+    commit("main moves on, outside what the map counts");
+    git("checkout", "-q", "-b", "work");
+  });
+  const pin = buildPin([area("src", files)], { sha });
+
+  assert.equal((await resolve(dir, { pin, baseRef: "main" })).drift.total, 0);
+
+  // What the map does count still moves it: a pinned file edited, and a source file added.
+  execFileSync("git", ["checkout", "-q", "main"], { cwd: dir });
+  writeFileSync(join(dir, "src/f0.js"), VIOLATING);
+  writeFileSync(join(dir, "src/f12.js"), CONFORMING);
+  execFileSync("git", ["add", "-A"], { cwd: dir });
+  execFileSync("git", ["commit", "-qm", "main moves the code"], { cwd: dir });
+  execFileSync("git", ["checkout", "-q", "-B", "work", "main"], { cwd: dir });
+
+  const state = await resolve(dir, { pin, baseRef: "main" });
+  assert.equal(state.drift.total, 2);
+  assert.equal(state.drift.byArea.get("src"), 2);
+});
+
+test("what a file is to the drift is read from the pin's own range, not the shared commit's", async (t) => {
+  // After a squash merge the shared commit sits behind the pin: a file the pin
+  // already held reads as added from there, and a generated file the pin left
+  // out was charged every time it was regenerated.
+  const files = Array.from({ length: 6 }, (_, i) => `src/app/a${i}.ts`);
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const rel of files) write(rel, CONFORMING);
+    commit("init");
+    git("checkout", "-q", "-b", "feature");
+    write("src/app/schema.ts", "// @generated\nexport const a = 1;\n");
+    sha = commit("generate");
+    git("checkout", "-q", "main");
+    git("merge", "--squash", "feature");
+    commit("squashed feature");
+    write("src/app/schema.ts", "// @generated\nexport const a = 2;\n");
+    commit("regenerate");
+    git("checkout", "-q", "-b", "work");
+  });
+  const pin = buildPin([area("src/app", files)], { sha });
+
+  assert.equal((await resolve(dir, { pin, baseRef: "main" })).drift.total, 0);
+});
+
+test("a file the base renamed is one change of the map each, not two", async (t) => {
+  // Both names of a rename are in the range's changed set, so one `git mv` of
+  // eight pinned files read as 2 of 8, which is the cliff itself.
+  const files = Array.from({ length: 8 }, (_, i) => `src/app/a${i}.ts`);
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const [i, rel] of files.entries()) write(rel, `export const a${i} = ${i};\n`);
+    sha = commit("init");
+    git("mv", "src/app/a0.ts", "src/app/b0.ts");
+    // Out of the population under a name no source file has.
+    git("mv", "src/app/a1.ts", "src/app/a1.ts.orig");
+    commit("rename on main");
+    git("checkout", "-q", "-b", "work");
+  });
+  const pin = buildPin([area("src/app", files)], { sha });
+
+  assert.equal((await resolve(dir, { pin, baseRef: "main" })).drift.total, 2);
+});
+
+test("a pinned file the base moved out of every area is still a change of the map", async (t) => {
+  const files = Array.from({ length: 6 }, (_, i) => `src/app/a${i}.ts`);
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const [i, rel] of files.entries()) write(rel, `export const a${i} = ${i};\n`);
+    sha = commit("init");
+    git("mv", "src/app/a0.ts", "a0.ts");
+    commit("move to the root");
+    git("checkout", "-q", "-b", "work");
+  });
+  const pin = buildPin([area("src/app", files)], { sha });
+
+  const state = await resolve(dir, { pin, baseRef: "main" });
+  assert.equal(state.drift.total, 1);
+  assert.equal(state.drift.byArea.get("src/app"), 1);
+});
+
+test("asked for drift alone, the reads only the scan needs are not made", async (t) => {
+  // The check reads the drift and the pin's status from `resolve`, and paid for
+  // the rename map to HEAD and the fork's file list besides, which it never read.
+  const files = Array.from({ length: 6 }, (_, i) => `src/app/a${i}.ts`);
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const rel of files) write(rel, CONFORMING);
+    sha = commit("init");
+    write("src/app/a0.ts", VIOLATING);
+    commit("main moves on");
+    git("checkout", "-q", "-b", "work");
+  });
+  const pin = buildPin([area("src/app", files)], { sha });
+
+  const calls = scriptGit(t);
+  const state = await resolve(dir, { pin, baseRef: "main", driftOnly: true });
+
+  assert.equal(state.drift.total, 1);
+  assert.deepEqual(calls().filter((c) => c.includes(`${sha}..HEAD`) || c.includes(` merge-base ${sha} HEAD `)), []);
+  assert.equal(state.renames.size, 0);
+  assert.equal(state.sinceFork.size, 0);
 });
 
 test("HEAD is refused as a base ref", async (t) => {

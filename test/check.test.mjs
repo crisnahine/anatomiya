@@ -9,10 +9,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 import { addWorktree, git, scratch } from "./git-worktrees.mjs";
+import { scriptGit } from "./git-script.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
-import { renamesSkipped } from "../plugins/anatomiya/lib/changeset.mjs";
 import { formatReport, formatReportGithub, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -1706,6 +1706,73 @@ test("a base branch that moved past the pin caps severity", async (t) => {
   assert.equal(r.stale, true);
   assert.match(r.staleReason, /mapped files changed since the pin/);
   assert.equal(forKey(r, "swallowed_error")[0].severity, "FIX");
+});
+
+test("data and prose the base edited beside the code do not age the map", async (t) => {
+  // Measured before: ten JSON edits on main beside twelve mapped files capped
+  // every finding as "10 of 12 mapped files changed since the pin".
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (let i = 0; i < 12; i++) write(`src/f${i}.ts`, clean(2));
+    for (let i = 0; i < 10; i++) write(`src/data/d${i}.json`, "{}\n");
+    commit("pin here");
+    for (let i = 0; i < 10; i++) write(`src/data/d${i}.json`, '{"a":1}\n');
+    write("src/README.md", "# notes\n");
+    commit("data moves on");
+
+    git("checkout", "-q", "-b", "work");
+    write("src/f0.ts", clean(2) + swallow(1));
+    commit("my change");
+  });
+  facts(dir, { sha: sha(dir, "main~1"), fileCount: 12 });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.stale, false, r.staleReason);
+  assert.equal(r.drift.changed, 0);
+  assert.equal(forKey(r, "swallowed_error")[0].severity, "MUST-FIX");
+});
+
+test("drift at exactly the share that caps severity caps it", async (t) => {
+  // Two of eight is the cliff itself, so a `>` where `>=` belongs moves it unseen.
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (let i = 0; i < 8; i++) write(`src/f${i}.ts`, clean(2));
+    commit("pin here");
+    for (let i = 1; i < 3; i++) write(`src/f${i}.ts`, clean(4));
+    commit("the world moved");
+
+    git("checkout", "-q", "-b", "work");
+    write("src/f0.ts", clean(2) + swallow(1));
+    commit("my change");
+  });
+  facts(dir, { sha: sha(dir, "main~1"), fileCount: 8 });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.drift.share, 0.25);
+  assert.equal(r.stale, true);
+  assert.equal(forKey(r, "swallowed_error")[0].severity, "FIX");
+});
+
+test("the check asks the baseline for drift alone", async (t) => {
+  // The rename map to HEAD and the fork's file list are the scan's, and the
+  // check read neither, at two git reads a run.
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (let i = 0; i < 6; i++) write(`src/f${i}.ts`, clean(2));
+    commit("pin here");
+    write("src/f1.ts", clean(4));
+    commit("the world moved");
+    git("checkout", "-q", "-b", "work");
+    write("src/f0.ts", clean(2) + swallow(1));
+    commit("my change");
+  });
+  const pin = sha(dir, "main~1");
+  const head = sha(dir, "HEAD");
+  facts(dir, { sha: pin, fileCount: 6 });
+
+  const calls = scriptGit(t);
+  await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(calls().filter((c) => c.includes(`${pin}..${head}`) || c.includes(` merge-base ${pin} ${head} `)), []);
 });
 
 // --- the severity table on its own ---
@@ -5751,17 +5818,6 @@ test("a branch past the configured rename limit still reads its moves as moves",
 
   assert.deepEqual(r.examined.map((c) => [c.path, c.from]), [["src/x.ts", "src/a.ts"], ["src/y.ts", "src/b.ts"]]);
   assert.deepEqual(forKey(r, "swallowed_error"), []);
-});
-
-test("rename detection git skipped past the limit this run set is said, not charged silently", () => {
-  const rows = (adds, dels) => [
-    ...Array.from({ length: adds }, (_, i) => ({ status: "A", path: `n${i}.ts`, from: null })),
-    ...Array.from({ length: dels }, (_, i) => ({ status: "D", path: `o${i}.ts`, from: `o${i}.ts` })),
-    { status: "R", path: "r.ts", from: "q.ts" },
-  ];
-  assert.equal(renamesSkipped(rows(2, 2), 1), true);
-  assert.equal(renamesSkipped(rows(1, 1), 1), false);
-  assert.equal(renamesSkipped(rows(5, 0), 1), false, "nothing deleted is nothing to pair");
 });
 
 /* --- the reads after base resolution run side by side, and ask once --- */

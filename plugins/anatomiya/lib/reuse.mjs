@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { addedRanges, pendingPaths } from "./changeset.mjs";
 import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
-import { gitBuffered, operationUnfinished, Unasked } from "./git.mjs";
+import { ask, operationUnfinished, unaskedAs, Unasked } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
 import { INERT_ENGINES, inertLinesOf, REUSE_PARSE_MS } from "./inert.mjs";
 import { embeddedIn, engineOf, language } from "./langs.mjs";
@@ -217,8 +217,8 @@ export async function pendingChange(root, { since = null, turnStart = null, call
  * nothing: the status read beside this one fails the same way.
  */
 async function gitDir(root) {
-  const r = await gitBuffered(root, ["rev-parse", "--absolute-git-dir"], { timeout: REUSE_GIT_MS });
-  const dir = r.ok ? r.stdout.trim() : "";
+  const r = await ask(root, ["rev-parse", "--absolute-git-dir"], "where this checkout's git directory is", { timeout: REUSE_GIT_MS }).catch(unaskedAs(null));
+  const dir = r?.code === 0 ? r.stdout.trim() : "";
   return dir === "" ? null : dir;
 }
 
@@ -275,12 +275,14 @@ const REFLOG_ASKED = 256;
  * asked has no such entry and cannot start a run.
  */
 async function headMovesFromGit(root) {
-  const r = await gitBuffered(
+  // No moves read, so no commit is charged to the turn.
+  const r = await ask(
     root,
     ["log", "-g", `--max-count=${REFLOG_ASKED}`, "--date=unix", "--format=%H %gd %gs", "HEAD"],
+    "how HEAD moved lately",
     { timeout: REUSE_GIT_MS }
-  );
-  if (!r.ok) return null;
+  ).catch(unaskedAs(null));
+  if (r?.code !== 0) return null;
   const moves = [];
   for (const line of r.stdout.split("\n").reverse()) {
     const entry = /^([0-9a-f]+) [^@]*@\{(\d+)\} (.*)$/.exec(line);

@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 349 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 350 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -65,7 +65,12 @@ is run, so a new grammar release is something to look for by hand.
 
 No test framework, no mocks, no fixtures generated at runtime. `node:test` and `node:assert` only.
 Tests that need a repository build one in a temp directory with real `git init` and real commits,
-because half the behaviour under test is git behaviour.
+because half the behaviour under test is git behaviour. A failure no real repository or disk can
+produce, such as a git ended by a signal or refusing one question, is stood in for that one call, and
+every other call still reaches the real thing: `test/git-script.mjs` scripts git's answer inside the
+test's own process, `test/git-stub.mjs` puts a stub git ahead on `PATH` for a child process the test
+starts and for the tests of how `git.mjs` runs git, and `test/fs-stub.mjs` replaces one `node:fs`
+export for the length of one call.
 
 Run the tool against a real repository before you send anything:
 

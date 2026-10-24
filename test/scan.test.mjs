@@ -27,6 +27,9 @@ import { checkerBlocked, loadTypeScript, runSemantic, verdictStamp } from "../pl
 import { buildVersion } from "../plugins/anatomiya/lib/readiness.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 
+// Claude Code's bodies on a plan, by filename.
+const bodiesOf = (plan) => new Map(plan.targets.claude.write.map((w) => [w.name, w.body]));
+
 // The directory is removed through the test context, so a failing assertion
 // still cleans up instead of leaving a repository in the temporary directory.
 function repo(t, build) {
@@ -1163,7 +1166,7 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
     assert.deepEqual(area.dimensions.filter((d) => d.tier === "semantic").map((d) => d.key), [], area.path);
   }
   assert.doesNotMatch(factsJson(r), /law_of_demeter|"tier":\s*"semantic"/);
-  const bodies = [...planMap(r).bodies.values()].join("\n");
+  const bodies = [...bodiesOf(planMap(r)).values()].join("\n");
   assert.doesNotMatch(bodies, /call chain|degraded-semantic/);
   assert.match(bodies, /^- type-checked claims are not counted: \S+( of)? type lookups resolved \(\S+\)$/m);
 });
@@ -1701,7 +1704,7 @@ test("a claim counted over a Gemfile names it, not the label the kinds line give
   });
 
   const result = await scan(dir);
-  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+  const text = bodiesOf(planMap(result)).get([...bodiesOf(planMap(result)).keys()].find((name) => name !== "anatomiya-overview.md"));
 
   assert.match(text, /^kinds: .*\(none\)/m);
   assert.match(text, /^rescue blocks use the error they caught, in \.rb files and Gemfile: /m);
@@ -1718,7 +1721,7 @@ test("two stray files of another language put no scope on an area's claims", asy
   });
 
   const result = await scan(dir);
-  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+  const text = bodiesOf(planMap(result)).get([...bodiesOf(planMap(result)).keys()].find((name) => name !== "anatomiya-overview.md"));
 
   assert.match(text, /^rescue blocks use the error they caught: /m);
   assert.match(text, /^module-level bindings are const, in \.js files: /m, "the two files' own row was not asked of the four");
@@ -1738,7 +1741,7 @@ test("a claim learned from the modules of a directory says so beside the compone
   });
 
   const result = await scan(dir);
-  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+  const text = bodiesOf(planMap(result)).get([...bodiesOf(planMap(result)).keys()].find((name) => name !== "anatomiya-overview.md"));
 
   assert.match(text, /^module-level bindings are const, in \.js and \.ts files: /m);
   assert.match(text, /^catch blocks use the error they caught: /m, "a row asked of every file here names none");
@@ -1757,7 +1760,7 @@ test("a claim names only the extensions its row was asked of, and a row asked of
     git("commit", "-qm", "init");
   });
 
-  const bodies = planMap(await scan(dir)).bodies;
+  const bodies = bodiesOf(planMap(await scan(dir)));
   const text = (dirName) => [...bodies.values()].find((body) => body.includes(`# ${dirName}`));
 
   assert.match(text("src/panel"), /^an event handler prop is given [^,]+, [^,]+, in \.tsx files: /m);

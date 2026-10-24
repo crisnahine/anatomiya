@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 
 import { git, scratch } from "./git-worktrees.mjs";
 import {
-  addedRanges, changedFiles, onlyInHead, pendingPaths, unquotePath, withPendingEdits,
+  addedRanges, branchChange, pendingPaths, renamesSkipped, unquotePath,
 } from "../plugins/anatomiya/lib/changeset.mjs";
 
 function repo(t) {
@@ -69,82 +69,117 @@ test("a name git quotes is read back as the path it names", () => {
   assert.equal(unquotePath("plain.ts"), "plain.ts");
 });
 
-test("the pending edits fold into the diff rows the way the check reads each case", () => {
-  const cases = [
-    {
-      name: "a committed rename edited again keeps the base path the diff found",
-      rows: [{ status: "R", path: "src/new.ts", from: "src/old.ts" }],
-      pending: { present: [{ path: "src/new.ts", status: "M", from: "src/new.ts" }], deleted: [] },
-      want: [{ status: "R", path: "src/new.ts", from: "src/old.ts", tree: true }],
-    },
-    {
-      name: "a file the branch added and then moved is still an addition",
-      rows: [{ status: "A", path: "src/added.ts", from: null }],
-      pending: { present: [{ path: "src/moved.ts", status: "M", from: "src/added.ts" }], deleted: ["src/added.ts"] },
-      want: [{ status: "A", path: "src/moved.ts", from: null, tree: true }],
-    },
-    {
-      name: "a committed edit then moved reads its base from where the merge base held it",
-      rows: [{ status: "M", path: "src/kept.ts", from: "src/kept.ts" }],
-      pending: { present: [{ path: "src/there.ts", status: "M", from: "src/kept.ts" }], deleted: ["src/kept.ts"] },
-      want: [{ status: "M", path: "src/there.ts", from: "src/kept.ts", tree: true }],
-    },
-    {
-      name: "an addition deleted again in the tree leaves",
-      rows: [{ status: "A", path: "src/gone.ts", from: null }, { status: "M", path: "src/stays.ts", from: "src/stays.ts" }],
-      pending: { present: [], deleted: ["src/gone.ts"] },
-      want: [{ status: "M", path: "src/stays.ts", from: "src/stays.ts" }],
-    },
-    {
-      name: "an edit to a file the branch never changed is a row of its own",
-      rows: [],
-      pending: { present: [{ path: "src/untouched.ts", status: "M", from: "src/untouched.ts" }], deleted: [] },
-      want: [{ status: "M", path: "src/untouched.ts", from: "src/untouched.ts", tree: true }],
-    },
-  ];
-  for (const { name, rows, pending, want } of cases) {
-    assert.deepEqual(withPendingEdits(rows, pending), want, name);
-  }
+const sha = (git, ref = "HEAD") => git("rev-parse", ref).toString().trim();
+const byPath = (a, b) => (a.path < b.path ? -1 : 1);
+
+test("a branch's change set: the committed diff, the tree's work folded in, and what it took away", async (t) => {
+  const { dir, write, git } = repo(t);
+  write("src/edited.ts", "export const a = 1\n");
+  write("src/gone.ts", "export const gone = 1\n");
+  write("src/old.ts", "export const moved = 1\n".repeat(5));
+  write("src/kept.ts", "export const kept = 1\n".repeat(5));
+  write("src/untouched.ts", "export const u = 1\n");
+  write("README.md", "# a\n");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const from = sha(git);
+  write("src/edited.ts", "export const a = 2\n");
+  write("src/added.ts", "export const added = 1\n".repeat(5));
+  write("src/schema.ts", "// @generated\nexport const s = 1\n");
+  git("rm", "-q", "src/gone.ts");
+  git("mv", "src/old.ts", "src/new.ts");
+  write("README.md", "# b\n");
+  write("src/kept.ts", "export const kept = 2\n".repeat(5));
+  git("add", "-A");
+  git("commit", "-qm", "change");
+  // The tree's own work: the rename edited again, the added file moved, the
+  // committed edit moved, an edit to a file the branch never changed.
+  write("src/new.ts", "export const moved = 2\n".repeat(5));
+  git("mv", "src/added.ts", "src/moved.ts");
+  git("mv", "src/kept.ts", "src/there.ts");
+  write("src/untouched.ts", "export const u = 2\n");
+
+  const change = await branchChange(dir, { from, head: sha(git), mergeBase: from, compare: true });
+
+  assert.equal(change.readable, true);
+  assert.deepEqual(change.rows.map((r) => r.path).sort(), ["README.md", "src/added.ts", "src/edited.ts", "src/gone.ts", "src/kept.ts", "src/new.ts", "src/schema.ts"]);
+  assert.deepEqual(change.examined.sort(byPath), [
+    { status: "M", path: "src/edited.ts", from: "src/edited.ts" },
+    // A file the branch added and then moved is still an addition.
+    { status: "A", path: "src/moved.ts", from: null, tree: true },
+    // A committed rename edited again keeps the base path the diff found.
+    { status: "R", path: "src/new.ts", from: "src/old.ts", tree: true },
+    // A committed edit then moved reads its base from where the merge base held it.
+    { status: "M", path: "src/there.ts", from: "src/kept.ts", tree: true },
+    { status: "M", path: "src/untouched.ts", from: "src/untouched.ts", tree: true },
+  ], "the generated file and the prose stay out");
+  assert.deepEqual(change.removed, ["src/gone.ts"]);
+  assert.deepEqual([...change.lost].sort(), ["src/added.ts", "src/gone.ts", "src/kept.ts", "src/old.ts"]);
+  assert.equal(change.listed, true);
+  assert.equal(change.unjudged, 0);
+  assert.equal(change.renamesSkipped, false);
+  assert.equal(change.added, null, "ranges only where asked");
 });
 
-test("a pending deletion stays only where HEAD holds the path", async (t) => {
+test("a pending addition the merge base holds reads its base from there, and a pending deletion stays only where HEAD holds the path", async (t) => {
   const { dir, write, git } = repo(t);
   write("src/a.ts", "export const a = 1\n");
   write("src/b.ts", "export const b = 1\n");
   git("add", "-A");
   git("commit", "-qm", "init");
+  const base = sha(git);
+  git("rm", "-q", "src/a.ts");
+  git("commit", "-qm", "drop a");
+  // Back in the tree, it is an addition to HEAD of a path the merge base holds.
+  write("src/a.ts", "export const a = 2\n");
+  // An addition deleted again in the tree never reached HEAD.
+  write("src/never.ts", "export const n = 1\n");
+  git("add", "src/never.ts");
+  rmSync(join(dir, "src/never.ts"));
+  rmSync(join(dir, "src/b.ts"));
 
-  const pending = { present: [], deleted: ["src/a.ts", "src/never.ts"], removed: ["src/b.ts", "src/never.ts"] };
-  const held = await onlyInHead(dir, pending);
+  const change = await branchChange(dir, { from: base, head: sha(git), mergeBase: base, compare: true });
 
-  assert.deepEqual([held.deleted, held.removed], [["src/a.ts"], ["src/b.ts"]]);
-  assert.deepEqual(pending.deleted, ["src/a.ts", "src/never.ts"], "the caller's lists are left as they were");
+  assert.deepEqual(change.examined, [{ status: "A", path: "src/a.ts", from: "src/a.ts", tree: true }]);
+  assert.deepEqual(change.pending.deleted, ["src/b.ts"]);
+  assert.deepEqual(change.pending.removed, ["src/b.ts"]);
 });
 
-test("the committed diff names each change with the path its base is read from", async (t) => {
+test("with no base to compare against, the tree's work is unjudged and the ranges are read where asked", async (t) => {
   const { dir, write, git } = repo(t);
-  write("src/edited.ts", "export const a = 1\n");
-  write("src/gone.ts", "export const gone = 1\n");
-  write("src/old.ts", "export const moved = 1\n".repeat(5));
+  write("a.ts", "line 1\n");
   git("add", "-A");
   git("commit", "-qm", "init");
-  const from = git("rev-parse", "HEAD").toString().trim();
-  write("src/edited.ts", "export const a = 2\n");
-  write("src/added.ts", "export const added = 1\n");
-  git("rm", "-q", "src/gone.ts");
-  git("mv", "src/old.ts", "src/new.ts");
+  write("a.ts", "line 1\nline 2\n");
+  git("commit", "-qam", "more");
+  write("b.ts", "export const b = 1\n");
+
+  const change = await branchChange(dir, { from: sha(git, "HEAD~1"), head: sha(git), mergeBase: null, compare: false, ranges: true });
+
+  assert.equal(change.unjudged, 1);
+  assert.deepEqual(change.pending.present, [], "nothing pending is judged without a base");
+  assert.deepEqual([...change.added], [["a.ts", [[2, 2]]]]);
+});
+
+test("a diff git refused is no empty branch, and a nothing to compare from is no diff", async (t) => {
+  const { dir, write, git } = repo(t);
+  write("a.ts", "export const a = 1\n");
   git("add", "-A");
-  git("commit", "-qm", "change");
+  git("commit", "-qm", "init");
 
-  const diff = await changedFiles(dir, from);
+  const refused = await branchChange(dir, { from: "f".repeat(40), head: sha(git), mergeBase: null, compare: false });
+  assert.deepEqual([refused.readable, refused.rows], [false, []]);
+  const none = await branchChange(dir, { from: null, head: sha(git), mergeBase: null, compare: false });
+  assert.deepEqual([none.readable, none.rows, none.examined], [true, [], []]);
+});
 
-  const byPath = (a, b) => (a.path < b.path ? -1 : 1);
-  assert.equal(diff.ok, true);
-  assert.deepEqual(diff.rows.sort(byPath), [
-    { status: "A", path: "src/added.ts", from: null },
-    { status: "M", path: "src/edited.ts", from: "src/edited.ts" },
-    { status: "D", path: "src/gone.ts", from: "src/gone.ts" },
-    { status: "R", path: "src/new.ts", from: "src/old.ts" },
-  ]);
-  assert.deepEqual(await changedFiles(dir, "f".repeat(40)), { ok: false, rows: [] }, "a diff git refused is no empty branch");
+test("git skips inexact rename pairing past its limit, which the rows it answered with are enough to tell", () => {
+  const rows = (adds, dels) => [
+    ...Array.from({ length: adds }, (_, i) => ({ status: "A", path: `n${i}.ts`, from: null })),
+    ...Array.from({ length: dels }, (_, i) => ({ status: "D", path: `o${i}.ts`, from: `o${i}.ts` })),
+    { status: "R", path: "r.ts", from: "q.ts" },
+  ];
+  assert.equal(renamesSkipped(rows(2, 2), 1), true);
+  assert.equal(renamesSkipped(rows(1, 1), 1), false);
+  assert.equal(renamesSkipped(rows(5, 0), 1), false, "nothing deleted is nothing to pair");
 });

@@ -2,11 +2,12 @@ import { ALL_DIMENSIONS } from "./dimensions.mjs";
 import { dimensionsFor } from "./walk.mjs";
 import { pairingsFor } from "./pairing.mjs";
 import { claimFor } from "./dimensions-naming.mjs";
-import { rowsOfKind } from "./registry.mjs";
+import { REGISTRY, rowsOfKind } from "./registry.mjs";
 import { dirCount } from "./areas.mjs";
 import { holdsTypeSyntax, language, spokenIn } from "./langs.mjs";
 import { defaultSideFor, defaultClassFor } from "./model-defaults.mjs";
 import { GATES, wilsonLower, wilsonUpper } from "./gates.mjs";
+import { PRECEDENT_FLOOR } from "./principles.mjs";
 import { extOrName } from "./paths.mjs";
 import { byVotes } from "./companions.mjs";
 
@@ -939,4 +940,29 @@ function distinctDirs(files = []) {
   // question.
   const paths = files.map((f) => (typeof f === "string" ? f : f && f.rel)).filter((r) => typeof r === "string");
   return dirCount(paths);
+}
+
+const ROW_LANGS = new Map(REGISTRY.map((d) => [d.key, d.langs]));
+
+/**
+ * The files a claim's row was asked of in an area whose language counts are
+ * `languages`, where the area holds enough files of languages the row is never
+ * asked of to say so; null otherwise. The scan keeps it on the slot as `scope`.
+ *
+ * Whether to say it is a question about languages, and what to say is the
+ * files the fold asked. A `.ts` file beside a JSX row could have been asked,
+ * as a `.js` file holding JSX is, so it alone earns no clause; and it is not
+ * named in one, because no `.ts` file here was.
+ *
+ * From three files of other languages up, the floor a directory's tests are
+ * read from: one stray script in an area of two hundred files of another
+ * language otherwise puts the clause on every line there.
+ */
+export function askedScope(languages, d) {
+  const langs = ROW_LANGS.get(d.key);
+  const counted = d.askedExts ?? [];
+  if (!langs || counted.length === 0) return null;
+  const never = Object.keys(languages.extsByLang ?? {}).filter((lang) => !spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
+  const unasked = never.reduce((n, lang) => n + (languages.filesByLang?.[lang] ?? 0), 0);
+  return unasked < PRECEDENT_FLOOR ? null : counted;
 }

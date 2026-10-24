@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { gitAhead, needsGitStub, unasked } from "./git-stub.mjs";
+import { scriptGit } from "./git-script.mjs";
 import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, removeTree } from "./platform.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
 import { askedMarksIn, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
@@ -1327,13 +1327,13 @@ test("the git reads fit inside the time the hook asks Claude Code for", () => {
   assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + REUSE_PARSE_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} + ${REUSE_PARSE_MS} against ${declared}s`);
 });
 
-test("a checkout whose attributes git could not be asked for asks nothing, and the next one is still asked about", needsGitStub, async (t) => {
+test("a checkout whose attributes git could not be asked for asks nothing, and the next one is still asked about", async (t) => {
   // The hook reads every checkout of a stop together, so a read that throws in one would end them all.
   const unaskable = repo(t);
   unaskable.write("src/b.ts", NEW_B);
   const other = repo(t);
   other.write("src/b.ts", NEW_B);
-  gitAhead(t, `case "$PWD" in *'/${basename(unaskable.dir)}') ${unasked("*' cat-file blob :.gitattributes '*")};; esac`);
+  scriptGit(t, (_args, line, cwd) => (basename(cwd) === basename(unaskable.dir) && line.includes(" cat-file blob :.gitattributes ") ? { signal: "SIGTERM" } : null));
 
   assert.equal(await pendingChange(unaskable.dir), null);
   assert.deepEqual((await pendingChange(other.dir)).map((f) => f.path), ["src/b.ts"]);

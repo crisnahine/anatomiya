@@ -1,12 +1,12 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
-import { answered, caseMagic, gitBuffered, gitStreamed } from "./git.mjs";
+import { ask, blobReader, caseMagic, gitStreamed, topLevel, Unasked } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { placedTests } from "./layout.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
-import { folded } from "./paths.mjs";
+import { escapeRe, folded } from "./paths.mjs";
 import { isLink, isMapName, readHead, STORE_DIR, trackedRulesDir } from "./rules.mjs";
 import { TARGETS, isClaude } from "./targets.mjs";
 
@@ -34,7 +34,7 @@ const SOURCE = new RegExp(`\\.(${Object.keys(EXT_BY_LANG).map(extsOf).join("|")}
 // and a name carrying a bracket would otherwise mis-match silently.
 const BARE_FILENAME = new RegExp(
   `(^|/)(${LANGUAGES.flatMap((l) => l.filenames)
-    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .map(escapeRe)
     .join("|")})$`
 );
 
@@ -257,22 +257,23 @@ async function generatedAttrRules(root, { timeout } = {}) {
 async function rootAttributes(root, timeout) {
   // Unasked is not an index that marks nothing: the working tree's file would then decide what counts as source (F29).
   // Past the bound git did answer, with more than is read: the working tree's file decides.
-  const ask = (args, question) => gitBuffered(root, args, { timeout }).then((r) => (r.oversize ? r : answered(r, question)));
+  const read = (args, question) => ask(root, args, question, { timeout }).catch((err) => {
+    if (err instanceof Unasked && err.oversize) return null;
+    throw err;
+  });
   // Both are awaited to their end before a throw is passed on, so no git is left running behind it.
   const settled = await Promise.allSettled([
-    ask(["ls-files", "-v", "-z", "--", ".gitattributes"], "how the index marks .gitattributes"),
-    ask(["cat-file", "blob", ":.gitattributes"], "for the index's .gitattributes"),
+    read(["ls-files", "-v", "-z", "--", ".gitattributes"], "how the index marks .gitattributes"),
+    read(["cat-file", "blob", ":.gitattributes"], "for the index's .gitattributes"),
   ]);
-  const rejected = settled.find((read) => read.status === "rejected");
+  const rejected = settled.find((r) => r.status === "rejected");
   if (rejected) throw rejected.reason;
-  const [listed, blob] = settled.map((read) => read.value);
-  if (listed.ok && blob.ok && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
+  const [listed, blob] = settled.map((r) => r.value);
+  if (listed?.code === 0 && blob?.code === 0 && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
   const abs = safeResolve(root, ".gitattributes");
   const file = abs ? readHead(abs, ATTR_FILE_BYTES) : null;
   return file?.kind === "file" ? file.head : "";
 }
-
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Git's own placement rules, which are gitignore's: a leading `/` anchors the
 // pattern at the root and is not part of any path, a pattern holding a slash
@@ -425,29 +426,7 @@ export async function gitRoot(cwd) {
   // is in the repository its directory is in.
   if (!stat.isDirectory()) dir = dirname(cwd);
 
-  // One bounded answer, so it takes the buffered entry point (F5).
-  const r = await gitBuffered(dir, ["rev-parse", "--show-toplevel"], { maxBytes: 1024 * 1024 });
-  if (!r.ok) {
-    // The directory was just seen, so an ENOENT from the spawn is git itself.
-    if (/\bspawn\b.*\bENOENT\b/.test(r.error ?? "")) {
-      throw new Error("git is not on PATH, and every command reads the repository through it");
-    }
-    // Node heads the message with `Command failed: <argv>`; what follows is
-    // git's stderr. Kept whole up to a bound, because the line after git's
-    // first is where it names its own fix, as `safe.directory` for a checkout
-    // owned by another user.
-    const said = String(r.error ?? "").replace(/^Command failed:[^\n]*\n/, "").split("\n")
-      .map((l) => l.trim()).filter(Boolean).join(" ").slice(0, 400);
-    if (!said || /not a git repository/i.test(said)) {
-      throw new Error(`not a git repository: ${cwd}`, { cause: new Error(r.error) });
-    }
-    throw new Error(`git could not read the repository at ${cwd}: ${said}`);
-  }
-
-  const root = r.stdout.trim();
-  // Exit 0 with an empty line is possible; returning "" would resolve every
-  // later path against the process cwd instead of against the repository.
-  if (!root) throw new Error(`not a git repository: ${cwd}`);
+  const root = await topLevel(dir, cwd);
   // git prints forward slashes even on Windows, and may print a short 8.3 form
   // where the filesystem holds a long one. Every path downstream is joined
   // against this and compared with it, so it is made native and real once here
@@ -614,6 +593,34 @@ export async function corpusDrop(root, { timeout } = {}) {
   const generatedRules = await generatedAttrRules(root, { timeout });
   const roots = new Map();
   return (rel) => classify(root, rel, generatedRules, roots).drop ?? null;
+}
+
+/**
+ * Which of `paths`, as commit `sha` holds them, the corpus would drop as a
+ * generator's: by a `linguist-generated` line in this checkout's root
+ * `.gitattributes`, which the next scan reads, or by the stamp in the file's
+ * own head at `sha`. For files the working tree may not hold, such as the ones
+ * a base added; a blob git could not be asked for throws (F29).
+ */
+export async function generatedAt(root, sha, paths) {
+  const stamped = new Set();
+  if (paths.length === 0) return stamped;
+  const generatedRules = await generatedAttrRules(root);
+  const reader = blobReader(root, sha);
+  try {
+    for (const rel of paths) {
+      if (isAttrGenerated(generatedRules, rel)) {
+        stamped.add(rel);
+        continue;
+      }
+      const blob = await reader.read(rel);
+      if (blob.reason === "unasked") throw new Unasked(blob.error);
+      if (blob.ok && isGeneratedHead(blob.content.subarray(0, MARKER_HEAD_BYTES).toString("utf8"))) stamped.add(rel);
+    }
+  } finally {
+    await reader.close();
+  }
+  return stamped;
 }
 
 /**

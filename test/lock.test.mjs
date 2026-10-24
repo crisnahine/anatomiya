@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { createdAlone, mtimeAge, ownerAge, removeLeftTokens, takeDeadLock } from "../plugins/anatomiya/lib/lock.mjs";
+import { stubbed } from "./fs-stub.mjs";
 import { removeTree } from "./platform.mjs";
 
 /**
@@ -17,19 +17,6 @@ function workspace(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-lock-"));
   t.after(() => removeTree(dir));
   return dir;
-}
-
-/** Runs `call` with `fs[name]` replaced by `stub`, which is handed the real one. */
-function stubbed(name, stub, call) {
-  const real = fs[name];
-  fs[name] = (...args) => stub(real, ...args);
-  syncBuiltinESMExports();
-  try {
-    return call();
-  } finally {
-    fs[name] = real;
-    syncBuiltinESMExports();
-  }
 }
 
 const refused = (code, p) => Object.assign(new Error(`${code}: open '${p}'`), { code });
@@ -162,7 +149,10 @@ test("a lock's owner and age say whether a worker can still hold it", (t) => {
   assert.equal(judge(lock), null, "gone");
   assert.deepEqual(verdict(JSON.stringify({ pid: 1, at: now - 1000, nonce: "0123456789abcdef" })), { live: true, generation: "0123456789abcdef" });
   assert.equal(verdict(JSON.stringify({ pid: 1, at: now - 31 * 60 * 1000 })).live, false, "older than any scan");
-  assert.equal(verdict(JSON.stringify({ pid: 1, at: now + 1 })).live, false, "stamped later than now");
+  // A clock set back, as NTP steps one past 128 ms, leaves a live worker's stamp ahead of it: its pid decides.
+  assert.equal(verdict(JSON.stringify({ pid: 1, at: now + 60_000, nonce: "0123456789abcdef" })).live, true, "ahead of the clock, its process alive");
+  assert.equal(verdict(JSON.stringify({ pid: 2, at: now + 1000 })).live, false, "ahead of the clock, its process gone");
+  assert.equal(verdict(JSON.stringify({ pid: 1, at: now + 31 * 60 * 1000 })).live, false, "further ahead than any scan runs");
   assert.equal(verdict(JSON.stringify({ pid: 2, at: now })).live, false, "its process is gone");
   assert.equal(verdict(JSON.stringify({ pid: "1", at: now })).live, false, "a pid that is not an integer");
   assert.equal(verdict(JSON.stringify({ pid: 1, at: null })).live, false, "an at that is not a number");
@@ -173,6 +163,16 @@ test("a lock's owner and age say whether a worker can still hold it", (t) => {
   for (const content of ["{", JSON.stringify({ pid: 2, at: now, nonce: "../x" })]) {
     assert.match(verdict(content).generation, /^[0-9a-f]{16}$/, `a lock with no nonce of ours still names a lock token: ${content}`);
   }
+});
+
+test("a worker's lock outlives the clock being set back under it", (t) => {
+  const lock = join(workspace(t), "refresh.lock");
+  writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now(), nonce: "0123456789abcdef" }));
+  // The wall clock stepped back one second right after a live worker took the lock.
+  const judge = ownerAge({ staleMs: 30 * 60 * 1000, now: () => Date.now() - 1000 });
+
+  assert.equal(takeDeadLock(lock, judge, JSON.stringify({ pid: process.pid, at: Date.now(), nonce: "fedcba9876543210" })), false);
+  assert.match(readFileSync(lock, "utf8"), /0123456789abcdef/);
 });
 
 test("a lock token left by a breaker that died is removed, and the live generation's and other names stay", (t) => {

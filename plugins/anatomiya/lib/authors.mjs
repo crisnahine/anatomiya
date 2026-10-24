@@ -1,4 +1,4 @@
-import { Unasked, answered, failureOf, gitBuffered } from "./git.mjs";
+import { Unasked, ask, unaskedAs } from "./git.mjs";
 import { SEP, historyFields } from "./history.mjs";
 
 /**
@@ -146,9 +146,10 @@ function authorsReader() {
  * message, which is translated.
  */
 async function headState(root) {
-  const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-  if (r.ok) return "ok";
-  return r.code === 1 ? "no-commits" : "unusable";
+  // Unasked keeps the history error on the map, as every answer but exit code 1 does.
+  const r = await ask(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], "whether HEAD names a commit").catch(unaskedAs(null));
+  if (r?.code === 0) return "ok";
+  return r?.code === 1 ? "no-commits" : "unusable";
 }
 
 /**
@@ -171,15 +172,15 @@ async function headState(root) {
  * whichever line git printed last.
  */
 async function shallowHistory(root) {
-  const asked = answered(await gitBuffered(root, ["rev-parse", "--is-shallow-repository"]), "whether this clone holds its whole history");
-  if (!asked.ok || asked.stdout.trim() !== "true") return null;
-  const counted = await gitBuffered(root, ["rev-list", "--count", "HEAD"]);
-  const commits = counted.ok ? Number.parseInt(counted.stdout.trim(), 10) : Number.NaN;
-  const roots = await gitBuffered(root, ["log", "--format=%cI", "--max-parents=0", "--"]);
+  const asked = await ask(root, ["rev-parse", "--is-shallow-repository"], "whether this clone holds its whole history");
+  if (asked.code !== 0 || asked.stdout.trim() !== "true") return null;
+  const counted = await ask(root, ["rev-list", "--count", "HEAD"], "how many commits HEAD reaches").catch(unaskedAs(null));
+  const commits = counted?.code === 0 ? Number.parseInt(counted.stdout.trim(), 10) : Number.NaN;
+  const roots = await ask(root, ["log", "--format=%cI", "--max-parents=0", "--"], "for the commits this clone grafted").catch(unaskedAs(null));
   // A value that does not read as a moment is dropped rather than compared:
   // every comparison against NaN is false, so an unparseable first entry would
   // win and shadow a real date.
-  const grafted = roots.ok ? roots.stdout.trim().split("\n").filter((line) => !Number.isNaN(Date.parse(line))) : [];
+  const grafted = roots?.code === 0 ? roots.stdout.trim().split("\n").filter((line) => !Number.isNaN(Date.parse(line))) : [];
   const oldest = grafted.reduce((a, b) => (a === null || Date.parse(b) < Date.parse(a) ? b : a), null);
   return { commits: Number.isFinite(commits) ? commits : null, oldest };
 }
@@ -209,9 +210,9 @@ async function shallowHistory(root) {
  * `-M100%`: the map then differs from one scan to the next.
  */
 async function isPartialClone(root) {
-  const asked = await gitBuffered(root, ["config", "--null", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.promisor)$"]);
+  const asked = await ask(root, ["config", "--null", "--get-regexp", "^(extensions\\.partialclone|remote\\..*\\.promisor)$"], "whether this clone is partial");
   // Exit code 1 is git saying neither key is set.
-  if (!asked.ok && asked.code !== 1) throw new Error(`git could not say whether this clone is partial: ${failureOf(asked)}`);
+  if (asked.code !== 0 && asked.code !== 1) throw new Error(`git could not say whether this clone is partial: ${asked.said}`);
   let extension;
   let flagged = false;
   // A key and its value a line apart, and a key with no value alone.

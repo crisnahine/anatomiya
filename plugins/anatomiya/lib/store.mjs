@@ -8,7 +8,7 @@
  * refresh state all write through it without importing one another.
  */
 import { randomBytes } from "node:crypto";
-import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fchmodSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { encodePath } from "./encode.mjs";
@@ -75,7 +75,8 @@ export function isFileAt(path) {
  * directory it had already created.
  */
 export function atomic(path, body) {
-  const tmp = writeTemp(path, body);
+  // A file replaced keeps its mode, as one written in place does: a person's 0600 settings stay theirs alone.
+  const tmp = writeTemp(path, body, fileMode(path));
   try {
     // Replaces the destination entry itself, never what a link there names.
     renameSync(tmp, path);
@@ -87,8 +88,22 @@ export function atomic(path, body) {
   }
 }
 
-/** `body` in a new file beside `path`, whole, and that file's path. */
-export function writeTemp(path, body) {
+// The permission bits of a regular file at `path`; null for anything else or nothing.
+function fileMode(path) {
+  try {
+    const entry = lstatSync(path);
+    return entry.isFile() ? entry.mode & 0o7777 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `body` in a new file beside `path`, whole, and that file's path. Given a
+ * `mode`, the file has it before a byte is written, so the bytes are never in a
+ * file more open than the one they replace.
+ */
+export function writeTemp(path, body, mode = null) {
   // Unpredictable, and created exclusively: `wx` is O_CREAT|O_EXCL, which
   // refuses any entry already there, a planted link included, and never follows
   // one. The name was `<path>.tmp-<pid>`, opened with a plain write, so a
@@ -101,9 +116,15 @@ export function writeTemp(path, body) {
   // single `writeFileSync` before the `try` left it beside the map. A create
   // that fails made nothing, so there is nothing of this call's to remove, and
   // an entry already at that name is somebody else's.
-  const fd = openSync(tmp, "wx");
+  const fd = openSync(tmp, "wx", mode ?? 0o666);
   try {
     try {
+      // The umask can narrow what the create asked for; a filesystem that keeps no mode leaves it narrower.
+      if (mode !== null && (fstatSync(fd).mode & 0o7777) !== mode) {
+        try {
+          fchmodSync(fd, mode);
+        } catch {}
+      }
       writeFileSync(fd, body);
     } finally {
       closeSync(fd);
@@ -321,6 +342,7 @@ function bytesToPutBack(path, said) {
 export const MOVE_IT = "move or delete it";
 export const tooLarge = (at, size) => new Error(`${tooLargeSentence(at, size)}, so nothing was written: ${MOVE_IT} and scan again`);
 
+/** Removes `path`, and says nothing where it is gone already or the system will not remove it. */
 export function quietUnlink(path) {
   try {
     unlinkSync(path);

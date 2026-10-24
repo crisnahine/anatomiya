@@ -15,6 +15,7 @@ import { CAPABILITY_WORDS } from "./stems.mjs";
 // The framework field is held to the declared profiles, so a row naming a
 // framework nobody detects cannot ship as a slot that can only read zero (C8).
 import { FRAMEWORK_NAMES } from "./frameworks.mjs";
+import { escapeRe } from "./paths.mjs";
 
 /**
  * A dimension is one claim about one area, and it is defined by three
@@ -256,8 +257,7 @@ export const PRINCIPLE_NAMES = [
 // registry, so one legitimate claim spelled that way would kill scan, check and
 // pin at startup while naming a principle the sentence never mentions. The
 // hyphen is excluded alongside word characters, or "dry-run" matches again.
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const NAME_PATTERNS = PRINCIPLE_NAMES.map((n) => [n, new RegExp(`(?<![\\w-])${escape(n)}(?![\\w-])`, "i")]);
+const NAME_PATTERNS = PRINCIPLE_NAMES.map((n) => [n, new RegExp(`(?<![\\w-])${escapeRe(n)}(?![\\w-])`, "i")]);
 
 export function assertClaimIsNotAVerdict(rows) {
   for (const d of rows) {
