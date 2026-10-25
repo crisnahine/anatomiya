@@ -44,9 +44,11 @@ What the checks hold the answer to:
 ## Reading this
 
 A check counts only the trials that did the task and gave it something to judge, so an arm cannot
-pass by writing nothing. The interval is the Wilson score interval at 95%. A p below 0.05 is a
-difference this many trials can tell from chance. A p above it means this run cannot tell, which is
-not a finding that the arms are the same. Cost and tokens are what the CLI reported for each trial,
-the plugin's hooks and any subagent they started included; wall time is the harness's own clock.
+pass by writing nothing. "Every check held" counts a trial only where each check held, so a check
+with nothing to judge in that trial keeps it out. The interval is the Wilson score interval at 95%.
+A p below 0.05 is a difference this many trials can tell from chance. A p above it means this run
+cannot tell, and says nothing about whether the arms are the same. Cost and tokens are what the CLI
+reported for each trial, the plugin's hooks and any subagent they started included. Wall time is the
+harness's own clock.
 
-Every trial's files, checks and cost are in `docs/measurements/data/2026-10-25-rubocop-new-cop-opus-5-5.json`.
+Every trial's files, checks, cost and the head of its answer are in `docs/measurements/data/2026-10-25-rubocop-new-cop-opus-5-5.json`.

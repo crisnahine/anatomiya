@@ -4,16 +4,17 @@
  *
  * Every setting is fixed and stated rather than inherited, because the two arms
  * differ in exactly one thing and anything that varies between them is a second
- * variable nobody controlled. The tool list is the same four the first run used:
- * an agent that can run bash can `cat` a rule file, and reading one that way is
- * how the map reaches an arm that was supposed to have none. `--tools` is what
- * takes the others away; `--allowedTools` only approves, and left alone it let
- * Bash run.
+ * variable nobody controlled. By default the tool list is the same four the
+ * first run used, since in `scripts/ab.mjs` both arms load the plugin and a
+ * shell could `cat` a rule file into the arm meant to have none; the scenario
+ * run passes the tools a coding session has and runs its second arm with no
+ * plugin at all. `--tools` is what takes the others away; `--allowedTools` only
+ * approves, and left alone it let Bash run.
  *
  * Nothing comes from the operator's own `~/.claude`: their CLAUDE.md, plugins
  * and MCP servers made two machines run two experiments. The project source
  * stays, since the map is read through it, and the plugin under measurement is
- * loaded from this repository in both arms.
+ * loaded from this repository unless a caller passes `pluginDir: null`.
  */
 import { execFile, execFileSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync } from "node:fs";

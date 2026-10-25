@@ -144,7 +144,7 @@ test("an arm is scored only on the trials that did the task, never on the plugin
   assert.equal(s.allPassed, 1);
   assert.deepEqual(s.perTrial[1].wrote, ["lib/rubocop/cop/style/reverse_first.rb"], "the plugin's own files are not the trial's work");
   assert.deepEqual(s.perTrial[1].checks, { config: false, json: false });
-  assert.deepEqual(s.perTrial[2], { ok: true, reason: null, wrote: ["notes.md"], did: false, checks: {}, spent: { costUsd: 1, wallMs: 1000 } });
+  assert.deepEqual(s.perTrial[2], { ok: true, reason: null, wrote: ["notes.md"], did: false, checks: {}, spent: { costUsd: 1, wallMs: 1000 }, answer: null });
 });
 
 test("a check with nothing to judge is left out of its own count and of every-check-held", async () => {
@@ -386,4 +386,45 @@ test("a cost under ten cents keeps a third decimal, so a cheap model's trial doe
   assert.equal(money(0.5), "$0.50");
   assert.equal(money(6.912), "$6.91");
   assert.equal(money(null), "not reported");
+});
+
+test("a raw record of another scenario at the same commit is refused, not scored by this one's checks", async (t) => {
+  // Two forem scenarios share one commit, and a record joined to the wrong
+  // scenario file printed a results page with no word of the mix-up.
+  const sha = "a".repeat(40);
+
+  const named = await fromRaw(t, [rawRun(sha, ["??"], ["||"], { scenario: "scripts/ab/scenarios/other.json" })]);
+  const digest = await fromRaw(t, [rawRun(sha, ["??"], ["||"], { scenarioSha256: "f".repeat(64) })]);
+
+  assert.equal(named.status, 2);
+  assert.match(named.output, /was run with other\.json, not s\.json/);
+  assert.equal(digest.status, 2);
+  assert.match(digest.output, /was scored by a scenario file whose sha256 is fff/);
+});
+
+test("each trial's record keeps the head of its answer, so a claim read from answers can be checked", async () => {
+  // The exploratory lines on a results page quote what sessions said; with
+  // only paths and checks in the record nobody else could read them.
+  const { parseScenario, scoreScenario } = await import("../scripts/ab/checks.mjs");
+  const { scenario } = parseScenario(scenarioText());
+  const long = `I found an existing helper. ${"x".repeat(3000)}`;
+
+  const s = await scoreScenario([{ ok: true, reason: null, wrote: [], stdout: long, spent: null }], scenario);
+
+  assert.equal(s.perTrial[0].answer.length, 2000);
+  assert.ok(s.perTrial[0].answer.startsWith("I found an existing helper."));
+});
+
+test("a kept answer names neither the operator's home nor their account, which a session can quote", async () => {
+  // A rubocop session credited its changelog entry to "@<account>", guessed
+  // from the machine it ran on, and the record is published.
+  const { parseScenario, scoreScenario } = await import("../scripts/ab/checks.mjs");
+  const { scenario } = parseScenario(scenarioText());
+  const said = "Wrote /home/alice/rubocop/x.rb and credited [@alice][]; alicewong stays.";
+
+  const s = await scoreScenario([{ ok: true, reason: null, wrote: [], stdout: said, spent: null }], scenario, [], {
+    operator: { home: "/home/alice", user: "alice" },
+  });
+
+  assert.equal(s.perTrial[0].answer, "Wrote ~/rubocop/x.rb and credited [@<user>][]; alicewong stays.");
 });

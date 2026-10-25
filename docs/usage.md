@@ -150,7 +150,8 @@ alone. What the four do:
 
 - **The refresh** keeps the map current, and is described under [Staying current](#staying-current).
 - **The echo** hands the overview back after a prompt or a tool call when no copy of that same map
-  sits in the last 192 KiB of what the model reads, about 30k tokens, with no compaction since
+  sits in the last 192 KiB of what the model reads, about 30k tokens at the 6.57 bytes per token A92
+  measured, with no compaction since
   (A92). A long session gets it again about every 30k tokens, and a session's first prompt gets one
   beside the copy Claude Code loaded from the rules file, which the echo cannot see since that copy
   is not in the transcript it reads.
@@ -252,8 +253,8 @@ pin of its own reads its main checkout's.
 ## What it prints
 
 A first run against [excalidraw](https://github.com/excalidraw/excalidraw) at `438d898`, a public
-React and TypeScript repository, on an 11-core Apple M3 Pro, with the root path shortened. This
-version printed it:
+React and TypeScript repository, on an 11-core Apple M3 Pro, with the root path shortened. anatomiya
+0.18.0 printed it:
 
 ```
 693 files, 38 areas, 1225ms, root /Users/me/code/excalidraw
@@ -638,7 +639,8 @@ The plugin is free. What a session pays is tokens, in three places:
 - The overview, which Claude Code loads from `.claude/rules/` at the start of a session, and which the
   echo hands back once 192 KiB of what the model reads, about 30k tokens, holds no copy of it. It was
   2.3 to 3.4 KB on rubocop, forem, mastodon, discourse and excalidraw. A directory's own file loads
-  when the agent reads a file there, 0.4 to 2.3 KB at the median on the same five.
+  when the agent reads a file there, 0.5 to 2.3 KB at the median on the same five
+  ([docs/measurements/2026-10-25-readme-examples.md](measurements/2026-10-25-readme-examples.md)).
 - The reuse check, one subagent after each turn that added source code.
 
 Measured over five tasks and two models, 20 sessions per arm, the median session with the plugin
@@ -646,6 +648,23 @@ cost 1.4 to 3.0 times as much as one without
 ([docs/measurements/2026-10-25-plugin-on-off.md](measurements/2026-10-25-plugin-on-off.md)). The task
 the reuse check skips still cost 1.9 times as much on Opus 5.5, so the map and the other hooks cost
 something on their own.
+
+## Measuring it on your own repository
+
+The README's results come from `scripts/ab-scenario.mjs`, and it runs on any clone. Write a scenario
+file like the ones in `scripts/ab/scenarios/`: the commit, a prompt, the checks that say a session did
+the task, and the checks that say it did it your repository's way. Commit it before the first trial,
+then:
+
+```
+node scripts/ab-scenario.mjs --repo <a clone at that commit> --scenario <your scenario> --model <a model> --trials 20
+```
+
+Each trial runs `claude -p` with a shell, in a temporary clone of your repository, with your
+environment. Run it where an agent with a shell on that code can do no harm: a container, or an
+account that holds no credentials beyond the model's. The result page and a record of every trial
+land under `docs/measurements/`; `--raw` keeps every written file as well, to score again later with
+`--from-raw`.
 
 ## Limits
 
@@ -699,8 +718,8 @@ phase of a fan-out that it costs. Started one directory up, the echo has nothing
 prompt either, since a prompt names no file, so the first batch of parallel tool calls into a mapped
 checkout carries the overview. It carries one copy between its calls where Claude Code gives the
 plugin a data directory (`CLAUDE_PLUGIN_DATA`): the first call to deliver leaves a batch claim there
-and the others read it. Without one, the batch can carry one copy per call, once per context window
-and per map. Inside the checkout the prompt delivers it first, so the first batch adds none; a batch
+and the others read it. Without one, the batch can carry one copy per call, once per 192 KiB of what
+the model reads and per map. Inside the checkout the prompt delivers it first, so the first batch adds none; a batch
 that later finds the window run out delivers as above.
 
 **The measured preventable share is 8% to 15% of human review comments.** That is from 4,616 review

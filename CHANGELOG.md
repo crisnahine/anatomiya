@@ -23,8 +23,10 @@ the limits beside it.
   interval, Fisher's exact test and the cost of every trial. `--from-raw` scores kept trial records
   again, or joins several workers' runs of one scenario.
 - Five scenarios and their results on two models under `docs/measurements/`, the summary in
-  `docs/measurements/2026-10-25-plugin-on-off.md`, and every trial's checks and cost under
-  `docs/measurements/data/`.
+  `docs/measurements/2026-10-25-plugin-on-off.md`, and every trial's checks, cost and the first
+  2,000 characters of its answer under `docs/measurements/data/`.
+- `docs/measurements/2026-10-25-readme-examples.md`: every map line the README quotes, with the
+  commit it was scanned at and how to rerun it.
 - A logo, an animated session rebuilt from a measured trial, and a social preview image under
   `docs/assets/`.
 - `docs/research/what-a-new-developer-meets.md` and `docs/research/why-developers-would-use-it.md`:
@@ -45,7 +47,8 @@ the limits beside it.
 - The echo is described as what it does: it hands the overview back once 192 KiB of what the model
   reads, about 30k tokens, holds no copy of it, and a session's first prompt gets one beside the
   copy Claude Code loaded from the rules file. Five places said "once per context window".
-- `scripts/ab.mjs` arms each sit alone at the repository's own name, a trial's work is what git
+- `scripts/ab.mjs` arms each sit alone at the repository's own name, in a local clone with no
+  remote, so neither holds a path back to the checkout with the map. A trial's work is what git
   shows it changed, a link is never followed, a trial that ends early says why without its command
   line, which carried the prompt and this machine's plugin path, and a trial is timed by the harness:
   the CLI's `duration_ms` and `num_turns` cover only the stretch after the last background

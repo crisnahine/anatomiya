@@ -40,9 +40,7 @@ async function main(argv) {
   // `buildArms` has cleared, so the operator's own settings never reach one.
 
   // 1. A map measured against an accepted baseline, which is what arm A is for.
-  execFileSync(process.execPath, [BINARY, "scan", args.repo], { stdio: "inherit" });
-  execFileSync(process.execPath, [BINARY, "pin", args.repo], { stdio: "inherit" });
-  execFileSync(process.execPath, [BINARY, "scan", args.repo], { stdio: "inherit" });
+  mapAndPin(args.repo);
 
   // 2. Where the arms could differ at all.
   const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
@@ -76,15 +74,7 @@ async function main(argv) {
     const arms = await buildArms(args.repo, sha);
     try {
       // 4. An unverified arm is not an arm.
-      // A file the corpus holds, because the map's own globs are what attach it:
-      // a tracked file the scan excluded attaches nothing, and a hand-kept
-      // extension list here missed every `.mjs` repository, this one included.
-      const probeFile = execFileSync("git", ["ls-files", "-z", "--", `${target.path}/`], { cwd: args.repo, encoding: "utf8" })
-        .split("\0")
-        .find((f) => f && isCorpusPath(f));
-      if (!probeFile) throw new Error(`no readable file under ${target.path} to probe with`);
-
-      const said = await verifyInjection(arms, probeFile, target.path, args.engine);
+      const said = await verifyInjection(arms, probeFileIn(args.repo, target.path), target.path, args.engine);
 
       // 5. The trials.
       const trials = await runTrials(arms, prompt, args.engine, args.trials);
@@ -109,12 +99,31 @@ async function main(argv) {
   console.log(`wrote ${out}`);
 }
 
+/** Scan, pin, then scan again, so the map arm A copies is measured against an accepted baseline. */
+export function mapAndPin(repo) {
+  for (const verb of ["scan", "pin", "scan"]) execFileSync(process.execPath, [BINARY, verb, repo], { stdio: "inherit" });
+}
+
+/**
+ * A file under `area` the corpus holds, to probe with, because the map's own
+ * globs are what attach it: a tracked file the scan excluded attaches nothing,
+ * and a hand-kept extension list here missed every `.mjs` repository, this one
+ * included. Throws where the area holds none.
+ */
+export function probeFileIn(repo, area) {
+  const found = execFileSync("git", ["ls-files", "-z", "--", `${area}/`], { cwd: repo, encoding: "utf8" })
+    .split("\0")
+    .find((f) => f && isCorpusPath(f));
+  if (!found) throw new Error(`no readable file under ${area} to probe with`);
+  return found;
+}
+
 /**
  * Ask each arm what map it was given for `file`, and refuse the run where arm A
  * did not name `area` or arm B named anything. `perArm` holds what only one arm
  * runs with, such as no plugin at all.
  */
-export async function verifyInjection(arms, file, area, engine, perArm = {}, log = console.log) {
+export async function verifyInjection(arms, file, area, engine, log = console.log, perArm = {}) {
   const probe = probeFor(file);
   const said = {};
   for (const name of ["a", "b"]) {

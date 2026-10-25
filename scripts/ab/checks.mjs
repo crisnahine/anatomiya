@@ -8,6 +8,8 @@
  * wrote. Both are fixed in the scenario file, so the scorer cannot be tuned to
  * the answers after they are in.
  */
+import { homedir, userInfo } from "node:os";
+
 import { scoreFile } from "./score.mjs";
 import { language } from "../../plugins/anatomiya/lib/langs.mjs";
 import { rowByKey } from "../../plugins/anatomiya/lib/registry.mjs";
@@ -92,6 +94,19 @@ function compileCheck(entry, at) {
   return text.error ? text : { check: { kind, name, claim, path: where.re, text: text.re } };
 }
 
+/** How much of each answer the record keeps: enough to check a claim read from it, not the whole transcript. */
+const ANSWER_KEPT = 2000;
+
+/** The machine a run is on, which a session can quote and a published record must not. */
+const OPERATOR = { home: homedir(), user: userInfo().username };
+
+function keptAnswer(stdout, { home, user }) {
+  let out = stdout.slice(0, ANSWER_KEPT);
+  if (home) out = out.split(home).join("~");
+  if (user) out = out.replace(new RegExp(`(?<![\\w.-])${user.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g"), "<user>");
+  return out;
+}
+
 /** The plugin's own state, which arm A's hooks rewrite and no task asks for. */
 const OWN = /^\.claude\/(?:anatomiya\/|rules\/anatomiya-)/;
 
@@ -102,6 +117,8 @@ const judged = (run) =>
 /**
  * One check against one trial's files: true, false, or null where the check
  * had nothing to judge (a dimension that found no site in what was written).
+ * The files are the ones the trial wrote, so `unchanged` means "wrote nothing
+ * there" and cannot see a file the trial deleted.
  */
 export async function runCheck(check, files, frameworks = []) {
   const at = files.filter((f) => check.path.test(f.rel));
@@ -127,7 +144,7 @@ export async function runCheck(check, files, frameworks = []) {
  * task (every `did` check holds) and the check had something to judge, so an
  * arm cannot pass a check by writing nothing.
  */
-export async function scoreScenario(runs, scenario, frameworks = []) {
+export async function scoreScenario(runs, scenario, frameworks = [], { operator = OPERATOR } = {}) {
   const out = {
     trials: runs.length,
     endedEarly: 0,
@@ -152,7 +169,8 @@ export async function scoreScenario(runs, scenario, frameworks = []) {
       }
       if (Object.values(checks).every((r) => r === true)) out.allPassed++;
     }
-    out.perTrial.push({ ok: run.ok, reason: run.reason ?? null, wrote: files.map((f) => f.rel), did, checks, spent: run.spent ?? null });
+    const answer = typeof run.stdout === "string" ? keptAnswer(run.stdout, operator) : null;
+    out.perTrial.push({ ok: run.ok, reason: run.reason ?? null, wrote: files.map((f) => f.rel), did, checks, spent: run.spent ?? null, answer });
   }
   return out;
 }

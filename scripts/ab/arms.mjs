@@ -2,7 +2,8 @@
 /**
  * Two checkouts of one commit: one holding the map, one holding none.
  *
- * Shared clones, which borrow the source's object store, so both arms are the
+ * Local clones, hard-linked rather than shared and with no remote, so neither
+ * arm holds a path back to the checkout that holds the map. Both arms are the
  * same bytes at the same commit by construction rather than by a checksum
  * somebody remembered to run. Not worktrees: a linked worktree with no map is
  * the one shape the plugin's hooks answer from its main checkout's map, so arm
@@ -33,7 +34,7 @@ const run = promisify(execFile);
  * shipped: `scripts/` is outside the plugin root. So the harness carries the
  * same battery over its own shorter list instead.
  */
-const ARM_FLAGS = new Set(["--quiet", "--shared", "--no-checkout", "--detach", "--hard", "-fdx"]);
+const ARM_FLAGS = new Set(["--quiet", "--no-checkout", "--detach", "--hard", "-fdx"]);
 
 async function git(root, args, { timeout = 60_000, maxBytes = 1 << 20 } = {}) {
   for (const arg of args) {
@@ -130,8 +131,10 @@ export async function buildArms(repo, sha, { workdir = tmpdir(), name = basename
   try {
     for (const [path, name] of arms) {
       // `.` rather than `repo`: git runs inside it, where a relative `repo` names somewhere else.
-      const cloned = await git(repo, ["clone", "--quiet", "--shared", "--no-checkout", ".", path]);
+      const cloned = await git(repo, ["clone", "--quiet", "--no-checkout", ".", path]);
       if (!cloned.ok) throw new Error(`could not create the ${name} arm: ${cloned.error}`);
+      const cut = await git(path, ["remote", "remove", "origin"]);
+      if (!cut.ok) throw new Error(`could not cut the ${name} arm from its source: ${cut.error}`);
       // Before the checkout, so an arm holds the commit's bytes on Windows too.
       const bytes = await git(path, ["config", "core.autocrlf", "false"]);
       if (!bytes.ok) throw new Error(`could not configure the ${name} arm: ${bytes.error}`);

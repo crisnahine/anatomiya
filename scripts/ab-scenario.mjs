@@ -13,7 +13,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseScenarioArgs, SCENARIO_USAGE } from "./ab/args.mjs";
@@ -21,10 +21,8 @@ import { buildArms } from "./ab/arms.mjs";
 import { parseScenario, scoreScenario } from "./ab/checks.mjs";
 import { engineRan } from "./ab/engine.mjs";
 import { renderScenario } from "./ab/render.mjs";
-import { runTrials, verifyInjection } from "./ab.mjs";
-import { BINARY } from "./plugins.mjs";
+import { mapAndPin, probeFileIn, runTrials, verifyInjection } from "./ab.mjs";
 import { die, invokedAs } from "./entry.mjs";
-import { isCorpusPath } from "../plugins/anatomiya/lib/corpus.mjs";
 import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -45,7 +43,9 @@ async function main(argv) {
   if (parsed.error) die(`${args.scenario}: ${parsed.error}`);
   const { scenario } = parsed;
 
-  const run = args.fromRaw ? readKept(args.fromRaw, scenario) : await runFresh(args, scenario);
+  // The digest is what shows a reader the scenario was not edited after its trials.
+  const scenarioSha256 = createHash("sha256").update(scenarioText).digest("hex");
+  const run = args.fromRaw ? readKept(args.fromRaw, scenario, { file: args.scenario, digest: scenarioSha256 }) : await runFresh(args, scenario);
   const label = scenario.repo;
   const result = {
     scenario,
@@ -60,8 +60,6 @@ async function main(argv) {
   const out = args.out ?? join(root, "docs/measurements", `${scenario.name}.md`);
   const data = args.data ?? join(root, "docs/measurements/data", `${scenario.name}.json`);
   const shown = (p) => relative(root, p).split("\\").join("/");
-  // The digest is what shows a reader the scenario was not edited after its trials.
-  const scenarioSha256 = createHash("sha256").update(scenarioText).digest("hex");
   const record = { scenario: shown(args.scenario), scenarioSha256, label, sha: run.sha, engine: result.engine, said: result.said };
   const writeJson = (path, value) => {
     mkdirSync(dirname(path), { recursive: true });
@@ -80,7 +78,7 @@ async function runFresh(args, scenario) {
   const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: args.repo, encoding: "utf8" }).trim();
   if (sha !== scenario.commit) die(`${args.repo} is at ${sha}, and the scenario was written against ${scenario.commit}`);
 
-  for (const verb of ["scan", "pin", "scan"]) execFileSync(process.execPath, [BINARY, verb, args.repo], { stdio: "inherit" });
+  mapAndPin(args.repo);
   const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
   if (!(facts.areas ?? []).some((a) => a.path === scenario.area)) die(`the map holds no area ${scenario.area}`);
 
@@ -89,13 +87,8 @@ async function runFresh(args, scenario) {
   const options = { ...args.engine, tools: SCENARIO_TOOLS, maxTurns: SCENARIO_MAX_TURNS, timeoutMs: SCENARIO_TIMEOUT_MS };
   let failed;
   try {
-    const probeFile =
-      scenario.probe ??
-      execFileSync("git", ["ls-files", "-z", "--", `${scenario.area}/`], { cwd: args.repo, encoding: "utf8" })
-        .split("\0")
-        .find((f) => f && isCorpusPath(f));
-    if (!probeFile) throw new Error(`no readable file under ${scenario.area} to probe with`);
-    const said = await verifyInjection(arms, probeFile, scenario.area, args.engine, PLUGIN_OFF);
+    const probeFile = scenario.probe ?? probeFileIn(args.repo, scenario.area);
+    const said = await verifyInjection(arms, probeFile, scenario.area, args.engine, console.log, PLUGIN_OFF);
     const trials = await runTrials(arms, scenario.prompt, options, args.trials, console.log, PLUGIN_OFF);
     const ran = engineRan(args.engine, [...trials.a, ...trials.b]);
     if (ran.error) throw new Error(ran.error);
@@ -113,12 +106,18 @@ async function runFresh(args, scenario) {
  * Raw records of earlier runs of this scenario, joined: one commit, one engine,
  * so trials paid for once can be scored again or several workers read as one run.
  */
-function readKept(paths, scenario) {
+function readKept(paths, scenario, { file, digest }) {
   const kept = paths.map((path) => ({ path, raw: JSON.parse(readFileSync(path, "utf8")) }));
+  const named = basename(file);
   const engineOf = (raw) => `${raw.engine?.model} at ${raw.engine?.effort}`;
   const needsFrameworks = scenario.checks.some((c) => c.kind === "dimension");
   for (const { path, raw } of kept) {
     if (raw.sha !== scenario.commit) die(`${path} was run at ${raw.sha}, and the scenario was written against ${scenario.commit}`);
+    // Two scenarios can share a commit, so the record has to name this one.
+    if (typeof raw.scenario === "string" && basename(raw.scenario) !== named) die(`${path} was run with ${basename(raw.scenario)}, not ${named}`);
+    if (typeof raw.scenarioSha256 === "string" && raw.scenarioSha256 !== digest) {
+      die(`${path} was scored by a scenario file whose sha256 is ${raw.scenarioSha256.slice(0, 12)}, and ${named} is ${digest.slice(0, 12)} now`);
+    }
     if (engineOf(raw) !== engineOf(kept[0].raw)) die(`${path} ran on ${engineOf(raw)}, and the first on ${engineOf(kept[0].raw)}`);
     if (needsFrameworks && !Array.isArray(raw.frameworks)) die(`${path} records no frameworks, which a dimension check reads`);
   }

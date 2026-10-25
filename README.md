@@ -42,14 +42,14 @@ in the first week, and it answers them with evidence you can check:
 
 The answers go where Claude Code reads them, and they are plain Markdown, so you can read them too.
 
-It is not only you, and it is not only your agent:
+The numbers say this happens to people and to agents alike:
 
 - "The biggest single frustration, cited by 66% of developers, is dealing with 'AI solutions that are
   almost right, but not quite'" ([Stack Overflow Developer Survey 2025](https://survey.stackoverflow.co/2025/ai)).
 - At Google, "developers who have started within the past year typically have more than twice as
   many comments per change" ([Sadowski et al., ICSE-SEIP 2018](https://research.google/pubs/modern-code-review-a-case-study-at-google/)).
 - "75 percent of defects found during the review do not affect the visible functionality" of the
-  software. Most review is about how code is written, not whether it runs
+  software, so most of what review finds is about how code is written
   ([Mantyla and Lassenius, IEEE TSE 2009](https://doi.org/10.1109/TSE.2008.71)).
 - Of 567 pull requests written with Claude Code across 157 projects, 83.8% were merged, against
   91.0% for a matched set written by people. Style fixes were 23.4% of the revisions made before
@@ -71,8 +71,9 @@ here" when two links point to the same page.
 - **Without anatomiya**, Claude Opus 5.5 wrote its own URL comparison in all 20 sessions.
 - **With anatomiya**, all 20 sessions called `compareUrls`, the helper mastodon already had.
 
-The pass and fail checks were written down before the first session ran. The scorer, every session's
-record and the command that reruns it are in this repository.
+The checks were fixed in a scenario file before the first session, and every result prints that
+file's sha256. Each component the sessions wrote, every session's record and the command that reruns
+the test are in this repository ([evidence](docs/measurements/data/2026-10-25-mastodon-components.json)).
 
 Now the part you should weigh just as hard. In the other four tasks, Claude already did what the
 repository does without any help, so anatomiya changed nothing there, and every session with it cost
@@ -85,7 +86,8 @@ more: 1.4 to 3.0 times as much. All five tasks, both models tried and every doll
 
 `/anatomiya:scan` reads every tracked file and your git history, and writes a map Claude Code loads on
 its own: a short overview on every turn, and one file per directory the moment the agent opens a file
-there. These are real lines from maps of open-source repositories:
+there. These are real lines from maps of open-source repositories, each listed with its commit in
+[docs/measurements/2026-10-25-readme-examples.md](docs/measurements/2026-10-25-readme-examples.md):
 
 | What the agent learns | Where | What the map says |
 |---|---|---|
@@ -167,16 +169,17 @@ whole run again on a second, smaller model.
 |---|---|---|---|
 | mastodon: a "You are here" badge | calls the existing `compareUrls` | **20 / 0** of 20 | **20 / 0** of 20 |
 | rubocop: a new cop | registers it in `config/default.yml` and adds a changelog entry | 20 / 20 and 20 / 20 | 20 / 20 and 17 / 15 |
-| forem: a module and its test | puts the test in `__tests__` | 20 / 20 | 20 / 20 |
+| forem: a module and its test | puts the test in `__tests__` and none beside the module | 20 / 20 | 20 / 20 |
 | forem: a service object | its entry point does not raise | 20 / 20 | 20 / 20 |
 | whitehall: a migration | updates `db/schema.rb` too | 20 / 20 | 20 / 20 |
 
-Read it straight. When the convention can be seen in the files next to the change, both models
-already follow it and anatomiya adds only cost. When the answer lives somewhere else in the
-repository, such as a helper in another directory, anatomiya is the difference between always and
-never, on both models. One check the map asked for was wrong: rubocop moved cop registration in July
-2026, the map still counted the hundred changes before it, and both arms followed the code instead
-of the stale claim, 20 of 20.
+Read it straight. When the convention could be seen in the files next to the change, both models
+already followed it and anatomiya added only cost. On the one task where the answer lived somewhere
+else in the repository, a helper in another directory, anatomiya took both models from none of 20 to
+all 20. One thing the map asked for was out of date: rubocop moved cop registration out of
+`lib/rubocop.rb` in [e9defb6](https://github.com/rubocop/rubocop/commit/e9defb651dff92627ac49ddca76211011c7cf08c),
+the map still counted the hundred changes before it, and the files every session wrote show both arms
+on both models followed the code instead, 20 of 20.
 
 [The full write-up](docs/measurements/2026-10-25-plugin-on-off.md) has every check, every interval,
 what it does not show, and how to rerun it. Each task has its own page and a record of every session.
@@ -187,13 +190,14 @@ It is free and MIT licensed. What you pay is tokens:
 
 - **On every session**: the five command entries, about 150 tokens by `claude plugin details`, and the
   overview, 2.3 to 3.4 KB on the repositories above. In a long session the overview is handed back
-  about every 30k tokens. A directory's own file, 0.4 to 2.3 KB at the median, loads when the agent
+  about every 30k tokens. A directory's own file, 0.5 to 2.3 KB at the median, loads when the agent
   opens a file there.
 - **On each turn that adds code**: one subagent searches for an existing function, which is what
   found `compareUrls`.
 - **Measured**: the median session with anatomiya cost 1.4 to 3.0 times as much as one without, on
   both models. On Opus 5.5 that was $0.10 to $0.51 against $0.06 to $0.28 per session. On Haiku 5.5 it
-  was $0.004 to $0.025 against $0.003 to $0.017.
+  was $0.004 to $0.025 against $0.003 to $0.017. Four Opus rubocop sessions with the plugin hit the
+  20-minute limit and reported no cost, so that arm's median leaves them out.
 
 anatomiya runs no server and sends nothing anywhere: the scan, the map and the check run on your
 machine.
@@ -251,14 +255,14 @@ baseline into each one:
 
 ## Works with
 
-- **Claude Code**: everything above.
-- **Cursor and GitHub Copilot**: the same map, written where each one reads it, with
-  `scan --targets cursor,copilot`. The hooks are Claude Code's, so those tools get the map and not the
-  notice, the reuse check or the background refresh.
-- **Languages**: JavaScript, TypeScript, JSX, Flow, Ruby and Rails in depth, and the script blocks of
-  Vue and Svelte files. Python, PHP, Go, Java, C#, Rust and Kotlin get the layout, their tests, and one
-  to three habits each. In all, 66 dimensions: 29 for JavaScript, 34 reachable in JSX, 28 for Ruby,
-  and one more that runs the TypeScript checker where your dependencies are installed.
+Claude Code gets everything above. Cursor and GitHub Copilot get the same map, written where each one
+reads it, with `scan --targets cursor,copilot`. The hooks are Claude Code's, so those tools get the
+map and not the notice, the reuse check or the background refresh.
+
+JavaScript, TypeScript, JSX, Flow, Ruby and Rails are read in depth, and so are the script blocks of
+Vue and Svelte files. Python, PHP, Go, Java, C#, Rust and Kotlin get the layout, their tests, and one
+to three habits each. In all, 66 dimensions: 29 for JavaScript, 34 reachable in JSX, 28 for Ruby, and
+one more that runs the TypeScript checker where your dependencies are installed.
 
 ## Questions you should ask first
 
@@ -290,7 +294,7 @@ annotation per finding, and `--format json` gives a job the same answer as a rec
 - **A habit that just changed can lag.** A ship-together rule stays until the newest changes outweigh
   it. rubocop moved cop registration out of `lib/rubocop.rb` in July 2026, and the map above still
   asks for that edit.
-- **Some lines are fixed sentences, not counts.** Every overview asks the agent to read a file before
+- **Some lines are fixed sentences.** Every overview asks the agent to read a file before
   editing it, to look instead of guessing, and to follow the repository through to the end of a
   change. Where the counts call for it, one more says a standing instruction to always write a test
   does not override a directory with no test precedent, so it can win over your own instruction.

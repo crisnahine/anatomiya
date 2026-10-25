@@ -272,6 +272,22 @@ test("each arm sits alone at the same leaf name, so neither can tell it is an ar
   assert.ok(!existsSync(dirname(arms.a)) && !existsSync(dirname(arms.b)), "dispose removes both");
 });
 
+test("an arm keeps no path back to the checkout it was cloned from", async (t) => {
+  // The source checkout holds the scanned map. A shared clone's alternates file
+  // and its origin both named that checkout, and an agent with a shell in the
+  // arm without the plugin could follow either to the map.
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { repo, sha } = armSource(t);
+  const arms = await buildArms(repo, sha);
+  t.after(() => arms.dispose());
+
+  for (const arm of [arms.a, arms.b]) {
+    assert.equal(execFileSync("git", ["remote"], { cwd: arm, encoding: "utf8" }).trim(), "", `${arm} names a remote`);
+    assert.ok(!existsSync(join(arm, ".git", "objects", "info", "alternates")), `${arm} borrows the source's objects`);
+    assert.equal(execFileSync("git", ["rev-parse", "HEAD"], { cwd: arm, encoding: "utf8" }).trim(), sha);
+  }
+});
+
 test("an arm takes its leaf name from the repository when none is given", async (t) => {
   const { buildArms } = await import("../scripts/ab/arms.mjs");
   const { repo, sha } = armSource(t);
@@ -303,7 +319,7 @@ test("what only one arm is run with reaches that arm's probe and trials and no o
   const env = { env: { PATH: [bin, "/usr/bin", "/bin"].join(":") } };
   const off = { b: { pluginDir: null } };
 
-  const said = await verifyInjection(arms, "src/x/a.ts", "src/x", env, off, () => {});
+  const said = await verifyInjection(arms, "src/x/a.ts", "src/x", env, () => {}, off);
   await runTrials(arms, "write", env, 2, () => {}, off);
 
   assert.deepEqual(said, { a: "src/x", b: "NONE" });
@@ -320,8 +336,8 @@ test("an arm that answers wrongly stops the run before any trial", needsShebang,
   const arms = { a: stub.arm, b: stub.arm };
   const env = { env: { PATH: stub.path } };
 
-  await assert.rejects(verifyInjection(arms, "src/x/a.ts", "src/x", env, {}, () => {}), /arm B received a map/);
-  await assert.rejects(verifyInjection(arms, "src/x/a.ts", "lib", env, {}, () => {}), /arm A did not receive the map/);
+  await assert.rejects(verifyInjection(arms, "src/x/a.ts", "src/x", env, () => {}), /arm B received a map/);
+  await assert.rejects(verifyInjection(arms, "src/x/a.ts", "lib", env, () => {}), /arm A did not receive the map/);
 });
 
 test("neither arm is a linked worktree, so the hooks cannot hand arm B the main checkout's map", async (t) => {
