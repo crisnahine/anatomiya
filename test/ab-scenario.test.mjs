@@ -276,7 +276,8 @@ test("a scenario run goes from a bare clone to its document, with the plugin on 
   // A rerun needs the builds that produced the numbers as well as the model.
   const { version } = JSON.parse(readFileSync(new URL("../plugins/anatomiya/.claude-plugin/plugin.json", import.meta.url), "utf8"));
   assert.equal(data.versions.claude, "9.9.9 (Claude Code)");
-  assert.match(data.versions.anatomiya, new RegExp(`^${version.replace(/\./g, "\\.")} at [0-9a-f]{12}(, with uncommitted changes)?$`));
+  const { escapeRe } = await import("../plugins/anatomiya/lib/paths.mjs");
+  assert.match(data.versions.anatomiya, new RegExp(`^${escapeRe(version)} at [0-9a-f]{12}(, with uncommitted changes)?$`));
   assert.ok(doc.includes(`| built with | claude 9.9.9 (Claude Code), anatomiya ${data.versions.anatomiya} |`), doc);
   const raw = JSON.parse(readFileSync(files.raw, "utf8"));
   assert.match(raw.b[0].wrote.find((f) => f.rel === "src/x/written.mjs").source, /\|\|/, "the raw record keeps them, to score again");
