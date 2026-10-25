@@ -96,8 +96,8 @@ the repository does with no help, and the plugin changed nothing but the bill: t
 cost 1.4 to 3.1 times as much. On 2026-10-26 a rule committed before any map was opened picked three
 more reuse tasks, in eslint, openfoodnetwork and cal.diy, and they came out 64 of 120 against 22 of
 120 (`docs/measurements/2026-10-26-blind-replication.md`). In cal.diy it was 0 against 0: the
-sessions wrote the query inside their new function, and the end-of-turn check matches whole
-functions, so it had nothing to replace.
+rule put the new file in a package that cal.diy's lint config forbids from importing the helper, and
+38 of the 40 sessions with the plugin named the helper and left it alone.
 
 So the pre-review effect is no longer unmeasured, and it is narrower than the mechanism above
 suggests. The map does not need to tell a current model what the neighbouring files already show. It

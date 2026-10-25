@@ -86,9 +86,10 @@ The same thing happened in forem, where 27 of 40 sessions without anatomiya wrot
 formula by hand instead of calling the contrast helper forem already has, and in whitehall, where 39
 of 40 skipped `is_external?` and compared hosts in their own code
 ([every file both arms wrote](docs/measurements/2026-10-25-plugin-on-off.md#exploratory-findings)).
-It did not help everywhere. In cal.diy, every session wrote the database query inside its new
-function, and the end-of-turn check, which looks for an existing function that duplicates one the
-turn wrote, had nothing to match: 0 of 40 with anatomiya and 0 of 40 without. Every result prints the
+It did not win everywhere, and one loss was the test's fault. In cal.diy it came out 0 of 40 either
+way: the rule put the new file in `packages/lib`, and cal.diy's own lint config forbids that package
+from importing app-store, where the helper lives. 38 of the 40 sessions with anatomiya found the
+helper and named it, and most of them said they could not import it there. Every result prints the
 sha256 of the scenario file it was scored by. [The whole test](#the-whole-test-ties-included) is below,
 including the five tasks where anatomiya changed nothing and only cost more.
 
@@ -212,8 +213,9 @@ Read it straight. Where the answer lived in another directory, anatomiya changed
 of the fourteen task and model pairs, each with p below 0.05 by Fisher's exact test, and in none did
 the arm without it do better. Of the other four, Haiku on mastodon's link policy is too close to call
 at 6 against 2; Opus on openfoodnetwork found the helper either way, 20 against 19; and cal.diy was
-0 against 0 on both models. On eslint, the 14 Opus sessions with anatomiya that kept their own
-helper all said why: `unIndent` strips spaces, and eslint indents with tabs. Where the neighbouring
+0 against 0 on both models, because the rule put that task where the repository forbids the import.
+On eslint, the 14 Opus sessions with anatomiya that kept their own helper all said why: `unIndent`
+strips spaces, and eslint indents with tabs. Where the neighbouring
 files already showed the habit, both models followed it without help, and anatomiya added only cost.
 
 One thing the map asked for was out of date: rubocop moved cop registration out of `lib/rubocop.rb`
@@ -295,9 +297,6 @@ JSX, 28 for Ruby, and one more that runs the TypeScript checker where your depen
   preventable by a map like this one. It catches code that works and does not belong.
 - **It is not a linter.** It enforces nothing, and a rule your linter already enforces is wasted in
   the map.
-- **The reuse check matches whole functions.** It finds an existing function that does what a
-  function the turn wrote does. A helper that would replace one step inside new code goes unnoticed:
-  in cal.diy, no session with or without anatomiya used `getAppKeysFromSlug`.
 - **A directory's file loads on a read.** An agent that only greps and runs `cat` gets the overview
   and not the directory's file.
 - **A habit that just changed can lag.** A ship-together rule stays until the newest changes outweigh

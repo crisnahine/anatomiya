@@ -60,3 +60,15 @@ What the rule picked, before any trial:
 Dropped on the way, by step 2: cal.diy's `TrpcSessionUser` (a type), `http` (an object built by an
 immediately called function), `PrismaModule` and `UsersModule` (classes) and `test` (bound to a call);
 eslint's `tester`, `utils` and `rules` (a class and two objects).
+
+## After the runs
+
+Written after the results, and changing nothing above.
+
+- The picks table names only the repositories step 2 dropped. Step 1 also dropped decidim and
+  discourse on the way to eslint, and canvas-lms and vscode on the way to openfoodnetwork, each for
+  holding 10,000 tracked files or more, and mastodon as one of the four already used.
+- Step 3 did not ask whether the repository lets the new file's package import the helper. cal.diy's
+  `biome.json` forbids `packages/lib` from importing app-store, where `getAppKeysFromSlug` lives, so
+  its task could not pass without breaking the repository's own rule. A next rule should place the new
+  file only where the repository's lint and dependency rules allow the import.

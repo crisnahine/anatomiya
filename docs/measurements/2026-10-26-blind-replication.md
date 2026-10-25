@@ -38,13 +38,13 @@ plugin do better. Together with the four reuse tasks of 2026-10-25, it is 209 of
   and all 14 give the tab indentation as the reason they kept a helper of their own. The check fixed in
   advance counts those as misses, so the result stays 6 against 0. On Haiku it is 18 against 0. No
   session without the plugin called it, on either model.
-- **cal.diy.** 0 against 0 on both models. 39 of the 40 answers with the plugin say the end-of-turn
-  check ran and found no existing function doing what the new `getAppClientId` does, and that is true:
-  `getAppKeysFromSlug` does one step of it, loading an app's keys by its slug. The sessions wrote the
-  database query inside `getAppClientId` itself, all 40 of them, so there was no separate copy for the
-  check to match.
-  The reuse check finds a function that duplicates a function the turn wrote, and misses a helper
-  that would replace part of one.
+- **cal.diy.** 0 against 0 on both models, and the task is to blame. Step 3 put the new file in
+  `packages/lib`, and cal.diy's `biome.json` forbids that package from importing app-store, where
+  `getAppKeysFromSlug` lives ("lib package should not import from app-store to avoid circular
+  dependencies"). 38 of the 40 answers with the plugin name the helper, and by a word search 20 of the
+  20 Opus answers and 12 of the 20 Haiku answers give that rule as a reason not to import it, most
+  adding that it returns the whole keys object. Without the plugin, 19 of 40 answers name it and 5 cite
+  the rule. Every session in both arms wrote the query itself.
 
 ## What it cost
 
@@ -54,8 +54,8 @@ plugin do better. Together with the four reuse tasks of 2026-10-25, it is 209 of
 | openfoodnetwork | $0.27 / $0.081 | 3.3 | $0.012 / $0.004 | 3.1 |
 | cal.diy | $0.39 / $0.10 | 3.8 | $0.018 / $0.009 | 2.0 |
 
-Median cost per session; the ratio is of the two medians before rounding. These three ran higher than
-the 2026-10-25 tasks, up to 3.8 times as much.
+Median cost per session; the ratio is of the two medians before rounding. The six ratios run from 2.0
+to 3.8, and cal.diy on Opus is the highest of any task measured.
 
 ## How it ran
 

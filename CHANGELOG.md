@@ -10,9 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 A rule committed before any map was opened picked three more reuse tasks, in eslint,
 openfoodnetwork and cal.diy, and they ran the same way: 64 of 120 sessions with the plugin called the
 helper the repository already had, against 22 of 120 without. With the first four, it is 209 of 280
-against 53 of 280. In cal.diy it was 0 against 0 on both models, which the README now names as a
-limit of the reuse check. The README, the chart and the cost range (now 1.4 to 3.8 times) include
-the three.
+against 53 of 280. In cal.diy it was 0 against 0 on both models: the rule put the new file in a
+package that cal.diy's lint config forbids from importing the helper, and 38 of 40 sessions with the
+plugin named the helper and said so. The README, the chart and the cost range (now 1.4 to 3.8 times)
+include the three.
 
 ### Added
 
@@ -24,7 +25,8 @@ the three.
 
 - The A/B harness could not install the map in a repository that links `.claude/rules` elsewhere:
   copying the directory onto the link stopped the run before its first trial. It now copies the
-  plugin's own files to wherever the link points.
+  plugin's own map files to wherever the link points, and fails the build when the arm's link leads
+  nowhere.
 - The "with uncommitted changes" mark on a result's build has a test that dirties a scratch tree.
 
 ## [0.18.1] - 2026-10-25

@@ -645,7 +645,8 @@ The plugin is free. What a session pays is tokens, in three places:
 
 Measured over eleven tasks and two models, 20 sessions per arm, the median session with the plugin
 cost 1.4 to 3.8 times as much as one without
-([docs/measurements/2026-10-25-plugin-on-off.md](measurements/2026-10-25-plugin-on-off.md)). The task
+([docs/measurements/2026-10-25-plugin-on-off.md](measurements/2026-10-25-plugin-on-off.md) and
+[the blind replication](measurements/2026-10-26-blind-replication.md)). The task
 the reuse check skips still cost 1.9 times as much on Opus 5.5, so the map and the other hooks cost
 something on their own.
 
@@ -858,7 +859,8 @@ outcome where the answer lived outside the files next to the change (an existing
 directory: 209 of 280 sessions called it with the plugin, 53 of 280 without, three of the seven tasks
 picked by a rule fixed in advance), and not where the
 neighbouring files already showed the habit, which both models followed without it
-([docs/measurements/2026-10-25-plugin-on-off.md](measurements/2026-10-25-plugin-on-off.md)). A solo
+([docs/measurements/2026-10-25-plugin-on-off.md](measurements/2026-10-25-plugin-on-off.md) and
+[the blind replication](measurements/2026-10-26-blind-replication.md)). A solo
 repository is not held back by the author gate: where the whole history has one author there is no
 second opinion to wait for, so every claim that clears the other gates is stated, and the overview
 says it is that author's practice. A team repository still needs two authors behind a habit before
