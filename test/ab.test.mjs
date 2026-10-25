@@ -276,18 +276,17 @@ test("the map reaches arm A through a rules directory the repository links elsew
   // cal.diy tracks .claude/rules as a link to agents/rules: the scan writes through
   // it, and copying the directory onto arm A's link refused the whole run.
   const { buildArms } = await import("../scripts/ab/arms.mjs");
-  const repo = mkdtempSync(join(tmpdir(), "anatomiya-ab-linked-"));
-  t.after(() => removeTree(repo));
-  const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: "pipe" });
+  const { git, scratch } = await import("./git-worktrees.mjs");
+  const repo = scratch(t, "anatomiya-ab-linked-");
   mkdirSync(join(repo, "agents", "rules"), { recursive: true });
   mkdirSync(join(repo, ".claude"));
   writeFileSync(join(repo, "agents", "rules", "team.md"), "# the team's own rule\n");
   symlinkSync(join("..", "agents", "rules"), join(repo, ".claude", "rules"));
-  git("init", "-q");
-  git("add", "-A");
-  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+  git(repo, "init", "-q");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-qm", "init");
   writeFileSync(join(repo, "agents", "rules", "anatomiya-area-x.md"), "# the map\n");
-  const sha = git("rev-parse", "HEAD").trim();
+  const sha = git(repo, "rev-parse", "HEAD").toString().trim();
 
   const arms = await buildArms(repo, sha);
   t.after(() => arms.dispose());
