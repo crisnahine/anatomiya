@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-10-25
+
 What a session gets from the plugin is measured now: eight tasks in four public repositories, 20
 sessions per arm, on Claude Opus 5.5 and Claude Haiku 5.5, every check fixed before the first
 session. In the four tasks that needed code the repository already had a function for, 145 of 160
@@ -5231,7 +5233,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/crisnahine/anatomiya/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/crisnahine/anatomiya/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/crisnahine/anatomiya/compare/v0.16.1...v0.17.0
