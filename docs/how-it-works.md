@@ -78,8 +78,9 @@ real area rather than being folded away.
 
 The repository root is never a fold target. Everything that reaches the root has nothing in common,
 and a claim computed over that describes no code anyone works on. Files with nowhere to go are
-reported as uncovered in the overview instead. On the 2,468 file repository the README's overview
-comes from, that was about 8% of its files (the README prints the count). Expect a larger share on a tree with many small leaf directories, and much less on a flat one.
+reported as uncovered in the overview instead. On a 2,468 file React repository in the
+acceptance corpus, that was about 8% of its files, and on excalidraw, whose run `docs/usage.md` prints,
+15 of 693. Expect a larger share on a tree with many small leaf directories, and much less on a flat one.
 
 The files directly at the root are an area of their own in one case: their language builds the
 root as a package like any directory, which Go's does (`rootPackage` on its declaration in
@@ -589,7 +590,7 @@ average of 80 to 310.
 A dimension is one claim about one area. 57 ship, the filename row included: 29 for JavaScript, 34
 reachable in JSX, and 19 that speak Ruby, plus the one type-checked row, which sits in the total and
 reaches a scan only when the checker runs. Beside them are 9 file-to-file obligations, all Ruby,
-which makes the 28 for Ruby and the 66 dimensions the README counts. A component's script block is
+which makes the 28 for Ruby and the 66 dimensions the README and `docs/usage.md` count. A component's script block is
 asked most of the 29: 25 for Vue and 25 for Svelte. Four are asked of a tree-sitter tree, each of
 the languages whose measured repositories differ on it: 3 for Python, 3 for PHP, 1 for Go, 3 for
 Java, 2 for C#, 2 for Rust and 1 for Kotlin. Each is defined by three quantities, not one.
@@ -1161,7 +1162,7 @@ Output goes to `.claude/rules/`, which is a context directory the agent loads fr
 
 There is a second delivery beside that one, declared by the plugin rather than installed by a scan: a
 hook that echoes the overview back after a turn or a tool call, stamped with the moment it was read,
-whenever the context window does not already hold that same map (A92). Unless it is asked for a copy
+whenever the last 192 KiB the model read, about 30k tokens, holds no copy of that same map (A92). Unless it is asked for a copy
 another tool reads ("The same map for Cursor and Copilot", below), a scan writes nothing outside
 `.claude/rules/` and `.claude/anatomiya/`; what it does to a repository's own settings is take out the
 entry an older version put there. The table above is what the platform loads; the hook is what keeps it

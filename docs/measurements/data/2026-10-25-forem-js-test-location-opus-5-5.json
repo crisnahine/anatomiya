@@ -1,0 +1,781 @@
+{
+  "scenario": "scripts/ab/scenarios/forem-js-test-location.json",
+  "scenarioSha256": "4af1b031f56a9783ef0a28b84517063622b0e7ad4b3070e19b259486f4da319d",
+  "label": "github.com/forem/forem",
+  "sha": "b5237b126cf27bd3897086e7811e33f7872ec444",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "said": {
+    "a": "app/javascript — 112 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.35535999999999995,
+        "inputTokens": 22,
+        "outputTokens": 5462,
+        "cacheReadTokens": 153435
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/readingTime.test.js",
+        "app/javascript/readingTime/readingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.2866922,
+        "inputTokens": 26,
+        "outputTokens": 5634,
+        "cacheReadTokens": 200436
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.4062308,
+        "inputTokens": 26,
+        "outputTokens": 5592,
+        "cacheReadTokens": 182189
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.3187586,
+        "inputTokens": 32,
+        "outputTokens": 5740,
+        "cacheReadTokens": 260703
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.31016599999999994,
+        "inputTokens": 26,
+        "outputTokens": 6246,
+        "cacheReadTokens": 198620
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.2369842,
+        "inputTokens": 24,
+        "outputTokens": 4617,
+        "cacheReadTokens": 177301
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/index.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.22529860000000002,
+        "inputTokens": 22,
+        "outputTokens": 4216,
+        "cacheReadTokens": 155188
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.22269519999999998,
+        "inputTokens": 20,
+        "outputTokens": 4066,
+        "cacheReadTokens": 143191
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.2849444,
+        "inputTokens": 26,
+        "outputTokens": 5521,
+        "cacheReadTokens": 203567
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.2492238,
+        "inputTokens": 28,
+        "outputTokens": 4628,
+        "cacheReadTokens": 219194
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.238062,
+        "inputTokens": 26,
+        "outputTokens": 4299,
+        "cacheReadTokens": 195865
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/index.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.2208784,
+        "inputTokens": 24,
+        "outputTokens": 3825,
+        "cacheReadTokens": 178457
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.27681700000000004,
+        "inputTokens": 22,
+        "outputTokens": 5703,
+        "cacheReadTokens": 159920
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.29880560000000006,
+        "inputTokens": 24,
+        "outputTokens": 6067,
+        "cacheReadTokens": 177793
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.328307,
+        "inputTokens": 30,
+        "outputTokens": 6187,
+        "cacheReadTokens": 241500
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.2819124,
+        "inputTokens": 24,
+        "outputTokens": 5201,
+        "cacheReadTokens": 176692
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/readingTime.test.js",
+        "app/javascript/readingTime/readingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.3149398,
+        "inputTokens": 26,
+        "outputTokens": 6246,
+        "cacheReadTokens": 199624
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.33892,
+        "inputTokens": 36,
+        "outputTokens": 6312,
+        "cacheReadTokens": 282450
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/index.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.22201459999999998,
+        "inputTokens": 20,
+        "outputTokens": 4345,
+        "cacheReadTokens": 139303
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.2962618,
+        "inputTokens": 24,
+        "outputTokens": 5707,
+        "cacheReadTokens": 180239
+      }
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1355132,
+        "inputTokens": 12,
+        "outputTokens": 2178,
+        "cacheReadTokens": 77806
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.12398519999999999,
+        "inputTokens": 16,
+        "outputTokens": 2695,
+        "cacheReadTokens": 120346
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.09738780000000001,
+        "inputTokens": 12,
+        "outputTokens": 2430,
+        "cacheReadTokens": 83739
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1228024,
+        "inputTokens": 16,
+        "outputTokens": 2957,
+        "cacheReadTokens": 117752
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1004044,
+        "inputTokens": 12,
+        "outputTokens": 2464,
+        "cacheReadTokens": 85822
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1172894,
+        "inputTokens": 16,
+        "outputTokens": 2759,
+        "cacheReadTokens": 116027
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1120022,
+        "inputTokens": 14,
+        "outputTokens": 2447,
+        "cacheReadTokens": 103151
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/index.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1235562,
+        "inputTokens": 14,
+        "outputTokens": 3099,
+        "cacheReadTokens": 101121
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1456192,
+        "inputTokens": 16,
+        "outputTokens": 3253,
+        "cacheReadTokens": 123116
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.0786946,
+        "inputTokens": 10,
+        "outputTokens": 1816,
+        "cacheReadTokens": 69393
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1159756,
+        "inputTokens": 16,
+        "outputTokens": 2838,
+        "cacheReadTokens": 114998
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.08732999999999999,
+        "inputTokens": 10,
+        "outputTokens": 2074,
+        "cacheReadTokens": 69290
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.0975402,
+        "inputTokens": 12,
+        "outputTokens": 2567,
+        "cacheReadTokens": 86361
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.107908,
+        "inputTokens": 14,
+        "outputTokens": 2747,
+        "cacheReadTokens": 98920
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.13482860000000002,
+        "inputTokens": 16,
+        "outputTokens": 2955,
+        "cacheReadTokens": 122083
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.09303360000000001,
+        "inputTokens": 12,
+        "outputTokens": 2321,
+        "cacheReadTokens": 83748
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.1078788,
+        "inputTokens": 14,
+        "outputTokens": 2542,
+        "cacheReadTokens": 101314
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/index.test.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.11606240000000001,
+        "inputTokens": 16,
+        "outputTokens": 2819,
+        "cacheReadTokens": 114932
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.138069,
+        "inputTokens": 18,
+        "outputTokens": 2928,
+        "cacheReadTokens": 139025
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/readingTime/__tests__/formatReadingTime.test.js",
+        "app/javascript/readingTime/formatReadingTime.js",
+        "app/javascript/readingTime/index.js"
+      ],
+      "did": true,
+      "checks": {
+        "the test sits in a __tests__ directory": true,
+        "no test sits beside the module": true
+      },
+      "spent": {
+        "costUsd": 0.13124059999999999,
+        "inputTokens": 16,
+        "outputTokens": 2853,
+        "cacheReadTokens": 122463
+      }
+    }
+  ]
+}

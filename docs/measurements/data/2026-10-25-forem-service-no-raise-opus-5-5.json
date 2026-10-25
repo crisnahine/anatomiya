@@ -1,0 +1,739 @@
+{
+  "scenario": "scripts/ab/scenarios/forem-service-no-raise.json",
+  "scenarioSha256": "cb4ca7d9ca01511b349c633a8bcddc4612500acd1695998efd43be932234e3ba",
+  "label": "github.com/forem/forem",
+  "sha": "b5237b126cf27bd3897086e7811e33f7872ec444",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "said": {
+    "a": "app/services, 167 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.32446719999999996,
+        "inputTokens": 28,
+        "outputTokens": 4776,
+        "cacheReadTokens": 241746
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.2533392,
+        "inputTokens": 24,
+        "outputTokens": 4250,
+        "cacheReadTokens": 198231
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.294586,
+        "inputTokens": 24,
+        "outputTokens": 5392,
+        "cacheReadTokens": 201045
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.28011539999999996,
+        "inputTokens": 26,
+        "outputTokens": 4392,
+        "cacheReadTokens": 238617
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.2645402,
+        "inputTokens": 22,
+        "outputTokens": 4626,
+        "cacheReadTokens": 178541
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.267839,
+        "inputTokens": 24,
+        "outputTokens": 4773,
+        "cacheReadTokens": 198855
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.3629664,
+        "inputTokens": 24,
+        "outputTokens": 5096,
+        "cacheReadTokens": 193512
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.26139340000000005,
+        "inputTokens": 22,
+        "outputTokens": 4413,
+        "cacheReadTokens": 175557
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.2806148,
+        "inputTokens": 28,
+        "outputTokens": 4903,
+        "cacheReadTokens": 229704
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.27943819999999997,
+        "inputTokens": 22,
+        "outputTokens": 5074,
+        "cacheReadTokens": 180901
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.27174380000000004,
+        "inputTokens": 26,
+        "outputTokens": 4405,
+        "cacheReadTokens": 239244
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.299065,
+        "inputTokens": 28,
+        "outputTokens": 5235,
+        "cacheReadTokens": 248700
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.2540634,
+        "inputTokens": 22,
+        "outputTokens": 4476,
+        "cacheReadTokens": 193197
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.3390732,
+        "inputTokens": 28,
+        "outputTokens": 5958,
+        "cacheReadTokens": 220746
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.28136300000000003,
+        "inputTokens": 24,
+        "outputTokens": 4903,
+        "cacheReadTokens": 219305
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.2626364,
+        "inputTokens": 22,
+        "outputTokens": 4894,
+        "cacheReadTokens": 177502
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.297902,
+        "inputTokens": 24,
+        "outputTokens": 5054,
+        "cacheReadTokens": 194220
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.28822459999999994,
+        "inputTokens": 24,
+        "outputTokens": 5354,
+        "cacheReadTokens": 203748
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.2572368,
+        "inputTokens": 22,
+        "outputTokens": 4596,
+        "cacheReadTokens": 178839
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.2683578,
+        "inputTokens": 22,
+        "outputTokens": 4733,
+        "cacheReadTokens": 178699
+      }
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.17209999999999998,
+        "inputTokens": 14,
+        "outputTokens": 2646,
+        "cacheReadTokens": 100900
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.130792,
+        "inputTokens": 14,
+        "outputTokens": 2794,
+        "cacheReadTokens": 107040
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.0995902,
+        "inputTokens": 12,
+        "outputTokens": 2066,
+        "cacheReadTokens": 86631
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.1610734,
+        "inputTokens": 22,
+        "outputTokens": 3191,
+        "cacheReadTokens": 181747
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.14324620000000002,
+        "inputTokens": 16,
+        "outputTokens": 2984,
+        "cacheReadTokens": 128751
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.1511604,
+        "inputTokens": 18,
+        "outputTokens": 2783,
+        "cacheReadTokens": 151022
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.16277160000000002,
+        "inputTokens": 18,
+        "outputTokens": 3071,
+        "cacheReadTokens": 154198
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.1406518,
+        "inputTokens": 14,
+        "outputTokens": 3036,
+        "cacheReadTokens": 105019
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.14430840000000003,
+        "inputTokens": 14,
+        "outputTokens": 2746,
+        "cacheReadTokens": 114222
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.1462968,
+        "inputTokens": 14,
+        "outputTokens": 2831,
+        "cacheReadTokens": 114184
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.1308356,
+        "inputTokens": 14,
+        "outputTokens": 2723,
+        "cacheReadTokens": 107678
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.137394,
+        "inputTokens": 14,
+        "outputTokens": 2914,
+        "cacheReadTokens": 108570
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.148312,
+        "inputTokens": 14,
+        "outputTokens": 2908,
+        "cacheReadTokens": 114480
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.1472326,
+        "inputTokens": 14,
+        "outputTokens": 2859,
+        "cacheReadTokens": 114183
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.156383,
+        "inputTokens": 16,
+        "outputTokens": 3031,
+        "cacheReadTokens": 133215
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.2017874,
+        "inputTokens": 18,
+        "outputTokens": 2901,
+        "cacheReadTokens": 142397
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.13178900000000002,
+        "inputTokens": 14,
+        "outputTokens": 2814,
+        "cacheReadTokens": 107185
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.13389700000000002,
+        "inputTokens": 12,
+        "outputTokens": 2617,
+        "cacheReadTokens": 95145
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.1481286,
+        "inputTokens": 18,
+        "outputTokens": 3122,
+        "cacheReadTokens": 140923
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/services/comments/hider.rb",
+        "spec/services/comments/hider_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "its entry point does not raise": true
+      },
+      "spent": {
+        "costUsd": 0.1698546,
+        "inputTokens": 18,
+        "outputTokens": 3313,
+        "cacheReadTokens": 157173
+      }
+    }
+  ]
+}

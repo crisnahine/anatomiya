@@ -1,0 +1,739 @@
+{
+  "scenario": "scripts/ab/scenarios/whitehall-migration-schema.json",
+  "scenarioSha256": "d10ad6d7cfbcc4ce5ae2eda7873362b06b7eb864bff37a586cbcee5d33d1af11",
+  "label": "github.com/alphagov/whitehall",
+  "sha": "44848361bcf7f8871c716ac6e5f8f6211416a1a7",
+  "engine": {
+    "model": "claude-haiku-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "said": {
+    "a": "db/migrate: 140 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.004579389999999999,
+        "inputTokens": 10,
+        "outputTokens": 2771,
+        "cacheReadTokens": 70129
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025090000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00450908,
+        "inputTokens": 14,
+        "outputTokens": 3211,
+        "cacheReadTokens": 107998
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025090000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00357487,
+        "inputTokens": 12,
+        "outputTokens": 2558,
+        "cacheReadTokens": 87827
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025093000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.004872329999999999,
+        "inputTokens": 16,
+        "outputTokens": 3226,
+        "cacheReadTokens": 129353
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025093247_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00327435,
+        "inputTokens": 10,
+        "outputTokens": 2305,
+        "cacheReadTokens": 70585
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00382956,
+        "inputTokens": 12,
+        "outputTokens": 2603,
+        "cacheReadTokens": 87586
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00428246,
+        "inputTokens": 14,
+        "outputTokens": 3204,
+        "cacheReadTokens": 105106
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025173609_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0046665299999999995,
+        "inputTokens": 14,
+        "outputTokens": 3309,
+        "cacheReadTokens": 107963
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025093000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00472532,
+        "inputTokens": 12,
+        "outputTokens": 3745,
+        "cacheReadTokens": 88542
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00382776,
+        "inputTokens": 12,
+        "outputTokens": 2775,
+        "cacheReadTokens": 86986
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025094008_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0052997,
+        "inputTokens": 16,
+        "outputTokens": 3579,
+        "cacheReadTokens": 134240
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025090000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00390273,
+        "inputTokens": 12,
+        "outputTokens": 2699,
+        "cacheReadTokens": 91703
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0037432100000000003,
+        "inputTokens": 12,
+        "outputTokens": 2776,
+        "cacheReadTokens": 88181
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00521481,
+        "inputTokens": 14,
+        "outputTokens": 4070,
+        "cacheReadTokens": 114261
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00310785,
+        "inputTokens": 12,
+        "outputTokens": 2144,
+        "cacheReadTokens": 86045
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00412461,
+        "inputTokens": 12,
+        "outputTokens": 2876,
+        "cacheReadTokens": 89821
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025093000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0034543,
+        "inputTokens": 10,
+        "outputTokens": 2511,
+        "cacheReadTokens": 70140
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00398504,
+        "inputTokens": 12,
+        "outputTokens": 2660,
+        "cacheReadTokens": 91964
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025100000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0044478600000000005,
+        "inputTokens": 14,
+        "outputTokens": 3231,
+        "cacheReadTokens": 105556
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00381335,
+        "inputTokens": 10,
+        "outputTokens": 3040,
+        "cacheReadTokens": 74375
+      }
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0031125000000000002,
+        "inputTokens": 10,
+        "outputTokens": 2035,
+        "cacheReadTokens": 55300
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0035023,
+        "inputTokens": 12,
+        "outputTokens": 3214,
+        "cacheReadTokens": 74690
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0023370200000000004,
+        "inputTokens": 8,
+        "outputTokens": 1937,
+        "cacheReadTokens": 47492
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025173211_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00360974,
+        "inputTokens": 18,
+        "outputTokens": 2944,
+        "cacheReadTokens": 116514
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025173308_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0030009900000000003,
+        "inputTokens": 12,
+        "outputTokens": 2637,
+        "cacheReadTokens": 75609
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025100000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0024446,
+        "inputTokens": 10,
+        "outputTokens": 2058,
+        "cacheReadTokens": 60860
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0019612,
+        "inputTokens": 8,
+        "outputTokens": 1767,
+        "cacheReadTokens": 46090
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0027895100000000003,
+        "inputTokens": 10,
+        "outputTokens": 2244,
+        "cacheReadTokens": 60431
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00229093,
+        "inputTokens": 8,
+        "outputTokens": 2088,
+        "cacheReadTokens": 47413
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00292184,
+        "inputTokens": 10,
+        "outputTokens": 2138,
+        "cacheReadTokens": 62324
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0029486300000000007,
+        "inputTokens": 14,
+        "outputTokens": 2514,
+        "cacheReadTokens": 86083
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025094134_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00295855,
+        "inputTokens": 12,
+        "outputTokens": 2252,
+        "cacheReadTokens": 75675
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00298186,
+        "inputTokens": 10,
+        "outputTokens": 2427,
+        "cacheReadTokens": 61376
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0022438,
+        "inputTokens": 10,
+        "outputTokens": 1889,
+        "cacheReadTokens": 60390
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025094526_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00309812,
+        "inputTokens": 12,
+        "outputTokens": 2482,
+        "cacheReadTokens": 74632
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00277005,
+        "inputTokens": 12,
+        "outputTokens": 2183,
+        "cacheReadTokens": 76055
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025174801_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00282735,
+        "inputTokens": 12,
+        "outputTokens": 2364,
+        "cacheReadTokens": 74375
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0030639200000000004,
+        "inputTokens": 10,
+        "outputTokens": 2385,
+        "cacheReadTokens": 62502
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025175005_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0027370700000000003,
+        "inputTokens": 10,
+        "outputTokens": 2400,
+        "cacheReadTokens": 60987
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00294772,
+        "inputTokens": 12,
+        "outputTokens": 2708,
+        "cacheReadTokens": 74972
+      }
+    }
+  ]
+}

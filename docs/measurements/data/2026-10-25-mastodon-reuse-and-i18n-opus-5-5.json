@@ -1,0 +1,784 @@
+{
+  "scenario": "scripts/ab/scenarios/mastodon-reuse-and-i18n.json",
+  "scenarioSha256": "ff08646b9f2ab5201b1bae75ffb8295ad9efb1a6f1264861f61eb9a93ea3b23f",
+  "label": "github.com/mastodon/mastodon",
+  "sha": "3f5c32f43f57751f994919335cf7b065c53044d1",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "said": {
+    "a": "app/javascript/mastodon/components: 167 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.39618640000000005,
+        "inputTokens": 34,
+        "outputTokens": 7416,
+        "cacheReadTokens": 276057
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3101318,
+        "inputTokens": 28,
+        "outputTokens": 5841,
+        "cacheReadTokens": 220369
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3476222,
+        "inputTokens": 36,
+        "outputTokens": 6822,
+        "cacheReadTokens": 271636
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.35943600000000003,
+        "inputTokens": 36,
+        "outputTokens": 6779,
+        "cacheReadTokens": 292890
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.27779220000000004,
+        "inputTokens": 26,
+        "outputTokens": 5143,
+        "cacheReadTokens": 194496
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.36850279999999996,
+        "inputTokens": 34,
+        "outputTokens": 5841,
+        "cacheReadTokens": 251554
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3819716000000001,
+        "inputTokens": 36,
+        "outputTokens": 7402,
+        "cacheReadTokens": 294978
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3438382,
+        "inputTokens": 34,
+        "outputTokens": 6999,
+        "cacheReadTokens": 272176
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.386264,
+        "inputTokens": 36,
+        "outputTokens": 7788,
+        "cacheReadTokens": 288850
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.35111240000000005,
+        "inputTokens": 36,
+        "outputTokens": 6563,
+        "cacheReadTokens": 272692
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.34735920000000003,
+        "inputTokens": 30,
+        "outputTokens": 6424,
+        "cacheReadTokens": 234521
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3211586,
+        "inputTokens": 32,
+        "outputTokens": 6306,
+        "cacheReadTokens": 234003
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.33019360000000003,
+        "inputTokens": 32,
+        "outputTokens": 5920,
+        "cacheReadTokens": 266728
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.34526099999999993,
+        "inputTokens": 34,
+        "outputTokens": 6212,
+        "cacheReadTokens": 278135
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3640504,
+        "inputTokens": 40,
+        "outputTokens": 6968,
+        "cacheReadTokens": 325327
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.29310820000000004,
+        "inputTokens": 32,
+        "outputTokens": 5749,
+        "cacheReadTokens": 228231
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.30002520000000005,
+        "inputTokens": 32,
+        "outputTokens": 5696,
+        "cacheReadTokens": 252421
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.36558039999999997,
+        "inputTokens": 34,
+        "outputTokens": 6686,
+        "cacheReadTokens": 276797
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3772652,
+        "inputTokens": 34,
+        "outputTokens": 6718,
+        "cacheReadTokens": 273246
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3430584,
+        "inputTokens": 30,
+        "outputTokens": 7018,
+        "cacheReadTokens": 218792
+      }
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.133879,
+        "inputTokens": 14,
+        "outputTokens": 2437,
+        "cacheReadTokens": 79935
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.103682,
+        "inputTokens": 16,
+        "outputTokens": 2447,
+        "cacheReadTokens": 95670
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1385388,
+        "inputTokens": 20,
+        "outputTokens": 2880,
+        "cacheReadTokens": 135414
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.12476760000000002,
+        "inputTokens": 18,
+        "outputTokens": 2509,
+        "cacheReadTokens": 115258
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1297242,
+        "inputTokens": 18,
+        "outputTokens": 2807,
+        "cacheReadTokens": 117561
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.0890038,
+        "inputTokens": 12,
+        "outputTokens": 1801,
+        "cacheReadTokens": 70759
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.10922699999999999,
+        "inputTokens": 14,
+        "outputTokens": 2259,
+        "cacheReadTokens": 87755
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.10591819999999999,
+        "inputTokens": 12,
+        "outputTokens": 2250,
+        "cacheReadTokens": 73511
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.12297319999999999,
+        "inputTokens": 14,
+        "outputTokens": 2689,
+        "cacheReadTokens": 90726
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1300102,
+        "inputTokens": 18,
+        "outputTokens": 2852,
+        "cacheReadTokens": 117931
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.16964639999999997,
+        "inputTokens": 22,
+        "outputTokens": 3735,
+        "cacheReadTokens": 155492
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1069854,
+        "inputTokens": 14,
+        "outputTokens": 2197,
+        "cacheReadTokens": 87947
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1361264,
+        "inputTokens": 24,
+        "outputTokens": 2969,
+        "cacheReadTokens": 171772
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.12083060000000001,
+        "inputTokens": 20,
+        "outputTokens": 2748,
+        "cacheReadTokens": 124113
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.10023239999999999,
+        "inputTokens": 14,
+        "outputTokens": 2276,
+        "cacheReadTokens": 84362
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.09560099999999999,
+        "inputTokens": 14,
+        "outputTokens": 1927,
+        "cacheReadTokens": 85625
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.09215580000000001,
+        "inputTokens": 12,
+        "outputTokens": 2311,
+        "cacheReadTokens": 67999
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1066662,
+        "inputTokens": 14,
+        "outputTokens": 2058,
+        "cacheReadTokens": 90331
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.10529899999999999,
+        "inputTokens": 16,
+        "outputTokens": 2202,
+        "cacheReadTokens": 99735
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.15095579999999997,
+        "inputTokens": 20,
+        "outputTokens": 3421,
+        "cacheReadTokens": 135799
+      }
+    }
+  ]
+}

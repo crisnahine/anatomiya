@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" role="img" aria-labelledby="title desc">
+<title id="title">anatomiya in a Claude Code session</title>
+<desc id="desc">A Claude Code session in mastodon, rebuilt from one measured trial&#x27;s files and answer: /anatomiya:scan maps the repository, the agent writes a badge component, the end-of-turn reuse check asks one subagent for an existing function, it names compareUrls, and the agent switches to it. Without the plugin, 20 of 20 trials wrote their own comparison.</desc>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:13px;fill:#e6edf3}
+.dim{fill:#8b949e}.you{fill:#e6edf3;font-weight:600}.tool{fill:#7ee787}.note{fill:#2dd4bf}.claim{fill:#a5f3fc}.ask{fill:#facc15}.ok{fill:#7ee787}
+@keyframes k0{0%,1.82%{opacity:0}3.02%,97.27%{opacity:1}100%{opacity:0}}.l0{animation:k0 22.0s linear infinite}@keyframes k1{0%,6.36%{opacity:0}7.56%,97.27%{opacity:1}100%{opacity:0}}.l1{animation:k1 22.0s linear infinite}@keyframes k2{0%,8.18%{opacity:0}9.38%,97.27%{opacity:1}100%{opacity:0}}.l2{animation:k2 22.0s linear infinite}@keyframes k3{0%,10.00%{opacity:0}11.20%,97.27%{opacity:1}100%{opacity:0}}.l3{animation:k3 22.0s linear infinite}@keyframes k4{0%,15.45%{opacity:0}16.65%,97.27%{opacity:1}100%{opacity:0}}.l4{animation:k4 22.0s linear infinite}@keyframes k5{0%,15.45%{opacity:0}16.65%,97.27%{opacity:1}100%{opacity:0}}.l5{animation:k5 22.0s linear infinite}@keyframes k6{0%,22.73%{opacity:0}23.93%,97.27%{opacity:1}100%{opacity:0}}.l6{animation:k6 22.0s linear infinite}@keyframes k7{0%,32.73%{opacity:0}33.93%,97.27%{opacity:1}100%{opacity:0}}.l7{animation:k7 22.0s linear infinite}@keyframes k8{0%,34.55%{opacity:0}35.75%,97.27%{opacity:1}100%{opacity:0}}.l8{animation:k8 22.0s linear infinite}@keyframes k9{0%,36.36%{opacity:0}37.56%,97.27%{opacity:1}100%{opacity:0}}.l9{animation:k9 22.0s linear infinite}@keyframes k10{0%,42.73%{opacity:0}43.93%,97.27%{opacity:1}100%{opacity:0}}.l10{animation:k10 22.0s linear infinite}@keyframes k11{0%,48.18%{opacity:0}49.38%,97.27%{opacity:1}100%{opacity:0}}.l11{animation:k11 22.0s linear infinite}@keyframes k12{0%,54.55%{opacity:0}55.75%,97.27%{opacity:1}100%{opacity:0}}.l12{animation:k12 22.0s linear infinite}@keyframes k13{0%,56.82%{opacity:0}58.02%,97.27%{opacity:1}100%{opacity:0}}.l13{animation:k13 22.0s linear infinite}@keyframes k14{0%,65.45%{opacity:0}66.65%,97.27%{opacity:1}100%{opacity:0}}.l14{animation:k14 22.0s linear infinite}@keyframes k15{0%,72.73%{opacity:0}73.93%,97.27%{opacity:1}100%{opacity:0}}.l15{animation:k15 22.0s linear infinite}
+@media (prefers-reduced-motion:reduce){[class*=" l"]{animation:none!important;opacity:1!important}}
+</style>
+<rect x="0.5" y="0.5" width="899" height="419" rx="12" fill="#0d1117" stroke="#30363d"/>
+<rect x="0.5" y="0.5" width="899" height="38" rx="12" fill="#161b22"/>
+<rect x="0.5" y="26" width="899" height="13" fill="#161b22"/>
+<line x1="0" y1="39" x2="900" y2="39" stroke="#30363d"/>
+<circle cx="22" cy="20" r="6" fill="#ff5f57"/><circle cx="42" cy="20" r="6" fill="#febc2e"/><circle cx="62" cy="20" r="6" fill="#28c840"/>
+<text x="450.0" y="24" text-anchor="middle" class="dim">claude  ~/code/mastodon</text>
+<text class="you l0" x="22" y="76" xml:space="preserve">&gt; /anatomiya:scan</text>
+<text class="dim l1" x="22" y="97" xml:space="preserve">  4176 files, 129 areas, 2822ms</text>
+<text class="dim l2" x="22" y="118" xml:space="preserve">  275 of 1209 claims stated, 61 match the model default, the rest print as counts</text>
+<text class="dim l3" x="22" y="139" xml:space="preserve">  wrote 130 files</text>
+<text class="you l4" x="22" y="160" xml:space="preserve">&gt; Add a CurrentPageBadge component that shows &quot;You are here&quot; when two links point to</text>
+<text class="you l5" x="22" y="181" xml:space="preserve">  the same page: same origin, path and query string, #fragment ignored.</text>
+<text class="tool l6" x="22" y="202" xml:space="preserve">● Write app/javascript/mastodon/components/current_page_badge.tsx</text>
+<text class="note l7" x="22" y="223" xml:space="preserve">● Stop hook feedback  (anatomiya reuse check)</text>
+<text class="claim l8" x="22" y="244" xml:space="preserve">    Before you finish, give one subagent this change&#x27;s diff and these added functions:</text>
+<text class="claim l9" x="22" y="265" xml:space="preserve">    app/javascript/mastodon/components/current_page_badge.tsx (new file). Have it grep shared ...</text>
+<text class="tool l10" x="22" y="286" xml:space="preserve">● Agent  find an existing function that does the same job</text>
+<text class="ok l11" x="22" y="307" xml:space="preserve">    compareUrls in app/javascript/mastodon/utils/compare_urls.ts does the same job</text>
+<text class="tool l12" x="22" y="328" xml:space="preserve">● Edit app/javascript/mastodon/components/current_page_badge.tsx</text>
+<text class="ok l13" x="22" y="349" xml:space="preserve">    + import { compareUrls } from &#x27;@/mastodon/utils/compare_urls&#x27;;</text>
+<text class="you l14" x="22" y="370" xml:space="preserve">  The repo already had a helper for this check, so the badge now uses it.</text>
+<text class="dim l15" x="22" y="391" xml:space="preserve">  measured: 20 of 20 sessions called compareUrls with anatomiya, 0 of 20 without</text>
+</svg>

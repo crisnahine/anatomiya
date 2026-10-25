@@ -21,8 +21,8 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] `npm run check:docs` passes. It is the mechanical half of this list: for every plugin, the
   version agreement across its manifests and a changelog section for the version it carries, plus an
   `## [Unreleased]` heading in each changelog and a link definition for it and for the version the
-  manifests carry. For anatomiya it also reads the dimension and decision-row counts in `README.md`,
-  `docs/why.md` and `CONTRIBUTING.md`, the runtime dependency set in `README.md` and `SECURITY.md`,
+  manifests carry. For anatomiya it also reads the dimension counts in `README.md`, `docs/usage.md` and
+  `docs/how-it-works.md`, the decision-row counts in `README.md`, `docs/why.md` and `CONTRIBUTING.md`, the runtime dependency set in `README.md` and `SECURITY.md`,
   the gate table, the command list, every command line that runs
   `plugins/anatomiya/bin/anatomiya.mjs` in `README.md`, `CONTRIBUTING.md`, the top-level `docs/*.md`
   files and the command files, parsed as the binary parses it, the severity table quoting every
@@ -102,7 +102,7 @@ upstreams and are not meant to move together.
 
 `check:docs` catches the counted numbers. It does not read English, so these are by hand:
 
-- [ ] `README.md` and `docs/how-it-works.md` describe every flag the CLI now takes, and none it does
+- [ ] `README.md`, `docs/usage.md` and `docs/how-it-works.md` describe every flag the CLI now takes, and none it does
       not. A flag documented and then refused is worse than one never mentioned.
 - [ ] `commands/*.md` match the CLI. The agent reads these, not `--help`.
 - [ ] `SECURITY.md` names the current dependency set and says nothing about a tier that now ships.

@@ -1,5 +1,11 @@
 # A/B: github.com/microsoft/vscode at a589bb73
 
+> [!WARNING]
+> Taken under the harness defects decision G13 lists: arms that were never reset, the operator's own
+> settings in both arms, and trials cut short dropped from one side. Not comparable with any later
+> run, and too small to read either way. What a session gets from the plugin is measured by
+> `scripts/ab-scenario.mjs` (G18).
+
 | setting | value |
 |---|---|
 | repository | github.com/microsoft/vscode |

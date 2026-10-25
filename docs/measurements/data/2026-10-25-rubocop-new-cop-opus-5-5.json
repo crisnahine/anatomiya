@@ -1,0 +1,920 @@
+{
+  "scenario": "scripts/ab/scenarios/rubocop-new-cop.json",
+  "scenarioSha256": "6e90369c5f4bf993798b58ee8bd2adefde2aea4bc2796613229bc58187a6a5b7",
+  "label": "github.com/rubocop/rubocop",
+  "sha": "f009b338048ea0ade9d6d88cf358111092c8f12c",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "said": {
+    "a": "lib/rubocop/cop/style — 302 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025171435.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5979554,
+        "inputTokens": 48,
+        "outputTokens": 10418,
+        "cacheReadTokens": 539727
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172254.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5328406000000002,
+        "inputTokens": 40,
+        "outputTokens": 9549,
+        "cacheReadTokens": 424308
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025173147.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.44413880000000006,
+        "inputTokens": 36,
+        "outputTokens": 9415,
+        "cacheReadTokens": 351524
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025174034.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.43967560000000006,
+        "inputTokens": 38,
+        "outputTokens": 8520,
+        "cacheReadTokens": 370083
+      }
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025174923.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": null
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025171439.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5243021999999999,
+        "inputTokens": 36,
+        "outputTokens": 10146,
+        "cacheReadTokens": 365966
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172239.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.4928546000000001,
+        "inputTokens": 38,
+        "outputTokens": 10086,
+        "cacheReadTokens": 389318
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172954.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.473693,
+        "inputTokens": 42,
+        "outputTokens": 9790,
+        "cacheReadTokens": 427275
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025174215.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5150252000000001,
+        "inputTokens": 40,
+        "outputTokens": 10435,
+        "cacheReadTokens": 406506
+      }
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025175601.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": null
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025171423.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5466658,
+        "inputTokens": 44,
+        "outputTokens": 10199,
+        "cacheReadTokens": 421374
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172249.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5123506,
+        "inputTokens": 38,
+        "outputTokens": 10174,
+        "cacheReadTokens": 376493
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.4645082,
+        "inputTokens": 34,
+        "outputTokens": 9526,
+        "cacheReadTokens": 332101
+      }
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025174939.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": null
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025181837.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5127944,
+        "inputTokens": 34,
+        "outputTokens": 10018,
+        "cacheReadTokens": 334157
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025171422.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5509575999999999,
+        "inputTokens": 46,
+        "outputTokens": 10050,
+        "cacheReadTokens": 468473
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172506.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.5037096000000001,
+        "inputTokens": 42,
+        "outputTokens": 10021,
+        "cacheReadTokens": 439113
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025173337.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.6113831999999999,
+        "inputTokens": 46,
+        "outputTokens": 12059,
+        "cacheReadTokens": 524266
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025174854.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.4599787999999999,
+        "inputTokens": 38,
+        "outputTokens": 9580,
+        "cacheReadTokens": 384549
+      }
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025175853.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": null
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025171949.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.32328559999999995,
+        "inputTokens": 24,
+        "outputTokens": 6650,
+        "cacheReadTokens": 221068
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172620.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.3357268000000001,
+        "inputTokens": 34,
+        "outputTokens": 7627,
+        "cacheReadTokens": 352934
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025173439.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.3817984,
+        "inputTokens": 42,
+        "outputTokens": 6687,
+        "cacheReadTokens": 418092
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025174539.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.2943588,
+        "inputTokens": 28,
+        "outputTokens": 7003,
+        "cacheReadTokens": 263054
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025180929.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.28205659999999994,
+        "inputTokens": 28,
+        "outputTokens": 6604,
+        "cacheReadTokens": 270403
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172052.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.34442040000000007,
+        "inputTokens": 24,
+        "outputTokens": 7343,
+        "cacheReadTokens": 218122
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172619.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.26180180000000003,
+        "inputTokens": 24,
+        "outputTokens": 6557,
+        "cacheReadTokens": 220149
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025173743.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.2675372,
+        "inputTokens": 26,
+        "outputTokens": 6278,
+        "cacheReadTokens": 236526
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025174836.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.2670068,
+        "inputTokens": 28,
+        "outputTokens": 6770,
+        "cacheReadTokens": 257634
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "CHANGELOG.md",
+        "changelog/new_add_new_style_reverse_first_cop_20261025181555.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.38039039999999996,
+        "inputTokens": 40,
+        "outputTokens": 8472,
+        "cacheReadTokens": 421072
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025171948.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.31353280000000006,
+        "inputTokens": 22,
+        "outputTokens": 6339,
+        "cacheReadTokens": 202804
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172606.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.2607858,
+        "inputTokens": 22,
+        "outputTokens": 6305,
+        "cacheReadTokens": 212949
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025174115.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.2822156,
+        "inputTokens": 28,
+        "outputTokens": 6836,
+        "cacheReadTokens": 267438
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025180944.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.27496080000000006,
+        "inputTokens": 24,
+        "outputTokens": 5832,
+        "cacheReadTokens": 237604
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025182143.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.30810540000000003,
+        "inputTokens": 28,
+        "outputTokens": 6929,
+        "cacheReadTokens": 273987
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.30081900000000006,
+        "inputTokens": 22,
+        "outputTokens": 5745,
+        "cacheReadTokens": 202235
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025172702.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.23721879999999998,
+        "inputTokens": 18,
+        "outputTokens": 6348,
+        "cacheReadTokens": 158774
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025174103.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.282557,
+        "inputTokens": 24,
+        "outputTokens": 6096,
+        "cacheReadTokens": 201985
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025175301.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.2866378,
+        "inputTokens": 28,
+        "outputTokens": 6672,
+        "cacheReadTokens": 255189
+      }
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025181753.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.2441716,
+        "inputTokens": 26,
+        "outputTokens": 5074,
+        "cacheReadTokens": 244338
+      }
+    }
+  ]
+}
