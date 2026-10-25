@@ -17,11 +17,10 @@
  * loaded from this repository unless a caller passes `pluginDir: null`.
  */
 import { execFile, execFileSync } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { changedSinceWorktree, filesAt, headSha } from "../../plugins/anatomiya/lib/git.mjs";
+import { changedSinceWorktree, filesAt, headSha, topLevel } from "../../plugins/anatomiya/lib/git.mjs";
 import { ENGINE, engineEnv, engineFor } from "./engine.mjs";
 import { ANATOMIYA } from "../plugins.mjs";
 
@@ -39,10 +38,10 @@ export const CLAUDE_DEFAULTS = {
 /**
  * The operator's GitHub login, kept from an agent with a shell: rubocop
  * sessions took it from `gh` to credit a changelog entry. A `GH_CONFIG_DIR`
- * that does not exist leaves `gh` logged out.
+ * under a file cannot exist, which leaves `gh` logged out.
  */
 const GITHUB_LOGINS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
-const NO_GH_CONFIG = join(tmpdir(), "anatomiya-ab-no-gh");
+const NO_GH_CONFIG = join(process.execPath, "gh");
 
 function trialEnv(env) {
   const out = engineEnv(env);
@@ -62,8 +61,7 @@ export async function runTrial(arm, prompt, options = {}) {
   const engine = engineFor(o);
   if (engine.error) return { ok: false, wrote: [], stdout: "", ran: null, reason: engine.error };
   const before = snapshot(arm);
-  // Outside a repository git cannot be asked, and every file the trial touched counts.
-  const base = await headSha(arm).catch(() => null);
+  const base = await startingCommit(arm);
   const started = Date.now();
 
   const args = [
@@ -200,8 +198,21 @@ async function added(dir, before, base) {
 }
 
 /**
+ * The commit a trial starts from, or null where `arm` is not the top of its own
+ * repository: from a subdirectory, ls-tree and diff name paths from different roots.
+ */
+async function startingCommit(arm) {
+  try {
+    if (realpathSync(await topLevel(arm)) !== realpathSync(arm)) return null;
+    return await headSha(arm);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Of `rels`, the files `base` tracks whose bytes match it now. Read against
- * `base` rather than HEAD, so a trial that committed its work still shows it.
+ * `base`, the starting commit, so a trial that committed its work still shows it.
  */
 async function unchangedSince(dir, base, rels) {
   if (!base || !rels.length) return new Set();

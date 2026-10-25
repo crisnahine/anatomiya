@@ -186,6 +186,7 @@ test("the scenario run's arguments are refused at the door", async () => {
  * it was not, so the two arms differ for a reason the test controls.
  */
 const scenarioClaude = () => [
+  'if [ "$1" = "--version" ]; then echo "9.9.9 (Claude Code)"; exit 0; fi',
   'case " $* " in *" --plugin-dir "*) PLUGIN=1;; *) PLUGIN=0;; esac',
   'case "$2" in',
   "  *NONE*)",
@@ -272,6 +273,11 @@ test("a scenario run goes from a bare clone to its document, with the plugin on 
   assert.deepEqual(data.a.map((x) => x.checks), [{ "defaults use ??": true }, { "defaults use ??": true }]);
   assert.deepEqual(data.b.map((x) => x.checks), [{ "defaults use ??": false }, { "defaults use ??": false }]);
   assert.ok(!JSON.stringify(data).includes("const a = {}"), "the committed record holds no file contents");
+  // A rerun needs the builds that produced the numbers, not only the model.
+  const { version } = JSON.parse(readFileSync(new URL("../plugins/anatomiya/.claude-plugin/plugin.json", import.meta.url), "utf8"));
+  assert.equal(data.versions.claude, "9.9.9 (Claude Code)");
+  assert.match(data.versions.anatomiya, new RegExp(`^${version.replace(/\./g, "\\.")} at [0-9a-f]{12}`));
+  assert.ok(doc.includes(`| built with | Claude Code 9.9.9 (Claude Code), anatomiya ${data.versions.anatomiya} |`), doc);
   const raw = JSON.parse(readFileSync(files.raw, "utf8"));
   assert.match(raw.b[0].wrote.find((f) => f.rel === "src/x/written.mjs").source, /\|\|/, "the raw record keeps them, to score again");
 });
@@ -444,12 +450,14 @@ test("the scrub reaches the reason too, and spares a word or a path that only st
   // and a home of /home/al would cut /home/alice to ~ice.
   const { parseScenario, scoreScenario } = await import("../scripts/ab/checks.mjs");
   const { scenario } = parseScenario(scenarioText());
-  const run = { ok: false, reason: "exited 1: cannot open /home/test/.config", wrote: [], stdout: "Ran the test in /home/test and /home/tester; @test, see /home/test/x.", spent: null };
+  const run = { ok: false, reason: "exited 1: cannot open /home/test/.config", wrote: [], stdout: "Ran the test in /home/test and /home/tester and /home/test.bak; @test, see /home/test/x.", spent: null };
 
-  const s = await scoreScenario([run], scenario, [], { operator: { home: "/home/test", user: "test" } });
+  for (const home of ["/home/test", "/home/test/"]) {
+    const s = await scoreScenario([run], scenario, [], { operator: { home, user: "test" } });
 
-  assert.equal(s.perTrial[0].answer, "Ran the test in ~ and /home/tester; @<user>, see ~/x.");
-  assert.equal(s.perTrial[0].reason, "exited 1: cannot open ~/.config");
+    assert.equal(s.perTrial[0].answer, "Ran the test in ~ and /home/tester and /home/test.bak; @<user>, see ~/x.", home);
+    assert.equal(s.perTrial[0].reason, "exited 1: cannot open ~/.config", home);
+  }
 });
 
 test("an answer is scrubbed before it is cut, so a home path across the cut leaves no part of itself", async () => {

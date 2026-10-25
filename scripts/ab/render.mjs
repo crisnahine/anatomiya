@@ -40,6 +40,7 @@ export function renderScenario(r, o) {
 | tools | ${o.tools.join(", ")} |
 | max turns | ${o.maxTurns} |
 | scenario | \`${o.scenarioPath}\`, sha256 ${o.scenarioSha256.slice(0, 12)} |
+| built with | ${r.versions ? `Claude Code ${r.versions.claude ?? "not reported"}, anatomiya ${r.versions.anatomiya}` : "not recorded"} |
 
 Arm A runs with the plugin and its map. Arm B runs with neither. Nothing else differs.
 Injection: arm A answered "${r.said.a}", arm B answered "${r.said.b}".

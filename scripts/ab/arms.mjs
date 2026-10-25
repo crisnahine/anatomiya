@@ -2,8 +2,8 @@
 /**
  * Two checkouts of one commit: one holding the map, one holding none.
  *
- * Local clones, hard-linked rather than shared and with no remote, so neither
- * arm holds a path back to the checkout that holds the map. Both arms are the
+ * Local clones, hard-linked, with no alternates, no remote and no reflog, so
+ * neither arm holds a path back to the checkout that holds the map. Both arms are the
  * same bytes at the same commit by construction rather than by a checksum
  * somebody remembered to run. Not worktrees: a linked worktree with no map is
  * the one shape the plugin's hooks answer from its main checkout's map, so arm

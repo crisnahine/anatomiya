@@ -24,6 +24,7 @@ import { renderScenario } from "./ab/render.mjs";
 import { mapAndPin, probeFileIn, runTrials, verifyInjection } from "./ab.mjs";
 import { die, invokedAs } from "./entry.mjs";
 import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { ANATOMIYA } from "./plugins.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -53,6 +54,7 @@ async function main(argv) {
     label,
     said: run.said,
     engine: run.engine,
+    versions: run.versions,
     a: await scoreScenario(run.trials.a, scenario, run.frameworks),
     b: await scoreScenario(run.trials.b, scenario, run.frameworks),
   };
@@ -60,7 +62,7 @@ async function main(argv) {
   const out = args.out ?? join(root, "docs/measurements", `${scenario.name}.md`);
   const data = args.data ?? join(root, "docs/measurements/data", `${scenario.name}.json`);
   const shown = (p) => relative(root, p).split("\\").join("/");
-  const record = { scenario: shown(args.scenario), scenarioSha256, label, sha: run.sha, engine: result.engine, said: result.said };
+  const record = { scenario: shown(args.scenario), scenarioSha256, label, sha: run.sha, engine: result.engine, versions: run.versions, said: result.said };
   const writeJson = (path, value) => {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -93,13 +95,31 @@ async function runFresh(args, scenario) {
     const ran = engineRan(args.engine, [...trials.a, ...trials.b]);
     if (ran.error) throw new Error(ran.error);
     if (ran.note) console.log(ran.note);
-    return { sha, said, engine: ran.engine, trials, frameworks: facts.corpus?.frameworks ?? [], runs: 1 };
+    return { sha, said, engine: ran.engine, versions: versionsHere(), trials, frameworks: facts.corpus?.frameworks ?? [], runs: 1 };
   } catch (err) {
     failed = err;
   } finally {
     await arms.dispose();
   }
   die(failed.message);
+}
+
+/**
+ * The Claude Code and the anatomiya build the trials ran on, so a rerun can use
+ * the same ones. A plugin with uncommitted changes says so.
+ */
+function versionsHere() {
+  const line = (command, argv) => {
+    try {
+      return execFileSync(command, argv, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n")[0] || null;
+    } catch {
+      return null;
+    }
+  };
+  const { version } = JSON.parse(readFileSync(join(ANATOMIYA, ".claude-plugin", "plugin.json"), "utf8"));
+  const commit = line("git", ["rev-parse", "--short=12", "HEAD"]);
+  const changed = line("git", ["status", "--porcelain", "--", ANATOMIYA]);
+  return { claude: line("claude", ["--version"]), anatomiya: `${version}${commit ? ` at ${commit}` : ""}${changed ? ", with uncommitted changes" : ""}` };
 }
 
 /**
@@ -127,6 +147,7 @@ function readKept(paths, scenario, { file, digest }) {
     sha: first.sha,
     said: first.said,
     engine: first.engine,
+    versions: first.versions ?? null,
     trials: { a: kept.flatMap((k) => k.raw.a), b: kept.flatMap((k) => k.raw.b) },
     frameworks: first.frameworks ?? [],
     runs: kept.length,

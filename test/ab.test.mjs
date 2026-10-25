@@ -294,19 +294,40 @@ test("an arm keeps no path back to the checkout it was cloned from", async (t) =
 const filesUnder = (dir) =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesUnder(join(dir, e.name)) : [join(dir, e.name)]));
 
-test("a trial cannot reach the operator's GitHub account", needsShebang, async (t) => {
+test("gh starts logged out in a trial", needsShebang, async (t) => {
   // A rubocop session ran `gh api user` to credit its changelog entry, so the
   // operator's own login was in reach of an agent with a shell.
   const { runTrial } = await import("../scripts/ab/run.mjs");
   const stub = stubClaude(t, reporting);
+  const operatorGh = mkdtempSync(join(tmpdir(), "anatomiya-gh-"));
+  t.after(() => removeTree(operatorGh));
 
   await runTrial(stub.arm, "write a file", {
-    env: { PATH: stub.path, GH_TOKEN: "x", GITHUB_TOKEN: "x", GH_ENTERPRISE_TOKEN: "x", GITHUB_ENTERPRISE_TOKEN: "x", GH_CONFIG_DIR: "/home/x/.config/gh" },
+    env: { PATH: stub.path, GH_TOKEN: "x", GITHUB_TOKEN: "x", GH_ENTERPRISE_TOKEN: "x", GITHUB_ENTERPRISE_TOKEN: "x", GH_CONFIG_DIR: operatorGh },
   });
 
   const env = stub.env();
   for (const name of ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]) assert.equal(env.has(name), false, name);
-  assert.ok(env.get("GH_CONFIG_DIR") && !existsSync(env.get("GH_CONFIG_DIR")), "gh reads a config directory that holds no login");
+  const given = env.get("GH_CONFIG_DIR");
+  assert.ok(given && given !== operatorGh, "gh is pointed away from the operator's config");
+  assert.throws(() => mkdirSync(given, { recursive: true }), "and at a directory nothing can create");
+});
+
+test("a trial in a directory inside another repository still counts the tracked file it changed", needsShebang, async (t) => {
+  // From a subdirectory, ls-tree names paths from there and diff names them
+  // from the top, so an edit read through both looked unchanged.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, (base) => `sleep 0.05; echo new > "${join(base, "arm", "x.txt")}"`);
+  const top = dirname(stub.arm);
+  const git = (...a) => execFileSync("git", a, { cwd: top, stdio: "pipe" });
+  writeFileSync(join(stub.arm, "x.txt"), "old\n");
+  git("init", "-q");
+  git("add", "arm");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+
+  const r = await runTrial(stub.arm, "write a file", { env: { PATH: stub.path } });
+
+  assert.deepEqual(r.wrote.map((f) => f.rel), ["x.txt"]);
 });
 
 test("a tracked file a trial rewrote with the same bytes is not counted as written", needsShebang, async (t) => {
