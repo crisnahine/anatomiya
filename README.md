@@ -39,7 +39,7 @@ function for. 20 sessions with anatomiya and 20 without, per task, on two models
 209 of 280 sessions called the function that was already there. Without it, 53 of 280 did.**
 
 No prompt named the function, and every check was fixed in a scenario file before the first session
-ran. For the last three tasks, a rule committed before anyone opened a map picked the repository, the
+ran. For the last three tasks, a rule committed ahead of its picks chose the repository, the
 helper and the place for the new file, and those three alone came out 64 of 120 against 22 of 120
 ([the rule and its results](docs/measurements/2026-10-26-blind-replication.md)).
 

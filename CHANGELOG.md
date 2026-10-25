@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-A rule committed before any map was opened picked three more reuse tasks, in eslint,
+A rule committed ahead of its picks chose three more reuse tasks, in eslint,
 openfoodnetwork and cal.diy, and they ran the same way: 64 of 120 sessions with the plugin called the
 helper the repository already had, against 22 of 120 without. With the first four, it is 209 of 280
 against 53 of 280. In cal.diy it was 0 against 0 on both models: the rule put the new file in a

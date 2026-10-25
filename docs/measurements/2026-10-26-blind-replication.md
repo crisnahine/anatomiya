@@ -6,10 +6,10 @@ Date: 2026-10-26. Harness: `scripts/ab-scenario.mjs` (G18). Claude Code 2.1.310.
 
 Three of the four reuse tasks in [the 2026-10-25 runs](2026-10-25-plugin-on-off.md) were chosen after
 the first had shown the plugin pays where a task needs a helper the repository already has. This run
-takes the choosing away: [a rule](2026-10-26-blind-replication-rule.md), committed in `17219f51`
-before any map was opened, picked the repositories, the helpers and the new file's place. Its one
-amendment and its picks were committed in `f55a7820`, and the three scenario files in `b6e8dc52`, all
-before the first session.
+takes the choosing away: [a rule](2026-10-26-blind-replication-rule.md), committed in `17219f51`, picked
+the repositories, the helpers and the new file's place. Its picks and its one amendment were committed
+in `f55a7820`, and the three scenario files in `b6e8dc52`, all before the first session. Git shows that
+order; it cannot show the moment a map was first read.
 
 ## Results
 
