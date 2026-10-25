@@ -332,11 +332,11 @@ async function fromRaw(t, raws, scenarioOver = {}) {
     ...scenarioOver,
   }));
   const args = ["--scenario", scenario, "--out", join(work, "r.md"), "--data", join(work, "r.json")];
-  raws.forEach((raw, i) => {
+  for (const [i, raw] of raws.entries()) {
     const path = join(work, `raw-${i}.json`);
     writeFileSync(path, JSON.stringify(raw));
     args.push("--from-raw", path);
-  });
+  }
   try {
     const output = execFileSync(process.execPath, [join(root, "scripts", "ab-scenario.mjs"), ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { PATH: "/usr/bin:/bin" } });
     return { status: 0, output, work };
