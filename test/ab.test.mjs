@@ -10,7 +10,7 @@ import { rankAreas } from "../scripts/ab/pick.mjs";
 import { scoreFile } from "../scripts/ab/score.mjs";
 import { readingFor } from "../scripts/ab/read.mjs";
 import { repoLabel } from "../scripts/ab/label.mjs";
-import { needsPathControl, needsPosixPermissions, needsShebang, removeTree } from "./platform.mjs";
+import { needsPathControl, needsPosixPermissions, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { measurable, PROBE_ANSWER, stubClaude } from "./ab-fixtures.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -270,6 +270,31 @@ test("each arm sits alone at the same leaf name, so neither can tell it is an ar
 
   await arms.dispose();
   assert.ok(!existsSync(dirname(arms.a)) && !existsSync(dirname(arms.b)), "dispose removes both");
+});
+
+test("the map reaches arm A through a rules directory the repository links elsewhere", needsSymlinks, async (t) => {
+  // cal.diy tracks .claude/rules as a link to agents/rules: the scan writes through
+  // it, and copying the directory onto arm A's link refused the whole run.
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const repo = mkdtempSync(join(tmpdir(), "anatomiya-ab-linked-"));
+  t.after(() => removeTree(repo));
+  const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: "pipe" });
+  mkdirSync(join(repo, "agents", "rules"), { recursive: true });
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(join(repo, "agents", "rules", "team.md"), "# the team's own rule\n");
+  symlinkSync(join("..", "agents", "rules"), join(repo, ".claude", "rules"));
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+  writeFileSync(join(repo, "agents", "rules", "anatomiya-area-x.md"), "# the map\n");
+  const sha = git("rev-parse", "HEAD").trim();
+
+  const arms = await buildArms(repo, sha);
+  t.after(() => arms.dispose());
+
+  assert.equal(readFileSync(join(arms.a, ".claude", "rules", "anatomiya-area-x.md"), "utf8"), "# the map\n");
+  assert.equal(existsSync(join(arms.b, ".claude", "rules", "anatomiya-area-x.md")), false);
+  assert.equal(readFileSync(join(arms.b, ".claude", "rules", "team.md"), "utf8"), "# the team's own rule\n");
 });
 
 test("an arm keeps no path back to the checkout it was cloned from", async (t) => {

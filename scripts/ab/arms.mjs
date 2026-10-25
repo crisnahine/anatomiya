@@ -13,14 +13,14 @@
  * getting that wrong is the whole experiment: a stale copy of the rules
  * directory left in B measures nothing, twice.
  */
-import { mkdtempSync, rmSync, cpSync, existsSync, unlinkSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, cpSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { RULES_DIR, SETTINGS_PATH, STORE_DIR } from "../../plugins/anatomiya/lib/rules.mjs";
+import { isGeneratedName, resolveRulesDir, SETTINGS_PATH, STORE_DIR } from "../../plugins/anatomiya/lib/rules.mjs";
 
 const run = promisify(execFile);
 
@@ -160,10 +160,15 @@ export async function buildArms(repo, sha, { workdir = tmpdir(), name = basename
  * every gate reads.
  */
 function installMap(source, arm) {
-  for (const rel of [RULES_DIR, STORE_DIR]) {
-    const from = join(source, rel);
-    if (existsSync(from)) cpSync(from, join(arm, rel), { recursive: true });
+  // Where the plugin writes, a link included: cal.diy points .claude/rules at agents/rules.
+  const from = resolveRulesDir(source);
+  const to = resolveRulesDir(arm);
+  if (from && to && existsSync(from)) {
+    mkdirSync(to, { recursive: true });
+    for (const name of readdirSync(from)) if (isGeneratedName(name)) copyFileSync(join(from, name), join(to, name));
   }
+  const store = join(source, STORE_DIR);
+  if (existsSync(store)) cpSync(store, join(arm, STORE_DIR), { recursive: true });
 }
 
 /**
