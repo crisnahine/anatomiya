@@ -1,0 +1,27 @@
+{
+  "name": "mastodon-reuse-and-i18n",
+  "repo": "github.com/mastodon/mastodon",
+  "commit": "3f5c32f43f57751f994919335cf7b065c53044d1",
+  "area": "app/javascript/mastodon/components",
+  "prompt": "Add a React component `CurrentPageBadge` in app/javascript/mastodon/components/current_page_badge.tsx. It takes `href` and `currentHref` string props and renders a small badge reading \"You are here\" when both point to the same page: same origin, path and query string, with any #fragment ignored. It renders nothing otherwise. Keep it small.",
+  "did": [
+    {
+      "name": "the component exists",
+      "changed": "^app/javascript/mastodon/components/current_page_badge\\.tsx$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing compareUrls",
+      "claim": "most imported from here: WithRouterPropTypes (9 files), DAY (5), assetHost (5), OnElementHandler (4), compareUrls (4)",
+      "contains": "import\\s*\\{[^}]*\\bcompareUrls\\b[^}]*\\}\\s*from\\s*['\"][^'\"]*compare_urls['\"]",
+      "in": "^app/javascript/mastodon/components/current_page_badge\\.tsx$"
+    },
+    {
+      "name": "its text goes through the translation layer",
+      "claim": "user-visible text goes through the translation layer",
+      "contains": "\\b(?:FormattedMessage|useIntl|defineMessages|formatMessage)\\b",
+      "in": "^app/javascript/mastodon/components/current_page_badge\\.tsx$"
+    }
+  ]
+}

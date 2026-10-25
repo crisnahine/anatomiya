@@ -14,7 +14,7 @@
  */
 import { mkdtempSync, rmSync, cpSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -100,12 +100,18 @@ export function dropSettings(arm) {
  * registered in the repository under measurement, so the directory is all
  * there is to remove.
  */
-export async function buildArms(repo, sha, { workdir = tmpdir() } = {}) {
-  const base = mkdtempSync(join(workdir, "anatomiya-ab-"));
-  const a = join(base, "with-map");
-  const b = join(base, "no-map");
+export async function buildArms(repo, sha, { workdir = tmpdir(), name = basename(resolve(repo)) } = {}) {
+  // Each arm sits alone, at the same leaf name: an agent with a shell sees its
+  // working directory, and "no-map" beside "with-map" told it which arm it was
+  // in and where the other arm's map lay.
+  const bases = [];
+  const dispose = async () => {
+    for (const base of bases) rmSync(base, { recursive: true, force: true });
+  };
+  for (let i = 0; i < 2; i++) bases.push(mkdtempSync(join(workdir, "ab-")));
+  const a = join(bases[0], name);
+  const b = join(bases[1], name);
   const arms = [[a, "with-map"], [b, "no-map"]];
-  const dispose = async () => rmSync(base, { recursive: true, force: true });
 
   const reset = async () => {
     for (const [path, name] of arms) {

@@ -15,8 +15,8 @@
  * stays, since the map is read through it, and the plugin under measurement is
  * loaded from this repository in both arms.
  */
-import { execFile } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { ENGINE, engineEnv, engineFor } from "./engine.mjs";
@@ -45,6 +45,7 @@ export function runTrial(arm, prompt, options = {}) {
   const engine = engineFor(o);
   if (engine.error) return Promise.resolve({ ok: false, wrote: [], stdout: "", ran: null, reason: engine.error });
   const before = snapshot(arm);
+  const started = Date.now();
 
   return new Promise((resolve) => {
     const args = [
@@ -56,7 +57,8 @@ export function runTrial(arm, prompt, options = {}) {
       "--allowedTools", o.tools.join(","),
       "--strict-mcp-config",
       "--setting-sources", o.settingSources,
-      "--plugin-dir", o.pluginDir,
+      // Null is the arm that runs without the plugin at all, hooks included.
+      ...(o.pluginDir === null ? [] : ["--plugin-dir", o.pluginDir]),
       // Asked for so the answer says which engine actually served it. The flags
       // above are a request; `modelUsage` is what the run reports back.
       "--output-format", "json",
@@ -70,7 +72,7 @@ export function runTrial(arm, prompt, options = {}) {
         maxBuffer: o.maxBytes,
         env: { ...engineEnv(o.env ?? process.env), CI: "1" },
       },
-      (err, stdout) => {
+      (err, stdout, stderr) => {
         if (err && err.code === "ENOENT") {
           return resolve({ ok: false, wrote: [], stdout: "", ran: null, reason: "the claude CLI is not on PATH" });
         }
@@ -78,8 +80,8 @@ export function runTrial(arm, prompt, options = {}) {
         // so they are kept and scored; `ok` only says it ended early.
         const wrote = added(arm, before);
         const said = answerIn(String(stdout ?? ""), engine.model);
-        const reason = err ? String(err.message) : wrote.length ? null : `answered ${firstLine(said.text)}`;
-        resolve({ ok: !err, wrote, stdout: said.text, ran: said.ran, reason });
+        const reason = err ? endedBy(err, said.subtype, String(stderr ?? "")) : wrote.length ? null : `answered ${firstLine(said.text)}`;
+        resolve({ ok: !err, wrote, stdout: said.text, ran: said.ran, spent: { ...said.spent, wallMs: Date.now() - started }, reason });
       }
     );
   });
@@ -101,14 +103,46 @@ function answerIn(stdout, askedModel) {
   try {
     said = JSON.parse(stdout);
   } catch {
-    return { text: stdout, ran: null };
+    return { text: stdout, ran: null, spent: null, subtype: null };
   }
   const text = typeof said?.result === "string" ? said.result : stdout;
+  const spent = spentIn(said);
+  const subtype = typeof said?.subtype === "string" ? said.subtype : null;
   const used = Object.entries(said?.modelUsage ?? {});
-  if (!used.length) return { text, ran: null };
+  if (!used.length) return { text, ran: null, spent, subtype };
   const busiest = (a, b) => (b[1]?.outputTokens ?? 0) - (a[1]?.outputTokens ?? 0);
   const [model, usage] = used.find(([m]) => m === askedModel) ?? [...used].sort(busiest)[0];
-  return { text, ran: { model, contextWindow: usage?.contextWindow ?? null } };
+  return { text, ran: { model, contextWindow: usage?.contextWindow ?? null }, spent, subtype };
+}
+
+/**
+ * Why a trial ended early, in one line that carries no command line: Node's own
+ * message is "Command failed:" and the whole argv, the prompt and this
+ * machine's plugin path among it, and a reason reaches a committed record.
+ */
+function endedBy(err, subtype, stderr) {
+  if (err.killed) return `ended by ${err.signal ?? "a signal"}, past the trial's clock`;
+  const why = subtype ?? stderr.trim().split("\n")[0]?.trim().slice(0, 200);
+  return `exited ${err.code ?? "early"}${why ? `: ${why}` : ""}`;
+}
+
+/**
+ * What the trial cost as the CLI reported it, summed over every model the run
+ * used, its subagents and the plugin's hooks included. A field the answer does
+ * not carry is null, never zero, so a missing report cannot pass for a free trial.
+ * Not `duration_ms` or `num_turns`: measured on 2.1.310, both cover only the
+ * stretch after the last background notification, so the clock is the harness's.
+ */
+function spentIn(said) {
+  const number = (x) => (typeof x === "number" && Number.isFinite(x) ? x : null);
+  const usage = Object.values(said?.modelUsage ?? {});
+  const tokens = (field) => (usage.length ? usage.reduce((sum, u) => sum + (number(u?.[field]) ?? 0), 0) : null);
+  return {
+    costUsd: number(said?.total_cost_usd),
+    inputTokens: tokens("inputTokens"),
+    outputTokens: tokens("outputTokens"),
+    cacheReadTokens: tokens("cacheReadInputTokens"),
+  };
 }
 
 /** Encoded, so an answer cannot break the log line it is quoted on. */
@@ -116,26 +150,48 @@ function firstLine(text) {
   return JSON.stringify((text.trim().split("\n")[0] ?? "").trim().slice(0, 200));
 }
 
+/**
+ * Every regular file under `dir` and its mtime. A link is not followed: one to
+ * a page nobody built made the whole run throw, and a trial's work is the files
+ * it wrote, not what a link happens to point at.
+ */
 function snapshot(dir) {
   const seen = new Map();
   const walk = (at) => {
     for (const name of readdirSync(at)) {
       if (name === ".git" || name === "node_modules") continue;
       const abs = join(at, name);
-      const st = statSync(abs);
+      const st = lstatSync(abs);
       if (st.isDirectory()) walk(abs);
-      else seen.set(abs, st.mtimeMs);
+      else if (st.isFile()) seen.set(abs, st.mtimeMs);
     }
   };
   walk(dir);
   return seen;
 }
 
+/**
+ * What the trial changed, as git would show it: a file git ignores is a cache
+ * or a log the trial's tools left, not its work. Measured on a Rails clone, a
+ * trial that booted the app left 4,360 ignored files beside the two it wrote.
+ */
 function added(dir, before) {
-  const out = [];
+  const changed = [];
   for (const [abs, mtime] of snapshot(dir)) {
-    if (before.has(abs) && before.get(abs) === mtime) continue;
-    out.push({ rel: relative(dir, abs), source: readFileSync(abs, "utf8") });
+    if (!(before.has(abs) && before.get(abs) === mtime)) changed.push(relative(dir, abs));
   }
-  return out;
+  const ignored = ignoredIn(dir, changed);
+  return changed.filter((rel) => !ignored.has(rel)).map((rel) => ({ rel, source: readFileSync(join(dir, rel), "utf8") }));
+}
+
+/** The paths git ignores in `dir`, or none where `dir` is no repository. */
+function ignoredIn(dir, rels) {
+  if (!rels.length) return new Set();
+  const listed = (out) => new Set(String(out ?? "").split("\0").filter(Boolean));
+  try {
+    return listed(execFileSync("git", ["check-ignore", "--stdin", "-z"], { cwd: dir, input: rels.join("\0"), stdio: ["pipe", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 }));
+  } catch (err) {
+    // Exit 1 is "none of them is ignored", and outside a repository git names none either.
+    return listed(err.stdout);
+  }
 }

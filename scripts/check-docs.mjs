@@ -523,6 +523,22 @@ export function rowsCitedInCode(ids, files) {
 }
 
 /**
+ * The lines, counted from 1, of each blank line that cuts one Markdown table in
+ * two: GitHub ends a table there and renders every row after it as raw pipes.
+ * A blank line before a second table's own header row is two tables, not a cut.
+ */
+export function tableSplits(text) {
+  const lines = text.split(/\r?\n/);
+  const row = (l) => l?.startsWith("|") ?? false;
+  const header = (i) => row(lines[i]) && /^\|[\s:|-]+\|$/.test(lines[i + 1] ?? "") && lines[i + 1].includes("-");
+  const cuts = [];
+  for (let i = 1; i < lines.length - 1; i++) {
+    if (lines[i].trim() === "" && row(lines[i - 1]) && row(lines[i + 1]) && !header(i + 1)) cuts.push(i + 1);
+  }
+  return cuts;
+}
+
+/**
  * Where the index and the row files say different things about the record.
  *
  * A row is written in two places, and every rule that reads what a row says
@@ -657,6 +673,7 @@ export const READS = [
   `${REL.anatomiya}/commands`,
   `${REL.anatomiya}/lib/check.mjs`,
   "docs/how-it-works.md",
+  "docs/usage.md",
   "docs/why.md",
   "docs/dimension-intake.md",
   "docs/measurements",
@@ -708,7 +725,7 @@ export function checkDocs() {
   // Its absence is not reported here: the version loop below asks every plugin's
   // changelog for the same heading, and two sentences about one missing heading
   // is one more than a reader needs.
-  for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
+  for (const rel of ["README.md", "docs/usage.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
     const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
     // Digits only: prose spells a share of the dimensions as a word ("one to
     // three dimensions each"), and the total is always written as a number.
@@ -806,7 +823,7 @@ export function checkDocs() {
 
   // --- the gate table ---------------------------------------------------------
 
-  const gateText = read("README.md") + read("docs/how-it-works.md");
+  const gateText = read("README.md") + read("docs/usage.md") + read("docs/how-it-works.md");
   claim(
     "docs",
     /\b0\.90\b/.test(gateText),
@@ -1055,7 +1072,7 @@ export function checkDocs() {
     [`The registry holds (${N}) declarations`, LANGUAGES.length, (n) => `the registry holds ${n}`],
   ];
   const rowDocs = [...rowsRead.keys()].map((name) => `${DECISIONS_DIR}/${name}.md`);
-  const stating = ["README.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", ...rowDocs, "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
+  const stating = ["README.md", "docs/usage.md", "SECURITY.md", "CONTRIBUTING.md", "CONTEXT.md", "DECISIONS.md", ...rowDocs, "CHANGELOG.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`, ...commandDocs];
   for (const rel of stating) {
     const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
     for (const [phrasing, held, source, pairsIn] of COUNTS) {
@@ -1138,6 +1155,7 @@ export function checkDocs() {
     if (HOME_AT) claim(rel, !HOME_AT.test(text), "carries the path of the machine it was written on");
     if (!rel.endsWith(".md") || THIRD_PARTY.has(rel)) continue;
     claim(rel, !BUILD_OFFSET.test(text), "quotes a byte offset into a build");
+    for (const line of tableSplits(text)) claim(`${rel}:${line}`, false, "a blank line cuts a table in two, and GitHub shows every row after it as raw pipes");
     // CI runs on a runner's home, so another machine's home is caught by its shape; the measurements have their own net above.
     const named = rel.startsWith("docs/measurements/") ? null : text.match(HOME_SHAPED);
     claim(rel, !named, `names the home directory ${named?.[0]}`);

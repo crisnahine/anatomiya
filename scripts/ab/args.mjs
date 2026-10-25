@@ -27,6 +27,39 @@ const OPTIONS = Object.fromEntries(
   ["repo", "task", "trials", "model", "effort", "out", "min-headroom", "key", "area"].map((k) => [k, { type: "string" }])
 );
 
+export const SCENARIO_USAGE = `usage: node scripts/ab-scenario.mjs --repo <path> --scenario <file> [options]
+
+  --repo <path>      a clone at the scenario's commit, scanned and pinned in place
+  --scenario <file>  the task and its checks (scripts/ab/scenarios/)
+  --trials <n>       trials per arm (default 10)
+  --model <name>     model for every trial (default ${CLAUDE_DEFAULTS.model}); quote it
+  --effort <level>   effort for every trial (default ${CLAUDE_DEFAULTS.effort})
+  --out <path>       the result (default docs/measurements/<scenario>.md)
+  --data <path>      every trial's checks and cost (default docs/measurements/data/<scenario>.json)
+  --raw <path>       every trial's written files too, to score again without a rerun
+  --from-raw <path>  score kept raw records instead of running trials; give it once per
+                     run to join several runs of one scenario (no --repo then)
+`;
+
+const SCENARIO_OPTIONS = {
+  ...Object.fromEntries(["repo", "scenario", "trials", "model", "effort", "out", "data", "raw"].map((k) => [k, { type: "string" }])),
+  "from-raw": { type: "string", multiple: true },
+};
+
+/** The scenario run's arguments, refused the way `parseArgs` refuses the dimension run's. */
+export function parseScenarioArgs(argv) {
+  const read = readArgv(argv, SCENARIO_OPTIONS);
+  if (read.error) return read;
+  const { trials = "10", model = CLAUDE_DEFAULTS.model, effort = CLAUDE_DEFAULTS.effort, "from-raw": fromRaw, ...named } = read.values;
+  if (fromRaw) return named.scenario ? { ...named, fromRaw } : { error: "--scenario is required" };
+  if (!named.repo || !named.scenario) return { error: "both --repo and --scenario are required" };
+  const count = Number(trials);
+  if (!Number.isInteger(count) || count < 1) return { error: "--trials takes a positive integer" };
+  const engine = engineFor({ model, effort });
+  if (engine.error) return { error: engine.error };
+  return { ...named, trials: count, engine };
+}
+
 /**
  * The run's arguments, with the model and the effort folded into one engine,
  * or `{ error }` naming the first thing refused.

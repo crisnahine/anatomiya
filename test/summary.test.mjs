@@ -51,14 +51,14 @@ test("a scan with nothing to report prints the head, the claims, the baseline an
   ]);
 });
 
-test("the README's sample run is the lines a scan prints for that run", () => {
+test("the usage guide's sample run is the lines a scan prints for that run", () => {
   // A new user compares a first run with this block, and scan.md has the agent
   // report these lines. The block kept a baseline and an orphan line in
   // wording the CLI had stopped printing, and none of the engines, layout or
   // running-session lines it had started printing, and no gate read it. The
   // run's own facts go through the printer, so a wording change fails here
-  // until the README says it too. Measured: excalidraw at 438d898, first run.
-  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  // until the guide says it too. Measured: excalidraw at 438d898, first run.
+  const readme = readFileSync(new URL("../docs/usage.md", import.meta.url), "utf8");
   const section = readme.slice(readme.indexOf("## What it prints"));
   const block = /```\r?\n([\s\S]*?)\r?\n```/.exec(section)[1].split(/\r?\n/);
 
@@ -77,10 +77,10 @@ test("the README's sample run is the lines a scan prints for that run", () => {
   const run = summary({
     files: 693,
     areas: 38,
-    durationMs: 3409,
+    durationMs: 1225,
     root: "/Users/me/code/excalidraw",
-    claims: { stated: 87, matchingDefault: 48, total: 716 },
-    engines: { oxc: { version: "0.149.0" } },
+    claims: { stated: 90, matchingDefault: 48, total: 715 },
+    engines: { oxc: { version: "0.155.0" } },
     layoutLine: layoutSummary(layout, areas),
     orphaned: 15,
     wrote: 39,
