@@ -84,13 +84,16 @@ without-map task diff, not more comment classification.
 
 ### The task diff, measured
 
-On 2026-10-25 the plugin was run on and off over five tasks in four public repositories, 20 sessions
-per arm, on Claude Opus 5.5 and again on Claude Haiku 5.5, with the checks fixed before the first
-session (G18, `docs/measurements/2026-10-25-plugin-on-off.md`). In one task the answer lived outside
-the files next to the change: mastodon already had a `compareUrls` helper, and with the plugin every
-session called it, 20 of 20 on both models, against 0 of 20 without. In the other four, both models
-already did what the repository does with no help, and the plugin changed nothing but the bill: the
-median session cost 1.4 to 3.0 times as much.
+On 2026-10-25 the plugin was run on and off over eight tasks in four public repositories, 20
+sessions per arm, on Claude Opus 5.5 and again on Claude Haiku 5.5, with the checks fixed before the
+first session (G18, `docs/measurements/2026-10-25-plugin-on-off.md`). In four tasks the answer lived
+outside the files next to the change, in a helper the repository already had: mastodon's
+`compareUrls`, forem's contrast helper, whitehall's `is_external?` and mastodon's
+`TagManager#local_url?`. Over those four, 145 of 160 sessions with the plugin called the helper, and
+31 of 160 without it did. Three of the four were chosen after the first, mastodon's `compareUrls`, had
+shown 20 of 20 against 0 of 20 on both models. In the other four tasks, both models already did what
+the repository does with no help, and the plugin changed nothing but the bill: the median session
+cost 1.4 to 3.1 times as much.
 
 So the pre-review effect is no longer unmeasured, and it is narrower than the mechanism above
 suggests. The map does not need to tell a current model what the neighbouring files already show. It

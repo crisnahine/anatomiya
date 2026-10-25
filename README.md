@@ -8,9 +8,9 @@
 <h3 align="center">New to the codebase? So is your coding agent.</h3>
 
 <p align="center">
-  anatomiya reads the repository and its git history and hands you both the house style on day one:
-  where things go, which base classes and helpers the team uses, how tests are written, and what has to
-  change together. Then it checks your branch against it before your reviewers do.
+  anatomiya reads your repository and its git history, then teaches Claude Code what a senior teammate
+  teaches you in your first week: where files go, which helpers already exist, how tests are written
+  here, and what has to change together.
 </p>
 
 <p align="center">
@@ -25,73 +25,109 @@
   <img src="docs/assets/demo.svg" alt="A Claude Code session in mastodon, rebuilt from a measured trial: the agent writes a badge component, the end-of-turn reuse check finds the compareUrls helper the repository already has, and the agent switches to it." width="860">
 </p>
 
-## Why this exists
+## Your repository already has the helper. Without anatomiya, Claude writes another one.
 
-I built anatomiya when I started at a new company. I wanted my coding agent to write code the way that
-repository already did: its house style, its conventions, its patterns. All of it was there, in the
-code and in its history, and an agent starts every session with no memory of the last review.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/results-dark.svg">
+    <img src="docs/assets/results-light.svg" alt="Sessions out of 20 that called the helper the repository already had, with anatomiya and without. Claude Opus 5.5: mastodon compareUrls 20 and 0, forem contrast helper 20 and 6, whitehall is_external? 20 and 0, mastodon TagManager#local_url? 20 and 15. Claude Haiku 5.5: 20 and 0, 20 and 7, 19 and 1, 6 and 2." width="860">
+  </picture>
+</p>
 
-So anatomiya reads it out of the code. It answers the questions a new developer asks a senior teammate
-in the first week, and it answers them with evidence you can check:
+Four small tasks in three open-source repositories, each asking for code the repository already had
+a function for. 20 sessions with anatomiya and 20 without, per task, on two models. **With
+anatomiya, 145 of 160 sessions called the function that was already there. Without it, 31 of 160
+did.** No prompt named the function, and every check was committed before the first session ran.
 
-- Where does a file like this go, and how are its tests written here?
-- Which base class does this kind of class inherit, and what does the team call things?
-- Is there already a helper for this?
-- When I add one of these, what else has to change with it?
-- Which habits does the team hold to everywhere, and which are only habits in one corner?
+Here is what that looks like. The task: show a "You are here" badge in
+[mastodon](https://github.com/mastodon/mastodon) when two links point to the same page. mastodon
+already has `compareUrls` for exactly that, in `app/javascript/mastodon/utils/`, one folder over
+from where the badge goes.
 
-The answers go where Claude Code reads them, and they are plain Markdown, so you can read them too.
+<table>
+<tr>
+<th>Without anatomiya: 20 of 20 sessions wrote their own</th>
+<th>With anatomiya: 20 of 20 sessions used mastodon's</th>
+</tr>
+<tr>
+<td valign="top">
 
-The numbers say this happens to people and to agents alike:
+```tsx
+const toPageKey = (href: string) => {
+  try {
+    const url = new URL(href, window.location.href);
+    return `${url.origin}${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+};
 
-- "The biggest single frustration, cited by 66% of developers, is dealing with 'AI solutions that are
-  almost right, but not quite'" ([Stack Overflow Developer Survey 2025](https://survey.stackoverflow.co/2025/ai)).
-- At Google, "developers who have started within the past year typically have more than twice as
-  many comments per change" ([Sadowski et al., ICSE-SEIP 2018](https://research.google/pubs/modern-code-review-a-case-study-at-google/)).
-- "75 percent of defects found during the review do not affect the visible functionality" of the
-  software, so most of what review finds is about how code is written
-  ([Mantyla and Lassenius, IEEE TSE 2009](https://doi.org/10.1109/TSE.2008.71)).
-- Of 567 pull requests written with Claude Code across 157 projects, 83.8% were merged, against
-  91.0% for a matched set written by people. Style fixes were 23.4% of the revisions made before
-  merge, and the authors found agents "often underperform on project-specific style rules"
-  ([Watanabe et al., arXiv:2509.14745](https://arxiv.org/abs/2509.14745)).
-- In 617 pull requests to one Python project, agent-written code repeated logic the project already
-  had about 1.87 times as much as code written by people, and reviewers did not react to it
-  ([Huang et al., MSR 2026](https://arxiv.org/abs/2601.21276)).
+// ...
+const pageKey = toPageKey(href);
+if (pageKey === null || pageKey !== toPageKey(currentHref)) {
+  return null;
+}
+```
 
-[docs/research/what-a-new-developer-meets.md](docs/research/what-a-new-developer-meets.md) has the
-rest of the evidence, and where it runs out.
+</td>
+<td valign="top">
 
-## 20 out of 20, against 0 out of 20
+```tsx
+import { compareUrls } from '../utils/compare_urls';
 
-Same task, same commit, same model, 40 sessions in the open-source
-[mastodon](https://github.com/mastodon/mastodon) repository. The task: add a badge that says "You are
-here" when two links point to the same page.
+// ...
+if (!compareUrls(href, currentHref)) {
+  return null;
+}
+```
 
-- **Without anatomiya**, Claude Opus 5.5 wrote its own URL comparison in all 20 sessions.
-- **With anatomiya**, all 20 sessions called `compareUrls`, the helper mastodon already had.
+</td>
+</tr>
+</table>
 
-The checks were fixed in a scenario file before the first session, and every result prints that
-file's sha256. Each component the sessions wrote, every session's record and the command that reruns
-the test are in this repository ([evidence](docs/measurements/data/2026-10-25-mastodon-components.json)).
+Same prompt, same commit, same model, Claude Opus 5.5. Every session without anatomiya parsed the URLs
+itself, and the median component was 37 lines against 27. Claude Haiku 5.5 did the same: 0 of 20
+without, 20 of 20 with. Every
+component both arms wrote is in [the evidence file](docs/measurements/data/2026-10-25-mastodon-components.json).
 
-Now the part you should weigh just as hard. In the other four tasks, Claude already did what the
-repository does without any help, so anatomiya changed nothing there, and every session with it cost
-more: 1.4 to 3.0 times as much. All five tasks, both models tried and every dollar are
-[below](#the-whole-test).
+The same thing happened in forem, where 27 of 40 sessions without anatomiya wrote the WCAG luminance
+formula by hand instead of calling the contrast helper forem already has, and in whitehall, where 39
+of 40 compared hosts themselves instead of calling `is_external?`. Every result prints the sha256 of the
+scenario file it was scored by. [The whole test](#the-whole-test-ties-included) is below, including
+the four tasks where anatomiya changed nothing and only cost more.
 
-## What it does for you
+## Try it in your repository
 
-### Before the agent writes: the house rules your linter cannot see
+```
+/plugin marketplace add crisnahine/anatomiya
+/plugin install anatomiya@crisnahine
+/anatomiya:scan
+```
 
-`/anatomiya:scan` reads every tracked file and your git history, and writes a map Claude Code loads on
-its own: a short overview on every turn, and one file per directory the moment the agent opens a file
-there. These are real lines from maps of open-source repositories, each listed with its commit in
-[docs/measurements/2026-10-25-readme-examples.md](docs/measurements/2026-10-25-readme-examples.md):
+That is the whole setup. The scan took 1.2 seconds on excalidraw's 693 files and 14 seconds on
+forem's 4,687. It runs on your machine and sends nothing anywhere. You need Node 22 or newer, and for
+Ruby, `ruby` with `prism` 1.x (Ruby 3.4 ships it). [More ways to install](#more-ways-to-install) are
+further down.
 
-| What the agent learns | Where | What the map says |
+## What changes in your sessions
+
+| When | What anatomiya does |
+|---|---|
+| Every session | Claude starts with your repository's house rules, counted from your own code with the evidence beside each, and gets a directory's own rules the moment it opens a file there. |
+| Before it creates a file | A short notice if your history says this kind of file ships with another change, or that tests do not live here. |
+| When its turn ends | One subagent looks for an existing function that does what the new code does, and Claude switches to it if there is one. |
+| Before you review | `/anatomiya:check` lists each habit the branch broke, at the line that broke it. |
+
+### The house rules your linter cannot see
+
+`/anatomiya:scan` reads every tracked file and your git history, and writes a map Claude Code loads
+on its own: a short overview on every turn, and one file per directory the moment Claude opens a file
+there. These are real lines from maps of open-source repositories, each with its commit in
+[the examples page](docs/measurements/2026-10-25-readme-examples.md):
+
+| What Claude learns | Where | What the map says |
 |---|---|---|
-| which base class carries the API's auth checks and error handling | mastodon `app/controllers/api/v1` | classes here inherit `Api::BaseController`: 58 of 59 |
+| which base class carries the API's auth and errors | mastodon `app/controllers/api/v1` | classes here inherit `Api::BaseController`: 58 of 59 |
 | how request parameters are filtered | mastodon `app/controllers/admin` | request parameters are filtered through `params.expect`: 37 of 37 |
 | which HTTP client to use | mastodon `app/javascript/mastodon/actions` | network calls go through the repository's own client, not fetch directly: 91 of 94 |
 | what a migration may touch | [forem](https://github.com/forem/forem) `db/migrate` | migrations change the schema and leave the data alone: 927 of 936 |
@@ -100,16 +136,14 @@ there. These are real lines from maps of open-source repositories, each listed w
 | where tests live | forem `app/javascript` | 143 of 149 test files under `__tests__` |
 | what ships together | [rubocop](https://github.com/rubocop/rubocop) `lib/rubocop/cop/style` | a new cop ships with an edit to `config/default.yml`: 100 of the last 100 |
 
-Each line carries its evidence, so you can check it in seconds and see when it goes stale. A habit is
-stated as a rule only when it holds in at least 90% of places across enough files and authors, and a
-habit the model already follows on its own is shown as a count instead of a rule, so the map spends
-the agent's context only where it would go wrong. The overview was 2.3 to 3.4 KB on the five
-repositories measured here.
+A habit becomes a rule only when it holds in at least 90% of places, across enough files and
+authors. A habit Claude already follows on its own is shown as a count instead, so the map spends
+context only where Claude would go wrong. The overview was 2.3 to 3.4 KB on the five repositories
+measured here.
 
-### While it writes: a word before a file skips a step
+### A word before a file skips a step
 
-Before the agent creates a file, anatomiya checks it against your history. In rubocop, the first write
-of a new cop gets this, before the file exists:
+In rubocop, the first write of a new cop gets this, before the file exists:
 
 ```text
 anatomiya: lib/rubocop/cop/style/reverse_first.rb
@@ -119,21 +153,13 @@ anatomiya: lib/rubocop/cop/style/reverse_first.rb
   Make those changes in the same change, or say why this file does not need them.
 ```
 
-It speaks the same way when a test is about to land in a directory that keeps none. On every other
-write it says nothing.
-
-### When its turn ends: the helper you already have
-
-After a turn that added code, anatomiya asks for one subagent to search the repository for an existing
-function that does the same job, and the agent calls it instead of keeping its copy. That is the
-mastodon result at the top of this page. Migrations, schema dumps, generated files and edits that add
-nothing callable are skipped.
+It says the same kind of thing when a test is about to land in a directory that keeps none. On every
+other write it says nothing.
 
 ### Before you review: what this branch broke
 
-`/anatomiya:check` compares the branch with its merge base, uncommitted work included, and reports each
-habit it broke at the line that broke it. A new mastodon API controller that inherits
-`ApplicationController`:
+`/anatomiya:check` compares the branch with its merge base, uncommitted work included. A new mastodon
+API controller that inherits `ApplicationController`:
 
 ```text
 FIX  "app/controllers/api/v1/bookmark_folders_controller.rb":3  classes here inherit Api::BaseController
@@ -152,34 +178,47 @@ MUST-FIX  "lib/rubocop/cop/style/reverse_first.rb":1  a .rb file added to "lib/r
 MUST-FIX means the code you accepted has no exception to the habit at all. Nothing is blocked, and
 `--format github` turns each finding into an annotation on the pull request.
 
-### All the time: a map that keeps up
+The map keeps up on its own. A checkout, a pull or a commit starts a refresh in the background. The
+checks measure against a baseline of code a person accepted, and that baseline moves only with
+commits that came to your default branch from the remote, so Claude cannot lower the bar it is
+judged by.
 
-You scan once. After that, a checkout, a pull or a commit starts a refresh in the background, and a
-running session gets the new overview on its next step. The checks measure against a baseline of code
-a person accepted. It moves forward only with commits that came to your default branch from the
-remote, never with one this clone made or pushed, so the agent cannot lower the bar it is judged by.
+## The whole test, ties included
 
-## The whole test
+Eight tasks in four open-source repositories. For each, 20 sessions with anatomiya and 20 without,
+the same prompt at the same commit, scored by checks written down before the first session. Then
+the whole run again on a second, smaller model.
 
-Five tasks in four open-source repositories. For each, 20 sessions with anatomiya and 20 without, the
-same prompt at the same commit, scored by checks written down before the first session. Then the
-whole run again on a second, smaller model.
+Where the code the task needed already existed in another directory:
 
 | Task | What was checked | Opus 5.5 with / without | Haiku 5.5 with / without |
 |---|---|---|---|
-| mastodon: a "You are here" badge | calls the existing `compareUrls` | **20 / 0** of 20 | **20 / 0** of 20 |
+| mastodon: a "You are here" badge | calls the existing `compareUrls` | **20 / 0** | **20 / 0** |
+| forem: a contrast warning | calls the existing WCAG contrast helper | **20 / 6** | **20 / 7** |
+| whitehall: an external link helper | calls the existing `is_external?` | **20 / 0** | **19 / 1** |
+| mastodon: a link policy | calls the existing `TagManager#local_url?` | **20 / 15** | 6 / 2 |
+
+Where the habit could be seen in the files next to the change:
+
+| Task | What was checked | Opus 5.5 with / without | Haiku 5.5 with / without |
+|---|---|---|---|
 | rubocop: a new cop | registers it in `config/default.yml` and adds a changelog entry | 20 / 20 and 20 / 20 | 20 / 20 and 17 / 15 |
 | forem: a module and its test | puts the test in `__tests__` and none beside the module | 20 / 20 | 20 / 20 |
 | forem: a service object | its entry point does not raise | 20 / 20 | 20 / 20 |
 | whitehall: a migration | updates `db/schema.rb` too | 20 / 20 | 20 / 20 |
 
-Read it straight. When the convention could be seen in the files next to the change, both models
-already followed it and anatomiya added only cost. On the one task where the answer lived somewhere
-else in the repository, a helper in another directory, anatomiya took both models from none of 20 to
-all 20. One thing the map asked for was out of date: rubocop moved cop registration out of
-`lib/rubocop.rb` in [e9defb6](https://github.com/rubocop/rubocop/commit/e9defb651dff92627ac49ddca76211011c7cf08c),
-the map still counted the hundred changes before it, and the files every session wrote show both arms
-on both models followed the code instead, 20 of 20.
+Read it straight. Where the answer lived in another directory, anatomiya changed the result in seven
+of the eight task and model pairs, each with p below 0.05 by Fisher's exact test. The eighth, Haiku on
+mastodon's link policy, is too close to call at 6 against 2, although 7 more of its sessions with
+anatomiya called other helpers mastodon already had. Where the neighbouring files already
+showed the habit, both models followed it without help, and anatomiya added only cost. Three of the
+four reuse tasks were chosen after the first run had shown that reuse is where anatomiya pays, and
+the write-up says so.
+
+One thing the map asked for was out of date: rubocop moved cop registration out of `lib/rubocop.rb`
+in [e9defb6](https://github.com/rubocop/rubocop/commit/e9defb651dff92627ac49ddca76211011c7cf08c), the
+map still counted the hundred changes before it, and the files every session wrote show both arms on
+both models followed the code instead, 20 of 20.
 
 [The full write-up](docs/measurements/2026-10-25-plugin-on-off.md) has every check, every interval,
 what it does not show, and how to rerun it. Each task has its own page and a record of every session.
@@ -190,38 +229,86 @@ It is free and MIT licensed. What you pay is tokens:
 
 - **On every session**: the five command entries, about 150 tokens by `claude plugin details`, and the
   overview, 2.3 to 3.4 KB on the repositories above. In a long session the overview is handed back
-  about every 30k tokens. A directory's own file, 0.5 to 2.3 KB at the median, loads when the agent
-  opens a file there.
-- **On each turn that adds code**: one subagent searches for an existing function, which is what
-  found `compareUrls`.
-- **Measured**: the median session with anatomiya cost 1.4 to 3.0 times as much as one without, on
-  both models. On Opus 5.5 that was $0.10 to $0.51 against $0.06 to $0.28 per session. On Haiku 5.5 it
-  was $0.004 to $0.025 against $0.003 to $0.017. Four Opus rubocop sessions with the plugin hit the
-  20-minute limit and reported no cost, so that arm's median leaves them out.
+  about every 30k tokens. A directory's own file, 0.5 to 2.3 KB at the median, loads when Claude opens
+  a file there.
+- **On each turn that adds code**: one subagent searches for an existing function. That search is
+  what found `compareUrls`.
+- **Measured**: across all eight tasks, the median session with anatomiya cost 1.4 to 3.1 times as
+  much as one without, on both models. On Opus 5.5 that was $0.10 to $0.51 against $0.056 to $0.28
+  per session. On Haiku 5.5 it was $0.004 to $0.025 against $0.003 to $0.017. Four Opus rubocop
+  sessions with anatomiya hit the 20-minute limit and reported no cost, so that arm's median leaves
+  them out.
 
-anatomiya runs no server and sends nothing anywhere: the scan, the map and the check run on your
-machine.
+## Why I built it
 
-## Install it in under a minute
+I built anatomiya when I started at a new company. I wanted my coding agent to write code the way that
+repository already did. All of it was there, in the code and in its history, and an agent starts every
+session with no memory of the last review. The research says the same thing happens to people and to
+agents:
 
-```
-/plugin marketplace add crisnahine/anatomiya
-/plugin install anatomiya@crisnahine
-```
+- At Google, "developers who have started within the past year typically have more than twice as
+  many comments per change" ([Sadowski et al., ICSE-SEIP 2018](https://research.google/pubs/modern-code-review-a-case-study-at-google/)).
+- Of 567 pull requests written with Claude Code across 157 projects, 83.8% were merged, against 91.0%
+  for a matched set written by people, and the authors found agents "often underperform on
+  project-specific style rules" ([Watanabe et al., arXiv:2509.14745](https://arxiv.org/abs/2509.14745)).
+- In 617 pull requests to one Python project, agent-written code repeated logic the project already
+  had about 1.87 times as much as code written by people
+  ([Huang et al., MSR 2026](https://arxiv.org/abs/2601.21276)).
 
-Then, in the repository you want mapped:
+[What a new developer meets](docs/research/what-a-new-developer-meets.md) has the rest of the
+evidence, and where it runs out.
 
-```
-/anatomiya:scan
-```
+## Questions you should ask first
 
-That is the whole setup. The scan took 1.2 seconds on excalidraw's 693 files and 14 seconds on forem's
-4,687. It needs Node 22 or newer on the `PATH` Claude Code runs hooks with, and Ruby files also want
-`ruby` with `prism` 1.x (Ruby 3.4 ships it, and `gem install prism` adds it to Ruby 2.7 or newer). Its
+**Does it send my code anywhere?** No. It runs on your machine. The only command that goes online is
+`/anatomiya:setup`, which installs the parser packages from npm. The reuse search is an ordinary
+subagent in your own session.
+
+**Will it block a commit or a merge?** No. Nothing it writes blocks a commit, a push or a merge.
+`check` reports, and you decide.
+
+**What if the map says something wrong?** Every rule carries its evidence, and every overview tells
+Claude that where the map and the code disagree, the code is right. The map rebuilds itself on the
+next checkout or pull.
+
+**Should I commit the map?** Usually not, and [the exclude lines below](#more-ways-to-install) keep
+it out of git. A team can commit it instead, and the background refresh then leaves it alone.
+
+**Does it work in CI?** `node plugins/anatomiya/bin/anatomiya.mjs check . --format github` prints one
+annotation per finding, and `--format json` gives a job the same answer as a record.
+
+**Does it work outside Claude Code?** Cursor and GitHub Copilot get the same map, written where each
+one reads it, with `scan --targets cursor,copilot`. The hooks are Claude Code's, so those tools get
+the map and not the notice, the reuse check or the background refresh.
+
+**Which languages?** JavaScript, TypeScript, JSX, Flow, Ruby and Rails are read in depth, and so are
+the script blocks of Vue and Svelte files. Python, PHP, Go, Java, C#, Rust and Kotlin get the layout,
+their tests, and one to three habits each. In all, 66 dimensions: 29 for JavaScript, 34 reachable in
+JSX, 28 for Ruby, and one more that runs the TypeScript checker where your dependencies are installed.
+
+## What it will not do
+
+- **It does not catch bugs.** Of 317 defect comments measured across ten repositories, 1 was
+  preventable by a map like this one. It catches code that works and does not belong.
+- **It is not a linter.** It enforces nothing, and a rule your linter already enforces is wasted in
+  the map.
+- **A directory's file loads on a read.** An agent that only greps and runs `cat` gets the overview
+  and not the directory's file.
+- **A habit that just changed can lag.** A ship-together rule stays until the newest changes outweigh
+  it. rubocop moved cop registration out of `lib/rubocop.rb` in July 2026, and the map above still
+  asks for that edit.
+- **Some lines are fixed sentences.** Every overview asks Claude to read a file before editing it, to
+  look instead of guessing, and to follow the repository through to the end of a change. Where the
+  counts call for it, one more says a standing instruction to always write a test does not override a
+  directory with no test precedent, so it can win over your own instruction.
+  [docs/usage.md](docs/usage.md#limits) lists each one and what it rests on.
+
+## More ways to install
+
+`/anatomiya:doctor` says what loaded, `/anatomiya:setup` repairs an install that stopped short, and
+`/anatomiya:pin` accepts the current code as the baseline by hand for a repository with no remote. The
 three runtime dependencies, `oxc-parser`, `flow-remove-types` and `web-tree-sitter`, are installed by
-`/plugin install` itself. `/anatomiya:doctor` says what loaded, `/anatomiya:setup` repairs an install
-that stopped short, and `/anatomiya:pin` accepts the current code as the baseline by hand for a
-repository with no remote.
+`/plugin install` itself.
 
 Without Claude Code it is a plain CLI:
 
@@ -252,53 +339,6 @@ baseline into each one:
 ```
 
 [docs/usage.md](docs/usage.md) has every command, option and edge case.
-
-## Works with
-
-Claude Code gets everything above. Cursor and GitHub Copilot get the same map, written where each one
-reads it, with `scan --targets cursor,copilot`. The hooks are Claude Code's, so those tools get the
-map and not the notice, the reuse check or the background refresh.
-
-JavaScript, TypeScript, JSX, Flow, Ruby and Rails are read in depth, and so are the script blocks of
-Vue and Svelte files. Python, PHP, Go, Java, C#, Rust and Kotlin get the layout, their tests, and one
-to three habits each. In all, 66 dimensions: 29 for JavaScript, 34 reachable in JSX, 28 for Ruby, and
-one more that runs the TypeScript checker where your dependencies are installed.
-
-## Questions you should ask first
-
-**Does it send my code anywhere?** No. It runs on your machine. The only command that goes online is
-`/anatomiya:setup`, which installs the parser packages from npm. The reuse search is an ordinary
-subagent in your own session.
-
-**Will it block a commit or a merge?** No. Nothing it writes blocks a commit, a push or a merge.
-`check` reports, and you decide.
-
-**What if the map says something wrong?** Every rule carries its evidence, and every overview tells
-the agent that where the map and the code disagree, the code is right. The map rebuilds itself on the
-next checkout or pull.
-
-**Should I commit the map?** Usually not, and the exclude lines above keep it out of git. A team can
-commit it instead, and the background refresh then leaves it alone.
-
-**Does it work in CI?** `node plugins/anatomiya/bin/anatomiya.mjs check . --format github` prints one
-annotation per finding, and `--format json` gives a job the same answer as a record.
-
-## What it will not do
-
-- **It does not catch bugs.** Of 317 defect comments measured across ten repositories, 1 was
-  preventable by a map like this one. It catches code that works and does not belong.
-- **It is not a linter.** It enforces nothing, and a rule your linter already enforces is wasted in
-  the map.
-- **A directory's file loads on a read.** An agent that only greps and runs `cat` gets the overview
-  and not the directory's file.
-- **A habit that just changed can lag.** A ship-together rule stays until the newest changes outweigh
-  it. rubocop moved cop registration out of `lib/rubocop.rb` in July 2026, and the map above still
-  asks for that edit.
-- **Some lines are fixed sentences.** Every overview asks the agent to read a file before
-  editing it, to look instead of guessing, and to follow the repository through to the end of a
-  change. Where the counts call for it, one more says a standing instruction to always write a test
-  does not override a directory with no test precedent, so it can win over your own instruction.
-  [docs/usage.md](docs/usage.md#limits) lists each one and what it rests on.
 
 ## Learn more
 

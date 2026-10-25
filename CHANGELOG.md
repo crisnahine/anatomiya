@@ -7,12 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-What a session gets from the plugin is measured now: five tasks in four public repositories, 20
-sessions per arm, on Claude Opus 5.5 and Claude Haiku 5.5. With the plugin, every session in mastodon
-called the `compareUrls` helper the repository already had, 20 of 20 on both models, against 0 of 20
-without. In the other four tasks both models already followed the repository, and the median session
-cost 1.4 to 3.0 times as much with the plugin. The README is rebuilt around that, with the cost and
-the limits beside it.
+What a session gets from the plugin is measured now: eight tasks in four public repositories, 20
+sessions per arm, on Claude Opus 5.5 and Claude Haiku 5.5, every check fixed before the first
+session. In the four tasks that needed code the repository already had a function for, 145 of 160
+sessions with the plugin called that function, and 31 of 160 without it did. In the other four, both
+models already followed the repository, and the plugin changed nothing. The median session cost 1.4
+to 3.1 times as much with the plugin. The README is rebuilt around those numbers, with the code both
+arms wrote side by side and the cost and the limits beside it.
 
 ### Added
 
@@ -22,13 +23,14 @@ the limits beside it.
   commit, the prompt and the checks before any trial runs, and the result reports each arm's Wilson
   interval, Fisher's exact test and the cost of every trial. `--from-raw` scores kept trial records
   again, or joins several workers' runs of one scenario.
-- Five scenarios and their results on two models under `docs/measurements/`, the summary in
+- Eight scenarios and their results on two models under `docs/measurements/`, the summary in
   `docs/measurements/2026-10-25-plugin-on-off.md`, and every trial's checks, cost and the first
-  2,000 characters of its answer under `docs/measurements/data/`.
+  2,000 characters of its answer under `docs/measurements/data/`. The three `*-reuse` scenarios were
+  committed before their first session.
 - `docs/measurements/2026-10-25-readme-examples.md`: every map line the README quotes, with the
   commit it was scanned at and how to rerun it.
-- A logo, an animated session rebuilt from a measured trial, and a social preview image under
-  `docs/assets/`.
+- A logo, an animated session rebuilt from a measured trial, a results chart drawn from the data
+  files in light and dark, and a social preview image under `docs/assets/`.
 - `docs/research/what-a-new-developer-meets.md` and `docs/research/why-developers-would-use-it.md`:
   what measured work says about joining a codebase, about review, and about why developers adopt or
   drop a tool like this one.
@@ -41,18 +43,19 @@ the limits beside it.
 
 ### Changed
 
-- The README is rewritten: a logo, an animated session, the measured results with their cost, and a
-  Limits list that names the fixed sentences the plugin writes in every repository, among them the
-  one that can win over an instruction to always write a test.
+- The README is rewritten: the measured reuse result first, the code each arm wrote side by side, a
+  three-line quick start, every task including the ties, the cost, and a limits list that names the
+  fixed sentences the plugin writes in every repository, among them the one that can win over an
+  instruction to always write a test.
 - The echo is described as what it does: it hands the overview back once 192 KiB of what the model
   reads, about 30k tokens, holds no copy of it, and a session's first prompt gets one beside the
   copy Claude Code loaded from the rules file. Five places said "once per context window".
-- `scripts/ab.mjs` arms each sit alone at the repository's own name, in a local clone with no
-  remote, so neither holds a path back to the checkout with the map. A trial's work is what git
-  shows it changed, a link is never followed, a trial that ends early says why without its command
-  line, which carried the prompt and this machine's plugin path, and a trial is timed by the harness:
-  the CLI's `duration_ms` and `num_turns` cover only the stretch after the last background
-  notification.
+- The A/B arms each sit alone at the repository's own name, in a local clone with no remote and no
+  reflog, so neither holds a path back to the checkout with the map. A trial's work is what git shows
+  it changed, so a file rewritten with the same bytes and a link are left out. A trial that ends
+  early says why without its command line, which carried the prompt and this machine's plugin path,
+  and a trial is timed by the harness: the CLI's `duration_ms` and `num_turns` cover only the stretch
+  after the last background notification.
 - The plugin, marketplace and package descriptions say what the plugin is for: a new developer's
   coding agent writing in the house style from day one.
 - The three 2026-08-16 vscode A/B results carry a warning that they were taken under the defects
@@ -60,6 +63,9 @@ the limits beside it.
 
 ### Fixed
 
+- A trial could use the operator's GitHub login: four rubocop sessions credited their changelog entry
+  through `gh`. Trials now run with no GitHub token and `gh` logged out, and a kept answer or failure
+  reason shows the operator's home directory as `~` and an `@account` as `@<user>`.
 - Three of `DECISIONS.md`'s tables were cut by a blank line, so GitHub showed rows A33, D10 and G12
   onward as raw text.
 - The README's examples came from a private repository and the 0.11.0 build. They are excalidraw's
