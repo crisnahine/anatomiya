@@ -273,11 +273,11 @@ test("a scenario run goes from a bare clone to its document, with the plugin on 
   assert.deepEqual(data.a.map((x) => x.checks), [{ "defaults use ??": true }, { "defaults use ??": true }]);
   assert.deepEqual(data.b.map((x) => x.checks), [{ "defaults use ??": false }, { "defaults use ??": false }]);
   assert.ok(!JSON.stringify(data).includes("const a = {}"), "the committed record holds no file contents");
-  // A rerun needs the builds that produced the numbers, not only the model.
+  // A rerun needs the builds that produced the numbers as well as the model.
   const { version } = JSON.parse(readFileSync(new URL("../plugins/anatomiya/.claude-plugin/plugin.json", import.meta.url), "utf8"));
   assert.equal(data.versions.claude, "9.9.9 (Claude Code)");
-  assert.match(data.versions.anatomiya, new RegExp(`^${version.replace(/\./g, "\\.")} at [0-9a-f]{12}`));
-  assert.ok(doc.includes(`| built with | Claude Code 9.9.9 (Claude Code), anatomiya ${data.versions.anatomiya} |`), doc);
+  assert.match(data.versions.anatomiya, new RegExp(`^${version.replace(/\./g, "\\.")} at [0-9a-f]{12}(, with uncommitted changes)?$`));
+  assert.ok(doc.includes(`| built with | claude 9.9.9 (Claude Code), anatomiya ${data.versions.anatomiya} |`), doc);
   const raw = JSON.parse(readFileSync(files.raw, "utf8"));
   assert.match(raw.b[0].wrote.find((f) => f.rel === "src/x/written.mjs").source, /\|\|/, "the raw record keeps them, to score again");
 });
@@ -409,6 +409,21 @@ test("a raw record of another scenario at the same commit is refused, not scored
   assert.match(named.output, /was run with other\.json, not s\.json/);
   assert.equal(digest.status, 2);
   assert.match(digest.output, /was scored by a scenario file whose sha256 is fff/);
+});
+
+test("raw records of two builds are refused, and records that name none say so on the page", async (t) => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const sha = "a".repeat(40);
+  const built = (claude) => ({ versions: { claude, anatomiya: "9.8.7 at 0123456789ab" } });
+
+  const two = await fromRaw(t, [rawRun(sha, ["??"], ["||"], built("2.1.310 (Claude Code)")), rawRun(sha, ["??"], ["||"], built("2.1.311 (Claude Code)"))]);
+  const none = await fromRaw(t, [rawRun(sha, ["??"], ["||"])]);
+
+  assert.equal(two.status, 2);
+  assert.match(two.output, /ran on claude 2\.1\.311 \(Claude Code\), anatomiya 9\.8\.7 at 0123456789ab, and the first on claude 2\.1\.310/);
+  assert.equal(none.status, 0, none.output);
+  assert.ok(readFileSync(join(none.work, "r.md"), "utf8").includes("| built with | not recorded |"));
 });
 
 test("a raw record that names no scenario is refused, since nothing then ties it to this one", async (t) => {

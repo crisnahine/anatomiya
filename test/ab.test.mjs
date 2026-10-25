@@ -882,6 +882,7 @@ test("a trial's engine cannot be redirected by the environment it inherits", nee
   assert.equal(env.has("CLAUDE_CODE_EFFORT_LEVEL"), false, "the build reads this ahead of the stated effort");
   assert.equal(env.has("ANTHROPIC_MODEL"), false);
   assert.equal(env.get("CI"), "1", "and the settings that are not a model choice still reach it");
+  assert.equal(env.get("DISABLE_AUTOUPDATER"), "1", "a build that updates itself mid-run is two builds");
   assert.equal(env.get("HOME"), "/home/x");
 });
 

@@ -27,6 +27,7 @@ const OPTIONS = Object.fromEntries(
   ["repo", "task", "trials", "model", "effort", "out", "min-headroom", "key", "area"].map((k) => [k, { type: "string" }])
 );
 
+/** The scenario run's help, printed under any refusal of its arguments. */
 export const SCENARIO_USAGE = `usage: node scripts/ab-scenario.mjs --repo <path> --scenario <file> [options]
 
   --repo <path>      a clone at the scenario's commit, scanned and pinned in place

@@ -80,6 +80,8 @@ async function runFresh(args, scenario) {
   const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: args.repo, encoding: "utf8" }).trim();
   if (sha !== scenario.commit) die(`${args.repo} is at ${sha}, and the scenario was written against ${scenario.commit}`);
 
+  // Before any trial: read after them, a build that changed mid-run is the one recorded.
+  const versions = versionsHere();
   mapAndPin(args.repo);
   const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
   if (!(facts.areas ?? []).some((a) => a.path === scenario.area)) die(`the map holds no area ${scenario.area}`);
@@ -95,7 +97,7 @@ async function runFresh(args, scenario) {
     const ran = engineRan(args.engine, [...trials.a, ...trials.b]);
     if (ran.error) throw new Error(ran.error);
     if (ran.note) console.log(ran.note);
-    return { sha, said, engine: ran.engine, versions: versionsHere(), trials, frameworks: facts.corpus?.frameworks ?? [], runs: 1 };
+    return { sha, said, engine: ran.engine, versions, trials, frameworks: facts.corpus?.frameworks ?? [], runs: 1 };
   } catch (err) {
     failed = err;
   } finally {
@@ -118,7 +120,8 @@ function versionsHere() {
   };
   const { version } = JSON.parse(readFileSync(join(ANATOMIYA, ".claude-plugin", "plugin.json"), "utf8"));
   const commit = line("git", ["rev-parse", "--short=12", "HEAD"]);
-  const changed = line("git", ["status", "--porcelain", "--", ANATOMIYA]);
+  // The harness decides what a trial is given and how it is scored, so it counts as the build too.
+  const changed = line("git", ["status", "--porcelain", "--", ANATOMIYA, join(root, "scripts"), join(root, "package-lock.json")]);
   return { claude: line("claude", ["--version"]), anatomiya: `${version}${commit ? ` at ${commit}` : ""}${changed ? ", with uncommitted changes" : ""}` };
 }
 
@@ -130,6 +133,7 @@ function readKept(paths, scenario, { file, digest }) {
   const kept = paths.map((path) => ({ path, raw: JSON.parse(readFileSync(path, "utf8")) }));
   const named = basename(file);
   const engineOf = (raw) => `${raw.engine?.model} at ${raw.engine?.effort}`;
+  const builtOf = (raw) => (raw.versions ? `claude ${raw.versions.claude}, anatomiya ${raw.versions.anatomiya}` : "no recorded build");
   const needsFrameworks = scenario.checks.some((c) => c.kind === "dimension");
   for (const { path, raw } of kept) {
     if (raw.sha !== scenario.commit) die(`${path} was run at ${raw.sha}, and the scenario was written against ${scenario.commit}`);
@@ -140,6 +144,7 @@ function readKept(paths, scenario, { file, digest }) {
       die(`${path} was scored by a scenario file whose sha256 is ${raw.scenarioSha256.slice(0, 12)}, and ${named} is ${digest.slice(0, 12)} now`);
     }
     if (engineOf(raw) !== engineOf(kept[0].raw)) die(`${path} ran on ${engineOf(raw)}, and the first on ${engineOf(kept[0].raw)}`);
+    if (builtOf(raw) !== builtOf(kept[0].raw)) die(`${path} ran on ${builtOf(raw)}, and the first on ${builtOf(kept[0].raw)}`);
     if (needsFrameworks && !Array.isArray(raw.frameworks)) die(`${path} records no frameworks, which a dimension check reads`);
   }
   const [first] = kept.map((k) => k.raw);

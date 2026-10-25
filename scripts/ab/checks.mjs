@@ -110,12 +110,12 @@ function operatorHere() {
   }
 }
 
-/** `text` with the operator's home as `~` and their `@account` as `@<user>`, matched only where the name ends. */
+/** `text` with the operator's home as `~` and their account name after an `@` as `@<user>`, matched only where the name ends. */
 function scrubbed(text, { home, user }) {
   const nameEnds = "(?![\\w-])(?!\\.[\\w-])";
-  const root = home?.replace(/[\\/]+$/, "");
+  const homeDir = home?.replace(/[\\/]+$/, "");
   let out = text;
-  if (root) out = out.replace(new RegExp(`${escapeRe(root)}${nameEnds}`, "g"), "~");
+  if (homeDir) out = out.replace(new RegExp(`${escapeRe(homeDir)}${nameEnds}`, "g"), "~");
   // Only after "@": an account called "test" would otherwise rewrite every "test".
   if (user) out = out.replace(new RegExp(`(?<=@)${escapeRe(user)}${nameEnds}`, "g"), "<user>");
   return out;

@@ -17,10 +17,11 @@
  * loaded from this repository unless a caller passes `pluginDir: null`.
  */
 import { execFile, execFileSync } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { changedSinceWorktree, filesAt, headSha, topLevel } from "../../plugins/anatomiya/lib/git.mjs";
+import { realpathOf } from "../../plugins/anatomiya/lib/rules.mjs";
 import { ENGINE, engineEnv, engineFor } from "./engine.mjs";
 import { ANATOMIYA } from "../plugins.mjs";
 
@@ -38,7 +39,7 @@ export const CLAUDE_DEFAULTS = {
 /**
  * The operator's GitHub login, kept from an agent with a shell: rubocop
  * sessions took it from `gh` to credit a changelog entry. A `GH_CONFIG_DIR`
- * under a file cannot exist, which leaves `gh` logged out.
+ * under a file cannot exist, so `gh` reads no login.
  */
 const GITHUB_LOGINS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
 const NO_GH_CONFIG = join(process.execPath, "gh");
@@ -46,7 +47,7 @@ const NO_GH_CONFIG = join(process.execPath, "gh");
 function trialEnv(env) {
   const out = engineEnv(env);
   for (const name of GITHUB_LOGINS) delete out[name];
-  return { ...out, GH_CONFIG_DIR: NO_GH_CONFIG, CI: "1" };
+  return { ...out, GH_CONFIG_DIR: NO_GH_CONFIG, DISABLE_AUTOUPDATER: "1", CI: "1" };
 }
 
 /**
@@ -203,7 +204,7 @@ async function added(dir, before, base) {
  */
 async function startingCommit(arm) {
   try {
-    if (realpathSync(await topLevel(arm)) !== realpathSync(arm)) return null;
+    if (realpathOf(await topLevel(arm)) !== realpathOf(arm)) return null;
     return await headSha(arm);
   } catch {
     return null;
