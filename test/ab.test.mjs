@@ -10,7 +10,7 @@ import { rankAreas } from "../scripts/ab/pick.mjs";
 import { scoreFile } from "../scripts/ab/score.mjs";
 import { readingFor } from "../scripts/ab/read.mjs";
 import { repoLabel } from "../scripts/ab/label.mjs";
-import { needsPathControl, needsPosixPermissions, needsShebang, removeTree } from "./platform.mjs";
+import { needsPathControl, needsPosixPermissions, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { measurable, PROBE_ANSWER, stubClaude } from "./ab-fixtures.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -192,7 +192,7 @@ function armSource(t) {
   git("add", "-A");
   git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
   mkdirSync(join(repo, ".claude", "rules"));
-  writeFileSync(join(repo, ".claude", "rules", "anatomiya-area-x.md"), "# the map\n");
+  writeFileSync(join(repo, ".claude", "rules", "anatomiya-area-0a1b2c3d.md"), "# the map\n");
   return { repo, sha: git("rev-parse", "HEAD").trim() };
 }
 
@@ -208,7 +208,7 @@ test("every trial starts from the commit, the map in arm A and nothing in arm B"
     written: existsSync(join(arm, "src", "New.ts")),
     source: readFileSync(join(arm, "src", "a.ts"), "utf8"),
     settings: existsSync(join(arm, ".claude", "settings.json")),
-    map: existsSync(join(arm, ".claude", "rules", "anatomiya-area-x.md")),
+    map: existsSync(join(arm, ".claude", "rules", "anatomiya-area-0a1b2c3d.md")),
   });
   const clean = (map) => ({ written: false, source: "export const a = 1;\n", settings: false, map });
   assert.deepEqual([state(arms.a), state(arms.b)], [clean(true), clean(false)], "as built");
@@ -217,12 +217,12 @@ test("every trial starts from the commit, the map in arm A and nothing in arm B"
     writeFileSync(join(arm, "src", "New.ts"), "export const x = 1;\n");
     writeFileSync(join(arm, "src", "a.ts"), "export const a = 2;\n");
     mkdirSync(join(arm, ".claude", "rules"), { recursive: true });
-    writeFileSync(join(arm, ".claude", "rules", "anatomiya-area-x.md"), "# a trial's own\n");
+    writeFileSync(join(arm, ".claude", "rules", "anatomiya-area-0a1b2c3d.md"), "# a trial's own\n");
   }
   await arms.reset();
 
   assert.deepEqual([state(arms.a), state(arms.b)], [clean(true), clean(false)], "after a trial wrote in both");
-  assert.equal(readFileSync(join(arms.a, ".claude", "rules", "anatomiya-area-x.md"), "utf8"), "# the map\n");
+  assert.equal(readFileSync(join(arms.a, ".claude", "rules", "anatomiya-area-0a1b2c3d.md"), "utf8"), "# the map\n");
 });
 
 test("the harness resets both arms before every trial it runs", needsShebang, async (t) => {
@@ -270,6 +270,54 @@ test("each arm sits alone at the same leaf name, so neither can tell it is an ar
 
   await arms.dispose();
   assert.ok(!existsSync(dirname(arms.a)) && !existsSync(dirname(arms.b)), "dispose removes both");
+});
+
+test("the map reaches arm A through a rules directory the repository links elsewhere", needsSymlinks, async (t) => {
+  // cal.diy tracks .claude/rules as a link to agents/rules: the scan writes through
+  // it, and copying the directory onto arm A's link refused the whole run.
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { git, scratch } = await import("./git-worktrees.mjs");
+  const repo = scratch(t, "anatomiya-ab-linked-");
+  mkdirSync(join(repo, "agents", "rules"), { recursive: true });
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(join(repo, "agents", "rules", "team.md"), "# the team's own rule\n");
+  symlinkSync(join("..", "agents", "rules"), join(repo, ".claude", "rules"));
+  git(repo, "init", "-q");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-qm", "init");
+  writeFileSync(join(repo, "agents", "rules", "anatomiya-area-0a1b2c3d.md"), "# the map\n");
+  writeFileSync(join(repo, "agents", "rules", "draft.md"), "# somebody's draft, not in the commit\n");
+  writeFileSync(join(repo, "agents", "rules", "anatomiya-notes.md"), "# a note with the prefix, not a map file\n");
+  mkdirSync(join(repo, "agents", "rules", "anatomiya-area-11111111.md"));
+  const sha = git(repo, "rev-parse", "HEAD").toString().trim();
+
+  const arms = await buildArms(repo, sha);
+  t.after(() => arms.dispose());
+
+  assert.equal(readFileSync(join(arms.a, ".claude", "rules", "anatomiya-area-0a1b2c3d.md"), "utf8"), "# the map\n");
+  assert.equal(existsSync(join(arms.a, ".claude", "rules", "draft.md")), false, "only the map is copied");
+  assert.equal(existsSync(join(arms.a, ".claude", "rules", "anatomiya-notes.md")), false, "a prefixed name the scan never writes stays put");
+  assert.equal(existsSync(join(arms.a, ".claude", "rules", "anatomiya-area-11111111.md")), false, "a directory with a map's name is not copied");
+  assert.equal(existsSync(join(arms.b, ".claude", "rules", "anatomiya-area-0a1b2c3d.md")), false);
+  assert.equal(readFileSync(join(arms.b, ".claude", "rules", "team.md"), "utf8"), "# the team's own rule\n");
+});
+
+test("an arm whose rules link leads nowhere fails the build, so a map is never skipped in silence", needsSymlinks, async (t) => {
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { git, scratch } = await import("./git-worktrees.mjs");
+  const repo = scratch(t, "anatomiya-ab-dangling-");
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(join(repo, "a.txt"), "a\n");
+  symlinkSync(join("..", "agents", "rules"), join(repo, ".claude", "rules"));
+  git(repo, "init", "-q");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-qm", "init");
+  // The source's link leads to a folder the commit does not hold, so only the source has it.
+  mkdirSync(join(repo, "agents", "rules"), { recursive: true });
+  writeFileSync(join(repo, "agents", "rules", "anatomiya-area-0a1b2c3d.md"), "# the map\n");
+  const sha = git(repo, "rev-parse", "HEAD").toString().trim();
+
+  await assert.rejects(buildArms(repo, sha), /could not install the map in the with-map arm/);
 });
 
 test("an arm keeps no path back to the checkout it was cloned from", async (t) => {

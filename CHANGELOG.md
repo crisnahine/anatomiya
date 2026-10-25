@@ -7,6 +7,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-10-26
+
+A rule committed ahead of its picks chose three more reuse tasks, in eslint,
+openfoodnetwork and cal.diy, and they ran the same way: 64 of 120 sessions with the plugin called the
+helper the repository already had, against 22 of 120 without. With the first four, it is 209 of 280
+against 53 of 280. In cal.diy it was 0 against 0 on both models: the rule put the new file in a
+package that cal.diy's lint config forbids from importing the helper. 38 of 40 sessions with the
+plugin named the helper, and most said they could not import it there. The README, the chart and the cost range (now 1.4 to 3.8 times)
+include the three.
+
+### Added
+
+- `docs/measurements/2026-10-26-blind-replication-rule.md`, the rule that picked the tasks, and
+  `docs/measurements/2026-10-26-blind-replication.md`, its results, with six task pages, every
+  trial's record and the file each session wrote.
+
+### Fixed
+
+- The A/B harness could not install the map in a repository that links `.claude/rules` elsewhere:
+  copying the directory onto the link stopped the run before its first trial. It now copies the
+  plugin's own map files to wherever the link points, and fails the build when the arm's link leads
+  nowhere.
+- The "with uncommitted changes" mark on a result's build has a test that dirties a scratch tree.
+
 ## [0.18.1] - 2026-10-25
 
 What a session gets from the plugin is measured now: eight tasks in four public repositories, 20
@@ -5233,7 +5257,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...HEAD
+[0.18.2]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/crisnahine/anatomiya/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/crisnahine/anatomiya/compare/v0.17.0...v0.17.1

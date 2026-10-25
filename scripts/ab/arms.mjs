@@ -13,14 +13,15 @@
  * getting that wrong is the whole experiment: a stale copy of the rules
  * directory left in B measures nothing, twice.
  */
-import { mkdtempSync, rmSync, cpSync, existsSync, unlinkSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, cpSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { RULES_DIR, SETTINGS_PATH, STORE_DIR } from "../../plugins/anatomiya/lib/rules.mjs";
+import { isMapName, resolveRulesDir, RULES_DIR, SETTINGS_PATH, STORE_DIR } from "../../plugins/anatomiya/lib/rules.mjs";
+import { isFileAt } from "../../plugins/anatomiya/lib/store.mjs";
 
 const run = promisify(execFile);
 
@@ -160,10 +161,19 @@ export async function buildArms(repo, sha, { workdir = tmpdir(), name = basename
  * every gate reads.
  */
 function installMap(source, arm) {
-  for (const rel of [RULES_DIR, STORE_DIR]) {
-    const from = join(source, rel);
-    if (existsSync(from)) cpSync(from, join(arm, rel), { recursive: true });
+  // Where the plugin writes, a link included: cal.diy links its rules directory to agents/rules.
+  const from = resolveRulesDir(source);
+  const isMapFile = (name) => isMapName(name) && isFileAt(join(from, name));
+  const names = from && existsSync(from) ? readdirSync(from).filter(isMapFile) : [];
+  if (names.length) {
+    const to = resolveRulesDir(arm);
+    // A link the arm cannot follow would leave it without the map it exists to have.
+    if (!to) throw new Error(`could not install the map in the with-map arm: its ${RULES_DIR} leads nowhere it can be written`);
+    mkdirSync(to, { recursive: true });
+    for (const name of names) copyFileSync(join(from, name), join(to, name));
   }
+  const store = join(source, STORE_DIR);
+  if (existsSync(store)) cpSync(store, join(arm, STORE_DIR), { recursive: true });
 }
 
 /**

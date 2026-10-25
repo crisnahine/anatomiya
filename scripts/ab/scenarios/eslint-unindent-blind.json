@@ -1,0 +1,20 @@
+{
+  "name": "eslint-unindent-blind",
+  "repo": "github.com/eslint/eslint",
+  "commit": "dc1e7a8416937edefe04cf836ee202a6fc03bedd",
+  "area": "tests/lib/linter",
+  "prompt": "Add a test file tests/lib/linter/report-location.js that checks `Linter#verify` reports a `no-undef` problem at the line and column where an undefined name appears in a multi-line source. Write each source as an indented template literal inside the test, and strip the indentation its lines share before passing it to the linter, so the reported line and column match the source as written. Keep it small.",
+  "did": [
+    {
+      "name": "the test exists",
+      "changed": "^tests/lib/linter/report-location\\.js$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing unIndent",
+      "contains": "(?:\\{[^}]*\\bunIndent\\b[^}]*\\}\\s*=\\s*require\\(\\s*['\"][^'\"]*_utils[^'\"]*['\"]\\s*\\)|import\\s*\\{[^}]*\\bunIndent\\b[^}]*\\}\\s*from\\s*['\"][^'\"]*_utils[^'\"]*['\"])[\\s\\S]*\\bunIndent\\s*[`(]",
+      "in": "^tests/lib/linter/report-location\\.js$"
+    }
+  ]
+}

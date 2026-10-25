@@ -30,15 +30,18 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/results-dark.svg">
-    <img src="docs/assets/results-light.svg" alt="Sessions out of 20 that called the helper the repository already had, with anatomiya and without. Claude Opus 5.5: mastodon compareUrls 20 and 0, forem contrast helper 20 and 6, whitehall is_external? 20 and 0, mastodon TagManager#local_url? 20 and 15. Claude Haiku 5.5: 20 and 0, 20 and 7, 19 and 1, 6 and 2." width="860">
+    <img src="docs/assets/results-light.svg" alt="Sessions out of 20 that called the helper the repository already had, with anatomiya and without. Claude Opus 5.5: mastodon compareUrls 20 and 0, forem contrast helper 20 and 6, whitehall is_external? 20 and 0, mastodon TagManager#local_url? 20 and 15; picked by a rule: eslint unIndent 6 and 0, openfoodnetwork showHttpError 20 and 19, cal.diy getAppKeysFromSlug 0 and 0. Claude Haiku 5.5: 20 and 0, 20 and 7, 19 and 1, 6 and 2; picked by a rule: 18 and 0, 20 and 3, 0 and 0." width="860">
   </picture>
 </p>
 
-Four small tasks in three open-source repositories, each asking for code the repository already had
-a function for. 20 sessions with anatomiya and 20 without, per task, on two models. **With
-anatomiya, 145 of 160 sessions called the function that was already there. Without it, 31 of 160
-did.** No prompt named the function, and every check was fixed in a scenario file before the first
-session ran; for the three newest tasks, the git history shows it.
+Seven small tasks in six open-source repositories, each asking for code the repository already had a
+function for. 20 sessions with anatomiya and 20 without, per task, on two models. **With anatomiya,
+209 of 280 sessions called the function that was already there. Without it, 53 of 280 did.**
+
+No prompt named the function, and every check was fixed in a scenario file before the first session
+ran. For the last three tasks, a rule committed ahead of its picks chose the repository, the
+helper and the place for the new file, and those three alone came out 64 of 120 against 22 of 120
+([the rule and its results](docs/measurements/2026-10-26-blind-replication.md)).
 
 Here is what that looks like. The task: show a "You are here" badge in
 [mastodon](https://github.com/mastodon/mastodon) when two links point to the same page. mastodon
@@ -83,8 +86,12 @@ The same thing happened in forem, where 27 of 40 sessions without anatomiya wrot
 formula by hand instead of calling the contrast helper forem already has, and in whitehall, where 39
 of 40 skipped `is_external?` and compared hosts in their own code
 ([every file both arms wrote](docs/measurements/2026-10-25-plugin-on-off.md#exploratory-findings)).
-Every result prints the sha256 of the scenario file it was scored by. [The whole test](#the-whole-test-ties-included) is below, including
-the four tasks where anatomiya changed nothing and only cost more.
+It did not win everywhere, and one loss was the test's fault. In cal.diy it came out 0 of 40 either
+way: the rule put the new file in `packages/lib`, and cal.diy's own lint config forbids that package
+from importing app-store, where the helper lives. 38 of the 40 sessions with anatomiya found the
+helper and named it, and most of them said they could not import it there. Every result prints the
+sha256 of the scenario file it was scored by. [The whole test](#the-whole-test-ties-included) is below,
+including the five tasks where anatomiya changed nothing and only cost more.
 
 ## Try it in your repository
 
@@ -177,9 +184,9 @@ judged by.
 
 ## The whole test, ties included
 
-Eight tasks in four open-source repositories. For each, 20 sessions with anatomiya and 20 without,
-the same prompt at the same commit, scored by checks written down before the first session. Then
-the whole run again on a second, smaller model.
+Eleven tasks in seven open-source repositories. For each, 20 sessions with anatomiya and 20
+without, the same prompt at the same commit, scored by checks written down before the first session.
+Then the whole run again on a second, smaller model.
 
 Where the code the task needed already existed in another directory:
 
@@ -189,6 +196,9 @@ Where the code the task needed already existed in another directory:
 | forem: a contrast warning | calls the existing WCAG contrast helper | **20 / 6** | **20 / 7** |
 | whitehall: an external link helper | calls the existing `is_external?` | **20 / 0** | **19 / 1** |
 | mastodon: a link policy | calls the existing `TagManager#local_url?` | **20 / 15** | 6 / 2 |
+| eslint: a linter test (picked by the rule) | calls the existing `unIndent` | **6 / 0** | **18 / 0** |
+| openfoodnetwork: a Stimulus controller (picked by the rule) | calls the existing `showHttpError` | 20 / 19 | **20 / 3** |
+| cal.diy: an app key reader (picked by the rule) | calls the existing `getAppKeysFromSlug` | 0 / 0 | 0 / 0 |
 
 Where the habit could be seen in the files next to the change:
 
@@ -199,21 +209,24 @@ Where the habit could be seen in the files next to the change:
 | forem: a service object | its entry point does not raise | 20 / 20 | 20 / 20 |
 | whitehall: a migration | updates `db/schema.rb` too | 20 / 20 | 20 / 20 |
 
-Read it straight. Where the answer lived in another directory, anatomiya changed the result in seven
-of the eight task and model pairs, each with p below 0.05 by Fisher's exact test. The eighth, Haiku on
-mastodon's link policy, is too close to call at 6 against 2, although 7 more of its sessions with
-anatomiya called other helpers mastodon already had. Where the neighbouring files already
-showed the habit, both models followed it without help, and anatomiya added only cost. Three of the
-four reuse tasks were chosen after the first run had shown that reuse is where anatomiya pays, and
-the write-up says so.
+Read it straight. Where the answer lived in another directory, anatomiya changed the result in ten
+of the fourteen task and model pairs, each with p below 0.05 by Fisher's exact test, and in none did
+the arm without it do better. Of the other four, Haiku on mastodon's link policy is too close to call
+at 6 against 2; Opus on openfoodnetwork found the helper either way, 20 against 19; and cal.diy was
+0 against 0 on both models, because the rule put that task where the repository forbids the import.
+On eslint, the 14 Opus sessions with anatomiya that kept their own helper all said why: `unIndent`
+strips spaces, and eslint indents with tabs. Where the neighbouring
+files already showed the habit, both models followed it without help, and anatomiya added only cost.
 
 One thing the map asked for was out of date: rubocop moved cop registration out of `lib/rubocop.rb`
 in [e9defb6](https://github.com/rubocop/rubocop/commit/e9defb651dff92627ac49ddca76211011c7cf08c), the
 map still counted the hundred changes before it, and the files every session wrote show both arms on
 both models followed the code instead, 20 of 20.
 
-[The full write-up](docs/measurements/2026-10-25-plugin-on-off.md) has every check, every interval,
-what it does not show, and how to rerun it. Each task has its own page and a record of every session.
+[The first write-up](docs/measurements/2026-10-25-plugin-on-off.md) and
+[the blind replication](docs/measurements/2026-10-26-blind-replication.md) have every check, every
+interval, what they do not show, and how to rerun them. Each task has its own page and a record of
+every session.
 
 ## What it costs
 
@@ -225,7 +238,7 @@ It is free and MIT licensed. What you pay is tokens:
   a file there.
 - **On each turn that adds code**: one subagent searches for an existing function. That search is
   what found `compareUrls`.
-- **Measured**: across all eight tasks, the median session with anatomiya cost 1.4 to 3.1 times as
+- **Measured**: across all eleven tasks, the median session with anatomiya cost 1.4 to 3.8 times as
   much as one without, on both models. On Opus 5.5 that was $0.10 to $0.51 against $0.056 to $0.28
   per session. On Haiku 5.5 it was $0.004 to $0.025 against $0.003 to $0.017. Four Opus rubocop
   sessions with anatomiya hit the 20-minute limit and reported no cost, so that arm's median leaves

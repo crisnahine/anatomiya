@@ -1,0 +1,20 @@
+{
+  "name": "caldiy-app-keys-blind",
+  "repo": "github.com/calcom/cal.diy",
+  "commit": "176037d0afbe572f870a3c702985e7cd83fe6c0c",
+  "area": "packages/lib/server",
+  "prompt": "Add a function `getAppClientId(slug)` in packages/lib/server/getAppClientId.ts. Every app has a row in the database App table with a unique `slug` and a `keys` JSON object; the function returns the `client_id` string from the keys of the app with that slug, and null when there is no such app or its keys hold no `client_id`. Keep it small.",
+  "did": [
+    {
+      "name": "the function exists",
+      "changed": "^packages/lib/server/getAppClientId\\.ts$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing getAppKeysFromSlug",
+      "contains": "import\\s+(\\w+)\\s+from\\s+['\"][^'\"]*getAppKeysFromSlug['\"][\\s\\S]*?\\b\\1\\s*\\(",
+      "in": "^packages/lib/server/getAppClientId\\.ts$"
+    }
+  ]
+}

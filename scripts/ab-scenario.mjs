@@ -81,7 +81,7 @@ async function runFresh(args, scenario) {
   if (sha !== scenario.commit) die(`${args.repo} is at ${sha}, and the scenario was written against ${scenario.commit}`);
 
   // Before any trial: read after them, a build that changed mid-run is the one recorded.
-  const versions = versionsHere();
+  const versions = versionsAt(root);
   mapAndPin(args.repo);
   const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
   if (!(facts.areas ?? []).some((a) => a.path === scenario.area)) die(`the map holds no area ${scenario.area}`);
@@ -110,18 +110,19 @@ async function runFresh(args, scenario) {
  * The Claude Code and the anatomiya build the trials ran on, so a rerun can use
  * the same ones. A plugin with uncommitted changes says so.
  */
-function versionsHere() {
+export function versionsAt(repoRoot) {
   const line = (command, argv) => {
     try {
-      return execFileSync(command, argv, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n")[0] || null;
+      return execFileSync(command, argv, { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n")[0] || null;
     } catch {
       return null;
     }
   };
-  const { version } = JSON.parse(readFileSync(join(ANATOMIYA, ".claude-plugin", "plugin.json"), "utf8"));
+  const plugin = join(repoRoot, relative(root, ANATOMIYA));
+  const { version } = JSON.parse(readFileSync(join(plugin, ".claude-plugin", "plugin.json"), "utf8"));
   const commit = line("git", ["rev-parse", "--short=12", "HEAD"]);
   // The harness decides what a trial is given and how it is scored, so it counts as the build too.
-  const changed = line("git", ["status", "--porcelain", "--", ANATOMIYA, join(root, "scripts"), join(root, "package-lock.json")]);
+  const changed = line("git", ["status", "--porcelain", "--", plugin, join(repoRoot, "scripts"), join(repoRoot, "package-lock.json")]);
   return { claude: line("claude", ["--version"]), anatomiya: `${version}${commit ? ` at ${commit}` : ""}${changed ? ", with uncommitted changes" : ""}` };
 }
 

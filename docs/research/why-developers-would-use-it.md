@@ -36,7 +36,7 @@ repositories. Tool docs were read on each vendor's docs site, READMEs with `gh a
 | 2 | What do maintainers say about AI pull requests? | Agent PRs merge less often than human ones (AIDev-pop: 76.8% human against 38.2% to 65.3% per agent), and the reasons are mostly duplicates, CI failures and silence, not style. Style and formatting is 10.3% of inline review comments on agent PRs; agent PRs show 1.87 times the redundancy of human PRs. Project policies (LLVM, curl, Ghostty, the Linux kernel) all put the review burden on the human and say AI code must meet the normal coding standards | A tool that makes agent code look like the codebase answers a real, measured complaint (redundancy) and a stated policy (follow our standards). It does not answer the larger rejection reasons (duplicates, CI, abandonment) |
 | 3 | What makes developer tools spread? | Measured: security or privacy concerns are the number 1 reason developers drop a tool, prohibitive pricing number 2; an easy API is the number 1 reason they become fans. Google's static-analysis work: tools must sit in the workflow, stay under about 10% effective false positives, and prove impact with data. Zero config as a cause of spread is a stated philosophy (Prettier), not a measurement. Speed as a cause is folklore with a strong vendor anecdote (ruff) | Local-only, no config, low noise and a printed denominator line up with the measured items. Cost per session is the measured weak point |
 | 4 | What else gives an agent repository context? | Hand-written or model-written instruction files (CLAUDE.md `/init`, Cursor rules, Copilot instructions, AGENTS.md generators), retrieval over an index (aider repo map, Augment, Greptile), memories learned from chat (Windsurf/Devin, CodeRabbit learnings) | anatomiya is the one that counts conventions from the code and git history with a threshold and a denominator, and writes the result into the files the other tools already read. Most others either ask a model to describe the code or retrieve code at question time |
-| 5 | Reasons and objections | See section 5 | The single strongest reason is a measured 145 of 160 against 31 of 160 sessions reusing an existing helper; the single strongest objection is the measured 1.4 to 3.1 times cost per session with no change in four of eight tasks |
+| 5 | Reasons and objections | See section 5 | The single strongest reason is a measured 209 of 280 against 53 of 280 sessions reusing an existing helper; the single strongest objection is the measured 1.4 to 3.8 times cost per session with no change in five of eleven tasks |
 
 ## 1. What developers say about AI coding tools
 
@@ -341,9 +341,10 @@ Greptile), hosted PR review (Copilot, CodeRabbit, Greptile), and editors and age
 
 ### Five reasons
 
-1. **It stops the agent rewriting a helper that exists.** Over four tasks in mastodon, forem and
-   whitehall, 145 of 160 sessions with the plugin called the helper the repository already had, and
-   31 of 160 without it did; in mastodon, Opus 5.5 called `compareUrls` in 20 of 20 sessions with the
+1. **It stops the agent rewriting a helper that exists.** Over seven tasks in six repositories,
+   three of them picked by a rule fixed in advance, 209 of 280 sessions with the plugin called the
+   helper the repository already had, and 53 of 280 without it did
+   (`docs/measurements/2026-10-26-blind-replication.md`); in mastodon, Opus 5.5 called `compareUrls` in 20 of 20 sessions with the
    plugin and 0 of 20 without (`docs/measurements/2026-10-25-plugin-on-off.md`). This is the redundancy Huang
    et al. measured at 1.87 times human levels and reviewers did not catch.
 2. **It answers "almost right" with this repository's own facts.** 66% of developers name "almost
@@ -366,9 +367,9 @@ Greptile), hosted PR review (Copilot, CodeRabbit, Greptile), and editors and age
 
 ### Five objections
 
-1. **It costs more, and changed nothing in half the tasks.** Median cost per session rose 1.4 to 3.1
-   times across eight tasks on two models, and in four of them the model did the same with or without
-   the plugin (`docs/measurements/2026-10-25-plugin-on-off.md`). Prohibitive pricing is the number 2
+1. **It costs more, and changed nothing in five of eleven tasks.** Median cost per session rose 1.4 to 3.8
+   times across eleven tasks on two models, and in five of them the model did the same with or without
+   the plugin (`docs/measurements/2026-10-25-plugin-on-off.md` and the blind replication). Prohibitive pricing is the number 2
    reason to drop a tool (Stack Overflow 2025). The run does not separate the map's cost from the
    end-of-turn reuse subagent's.
 2. **Context files do not move pass rates in published work.** Gloaguen et al. found no significant

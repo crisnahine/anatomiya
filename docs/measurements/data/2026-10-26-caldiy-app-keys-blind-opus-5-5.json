@@ -1,0 +1,783 @@
+{
+  "scenario": "scripts/ab/scenarios/caldiy-app-keys-blind.json",
+  "scenarioSha256": "c76fa5212a91b3e24beb0f4ea0dc4120b9191c79036e474a7ddd836369cadf04",
+  "label": "github.com/calcom/cal.diy",
+  "sha": "176037d0afbe572f870a3c702985e7cd83fe6c0c",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": {
+    "claude": "2.1.310 (Claude Code)",
+    "anatomiya": "0.18.1 at 9bdeb6978ea0"
+  },
+  "said": {
+    "a": "packages/lib/server  27 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.6468192000000001,
+        "inputTokens": 28,
+        "outputTokens": 4633,
+        "cacheReadTokens": 410891,
+        "wallMs": 69996
+      },
+      "answer": "`getAppClientId(slug)` is in `packages/lib/server/getAppClientId.ts`. It looks up the app by `slug` and returns its `client_id` string, or `null` if the app doesn't exist or its keys have no string `client_id`.\n\nA subagent searched for an existing function that could replace it and found none, so I left the code unchanged. The closest is `getAppKeysFromSlug` in `packages/app-store/_utils/getAppKeysFromSlug.ts`. It makes the same database lookup but returns the whole keys object, not just `client_id`. It also can't be used from here, because files in `packages/lib` aren't allowed to import from `@calcom/app-store`. The other matches either have a different result, throw an error instead of returning `null`, or live in packages that `packages/lib` can't import.\n\nAs before, TypeScript type-checking shows no errors in the new file, nothing calls it yet, and there's no test for it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.7240838000000002,
+        "inputTokens": 24,
+        "outputTokens": 5593,
+        "cacheReadTokens": 328914,
+        "wallMs": 75651
+      },
+      "answer": "I had a subagent check whether `getAppClientId` copies something that already exists. Nothing in the repo does the same job, so I left the code as it was.\n\nThe closest match is `getAppKeysFromSlug` in `packages/app-store/_utils/getAppKeysFromSlug.ts`. It doesn't fit for two reasons:\n- **It returns something different.** You get the whole `keys` object, or `{}` when the app or keys are missing, never `null`. It also doesn't check that `client_id` is a string.\n- **`packages/lib` can't use it.** The repo's layering rules don't allow `packages/lib` to import from `@calcom/app-store`.\n\nThe other near-matches were the zod-parsing helper `getParsedAppKeysFromSlug`, small key helpers written for one app each, and one-off `prisma.app.findUnique` calls. They all sit in app-store, features or tRPC, and the parsing ones throw an error instead of returning `null`.\n\nSo `packages/lib/server/getAppClientId.ts` is unchanged. I still haven't run a type check or added a test."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.4025772,
+        "inputTokens": 28,
+        "outputTokens": 5506,
+        "cacheReadTokens": 547566,
+        "wallMs": 75677
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`. It looks up the app by slug and returns its `client_id`. It returns `null` when there's no such app, when `keys` isn't a plain object, or when `client_id` is missing or isn't a string. It reads only the `keys` column.\n\nThe reuse check found no existing function that does the same job, so I left the code as it is. The closest is `getAppKeysFromSlug` in `packages/app-store/_utils`. That one returns the whole keys object (`{}` when the app is missing, not `null`), and `packages/lib` isn't allowed to import from the app store anyway.\n\nI couldn't type-check or lint it because dependencies aren't installed in this checkout (there's no `node_modules`). I also didn't add a test. To check it, run `yarn install`, then `yarn type-check:ci --force` and `yarn biome check packages/lib/server/getAppClientId.ts`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.32081239999999994,
+        "inputTokens": 26,
+        "outputTokens": 5079,
+        "cacheReadTokens": 486917,
+        "wallMs": 73842
+      },
+      "answer": "I had a subagent check for an existing function that does the same thing as `getAppClientId`. Nothing that `packages/lib` can import does that job, so I left the code as it is.\n\nThe closest match is `getAppKeysFromSlug` (`packages/app-store/_utils/getAppKeysFromSlug.ts:4`), but it doesn't fit here:\n- **Wrong package:** it lives in `@calcom/app-store`, and the repo's rules don't allow `packages/lib` to import from there.\n- **Different result:** it returns the whole `keys` object and fetches every column, so the caller would still have to pull out `client_id` and check it's a string.\n\nThe other candidates were the per-app key helpers (Zoom, Daily and others) and inline `prisma.app.findUnique` queries in `features` and `trpc`. They're all either fixed to one app, return something else, or sit in packages that `lib` can't import from."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.402505,
+        "inputTokens": 26,
+        "outputTokens": 5630,
+        "cacheReadTokens": 477265,
+        "wallMs": 70507
+      },
+      "answer": "A search for existing code that does the same job found none, so `packages/lib/server/getAppClientId.ts` stays as written and nothing else changed.\n\n- **Closest helpers:** `getAppKeysFromSlug` and `getParsedAppKeysFromSlug` return an app's whole `keys` object rather than just `client_id`. The other matches, like `getZoomAppKeys`, are each tied to a single app.\n- **Imports:** all of those helpers live in `packages/app-store`, which `packages/lib` isn't allowed to import from anyway.\n- **Possible caller later:** `packages/trpc/server/routers/viewer/googleWorkspace/googleWorkspace.handler.ts:37-38` pulls `client_id` out of the Google Calendar app's keys inline. Unlike the new function, it throws when the value is missing instead of returning null, so it could switch over later but isn't a straight duplicate. I left it alone."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.3409192,
+        "inputTokens": 24,
+        "outputTokens": 5463,
+        "cacheReadTokens": 440966,
+        "wallMs": 76084
+      },
+      "answer": "I had a subagent check whether an existing function already does what `getAppClientId` does. None does the same job, so I left the file as it was.\n\n- **Closest match:** `getAppKeysFromSlug` in `packages/app-store/_utils/getAppKeysFromSlug.ts`. It returns the whole `keys` object, or `{}` when the app doesn't exist, and never reads out `client_id` or returns `null`. It also can't be used here, because `packages/lib` isn't allowed to import from `@calcom/app-store`.\n- **Repeated code:** about seven app-store handlers (zohocrm, hubspot, office365calendar and others) repeat the same `typeof appKeys.client_id === \"string\"` check inline after calling `getAppKeysFromSlug`. Since app-store can import from lib, those could switch to the new function later. I didn't make that change because it's outside what you asked for.\n\nThe file is still not type-checked or linted, because dependencies aren't installed in this checkout."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.38084840000000003,
+        "inputTokens": 26,
+        "outputTokens": 5370,
+        "cacheReadTokens": 518922,
+        "wallMs": 65063
+      },
+      "answer": "I've added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`. It returns the app's `client_id` string, or `null` if there's no app with that slug or its keys have no string `client_id`. It reads only the `keys` column.\n\n```ts\nimport { prisma } from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n**Checks:** a type check of `packages/lib` showed no errors in this file, and Biome reported nothing. I didn't run the full `yarn type-check:ci --force`, and there's no test for it yet. I can add one like `avatar.test.ts`, which mocks Prisma.\n\n**No existing duplicate:** a subagent searched for an existing function that does the same job and found none, so nothing was replaced. The closest is `getAppKeysFromSlug` in `packages/app-store/_utils/getAppKeysFromSlug.ts`, which returns the whole keys object and never `null`. Code in `packages/lib` can't import from `app-store` anyway. Many app-store files instead write `const { client_id } = await getAppKeysFromSlug(\"<slug>\")` at each call site."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.3920462,
+        "inputTokens": 26,
+        "outputTokens": 5584,
+        "cacheReadTokens": 461816,
+        "wallMs": 81183
+      },
+      "answer": "I had a subagent search the repo for an existing function that does the same job as `getAppClientId`. It found none, so I left the code as it was. The new function is the only code in the repo that reads `keys.client_id` from an App row.\n\nThe closest matches all live in `@calcom/app-store`, which `packages/lib` isn't allowed to import, and none of them returns just the client ID:\n- `getAppKeysFromSlug` returns the whole `keys` object.\n- `getParsedAppKeysFromSlug` checks the keys against a validation schema you pass in, but you'd still have to pull `client_id` out yourself.\n- Each app also has its own key getter (`getGoogleAppKeys`, `getZoomAppKeys` and so on), and each returns that app's full set of keys."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.38974980000000004,
+        "inputTokens": 22,
+        "outputTokens": 5304,
+        "cacheReadTokens": 439344,
+        "wallMs": 63385
+      },
+      "answer": "As the stop hook required, I had a subagent check for an existing function that does the same job. It found none, so nothing changed.\n\nThe closest helpers are `getAppKeysFromSlug` and the per-app getters like `getGoogleAppKeys`. They all live in `packages/app-store`, which `packages/lib` isn't allowed to import from. They also either return the whole keys object or throw when a key is missing instead of returning `null`.\n\nSo `packages/lib/server/getAppClientId.ts` stays as I wrote it, and the earlier caveats still apply. I only ran `tsc` on `packages/lib` (no errors mentioned the new file), not the full `yarn type-check:ci --force`. There's no test, nothing calls the function yet, and nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.42820120000000006,
+        "inputTokens": 20,
+        "outputTokens": 6434,
+        "cacheReadTokens": 383406,
+        "wallMs": 83050
+      },
+      "answer": "I had a subagent search the shared and utility modules for an existing function that does the same job. There isn't one that `packages/lib` is allowed to use, so I left the change as it was.\n\n- **Closest match:** `getAppKeysFromSlug` in `packages/app-store/_utils/getAppKeysFromSlug.ts`. It does the same slug lookup but returns the whole `keys` object, or `{}` when nothing is found, rather than `client_id` or `null`. It also lives in `@calcom/app-store`, and the repo rules forbid `packages/lib` from importing from app-store.\n- **Others:** `getParsedAppKeysFromSlug` and the per-app helpers like `getGoogleAppKeys` are also in app-store, and they throw when keys are missing. The other `prisma.app.findUnique` calls are written inline in features, tRPC or app code, not shared helpers.\n- **Inside `packages/lib`:** the new `getAppClientId.ts` is the only code that reads the App table.\n\nSo `getAppClientId` does repeat the lookup in `getAppKeysFromSlug`, but the import rule means it can't reuse it. To remove the duplicate, the follow-up would be to build `getAppKeysFromSlug` on top of a lib-level helper instead. I haven't done that because it touches the app-store package too."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.3689082,
+        "inputTokens": 28,
+        "outputTokens": 5690,
+        "cacheReadTokens": 594711,
+        "wallMs": 96430
+      },
+      "answer": "A subagent searched the repo for an existing function that does the same thing as `getAppClientId` and found none. The new file stays as it is.\n\n- **Nearest existing helper:** `getAppKeysFromSlug` in `packages/app-store/_utils` looks an app up by slug too, but it returns the whole keys object, or `{}` when there's no such app. It also lives in app-store, which `packages/lib` isn't allowed to import.\n- **Per-app helpers (e.g. `getGoogleAppKeys`):** each works for only one slug, returns all the keys, and throws instead of returning null.\n- **`googleWorkspace.handler.ts`:** this tRPC handler reads Google's `client_id` inline and throws if it's missing. It could call `getAppClientId` instead, but that's outside this change, so I left it alone.\n\nThe earlier note still applies: the type check couldn't run here, so run `yarn type-check:ci --force` before committing."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.37090999999999996,
+        "inputTokens": 24,
+        "outputTokens": 5635,
+        "cacheReadTokens": 440565,
+        "wallMs": 96790
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`. It returns the app's `client_id` string, or `null` if there's no app with that slug or its keys hold no string `client_id`.\n\n- **Reuse check:** a subagent searched for an existing function doing the same job. The closest is `getAppKeysFromSlug` in `packages/app-store/_utils/getAppKeysFromSlug.ts:4`. `packages/lib` isn't allowed to import from app-store, so I left the new file as it is. Nothing equivalent exists anywhere `packages/lib` can import from.\n- **Type check:** running `tsc` on `packages/lib` reported no errors in the new file. I haven't run the full `yarn type-check:ci --force`.\n- **Not done:** I didn't add a test or commit anything.\n\nIf you'd rather have a single version of this logic, `getAppKeysFromSlug` could move into `packages/lib` so both use it. About 51 files import it, so that's a separate change."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.3625984,
+        "inputTokens": 26,
+        "outputTokens": 5127,
+        "cacheReadTokens": 545672,
+        "wallMs": 103246
+      },
+      "answer": "I had a subagent look for an existing function that already does this, and it found nothing `packages/lib` is allowed to import. So the new file stays as it is, and I made no further changes.\n\nThe closest match is `getAppKeysFromSlug` in `packages/app-store/_utils/getAppKeysFromSlug.ts`, along with a parsing wrapper, `getParsedAppKeysFromSlug`, next to it. Code in `packages/lib` can't import from app-store. That helper also returns the whole keys object (or `{}`) and doesn't check that `client_id` is a string.\n\nThe type check still hasn't run: `tsc` couldn't find `@calcom/tsconfig/base.json`, likely because dependencies aren't installed here. Running `yarn type-check:ci --force` once they are is the remaining check.\n\nIf you later want one shared version, `getAppKeysFromSlug` could be rebuilt on a key lookup in `packages/lib`, since app-store is allowed to import from lib. I left that alone because you asked to keep this small."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.3582188,
+        "inputTokens": 32,
+        "outputTokens": 6280,
+        "cacheReadTokens": 523764,
+        "wallMs": 86723
+      },
+      "answer": "I had a subagent look for an existing function that already does this job, and it found none that `packages/lib` can import, so `packages/lib/server/getAppClientId.ts` stays as written.\n\nThe closest match is `getAppKeysFromSlug` in `packages/app-store/_utils/`, but it can't replace the new function:\n- **It's in the wrong layer:** `packages/lib` isn't allowed to import from `packages/app-store`.\n- **It returns the whole keys object:** you'd still have to pull out `client_id` yourself.\n- **It returns `{}` instead of `null`** when the app or its keys are missing.\n\nOne more thing it turned up: `googleWorkspace.handler.ts:37-38` in trpc reads `client_id` from that function's result by hand, and it throws when the value is missing instead of returning `null`. It could switch to `getAppClientId` and keep its own throw, but I left it alone because you didn't ask for that change.\n\nThe checks are the same as before: no type errors in the new file within `packages/lib`. I haven't run the full `yarn type-check:ci --force` or Biome, and there's still no test for it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.4434642000000001,
+        "inputTokens": 30,
+        "outputTokens": 5471,
+        "cacheReadTokens": 673406,
+        "wallMs": 75463
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`, but I couldn't type-check or lint it. This checkout has no `node_modules`, so `tsc` and `yarn biome check` didn't run.\n\n- **Behaviour:** it looks up the app by its unique `slug`, fetching only the `keys` column, and returns `client_id` when it's a string. It returns `null` when there's no app with that slug, when `keys` is empty or not a JSON object, or when `client_id` is missing or not a string.\n- **No duplicate found:** a search of the repo found no existing function that does this. The closest helpers return the whole keys object rather than `client_id`. They also live in `packages/app-store` or `packages/features`, which `packages/lib` isn't allowed to import, so I left the code as it is.\n- **Possible follow-up:** `packages/trpc/server/routers/viewer/googleWorkspace/googleWorkspace.handler.ts:37` does the same check inline for Google Calendar, but throws an error instead of returning `null`. It could switch to the new function; I didn't change it.\n\nI didn't add a test. Once dependencies are installed, run `yarn type-check:ci --force` to confirm it compiles."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.3308474,
+        "inputTokens": 24,
+        "outputTokens": 4627,
+        "cacheReadTokens": 443522,
+        "wallMs": 76508
+      },
+      "answer": "`getAppClientId(slug)` is in `packages/lib/server/getAppClientId.ts`. It looks up the App by `slug`, reads only its `keys`, and returns `client_id` as a string. It returns `null` if there's no such app, `keys` isn't a JSON object, or `client_id` is missing or not a string.\n\nI haven't type-checked or linted it: dependencies aren't installed in this checkout, so Biome and `tsc` couldn't run. I also didn't add a test, to keep it small, though the repo asks for about 80% coverage on new code. To finish checking, run `yarn` and then `yarn type-check:ci --force`.\n\n**Reuse check:** a subagent searched for an existing function that does the same job and found none, so I left the file as it is.\n- The closest is `getAppKeysFromSlug` in app-store. It returns the whole `keys` object (or `{}`, never `null`), loads the full App row, and `packages/lib` can't import from app-store anyway.\n- `PrismaAppRepository`, the only App repository, has no method that looks up keys by slug.\n- About 20 app-store integrations each pull `client_id` out of `getAppKeysFromSlug`'s result inline. They could call the new function later, but I didn't change them."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.32963860000000006,
+        "inputTokens": 22,
+        "outputTokens": 4129,
+        "cacheReadTokens": 471303,
+        "wallMs": 67915
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`. It looks up the App row by `slug`, reads only its `keys` column, and returns `client_id` as a string. It returns `null` if there's no app with that slug, if `keys` isn't a plain object, or if `client_id` is missing or isn't a string.\n\nA search for code that already does this found nothing in `packages/lib` or `packages/prisma`. The nearest helper is `getAppKeysFromSlug` in `packages/app-store/_utils`, which returns the whole `keys` object. I couldn't use it because the repo's rules don't allow `packages/lib` to import from `packages/app-store`. So I kept the new file as it was.\n\nRunning `tsc` on `packages/lib` reported no errors in the new file. I didn't add a test or run the full `yarn type-check:ci --force`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.3675618000000001,
+        "inputTokens": 24,
+        "outputTokens": 6081,
+        "cacheReadTokens": 485274,
+        "wallMs": 74174
+      },
+      "answer": "No existing function in the repo does the same job, so I left the new file as it was.\n\n- **Closest helper:** `packages/app-store/_utils/getAppKeysFromSlug.ts:4` returns the whole `keys` object, or `{}` when the app is missing. It doesn't return a `client_id`, and it lives in `@calcom/app-store`, which `packages/lib` isn't allowed to import.\n- **Other helpers:** `getParsedAppKeysFromSlug` and the per-app wrappers (`getGoogleAppKeys`, `getZoomAppKeys`, etc.) return parsed key objects and throw on bad keys, so they only partly overlap.\n- **Same logic written inline:** `packages/trpc/server/routers/viewer/googleWorkspace/googleWorkspace.handler.ts:37-38` pulls `client_id` out by hand, but it also reads `client_secret` and throws instead of returning null. Switching it to the new function wouldn't be a drop-in swap, so I left it alone.\n\n`getAppClientId` is still not type-checked or linted, because dependencies aren't installed here."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.4345240000000001,
+        "inputTokens": 28,
+        "outputTokens": 5201,
+        "cacheReadTokens": 581215,
+        "wallMs": 72441
+      },
+      "answer": "`getAppClientId(slug)` is in `packages/lib/server/getAppClientId.ts`, and I left it as it was after checking for an existing function that does the same thing.\n\nThe function looks up the App row by `slug`, fetching only `keys`. It returns `keys.client_id` if that's a string, and `null` if the app doesn't exist, its keys aren't a JSON object, or there's no string `client_id`. The type check of `packages/lib` passes and includes the new file. I didn't add a test or run it against a database.\n\nA subagent searched the shared modules, nearby files and every caller of `prisma.app.findUnique`, and found nothing that does the same job:\n\n- **`getAppKeysFromSlug` and `getParsedAppKeysFromSlug`:** both return the whole keys object, not just `client_id`. The second also throws on bad keys instead of returning null. Both are in `packages/app-store`, which `packages/lib` isn't allowed to import from.\n- **Per-app helpers like `getZoomAppKeys`:** each is tied to one app and returns several keys.\n- **The remaining hits:** inline queries or unrelated uses of `client_id`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.4019746,
+        "inputTokens": 28,
+        "outputTokens": 6060,
+        "cacheReadTokens": 509873,
+        "wallMs": 79719
+      },
+      "answer": "The reuse check found nothing to replace, so the new `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts` stays as written.\n\nNo existing function does the same job, meaning it takes any slug, reads the App row and returns `client_id` or null. The closest matches:\n\n- **`getParsedAppKeysFromSlug`** (in app-store) works for any slug but returns the whole parsed keys object. It throws on bad keys instead of returning null, and code in `packages/lib` isn't allowed to import from app-store anyway.\n- **`googleWorkspace.handler.ts:37-38`** reads `client_id` the same way, but only for `google-calendar`, and it throws instead of returning null. It could switch to the new function later; I left it alone to keep this change small.\n- **Per-app helpers** like `getZoomAppKeys` and `getGoogleAppKeys` are each tied to one app and return all of its keys."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.4257758,
+        "inputTokens": 8,
+        "outputTokens": 1679,
+        "cacheReadTokens": 157219,
+        "wallMs": 32609
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`, but I couldn't type-check or lint it: the repo's dependencies aren't installed here. `tsc` stopped because it couldn't find `@calcom/tsconfig/base.json`, and `npx biome` started installing an unrelated package instead of running Biome. Nothing else has been run or tested.\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- **Lookup:** it finds the app by its unique `slug` and selects only the `keys` column.\n- **Null cases:** it returns `null` when no app has that slug, or when `keys` isn't an object with a string `client_id`. Because `keys` is a JSON column, it checks the type at runtime instead of casting.\n- **Direct Prisma call:** the repo's rules say database access should go through a repository class. I called Prisma directly because you asked to keep it small, and the existing `packages/app-store/_utils/getAppKeysFromSlug.ts` does the same.\n\nTo verify, run `yarn install` and then `yarn type-check:ci --force`. There are no tests for this yet."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.0983036,
+        "inputTokens": 10,
+        "outputTokens": 1382,
+        "cacheReadTokens": 250558,
+        "wallMs": 28138
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- It looks up the app by `slug` and reads only the `keys` column.\n- It returns `null` if there's no app with that slug, if `keys` isn't a JSON object, or if `client_id` is missing or isn't a string. Because `keys` is untyped JSON, these checks are what let it return `string | null` without a type cast.\n- There's already a similar helper, `getAppKeysFromSlug`, in `app-store/_utils`. I didn't reuse it because code in `packages/lib` isn't allowed to import from `app-store`.\n\nRunning the TypeScript compiler on `packages/lib` reported no errors in the new file. Biome printed nothing, so it found no problems. I didn't add tests, run the full `yarn type-check:ci --force`, or commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1264578,
+        "inputTokens": 14,
+        "outputTokens": 1675,
+        "cacheReadTokens": 351069,
+        "wallMs": 40184
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`. I couldn't type-check or lint it because the repo has no `node_modules`. `tsc` and Biome never got past setup, so run `yarn` and then `yarn type-check:ci --force` before relying on it.\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n\nexport default getAppClientId;\n```\n\n- **Separate query:** an `app-store` helper (`getAppKeysFromSlug`) already reads an app's keys. But code in `packages/lib` isn't allowed to import from `app-store`, so this function runs its own query and fetches only `keys`.\n- **When it returns null:** if no app has that slug, if `keys` is empty or isn't a JSON object, or if `client_id` is missing or isn't a string.\n\nI haven't written any tests for it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.0964608,
+        "inputTokens": 10,
+        "outputTokens": 1288,
+        "cacheReadTokens": 250144,
+        "wallMs": 29100
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- **Lookup:** it uses `findUnique` on the unique `slug` and selects only `keys`.\n- **Returns null when:** there's no app with that slug, `keys` isn't a plain object (it's a JSON column, so it could be null, an array or a single value), or `client_id` is missing or not a string.\n\nI ran the type checker on `packages/lib` and it reported no errors for this file. I didn't add tests or run the full `yarn type-check:ci`.\n\nThe repo's rules say database access should go through repository classes. This calls Prisma directly, the same way the existing `getAppKeysFromSlug` helper in `packages/app-store/_utils` does, because you asked to keep it small. If you'd rather follow the rule, I can move the query into an app repository."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.09213100000000002,
+        "inputTokens": 10,
+        "outputTokens": 1358,
+        "cacheReadTokens": 248415,
+        "wallMs": 24001
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport { prisma } from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- It looks the app up by its unique `slug` and selects only `keys`.\n- It returns `null` if there's no matching app, if `keys` is empty or isn't a plain object, or if `client_id` is missing or isn't a string.\n- I didn't reuse the existing `getAppKeysFromSlug` because it's in `@calcom/app-store`, and `packages/lib` isn't allowed to import from there.\n\nA type check of `packages/lib` reported no errors in the new file. I didn't add tests or run the full `yarn type-check:ci --force`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1021142,
+        "inputTokens": 10,
+        "outputTokens": 1351,
+        "cacheReadTokens": 251591,
+        "wallMs": 30944
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- **Returns null when:** there's no app with that slug, its `keys` is null or isn't a JSON object, or `client_id` is missing or not a string.\n- **Query:** it fetches only the `keys` column. It differs from the existing `getAppKeysFromSlug` in `app-store/_utils`, which loads the whole row.\n- **No casting:** the checks narrow Prisma's JSON type to an object, so no `as` is needed.\n\n**Checks:** I ran `tsc` on `packages/lib` and Biome on the new file, and neither reported a problem in it. I didn't add unit tests or run any."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1035734,
+        "inputTokens": 10,
+        "outputTokens": 1419,
+        "cacheReadTokens": 252047,
+        "wallMs": 23437
+      },
+      "answer": "I added `getAppClientId` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\nIt returns `null` when there's no app with that slug or its keys hold no `client_id`. It also returns `null` when `keys` isn't a plain object (like an array) or when `client_id` isn't a string. The query only fetches `keys`, and it imports prisma the same way other files in `packages/lib/server` do.\n\nI ran `tsc` on `packages/lib` and filtered its output for this file, which showed no errors. I didn't look at the rest of that output, so I haven't confirmed the whole package type-checks cleanly. I didn't add tests, and I didn't run the full `yarn type-check:ci --force` or Biome."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.103326,
+        "inputTokens": 10,
+        "outputTokens": 1544,
+        "cacheReadTokens": 250790,
+        "wallMs": 23365
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  // keys is arbitrary JSON, so it may be null, an array or a primitive rather than an object\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\nIt returns `null` when there's no app with that slug, when `keys` isn't a JSON object, or when `client_id` is missing or not a string. It only fetches the `keys` column and doesn't use `as` casts.\n\n**Checks:** I type-checked the `packages/lib` package and got no errors from this file. I didn't run the full `yarn type-check:ci --force`, and I didn't add tests.\n\n**One thing to decide:** the project rules say database access should go through repositories, and there's already a `PrismaAppRepository` in `packages/features/apps/repository/`. But `packages/lib` isn't allowed to import from `packages/features`, so I queried Prisma directly here. That matches the existing `packages/app-store/_utils/getAppKeysFromSlug.ts`. If you'd prefer the repository approach, the function would need to live in `packages/features` instead."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1000248,
+        "inputTokens": 10,
+        "outputTokens": 1251,
+        "cacheReadTokens": 251864,
+        "wallMs": 22572
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\nIt looks up the app by its unique slug and fetches only the `keys` column. It returns `client_id` only when it's a string. In every other case it returns `null`: no app with that slug, no keys, keys that aren't a JSON object, or a missing or non-string `client_id`.\n\nA type check of `packages/lib` reported no errors in this file. I didn't run the full `yarn type-check:ci --force` or add tests, and I haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1009552,
+        "inputTokens": 10,
+        "outputTokens": 1423,
+        "cacheReadTokens": 250916,
+        "wallMs": 24014
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  // `keys` is untyped JSON and may be null, an array, or a primitive\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\nIt returns `null` when no app has that slug, when its `keys` isn't a plain object, or when `client_id` is missing or not a string. The database column is untyped JSON, so the function checks the value's type instead of casting it.\n\nI type-checked `packages/lib` with `tsc` and saw no errors from the new file. I didn't run the full `yarn type-check:ci --force`, and I didn't add tests.\n\n**Decision for you:** the project rules say database access should go through a repository class. I used `prisma` directly to keep it small, the same way `getAppKeysFromSlug` in `packages/app-store/_utils/` does. If you want it to follow the rule, it could call a method on `PrismaAppRepository` instead, at the cost of a slightly bigger change."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1028552,
+        "inputTokens": 10,
+        "outputTokens": 1458,
+        "cacheReadTokens": 251396,
+        "wallMs": 36450
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n\nexport default getAppClientId;\n```\n\n- **Query:** it looks the app up by its unique `slug` and fetches only the `keys` column.\n- **Returns null when:** there's no app with that slug, `keys` is empty or isn't a JSON object, or `client_id` is missing or isn't a string.\n- **No type casts:** it checks the shape of the JSON at runtime instead. The existing `getAppKeysFromSlug` helper uses `as Prisma.JsonObject`, which skips that check.\n\nType-checking `packages/lib` with `tsc` showed no errors in the new file, and Biome reported no issues. I didn't run the full `yarn type-check:ci --force` or add tests. Nothing has been committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1015414,
+        "inputTokens": 10,
+        "outputTokens": 1329,
+        "cacheReadTokens": 251767,
+        "wallMs": 31164
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- It looks up the app by its unique `slug` and fetches only the `keys` column.\n- It returns `null` if there's no app with that slug, if `keys` isn't a plain object, or if `client_id` is missing or not a string. Checking the type this way avoids casting `keys` with `as`.\n\nI type-checked the `packages/lib` package with `tsc --noEmit`, and nothing came up for the new file. I didn't add tests, run the full `yarn type-check:ci`, or commit anything.\n\nThis puts a Prisma query directly in `packages/lib`, which bends the repo's rule that database access goes through repository classes. I kept it that way because you asked for something small and it matches the existing `getAppKeysFromSlug` helper in `packages/app-store/_utils/`. I can rewrite it to use a repository if you'd prefer."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1078856,
+        "inputTokens": 10,
+        "outputTokens": 1500,
+        "cacheReadTokens": 252028,
+        "wallMs": 32004
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  // `keys` is nullable JSON, so it may not be an object at all\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- It looks the app up by its unique `slug` and reads only the `keys` column.\n- `keys` can be empty in the schema (`Json?`), so the function checks that it's a normal object before reading it. It returns null if there's no app, if `keys` is empty or not an object, or if `client_id` is missing or isn't a string.\n- The type check on `packages/lib` and Biome both reported no problems for this file. I didn't add tests or commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1243294,
+        "inputTokens": 12,
+        "outputTokens": 1624,
+        "cacheReadTokens": 304927,
+        "wallMs": 37399
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`. I haven't type-checked or linted it: the repo has no `node_modules`, so `tsc` and Biome couldn't run.\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n\nexport default getAppClientId;\n```\n\n- **Lookup:** it fetches only the `keys` column by the unique `slug`.\n- **Returns null** when the app doesn't exist, `keys` is null or not a JSON object, or `client_id` is missing or not a string.\n- **Exports:** it has both a named and a default export. The default export matches the existing `getAppKeysFromSlug` helper in `packages/app-store/_utils/getAppKeysFromSlug.ts`.\n\nTo check it, run `yarn install`, then `yarn type-check:ci --force` and `yarn biome check packages/lib/server/getAppClientId.ts`. I didn't add a unit test."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.12974760000000002,
+        "inputTokens": 12,
+        "outputTokens": 1803,
+        "cacheReadTokens": 305438,
+        "wallMs": 45624
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`, but I haven't type-checked or linted it. This checkout has no `node_modules`, so `tsc` stopped on missing config files and Biome wouldn't start.\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- **Lookup:** it finds the app by its unique `slug` and selects only `keys`.\n- **Null cases:** it returns `null` when there's no app with that slug, or when `keys` is empty, not a JSON object, or has no string `client_id`.\n- **No type cast:** the checks above handle `keys` being a loose JSON type, unlike the existing `getAppKeysFromSlug` helper, which just casts it.\n\nTo check it, run `yarn install`, then `yarn type-check:ci --force` and `yarn biome check packages/lib/server/getAppClientId.ts`. I haven't added tests or committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.09796860000000002,
+        "inputTokens": 10,
+        "outputTokens": 1412,
+        "cacheReadTokens": 250003,
+        "wallMs": 31548
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- **Lookup:** it finds the app by its unique `slug` and fetches only the `keys` column.\n- **Returns null** when no app has that slug, when `keys` is missing or isn't an object, or when `client_id` is missing or isn't a string. A non-string `client_id` is treated as missing.\n\nI ran the type checker on `packages/lib` and it reported no errors in this file. I haven't run the full `yarn type-check:ci --force` or Biome, haven't written any tests, and haven't committed anything.\n\nOne thing to know: the repo's rules say database access should go through a repository class, and `packages/lib` already calls Prisma directly in places like `packages/app-store/_utils/getAppKeysFromSlug.ts`. Since you asked to keep it small, I followed that existing style rather than adding a repository. If this will be reviewed against those rules, it could move behind an `AppRepository` method later."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.10122300000000001,
+        "inputTokens": 10,
+        "outputTokens": 1458,
+        "cacheReadTokens": 250995,
+        "wallMs": 25517
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\nIt looks up the app by its unique `slug` and reads only the `keys` column. It returns null when there's no such app, when `keys` isn't a plain object, or when `client_id` is missing or isn't a string. It narrows the types with checks rather than a cast.\n\nI type-checked `packages/lib` and filtered the output for this file: no errors. Biome didn't report anything for it either. I didn't add a unit test.\n\nThe existing `getAppKeysFromSlug` in `packages/app-store/_utils` does a similar lookup. I didn't reuse it because `packages/lib` isn't allowed to import from `app-store`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.0966764,
+        "inputTokens": 10,
+        "outputTokens": 1525,
+        "cacheReadTokens": 249002,
+        "wallMs": 29258
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  // `keys` is untyped JSON, so it may be null, an array, or a primitive rather than an object\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- It looks up the app by `slug` (the table's primary key) and reads only the `keys` column.\n- It returns `null` if there's no matching app or `keys` isn't a JSON object (empty, a list, or a single value).\n- It also returns `null` if `client_id` is missing or isn't a string.\n\nThe type check showed no errors in this file, and Biome printed nothing for it. I didn't add tests.\n\nThis puts a direct Prisma query in `packages/lib`, while the project rules say database access should go through repositories. I did it this way because nearby files like `username.ts` and `avatar.ts` also query Prisma directly. If you'd rather follow the rule strictly, this belongs in an app repository."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1139976,
+        "inputTokens": 12,
+        "outputTokens": 1497,
+        "cacheReadTokens": 302728,
+        "wallMs": 32481
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`. I couldn't run the type check or Biome because this checkout has no `node_modules` (dependencies aren't installed).\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\n- It looks the app up by its unique `slug` and fetches only `keys`, so no other fields are read.\n- `keys` is a JSON column, so it could be null, an array or a plain value rather than an object. In any of those cases the function returns `null`, as it does when there's no app with that slug.\n- It returns `client_id` only if it's a string. If it's missing or any other type, you get `null`.\n\nIt follows the same pattern as `packages/app-store/_utils/getAppKeysFromSlug.ts`. To check it, run `yarn install` and then `yarn type-check:ci --force`. I haven't added tests."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "packages/lib/server/getAppClientId.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing getAppKeysFromSlug": false
+      },
+      "spent": {
+        "costUsd": 0.1001946,
+        "inputTokens": 10,
+        "outputTokens": 1425,
+        "cacheReadTokens": 250873,
+        "wallMs": 25125
+      },
+      "answer": "I added `getAppClientId(slug)` in `packages/lib/server/getAppClientId.ts`:\n\n```ts\nimport prisma from \"@calcom/prisma\";\n\nexport async function getAppClientId(slug: string): Promise<string | null> {\n  const app = await prisma.app.findUnique({ where: { slug }, select: { keys: true } });\n  const keys = app?.keys;\n  if (!keys || typeof keys !== \"object\" || Array.isArray(keys)) return null;\n  const clientId = keys.client_id;\n  return typeof clientId === \"string\" ? clientId : null;\n}\n```\n\nIt looks up the app by its unique `slug` and reads only the `keys` column. It returns `null` if there's no app with that slug, if `keys` is missing or isn't a JSON object, or if `client_id` isn't a string. It narrows the type with checks instead of casting.\n\nThe type check on `packages/lib` reported no errors in this file, and Biome printed nothing for it. I didn't write unit tests. The project rules ask for coverage on new code, so tell me if you want tests added. Nothing is committed.\n\nOne thing to know: `packages/app-store/_utils/getAppKeysFromSlug.ts` already fetches an app's keys by slug, though it returns the whole keys object instead of just `client_id`."
+    }
+  ]
+}

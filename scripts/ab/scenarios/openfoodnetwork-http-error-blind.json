@@ -1,0 +1,20 @@
+{
+  "name": "openfoodnetwork-http-error-blind",
+  "repo": "github.com/openfoodfoundation/openfoodnetwork",
+  "commit": "4e121e10f1acde5aa975a4b8a37c421f2080565d",
+  "area": "app/components",
+  "prompt": "Add a Stimulus controller in app/components/resend_confirmation_component/resend_confirmation_controller.js. Its `resend` action sends a POST with `fetch` to the URL in its `url` value, and when the request fails it alerts the user with a translated message: `errors.unauthorized.message` for a 401 status, `errors.network_error.message` when there is no response at all, and `errors.general_error.message` for a status of 500 or above. Keep it small.",
+  "did": [
+    {
+      "name": "the controller exists",
+      "changed": "^app/components/resend_confirmation_component/resend_confirmation_controller\\.js$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing showHttpError",
+      "contains": "import\\s+(\\w+)\\s+from\\s+['\"][^'\"]*show_http_error['\"][\\s\\S]*?\\b\\1\\s*\\(",
+      "in": "^app/components/resend_confirmation_component/resend_confirmation_controller\\.js$"
+    }
+  ]
+}

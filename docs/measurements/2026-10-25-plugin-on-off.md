@@ -2,6 +2,9 @@
 
 Date: 2026-10-25. Harness: `scripts/ab-scenario.mjs` (G18). Claude Code 2.1.310.
 
+A rule fixed in advance picked three more reuse tasks the next day, in eslint, openfoodnetwork and
+cal.diy: [the blind replication](2026-10-26-blind-replication.md).
+
 ## In short
 
 Four of the eight tasks ask for code an existing helper in the repository already does. Over those
