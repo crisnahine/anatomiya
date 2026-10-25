@@ -32,8 +32,9 @@ task cost more with the plugin, 1.4 to 3.1 times as much at the median.
   holds the map. In the second each arm was a local clone with no remote, whose reflog still named
   it. In both, a session could reach the operator's `gh` login, which four rubocop sessions, two on
   each model, say they used to credit their changelog entry. None of the 320 sessions without the
-  plugin mentions the map in its answer or wrote a file under `.claude/`. The harness now removes the
-  reflog and logs `gh` out (G18).
+  plugin mentions the map in its answer, and none of the 280 outside rubocop wrote a file under
+  `.claude/`; rubocop's own `.gitignore` covers that directory, so a write there would not show. The
+  harness now removes the reflog and leaves `gh` unable to read a login (G18).
 - The arms alternate, A then B, 20 trials each. Before any trial, arm A has to name the map's area
   for a file and arm B has to answer that it was given none, or the run stops.
 - A check counts only trials that did the task (every `did` check held) and gave it something to

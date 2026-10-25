@@ -33,6 +33,16 @@ file in it. Bytes as written by the scan above.
 | discourse at `2d1c470` | 2,768 | 447 | 978 |
 | excalidraw at `438d898` | 3,414 | 38 | 2,306 |
 
+## Scan time
+
+The time `scan` prints, on an Apple M3 Pro with 11 cores and a load average under 4, with no
+dependencies installed in either clone, so the TypeScript checker did not run.
+
+| Repository and commit | Files read | First scan of a fresh clone | Three rescans |
+|---|---|---|---|
+| excalidraw at `438d898` | 693 | 1,071 ms | 1,292, 1,101 and 1,132 ms |
+| forem at `b5237b1` | 4,687 | 13,250 ms | 3,132, 2,883 and 2,689 ms |
+
 ## The notice before a write
 
 rubocop at `f009b33`, after a scan, asked through the PreToolUse hook about a `Write` to

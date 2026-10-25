@@ -65,7 +65,7 @@ arms wrote side by side and the cost and the limits beside it.
 ### Fixed
 
 - A trial could use the operator's GitHub login: four rubocop sessions credited their changelog entry
-  through `gh`. Trials now run with no GitHub token and a `gh` that reads no login, and a kept answer
+  through `gh`. Trials now run with no GitHub token and a `gh` that cannot read a login, and a kept answer
   or failure reason shows the operator's home directory as `~` and the machine's account name after an
   `@` as `@<user>`.
 - Three of `DECISIONS.md`'s tables were cut by a blank line, so GitHub showed rows A33, D10 and G12

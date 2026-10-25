@@ -37,7 +37,8 @@
 Four small tasks in three open-source repositories, each asking for code the repository already had
 a function for. 20 sessions with anatomiya and 20 without, per task, on two models. **With
 anatomiya, 145 of 160 sessions called the function that was already there. Without it, 31 of 160
-did.** No prompt named the function, and every check was committed before the first session ran.
+did.** No prompt named the function, and every check was fixed in a scenario file before the first
+session ran; for the three newest tasks, the git history shows it.
 
 Here is what that looks like. The task: show a "You are here" badge in
 [mastodon](https://github.com/mastodon/mastodon) when two links point to the same page. mastodon
@@ -92,7 +93,7 @@ without, 20 of 20 with. Every
 component both arms wrote is in [the evidence file](docs/measurements/data/2026-10-25-mastodon-components.json).
 
 How it got there: 35 of the 40 sessions with anatomiya say they wrote their own comparison first,
-then replaced it with `compareUrls` and deleted their copy. That is the order anatomiya's end-of-turn
+then replaced it with `compareUrls`. That is the order anatomiya's end-of-turn
 check asks for: when a turn adds code, it has a subagent look for an existing function that does the
 same job. The demo at the top is rebuilt from one of those sessions.
 
@@ -111,8 +112,10 @@ the four tasks where anatomiya changed nothing and only cost more.
 /anatomiya:scan
 ```
 
-That is the whole setup. The scan took 1.2 seconds on excalidraw's 693 files and 14 seconds on
-forem's 4,687. It runs on your machine and sends nothing anywhere. You need Node 22 or newer, and for
+That is the whole setup. The first scan took 1.1 seconds on excalidraw's 693 files and 13 seconds on
+forem's 4,687, and a rescan of forem about 3
+([measured](docs/measurements/2026-10-25-readme-examples.md#scan-time)). The scan runs on your machine,
+and anatomiya itself sends nothing anywhere. You need Node 22 or newer, and for
 Ruby, `ruby` with `prism` 1.x (Ruby 3.4 ships it). [More ways to install](#more-ways-to-install) are
 further down.
 
@@ -120,9 +123,9 @@ further down.
 
 | When | What anatomiya does |
 |---|---|
-| Every session | Claude starts with your repository's house rules, counted from your own code with the evidence beside each, and gets a directory's own rules the moment it opens a file there. |
-| Before it creates a file | A short notice if your history says this kind of file ships with another change, or that tests do not live here. |
-| When its turn ends | One subagent looks for an existing function that does what the new code does, and Claude switches to it if there is one. |
+| Every session | In a scanned repository, Claude starts with its house rules, counted from your own code with the evidence beside each, and gets a directory's own rules when it reads a file there. |
+| Before it writes a new file | A short notice if your history says this kind of file ships with another change, or that tests do not live here. |
+| When its turn ends | If the turn added code, one subagent looks for an existing function that does the same job, and Claude is asked to switch to it. |
 | Before you review | `/anatomiya:check` lists each habit the branch broke, at the line that broke it. |
 
 ### The house rules your linter cannot see
