@@ -2,7 +2,8 @@
 /**
  * Two checkouts of one commit: one holding the map, one holding none.
  *
- * Shared clones, which borrow the source's object store, so both arms are the
+ * Local clones, hard-linked, with no alternates, no remote and no reflog, so
+ * neither arm holds a path back to the checkout that holds the map. Both arms are the
  * same bytes at the same commit by construction rather than by a checksum
  * somebody remembered to run. Not worktrees: a linked worktree with no map is
  * the one shape the plugin's hooks answer from its main checkout's map, so arm
@@ -14,7 +15,7 @@
  */
 import { mkdtempSync, rmSync, cpSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -33,7 +34,7 @@ const run = promisify(execFile);
  * shipped: `scripts/` is outside the plugin root. So the harness carries the
  * same battery over its own shorter list instead.
  */
-const ARM_FLAGS = new Set(["--quiet", "--shared", "--no-checkout", "--detach", "--hard", "-fdx"]);
+const ARM_FLAGS = new Set(["--quiet", "--no-checkout", "--detach", "--hard", "-fdx"]);
 
 async function git(root, args, { timeout = 60_000, maxBytes = 1 << 20 } = {}) {
   for (const arg of args) {
@@ -100,12 +101,18 @@ export function dropSettings(arm) {
  * registered in the repository under measurement, so the directory is all
  * there is to remove.
  */
-export async function buildArms(repo, sha, { workdir = tmpdir() } = {}) {
-  const base = mkdtempSync(join(workdir, "anatomiya-ab-"));
-  const a = join(base, "with-map");
-  const b = join(base, "no-map");
+export async function buildArms(repo, sha, { workdir = tmpdir(), name = basename(resolve(repo)) } = {}) {
+  // Each arm sits alone, at the same leaf name: an agent with a shell sees its
+  // working directory, and "no-map" beside "with-map" told it which arm it was
+  // in and where the other arm's map lay.
+  const bases = [];
+  const dispose = async () => {
+    for (const base of bases) rmSync(base, { recursive: true, force: true });
+  };
+  for (let i = 0; i < 2; i++) bases.push(mkdtempSync(join(workdir, "ab-")));
+  const a = join(bases[0], name);
+  const b = join(bases[1], name);
   const arms = [[a, "with-map"], [b, "no-map"]];
-  const dispose = async () => rmSync(base, { recursive: true, force: true });
 
   const reset = async () => {
     for (const [path, name] of arms) {
@@ -124,8 +131,12 @@ export async function buildArms(repo, sha, { workdir = tmpdir() } = {}) {
   try {
     for (const [path, name] of arms) {
       // `.` rather than `repo`: git runs inside it, where a relative `repo` names somewhere else.
-      const cloned = await git(repo, ["clone", "--quiet", "--shared", "--no-checkout", ".", path]);
+      const cloned = await git(repo, ["clone", "--quiet", "--no-checkout", ".", path]);
       if (!cloned.ok) throw new Error(`could not create the ${name} arm: ${cloned.error}`);
+      const cut = await git(path, ["remote", "remove", "origin"]);
+      if (!cut.ok) throw new Error(`could not cut the ${name} arm from its source: ${cut.error}`);
+      // The reflog opens with "clone: from <source>", the checkout that holds the map.
+      rmSync(join(path, ".git", "logs"), { recursive: true, force: true });
       // Before the checkout, so an arm holds the commit's bytes on Windows too.
       const bytes = await git(path, ["config", "core.autocrlf", "false"]);
       if (!bytes.ok) throw new Error(`could not configure the ${name} arm: ${bytes.error}`);

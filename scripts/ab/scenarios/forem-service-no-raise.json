@@ -1,0 +1,21 @@
+{
+  "name": "forem-service-no-raise",
+  "repo": "github.com/forem/forem",
+  "commit": "b5237b126cf27bd3897086e7811e33f7872ec444",
+  "area": "app/services",
+  "prompt": "Add a service object, `Comments::Hider`, in app/services/comments/hider.rb. Its class method `call(comment)` hides the comment the way a post's author hides one, by setting `hidden_by_commentable_user` to true. The caller needs to be able to tell whether it worked.",
+  "did": [
+    {
+      "name": "the service exists",
+      "changed": "^app/services/comments/hider\\.rb$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "its entry point does not raise",
+      "claim": "service entry points do not raise, directly or through a bang call like update!: 141 of 147 sites across 91 of 167 files, 59 authors",
+      "dimension": "service_result_shape",
+      "in": "^app/services/comments/hider\\.rb$"
+    }
+  ]
+}

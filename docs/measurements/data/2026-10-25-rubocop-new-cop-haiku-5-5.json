@@ -1,0 +1,1012 @@
+{
+  "scenario": "scripts/ab/scenarios/rubocop-new-cop.json",
+  "scenarioSha256": "6e90369c5f4bf993798b58ee8bd2adefde2aea4bc2796613229bc58187a6a5b7",
+  "label": "github.com/rubocop/rubocop",
+  "sha": "f009b338048ea0ade9d6d88cf358111092c8f12c",
+  "engine": {
+    "model": "claude-haiku-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": null,
+  "said": {
+    "a": "lib/rubocop/cop/style: 302 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025172959.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.024539504999999996,
+        "inputTokens": 44,
+        "outputTokens": 17864,
+        "cacheReadTokens": 562048
+      },
+      "answer": "The reuse check found no existing helper that does the same job as the new code, so I made no changes.\n\nThe change is still:\n- `lib/rubocop/cop/style/reverse_first.rb`, the `Style/ReverseFirst` cop. It flags `array.reverse.first` and autocorrects it to `array.last`, keeping the original `.` or `&.` operator.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`, 9 examples, all passing.\n- `config/default.yml` and `lib/rubocop/cop/style.rb`, registering the cop as pending, unsafe (`Safe: false`).\n- `changelog/new_add_style_reverse_first_cop_20261025172959.md`.\n\nStill open:\n- **Changelog placeholders.** The entry uses `pull/x`, `#x` and `[@][]`. `spec/project_spec.rb` fails on these 4 format checks until they're filled in. I need the PR number and your GitHub username.\n- **Full CI not run.** I ran the cop spec, `project_spec.rb` and RuboCop on the new files, not `bundle exec rake`. That's the next step before a PR.\n- **Nothing committed.** Changes are uncommitted in the working tree."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": false
+      },
+      "spent": {
+        "costUsd": 0.021072305000000003,
+        "inputTokens": 46,
+        "outputTokens": 16450,
+        "cacheReadTokens": 553458
+      },
+      "answer": "The reuse check found no shared helper I could call in place of the new code, so I made no further changes.\n\n**What the check reported**\n- **Selector range:** `node.children.first.loc.selector.join(node.loc.selector)` is copied verbatim from `Style/ReverseFind` (`reverse_find.rb:41`). That's inline code in a sibling cop, not a function, so there is nothing to call. Extracting it into a shared helper would touch a second cop, which is outside this change.\n- **Similar functions:** `offense_range` in `redundant_filter_chain.rb:108` and `kv_range` in `hash_each_methods.rb:214` do the same join with different receivers. They are instance methods on other cop classes, so `ReverseFirst` can't call them without moving them into a shared mixin. I didn't make that change.\n- **Block-parent guard:** `from_map_to_h` in `hash_transform_method/autocorrection.rb:17` and `convertible_block?` in `redundant_line_break.rb:207` do similar checks. Both are cop-local, not shared helpers.\n\nThe rubocop-ast gem was not searched because the subagent's filesystem scan timed out, so that part is unverified.\n\n**Still open from before**\n- No changelog entry yet. It needs an issue or PR number for `bundle exec rake changelog:new <number>`.\n- `VersionAdded` is still the `'<<next>>'` placeholder.\n- Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025174935.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.026731940000000003,
+        "inputTokens": 56,
+        "outputTokens": 17382,
+        "cacheReadTokens": 771334
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no changes for it.\n\nThe closest matches are private helpers in sibling cops (`Style/Sample`, `Style/ArrayFirstLast`, `Style/UnpackFirst`) that build the same offense range. They're private to their cops and can't be called from the new one. No existing cop flags `reverse.first`.\n\n**Status**\n- `Style/ReverseFirst` flags `x.reverse.first` (no argument) and autocorrects it to `x.last`. It handles `.` and `&.`, and it's marked unsafe.\n- The spec passes (11 examples), and self-lint, the doc-syntax check, and the related specs pass.\n- Still open: `spec/project_spec.rb` fails on the changelog entry, which has a placeholder `#x` link and `([@][])` handle. I need your issue or PR number and GitHub handle to fix it.\n- Also open: the full `bundle exec rake` hasn't been run, and nothing is committed.\n- The cop ships as `Enabled: pending`. Change it to `true` if you want it on by default."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025180000.md",
+        "config/default.yml",
+        "docs/modules/ROOT/pages/cops.adoc",
+        "docs/modules/ROOT/pages/cops_bundler.adoc",
+        "docs/modules/ROOT/pages/cops_gemspec.adoc",
+        "docs/modules/ROOT/pages/cops_layout.adoc",
+        "docs/modules/ROOT/pages/cops_lint.adoc",
+        "docs/modules/ROOT/pages/cops_metrics.adoc",
+        "docs/modules/ROOT/pages/cops_migration.adoc",
+        "docs/modules/ROOT/pages/cops_naming.adoc",
+        "docs/modules/ROOT/pages/cops_security.adoc",
+        "docs/modules/ROOT/pages/cops_style.adoc",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.030194249999999995,
+        "inputTokens": 60,
+        "outputTokens": 21089,
+        "cacheReadTokens": 960460
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no changes for it.\n\n`Style/ReverseFirst` flags `receiver.reverse.first` with no arguments and autocorrects it to `receiver.last`, including the `&.` form. The new spec passes (9 examples), and RuboCop's self-lint on the whole repo is clean.\n\nChanges, none committed:\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: the spec.\n- `config/default.yml` and `lib/rubocop/cop/style.rb`: registration and config, set to `Enabled: pending`, `Safe: false`.\n- `docs/modules/ROOT/pages/cops.adoc` and `cops_style.adoc`: only the `ReverseFirst` lines.\n- `changelog/new_add_style_reverse_first_cop_20261025180000.md`: the changelog entry.\n\nBefore this can merge:\n- **Changelog placeholders:** the entry has `[#XXXXX]` and `pull/XXXXX`, and `([@<user>][])` is my guess at your username. `spec/project_spec.rb` fails on those three checks until you replace them with the real PR number and username.\n- **Codespell:** I didn't confirm it passed; its output was empty.\n- **Full CI:** I ran the cop spec, project spec, and self-lint separately, not `bundle exec rake` as one pass.\n\nDesign choices you may want to change:\n- Marked unsafe, like `Style/ReverseFind`, because the receiver isn't guaranteed to be an Array.\n- Only the `reverse.first` span is flagged; multi-line chains get one offense over that span.\n- Blocks aren't special-cased: `array.reverse.first { ... }` becomes `array.last { ... }`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_that_flags_array_reverse_first_and_autocorrects_20261025181403.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.024373899999999993,
+        "inputTokens": 54,
+        "outputTokens": 17815,
+        "cacheReadTokens": 718155
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no changes.\n\nThe closest matches were near-misses: `ZeroLengthPredicate#replacement` and two other cops build a similar receiver-plus-dot string, but each is private to its own cop. `block_literal?` appears in about 15 cops as an inline guard, which is the same idiom the new cop uses.\n\nThe cop is still ready, with one open item: the changelog entry links to `#x` because I don't have the PR or issue number. `spec/project_spec.rb` fails until that is replaced with a real number. Send me the number and I'll update the entry."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025183000.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.02550542,
+        "inputTokens": 42,
+        "outputTokens": 19382,
+        "cacheReadTokens": 597322
+      },
+      "answer": "The reuse check found no existing function that does the same job as the new cop, so I made no changes.\n\nThe subagent's closest matches were all private to their own cops, or the same `dot.join(selector)` idiom written inline across many cops. None could be called directly, so the new code stays as written. The subagent searched `lib/` closely but only skimmed `spec/support` and `lib/rubocop/ast`.\n\nStill open from the last report: the changelog entry has placeholders (`#x` for the PR number and `[@]` for the author), which fail four `project_spec.rb` checks. Give me the PR number and your GitHub username and I'll fill them in. The full `bundle exec rake` also hasn't been run yet."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_20261025183500.md",
+        "config/default.yml",
+        "docs/modules/ROOT/pages/cops.adoc",
+        "docs/modules/ROOT/pages/cops_bundler.adoc",
+        "docs/modules/ROOT/pages/cops_gemspec.adoc",
+        "docs/modules/ROOT/pages/cops_layout.adoc",
+        "docs/modules/ROOT/pages/cops_lint.adoc",
+        "docs/modules/ROOT/pages/cops_metrics.adoc",
+        "docs/modules/ROOT/pages/cops_migration.adoc",
+        "docs/modules/ROOT/pages/cops_naming.adoc",
+        "docs/modules/ROOT/pages/cops_security.adoc",
+        "docs/modules/ROOT/pages/cops_style.adoc",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.03174488,
+        "inputTokens": 54,
+        "outputTokens": 25184,
+        "cacheReadTokens": 879758
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no changes for it. The closest match is `Style/ReverseFind`, whose matcher and `on_send`/`on_csend` structure the new cop already follows. Its range calculation differs, so there's nothing to call or delete.\n\nStill open:\n- **Changelog entry:** `changelog/new_add_style_reverse_first_20261025183500.md` has placeholder PR number and GitHub username. Until you give me those, 3 `spec/project_spec.rb` tests fail. Send the PR number and username and I'll fill them in.\n- **Commit:** nothing is committed. Tell me if you want one.\n\nThe cop, spec, config entry, registration line, and doc sections are in place. The spec passes (12 examples), and the full style cop suite and config spec pass (15,196 examples, 0 failures)."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": false
+      },
+      "spent": {
+        "costUsd": 0.021348935,
+        "inputTokens": 46,
+        "outputTokens": 16726,
+        "cacheReadTokens": 572046
+      },
+      "answer": "The reuse check found no existing function to replace any of the new code, so I made no changes in this step.\n\nThe subagent checked the shared mixins, `util.rb`, and the sibling cops. The closest matches are inline copies of the same selector-join and `reverse` matcher in `Style/ReverseFind` and a few other cops, not callable helpers, so there was nothing to swap in.\n\nCurrent state (unchanged since my last report):\n- **Added:** `lib/rubocop/cop/style/reverse_first.rb`, `spec/rubocop/cop/style/reverse_first_spec.rb`, the registration line in `lib/rubocop/cop/style.rb`, and the `Style/ReverseFirst` entry in `config/default.yml`.\n- **Verified:** the cop spec passes under both Parser and Prism, `spec/project_spec.rb` passes, the doc-syntax check and self-lint are clean.\n- **Still open:** the changelog entry needs a PR number and your GitHub username, and `codespell` isn't installed in this bundle, so the spell check didn't run. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025184500.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.020572745000000003,
+        "inputTokens": 46,
+        "outputTokens": 14356,
+        "cacheReadTokens": 565087
+      },
+      "answer": "The reuse check found no existing function that does the same job as the new `Style/ReverseFirst` code, so I made no changes.\n\nThe closest match is `Style/ReverseFind` (`lib/rubocop/cop/style/reverse_find.rb:31-47`). It has the same structure, with a `reverse` receiver, the same offense-range idiom, and a `csend` alias. It rewrites to `rfind` for `find`/`detect`, though, so it does a different job. The subagent did not search the rubocop-ast gem.\n\nThe only open item is the changelog entry. `project_spec` needs your issue or PR number in the `[#N](https://github.com/rubocop/rubocop/(issues|pull)/N):` format, and the entry's `[@username][]` placeholder needs your GitHub handle. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025184955.md",
+        "config/default.yml",
+        "docs/modules/ROOT/pages/cops.adoc",
+        "docs/modules/ROOT/pages/cops_bundler.adoc",
+        "docs/modules/ROOT/pages/cops_gemspec.adoc",
+        "docs/modules/ROOT/pages/cops_layout.adoc",
+        "docs/modules/ROOT/pages/cops_lint.adoc",
+        "docs/modules/ROOT/pages/cops_metrics.adoc",
+        "docs/modules/ROOT/pages/cops_migration.adoc",
+        "docs/modules/ROOT/pages/cops_naming.adoc",
+        "docs/modules/ROOT/pages/cops_security.adoc",
+        "docs/modules/ROOT/pages/cops_style.adoc",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.024611755000000003,
+        "inputTokens": 56,
+        "outputTokens": 16710,
+        "cacheReadTokens": 768983
+      },
+      "answer": "The reuse check found no existing function that does the same job as the new cop, so I made no changes for it.\n\nThe closest code is `Style/ReverseFind`, which rewrites `reverse.find` to `rfind`. Its matcher doesn't cover `.first`, so it can't be reused. `Style/NegativeArrayIndex` lists `reverse` as a method that preserves negative indexes, but it doesn't flag `reverse.first`.\n\nStill open from earlier:\n- The changelog entry in `changelog/new_add_style_reverse_first_cop_20261025184955.md` has placeholders: `#x` for the PR number and `[@username]` for your GitHub login. Until you fill them in, `spec/project_spec.rb` fails in the full `bundle exec rake` run, with three failures from those two placeholders.\n- Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025172947.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.02193681,
+        "inputTokens": 40,
+        "outputTokens": 16033,
+        "cacheReadTokens": 511351
+      },
+      "answer": "The reuse check found no existing function I can call in place of the new code, so I left the change as it was.\n\n- **`block_attached?` (reverse_first.rb:46-48):** the subagent pointed at `convertible_block?` in `lib/rubocop/cop/layout/redundant_line_break.rb:204`. That is a private method of another cop, and it also checks argument parenthesization, so it isn't the same job. The other match, `lib/rubocop/cop/mixin/hash_transform_method/autocorrection.rb:17`, is an inline `block_type? && send_node == node` check inside a method, not a reusable function. I kept my helper.\n- **Offense range (reverse_first.rb:34):** `reverse_find.rb:41` builds the same `loc.selector.join(...)` range, but inline rather than through a helper. Nothing to call.\n- **Matcher and cop logic:** no existing code matches `reverse.first` or suggests `last` for it.\n\nNothing was deleted. The changelog entry still has placeholders for the PR number and GitHub login, so `spec/project_spec.rb` fails until you provide them. The change is still uncommitted."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": false
+      },
+      "spent": {
+        "costUsd": 0.024020254999999997,
+        "inputTokens": 50,
+        "outputTokens": 19199,
+        "cacheReadTokens": 641968
+      },
+      "answer": "The reuse check found one piece of the new cop that duplicates existing code, but I left it alone. That duplicate is `kv_range` in `lib/rubocop/cop/style/hash_each_methods.rb:214`. It computes the same range as my `node.receiver.loc.selector.join(node.loc.selector)`, but it's a private method of `HashEachMethods`. Calling it from `ReverseFirst` would mean making it public or moving it into a shared mixin, which changes another cop. That's outside this change, so I didn't do it. The subagent found no other function that does the whole job. Its matcher and `on_send` are near copies of `ReverseFind`, but they match different methods and differ in the details that matter.\n\n**State of the change:** unchanged since my last message.\n- Added: `lib/rubocop/cop/style/reverse_first.rb`, `spec/rubocop/cop/style/reverse_first_spec.rb`.\n- Edited: `lib/rubocop/cop/style.rb` (registration), `config/default.yml` (entry).\n- The cop spec passes (12 examples) under both Parser and Prism, and the doc syntax check and config/project specs pass.\n\n**Still open:**\n- **Changelog entry:** still missing. It needs a PR number and a `credential.username`. Once you have both, run `bundle exec rake 'changelog:new[<PR number>]'`.\n- **Full `rake prism_spec`:** I didn't get a clear result for it. The background job's last command was RuboCop, which passed, but the Prism suite's own output wasn't captured in what I read. I only verified the targeted Prism run.\n- **Commit:** nothing committed.\n\nIf you want the `kv_range` duplicate removed, the change would be to move that helper into a shared mixin and update `HashEachMethods` to use it. Say if you want that done."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_20261025174430.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.02171821,
+        "inputTokens": 46,
+        "outputTokens": 15534,
+        "cacheReadTokens": 542816
+      },
+      "answer": "The reuse check found no existing function that does the same job as the new cop, so I made no further changes.\n\nThe closest match is `ReverseFind#on_send` in `lib/rubocop/cop/style/reverse_find.rb:38-46`. It has the same structure, but it's a sibling cop that rewrites a different pattern, not a shared helper. The `loc.selector.join` range idiom appears inline in about 20 cops, with no helper for it, so the new line stays as written.\n\nThe change is the same as before: the `Style/ReverseFirst` cop, its 10 specs (passing), the `config/default.yml` entry, the `register_cop` line, and a changelog entry. Two things still need your input:\n- **Changelog:** `spec/project_spec.rb` fails 4 checks on `changelog/new_add_style_reverse_first_20261025174430.md`. The entry has a `#x` placeholder for the PR number and a blank `[@][]` author. Give me the PR number and your GitHub username and I'll fix it.\n- **Commit:** I haven't committed. AGENTS.md asks for a `[Fix #N]`-style message and the full `bundle exec rake` before pushing. I ran `rake internal_investigation` and `documentation_syntax_check`, and both pass, but I didn't run the full `rake`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_that_flags_array_reverse_first_and_autocorrects_it_20261025175436.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.030603874999999996,
+        "inputTokens": 70,
+        "outputTokens": 20436,
+        "cacheReadTokens": 1048260
+      },
+      "answer": "The Prism spec run is no longer unverified, but it still isn't clean. The only failures are the placeholder changelog entry, plus one timing test that passes when run alone.\n\n**Prism suite (`bundle exec rake prism_spec`):** about 40,000 examples across 11 parallel groups. Four failed:\n- Three changelog checks fail on the entry's placeholder PR number and username. Fill in the real PR number and your GitHub login in `changelog/new_add_style_reverse_first_...md`.\n- One `Layout/LineLength` performance test (\"checks a large collection literal ... in a reasonable amount of time\") failed under parallel load. Run alone, its spec file passes (208 examples, 0 failures), so I'm treating it as flaky, not caused by this change.\n\n**Earlier work still stands:** the new cop and its 10-example spec pass under the default parser, RuboCop reports no offenses on the new files, and the reuse check found no existing helper to reuse. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_20261025120000.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.026470494999999997,
+        "inputTokens": 44,
+        "outputTokens": 21640,
+        "cacheReadTokens": 665187
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no changes in this step.\n\nThe subagent searched the shared mixins, the sibling cops (`reverse_find.rb`, `array_first_last.rb`), and every `loc.dot.join` / `loc.selector.join` call in `lib/`. The closest matches do different rewrites. I also confirmed that `lib/rubocop.rb` doesn't reference any sibling cop like `ReverseFind`, so no edit is needed there.\n\nStill open from before:\n- **Changelog placeholders:** `changelog/new_add_style_reverse_first_20261025120000.md` has `NNNNN` for the issue/PR number and `[@username][]` for your GitHub handle. Fill those in, or `spec/project_spec.rb` will keep failing 3 examples.\n- **Not committed:** the changes are in the working tree only."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025180000.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.025350530000000003,
+        "inputTokens": 48,
+        "outputTokens": 21884,
+        "cacheReadTokens": 582363
+      },
+      "answer": "The reuse check found no existing function that does the same job as the new code, so I made no changes. The range join and the parent-block guard are written inline in several cops, but no shared helper exists for them. `reverse_find.rb:41` computes the same range, and `hash_transform_method/autocorrection.rb:17` has a near-identical block guard, but both are inline expressions rather than functions to call.\n\nThe cop is still done: 13 specs pass under both the Parser and Prism parsers, and the cop lints clean. The open item is the changelog entry (`changelog/new_add_style_reverse_first_cop_20261025180000.md`). It has placeholder `[#x]` and `[@][]` values, which fail four `spec/project_spec.rb` checks. I need the real PR number and your GitHub username to fill them in. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025182700.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.02877779499999999,
+        "inputTokens": 66,
+        "outputTokens": 19725,
+        "cacheReadTokens": 945307
+      },
+      "answer": "The reuse check found no existing function that does the same job as the new code, so I made no changes.\n\n- **Cop logic:** the closest match is `Style/ReverseFind`, but it handles `reverse.find`/`detect` and has no shared helper I could call.\n- **Offense range:** `node.receiver.loc.selector.join(node.loc.selector)` appears in several cops, but as an inline idiom, not a shared method.\n- **Duplicate cop:** no existing cop flags `reverse.first`.\n\nThe work is still uncommitted, and the changelog entry still has placeholders. `spec/project_spec.rb` fails 4 checks until the `#x` PR/issue number and `[@]` username are filled in. Send me both values and I'll fix the entry and rerun the spec. Do you also want me to commit this as one commit?"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025183350.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.020759609999999998,
+        "inputTokens": 50,
+        "outputTokens": 14953,
+        "cacheReadTokens": 591191
+      },
+      "answer": "The reuse check found no existing function that does the same job as the new code, so I made no changes for it.\n\nThe closest match is `Style/ReverseFind`. It has the same structure, but its logic is private to its own class, so `ReverseFirst` can't call it. The `selector.join` range computation is written inline in about 20 cops, not in a shared helper. `RangeHelp#add_range` is a similar concept, but it computes a min/max union rather than the same range, so it isn't a replacement.\n\nThe change is still as it was:\n- `lib/rubocop/cop/style/reverse_first.rb` (new cop)\n- `spec/rubocop/cop/style/reverse_first_spec.rb` (9 examples, passing)\n- `config/default.yml` entry (`Enabled: pending`, `Safe: false`)\n- the `register_cop` line in `lib/rubocop/cop/style.rb`\n- `changelog/new_add_style_reverse_first_cop_20261025183350.md` (staged)\n\nStill open before a PR: the changelog entry has placeholders (`#x` and `[@]`), so `spec/project_spec.rb` fails on 4 examples. Give me the PR number and your GitHub username and I'll fill them in. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025183900.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.018398845000000004,
+        "inputTokens": 38,
+        "outputTokens": 13296,
+        "cacheReadTokens": 509287
+      },
+      "answer": "The reuse check found no existing function to reuse, so I made no changes for it.\n\nThe subagent searched the shared and utility modules, the files near the change, and the code making the same calls. Its closest match is inline code in `lib/rubocop/cop/style/reverse_find.rb:41-44`, which computes the same selector-to-selector range and correction. That code isn't a callable helper, so the new cop mirrors it rather than calling it. The other inline copies (`redundant_filter_chain.rb`, `hash_each_methods.rb`) use the same idiom but don't share a function.\n\n**Still outstanding from before:**\n- The changelog entry `changelog/new_add_style_reverse_first_cop_20261025183900.md` has `#x` and `@username` placeholders. Send me the PR number and your GitHub login and I'll fill them in. Until then the three changelog checks in `spec/project_spec.rb` fail; everything else in the full `bundle exec rake` run passes.\n- Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025184517.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.02573826,
+        "inputTokens": 50,
+        "outputTokens": 20462,
+        "cacheReadTokens": 676846
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I changed nothing.\n\nThe subagent compared the new code against the shared helpers, the neighboring cops, and the code making the same calls. Its closest matches only share the technique, not the job:\n- `reverse_find.rb` has the same `on_send` shape, but it renames `find`/`detect` to `rfind` and does not remove `.reverse`.\n- Several cops, such as `redundant_source_range.rb` and `collection_querying.rb`, build the same dot-to-selector range, but they remove different calls.\n- `redundant_sort.rb` matches `first`/`last` but rewrites to `min`/`max`.\n\nSince none of those matches is the same job, there was nothing to delete.\n\nThe cop, its spec, and the config entry are as before. Still open: the changelog entry has placeholders for the issue number and your GitHub handle, and `spec/project_spec.rb` fails 3 examples until they're filled in. Send me the number and handle and I'll fix it. Nothing is committed."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_that_checks_for_reverse_first_calls_that_can_be_20261025173229.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.01624856,
+        "inputTokens": 34,
+        "outputTokens": 13361,
+        "cacheReadTokens": 407266
+      },
+      "answer": "I added `Style/ReverseFirst`, which flags `array.reverse.first` with no arguments and autocorrects it to `array.last`. The cop's 13 specs pass, but the project changelog spec fails until the changelog entry has a real PR number.\n\n**What's in the change**\n- **Cop** (`lib/rubocop/cop/style/reverse_first.rb`): matches `(call (call !nil? :reverse) :first)` and replaces `reverse.first` with `last`, keeping the receiver and any `&.` on the receiver. Marked `@safety` unsafe, since the receiver may be an `Enumerable` without `last`.\n- **Spec** (`spec/rubocop/cop/style/reverse_first_spec.rb`): covers the basic case, `&.` on both calls, a method-call receiver, a chained call after `first`, and non-matches: `first(2)`, `first(&block)`, `reverse!.first`, `reverse_each.first`, implicit-receiver `reverse.first`, `first`, `reverse.last`.\n- **Config** (`config/default.yml`): description, `Safe: false`, `Enabled: pending`, `VersionAdded: '<<next>>'`.\n- **Registration** (`lib/rubocop/cop/style.rb`): added by the generator.\n- **Changelog** (`changelog/new_add_new_style_reverse_first_cop_...md`): created through `Changelog::Entry`, staged.\n\n**Checks**\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 13 examples, 0 failures.\n- `rake internal_investigation`: 1745 files, no offenses.\n- `rake documentation_syntax_check` and `codespell`: pass.\n- `spec/project_spec.rb` and `spec/rubocop/config_spec.rb`: 3 failures, all in `project_spec`, all from the changelog entry's `#x` placeholder (no valid issue number, no PR link). Once the PR exists, replace `#x` and the link with the real number and rerun.\n- I did not run the full `bundle exec rake`.\n\n**Choices I made**\n- The changelog's GitHub handle is `crisnahine`, taken from `gh api user`. Tell me if it should be different.\n- The generator's default body came from the last commit title, which was an unrelated merge. I deleted that entry and regenerated it with the correct body.\n- Nothing is committed. Per AGENTS.md, the change should probably go"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": false
+      },
+      "spent": {
+        "costUsd": 0.01817389,
+        "inputTokens": 44,
+        "outputTokens": 14407,
+        "cacheReadTokens": 619939
+      },
+      "answer": "The `Style/ReverseFirst` cop is added and its 11 specs pass under both the Parser and Prism parsers. I didn't commit anything.\n\n**What it does:** `array.reverse.first` is flagged and autocorrected to `array.last`. It only matches when both `reverse` and `first` take no arguments and `reverse` has a receiver.\n\n**Choices I made beyond the request:**\n- **Safe navigation:** the replacement keeps the `reverse` call's operator, so `array&.reverse&.first` becomes `array&.last` and `array&.reverse.first` becomes `array&.last`. My first draft used the outer operator and turned the second case into `array.last`, which raises on nil. The spec covers this.\n- **Marked unsafe (`Safe: false`):** a custom `reverse` could return something whose `last` differs from `first`.\n- **`Enabled: pending`:** I left the generator's default, which is how new cops are normally added here.\n\n**Files:**\n- `lib/rubocop/cop/style/reverse_first.rb` (new)\n- `spec/rubocop/cop/style/reverse_first_spec.rb` (new)\n- `config/default.yml` and `lib/rubocop/cop/style.rb` (generator-registered, with the description and `Safe: false` filled in)\n\n**Checks run:** the cop spec, `spec/project_spec.rb` plus two config and cop specs (792 examples, 0 failures), `documentation_syntax_check`, and `internal_investigation` (1745 files, no offenses). `bundle exec rake` as a whole has not been run.\n\n**Not done: the changelog entry.** `changelog:new` builds the entry's author link from `git config --global credential.username`, and that isn't set here. I didn't guess a GitHub login. Once you set it, run `bundle exec rake changelog:new` and then `bundle exec rake changelog:new` will create the file for you. Or tell me your GitHub username and I'll write it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025175531.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.01767117,
+        "inputTokens": 38,
+        "outputTokens": 14932,
+        "cacheReadTokens": 532577
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `array.reverse.first` (no arguments) and autocorrects it to `array.last`. The cop specs pass under both the Parser and Prism engines. The changelog entry still has placeholders, so the project spec fails until you fill them in.\n\n**Changes:**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `(call (call !nil? :reverse) :first)`, so `first` and `reverse` must take no arguments and `reverse` must have an explicit receiver. It also handles `&.` via `alias on_csend on_send`.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 12 examples covering offenses, autocorrection (including `&.` on either call and calls inside larger expressions), and non-offenses (`array.last`, `reverse.last`, `first(2)`, `reverse(1).first`, bare `reverse.first`).\n- `config/default.yml`: description and `Safe: false`, since a receiver that is not an Array (such as a String with ActiveSupport) may not respond to `last`. `Enabled: pending` is still the placeholder default, so I left it alone.\n- `lib/rubocop/cop/style.rb`: registration, added by the generator.\n- `changelog/new_add_style_reverse_first_cop_20261025175531.md`: entry with placeholders.\n\n**Verification:**\n- The cop spec passes (12 examples, 0 failures) under the Parser engine and under `PARSER_ENGINE=parser_prism`.\n- `rake codespell` and `rake internal_investigation` pass.\n- `rubocop` reports no offenses on the new files.\n- I did not run the full `bundle exec rake`, which also includes the documentation syntax check.\n- `spec/project_spec.rb` fails 3 examples, all for the changelog entry.\n\n**Needs your input:**\n- The changelog entry has `[#XXXXX]` and `[@USERNAME][]` placeholders. Replace them with the real PR number and GitHub username before pushing; I don't know either.\n- Running `rake changelog:new` produced a bad entry, with a placeholder PR number and a blank author, and staged it. I removed that file and unstaged it. The entry above replaces it.\n\nNothing is committed. The repo's "
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": false
+      },
+      "spent": {
+        "costUsd": 0.02304216,
+        "inputTokens": 56,
+        "outputTokens": 18609,
+        "cacheReadTokens": 807566
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `reverse.first` with no arguments and autocorrects it to `last`. The new spec passes under both the Parser and Prism engines, and the self-lint and doc-syntax checks are clean. Nothing is committed.\n\n**Files**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches only zero-argument `reverse` and `first` calls, handles `&.` via `on_csend`, and uses `RESTRICT_ON_SEND`.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 13 examples covering offenses, safe-navigation variants, implicit receivers, and calls that must not be flagged.\n- `lib/rubocop/cop/style.rb` and `config/default.yml`: generated registration and config entry. I set the description; the entry stays `Enabled: pending`, which is the generator default for new cops.\n\n**Decisions I made**\n- **Safe navigation is preserved.** `array&.reverse.first` becomes `array&.last`, not `array.last`. Ruby short-circuits the whole chain when `array` is nil, so a plain `array.last` would raise.\n- **No receiver type check.** The cop can't tell whether `reverse` comes from an Array or a custom method, so it flags any receiver. I left out an `@safety` note for that.\n\n**Not done yet**\n- **Changelog entry.** A new cop needs one, but I didn't create it. The `changelog:new` task needs a PR number and a GitHub username, and neither is available (no `credential.username` is configured). After you commit and open the PR, run `bundle exec rake 'changelog:new[<PR#>]'`. It takes its text from the last commit title, so name the commit something like \"Add new `Style/ReverseFirst` cop\". I tried a placeholder entry, but `project_spec.rb` rejected it and I removed it.\n- **Full CI.** Codespell, doc syntax, and self-lint pass. The full spec run had one failure, `Layout/LineLength`'s \"reasonable amount of time\" timing test, which timed out while several rake runs competed for the machine. It passes on its own (208 examples, 0 failures). I haven't gotten a clean full `bundle exec rake` run, so I'd r"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": false
+      },
+      "spent": {
+        "costUsd": 0.016597100000000004,
+        "inputTokens": 38,
+        "outputTokens": 14286,
+        "cacheReadTokens": 489550
+      },
+      "answer": "I added `Style/ReverseFirst`, which flags `array.reverse.first` (no arguments) and autocorrects it to `array.last`. The full `bundle exec rake` passes with exit code 0, including 3790+ specs in the first worker and the self-lint. Nothing is committed.\n\n**Changes**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `reverse` with an explicit receiver followed by `first` with no arguments, and also handles `&.`.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 15 examples covering the offense and correction, safe navigation, parentheses, use as an argument or block body, and the non-matching cases.\n- `lib/rubocop/cop/style.rb` and `config/default.yml`: the registration and config entry, generated by `rake new_cop`. I set a description and `Safe: false`.\n\n**Choices I made that you may want to change**\n- **Unsafe.** The cop is marked `Safe: false` because the receiver might not be an Array, so `last` may not match `reverse.first`.\n- **Blocks are skipped.** `array.reverse.first { ... }` is not flagged, since a block isn't the no-argument form. A chain used as a block body is still flagged.\n- **Enabled: pending.** The scaffold default is kept, so the cop is off until it's enabled for a release.\n\n**Not done: changelog entry.** `bundle exec rake changelog:new` derived the name from the detached HEAD's merge commit, so I deleted the file it created and unstaged it. The correct entry needs the issue or PR number and your GitHub username, which I don't have. Once you give me those, I'll add `changelog/new_style_reverse_first_<timestamp>.md` in the `* [#N](…): Add … ([@user][])` format."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025182847.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.01432173,
+        "inputTokens": 34,
+        "outputTokens": 11635,
+        "cacheReadTokens": 418983
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `array.reverse.first` and autocorrects it to `array.last`, and it covers `&.` in either position. The cop's specs pass (11 examples, Parser and Prism), and self-lint and the doc syntax check are clean. The full `bundle exec rake` still fails because of the changelog entry, which needs your input (see below). I haven't committed anything.\n\n**What changed**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `reverse` with a receiver followed by `first` with no arguments, and it replaces the `reverse.first` span with `last`.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: specs for `.`/`&.` combinations, a method-call receiver, use inside a larger expression, and the non-matching cases (`first(2)`, bare `reverse.first`, `reverse.last`, plain `first`).\n- `config/default.yml` and `lib/rubocop/cop/style.rb`: the generated registration and config entries, with a description, `Safe: false`, and `Enabled: pending`.\n- `changelog/new_add_style_reverse_first_cop_20261025182847.md`: the changelog entry.\n\n**Choices I made**\n- `reverse.first(n)` is not flagged, because it returns an array rather than one element.\n- A bare `reverse.first` with no receiver is not flagged, since `reverse` could be a local method.\n- `reverse_each.first` is not flagged, since you only asked for `reverse.first`. It would be a small addition if you want it.\n- The cop is marked unsafe because a non-Array receiver may not respond to `last`.\n\n**Needs your input: changelog**\nThe `changelog:new` task named the file after the latest merge commit, so I deleted that file and wrote the entry by hand. It still has `#x` and `[@]` placeholders, which make `spec/project_spec.rb` fail. Send me the PR or issue number and your GitHub username and I'll fill them in. The other four failures in that run are the same placeholder checks."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": false
+      },
+      "spent": {
+        "costUsd": 0.01170368,
+        "inputTokens": 24,
+        "outputTokens": 10398,
+        "cacheReadTokens": 276208
+      },
+      "answer": "I added `Style/ReverseFirst`, which flags `array.reverse.first` (no arguments) and autocorrects it to `array.last`. The full `bundle exec rake` passes, as does `prism_spec`. Nothing is committed.\n\n**Changes**\n- `lib/rubocop/cop/style/reverse_first.rb`: new cop. It matches `(call (call !nil? :reverse) :first)`, which requires a receiver on `reverse` and rules out any arguments to either call. Autocorrect replaces `reverse.first` with `last`, so `array&.reverse.first` becomes `array&.last`. `on_csend` is aliased.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 12 examples covering the offense and autocorrect (plain, safe-navigation, method-call receiver, inside an expression) and the no-offense cases (`last`, bare `first`/`reverse`, arguments to either call, no receiver, `sort.first`).\n- `lib/rubocop/cop/style.rb` and `config/default.yml`: registration from the scaffold, plus the description. The cop stays `Enabled: pending` with `VersionAdded: '<<next>>'`, as the scaffold set it.\n\n**Verification**\n- `bundle exec rake`: exit 0, 4417 examples with 0 failures, and no offenses in RuboCop's own 1745 files.\n- `bundle exec rake prism_spec`: the summary lines show 0 failures.\n\n**Still needed from you**\n- **Changelog entry.** I did not create one. Each entry needs an issue/PR number and your GitHub username. Running `rake changelog:new` picked up the wrong title from the last merge commit and staged a file, so I deleted that file and unstaged it. Once you have the number, add it with a line like: `* [#NNNN](https://github.com/rubocop/rubocop/pull/NNNN): Add new \\`Style/ReverseFirst\\` cop to flag \\`array.reverse.first\\` and autocorrect it to \\`array.last\\`. ([@you][])`\n- **Commit.** Say the word and I'll commit with the `[Fix #N]`-style prefix once you have the number."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_20261025184238.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.024681610000000003,
+        "inputTokens": 56,
+        "outputTokens": 18422,
+        "cacheReadTokens": 897101
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `x.reverse.first` with no arguments and autocorrects it to `x.last`. The spec passes (11 examples), and the new files pass RuboCop's self-lint. The changelog entry still has placeholders, and nothing is committed.\n\n**What I built**\n- **Cop** (`lib/rubocop/cop/style/reverse_first.rb`): matches `reverse.first` with no arguments, including `&.` on either call. The autocorrect keeps the operator in front of `reverse`, so `array&.reverse&.first` becomes `array&.last` rather than `array.last`. That matters because `nil&.reverse&.first` returns `nil` while `nil.last` raises.\n- **Spec** (`spec/rubocop/cop/style/reverse_first_spec.rb`): covers the plain case, each safe-navigation variant, a chained call, and non-matches: `last`, `reverse.last`, `first` alone, `first(2)`, `reverse(1).first`, and a bare `reverse.first` with no receiver.\n- **Registration and config**: the scaffold added the `register_cop` line in `lib/rubocop/cop/style.rb` and the `Style/ReverseFirst` entry in `config/default.yml`. I set a real description and `Safe: false`.\n\n**Choices I made that you may want to change**\n- The cop is `Enabled: pending`, which is the repo's default for new cops.\n- It is marked unsafe because `reverse` on a non-Array receiver (such as a String or Enumerator) may not behave like `last`. So `rubocop -a` will not apply it; it needs `-A`. I confirmed this from the CLI.\n- It does not flag `reverse.first(n)`, since that returns a different result.\n\n**Still open**\n- **Changelog entry:** `changelog/new_add_new_style_reverse_first_cop_20261025184238.md` uses placeholders: `#x` for the PR number and `[@username][]` for your GitHub handle. `git config credential.username` is not set, so I did not guess. `spec/project_spec.rb` fails on those three checks until you replace them with your PR number and handle.\n- **Full CI not run:** I ran the documentation syntax check, self-lint, and the config and registration specs. I did not run the full `bundle exec"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025184800.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.01685926,
+        "inputTokens": 38,
+        "outputTokens": 14120,
+        "cacheReadTokens": 504186
+      },
+      "answer": "I added `Style/ReverseFirst`, which flags `array.reverse.first` (no arguments) and autocorrects it to `array.last`. The cop's 10 specs pass under both the Parser and Prism runs. Full CI is not clean yet because the changelog entry needs two values from you (details below). Nothing is committed.\n\n**Changes**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `(call (call !nil? :reverse) :first)`, so a `first(n)` call, a `reverse(1)` call, a bare `reverse.first` with no receiver, and `reverse.last` are not flagged.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: offense and correction cases, including safe navigation on either side of the chain and a method-chain receiver, plus the non-matching cases above.\n- `lib/rubocop/cop/style.rb` and `config/default.yml`: registration and config. The cop is `Enabled: pending` with `VersionAdded: '<<next>>'`, as the generator sets for new cops.\n- `changelog/new_add_style_reverse_first_cop_20261025184800.md`: the entry.\n\n**Choices I made**\n- **Marked unsafe (`Safe: false`).** A custom `reverse` can return anything, so the correction isn't guaranteed to be equivalent.\n- **Explicit receiver required.** A bare `reverse.first` is not flagged, because `self` might not be an array.\n- **`array.reverse&.first` becomes `array.last`.** The correction replaces the whole `reverse…first` span, so the `&.` on the `reverse` result is dropped. That only matters if `reverse` can return `nil`, which is why the cop is unsafe.\n\n**Verification**\n- `codespell`, `documentation_syntax_check`, and `internal_investigation` all exit 0.\n- `rubocop` on the new files reports no offenses.\n- The full `bundle exec rake` run has 4 failures, all in `spec/project_spec.rb`, and all from the changelog entry.\n\n**Needs your input before the PR**\nThe changelog entry has placeholders: `[#x]` for the issue or PR number and `[@]` for your GitHub handle. The `changelog:new` task picked up the merge commit's title and a blank username, so I removed that file an"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025190000.md",
+        "config/default.yml",
+        "docs/modules/ROOT/pages/cops.adoc",
+        "docs/modules/ROOT/pages/cops_bundler.adoc",
+        "docs/modules/ROOT/pages/cops_gemspec.adoc",
+        "docs/modules/ROOT/pages/cops_layout.adoc",
+        "docs/modules/ROOT/pages/cops_lint.adoc",
+        "docs/modules/ROOT/pages/cops_metrics.adoc",
+        "docs/modules/ROOT/pages/cops_migration.adoc",
+        "docs/modules/ROOT/pages/cops_naming.adoc",
+        "docs/modules/ROOT/pages/cops_security.adoc",
+        "docs/modules/ROOT/pages/cops_style.adoc",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.019899740000000003,
+        "inputTokens": 40,
+        "outputTokens": 15248,
+        "cacheReadTokens": 604214
+      },
+      "answer": "I added `Style/ReverseFirst`, which flags `array.reverse.first` with no argument and autocorrects it to `array.last`. The cop spec passes (13 examples) under both the Parser and Prism parsers. One part of the full CI run still fails, because the changelog entry needs your PR number and GitHub handle.\n\n**What changed**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `reverse` with no arguments followed by `first` with no arguments, and handles `&.` too.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: specs for `.`, `&.`, longer chains, and receivers that are method calls. It also covers the no-offense cases: `first(n)`, a block passed to `first`, `reverse(1).first`, `reverse.last`, and plain `last`/`first`.\n- `config/default.yml` and `lib/rubocop/cop/style.rb`: the registration and config entry. The cop is `Enabled: pending` and `Safe: false`, since `reverse` on a non-Array may not respond to `last`.\n- `docs/modules/ROOT/pages/cops_style.adoc` and `cops.adoc`: regenerated to include the new cop.\n\n**Choices I made**\n- `array.reverse.first { ... }` is not flagged. The block would be dropped from the correction, so I left that form alone.\n- `reverse.first` with an implicit receiver is flagged, since `last` on self is equivalent.\n\n**CI status**\n- Codespell, doc-syntax check, and self-lint (`internal_investigation`) all pass.\n- The spec suite passes except four changelog-format checks. Those fail because the entry below has placeholders.\n\n**Needs your input**\n- The changelog entry is `changelog/new_add_style_reverse_first_cop_20261025190000.md`, with `[#x]` and `[@][]` placeholders. Please replace them with the PR number and your GitHub username.\n- I first ran `rake changelog:new`, but it built the entry from the last commit subject, not from this cop. I removed that file and unstaged it before writing the placeholder version by hand.\n\n**Docs**\n- Regenerating the docs also pulled in an existing `Style/DirectiveScope` entry, which was missing from the com"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_reverse_first_cop_20261025120000.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.022333400000000003,
+        "inputTokens": 52,
+        "outputTokens": 14563,
+        "cacheReadTokens": 765170
+      },
+      "answer": "The background command that finished was the `prism_spec` run I had already checked, so there's nothing new to act on. Its results match what I reported: 180 examples, 0 failures. The \"error outside of examples\" line came from my wrong `spec/rubocop/cop/legacy` path, not from the cop.\n\nThe work is unchanged from my last message. Two things still need you:\n- Replace the `[#x]` and `pull/x` placeholders in `changelog/new_add_reverse_first_cop_20261025120000.md` with the real issue or PR number. Until then, `spec/project_spec.rb` fails 3 checks.\n- Confirm the author handle `[@crisnahine][]`, which I inferred from your noreply email.\n\nNothing is committed. Tell me if you want a commit."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_20261025174200.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.018443209999999998,
+        "inputTokens": 30,
+        "outputTokens": 17910,
+        "cacheReadTokens": 410221
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `array.reverse.first` with no argument and autocorrects it to `array.last`. The new spec file passes (11 examples, 0 failures), and so do the config and registry specs. Nothing is committed.\n\n**Changes**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `(call (call !nil? :reverse) :first)`, so calls with arguments and bare `reverse.first` with no receiver are not flagged.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: covers the plain case, `&.` on either call, chained calls, a method-call receiver, and the non-matching cases (`first(2)`, `reverse.last`, `array.first`, no receiver).\n- `lib/rubocop/cop/style.rb` and `config/default.yml`: registration and config, generated by `rake new_cop`, with a real description.\n\n**Choices I made**\n- The cop is `Enabled: pending` and `Safe: false`, following `Style/ReverseFind`. `reverse` can be defined on non-Array objects, so the autocorrect is not guaranteed to be safe.\n- Safe navigation is preserved: `array&.reverse.first` becomes `array&.last`. The offense range covers `.reverse.first`.\n\n**Checks**\n- `rubocop` on the two new Ruby files: no offenses.\n- `rake documentation_syntax_check`: exits 0.\n- `spec/project_spec.rb`: 631 examples, 4 failures, all in the changelog checks. The entry has placeholders (see below).\n- I did not run the full `bundle exec rake`.\n\n**Needs your input before a PR**\n- The changelog entry `changelog/new_add_style_reverse_first_20261025174200.md` uses placeholders: `#x` for the PR number and `[@][]` for your GitHub handle. The project spec requires real values. I didn't guess them.\n- `bundle exec rake changelog:new` built its entry from the latest commit message, which is an unrelated merge. I deleted that file and unstaged it. Since this is a new cop with no issue number, I wrote the entry by hand.\n- Once you give me the PR number and handle, I can fill them in and rerun `spec/project_spec.rb`. The commit and attribution lines you asked for will "
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025180000.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.01331688,
+        "inputTokens": 32,
+        "outputTokens": 10843,
+        "cacheReadTokens": 378918
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `array.reverse.first` (no arguments on either call) and autocorrects it to `array.last`. The cop spec passes (12 examples) under both the Parser and Prism engines, and RuboCop self-lint reports no offenses on the new files.\n\nFull `bundle exec rake` still exits 1. The only failures are four `project_spec.rb` checks on my changelog entry, because I don't know your GitHub username or the PR number. Those need filling in before the PR goes up.\n\n**Changes (uncommitted):**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `(call (call !nil? :reverse) :first)`, so a receiver is required and `reverse(1).first` and `first(2)` are skipped. It also handles `&.` via `on_csend`. The correction replaces the `reverse…first` part only, so `array&.reverse.first` becomes `array&.last`.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: offenses for `.`, `&.`, and a method-call receiver. No-offense cases for `array.last`, `array.first`, `reverse.last`, `reverse` alone, `first(2)`, a receiver-less `reverse.first`, and `reverse(1).first`.\n- `lib/rubocop/cop/style.rb` and `config/default.yml`: the generator's registration and config entry. The config is `Enabled: pending` and `Safe: false`, with the description set.\n- `changelog/new_add_style_reverse_first_cop_20261025180000.md`: placeholder entry, `[#x]` and `[@][]`.\n\n**Decisions I made:**\n- **Marked unsafe.** A receiver's `reverse` might return something without `last`, so I set `Safe: false` and documented why.\n- **Block form not excluded.** `array.reverse.first { … }` is still flagged. Array#first ignores the block, so the rewrite is harmless, but I didn't add a guard.\n\n**Needs your input:**\n- **Changelog placeholders.** Please give me the PR number and your GitHub login and I'll fill them in. The `changelog:new` task generated a bogus entry from the last merge commit, so I deleted it and wrote this one by hand.\n- **Commit.** I haven't committed, since you didn't ask. If you want it"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": false
+      },
+      "spent": {
+        "costUsd": 0.01624693,
+        "inputTokens": 34,
+        "outputTokens": 13647,
+        "cacheReadTokens": 458363
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `array.reverse.first` with no arguments and autocorrects it to `array.last`. Nothing is committed.\n\n**Files changed**\n- `lib/rubocop/cop/style/reverse_first.rb` (new): the cop, with `on_send` and `on_csend` handlers.\n- `spec/rubocop/cop/style/reverse_first_spec.rb` (new): 15 examples.\n- `config/default.yml`: enabled, `Safe: false`, with a description.\n- `lib/rubocop/cop/style.rb`: registration, added by the generator.\n\n**Behavior choices**\n- **Safe navigation:** `array&.reverse&.first` becomes `array&.last`. The `&.` is kept on either call, and the cop handles `csend` too.\n- **Skipped cases:** `reverse.first` with an argument, `reverse(1).first`, a receiverless `reverse.first`, and `reverse.first { }` with a block are not flagged. The block case is skipped because `array.last { }` would change behavior.\n- **Marked unsafe:** the cop can't confirm the receiver is an `Array`, so `@safety` says so and the config is `Safe: false`.\n\n**Verification**\n- The cop spec passes with both the Parser and Prism engines.\n- Project spec (612 examples), config spec (104), documentation syntax check, codespell, and RuboCop's self-lint on the new files all pass.\n- No existing code or spec in the repo uses `reverse.first`, so enabling the cop by default adds no new offenses.\n- I did not run the full `bundle exec rake` or the full spec suite.\n\n**Not done: changelog entry**\n- `changelog:new` derived its text from the current merge commit (PR #15566) and staged it. I removed that file and unstaged it.\n- The project spec requires a real PR link and an `@username`, and I don't have either. Once you have the PR number and handle, run `bundle exec rake 'changelog:new[<PR#>]'` and edit the text to say: `Add new Style/ReverseFirst cop`. Also check that the description matches the cop."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025181744.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.02026961,
+        "inputTokens": 44,
+        "outputTokens": 16039,
+        "cacheReadTokens": 681651
+      },
+      "answer": "I added `Style/ReverseFirst`, which flags `receiver.reverse.first` (no arguments, explicit receiver) and autocorrects it to `receiver.last`. The new spec passes under both the Parser and Prism parsers (13 examples), and RuboCop's own lint is clean on the new files. Nothing is committed.\n\nOne check is still failing: the project spec requires a changelog entry with a linked issue or PR number, and I don't have one. The entry is at `changelog/new_add_style_reverse_first_cop_20261025181744.md`. Give me the number and I'll update the link. I used `crisnahine` from your `gh` login for the author handle, so tell me if that's wrong.\n\nWhat's in place:\n- **Cop** (`lib/rubocop/cop/style/reverse_first.rb`): matches `(call (call !nil? :reverse) :first)`, so the bare `reverse.first` (implicit self) and calls with arguments are not flagged. It also handles `&.` on either call and keeps the dot the `reverse` call used.\n- **Specs** (`spec/rubocop/cop/style/reverse_first_spec.rb`): 13 examples covering the offense, autocorrect, safe navigation, method-call receivers, and the non-offense cases.\n- **Config** (`config/default.yml`): description set, `Safe: false`, and `Enabled: pending`, which is the scaffold default. Say if you want it enabled.\n- **Registration** in `lib/rubocop/cop/style.rb` came from the generator.\n\nChecks run: the doc-syntax check and the config and registry specs pass.\n\nKnown limitation: a multi-line chain with a comment between `reverse` and `first` loses that comment on autocorrect. I did not run the full `bundle exec rake` CI suite; run it before opening a PR."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025182427.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.01152251,
+        "inputTokens": 30,
+        "outputTokens": 10109,
+        "cacheReadTokens": 326861
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `reverse.first` with no arguments and autocorrects it to `last`. The cop's 9 specs pass under both the Parser and Prism parsers, and RuboCop reports no offenses on the new files. Nothing is committed.\n\n**Changes**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `(call (call _ :reverse) :first)`, so `first(n)` and `reverse(n)` are not flagged. Safe navigation (`&.`) is handled.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: specs for offenses, autocorrection, `&.`, a receiver-less `reverse`, and the non-flagged cases.\n- `config/default.yml`: description set, `Safe: false`, and `Enabled: pending`, which is the default for new cops.\n- `lib/rubocop/cop/style.rb`: the `register_cop` line, added by the scaffold.\n\n**Choices I made**\n- **Only argument-less `first` is flagged.** `array.reverse.first(2)` returns elements in reverse order, while `array.last(2)` returns them in original order, so rewriting it would change behavior.\n- **Marked unsafe.** The receiver is not guaranteed to be an `Array` or to respond to `last`. This matches `Style/ReverseFind`.\n- **`reverse!` is not flagged.** It mutates the array, so it isn't the same pattern.\n\n**Needs your input before committing**\n- The changelog entry `changelog/new_add_style_reverse_first_cop_20261025182427.md` has placeholders: `#x` for the PR number and `[@username][]` for your GitHub handle. Fill in both. Until then `spec/project_spec.rb` fails 3 examples on that file. The `changelog:new` task did not work here: it picked up the HEAD merge commit as the description and left the username blank. I removed that output and wrote the entry by hand.\n\n**Verification**\n- Ran the new spec with Parser and Prism, `spec/project_spec.rb` (3 failures, all from the placeholder changelog entry above), `spec/rubocop/config_spec.rb`, RuboCop on the new files, and `rake documentation_syntax_check`.\n- I did not run the full `bundle exec rake`, which AGENTS.md asks for before a PR."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025183000.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.02131526,
+        "inputTokens": 46,
+        "outputTokens": 17583,
+        "cacheReadTokens": 692156
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `array.reverse.first` (no arguments) and autocorrects it to `array.last`. The new specs pass under both the Parser and Prism engines, and the self-lint and doc checks are clean.\n\n**What changed**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches both `.` and `&.`, and it doesn't flag `reverse.first` with no receiver, since rewriting that would produce `.last` with nothing in front of it.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 13 examples covering offenses, autocorrection (including `&.`, method chains, and a multi-line receiver), and non-offenses (`last`, `reverse.last`, `first(2)`, `reverse(1).first`, an implicit receiver, and `sort.first`).\n- `config/default.yml` and `lib/rubocop/cop/style.rb`: registration and config, generated by `rake new_cop` and then filled in. The cop is `Safe: false` because `String#reverse` returns a string, and `Enabled: pending`, which is the convention for new cops.\n\n**Things you need to act on**\n- **Changelog entry is a placeholder.** `changelog/new_add_style_reverse_first_cop_20261025183000.md` uses `#XXXXX` and `@XXXXX`. I didn't have an issue number or your GitHub username. Three `spec/project_spec.rb` changelog checks fail until you fill those in. The `changelog:new` task also named the file after the current merge commit, so I deleted that file and wrote this one by hand.\n- **Nothing is committed.** The changes are in the working tree; the changelog file is untracked.\n\n**Verification**\n- The full `bundle exec rake` run passed everything except the three placeholder changelog checks. I refactored the correction into a helper afterward to fix an AbcSize offense from the self-lint. I re-ran the cop specs, the self-lint, and the doc check after that change, but not the full suite."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_that_flags_array_reverse_first_and_autocorrects_20261025183648.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.013052869999999998,
+        "inputTokens": 28,
+        "outputTokens": 11079,
+        "cacheReadTokens": 335897
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `array.reverse.first` with no argument and autocorrects it to `array.last`. The new spec passes under both parsers, and RuboCop's self-lint is clean. I did not run the full `bundle exec rake`, and I did not commit anything.\n\n**Changes**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `(call (call !nil? :reverse) :first)`, so `reverse` must have an explicit receiver and no arguments, and `first` must have no arguments. The offense covers `reverse.first`, and the correction replaces it with `last`. `array&.reverse&.first` becomes `array&.last`.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 10 examples covering the plain, safe-navigation, method-call-receiver, and chained cases, plus non-matches: `last`, `first` alone, `reverse.first(2)`, `reverse(1).first`, `reverse.last`, and a bare `reverse.first` with no receiver.\n- `lib/rubocop/cop/style.rb` and `config/default.yml`: registration and config. The config is `Enabled: pending`, `Safe: false`, with a description.\n- `changelog/new_add_new_style_reverse_first_cop_..._20261025183648.md`: the changelog entry.\n\n**Choices I made**\n- The cop is marked unsafe. The receiver may not be an `Array`, and `last` may not exist on it.\n- It is `Enabled: pending`, which is the convention for new cops.\n\n**Needs your input before a PR**\n- The changelog entry has two placeholders. `[@USERNAME]` needs your GitHub login, which isn't configured in git (`credential.username` is empty), so I didn't guess it. The `[#x]` link needs the PR number once the PR exists.\n- Because of those placeholders, `spec/project_spec.rb` fails 3 examples, all on the changelog entry. Fix the placeholders and they should pass.\n- The changelog task derives its text from the last commit title, so I wrote the entry with `Changelog::Entry` directly instead.\n\n**Verified**\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 10 examples, 0 failures, under the default parser and under `PARSER_ENGINE=parser_prism`.\n- "
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_style_reverse_first_cop_20261025184500.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.01920852,
+        "inputTokens": 42,
+        "outputTokens": 15364,
+        "cacheReadTokens": 633232
+      },
+      "answer": "I added `Style/ReverseFirst`, which flags `receiver.reverse.first` with no arguments and autocorrects it to `receiver.last`. The new cop spec passes under both parsers (12/12), and `rubocop` lints the new files cleanly. The full suite passes except for 4 changelog-format failures described below. Nothing is committed.\n\n**Changes**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. The offense covers `.reverse.first`, and the correction keeps the dot operator. So `array&.reverse.first` becomes `array&.last`, which keeps the nil short-circuit.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 12 examples covering offenses, autocorrection, safe navigation on either call, method-call receivers, and non-matches (arguments on `reverse` or `first`, a block-pass to `first`, `last`, `reverse.last`, and receiverless `reverse.first`).\n- `config/default.yml` and `lib/rubocop/cop/style.rb`: registration and config, generated by `rake new_cop`.\n- `changelog/new_add_style_reverse_first_cop_20261025184500.md`: the changelog entry.\n\n**Choices I made**\n- The cop is `Safe: false` and marked unsafe in its YARD docs, because the receiver may not be an `Array`.\n- It ships as `Enabled: pending`, which is the scaffold default. Set it to `true` if you want it on by default.\n- Message: ``Use `last` instead of `reverse.first`.``\n\n**Needs your input before a PR**\n- The changelog entry uses placeholders, `[#x]` and `[@]`. The project spec rejects them, and that is the source of the 4 failures in the full suite. Send me the PR or issue number and your GitHub username and I'll fill them in.\n- `rake changelog:new` built its text from the latest merge commit, not from this change. I removed that file and wrote the entry by hand."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "changelog/new_add_new_style_reverse_first_cop_that_checks_for_reverse_first_and_autocorrects_20261025184842.md",
+        "config/default.yml",
+        "lib/rubocop/cop/style/reverse_first.rb",
+        "lib/rubocop/cop/style.rb",
+        "spec/rubocop/cop/style/reverse_first_spec.rb"
+      ],
+      "did": true,
+      "checks": {
+        "config/default.yml registers the cop": true,
+        "lib/rubocop.rb requires the cop": false,
+        "a changelog entry is added": true
+      },
+      "spent": {
+        "costUsd": 0.01537759,
+        "inputTokens": 36,
+        "outputTokens": 12592,
+        "cacheReadTokens": 461499
+      },
+      "answer": "I added `Style/ReverseFirst`. It flags `array.reverse.first` with no argument and autocorrects it to `array.last`. The cop spec passes under both the Parser and Prism parsers, but `spec/project_spec.rb` fails on the changelog entry, which needs your PR number and GitHub username.\n\n**Changes**\n- `lib/rubocop/cop/style/reverse_first.rb`: the cop. It matches `reverse.first` with a receiver and no arguments, including `&.` forms. It's marked `Safe: false` because the receiver isn't guaranteed to be an Array.\n- `spec/rubocop/cop/style/reverse_first_spec.rb`: 10 examples covering offenses, autocorrection, and non-offenses (`last`, bare `first`, `reverse.last`, receiverless `reverse`, `first(2)`, `reverse(1)`).\n- `config/default.yml` and `lib/rubocop/cop/style.rb`: the generated registration, with the description filled in. The cop is `Enabled: pending`, matching how new cops are added here.\n- `changelog/new_add_new_style_reverse_first_…_20261025184842.md`: the changelog entry.\n\n**Verification**\n- `reverse_first_spec.rb`: 10 examples, 0 failures (Parser), 10 examples, 0 failures (Prism).\n- `config_spec.rb` together with the new spec: 114 examples, 0 failures.\n- `rubocop` on the two new Ruby files: no offenses.\n- `rake documentation_syntax_check`: exit 0.\n- `spec/project_spec.rb`: 631 examples, 3 failures. All three are on the new changelog entry, which has `#x` as its PR number and `username` as the author.\n\n**Needs your input**\n- Replace `#x` with the PR number once the PR exists, and `username` with your GitHub login. `git config --global credential.username` isn't set, so I didn't guess it.\n\nI didn't commit anything. I also didn't run the full `bundle exec rake` suite, which AGENTS.md asks for before opening a PR."
+    }
+  ]
+}

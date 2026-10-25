@@ -1,6 +1,6 @@
 /**
- * Whether the echo delivers the map on this call: once per context window,
- * and once per parallel batch of calls (A92).
+ * Whether the echo delivers the map on this call: once per 192 KiB of what the
+ * model reads, and once per parallel batch of calls (A92).
  *
  * The map, its digest and the stamp are `hook.mjs`'s; this decides only from
  * the digest, the window's transcript and the plugin's data directory, so the

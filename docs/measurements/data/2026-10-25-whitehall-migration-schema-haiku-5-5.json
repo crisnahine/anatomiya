@@ -1,0 +1,780 @@
+{
+  "scenario": "scripts/ab/scenarios/whitehall-migration-schema.json",
+  "scenarioSha256": "d10ad6d7cfbcc4ce5ae2eda7873362b06b7eb864bff37a586cbcee5d33d1af11",
+  "label": "github.com/alphagov/whitehall",
+  "sha": "44848361bcf7f8871c716ac6e5f8f6211416a1a7",
+  "engine": {
+    "model": "claude-haiku-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": null,
+  "said": {
+    "a": "db/migrate: 140 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.004579389999999999,
+        "inputTokens": 10,
+        "outputTokens": 2771,
+        "cacheReadTokens": 70129
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I have not run the migration: the local MySQL server isn't running, so `bin/rails db:migrate` failed with a connection error.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` adds a nullable `:string` column `external_reference` to `organisations`, in the same `change`-method style as the recent `add_column` migrations.\n- **Schema:** `db/schema.rb` now has `version: 2026_10_25_120000` and `t.string \"external_reference\"` in the `organisations` table. I placed it alphabetically, between `custom_jobs_url` and `foi_exempt`, because the dump orders columns that way.\n\nSince the schema was edited by hand, please run `bin/rails db:migrate` once MySQL is up. Then check that `git diff db/schema.rb` shows only the version bump and the one column line. If the dump differs, keep the regenerated version.\n\nI haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025090000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00450908,
+        "inputTokens": 14,
+        "outputTokens": 3211,
+        "cacheReadTokens": 107998
+      },
+      "answer": "I added the migration, but I haven't run it. MySQL isn't running here, so `bin/rails db:migrate` failed to connect. I updated `db/schema.rb` by hand to match.\n\n**Changes**\n\n- **`db/migrate/20261025090000_add_external_reference_to_organisations.rb`** (new): `add_column :organisations, :external_reference, :string`. Nullable by default, and the same `Migration[8.1]` `change` style as the recent migrations.\n- **`db/schema.rb`**: bumped the version to `2026_10_25_090000` and added `t.string \"external_reference\"` to `organisations`.\n\nBoth files pass `ruby -c`.\n\n**Things to check**\n\n- **Schema placement.** I put the new column after `url`, which is where Rails appends a column. The rest of that table's columns are alphabetical, so a real `db:migrate` dump could order them differently. Running the migration against a local database and letting Rails regenerate `schema.rb` will settle it.\n- **Not yet verified.** The migration has not been applied to a database, and I haven't run any tests.\n\n**Next step:** start MySQL, run `bin/rails db:migrate`, and confirm `db/schema.rb` is unchanged apart from the lines above. I can do that if you start the database."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025090000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00357487,
+        "inputTokens": 12,
+        "outputTokens": 2558,
+        "cacheReadTokens": 87827
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`, and updated `db/schema.rb` to match. I haven't run the migration against a database.\n\n- **Migration:** `db/migrate/20261025090000_add_external_reference_to_organisations.rb` calls `add_column :organisations, :external_reference, :string` inside `change`. It follows the same shape as the recent `add_column` migrations on `editions`. The file passes `ruby -c`.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, placed alphabetically after `custom_jobs_url`, and the schema version is bumped to `2026_10_25_090000`. I edited it by hand rather than regenerating it, so running `rails db:migrate` locally is the check that it matches what Rails would generate.\n\nNothing is committed. Run `bin/rails db:migrate` to confirm the schema dump matches my hand edit."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025093000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.004872329999999999,
+        "inputTokens": 16,
+        "outputTokens": 3226,
+        "cacheReadTokens": 129353
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run the migration against a database.\n\n- **Migration:** `db/migrate/20261025093000_add_external_reference_to_organisations.rb` adds a nullable string column `external_reference` to `organisations`. It follows the `add_column` / `change` pattern of the recent migrations in `db/migrate`.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, placed alphabetically between `custom_jobs_url` and `foi_exempt`, which is how the dump orders columns here. The schema version is bumped to `2026_10_25_093000`.\n\n`bin/rails db:migrate` failed because the local MySQL server isn't running (`/tmp/mysql.sock` not found). The schema edit is hand-written, not Rails-generated. Once MySQL is up, run `bin/rails db:migrate` and check that `git diff db/schema.rb` shows the same change. If Rails regenerates it differently, keep Rails' version.\n\nBoth files pass a Ruby syntax check. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025093247_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00327435,
+        "inputTokens": 10,
+        "outputTokens": 2305,
+        "cacheReadTokens": 70585
+      },
+      "answer": "I added the migration for a nullable string column `external_reference` on `organisations`. I did not run it against a database, because I didn't check whether one is available here. The migration file parses cleanly (`ruby -c`).\n\nChanges:\n\n- **New migration** `db/migrate/20261025093247_add_external_reference_to_organisations.rb`: `AddExternalReferenceToOrganisations < ActiveRecord::Migration[8.1]`, with `add_column :organisations, :external_reference, :string`. I used `[8.1]` to match the most recent migrations, and the timestamp is the current UTC time.\n- **`db/schema.rb`**: added `t.string \"external_reference\"` to the `organisations` table, placed alphabetically between `custom_jobs_url` and `foi_exempt`. I also bumped the schema version to `2026_10_25_093247`. The repo checks in `schema.rb`, and the hook flagged that new migrations usually ship with a schema edit, so I made it by hand rather than by running the migration.\n\nNothing else is changed. The `.claude/` directory was already untracked before I started.\n\nNext steps: run `bin/rails db:migrate` locally, which should produce the same `schema.rb` change. If the output differs, keep the regenerated file. I did not add a test, since `db/migrate` has no sibling tests in this repo."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00382956,
+        "inputTokens": 12,
+        "outputTokens": 2603,
+        "cacheReadTokens": 87586
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run it. The local MySQL server isn't running, so `bin/rails db:migrate` failed with a connection error.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` adds `external_reference` as a nullable string to `organisations`, using `change` like the other recent migrations.\n- **Schema:** in `db/schema.rb` I added `t.string \"external_reference\"` as the last column of `organisations` and bumped the version to `2026_10_25_120000`. I edited this by hand, not by regenerating it.\n\nTo confirm, start MySQL and run `bin/rails db:migrate`. If the regenerated `schema.rb` differs from my hand edit, keep the generated version.\n\nI haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00428246,
+        "inputTokens": 14,
+        "outputTokens": 3204,
+        "cacheReadTokens": 105106
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`, and updated `db/schema.rb` to match. I did not run the migration against a database, so the schema edit is hand-written and not generated by Rails.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` uses a `change` method with `add_column :organisations, :external_reference, :string`. It follows the same shape as the recent `add_column` migrations in this repo. The syntax check passes.\n- **Schema:** `db/schema.rb` now has the new column as the last column of `organisations`, after `url`, and the version is bumped to `2026_10_25_120000`.\n\nTo apply it, run `bin/rails db:migrate` and check that the regenerated `db/schema.rb` matches my hand edit. I have not committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025173609_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0046665299999999995,
+        "inputTokens": 14,
+        "outputTokens": 3309,
+        "cacheReadTokens": 107963
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run it against a database.\n\n- **Migration:** `db/migrate/20261025173609_add_external_reference_to_organisations.rb` adds `external_reference` as a nullable `:string` column on `organisations`. It's a plain `add_column` with no default, so it's a safe, non-blocking change.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, placed alphabetically between `custom_jobs_url` and `foi_exempt`, and the version is bumped to `2026_10_25_173609`.\n\n`bin/rails db:migrate` failed because the local MySQL server isn't running (no socket at `/tmp/mysql.sock`), so the schema edit is hand-written, not generated. Once MySQL is up, run `bin/rails db:migrate` and check that `git diff db/schema.rb` shows only the expected change."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025093000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00472532,
+        "inputTokens": 12,
+        "outputTokens": 3745,
+        "cacheReadTokens": 88542
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run it against a database, so it is unverified.\n\n**Changes:**\n- **New migration:** `db/migrate/20261025093000_add_external_reference_to_organisations.rb` adds `external_reference` as a nullable `:string` to `organisations`. It uses `change`, matching the recent migrations in this repo. The syntax check passes.\n- **`db/schema.rb`:** I bumped the version to `2026_10_25_093000` and added `t.string \"external_reference\"` to the `organisations` table.\n\n**Not verified:** `bin/rails db:migrate` failed because it couldn't connect to MySQL at `/tmp/mysql.sock`, though a `mysqld` process is running. So I hand-edited `schema.rb` rather than letting Rails regenerate it. Run `bin/rails db:migrate` once the database is reachable, and check that the regenerated schema matches my edit. Rails may place the new column in a different position than I chose.\n\n**Choice I made:** I put `external_reference` in alphabetical order within the table, after `custom_jobs_url`. The existing columns are alphabetical, so this fits, but a real dump would likely append it after `url`.\n\nNothing is committed. Let me know if you want me to retry the migration with a different database connection, or to add a test for the new column."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00382776,
+        "inputTokens": 12,
+        "outputTokens": 2775,
+        "cacheReadTokens": 86986
+      },
+      "answer": "I added the migration that creates a nullable `external_reference` string column on `organisations`. I could not run it, because there is no local MySQL server, so the schema change is unverified against a real database.\n\n**Changes**\n- **New migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` uses `add_column :organisations, :external_reference, :string`. It follows the same pattern as the recent `add_usage_to_images` and `add_slug_override_to_editions` migrations.\n- **`db/schema.rb`:** I bumped the version to `2026_10_25_120000` and added the column to `organisations`. I edited it by hand to match what `rails db:migrate` would dump. Running the migration locally should produce an identical diff; if it doesn't, regenerate the file.\n\n**Choices I made**\n- I did not add an index, since you didn't ask for one. Add it if you plan to look up organisations by this value.\n- The timestamp is today's date, so it sorts after the latest existing migration.\n\nBoth files pass `ruby -c`. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025094008_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0052997,
+        "inputTokens": 16,
+        "outputTokens": 3579,
+        "cacheReadTokens": 134240
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run it against a database. The local MySQL server isn't running, so `bin/rails db:migrate` failed with a socket connection error.\n\nChanges:\n\n- **New migration** `db/migrate/20261025094008_add_external_reference_to_organisations.rb`:\n  ```ruby\n  class AddExternalReferenceToOrganisations < ActiveRecord::Migration[8.1]\n    def change\n      add_column :organisations, :external_reference, :string\n    end\n  end\n  ```\n  It follows the repo's pattern: a `change` method, `Migration[8.1]`, and a timestamped filename.\n- **`db/schema.rb`**: added `t.string \"external_reference\"` to `organisations` in alphabetical position, and bumped the schema version to `2026_10_25_094008`. The edit was hand-written, not generated by Rails.\n\nBoth files pass `ruby -c`.\n\nTo finish, start MySQL and run `bin/rails db:migrate`. If Rails regenerates `db/schema.rb` with a different layout, keep its output, since that is what the database actually produces. The column is nullable, so no default or backfill is needed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025090000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00390273,
+        "inputTokens": 12,
+        "outputTokens": 2699,
+        "cacheReadTokens": 91703
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match. I haven't run it against a database.\n\n- **Migration:** `db/migrate/20261025090000_add_external_reference_to_organisations.rb` uses `ActiveRecord::Migration[8.1]`, the same as the latest migration in the repo. It calls `add_column :organisations, :external_reference, :string`, which leaves the column nullable with no default.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, placed alphabetically after `custom_jobs_url`. The version is bumped to `2026_10_25_090000`.\n\nThe migration passes `ruby -c`. To confirm it end to end, run `bin/rails db:migrate` and check that the schema dump comes out unchanged."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0037432100000000003,
+        "inputTokens": 12,
+        "outputTokens": 2776,
+        "cacheReadTokens": 88181
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`, and updated `db/schema.rb` to match. I haven't run the migration: the local MySQL server isn't running, so `bin/rails` couldn't boot.\n\nChanges:\n\n- **`db/migrate/20261025120000_add_external_reference_to_organisations.rb`** (new): `AddExternalReferenceToOrganisations < ActiveRecord::Migration[8.1]` with `add_column :organisations, :external_reference, :string`. It follows the repo's `change` style, and the timestamp is after the latest existing migration. Syntax checks out with `ruby -c`.\n- **`db/schema.rb`**: added `t.string \"external_reference\"` to the `organisations` table and bumped the schema version to `2026_10_25_120000`. I hand-edited it, so the column sits at the end of the table as `add_column` would append it. Running `bin/rails db:migrate` once the database is up will regenerate the file and confirm the result.\n\nStill to do: run `bin/rails db:migrate` against a local database, then check that `git diff db/schema.rb` shows only the expected change. I didn't add a test. Nothing in `db/` has a namesake test, so there was no sibling test shape to follow."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00521481,
+        "inputTokens": 14,
+        "outputTokens": 4070,
+        "cacheReadTokens": 114261
+      },
+      "answer": "I added the migration and updated `db/schema.rb` by hand, but I haven't run the migration. The local MySQL server isn't running (`Can't connect to local MySQL server through socket '/tmp/mysql.sock'`), so `db:migrate` failed.\n\n**Changes:**\n- **`db/migrate/20261025120000_add_external_reference_to_organisations.rb`**: a new `AddExternalReferenceToOrganisations` migration on `ActiveRecord::Migration[8.1]`. Its `change` method calls `add_column :organisations, :external_reference, :string`, which leaves the column nullable with no default. This matches the sibling `add_column` migrations. It passes `ruby -c`.\n- **`db/schema.rb`**: bumped the version to `2026_10_25_120000` and added `t.string \"external_reference\"` at the end of the `organisations` table, after `url`. That is where a real dump would put it, since `add_column` appends columns.\n\n**Still to do:** start MySQL and run `bin/rails db:migrate`. Rails will regenerate `db/schema.rb`, and the result should match my hand edit. If it differs, keep the regenerated file."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00310785,
+        "inputTokens": 12,
+        "outputTokens": 2144,
+        "cacheReadTokens": 86045
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I did not run it against a database.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` adds `external_reference` as a nullable string to `organisations`. It follows the existing `add_column` pattern. A nullable column add needs no `safety_assured` wrapper.\n- **Schema:** `db/schema.rb` now has the column in alphabetical order, between `custom_jobs_url` and `foi_exempt`, and the version is bumped to `2026_10_25_120000`.\n\n`bin/rails db:migrate:status` failed, so there is no database available here. The migration file passes `ruby -c`, but I have not run `db:migrate` or the test suite. You can check it with `bin/rails db:migrate` followed by `git diff db/schema.rb`, which should show no changes beyond the ones above.\n\nI did not commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00412461,
+        "inputTokens": 12,
+        "outputTokens": 2876,
+        "cacheReadTokens": 89821
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run it against a database. Local MySQL isn't running (`/tmp/mysql.sock` refused the connection), so `db:migrate` failed before doing anything.\n\n**Changes**\n- `db/migrate/20261025120000_add_external_reference_to_organisations.rb`: adds `external_reference` as a `string` column on `organisations`. It is nullable because I gave no `null:` option. It uses `change` with `add_column`, matching the recent migrations in this repo. I did not wrap it in `safety_assured`, since adding a nullable column doesn't need it.\n- `db/schema.rb`: added `t.string \"external_reference\"` to the `organisations` table, placed alphabetically between `custom_jobs_url` and `foi_exempt`, and bumped the version to `2026_10_25_120000`. I wrote this by hand to match the format Rails would dump. It should be checked by running the migration and confirming `db:schema:dump` produces the same diff.\n\n**Next steps**\n- Start MySQL, run `bin/rails db:migrate`, and confirm `git diff db/schema.rb` shows only the lines above. If the dump differs, keep the dumped version.\n- I did not add a test. The repo has no test precedent for migrations, and this change doesn't add model or behaviour code."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025093000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0034543,
+        "inputTokens": 10,
+        "outputTokens": 2511,
+        "cacheReadTokens": 70140
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run the migration against a database.\n\n- **Migration:** `db/migrate/20261025093000_add_external_reference_to_organisations.rb` adds a nullable `:string` column `external_reference` to `organisations`. It uses the `ActiveRecord::Migration[8.1]` base class, like the most recent migrations.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, and the schema version is bumped to `2026_10_25_093000`. I placed the column last, since that's where the database appends new columns. The column list is otherwise alphabetical, so a real `db:migrate` dump may order it differently.\n\n`bin/rails db:migrate` failed because MySQL isn't running locally (`/tmp/mysql.sock` not found). Once MySQL is up, run `bin/rails db:migrate` and confirm `db/schema.rb` is unchanged by the dump. If it changes, keep the regenerated version.\n\nThe repo has no test for migrations, so I didn't add one."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00398504,
+        "inputTokens": 12,
+        "outputTokens": 2660,
+        "cacheReadTokens": 91964
+      },
+      "answer": "I added the migration `db/migrate/20261025120000_add_external_reference_to_organisations.rb`, which adds a nullable string `external_reference` column to `organisations`. I could not run it, because no local MySQL server is listening on `/tmp/mysql.sock`, so the migration is untested.\n\n- **Migration:** a `change` method calling `add_column :organisations, :external_reference, :string, null: true`, matching the `Migration[8.1]` style of recent migrations.\n- **`db/schema.rb`:** edited by hand to match what `db:migrate` would dump: the new `t.string \"external_reference\"` line after `url` (MySQL appends new columns at the end of the table) and the version bumped to `2026_10_25_120000`. Running `bin/rails db:migrate` once MySQL is up should regenerate it and confirm the edit.\n\nNothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025100000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0044478600000000005,
+        "inputTokens": 14,
+        "outputTokens": 3231,
+        "cacheReadTokens": 105556
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run it against a database.\n\n- **Migration:** `db/migrate/20261025100000_add_external_reference_to_organisations.rb` defines `AddExternalReferenceToOrganisations` (Migration[8.1], `change` method) with `add_column :organisations, :external_reference, :string`. It has no `null: false`, so the column is nullable, as you asked.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, placed alphabetically between `custom_jobs_url` and `foi_exempt`, and the version is bumped to `2026_10_25_100000`. I wrote this by hand because `bin/rails db:migrate` failed: the local MySQL server isn't running (`/tmp/mysql.sock` not found). Once the database is up, running `bin/rails db:migrate` should regenerate `schema.rb`. If the regenerated file differs from my hand edit, keep the regenerated one.\n\nI haven't committed anything. Two things to check when you run it: the migration timestamp is an assumed value (today's date with a fixed time), and I didn't add a test, since the `db/migrate` directory has no test precedent."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00381335,
+        "inputTokens": 10,
+        "outputTokens": 3040,
+        "cacheReadTokens": 74375
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`, and updated `db/schema.rb` to match.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` uses `add_column :organisations, :external_reference, :string` under `ActiveRecord::Migration[8.1]`, the same shape as the recent `add_column` migrations in this directory.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, placed alphabetically between `custom_jobs_url` and `foi_exempt`. The schema version moved from `2026_07_22_120000` to `2026_10_25_120000`.\n\nBoth files pass a Ruby syntax check. I did not run the migration against a database, so it is unverified there. Running `bin/rails db:migrate` in a dev environment would confirm it and would also confirm that the regenerated schema matches my hand edit."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0031125000000000002,
+        "inputTokens": 10,
+        "outputTokens": 2035,
+        "cacheReadTokens": 55300
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match. I did not run the migration against a database, so it's only checked for syntax.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` runs `add_column :organisations, :external_reference, :string`. There is no default and no `null: false`, so it's a nullable column with no table rewrite. Strong Migrations should not flag it, so I didn't wrap it in `safety_assured`.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, and the version is bumped to `2026_10_25_120000`.\n\nThe timestamp is today's date at 12:00:00 UTC, which is after the latest existing migration. I placed the column at the end of the table definition, which is where Rails would put it. Running `bin/rails db:migrate` locally will confirm both the migration and the schema dump.\n\nI have not committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0035023,
+        "inputTokens": 12,
+        "outputTokens": 3214,
+        "cacheReadTokens": 74690
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`, but I haven't run it. MySQL isn't running locally, so `bin/rails db:migrate` failed with a connection error.\n\nChanges:\n- **New migration** `db/migrate/20261025120000_add_external_reference_to_organisations.rb`: `add_column :organisations, :external_reference, :string`. It's reversible via `change`, and RuboCop reports no offenses.\n- **`db/schema.rb`**: I bumped the version to `2026_10_25_120000` and added `t.string \"external_reference\"` between `custom_jobs_url` and `foi_exempt`. The file's columns are in alphabetical order, so I followed that. I edited it by hand rather than letting Rails dump it, so it's worth regenerating once you can run the migration. If the dump differs, keep the dumped version.\n\nNext step: start MySQL, run `bin/rails db:migrate`, and confirm `db/schema.rb` has no further changes. I haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0023370200000000004,
+        "inputTokens": 8,
+        "outputTokens": 1937,
+        "cacheReadTokens": 47492
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`, and updated `db/schema.rb` to match. I could not run the migration, because the local MySQL server isn't running (`/tmp/mysql.sock` is missing), so the schema change was made by hand rather than generated by Rails.\n\nChanges:\n- **New file** `db/migrate/20261025120000_add_external_reference_to_organisations.rb`: `add_column :organisations, :external_reference, :string`. No `null:` option is given, so the column is nullable by default. A plain nullable add doesn't need the `safety_assured` wrapper that the repo's strong_migrations setup uses for riskier changes.\n- **`db/schema.rb`**: added `t.string \"external_reference\"` to the `organisations` table in alphabetical position, and bumped the schema version to `2026_10_25_120000`.\n\nNext steps:\n- Start MySQL and run `bin/rails db:migrate`, then check that `db/schema.rb` comes out identical to my hand edit. If the diff differs, use Rails' version.\n- I did not commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025173211_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00360974,
+        "inputTokens": 18,
+        "outputTokens": 2944,
+        "cacheReadTokens": 116514
+      },
+      "answer": "I added the migration for a nullable string column `external_reference` on `organisations`. I did not run it, because MySQL isn't running locally, so `schema.rb` was edited by hand rather than regenerated.\n\n**Changes:**\n- **New migration:** `db/migrate/20261025173211_add_external_reference_to_organisations.rb` adds `add_column :organisations, :external_reference, :string`. The column is nullable with no default and no index, which matches the request. It follows the style of the other `add_column` migrations in the repo.\n- **`db/schema.rb`:** added `t.string \"external_reference\"` to the `organisations` table and bumped the version to `2026_10_25_173211`. The column is placed last, since Rails dumps columns in database order and a new column is appended.\n\nRuboCop passes on the new migration.\n\n**Still to do:** start MySQL and run `bin/rails db:migrate`, then confirm `db/schema.rb` comes out unchanged from my hand edit. If it differs, keep the regenerated version.\n\nI haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025173308_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0030009900000000003,
+        "inputTokens": 12,
+        "outputTokens": 2637,
+        "cacheReadTokens": 75609
+      },
+      "answer": "I added the migration for `external_reference` on `organisations`, but I could not run it because no MySQL server is running locally.\n\n- **Migration:** `db/migrate/20261025173308_add_external_reference_to_organisations.rb` adds a nullable string column with no default. It follows the `add_column` style of the other migrations in the directory.\n- **Schema:** I updated `db/schema.rb` by hand: the version is now `2026_10_25_173308` and the `organisations` table has `t.string \"external_reference\"`. I put the column in alphabetical order to match the existing layout. A real `db:migrate` will append it at the end of the table and may reorder it in the dump, so regenerate the schema once you can run the migration.\n\nNext step: start MySQL and run `bin/rails db:migrate`, then check the `schema.rb` diff. I have not committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025100000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0024446,
+        "inputTokens": 10,
+        "outputTokens": 2058,
+        "cacheReadTokens": 60860
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I haven't run the migration against a database.\n\n- **Migration:** `db/migrate/20261025100000_add_external_reference_to_organisations.rb` adds `external_reference` as a nullable `string` to `organisations`. It follows the `ActiveRecord::Migration[8.1]` style of the recent migrations in the repo. A nullable column add is a safe change, so I didn't wrap it in `safety_assured`.\n- **Schema:** I added `t.string \"external_reference\"` in alphabetical position in the `organisations` table, between `custom_jobs_url` and `foi_exempt`, and bumped the version to `2026_10_25_100000`.\n- **Checks:** Both files pass `ruby -c`. `bin/rails db:migrate:status` failed, most likely because no local database is running, so the migration itself is unverified.\n\nTo confirm, run `bin/rails db:migrate` locally and check that `git diff db/schema.rb` shows only the expected changes. I haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0019612,
+        "inputTokens": 8,
+        "outputTokens": 1767,
+        "cacheReadTokens": 46090
+      },
+      "answer": "I added the migration for `external_reference` and updated `db/schema.rb` to match. I have not run it against a database.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` adds a nullable string column to `organisations` with `add_column`, following the same pattern as the other migrations in the repo.\n- **Schema:** `db/schema.rb` gets the new `t.string \"external_reference\"` line in alphabetical order within the `organisations` table, and the schema version is bumped to `2026_10_25_120000`.\n\nNothing is committed. To check it, run `bin/rails db:migrate` locally and confirm `db/schema.rb` doesn't change beyond what I wrote. If you want a different timestamp, rename the file and update the version in `schema.rb` to match."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0027895100000000003,
+        "inputTokens": 10,
+        "outputTokens": 2244,
+        "cacheReadTokens": 60431
+      },
+      "answer": "I added the migration for the nullable `external_reference` string column on `organisations`, but I could not run it. The local MySQL server isn't running, so `rails db:migrate` failed to connect and I hand-edited `db/schema.rb` to match what Rails would generate.\n\nChanges:\n\n- **New migration** `db/migrate/20261025120000_add_external_reference_to_organisations.rb`: `AddExternalReferenceToOrganisations`, which calls `add_column :organisations, :external_reference, :string`. It follows the `Migration[8.1]` style of the recent migrations. RuboCop reports no offences.\n- **`db/schema.rb`**: added `t.string \"external_reference\"` to the `organisations` table, in alphabetical position after `custom_jobs_url`, and bumped the schema version to `2026_10_25_120000`.\n\nNothing is committed. To confirm the migration against a real database, start MySQL and run `bin/rails db:migrate`. If the regenerated `schema.rb` differs from my hand edit, keep the regenerated one."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00229093,
+        "inputTokens": 8,
+        "outputTokens": 2088,
+        "cacheReadTokens": 47413
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`. I haven't run it, because the local MySQL server isn't running, so the migration is unverified against a database.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` calls `add_column :organisations, :external_reference, :string`. Adding a nullable column needs no `safety_assured` wrapper, so I left one out.\n- **Schema:** I hand-edited `db/schema.rb` to add `t.string \"external_reference\"` to `organisations` (between `custom_jobs_url` and `foi_exempt`, in the file's alphabetical order) and bumped the version to `2026_10_25_120000`.\n\nTo verify, start MySQL and run `bin/rails db:migrate`. That should regenerate `schema.rb`, and a diff against my hand edit will show whether it matches. I didn't commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00292184,
+        "inputTokens": 10,
+        "outputTokens": 2138,
+        "cacheReadTokens": 62324
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`, but I couldn't run it. The local MySQL server isn't running, so `db:migrate` failed with a connection error.\n\nChanges:\n\n- **New migration** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` calls `add_column :organisations, :external_reference, :string`. It follows the style of the recent migrations in the repo. A nullable column with no default is a safe, non-locking change on MySQL.\n- **`db/schema.rb`** is updated by hand to match what Rails would generate: the new column sits alphabetically after `custom_jobs_url`, and the schema version is bumped to `2026_10_25_120000`.\n\nNext steps:\n\n1. Start MySQL and run `bin/rails db:migrate`. That will regenerate `db/schema.rb` itself, so check that the diff matches the hand edit.\n2. Run the migration against a development database, then run the organisation specs.\n\nI haven't committed anything. Let me know if you want a commit made."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0029486300000000007,
+        "inputTokens": 14,
+        "outputTokens": 2514,
+        "cacheReadTokens": 86083
+      },
+      "answer": "I added the migration for `external_reference` on `organisations`, but I haven't run it. MySQL isn't running locally, so `bin/rails db:migrate` failed with a connection error.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` adds a nullable string column with `add_column :organisations, :external_reference, :string`. It follows the `Migration[8.1]` convention of the other recent migrations.\n- **Schema:** I edited `db/schema.rb` by hand to match what the dump would produce. That means adding `t.string \"external_reference\"` after `url` in the `organisations` table, and bumping the version to `2026_10_25_120000`.\n\nNext step: start MySQL and run `bin/rails db:migrate`. Then check that `db/schema.rb` shows no further changes. If the dump differs from my hand edit, keep the dumped version.\n\nI haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025094134_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00295855,
+        "inputTokens": 12,
+        "outputTokens": 2252,
+        "cacheReadTokens": 75675
+      },
+      "answer": "I added the migration for `external_reference` on `organisations`, but I haven't run it. The local MySQL server isn't running, so `db:migrate` failed with a connection error.\n\n- **Migration:** `db/migrate/20261025094134_add_external_reference_to_organisations.rb` adds a nullable string column with `add_column`. It follows the pattern of the recent migrations in the repo.\n- **Schema:** I hand-edited `db/schema.rb` to add `t.string \"external_reference\"` to the `organisations` table and bumped the version to `2026_10_25_094134`. Rails would normally regenerate this file when you migrate.\n\nTo verify, start MySQL and run `bin/rails db:migrate`, then check that `db/schema.rb` matches what Rails writes. I haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00298186,
+        "inputTokens": 10,
+        "outputTokens": 2427,
+        "cacheReadTokens": 61376
+      },
+      "answer": "I added the migration that adds a nullable string column `external_reference` to `organisations`. I could not run it, because MySQL isn't running here (`db:migrate` failed with \"Can't connect to local MySQL server through socket '/tmp/mysql.sock'\").\n\nChanges:\n\n- **`db/migrate/20261025120000_add_external_reference_to_organisations.rb`**: a reversible `add_column :organisations, :external_reference, :string`. Adding a nullable column is a safe operation under strong_migrations, so I did not wrap it in `safety_assured`. The file passes a Ruby syntax check.\n- **`db/schema.rb`**: I edited this by hand to match what Rails would dump. I added `t.string \"external_reference\"` in alphabetical position within `organisations` and bumped the version to `2026_10_25_120000`.\n\nTo confirm, start MySQL and run `bin/rails db:migrate`. Rails will regenerate `schema.rb`, and the diff should match my hand edit. I haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0022438,
+        "inputTokens": 10,
+        "outputTokens": 1889,
+        "cacheReadTokens": 60390
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match. I haven't run it against a database, so it's only syntax-checked.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` adds `external_reference` as a nullable string to `organisations`. It follows the same `add_column` style as the recent migrations.\n- **Schema:** `db/schema.rb` now has the `external_reference` column in the `organisations` table, in alphabetical position, and the schema version is bumped to `2026_10_25_120000`.\n\nI wrote the schema change by hand because I couldn't run `rails db:migrate` here. Running that migration locally would confirm the schema dump matches what Rails generates.\n\nI haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025094526_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00309812,
+        "inputTokens": 12,
+        "outputTokens": 2482,
+        "cacheReadTokens": 74632
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match, but I could not run the migration because no MySQL server is running locally.\n\n- **Migration:** `db/migrate/20261025094526_add_external_reference_to_organisations.rb` adds a nullable string column `external_reference` to `organisations`. It follows the `add_column` style of the recent migrations and uses `ActiveRecord::Migration[8.1]`.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, placed alphabetically between `custom_jobs_url` and `foi_exempt`. The schema version is bumped to `2026_10_25_094526`.\n\n`bin/rails db:migrate` failed with `Can't connect to local MySQL server through socket '/tmp/mysql.sock'`. The schema edit is by hand, so run `bin/rails db:migrate` once MySQL is up and check that `db/schema.rb` comes out identical. If it differs, keep the regenerated file.\n\nNothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00277005,
+        "inputTokens": 12,
+        "outputTokens": 2183,
+        "cacheReadTokens": 76055
+      },
+      "answer": "I added the migration for a nullable `external_reference` string column on `organisations`, and updated `db/schema.rb` to match. I did not run the migration against a database.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` uses `add_column :organisations, :external_reference, :string`. It follows the style of the other migrations in the repo.\n- **Schema:** `db/schema.rb` gains `t.string \"external_reference\"` in alphabetical position, and the version is bumped to `2026_10_25_120000`. I edited this by hand because `db:migrate` could not run.\n- **Checks:** RuboCop passes on the new migration.\n- **Not verified:** `bin/rails db:migrate` failed because the local MySQL server isn't running (`/tmp/mysql.sock` is missing). Once it's up, run `bin/rails db:migrate` and confirm the regenerated `db/schema.rb` matches my hand edit.\n\nI did not commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025174801_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00282735,
+        "inputTokens": 12,
+        "outputTokens": 2364,
+        "cacheReadTokens": 74375
+      },
+      "answer": "I added the migration and updated `db/schema.rb`, but I couldn't run the migration because the local MySQL server isn't running.\n\n**Changes**\n\n- **`db/migrate/20261025174801_add_external_reference_to_organisations.rb`** (new): `AddExternalReferenceToOrganisations`, a `Migration[8.1]` that calls `add_column :organisations, :external_reference, :string`. The column has no `null: false` or default, so it is nullable.\n- **`db/schema.rb`**: bumped the version to `2026_10_25_174801` and added `t.string \"external_reference\"` to `organisations`, between `custom_jobs_url` and `foi_exempt` to match the file's alphabetical column order.\n\n**Verification**\n\n- `ruby -c` reports syntax OK for the migration.\n- `bin/rails db:migrate` failed with `Can't connect to local MySQL server through socket '/tmp/mysql.sock'`. I didn't start a database server on your machine. To verify, start MySQL and run `bin/rails db:migrate`. Then confirm that `db/schema.rb` has no further diff beyond the lines above.\n\nI haven't committed anything. Say if you want a commit with the attribution line."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0030639200000000004,
+        "inputTokens": 10,
+        "outputTokens": 2385,
+        "cacheReadTokens": 62502
+      },
+      "answer": "I added the migration for `external_reference` but could not run it, because the local MySQL server isn't running. The migration file has not been applied to any database.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` adds a nullable string column to `organisations` with `add_column :organisations, :external_reference, :string`. It needs no `safety_assured` block, since adding a nullable column is safe under `strong_migrations`.\n- **Schema:** I edited `db/schema.rb` by hand to match what the dump would produce. That's the new column in alphabetical position and the version bumped to `2026_10_25_120000`. Running `bin/rails db:migrate` once MySQL is up should regenerate it, and the diff should be empty if my edit matches.\n\nNothing is committed. To finish, start MySQL and run `bin/rails db:migrate`, then check `git diff db/schema.rb` for any changes beyond what I made."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025175005_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.0027370700000000003,
+        "inputTokens": 10,
+        "outputTokens": 2400,
+        "cacheReadTokens": 60987
+      },
+      "answer": "I added the migration `db/migrate/20261025175005_add_external_reference_to_organisations.rb`, which adds a nullable string column `external_reference` to `organisations`. I haven't run it against a database.\n\nThe migration is:\n\n```ruby\nclass AddExternalReferenceToOrganisations < ActiveRecord::Migration[8.1]\n  def change\n    add_column :organisations, :external_reference, :string, null: true\n  end\nend\n```\n\nI used `null: true` explicitly, though it's the default. It needs no `safety_assured` wrapper since adding a nullable column is safe under strong_migrations. The migration passes a syntax check.\n\nI also updated `db/schema.rb` by hand, since `bin/rails db:migrate` failed with \"Can't connect to local MySQL server through socket '/tmp/mysql.sock'\". The schema now has the new column between `custom_jobs_url` and `foi_exempt`, and the version is bumped to `2026_10_25_175005`.\n\nTo finish, start the local MySQL server and run `bin/rails db:migrate`. If Rails regenerates `schema.rb` with any differences from my hand edit, keep Rails' version."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "db/migrate/20261025120000_add_external_reference_to_organisations.rb",
+        "db/schema.rb"
+      ],
+      "did": true,
+      "checks": {
+        "db/schema.rb carries the column": true
+      },
+      "spent": {
+        "costUsd": 0.00294772,
+        "inputTokens": 12,
+        "outputTokens": 2708,
+        "cacheReadTokens": 74972
+      },
+      "answer": "I added the migration and updated `db/schema.rb` to match. I did not run the migration, since that needs the MySQL database, and I did not commit.\n\n- **Migration:** `db/migrate/20261025120000_add_external_reference_to_organisations.rb` adds a nullable `string` column `external_reference` to `organisations`. It follows the `Migration[8.1]` style used by the other migrations in the repo.\n- **Schema:** `db/schema.rb` now has `t.string \"external_reference\"` in the `organisations` table, placed alphabetically after `custom_jobs_url`, and the schema version is bumped to `2026_10_25_120000`.\n\nTo apply it locally, run `bin/rails db:migrate` and then check that `db/schema.rb` is unchanged. If the regenerated schema differs from my hand edit, the regenerated version wins."
+    }
+  ]
+}

@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 352 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 353 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -560,7 +560,8 @@ A language new to the engine is these sites, in order:
    declarations`)
 9. by hand, every place that lists the languages by name. No gate reads these, so a list left at
    seven names passes:
-   - `README.md`: the opening paragraph, the paragraph on the grammars the plugin carries, the
+   - `README.md`: the paragraph under What it reads
+   - `docs/usage.md`: the opening paragraph, the paragraph on the grammars the plugin carries, the
      list under Staying current, the sentence that counts the rows for each, and under Limits
      the paragraph, its table and the share each language's grammar leaves unread
    - `CONTEXT.md`: Engine and Family
@@ -632,8 +633,8 @@ order:
 6. `test/fixtures/counter-pins.mjs` the counter pin: `ELIGIBLE` where the row carries a
    counter-claim, `REFUSED` where it refuses one, with the reason beside it. A review gate too (C6)
 7. `CHANGELOG.md` a line under `## [Unreleased]`
-8. `README.md` and section 4 of `docs/how-it-works.md`, which state how many rows ship and how many
-   speak each language
+8. `README.md`, `docs/usage.md` and section 4 of `docs/how-it-works.md`, which state how many rows
+   ship and how many speak each language
 
 Then `node scripts/check-docs.mjs`. It reaches four of the eight in one run, with the move beside
 each: the intake row, the model default, the counter pin, and the two counts. Two of those four it
@@ -649,7 +650,7 @@ registry's keys, so an entry naming a key that no longer exists throws on every 
 `plugins/anatomiya/lib/model-defaults.mjs`, which is every command. The intake row is the one site that stays: mark it
 `dropped` with the reason rather than deleting it, or the entry is proposed again next quarter (G4).
 Take the counter pin out of `ELIGIBLE` or `REFUSED`, take the witness pair out of
-`test/applicability.test.mjs`, and bring the counts in `README.md` and section 4 of
+`test/applicability.test.mjs`, and bring the counts in `README.md`, `docs/usage.md` and section 4 of
 `docs/how-it-works.md` down, which the checker fails on until you do.
 
 ## The bar a new dimension has to clear

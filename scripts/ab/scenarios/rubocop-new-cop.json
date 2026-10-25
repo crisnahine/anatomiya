@@ -1,0 +1,33 @@
+{
+  "name": "rubocop-new-cop",
+  "repo": "github.com/rubocop/rubocop",
+  "commit": "f009b338048ea0ade9d6d88cf358111092c8f12c",
+  "area": "lib/rubocop/cop/style",
+  "probe": "lib/rubocop/cop/style/reverse_find.rb",
+  "prompt": "Add a new cop, Style/ReverseFirst, that flags `array.reverse.first` called with no argument and autocorrects it to `array.last`. Include specs for it.",
+  "did": [
+    {
+      "name": "the cop exists",
+      "changed": "^lib/rubocop/cop/style/reverse_first\\.rb$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "config/default.yml registers the cop",
+      "claim": "a .rb file added to \"lib/rubocop/cop/style\" ships with an edit to \"config/default.yml\": 100 of the last 100 changes that added one, 22 authors",
+      "contains": "^Style/ReverseFirst:",
+      "in": "^config/default\\.yml$"
+    },
+    {
+      "name": "lib/rubocop.rb requires the cop",
+      "claim": "a .rb file added to \"lib/rubocop/cop/style\" ships with an edit to \"lib/rubocop.rb\": 99 of the last 100 changes that added one, 21 authors",
+      "contains": "rubocop/cop/style/reverse_first",
+      "in": "^lib/rubocop\\.rb$"
+    },
+    {
+      "name": "a changelog entry is added",
+      "claim": "a .rb file added to \"lib/rubocop/cop/style\" ships with a new .md file in \"changelog\": 97 of the last 100 changes that added one, 21 authors",
+      "changed": "^changelog/[^/]+\\.md$"
+    }
+  ]
+}

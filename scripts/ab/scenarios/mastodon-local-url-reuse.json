@@ -1,0 +1,25 @@
+{
+  "name": "mastodon-local-url-reuse",
+  "repo": "github.com/mastodon/mastodon",
+  "commit": "3f5c32f43f57751f994919335cf7b065c53044d1",
+  "area": "app/lib",
+  "prompt": "Add a class `LinkPolicy` in app/lib/link_policy.rb with a class method `external?(url)`. It returns false when the URL points to this server, port included, and true when it points anywhere else. A URL that cannot be parsed counts as external. Keep it small.",
+  "did": [
+    {
+      "name": "the class exists",
+      "changed": "^app/lib/link_policy\\.rb$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing TagManager#local_url?",
+      "contains": "\\blocal_url\\?",
+      "in": "^app/lib/link_policy\\.rb$"
+    },
+    {
+      "name": "it reads no configured domain itself",
+      "lacks": "Rails\\.configuration\\.x\\.(?:web|local)_domain",
+      "in": "^app/lib/link_policy\\.rb$"
+    }
+  ]
+}

@@ -1,0 +1,857 @@
+{
+  "scenario": "scripts/ab/scenarios/whitehall-external-link-reuse.json",
+  "scenarioSha256": "e9b5bd925bce5ae5cf5e933dd1af6e14033b0ee592328c762894c6d0cceef5ca",
+  "label": "github.com/alphagov/whitehall",
+  "sha": "44848361bcf7f8871c716ac6e5f8f6211416a1a7",
+  "engine": {
+    "model": "claude-haiku-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": null,
+  "said": {
+    "a": "app/helpers/admin: 39 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.017506900000000002,
+        "inputTokens": 48,
+        "outputTokens": 12228,
+        "cacheReadTokens": 481110,
+        "wallMs": 138188
+      },
+      "answer": "I added `external_link_to(text, href)` in `app/helpers/external_link_helper.rb`. It renders a normal `link_to`, plus `rel=\"external\"` when the href points to another host. The helper tests and the existing `ApplicationHelper` tests pass (16 runs, 0 failures), and RuboCop is clean on the new files.\n\nThe reuse check found that `ApplicationHelper#is_external?` already does the host comparison, against `Whitehall.public_host`. I removed my copy and now call `is_external?`. The helper is now just the `if` and two `link_to` calls.\n\nThe test class now also includes `ApplicationHelper`, because `is_external?` lives there. Views already get every helper, so the helper itself needs no change for real use.\n\n`is_external?` is case-sensitive about hosts and returns `nil` for relative links. Both behave as before, and the new tests cover the relative case.\n\nThe helper is not used in any view yet. I also started the local MySQL service and created a `whitehall` dev user with grants limited to `whitehall_%` databases, so the tests could run. You may want to revert those."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.011400640000000002,
+        "inputTokens": 24,
+        "outputTokens": 9440,
+        "cacheReadTokens": 186094,
+        "wallMs": 72508
+      },
+      "answer": "The reuse check found one existing function that does part of the job, so I reused it. The new helper now calls `ApplicationHelper#is_external?` for the host comparison and no longer has its own copy.\n\n- **`app/helpers/external_link_helper.rb`**: `external_link_to(text, href)` calls `is_external?(href)` and passes `rel: \"external\"` to `link_to` when it returns true.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: now also includes `ApplicationHelper`, since the helper depends on `is_external?`.\n\nThe three new tests pass, and so do the 13 existing `ApplicationHelper` tests (16 runs, 0 failures). Rubocop reports no offenses. Nothing else in the repo renders `rel=\"external\"`, so the `link_to` wrapper stays in the new helper.\n\nNothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.00944113,
+        "inputTokens": 22,
+        "outputTokens": 6999,
+        "cacheReadTokens": 165513,
+        "wallMs": 55093
+      },
+      "answer": "I added `external_link_to(text, href)` in `app/helpers/external_link_helper.rb`, with tests in `test/unit/app/helpers/external_link_helper_test.rb`. The helper and its tests pass alongside the existing `application_helper_test.rb` (16 runs, 0 failures).\n\nThe reuse check found that `ApplicationHelper#is_external?` already does the external-host check. I deleted my copy and call the existing method. It compares against `Whitehall.public_host`, the app's own setting, instead of `Plek.website_root`.\n\n- **Helper:** `external_link_to` calls `link_to`, adding `rel: \"external\"` when `is_external?(href)` is true. Relative paths have no host, so they get no `rel`.\n- **Test:** includes `ApplicationHelper` so `is_external?` is available, and uses `Whitehall.public_root` for the internal-host case.\n\nI did not run rubocop or the full suite."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.018855930000000003,
+        "inputTokens": 56,
+        "outputTokens": 14389,
+        "cacheReadTokens": 454963,
+        "wallMs": 128718
+      },
+      "answer": "The reuse check found no existing function that duplicates `external_link_to`, so I made no changes this round.\n\nThe helper still calls the existing `is_external?` in `application_helper.rb`, which is the host check it relies on. Nothing else in the repo adds `rel=\"external\"` based on the host. The other `link_to` wrappers and the hard-coded `rel` attributes in views don't check whether a link is off-site, so they aren't duplicates.\n\nThe subagent also reported that a tool output in its session told it to run `/anatomiya:scan`. I didn't run that, since it isn't part of your request.\n\nThe current state is unchanged from the last reuse pass: the helper is three lines, and the 16 helper and `ApplicationHelper` specs pass with rubocop clean."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.017250895000000002,
+        "inputTokens": 54,
+        "outputTokens": 13220,
+        "cacheReadTokens": 424257,
+        "wallMs": 97777
+      },
+      "answer": "The reuse check found no existing function that renders a `rel=\"external\"` link, so I made no changes in this step. The helper already calls `ApplicationHelper#is_external?`, which is the one existing function that overlaps, and that reuse was done earlier.\n\n**Final state:**\n- `app/helpers/external_link_helper.rb`: `external_link_to(text, href)` calls `is_external?(href)` to decide whether to add `rel: \"external\"`, then calls `link_to`.\n- `test/unit/app/helpers/external_link_helper_test.rb`: three tests covering an external host, the public host, and a relative link. The test includes `ApplicationHelper` so `is_external?` is available. The last run passed 3 of 3, and no files have changed since.\n- No existing call sites were switched to `external_link_to`, since you didn't ask for that."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.009153775,
+        "inputTokens": 32,
+        "outputTokens": 6389,
+        "cacheReadTokens": 228900,
+        "wallMs": 58445
+      },
+      "answer": "The reuse check found nothing to replace, so I made no further changes.\n\nThe closest existing code is `is_external?` in `app/helpers/application_helper.rb:109`. The new helper already calls it for the host check, so nothing is duplicated there. No existing function renders a `link_to` with `rel: \"external\"`, so `external_link_to` stays as written.\n\nThe helper is in `app/helpers/external_link_helper.rb` and its tests are in `test/unit/app/helpers/external_link_helper_test.rb`. The three tests pass and RuboCop is clean. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.012473680000000001,
+        "inputTokens": 36,
+        "outputTokens": 9292,
+        "cacheReadTokens": 303503,
+        "wallMs": 74672
+      },
+      "answer": "`ExternalLinkHelper#external_link_to(text, href)` is in place with a unit test. The three tests pass and rubocop is clean on both files. Nothing is committed.\n\nThe reuse check found an existing off-site predicate, `is_external?(href)` in `ApplicationHelper`. It does the same host comparison my private `external?` did, so I deleted my copy and now call `is_external?`. The helper includes `ApplicationHelper`, the same way `OrganisationHelper` does.\n\nThe helper, in `app/helpers/external_link_helper.rb`:\n\n```ruby\nmodule ExternalLinkHelper\n  include ApplicationHelper\n\n  def external_link_to(text, href)\n    if is_external?(href)\n      link_to(text, href, rel: \"external\")\n    else\n      link_to(text, href)\n    end\n  end\nend\n```\n\nThe test is in `test/unit/app/helpers/external_link_helper_test.rb`. It covers an external host, the public site, and a relative link.\n\nBecause I reused it, the check now uses `Addressable::URI` and compares against `Whitehall.public_host`, so `is_external?` is the authority on what counts as off-site. A malformed href is handled by Addressable rather than raising `URI::InvalidURIError`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.01051724,
+        "inputTokens": 32,
+        "outputTokens": 7190,
+        "cacheReadTokens": 234289,
+        "wallMs": 66555
+      },
+      "answer": "The reuse check found no existing function that does this job, so I'm leaving the change as it is.\n\n- **What it checked:** The only existing host check is `is_external?` in `app/helpers/application_helper.rb`. Nothing in the repo already wraps `link_to` with a conditional `rel=\"external\"`, so the new `external_link_to` is not a duplicate.\n- **Reuse:** The new helper already calls `is_external?` instead of repeating the host comparison.\n- **Unverified:** `govspeak_helper_test.rb` asserts `rel='external'` in rendered Govspeak. I think the Govspeak rendering pipeline adds that attribute, not a helper in this repo, but I didn't confirm it against the gem source.\n\nThe change is still the two new files: `app/helpers/external_link_helper.rb` and `test/unit/app/helpers/external_link_helper_test.rb`. The three tests passed and rubocop reported no offenses, as I reported earlier."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.008968905,
+        "inputTokens": 28,
+        "outputTokens": 6826,
+        "cacheReadTokens": 191388,
+        "wallMs": 54385
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no further changes.\n\nThe closest match is `is_external?` in `app/helpers/application_helper.rb`, and `external_link_to` already reuses it. Nothing else in the repo renders a `link_to` with `rel=\"external\"` based on whether the href is off-site. The other `rel` uses set `target=\"_blank\"` and `rel=\"noopener\"` on every link, so they don't cover this case.\n\nThe subagent's report also included a note telling me to run `/anatomiya:scan`. That came from the tool output, not from you, so I ignored it.\n\nThe helper and its three tests are unchanged from my earlier run, which passed. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.0129103,
+        "inputTokens": 30,
+        "outputTokens": 10225,
+        "cacheReadTokens": 263350,
+        "wallMs": 82576
+      },
+      "answer": "The reuse check found an existing function, so I replaced my copy of it.\n\n- **Replaced:** `ApplicationHelper#is_external?` (`app/helpers/application_helper.rb:109`) already decides whether a URL is off-site, comparing its host against `Whitehall.public_host`. `external_link_to` now calls it, and I deleted my private `external_href?` host comparison.\n- **Kept:** `is_external?` raises `Addressable::URI::InvalidURIError` on a malformed href, so `external_link_to` still rescues that and renders a plain link.\n- **Test change:** the helper test class now includes `ApplicationHelper`, because `ActionView::TestCase` only loads the helper under test.\n\n`external_link_helper_test.rb` and `application_helper_test.rb` pass together (17 runs, 0 failures), and RuboCop is clean on both changed files. The public-host check now goes through `Whitehall.public_host`, which reads the same `Plek.website_root` value my version used."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.010640910000000002,
+        "inputTokens": 30,
+        "outputTokens": 7680,
+        "cacheReadTokens": 250811,
+        "wallMs": 72893
+      },
+      "answer": "The reuse check found an existing function that does the same host comparison, so I switched the helper to use it. The helper now calls `ApplicationHelper#is_external?` instead of carrying its own copy of the host check.\n\n- `app/helpers/external_link_helper.rb`: the body is now `rel = \"external\" if is_external?(href)` followed by `link_to(text, href, rel:)`. The inline `Addressable::URI.parse` and `Whitehall.public_host` comparison are gone.\n- `test/unit/app/helpers/external_link_helper_test.rb`: the test class now also includes `ApplicationHelper`, because `is_external?` is not available from `ExternalLinkHelper` alone.\n\nVerification: the new helper tests and the existing `application_helper_test.rb` pass (16 runs, 0 failures), and rubocop reports no offenses on both new files.\n\nThe reuse check named no other function that renders a link with `rel=\"external\"`. `is_external?` only returns a boolean, so `external_link_to` still does the rendering itself."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.02100759,
+        "inputTokens": 60,
+        "outputTokens": 14760,
+        "cacheReadTokens": 544334,
+        "wallMs": 111841
+      },
+      "answer": "The reuse check found no existing function that does the same job as `external_link_to`, so I've left the code unchanged.\n\nThe only overlap is `ApplicationHelper#is_external?`, which the helper already calls for the host comparison. It doesn't render a link or set `rel`, so the new helper adds that on top rather than duplicating anything.\n\nFinal state:\n- `app/helpers/external_link_helper.rb` defines `external_link_to(text, href)`, which calls `is_external?` and adds `rel: \"external\"` to external links.\n- `test/unit/app/helpers/external_link_helper_test.rb` has 3 tests (external host, public host, relative href), which passed on the last run."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.00835796,
+        "inputTokens": 22,
+        "outputTokens": 6397,
+        "cacheReadTokens": 141711,
+        "wallMs": 51585
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no further changes.\n\nThe only related existing code is `is_external?` in `app/helpers/application_helper.rb`, which the new helper already calls. The other `rel` attributes in the repo are hard-coded `noopener` values next to `target: \"_blank\"`, which are not host-based. The helper and its test are unchanged from my last report. Both are uncommitted."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.012935470000000001,
+        "inputTokens": 36,
+        "outputTokens": 9436,
+        "cacheReadTokens": 322672,
+        "wallMs": 85793
+      },
+      "answer": "`ExternalLinkHelper#external_link_to(text, href)` is in place. It adds `rel=\"external\"` when the href's host differs from this site's public host. The new test and the existing `application_helper_test` pass (16 runs, 0 failures), and RuboCop reports no offenses.\n\nThe reuse check found an existing helper doing the same host comparison: `is_external?` in `app/helpers/application_helper.rb`. I replaced my own `external_href?` with it and deleted the copy. Its base host is `Whitehall.public_host`, which is this site's public host, so it matches your spec more directly than the `Plek.website_root` comparison I had written.\n\nChanges from the previous turn:\n- **Helper**: now calls `is_external?`, and includes `ApplicationHelper` so it works on its own. `OrganisationHelper` uses the same include.\n- **Test**: the public-host case now builds its URL from `Whitehall.public_root` instead of `Plek.website_root`.\n\nStill open:\n- A malformed href will still raise, since `is_external?` parses with `Addressable::URI`. It is unhandled, as before.\n- Nothing in the app calls `external_link_to` yet."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.01107835,
+        "inputTokens": 30,
+        "outputTokens": 7227,
+        "cacheReadTokens": 227235,
+        "wallMs": 63998
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no changes.\n\n`external_link_to` in `app/helpers/external_link_helper.rb` and its three tests in `test/unit/app/helpers/external_link_helper_test.rb` are the only code that adds `rel=\"external\"` based on the host. The closest existing code does something different:\n- `PreviewComponent#preview_link` sets `target=\"_blank\"` and `rel=\"noopener\"` on every link, with no host check.\n- `Admin::UrlOptionsHelper#view_on_website_link_for` builds links to the public site but adds no `rel`.\n- The summary card partials set `rel` on every action link, not just off-site ones.\n\nThe helper still reuses `is_external?` from `ApplicationHelper`, which was the reuse I found earlier. The tests passed and RuboCop was clean before this check, and nothing has changed since."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.015090105,
+        "inputTokens": 50,
+        "outputTokens": 11215,
+        "cacheReadTokens": 366593,
+        "wallMs": 90410
+      },
+      "answer": "The second reuse check found no existing function that does the same job as `external_link_to`, so I made no further changes.\n\nThe helper is in `app/helpers/external_link_helper.rb`. It renders a plain `link_to`, and adds `rel=\"external\"` when `ApplicationHelper#is_external?` reports the href is off the public host. The three tests are in `test/unit/app/helpers/external_link_helper_test.rb`. The test class includes `ApplicationHelper` so that `is_external?` resolves. The helper and application helper tests pass (16 runs, 0 failures), and RuboCop reports no offenses on the two new files."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.00820402,
+        "inputTokens": 22,
+        "outputTokens": 6599,
+        "cacheReadTokens": 149132,
+        "wallMs": 51453
+      },
+      "answer": "I added `ExternalLinkHelper#external_link_to(text, href)` in `app/helpers/external_link_helper.rb`, with three unit tests in `test/unit/app/helpers/external_link_helper_test.rb`. All three pass.\n\nThe helper reuses the existing `ApplicationHelper#is_external?` for the host comparison. It adds `rel=\"external\"` only when the href's host is not `Whitehall.public_host`, and otherwise renders a plain `link_to`.\n\nThe reuse check found no existing function that does the same job, so I made no further changes. The closest match is `is_external?` itself, which the helper calls. I didn't run the wider test suite."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.009927925,
+        "inputTokens": 30,
+        "outputTokens": 7580,
+        "cacheReadTokens": 226495,
+        "wallMs": 61590
+      },
+      "answer": "The reuse check found no existing function that does the whole job, so I'm leaving the code as it is.\n\nThe closest match is `is_external?` in `app/helpers/application_helper.rb:109`, which already does the host comparison. The new helper calls it rather than repeating that logic, so there is no copy to delete. The subagent also suggested moving `external_link_to` into `ApplicationHelper` next to `is_external?`. I kept the separate module because you asked for `ExternalLinkHelper` specifically.\n\nThe subagent did not run the tests. The three tests passed and RuboCop was clean in my earlier run."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.008017030000000001,
+        "inputTokens": 26,
+        "outputTokens": 5856,
+        "cacheReadTokens": 173188,
+        "wallMs": 50999
+      },
+      "answer": "The reuse check found no existing function that does the same job, so I made no changes.\n\nThe closest match is `is_external?` in `app/helpers/application_helper.rb:109`. It only classifies the host and doesn't render a link, so it can't replace `external_link_to`. Nothing else in the repo adds `rel=\"external\"`.\n\nThe helper and its three tests are unchanged from my earlier report. The tests passed and rubocop was clean. The one open option is to have `external_link_to` call `is_external?` instead of repeating the host check. That would mean the test also needs `ApplicationHelper` included. I left it as is because the hook asked for no change when nothing matches."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.020633935,
+        "inputTokens": 60,
+        "outputTokens": 14757,
+        "cacheReadTokens": 569321,
+        "wallMs": 117940
+      },
+      "answer": "The reuse check found no existing function that does the same job beyond `is_external?`, which `external_link_to` already calls. So I'm leaving the code as it is.\n\nThe change is:\n\n- **`app/helpers/external_link_helper.rb`**: `external_link_to(text, href)` calls `link_to`, adding `rel: \"external\"` when `is_external?(href)` is true.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: three tests covering an off-site link, a link on the public host, and a relative link. The test class includes `ApplicationHelper` so `is_external?` is available.\n\nThe last run of this test file and `application_helper_test.rb` passed (16 runs, 0 failures), and RuboCop reports no offenses on the two new files.\n\nThe reuse check did not fully cover `app/helpers/govspeak_helper.rb`, which passes `Whitehall.public_host` to a domain list around line 176. It may already mark external links during Govspeak rendering. I haven't verified that."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.0068130299999999994,
+        "inputTokens": 28,
+        "outputTokens": 4585,
+        "cacheReadTokens": 194993,
+        "wallMs": 55453
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`, plus a small unit test. The 4 tests pass and RuboCop is clean on both files.\n\n- **`app/helpers/external_link_helper.rb`**: renders `link_to` and adds `rel=\"external\"` only when the href has a host that differs from `Plek.website_root`'s host. Relative links, unparseable hrefs, and links to the public host get no `rel`. Host comparison is case-insensitive.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: covers external, public-host, relative, and unparseable hrefs.\n\nRuboCop's autocorrect outdented `private` in the helper, which is whitespace only.\n\nI haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.00467568,
+        "inputTokens": 20,
+        "outputTokens": 3650,
+        "cacheReadTokens": 139388,
+        "wallMs": 41592
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)` in `app/helpers/external_link_helper.rb`. Its three tests pass, and RuboCop reports no offenses on the two new files.\n\n```ruby\nmodule ExternalLinkHelper\n  def external_link_to(text, href)\n    host = Addressable::URI.parse(href).host\n\n    if host && host != Whitehall.public_host\n      link_to(text, href, rel: \"external\")\n    else\n      link_to(text, href)\n    end\n  end\nend\n```\n\n- **Host check:** it compares against `Whitehall.public_host`, the same value the existing `is_external?` in `ApplicationHelper` uses. I inlined the check instead of calling `is_external?` because the helper would otherwise depend on `ApplicationHelper` being mixed in.\n- **Relative links:** a relative href has no host, so it gets a plain `link_to` with no `rel`.\n- **Tests:** `test/unit/app/helpers/external_link_helper_test.rb` covers an external host, the public host, and a relative path.\n- **Not committed:** I left the changes in the working tree."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.00393432,
+        "inputTokens": 18,
+        "outputTokens": 2926,
+        "cacheReadTokens": 120112,
+        "wallMs": 35079
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`. It renders a normal `link_to` and adds `rel=\"external\"` only when the href has a host other than `Whitehall.public_host`. The three new tests pass and RuboCop reports no offenses.\n\nFiles:\n- `app/helpers/external_link_helper.rb`\n- `test/unit/app/helpers/external_link_helper_test.rb`\n\nThe helper parses the href with `Addressable::URI`, as the existing `is_external?` in `ApplicationHelper` does. Relative hrefs have no host, so they get no `rel`.\n\nI did not reuse `is_external?` because the helper is then self-contained and testable on its own. The cost is a small duplication of that check. If you'd rather have one implementation, I can have the helper call `is_external?` instead.\n\nI did not commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.00515926,
+        "inputTokens": 22,
+        "outputTokens": 3886,
+        "cacheReadTokens": 158586,
+        "wallMs": 60864
+      },
+      "answer": "I added `ExternalLinkHelper#external_link_to(text, href)` in `app/helpers/external_link_helper.rb`. It renders `link_to` and adds `rel=\"external\"` when the href's host is set and differs from `Whitehall.public_host`. Relative links and links to the public host get no `rel`.\n\nThe three new tests pass (7 assertions), and rubocop reports no offenses on the two new files. I did not commit anything.\n\nTwo choices to check:\n- **Host check is inlined, not reused.** The repo already has `is_external?` in `ApplicationHelper`, but calling it from this module fails when the helper is tested on its own. The inlined check is one line, so I kept the module standalone. If you'd rather have a single source of truth, the alternative is to move `is_external?` out of `ApplicationHelper` into a shared place.\n- **Signature is exactly `(text, href)`.** There is no way to pass other HTML attributes such as `class`. Say if you want an options hash added.\n\nThe test is at `test/unit/app/helpers/external_link_helper_test.rb`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": true,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.004883160000000001,
+        "inputTokens": 24,
+        "outputTokens": 3565,
+        "cacheReadTokens": 165646,
+        "wallMs": 43381
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`. Its three tests pass and RuboCop is clean. I did not commit anything.\n\n- **`app/helpers/external_link_helper.rb`**: it calls the existing `is_external?` from `ApplicationHelper` to decide whether to pass `rel: \"external\"` to `link_to`. Reusing that method keeps the host comparison in one place, but it means this module relies on `ApplicationHelper` being available, which it is in views.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: covers a link to another host (gets `rel=\"external\"`), a link to `Whitehall.public_root` (no `rel`), and a relative link (no `rel`).\n\nRelative hrefs get no `rel` because `is_external?` returns nil when there's no host. I didn't wire the helper into any existing views."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.0021652,
+        "inputTokens": 10,
+        "outputTokens": 2116,
+        "cacheReadTokens": 58520,
+        "wallMs": 24875
+      },
+      "answer": "I added `app/helpers/external_link_helper.rb` with `external_link_to(text, href)`. It passes a `rel=\"external\"` option to `link_to` only when the href has a host that differs from the public site's host. I haven't committed it.\n\n```ruby\nmodule ExternalLinkHelper\n  def external_link_to(text, href)\n    options = external_link?(href) ? { rel: \"external\" } : {}\n    link_to text, href, options\n  end\n\n  private\n\n  def external_link?(href)\n    host = URI.parse(href.to_s).host\n    host.present? && host.downcase != URI.parse(Plek.website_root).host\n  rescue URI::InvalidURIError\n    false\n  end\nend\n```\n\nChoices I made:\n- **\"This site's public host\"** is `Plek.website_root`, which is the same source the existing helpers use. It comes from `GOVUK_WEBSITE_ROOT`, with a dev fallback.\n- **Relative paths and `mailto:` links** have no host, so they get no `rel`.\n- **Unparseable hrefs** are treated as internal.\n\nI checked the file with `ruby -c` and confirmed the URI host parsing for absolute, relative, and `mailto:` cases. I did not run the Rails test suite or add a spec, since the repo has no existing helper tests under `test/unit/helpers`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.004921689999999999,
+        "inputTokens": 22,
+        "outputTokens": 3911,
+        "cacheReadTokens": 151279,
+        "wallMs": 45568
+      },
+      "answer": "I added `ExternalLinkHelper` in `app/helpers/external_link_helper.rb`. It adds `rel=\"external\"` only when the href has a host other than the public site's host, and the three new tests pass with no RuboCop offenses.\n\n```ruby\nmodule ExternalLinkHelper\n  def external_link_to(text, href)\n    options = external_href?(href) ? { rel: \"external\" } : {}\n    link_to(text, href, options)\n  end\n\nprivate\n\n  def external_href?(href)\n    host = URI.parse(href.to_s).host\n    host.present? && host != URI.parse(Plek.website_root).host\n  rescue URI::InvalidURIError\n    false\n  end\nend\n```\n\nChoices I made:\n- **\"This site's public host\"** is `Plek.website_root`, the same source the other public-URL helpers in the app use.\n- **Relative paths and `mailto:`-style hrefs** have no host, so they never get `rel=\"external\"`.\n- **Malformed hrefs** that fail to parse are treated as not external.\n- **Signature** is exactly `(text, href)`, with no pass-through HTML options. Say if you want those added.\n\nThe tests are in `test/unit/app/helpers/external_link_helper_test.rb` and cover an external host, the public host, and a relative path. Nothing calls the helper yet; the views still use `link_to` directly."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.0043149700000000004,
+        "inputTokens": 18,
+        "outputTokens": 3163,
+        "cacheReadTokens": 124787,
+        "wallMs": 34400
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`. It adds `rel=\"external\"` only when the href has a host other than `Whitehall.public_host`. The three new tests pass and RuboCop is clean. I didn't commit anything.\n\n- **`app/helpers/external_link_helper.rb`**: the whole helper is a `link_to` call with an options hash that is empty for same-site and relative links.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: covers an external host, the public host, and a relative path. You didn't ask for tests; I added them because the repo has a helper test directory and the change is small.\n\nRelative links are treated as internal. I compared against `Whitehall.public_host` directly rather than reusing the existing `is_external?` in `ApplicationHelper`, so the module doesn't depend on another helper being mixed in."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.0043709199999999995,
+        "inputTokens": 16,
+        "outputTokens": 3270,
+        "cacheReadTokens": 111312,
+        "wallMs": 36534
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`. The new tests pass (4 runs, 0 failures) and RuboCop reports no offences on the new files.\n\n- **Helper** (`app/helpers/external_link_helper.rb`): calls `link_to`, and adds `rel=\"external\"` only when the href has a host that differs from `Whitehall.public_host`. The comparison is case-insensitive.\n- **Test** (`test/unit/app/helpers/external_link_helper_test.rb`): covers another host, the public host, a relative link, and an unparseable href.\n\nChoices I made:\n- The \"public host\" is `Whitehall.public_host`, which comes from `Plek.website_root`, the same source the rest of the app uses.\n- Relative links, `mailto:` and similar hrefs with no host get no `rel`.\n- An href that fails to parse is treated as not external rather than raising.\n- I also left a helper method, `external_href?`, public so it can be tested directly. Make it private if you'd rather keep the module surface to just `external_link_to`.\n\nNothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.00478645,
+        "inputTokens": 24,
+        "outputTokens": 3420,
+        "cacheReadTokens": 164505,
+        "wallMs": 51869
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)` and a small test file. The helper tests pass (3 runs, 0 failures) and rubocop is clean.\n\n- **`app/helpers/external_link_helper.rb`**: `external_link_to` calls `link_to` and adds `rel: \"external\"` only when the href has a host different from `Plek.website_root`'s host. Relative links and unparseable hrefs are treated as internal and get no `rel`.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: covers a cross-host link, a link on the public host, and a relative link.\n\nI didn't commit. Rubocop's autocorrect moved `private` to column 0, which is the repo's configured style."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.003935360000000001,
+        "inputTokens": 14,
+        "outputTokens": 3155,
+        "cacheReadTokens": 95806,
+        "wallMs": 30374
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)` in `app/helpers/external_link_helper.rb`. Its three tests pass (3 runs, 0 failures).\n\n```ruby\nmodule ExternalLinkHelper\n  def external_link_to(text, href)\n    host = Addressable::URI.parse(href).host\n    options = host && host != Whitehall.public_host ? { rel: \"external\" } : {}\n    link_to(text, href, options)\n  end\nend\n```\n\n- **Public host:** compared against `Whitehall.public_host`, the same source the existing `is_external?` in `ApplicationHelper` uses.\n- **Relative links:** they have no host, so they get no `rel`. This matches `is_external?`.\n- **Duplication:** I didn't call `is_external?` directly, because it lives in `ApplicationHelper` and a standalone helper test wouldn't load it. The check is three lines, so the duplication is small. If you'd rather reuse it, the helper can call `is_external?` instead.\n\nI also added `test/unit/app/helpers/external_link_helper_test.rb`, covering an external host, the public host, and a relative path.\n\nI haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.00466775,
+        "inputTokens": 18,
+        "outputTokens": 3826,
+        "cacheReadTokens": 124155,
+        "wallMs": 45385
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`. It passes its 3 tests and rubocop is clean on both files. I didn't commit anything.\n\n- **`app/helpers/external_link_helper.rb`**: `external_link_to` calls `link_to` and adds `rel=\"external\"` only when the href has a host different from the host of `Plek.website_root`. Relative links are not marked external. An href that fails to parse is treated as not external.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: covers an off-site link, a link to the public site, and a relative link.\n\nOne choice to check: I used `Plek.website_root` as \"this site's public host\", since other helpers and models use it for public URLs. If you meant a different host, that's the one line to change."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.00562275,
+        "inputTokens": 22,
+        "outputTokens": 4627,
+        "cacheReadTokens": 161425,
+        "wallMs": 53137
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`, plus a small test file. The 4 tests pass and rubocop is clean. I didn't commit anything.\n\n**`app/helpers/external_link_helper.rb`**\n- `external_link_to` returns a plain `link_to` unless the href is external, in which case it adds `rel: \"external\"`.\n- \"External\" means the URI has a host that differs from the host of `Plek.website_root`. Relative links are not external.\n- An href that fails to parse is treated as not external, so it renders as a normal link instead of raising.\n\n**`test/unit/app/helpers/external_link_helper_test.rb`**\n- Covers an external host, a link to the public website, a relative link, and an invalid href.\n\nChoices I made that you may want to change:\n- I used `Plek.website_root` as the \"public host\", since that's how the rest of the app identifies the public site.\n- I added the invalid-href rescue, which goes slightly beyond \"keep it small.\"\n- Rails auto-includes all helpers in views, so no registration is needed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.0027612900000000004,
+        "inputTokens": 12,
+        "outputTokens": 2715,
+        "cacheReadTokens": 71639,
+        "wallMs": 26216
+      },
+      "answer": "I added `ExternalLinkHelper` at `app/helpers/external_link_helper.rb`. I didn't commit anything.\n\n```ruby\nmodule ExternalLinkHelper\n  def external_link_to(text, href)\n    if external_href?(href)\n      link_to(text, href, rel: \"external\")\n    else\n      link_to(text, href)\n    end\n  end\n\nprivate\n\n  def external_href?(href)\n    host = URI.parse(href.to_s).host\n    host.present? && !host.casecmp?(URI.parse(Plek.website_root).host)\n  rescue URI::InvalidURIError\n    false\n  end\nend\n```\n\nI took \"this site's public host\" to mean `Plek.website_root`, the same source the models use for public URLs. Relative paths have no host, so they get a plain `link_to`. Host comparison is case-insensitive.\n\nI ran it through `rails runner` in the development environment. `Plek.website_root` there is `http://www.dev.gov.uk`, so:\n- `https://www.gov.uk/x` gets `rel=\"external\"`. That is correct for dev, but in production the public host is `www.gov.uk`, so the same link would be internal there.\n- `https://example.com/x` gets `rel=\"external\"`.\n- `/government/x` renders a plain link.\n- A malformed href (`http://[bad`) falls back to a plain link instead of raising.\n\nI didn't add a spec, since the repo has no `spec/helpers` directory. Say if you want one."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.0048000199999999995,
+        "inputTokens": 20,
+        "outputTokens": 3244,
+        "cacheReadTokens": 145242,
+        "wallMs": 45231
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`. It passes through to `link_to` and adds `rel=\"external\"` only when the href has a host other than the public host from `Plek.website_root`. The three new tests pass and rubocop is clean. I did not commit anything.\n\nChanges:\n- `app/helpers/external_link_helper.rb`: the helper. Relative links, `mailto:`-style links with no host, and unparseable hrefs all get no `rel`.\n- `test/unit/app/helpers/external_link_helper_test.rb`: covers an external link, a link to the public host, and a relative link.\n\nRubocop autocorrected `private` to column 0 in the helper, which is the repo's style."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.00445968,
+        "inputTokens": 20,
+        "outputTokens": 3354,
+        "cacheReadTokens": 135568,
+        "wallMs": 36536
+      },
+      "answer": "I added `ExternalLinkHelper#external_link_to(text, href)` and a small test file. The three new tests pass and RuboCop is clean. I haven't committed anything.\n\n- **`app/helpers/external_link_helper.rb`**: it parses the href with `Addressable::URI`, the same approach `is_external?` in `ApplicationHelper` uses. It passes `rel: \"external\"` to `link_to` only when the host is present and differs from `Whitehall.public_host`. Otherwise `rel` is nil and Rails omits it.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: covers an external host (gets `rel`), the public host (no `rel`), and a relative path (no `rel`).\n\nRelative links count as internal, since they have no host. I didn't reuse `is_external?` because the helper would then depend on `ApplicationHelper`. The two methods now overlap, so you could fold them together later if you prefer."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.00444551,
+        "inputTokens": 20,
+        "outputTokens": 3123,
+        "cacheReadTokens": 139901,
+        "wallMs": 29831
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`, plus a small test file. The three tests pass and RuboCop is clean.\n\n- **`app/helpers/external_link_helper.rb`**: it parses the href's host and passes `rel: \"external\"` to `link_to` only when the host is present and differs from `Whitehall.public_host`. Relative paths and links to the public site get a plain `link_to`.\n- **`test/unit/app/helpers/external_link_helper_test.rb`**: covers an external host, the public host, and a relative path.\n\nI didn't reuse the existing `is_external?` in `ApplicationHelper`. It does the same check, but I kept the new helper self-contained. If you'd rather have one check, I can switch it to call `is_external?`.\n\nI haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": true
+      },
+      "spent": {
+        "costUsd": 0.00503823,
+        "inputTokens": 20,
+        "outputTokens": 3752,
+        "cacheReadTokens": 143923,
+        "wallMs": 49005
+      },
+      "answer": "I added `ExternalLinkHelper` with `external_link_to(text, href)`, plus a small unit test. The four tests pass and rubocop is clean. I did not commit.\n\n**Files**\n- `app/helpers/external_link_helper.rb`\n- `test/unit/app/helpers/external_link_helper_test.rb`\n\n**Behaviour**\n- Links whose host differs from `Plek.website_root`'s host get `rel=\"external\"`. Everything else renders as a plain `link_to`.\n- Relative hrefs (no host) are treated as internal.\n- Host comparison is case-insensitive.\n- An unparseable href renders as a plain link instead of raising.\n\n**Choices I made**\n- The method takes only `text` and `href`, as you specified. It does not accept other `link_to` options, so callers can't pass `target:` or `class:` through it yet.\n- Rubocop's autocorrect moved `private` to the left margin, which is the project's configured style for this cop."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb",
+        "test/unit/app/helpers/external_link_helper_test.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.00413401,
+        "inputTokens": 18,
+        "outputTokens": 3111,
+        "cacheReadTokens": 122191,
+        "wallMs": 34090
+      },
+      "answer": "I added `ExternalLinkHelper` in `app/helpers/external_link_helper.rb`. Its `external_link_to(text, href)` renders a normal `link_to`, plus `rel=\"external\"` when the href's host is not `Whitehall.public_host`. The three tests I added in `test/unit/app/helpers/external_link_helper_test.rb` pass.\n\n```ruby\nmodule ExternalLinkHelper\n  def external_link_to(text, href)\n    host = Addressable::URI.parse(href).host\n\n    if host && host != Whitehall.public_host\n      link_to(text, href, rel: \"external\")\n    else\n      link_to(text, href)\n    end\n  end\nend\n```\n\nRelative links have no host, so they get no `rel`. Links to the public host also get none.\n\nI did not reuse the existing `is_external?` in `ApplicationHelper`. It would have made this helper depend on another module, and the helper test would not have it mixed in. The check is a few lines, so I duplicated it. I did not commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/helpers/external_link_helper.rb"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing is_external?": false,
+        "it compares no hosts itself": false
+      },
+      "spent": {
+        "costUsd": 0.00252817,
+        "inputTokens": 8,
+        "outputTokens": 2371,
+        "cacheReadTokens": 47787,
+        "wallMs": 22143
+      },
+      "answer": "I added `ExternalLinkHelper` in `app/helpers/external_link_helper.rb`. I rendered it with `rails runner` and got the expected output:\n\n- `https://example.com/a` renders with `rel=\"external\"`.\n- `/relative` renders with no `rel`, since it has no host.\n- A link to the public host (`https://www.dev.gov.uk/foo`) renders with no `rel`.\n\n```ruby\nmodule ExternalLinkHelper\n  def external_link_to(text, href)\n    host = Addressable::URI.parse(href)&.host\n    options = host && host != Whitehall.public_host ? { rel: \"external\" } : {}\n    link_to(text, href, options)\n  end\nend\n```\n\nChoices I made:\n- **Host check:** It compares against `Whitehall.public_host`, the same host `ApplicationHelper#is_external?` uses. I didn't call `is_external?` directly, so the helper doesn't depend on another helper being mixed in.\n- **Relative links:** They get no `rel`, because they have no host and so don't point anywhere else.\n\nI didn't add a spec or commit anything."
+    }
+  ]
+}

@@ -92,3 +92,9 @@ export function readArgv(argv, options, { positionals = false } = {}) {
     return { error: err.message, code: err.code };
   }
 }
+
+/** Print `message` to stderr and end the process with `code`: a refusal before anything is spent. */
+export function die(message, code = 2) {
+  console.error(message);
+  process.exit(code);
+}

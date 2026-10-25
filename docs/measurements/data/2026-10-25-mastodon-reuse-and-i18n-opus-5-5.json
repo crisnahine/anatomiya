@@ -1,0 +1,825 @@
+{
+  "scenario": "scripts/ab/scenarios/mastodon-reuse-and-i18n.json",
+  "scenarioSha256": "ff08646b9f2ab5201b1bae75ffb8295ad9efb1a6f1264861f61eb9a93ea3b23f",
+  "label": "github.com/mastodon/mastodon",
+  "sha": "3f5c32f43f57751f994919335cf7b065c53044d1",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": null,
+  "said": {
+    "a": "app/javascript/mastodon/components: 167 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.39618640000000005,
+        "inputTokens": 34,
+        "outputTokens": 7416,
+        "cacheReadTokens": 276057
+      },
+      "answer": "`CurrentPageBadge` now uses the repo's existing `compareUrls` helper instead of its own URL comparison. Typecheck, lint and the string extractor still haven't run, because `node_modules` isn't installed. I only checked the comparison logic separately in Node.\n\n**What changed**\n- **`app/javascript/mastodon/utils/compare_urls.ts`:** `compareUrls` already checked same origin, path and query and ignored the `#fragment`. But it couldn't handle relative links like `/home`. I added an optional third argument, a base URL to resolve them against. Its four existing callers don't pass it, so they behave exactly as before.\n- **`current_page_badge.tsx`:** I deleted my own copy of the comparison. The component now calls `compareUrls(href, currentHref, window.location.href)` and shows the \"You are here\" badge when it returns true.\n- **Bug avoided:** my copy treated two invalid URLs as the same page, so it would have shown the badge for them. `compareUrls` returns false in that case.\n\n**Checked:** run on its own in Node, the updated comparison passes the earlier cases (same page with a different fragment matches; a different query or origin doesn't). Two invalid URLs, or a relative URL with no base as existing callers use it, both give false.\n\nThe `\"You are here\"` text is still in `en.json`. Run `yarn install`, then `yarn i18n:extract`, `yarn tsc` and `yarn lint` to confirm it all lines up."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3101318,
+        "inputTokens": 28,
+        "outputTokens": 5841,
+        "cacheReadTokens": 220369
+      },
+      "answer": "The repo already had a helper for this check, so the badge now uses it. `compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts` compares origin, path and query string and ignores the `#fragment`, exactly as my own version did.\n\nThe one difference is that `compareUrls` only accepts full URLs, and a relative one like `/home` makes it return `false`. So `isSamePage` in `current_page_badge.tsx` is now just a small wrapper. It turns `currentHref` into a full URL using the page's own address, does the same for `href` using `currentHref`, then calls `compareUrls` with both. A malformed URL still renders nothing. My separate copy of the comparison is gone, and nothing else in the repo already shows a current-page badge.\n\nThis change hasn't been linted, type-checked or run either, for the same reason as before: the checkout has no dependencies installed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3476222,
+        "inputTokens": 36,
+        "outputTokens": 6822,
+        "cacheReadTokens": 271636
+      },
+      "answer": "The reuse check found a function the repo already had. `CurrentPageBadge` now calls `compareUrls` from `app/javascript/mastodon/utils/compare_urls.ts`, and I deleted my own `isSamePage` and `parseUrl`. `compareUrls` checks the same three things (origin, path and query string, ignoring the `#fragment`) and returns false if either URL can't be parsed. The status components already use it.\n\nThe difference is that `compareUrls` only accepts full URLs, so a relative link like `/about` would never match. I kept a short `toAbsolute` helper that first turns relative links into full ones using the current page's address. If an address can't be converted, it's passed through unchanged and `compareUrls` treats it as not matching.\n\nThe component still hasn't been type-checked, linted or run, because the dependencies aren't installed. Running `yarn install`, then `yarn lint` and `yarn typecheck`, will check it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.35943600000000003,
+        "inputTokens": 36,
+        "outputTokens": 6779,
+        "cacheReadTokens": 292890
+      },
+      "answer": "The reuse check found an existing helper, `compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts`. It already compares origin, path and query string, ignores the `#fragment`, and returns `false` on bad input. The component now uses it instead of its own copy.\n\nIt wasn't a perfect fit: it couldn't handle relative links like `/@alice`. So I gave it an optional third argument, `base`, which is passed to `new URL`. The four places that already use it don't pass that argument, so they work exactly as before. `CurrentPageBadge` calls `compareUrls(href, currentHref, window.location.href)`, and its own `parseUrl`/`isSamePage` helpers are gone.\n\nThe full change is now:\n- **`components/current_page_badge.tsx`**: the new component, shrunk to the `compareUrls` call plus the `Badge`.\n- **`utils/compare_urls.ts`**: the optional `base` argument.\n- **`locales/en.json`**: the \"You are here\" entry I added by hand.\n\nNone of it has been run yet, because dependencies aren't installed. Once they are, run `yarn i18n:extract`, `eslint` and `tsc`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.27779220000000004,
+        "inputTokens": 26,
+        "outputTokens": 5143,
+        "cacheReadTokens": 194496
+      },
+      "answer": "I replaced my URL helper in `CurrentPageBadge` with the repo's existing `compareUrls` (`app/javascript/mastodon/utils/compare_urls.ts`). It checks the same thing: origin, path and query string, with the `#fragment` ignored. Four other places in the codebase already use it.\n\n**One change in behaviour:** both `href` and `currentHref` now need to be full URLs. `compareUrls` doesn't resolve relative paths like `/about`, so the badge won't show for those. My earlier version resolved them against the current page, which you hadn't asked for. If you need relative hrefs to work, the cleanest fix is an optional base argument on `compareUrls`.\n\nThe component still renders the existing `Badge` with \"You are here\" when the URLs match, and nothing otherwise. The translation key `current_page_badge.you_are_here` is in `app/javascript/mastodon/locales/en.json`.\n\nI still haven't linted or type-checked it, because `node_modules` isn't installed in this checkout. I didn't add a test, since only 4 of the 109 components in this directory have one."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.36850279999999996,
+        "inputTokens": 34,
+        "outputTokens": 5841,
+        "cacheReadTokens": 251554
+      },
+      "answer": "`app/javascript/mastodon/utils/compare_urls.ts` already had a `compareUrls` function that does the same check, so I deleted my copy and the badge now calls it. `compareUrls` checks origin, path and query string, ignores the `#fragment`, and returns false for addresses it can't parse. Four other components already use it.\n\n`compareUrls` only accepts full addresses, so a relative link like `/about` would never match. To keep that working, the badge first turns both props into full addresses based on the current page, then passes them to `compareUrls`. I left `compareUrls` itself unchanged, so its existing callers aren't affected.\n\nEverything else is the same as before: the \"You are here\" label and its entry in `en.json`. It's still not linted, type-checked or rendered, because the project's packages aren't installed here."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3819716000000001,
+        "inputTokens": 36,
+        "outputTokens": 7402,
+        "cacheReadTokens": 294978
+      },
+      "answer": "The repo already had a helper that does this check, so the component now uses it. `CurrentPageBadge` calls `compareUrls` from `app/javascript/mastodon/utils/compare_urls.ts`, and I deleted my own `pageKey` helper. That helper is already used in four places; it compares origin, path and query string, ignores the `#fragment`, and returns `false` if either URL is invalid.\n\n**One change in behaviour:** `compareUrls` parses URLs without a base, so a relative `href` like `/@user` never matches and the badge doesn't show. My earlier version resolved relative links against the current page. Since you specified \"same origin\", I took the props to be full URLs. If you need relative links to work, I can add an optional base argument to `compareUrls`.\n\nThe `\"current_page_badge.label\": \"You are here\"` entry in `en.json` is unchanged. I still couldn't run lint, the type checker or `yarn i18n:extract` because `node_modules` isn't installed, and the new version of the file hasn't been run."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3438382,
+        "inputTokens": 34,
+        "outputTokens": 6999,
+        "cacheReadTokens": 272176
+      },
+      "answer": "I replaced my own URL comparison with an existing helper. `CurrentPageBadge` now calls `compareUrls` from `app/javascript/mastodon/utils/compare_urls.ts`, which compares origin, path and query string and ignores any `#fragment`, as you asked. I deleted my local `parseUrl` and `isSamePage`, so the component is now about 25 lines.\n\n**One behaviour change:** `compareUrls` only accepts full URLs like `https://…`. A relative link like `/@user` now renders nothing instead of being matched against the current page's address. Pass full URLs, for example `window.location.href` for `currentHref`. I didn't change `compareUrls` to accept relative links because four status components already use it, and that would change their behaviour too.\n\nThe rest is unchanged: it renders the existing `Badge` with \"You are here\", and the `current_page_badge.label` entry I added to `en.json` by hand is still there.\n\nI still haven't type-checked or linted it, because `node_modules` is empty in this checkout. I also didn't add a test, because only 4 of the 109 components in that folder have one. After `yarn install`, run `yarn typecheck`, `yarn lint` and `yarn i18n:extract`. The last one should leave `en.json` unchanged."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.386264,
+        "inputTokens": 36,
+        "outputTokens": 7788,
+        "cacheReadTokens": 288850
+      },
+      "answer": "The reuse check found that the repo already had this logic: `compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts` does the same origin, path and query comparison and ignores fragments. The component now calls it, and I deleted my own copy.\n\nThe one difference was that `compareUrls` treated a relative href like `/a?x=1` as no match. I gave it an optional third argument, `base`, that relative hrefs are resolved against. The component passes `currentHref` as that base. The four existing callers pass only two arguments, so they behave as before.\n\n**Changes:**\n- `app/javascript/mastodon/components/current_page_badge.tsx`: calls `compareUrls(href, currentHref, currentHref)` and renders the existing `Badge` with \"You are here\", or `null`.\n- `app/javascript/mastodon/utils/compare_urls.ts`: the new optional `base` parameter.\n- `app/javascript/mastodon/locales/en.json`: added `current_page_badge.label` by hand, because `yarn i18n:extract` couldn't run.\n\n**Checks:** I re-ran the same Node cases against the updated logic. A different fragment, a relative path and a differently written origin all match. A different path, query or origin doesn't, and an unparseable URL returns false. I also confirmed that two-argument calls still reject relative hrefs. ESLint and `tsc` still haven't been run because `node_modules` isn't installed, and I haven't rendered the component. I didn't add a test, since most components in this directory have none."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.35111240000000005,
+        "inputTokens": 36,
+        "outputTokens": 6563,
+        "cacheReadTokens": 272692
+      },
+      "answer": "I had the subagent look for code that already does this comparison. It found one: `compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts`, which four status components already use. It checks origin, path and query string, ignores the hash, and returns `false` if a URL can't be parsed. That's the same rule my `pageKey` helper applied.\n\n`CurrentPageBadge` now calls `compareUrls`, and I deleted `pageKey`. One small helper is left, `toAbsolute`. `compareUrls` only handles absolute URLs, so `toAbsolute` first resolves relative hrefs: `currentHref` against `window.location.href`, then `href` against the result. Without it, relative hrefs would never match.\n\nThe component still renders nothing for URLs that can't be parsed. The `en.json` entry for the label is unchanged. I still couldn't lint or type-check because the JS dependencies aren't installed, so the edit is untested."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.34735920000000003,
+        "inputTokens": 30,
+        "outputTokens": 6424,
+        "cacheReadTokens": 234521
+      },
+      "answer": "`CurrentPageBadge` now uses the existing `compareUrls` helper from `app/javascript/mastodon/utils/compare_urls.ts`. The repo already had it and uses it in four places. It checks the same origin, path and query string, ignores the `#fragment`, and returns false for a URL it can't parse, so I removed my own copy (`isSamePage`). The component is now about 20 lines.\n\n**One change in behaviour:** `compareUrls` only accepts full URLs like `https://example.social/about`. If you pass a relative link like `/about` or `?page=2`, the badge won't appear. You asked for an origin check, so I assumed full URLs. If callers will pass relative links, convert them first, for example with `new URL(href, window.location.href).href`.\n\n**Translation:** the key `current_page_badge.label` (\"You are here\") is still in `app/javascript/mastodon/locales/en.json`.\n\n**Not checked:** I still haven't linted, type-checked or run the component, because the node packages aren't installed. Run `yarn install`, then `yarn lint` and `yarn typecheck` to confirm."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3211586,
+        "inputTokens": 32,
+        "outputTokens": 6306,
+        "cacheReadTokens": 234003
+      },
+      "answer": "The reuse check turned up an existing helper that already does this job, so I switched to it and deleted my own copy.\n\n`compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts:1` compares origin, path and query string, ignores the `#fragment`, and returns `false` instead of throwing on a URL it can't parse. Four other components already use it. `CurrentPageBadge` now just calls `compareUrls(href, currentHref)` and shows the \"You are here\" badge when it returns true.\n\n**One behaviour change:** relative links no longer match. `compareUrls` only accepts full URLs, so a relative `href` like `/about` will never show the badge. You didn't ask for relative-link support, so I dropped it to keep the component small. If you need it, the clean fix is an optional `base` argument on `compareUrls`.\n\nThe `en.json` key is unchanged. I still haven't linted or type-checked anything, because dependencies aren't installed in this checkout."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.33019360000000003,
+        "inputTokens": 32,
+        "outputTokens": 5920,
+        "cacheReadTokens": 266728
+      },
+      "answer": "I replaced my own URL-matching helper with `compareUrls` from `app/javascript/mastodon/utils/compare_urls.ts`. That function already does the same job and is used in four other places. Nothing has been linted, type-checked or run, because the project's Node packages still aren't installed here.\n\nChanges:\n\n- **`current_page_badge.tsx`:** my private `isSamePage` helper is gone. The component now calls `compareUrls(href, currentHref, window.location.href)`.\n- **`compare_urls.ts`:** I added an optional third `base` argument. Before, it only handled full URLs, so a relative link like `/@user` always counted as \"not the same page\". The four existing callers don't pass a base, so they behave exactly as before.\n- **`locales/en.json`:** still has the hand-added `current_page_badge.label` key.\n\nAfter installing packages, run `yarn i18n:extract`, `yarn lint` and `yarn typecheck` to confirm."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.34526099999999993,
+        "inputTokens": 34,
+        "outputTokens": 6212,
+        "cacheReadTokens": 278135
+      },
+      "answer": "I replaced my own URL check in `CurrentPageBadge` with the repo's existing `compareUrls` (`app/javascript/mastodon/utils/compare_urls.ts:1`). It compares origin, path and query string, ignores the `#fragment`, and returns `false` if either URL can't be parsed. That's the same check my copy did, so I deleted my copy. The component is now just the check plus the `Badge` with the translated \"You are here\" label.\n\n**One behaviour change:** `compareUrls` only accepts full URLs like `https://example.com/home`. My version also resolved relative ones like `/home` against the current page. Now a relative `href` or `currentHref` makes the badge render nothing. I went with that because \"same origin\" implies full URLs, and the four places that already call `compareUrls` all pass full URLs. If you need relative URLs to work, the smallest fix is an optional base-URL parameter on `compareUrls`.\n\nThe locale entry in `en.json` is unchanged. Nothing has been run yet: dependencies aren't installed here, so ESLint, typecheck and `yarn i18n:extract` still need running after `yarn install`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3640504,
+        "inputTokens": 40,
+        "outputTokens": 6968,
+        "cacheReadTokens": 325327
+      },
+      "answer": "I removed my URL-comparison helper. `CurrentPageBadge` now calls the repo's existing `compareUrls` (`app/javascript/mastodon/utils/compare_urls.ts`), which a subagent search turned up. It checks the same thing: origin, path and query string must match, the `#fragment` is ignored, and a URL that can't be parsed means no badge.\n\n**One behaviour change:** `compareUrls` only accepts full URLs like `https://example.com/@user`. A relative link like `/@user` now makes the badge render nothing; my version handled it. The other places that call `compareUrls` pass full URLs, so I matched them. If you need relative links, the fix is an optional base URL parameter on `compareUrls`.\n\nThe `en.json` entry and the reasons for skipping a test haven't changed. Lint and the type check still haven't run, because dependencies aren't installed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.29310820000000004,
+        "inputTokens": 32,
+        "outputTokens": 5749,
+        "cacheReadTokens": 228231
+      },
+      "answer": "The repo already has a helper that does this: `compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts`, used in four other places. It checks for the same origin, path and query string, ignores the `#fragment`, and returns `false` if either URL can't be parsed. I deleted my own `normalizeUrl` copy and `CurrentPageBadge` now calls `compareUrls(href, currentHref)`. The component is down to about 25 lines.\n\nOne behaviour change: `compareUrls` doesn't resolve relative hrefs. Both props need to be full URLs, such as `https://example.com/@alice` and `window.location.href`, which is what \"same origin\" implies. A relative href like `/@alice` now never matches. If callers will pass relative paths, the fix is an optional base URL parameter on `compareUrls`, not a second helper.\n\nThe `current_page_badge.label` key in `en.json` is unchanged. This version hasn't been linted, type-checked or run either, because `node_modules` still isn't installed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.30002520000000005,
+        "inputTokens": 32,
+        "outputTokens": 5696,
+        "cacheReadTokens": 252421
+      },
+      "answer": "I swapped my own URL comparison for an existing helper. The repo already has `compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts`, which compares origin, path and query string, ignores the `#fragment`, and is used in four other places. `CurrentPageBadge` now calls it, and my `pageKey` copy is gone.\n\n**One behaviour change:** `compareUrls` only accepts full URLs. If either prop is a relative path like `/about`, it can't be read as a URL and the badge renders nothing. My earlier version resolved relative paths against the current page instead. Since you asked for \"same origin\", I assumed callers pass full URLs. If they might pass relative paths, either turn them into full URLs before passing them in, or I can add an optional base URL argument to `compareUrls`.\n\nThe `en.json` entry stays as it was. I still couldn't run lint or the typechecker, because the repo has no `node_modules`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.36558039999999997,
+        "inputTokens": 34,
+        "outputTokens": 6686,
+        "cacheReadTokens": 276797
+      },
+      "answer": "`CurrentPageBadge` now uses the existing `compareUrls` helper from `app/javascript/mastodon/utils/compare_urls.ts`, and I deleted my own copy, `isSamePage`. The repository already had a function doing the same job, and four other components use it. It checks the same things: origin, path and query string must match, the `#fragment` is ignored, and an unreadable URL counts as no match.\n\n**One behaviour change:** `compareUrls` only accepts full URLs like `https://…`. A relative `href` such as `/@user` or `?page=2` now never shows the badge, where my version used to read it against the current page. If you pass full URLs, for example `window.location.href` and a status URL, nothing changes. If you need relative links to work, the clean fix is an optional base URL parameter on `compareUrls`, not a second copy of the logic.\n\nThe component is now about 25 lines, and the `en.json` entry for \"You are here\" is unchanged. I still couldn't run lint or the type checker because the dependencies aren't installed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3772652,
+        "inputTokens": 34,
+        "outputTokens": 6718,
+        "cacheReadTokens": 273246
+      },
+      "answer": "I swapped my own URL-matching helpers for an existing function, `compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts`. Four other components already use it. It checks the same thing: same origin, path and query string, with the `#fragment` ignored, and it returns false if either URL can't be parsed. The component is now about 25 lines, and the \"You are here\" entry in `en.json` stays.\n\n**One behaviour change:** `compareUrls` only works with full URLs (`https://…`). If either prop is a relative path like `/@user`, the badge won't show, even when it points to the current page. My earlier version resolved relative paths against the current page. Since you asked for a same-origin check, I assumed both props are full URLs. If relative paths need to work, the fix is an optional base URL argument in `compareUrls`, rather than keeping a second copy here.\n\nI still haven't run lint or the typecheck, because `node_modules` isn't installed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json",
+        "app/javascript/mastodon/utils/compare_urls.ts"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": true,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.3430584,
+        "inputTokens": 30,
+        "outputTokens": 7018,
+        "cacheReadTokens": 218792
+      },
+      "answer": "I found an existing helper that already did my URL comparison, so I removed my copy and the badge uses it now. Nothing has been run, though. Lint and type-checking fail to start because `node_modules` isn't installed here.\n\n**What changed:**\n- `compareUrls` in `app/javascript/mastodon/utils/compare_urls.ts` already compared origin, path and query string and ignored the `#fragment`. The difference was that it only worked with full URLs, so a relative link like `/@alice` always counted as \"different\". I gave it an optional third argument, `base`, so relative links can be resolved too.\n- The other four places that use `compareUrls` don't pass this argument. They should behave exactly as before, but that's from reading the code, not from running anything.\n- `CurrentPageBadge` now calls `compareUrls(href, currentHref, window.location.href)` instead of its own function. What it shows is unchanged: a subtle \"You are here\" badge when the two match, and nothing otherwise, including when a URL can't be parsed.\n- The \"You are here\" text is added to `locales/en.json`.\n\nI didn't write a test for the badge, because most components in that folder have none. I also didn't add a case for the new `base` argument to `compareUrls`'s tests, because I haven't looked at whether it has any.\n\nTo check it after `yarn install`, run `npx eslint app/javascript/mastodon/components/current_page_badge.tsx app/javascript/mastodon/utils/compare_urls.ts` and `yarn typecheck`."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.133879,
+        "inputTokens": 14,
+        "outputTokens": 2437,
+        "cacheReadTokens": 79935
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`, but I haven't been able to lint, type-check or test it. This checkout has no `node_modules` installed, so ESLint stopped before reaching the file, and I didn't install dependencies.\n\n- **What it does:** it reads `href` and `currentHref` as full URLs and drops any `#fragment`. If origin, path and query string all match, it shows the existing `Badge` component with the text \"You are here\". Otherwise it renders nothing.\n- **Links like `/foo`:** these are read relative to the browser's current page address (`window.location.href`), so a site-relative link can match a full URL on the same site.\n- **Bad input:** if either value isn't a valid URL, it renders nothing.\n- **Translation:** the text uses `FormattedMessage` with the id `current_page_badge.label`. I added the English string to `app/javascript/mastodon/locales/en.json` in alphabetical order, as the translation tools expect.\n\nTo check it, run `yarn install`, then `yarn lint` and `yarn typecheck`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.103682,
+        "inputTokens": 16,
+        "outputTokens": 2447,
+        "cacheReadTokens": 95670
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`, but I couldn't type-check or lint it. `node_modules` isn't installed here, so `tsc`, `eslint` and `formatjs` didn't run. I tested the URL comparison on its own in Node and it behaved as expected:\n\n- `/x?q=1#f` and `https://ex.com/x?q=1` count as the same page.\n- A different query string or a different origin counts as a different page.\n- `/x#a` and `/x#b` count as the same page.\n\n**How it works:** it turns each URL into origin + path + query string and compares the two. Relative hrefs are resolved against the current page (`window.location.href`). If they match, it renders the existing `Badge` with the label \"You are here\". If they don't match, or either URL can't be parsed, it renders nothing.\n\n**Locale string:** because the i18n extract script couldn't run, I added `\"current_page_badge.label\": \"You are here\"` to `app/javascript/mastodon/locales/en.json` by hand, in alphabetical order. Once dependencies are installed, `npm run i18n:extract` should produce the same entry."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1385388,
+        "inputTokens": 20,
+        "outputTokens": 2880,
+        "cacheReadTokens": 135414
+      },
+      "answer": "I've added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I haven't run typecheck, lint or the i18n extraction, because the project's JS dependencies aren't installed here (`node_modules` is missing). I did test the URL comparison logic on its own in Node with five cases, and all gave the expected result:\n- Same page with a different `#fragment` → shows the badge.\n- A relative `href` against a full `currentHref` → shows the badge.\n- Different query string → renders nothing.\n- Different origin → renders nothing.\n- Invalid URL → renders nothing.\n\nHow it works:\n- It reads both URLs and compares origin, path and query string, so any `#fragment` is ignored.\n- A relative `href` is read relative to `currentHref`, and a relative `currentHref` is read relative to the browser's current address.\n- If either URL is invalid, it renders nothing instead of throwing an error.\n- The badge uses the existing `Badge` component with the `subtle` style. The label is translatable, using the key `current_page_badge.you_are_here`.\n\nSince the extraction script couldn't run, I added the \"You are here\" entry to `app/javascript/mastodon/locales/en.json` by hand, in alphabetical order. Once dependencies are installed, `yarn i18n:extract`, `tsc` and `eslint` should be run to confirm the file and entry are clean."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.12476760000000002,
+        "inputTokens": 18,
+        "outputTokens": 2509,
+        "cacheReadTokens": 115258
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I haven't run it, type-checked it or linted it: the repo's node dependencies aren't installed here, so ESLint stopped on a missing package.\n\n**How it works:**\n- It turns `href` and `currentHref` into URLs and builds a key from the origin, path and query string. The `#fragment` is dropped.\n- Relative URLs are resolved against `window.location.href`, so `/about` and `https://your.server/about` count as the same page.\n- If the keys match, it shows the existing `Badge` with the text \"You are here\". If they don't match, or either URL can't be parsed, it shows nothing.\n\n**Translation string:** the text uses the new message ID `current_page_badge.label`. Because the extractor couldn't run, I added that entry to `app/javascript/mastodon/locales/en.json` by hand. Once dependencies are installed, `yarn i18n:extract` should leave the file unchanged.\n\n**Comparison is exact apart from the fragment:**\n- `/about` and `/about/` count as different pages.\n- `?a=1&b=2` and `?b=2&a=1` count as different pages."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1297242,
+        "inputTokens": 18,
+        "outputTokens": 2807,
+        "cacheReadTokens": 117561
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx` and the `\"current_page_badge.label\": \"You are here\"` string to `app/javascript/mastodon/locales/en.json`. I couldn't run ESLint or the TypeScript checker because `node_modules` isn't installed in this checkout. I checked the URL-matching logic separately in plain Node.\n\n- **How it matches:** both URLs are parsed with `new URL()`, then origin, path and query string are compared. The `#fragment` is never looked at.\n- **Relative links:** a relative `href` like `/p?q=1` is resolved against `currentHref`. A relative `currentHref` is resolved against `window.location.href`.\n- **Bad input:** if either URL can't be parsed, nothing is rendered.\n- **Look:** it reuses the existing `Badge` component with its default style.\n- **Trailing slashes:** `/p/` and `/p` count as different pages. Say if you want them treated as the same.\n\nThe Node check gave the expected result for all six cases: same page with different fragments, a relative `href`, a different query, a different origin, a trailing-slash difference and an unparseable URL.\n\nThe `yarn i18n:extract` script also couldn't run without dependencies, so I added the locale string by hand. Once you've run `yarn install`, run `yarn i18n:extract` and `yarn lint` to confirm it matches what the extractor produces."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.0890038,
+        "inputTokens": 12,
+        "outputTokens": 1801,
+        "cacheReadTokens": 70759
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I couldn't lint or type-check it because the project's dependencies aren't installed here: ESLint failed with a missing `@eslint/js`, so neither check is a real result.\n\n**How it works:**\n- It turns both `href` and `currentHref` into full URLs, removes the `#fragment`, and compares them. A match means the same origin, path and query string.\n- Relative links like `/about?x=1` are resolved against the current page's address, so they work too.\n- If either value isn't a valid URL, it renders nothing.\n- When they match, it shows the existing `Badge` component with the label \"You are here\". The text is translatable, and I added the key `current_page_badge.label` to `locales/en.json` in alphabetical order.\n\n**Also worth knowing:** the comparison is exact, so `/about` and `/about/` count as different pages, and so do the same query parameters in a different order.\n\nTo check it, run `yarn install`, then `yarn lint:js` and `yarn typecheck`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.10922699999999999,
+        "inputTokens": 14,
+        "outputTokens": 2259,
+        "cacheReadTokens": 87755
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I haven't linted, type-checked or tested it: this checkout has no `node_modules` installed, so ESLint wouldn't start. I didn't install anything.\n\n**How it works:**\n- `currentHref` is read relative to `window.location.href`, and `href` is read relative to `currentHref`, so relative links like `/about?x=1` work.\n- It compares only the origin, path and query string, so any `#fragment` is ignored.\n- If both point to the same page, it shows the existing `Badge` with the text \"You are here\". Otherwise, or if either URL can't be parsed, it renders `null`.\n\n**Translation string:** I also added `\"current_page_badge.label\": \"You are here\"` to `app/javascript/mastodon/locales/en.json`. Mastodon's CI checks that every message in the code has an entry in that file.\n\n**Behaviours you might trip over:**\n- `/about` and `/about/` count as different pages.\n- `?a=1&b=2` and `?b=2&a=1` also count as different. The query strings are compared as exact text, not sorted.\n\nTo check it once dependencies are installed: `yarn install && npx eslint app/javascript/mastodon/components/current_page_badge.tsx && yarn typecheck`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.10591819999999999,
+        "inputTokens": 12,
+        "outputTokens": 2250,
+        "cacheReadTokens": 73511
+      },
+      "answer": "I've added `CurrentPageBadge`, but I couldn't type-check or lint it: `node_modules` isn't installed in this checkout, so `tsc` and `eslint` failed before they got to the code.\n\n**`app/javascript/mastodon/components/current_page_badge.tsx`**\n- Both `href` and `currentHref` are parsed with `new URL(url, window.location.href)`, so relative links like `/@alice?x=1` also work.\n- It shows the badge only when the two URLs have the same `origin`, `pathname` and `search`. The `#fragment` is never compared, so it's ignored.\n- If either URL can't be parsed, it renders nothing.\n- The badge uses the existing `Badge` component, with the text as a `FormattedMessage` (`current_page_badge.label`, \"You are here\").\n\n**`app/javascript/mastodon/locales/en.json`**\n- I added the `current_page_badge.label` string in alphabetical order, matching what `i18n:extract` would produce.\n\nTwo behaviours you might not expect:\n- The query string has to match exactly, so `?a=1&b=2` and `?b=2&a=1` count as different pages.\n- A trailing slash also counts: `/about` and `/about/` are different pages.\n\nTo check it, run `yarn install`, then `yarn typecheck` and `yarn lint:js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.12297319999999999,
+        "inputTokens": 14,
+        "outputTokens": 2689,
+        "cacheReadTokens": 90726
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I couldn't typecheck, lint or test it, because `node_modules` isn't installed in this checkout.\n\n**How it works:**\n- It parses both props with `new URL(...)`. Relative URLs like `/@alice?x=1` work because they're resolved against the current page's URL.\n- It shows the badge only when origin, path and query string all match, so `#fragment` is ignored. Otherwise it returns `null`.\n- If either URL can't be parsed, it renders nothing instead of throwing.\n- Links like `mailto:` or `data:` have no real origin, and the browser reports it as the text `\"null\"` for both. Two such links could falsely count as the same origin, so the component never shows the badge for them.\n- It uses the existing `Badge` component, so it gets the current (and redesign) styling.\n\n**Translation:** I added `\"current_page_badge.label\": \"You are here\"` to `app/javascript/mastodon/locales/en.json` by hand, since `yarn i18n:extract` couldn't run.\n\nOnce dependencies are installed, it's worth running `yarn i18n:extract`, `yarn typecheck` and `yarn lint` to confirm it builds and that the string was added correctly."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1300102,
+        "inputTokens": 18,
+        "outputTokens": 2852,
+        "cacheReadTokens": 117931
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. It uses the existing `Badge` component to show \"You are here\", and renders nothing when the two URLs point to different pages.\n\n**How it compares:** both props go through `new URL(href, window.location.href)`, and the component compares origin, path and query string while ignoring the `#fragment`. That means:\n- Relative URLs like `/p?q=1` are read relative to the page you're on.\n- URLs that are written differently but mean the same thing still match, such as different capitalisation in the host name or an explicit `:443` port.\n- If either URL is invalid, it renders nothing.\n\nI also added the translation string `current_page_badge.label` to `app/javascript/mastodon/locales/en.json`, in alphabetical order.\n\n**Checks:** I couldn't run `yarn i18n:extract`, ESLint or the type check because `node_modules` isn't installed here, so the locale entry was added by hand. I tested the comparison logic separately in Node: same page with and without a fragment, relative vs. absolute, different query, different origin, and invalid URLs all gave the expected result. Run `yarn install` and then the lint and type check before merging."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.16964639999999997,
+        "inputTokens": 22,
+        "outputTokens": 3735,
+        "cacheReadTokens": 155492
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I haven't run lint or the typechecker: `node_modules` isn't installed in this checkout, so ESLint failed on startup. The only thing I tested was the URL comparison, in a quick Node script, and it gave the expected result in all four cases.\n\n- **How it compares:** both URLs are parsed with `new URL(..., window.location.href)`, and the component compares origin, path and query string. The #fragment is ignored.\n- **Relative and messy URLs:** relative paths like `/a/b?x=1` work. Differences in case or a default port (e.g. `https://EX.com:443`) still count as the same page.\n- **Invalid URLs:** if either URL can't be parsed, nothing is rendered.\n- **Rendering:** on a match it uses the existing `Badge` with the default style, so it looks like the other badges.\n- **Translation:** the text uses `FormattedMessage` with id `current_page_badge.label`. I added that key to `locales/en.json` in alphabetical order, so `yarn i18n:extract` shouldn't need to change anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1069854,
+        "inputTokens": 14,
+        "outputTokens": 2197,
+        "cacheReadTokens": 87947
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I haven't linted, typechecked or run it: this checkout has no `node_modules`, so ESLint failed on startup and `tsc` and `yarn i18n:extract` couldn't run either.\n\n**How it works:**\n- It uses the existing `Badge` component with the `subtle` style and a translatable label, \"You are here\".\n- It reads both URLs with `new URL(href, window.location.href)`, so links like `/@user` that leave out the domain are treated as being on the current site.\n- It compares origin + path + query string and ignores any `#fragment`.\n- If either URL can't be read, or the two pages differ, it renders nothing.\n\n**Also changed:** I added `\"current_page_badge.label\": \"You are here\"` to `locales/en.json` by hand, since the extract script couldn't run.\n\n**Points to know:**\n- The match is exact. `/about` and `/about/` count as different pages, and so do `?a=1&b=2` and `?b=2&a=1`.\n- I didn't add tests.\n\nTo verify, install dependencies, then run `yarn lint`, `yarn typecheck` and `yarn i18n:extract`. The last one should leave `en.json` unchanged."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1361264,
+        "inputTokens": 24,
+        "outputTokens": 2969,
+        "cacheReadTokens": 171772
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. It uses the existing `Badge` component to show \"You are here\" when the two URLs point to the same page, and renders nothing otherwise.\n\n**How it compares:** it parses both values as URLs and checks that the origin, path and query string match, so `#fragment`s are ignored. A relative `href` is resolved against `currentHref`, and a relative `currentHref` against the current page address. If either value isn't a valid URL, it renders nothing instead of throwing.\n\n**Translation:** I added `\"current_page_badge.label\": \"You are here\"` to `locales/en.json` by hand, because `node_modules` isn't installed here and `yarn i18n:extract` couldn't run.\n\n**Testing:** I couldn't run ESLint or the TypeScript check, for the same reason. I only checked the URL-matching logic with a quick Node script, and these cases came out as expected:\n- a matching URL with a different `#fragment` → match\n- a different query string → no match\n- a different origin → no match\n- an invalid URL → no match\n\nRunning `yarn install` and then `yarn lint` / `yarn typecheck` would confirm the rest.\n\nOne small edge case: links with no real origin, like `data:` and `blob:` URLs, can still match if the rest of the URL is identical. That seemed fine for a small component, but it's easy to rule out if you'd rather they never match."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.12083060000000001,
+        "inputTokens": 20,
+        "outputTokens": 2748,
+        "cacheReadTokens": 124113
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I couldn't typecheck or lint it because the Node dependencies aren't installed here (`@eslint/js` is missing). I did test the URL-matching logic on its own in Node, and it gave the right result for all five cases I tried.\n\n**How it works:**\n- It parses both URLs with `new URL`, then compares origin, path and query string. The #fragment is ignored.\n- Relative URLs work: `href` is resolved against `currentHref`, and `currentHref` against `window.location.href`.\n- If either URL can't be parsed, it renders nothing instead of throwing.\n- When the pages match, it uses the existing `Badge` component with the translatable label \"You are here\". Otherwise it returns `null`.\n\n**Translation string:** the extract script (`yarn i18n:extract`) also needs those dependencies, so I added `\"current_page_badge.label\": \"You are here\"` to `app/javascript/mastodon/locales/en.json` by hand, in alphabetical order. Running the script after `yarn install` should give the same result.\n\n**Tests from the Node check:**\n- `/a?x=1#f` vs `https://ex.com/a?x=1`: match\n- a different query string: no match\n- a different origin: no match\n- `#top`: match\n- an invalid URL: no match"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.10023239999999999,
+        "inputTokens": 14,
+        "outputTokens": 2276,
+        "cacheReadTokens": 84362
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I couldn't lint, type-check or run it, because the repo has no `node_modules` installed. So it's untested.\n\nHow it works:\n- **Comparison:** it turns both props into URLs and compares origin + path + query string. The `#fragment` is dropped. Relative hrefs are resolved against the current page's URL.\n- **Output:** when the two match, it shows the existing `Badge` component with a translated \"You are here\" label. Otherwise it renders nothing. It also renders nothing if `href` can't be parsed as a URL.\n\nI also added the string `\"current_page_badge.you_are_here\": \"You are here\"` to `app/javascript/mastodon/locales/en.json` by hand, since `yarn i18n:extract` couldn't run without dependencies. After a `yarn install`, it's worth running `yarn i18n:extract`, `tsc` and `eslint` to confirm.\n\nOne thing to know: the comparison is exact, so `/foo` and `/foo/` count as different pages, and so do `?a=1&b=2` and `?b=2&a=1`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.09560099999999999,
+        "inputTokens": 14,
+        "outputTokens": 1927,
+        "cacheReadTokens": 85625
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. It hasn't been linted, type-checked or tested: `node_modules` isn't installed in this checkout, so ESLint, `tsc` and `yarn i18n:extract` all failed to start.\n\n**How it works:**\n- It reads both props with `new URL(url, window.location.href)`, so relative links like `/@alice` also work, and compares origin, path and query string. The `#fragment` is ignored.\n- If they match, it renders the existing `Badge` with \"You are here\" as a translatable string (`current_page_badge.label`). Otherwise it renders nothing.\n- If either prop can't be read as a URL, it also renders nothing.\n\nBecause the extract script couldn't run, I added the string to `app/javascript/mastodon/locales/en.json` by hand, in alphabetical order. Once you've run `yarn install`, `yarn i18n:extract` should give the same result, and you can run `yarn lint` and `yarn typecheck` to check the component."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.09215580000000001,
+        "inputTokens": 12,
+        "outputTokens": 2311,
+        "cacheReadTokens": 67999
+      },
+      "answer": "I've added the component, but I couldn't lint or type-check it: running ESLint failed because this checkout has no installed dependencies (`Cannot find package '@eslint/js'`). Because the `&&` chain stopped there, `tsc` never ran either.\n\n**`app/javascript/mastodon/components/current_page_badge.tsx`**\n- It takes `href` and `currentHref`. Both are parsed as URLs relative to `window.location.href`, so relative links like `/about?x=1` work too.\n- It shows the badge when `origin`, `pathname` and `search` all match. The `#fragment` is ignored, and if either URL can't be parsed, nothing is shown.\n- It reuses the existing `Badge` component, with the label \"You are here\" as a translatable `FormattedMessage` (`current_page_badge.label`).\n\n**`app/javascript/mastodon/locales/en.json`**: I added `\"current_page_badge.label\": \"You are here\"` in alphabetical order, the way `yarn i18n:extract` would.\n\nTwo things you might not expect:\n- **Query parameter order matters:** `?a=1&b=2` and `?b=2&a=1` count as different pages, because it compares the query text exactly.\n- **Trailing slashes matter:** `/about` and `/about/` count as different pages.\n\nTo check it, run `yarn install`, then `npx eslint app/javascript/mastodon/components/current_page_badge.tsx` and `yarn typecheck`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.1066662,
+        "inputTokens": 14,
+        "outputTokens": 2058,
+        "cacheReadTokens": 90331
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`, but I couldn't type-check or lint it. This checkout has no `node_modules`, and I didn't install dependencies without asking.\n\n**How it works:**\n- It reduces each URL to origin + path + query string, leaving out the `#fragment`. If the two match, it shows the existing `Badge` (`subtle` variant) with the text \"You are here\". Otherwise it renders nothing.\n- Relative URLs are resolved against the current page's address, so `/@alice` and `https://example.com/@alice` count as the same page.\n- If either URL can't be parsed, it renders nothing.\n\nI also added the string to `app/javascript/mastodon/locales/en.json` as `\"current_page_badge.label\": \"You are here\"`. Mastodon's translation-extraction check expects new strings to be listed there.\n\n**Comparison is exact:** `/foo` and `/foo/` count as different pages, and so do `?a=1&b=2` and `?b=2&a=1`. Tell me if you want either of those treated as the same.\n\nTo check it yourself: `yarn install`, then `yarn typecheck` and `yarn lint:js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.10529899999999999,
+        "inputTokens": 16,
+        "outputTokens": 2202,
+        "cacheReadTokens": 99735
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I haven't linted, type-checked or tested it, because `node_modules` isn't installed in this checkout and ESLint failed straight away.\n\n- **Matching:** both URLs are read with `new URL(href, window.location.href)`, which means relative paths like `/explore?x=1` work too. They match only when origin, path and query string are all the same; `url.hash` is never looked at, so any `#fragment` is ignored. If either URL is invalid, nothing is rendered.\n- **Rendering:** it uses the existing `Badge` component with the `subtle` style and the text \"You are here\".\n- **Translation key:** I also added `\"current_page_badge.label\": \"You are here\"` to `app/javascript/mastodon/locales/en.json`, because Mastodon's i18n check expects every message in the code to be listed there.\n\nThe query string must match exactly, including parameter order: `?a=1&b=2` and `?b=2&a=1` count as different pages. To check it, run `yarn install`, then `yarn lint:js` and `yarn typecheck`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/javascript/mastodon/components/current_page_badge.tsx",
+        "app/javascript/mastodon/locales/en.json"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing compareUrls": false,
+        "its text goes through the translation layer": true
+      },
+      "spent": {
+        "costUsd": 0.15095579999999997,
+        "inputTokens": 20,
+        "outputTokens": 3421,
+        "cacheReadTokens": 135799
+      },
+      "answer": "I added `CurrentPageBadge` in `app/javascript/mastodon/components/current_page_badge.tsx`. I didn't run lint, type-checking or tests on it because `node_modules` isn't installed, so `eslint`, `tsc` and `yarn i18n:extract` can't run. I only tested the URL comparison logic separately in Node: same page with a different fragment, a relative path against a full URL, different query strings, different origins and an invalid URL all gave the expected result.\n\n- **How it works:** it takes `href` and `currentHref`, strips the `#fragment` from each, and compares what's left. That means origin, path and query string all have to match. If they do, it renders the existing `Badge` with the label \"You are here\"; otherwise it renders nothing.\n- **Relative URLs:** values like `/foo` are resolved against the browser's current address before comparing.\n- **Invalid URLs:** if either value can't be parsed, nothing is rendered.\n- **Translation key:** the label uses the message ID `current_page_badge.label`. Since the extract script couldn't run, I added it to `app/javascript/mastodon/locales/en.json` by hand. Running `yarn i18n:extract` after installing dependencies will confirm it matches."
+    }
+  ]
+}

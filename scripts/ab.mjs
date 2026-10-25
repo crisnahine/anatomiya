@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * The with-map / without-map diff, which is the only success measure this tool
- * accepts (G5).
+ * The with-map / without-map diff on one stated claim (G5); what a whole
+ * session gets from the plugin is `scripts/ab-scenario.mjs` (G18).
  *
  * Never a review-comment count: comment data only sees what got through review,
  * preventable comments were 8.5% of a measured 4,616-comment corpus, and 93.5%
- * of pull requests held none at all. The pre-review effect is unmeasured, which
- * is a different thing from disproven, and this is what measures it.
+ * of pull requests held at least one comment the map could not have prevented,
+ * so they came back anyway.
  *
  * The order below is the experiment. Step 4 is the one that makes the rest
  * mean anything: an arm where the map did not attach, or an arm where it
@@ -26,16 +26,11 @@ import { scoreArm } from "./ab/score.mjs";
 import { render } from "./ab/render.mjs";
 import { repoLabel } from "./ab/label.mjs";
 import { BINARY } from "./plugins.mjs";
-import { invokedAs } from "./entry.mjs";
+import { die, invokedAs } from "./entry.mjs";
 import { isCorpusPath } from "../plugins/anatomiya/lib/corpus.mjs";
 import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-const die = (message, code = 2) => {
-  console.error(message);
-  process.exit(code);
-};
 
 async function main(argv) {
   const args = parseArgs(argv);
@@ -45,9 +40,7 @@ async function main(argv) {
   // `buildArms` has cleared, so the operator's own settings never reach one.
 
   // 1. A map measured against an accepted baseline, which is what arm A is for.
-  execFileSync(process.execPath, [BINARY, "scan", args.repo], { stdio: "inherit" });
-  execFileSync(process.execPath, [BINARY, "pin", args.repo], { stdio: "inherit" });
-  execFileSync(process.execPath, [BINARY, "scan", args.repo], { stdio: "inherit" });
+  mapAndPin(args.repo);
 
   // 2. Where the arms could differ at all.
   const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
@@ -81,24 +74,7 @@ async function main(argv) {
     const arms = await buildArms(args.repo, sha);
     try {
       // 4. An unverified arm is not an arm.
-      // A file the corpus holds, because the map's own globs are what attach it:
-      // a tracked file the scan excluded attaches nothing, and a hand-kept
-      // extension list here missed every `.mjs` repository, this one included.
-      const probeFile = execFileSync("git", ["ls-files", "-z", "--", `${target.path}/`], { cwd: args.repo, encoding: "utf8" })
-        .split("\0")
-        .find((f) => f && isCorpusPath(f));
-      if (!probeFile) throw new Error(`no readable file under ${target.path} to probe with`);
-
-      const probe = probeFor(probeFile);
-      const said = {};
-      for (const [name, arm] of [["a", arms.a], ["b", arms.b]]) {
-        const r = await runTrial(arm, probe, { ...args.engine, tools: ["Read"] });
-        if (!r.ok) throw new Error(`the probe could not run in arm ${name}: ${r.reason}`);
-        said[name] = r.stdout.trim().split("\n").at(-1) ?? "";
-      }
-      if (!said.a.includes(target.path)) throw new Error(`arm A did not receive the map: it answered "${said.a}"`);
-      if (!/NONE/i.test(said.b)) throw new Error(`arm B received a map it should not have: it answered "${said.b}"`);
-      console.log(`injection verified: A said "${said.a}", B said "${said.b}"`);
+      const said = await verifyInjection(arms, probeFileIn(args.repo, target.path), target.path, args.engine);
 
       // 5. The trials.
       const trials = await runTrials(arms, prompt, args.engine, args.trials);
@@ -123,16 +99,55 @@ async function main(argv) {
   console.log(`wrote ${out}`);
 }
 
+/** Scan, pin, then scan again, so the map arm A copies is measured against an accepted baseline. */
+export function mapAndPin(repo) {
+  for (const verb of ["scan", "pin", "scan"]) execFileSync(process.execPath, [BINARY, verb, repo], { stdio: "inherit" });
+}
+
+/**
+ * A file under `area` the corpus holds, to probe with, because the map's own
+ * globs are what attach it: a tracked file the scan excluded attaches nothing,
+ * and a hand-kept extension list here missed every `.mjs` repository, this one
+ * included. Throws where the area holds none.
+ */
+export function probeFileIn(repo, area) {
+  const found = execFileSync("git", ["ls-files", "-z", "--", `${area}/`], { cwd: repo, encoding: "utf8" })
+    .split("\0")
+    .find((f) => f && isCorpusPath(f));
+  if (!found) throw new Error(`no readable file under ${area} to probe with`);
+  return found;
+}
+
+/**
+ * Ask each arm what map it was given for `file`, and refuse the run where arm A
+ * did not name `area` or arm B named anything. `perArm` holds what only one arm
+ * runs with, such as no plugin at all.
+ */
+export async function verifyInjection(arms, file, area, engine, log = console.log, perArm = {}) {
+  const probe = probeFor(file);
+  const said = {};
+  for (const name of ["a", "b"]) {
+    const r = await runTrial(arms[name], probe, { ...engine, ...perArm[name], tools: ["Read"] });
+    if (!r.ok) throw new Error(`the probe could not run in arm ${name}: ${r.reason}`);
+    said[name] = r.stdout.trim().split("\n").at(-1) ?? "";
+  }
+  if (!said.a.includes(area)) throw new Error(`arm A did not receive the map: it answered "${said.a}"`);
+  if (!/NONE/i.test(said.b)) throw new Error(`arm B received a map it should not have: it answered "${said.b}"`);
+  log(`injection verified: A said "${said.a}", B said "${said.b}"`);
+  return said;
+}
+
 /**
  * Alternating, so a rate limit partway through hits both arms equally, and each
- * from the commit, so no trial starts from another's files.
+ * from the commit, so no trial starts from another's files. `perArm` is as for
+ * `verifyInjection`.
  */
-export async function runTrials(arms, prompt, engine, count, log = console.log) {
+export async function runTrials(arms, prompt, engine, count, log = console.log, perArm = {}) {
   const trials = { a: [], b: [] };
   for (let i = 0; i < count; i++) {
     for (const name of ["a", "b"]) {
       await arms.reset();
-      const r = await runTrial(arms[name], prompt, engine);
+      const r = await runTrial(arms[name], prompt, { ...engine, ...perArm[name] });
       trials[name].push(r);
       const why = !r.ok ? `, ended early: ${r.reason}` : r.wrote.length ? "" : `, wrote nothing: ${r.reason}`;
       log(`  trial ${i + 1} arm ${name}: ${r.wrote.length} file(s)${why}`);

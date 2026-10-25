@@ -1,8 +1,10 @@
 # anatomiya
 
-Counts what your code already does, directory by directory, and writes those counts into
-`.claude/rules/` where a coding agent picks them up when it reads a file there. Asked with
-`scan --targets cursor,copilot`, it writes the same counts for Cursor and GitHub Copilot too.
+Shows your coding agent how your repository already works. A scan writes a map of each directory's
+habits, tests and helpers into `.claude/rules/`, where Claude Code loads it; four hooks speak before a
+new file skips a step your history never skips, send the agent to the helper you already have before
+its turn ends, and keep the map current; `check` reports what a branch broke before review. Asked
+with `scan --targets cursor,copilot`, it writes the same map for Cursor and GitHub Copilot too.
 
 This directory is the plugin. It is what a marketplace install copies: the manifest, the binary, the
 library it runs, the command files, the hook declaration and the grammars with their licenses, plus

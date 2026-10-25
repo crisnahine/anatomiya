@@ -1,50 +1,19 @@
 // test/ab.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rankAreas } from "../scripts/ab/pick.mjs";
 import { scoreFile } from "../scripts/ab/score.mjs";
 import { readingFor } from "../scripts/ab/read.mjs";
 import { repoLabel } from "../scripts/ab/label.mjs";
 import { needsPathControl, needsPosixPermissions, needsShebang, removeTree } from "./platform.mjs";
+import { measurable, PROBE_ANSWER, stubClaude } from "./ab-fixtures.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-/**
- * A `claude` earlier on PATH than the real one, running the script given.
- *
- * Running the real one would reach the network and cost a trial per assertion,
- * and what these cases are about is the argv and the environment the harness
- * hands over, and the answer it reads back, all of which a stub settles.
- */
-function stubClaude(t, script) {
-  const base = mkdtempSync(join(tmpdir(), "anatomiya-stub-"));
-  t.after(() => removeTree(base));
-  const bin = join(base, "bin");
-  const arm = join(base, "arm");
-  mkdirSync(bin);
-  mkdirSync(arm);
-  const stub = join(bin, "claude");
-  writeFileSync(stub, `#!/bin/sh\n${script(base)}\n`);
-  chmodSync(stub, 0o755);
-  return {
-    arm,
-    // The system directories come too: the stub is a shell script, and a PATH
-    // holding only its own directory cannot resolve the commands it runs.
-    path: [bin, "/usr/bin", "/bin"].join(":"),
-    argv: () => readFileSync(join(base, "argv.txt"), "utf8").trim().split("\n"),
-    env: () => new Map(
-      readFileSync(join(base, "env.txt"), "utf8")
-        .split("\n")
-        .filter((line) => line.includes("="))
-        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)])
-    ),
-  };
-}
 
 /** A stub that records how it was called. */
 const reporting = (base) =>
@@ -115,6 +84,99 @@ test("a trial is handed its tools and no others, the arm's own settings and the 
 
   await runTrial(stub.arm, "probe", { env: { PATH: stub.path }, tools: ["Read"] });
   assert.equal(stub.argv()[stub.argv().indexOf("--tools") + 1], "Read", "the probe gets Read and nothing else");
+});
+
+test("a trial that ends early says why without repeating its command line", needsShebang, async (t) => {
+  // Node's own message is "Command failed:" and the whole argv, the prompt and
+  // the plugin's path on this machine among it, and the reason reaches a
+  // committed record of the run.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const capped = stubClaude(t, () => `echo '{"subtype":"error_max_turns","result":""}'\nexit 1`);
+  const crashed = stubClaude(t, () => "echo 'the build said no' >&2\nexit 3");
+
+  const r = await runTrial(capped.arm, "a prompt that must not be echoed", { env: { PATH: capped.path } });
+  const c = await runTrial(crashed.arm, "a prompt that must not be echoed", { env: { PATH: crashed.path } });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "exited 1: error_max_turns");
+  assert.equal(c.reason, "exited 3: the build said no");
+  for (const reason of [r.reason, c.reason]) assert.ok(!reason.includes("must not be echoed"), reason);
+});
+
+test("a trial's work is what git would show it changed, never what git ignores", needsShebang, async (t) => {
+  // Measured on a Rails clone: a trial that ran the app left 4,360 bootsnap
+  // cache files under tmp/ and a log, all ignored, beside the two files it wrote.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, () => "mkdir -p tmp/cache src\necho x > tmp/cache/one\necho x > log.txt\necho 'export const a = 1;' > src/a.ts\necho '{}'");
+  const git = (...a) => execFileSync("git", a, { cwd: stub.arm, stdio: "pipe" });
+  git("init", "-q");
+  writeFileSync(join(stub.arm, ".gitignore"), "tmp/\n*.txt\n");
+
+  const r = await runTrial(stub.arm, "go", { env: { PATH: stub.path } });
+
+  assert.deepEqual(r.wrote.map((f) => f.rel).sort(), ["src/a.ts"]);
+});
+
+test("a link whose target is missing neither stops a trial nor counts as its work", { ...needsShebang, ...needsPosixPermissions }, async (t) => {
+  // Measured on a mastodon clone: `public/500.html` links to a compiled page
+  // that is not built, and following it threw ENOENT before the first trial.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, () => "mkdir -p src\necho 'export const a = 1;' > src/a.ts\necho '{}'");
+  symlinkSync(join(stub.arm, "nowhere.html"), join(stub.arm, "500.html"));
+
+  const r = await runTrial(stub.arm, "go", { env: { PATH: stub.path } });
+
+  assert.equal(r.ok, true, r.reason);
+  assert.deepEqual(r.wrote.map((f) => f.rel), ["src/a.ts"]);
+});
+
+test("a trial run without the plugin names no plugin directory", needsShebang, async (t) => {
+  // The scenario arm B is a session with no plugin at all, so its hooks are
+  // gone with the map, and nothing else on the command line may differ.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, reporting);
+
+  await runTrial(stub.arm, "write a file", { env: { PATH: stub.path }, pluginDir: null });
+
+  assert.ok(!stub.argv().includes("--plugin-dir"), stub.argv().join(" "));
+  assert.ok(stub.argv().includes("--strict-mcp-config"), "the rest of the isolation stays");
+});
+
+test("a trial reports what it cost as the CLI counted it, and null where the answer says nothing", needsShebang, async (t) => {
+  // Every model the run used is summed, the plugin's subagent included, since
+  // that is what the user pays for a session.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, answering(JSON.stringify({
+    result: "done",
+    total_cost_usd: 0.42,
+    modelUsage: {
+      "claude-opus-5[1m]": { contextWindow: 1000000, inputTokens: 100, outputTokens: 900, cacheReadInputTokens: 5000 },
+      "claude-haiku-4-5-20251001": { contextWindow: 200000, inputTokens: 10, outputTokens: 20, cacheReadInputTokens: 0 },
+    },
+  })));
+
+  const r = await runTrial(stub.arm, "go", { env: { PATH: stub.path } });
+
+  const { wallMs, ...counted } = r.spent;
+  assert.deepEqual(counted, { costUsd: 0.42, inputTokens: 110, outputTokens: 920, cacheReadTokens: 5000 });
+  assert.ok(Number.isFinite(wallMs), "the wall clock is the harness's own");
+
+  const bare = stubClaude(t, answering(JSON.stringify({ result: "done" })));
+  const { wallMs: _, ...none } = (await runTrial(bare.arm, "go", { env: { PATH: bare.path } })).spent;
+  assert.deepEqual(none, { costUsd: null, inputTokens: null, outputTokens: null, cacheReadTokens: null });
+});
+
+test("a trial's time is the harness's own clock, never the CLI's duration_ms", needsShebang, async (t) => {
+  // Measured on 2.1.310: a session that waited on a background task for 25 s
+  // reported duration_ms 1557 and num_turns 1, which cover only the stretch
+  // after the last notification, while its cost and tokens cover the session.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, () => `sleep 1\necho '{"result":"done","duration_ms":3,"num_turns":1,"total_cost_usd":0.01}'`);
+
+  const r = await runTrial(stub.arm, "go", { env: { PATH: stub.path } });
+
+  assert.ok(r.spent.wallMs >= 900, `wallMs ${r.spent.wallMs}`);
+  assert.ok(!("durationMs" in r.spent) && !("turns" in r.spent), "a field that covers part of a session is not recorded as the session's");
 });
 
 /** A committed repository holding a settings file, with an untracked map beside it. */
@@ -191,6 +253,164 @@ test("a trial that finishes and writes nothing is logged with its answer as the 
   const reason = 'answered "The file already exists"';
   assert.deepEqual([trials.a[0].reason, trials.b[0].reason], [reason, reason]);
   assert.deepEqual(lines, [`  trial 1 arm a: 0 file(s), wrote nothing: ${reason}`, `  trial 1 arm b: 0 file(s), wrote nothing: ${reason}`]);
+});
+
+test("each arm sits alone at the same leaf name, so neither can tell it is an arm or find the other", async (t) => {
+  // An agent with a shell sees its working directory: "no-map" beside
+  // "with-map" told it which arm it was in and where the other arm's map lay.
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { repo, sha } = armSource(t);
+  const arms = await buildArms(repo, sha, { name: "rubocop" });
+  t.after(() => arms.dispose());
+
+  assert.equal(basename(arms.a), "rubocop");
+  assert.equal(basename(arms.b), "rubocop");
+  assert.notEqual(dirname(arms.a), dirname(arms.b));
+  assert.deepEqual(readdirSync(dirname(arms.b)), ["rubocop"], "nothing beside arm B names arm A");
+
+  await arms.dispose();
+  assert.ok(!existsSync(dirname(arms.a)) && !existsSync(dirname(arms.b)), "dispose removes both");
+});
+
+test("an arm keeps no path back to the checkout it was cloned from", async (t) => {
+  // The source checkout holds the scanned map. A shared clone's alternates file
+  // and its origin both named that checkout, and an agent with a shell in the
+  // arm without the plugin could follow either to the map.
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { repo, sha } = armSource(t);
+  const arms = await buildArms(repo, sha);
+  t.after(() => arms.dispose());
+
+  for (const arm of [arms.a, arms.b]) {
+    assert.equal(execFileSync("git", ["remote"], { cwd: arm, encoding: "utf8" }).trim(), "", `${arm} names a remote`);
+    assert.ok(!existsSync(join(arm, ".git", "objects", "info", "alternates")), `${arm} borrows the source's objects`);
+    assert.equal(execFileSync("git", ["rev-parse", "HEAD"], { cwd: arm, encoding: "utf8" }).trim(), sha);
+    // A clone's reflog opens with "clone: from <source>".
+    const naming = filesUnder(join(arm, ".git")).filter((f) => readFileSync(f, "latin1").includes(basename(repo)));
+    assert.deepEqual(naming, [], `${arm} names its source`);
+  }
+});
+
+const filesUnder = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesUnder(join(dir, e.name)) : [join(dir, e.name)]));
+
+test("gh starts logged out in a trial", needsShebang, async (t) => {
+  // A rubocop session ran `gh api user` to credit its changelog entry, so the
+  // operator's own login was in reach of an agent with a shell.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, reporting);
+  const operatorGh = mkdtempSync(join(tmpdir(), "anatomiya-gh-"));
+  t.after(() => removeTree(operatorGh));
+
+  await runTrial(stub.arm, "write a file", {
+    env: { PATH: stub.path, GH_TOKEN: "x", GITHUB_TOKEN: "x", GH_ENTERPRISE_TOKEN: "x", GITHUB_ENTERPRISE_TOKEN: "x", GH_CONFIG_DIR: operatorGh },
+  });
+
+  const env = stub.env();
+  for (const name of ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]) assert.equal(env.has(name), false, name);
+  const given = env.get("GH_CONFIG_DIR");
+  assert.ok(given && given !== operatorGh, "gh is pointed away from the operator's config");
+  assert.throws(() => mkdirSync(given, { recursive: true }), "and at a directory nothing can create");
+});
+
+test("a trial in a directory inside another repository still counts the tracked file it changed", needsShebang, async (t) => {
+  // From a subdirectory, ls-tree names paths from there and diff names them
+  // from the top, so an edit read through both looked unchanged.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, (base) => `sleep 0.05; echo new > "${join(base, "arm", "x.txt")}"`);
+  const top = dirname(stub.arm);
+  const git = (...a) => execFileSync("git", a, { cwd: top, stdio: "pipe" });
+  writeFileSync(join(stub.arm, "x.txt"), "old\n");
+  git("init", "-q");
+  git("add", "arm");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+
+  const r = await runTrial(stub.arm, "write a file", { env: { PATH: stub.path } });
+
+  assert.deepEqual(r.wrote.map((f) => f.rel), ["x.txt"]);
+});
+
+test("a tracked file a trial rewrote with the same bytes is not counted as written", needsShebang, async (t) => {
+  // A docs task regenerated eight pages it left unchanged, and all eight were
+  // listed as the trial's work.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, (base) => `sleep 0.05; cp "${join(base, "arm", "same.txt")}" "${join(base, "arm", "same.tmp")}"; mv "${join(base, "arm", "same.tmp")}" "${join(base, "arm", "same.txt")}"; echo new > "${join(base, "arm", "changed.txt")}"; echo b > "${join(base, "arm", "made.txt")}"`);
+  const git = (...a) => execFileSync("git", a, { cwd: stub.arm, stdio: "pipe" });
+  writeFileSync(join(stub.arm, "same.txt"), "same\n");
+  writeFileSync(join(stub.arm, "changed.txt"), "old\n");
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+
+  const r = await runTrial(stub.arm, "write a file", { env: { PATH: stub.path } });
+
+  assert.deepEqual(r.wrote.map((f) => f.rel).sort(), ["changed.txt", "made.txt"]);
+});
+
+test("a trial that commits its change is still counted as having written it", needsShebang, async (t) => {
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, (base) => `cd "${join(base, "arm")}" && sleep 0.05 && echo new > changed.txt && git add -A && git -c user.name=t -c user.email=t@t.test commit -qm work`);
+  const git = (...a) => execFileSync("git", a, { cwd: stub.arm, stdio: "pipe" });
+  writeFileSync(join(stub.arm, "changed.txt"), "old\n");
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+
+  const r = await runTrial(stub.arm, "write a file", { env: { PATH: stub.path } });
+
+  assert.deepEqual(r.wrote.map((f) => f.rel), ["changed.txt"]);
+});
+
+test("an arm takes its leaf name from the repository when none is given", async (t) => {
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { repo, sha } = armSource(t);
+  const arms = await buildArms(repo, sha);
+  t.after(() => arms.dispose());
+
+  assert.equal(basename(arms.a), basename(repo));
+  assert.equal(basename(arms.b), basename(repo));
+});
+
+test("what only one arm is run with reaches that arm's probe and trials and no other", needsShebang, async (t) => {
+  // The scenario harness runs arm B without the plugin. Passed to both, the
+  // plugin-off arm would be the only arm; passed to neither, there is no B.
+  const { runTrials, verifyInjection } = await import("../scripts/ab.mjs");
+  const base = mkdtempSync(join(tmpdir(), "anatomiya-ab-perarm-"));
+  t.after(() => removeTree(base));
+  const bin = join(base, "bin");
+  mkdirSync(bin);
+  const arms = { a: join(base, "a"), b: join(base, "b"), reset: async () => {} };
+  for (const arm of [arms.a, arms.b]) mkdirSync(arm);
+  // Each call is logged in the arm it ran in, and answers whether it was handed a plugin directory.
+  writeFileSync(join(bin, "claude"), [
+    "#!/bin/sh",
+    'case " $* " in *" --plugin-dir "*) P=src/x;; *) P=NONE;; esac',
+    'printf "%s\\n" "$*" >> calls.txt',
+    `printf '{"result":"%s"}' "$P"`,
+  ].join("\n") + "\n");
+  chmodSync(join(bin, "claude"), 0o755);
+  const env = { env: { PATH: [bin, "/usr/bin", "/bin"].join(":") } };
+  const off = { b: { pluginDir: null } };
+
+  const said = await verifyInjection(arms, "src/x/a.ts", "src/x", env, () => {}, off);
+  await runTrials(arms, "write", env, 2, () => {}, off);
+
+  assert.deepEqual(said, { a: "src/x", b: "NONE" });
+  const calls = (arm) => readFileSync(join(arm, "calls.txt"), "utf8").trim().split("\n");
+  assert.equal(calls(arms.a).length, 3);
+  assert.ok(calls(arms.a).every((c) => c.includes("--plugin-dir")), calls(arms.a).join("\n"));
+  assert.equal(calls(arms.b).length, 3);
+  assert.ok(calls(arms.b).every((c) => !c.includes("--plugin-dir")), calls(arms.b).join("\n"));
+});
+
+test("an arm that answers wrongly stops the run before any trial", needsShebang, async (t) => {
+  const { verifyInjection } = await import("../scripts/ab.mjs");
+  const stub = stubClaude(t, answering('{"result":"src/x - 3 files"}'));
+  const arms = { a: stub.arm, b: stub.arm };
+  const env = { env: { PATH: stub.path } };
+
+  await assert.rejects(verifyInjection(arms, "src/x/a.ts", "src/x", env, () => {}), /arm B received a map/);
+  await assert.rejects(verifyInjection(arms, "src/x/a.ts", "lib", env, () => {}), /arm A did not receive the map/);
 });
 
 test("neither arm is a linked worktree, so the hooks cannot hand arm B the main checkout's map", async (t) => {
@@ -662,6 +882,7 @@ test("a trial's engine cannot be redirected by the environment it inherits", nee
   assert.equal(env.has("CLAUDE_CODE_EFFORT_LEVEL"), false, "the build reads this ahead of the stated effort");
   assert.equal(env.has("ANTHROPIC_MODEL"), false);
   assert.equal(env.get("CI"), "1", "and the settings that are not a model choice still reach it");
+  assert.equal(env.get("DISABLE_AUTOUPDATER"), "1", "a build that updates itself mid-run is two builds");
   assert.equal(env.get("HOME"), "/home/x");
 });
 
@@ -1069,42 +1290,6 @@ test("a substituted engine is named in the document beside the one that served",
   assert.ok(doc.includes("| asked for | claude-opus-5[1m], which is not what served it |"), doc);
 });
 
-/**
- * A repository the harness can measure: one leaf area holding one stated claim
- * with headroom, written by two hands.
- *
- * The gates size it. The Wilson bound at z=1.96 holds 0.90 from a ratio of 0.94
- * at about 400 sites, the ranking wants headroom above 0.05, the concentration
- * gate wants the sites spread over three files' worth, and the author bar wants
- * a second pair of hands on files carrying conforming sites. `nullish_default`
- * sites are one line each, and the model's default for it is unmeasured, so
- * the map states it as a directive rather than dropping it to a counts line.
- */
-function measurable(t) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-ab-repo-"));
-  t.after(() => removeTree(dir));
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe", encoding: "utf8" });
-  const write = (rel, body) => {
-    mkdirSync(dirname(join(dir, rel)), { recursive: true });
-    writeFileSync(join(dir, rel), body);
-  };
-  git("init", "-q");
-  git("config", "user.email", "one@t.test");
-  git("config", "user.name", "one");
-  for (let f = 0; f < 20; f++) {
-    // 24 of the 400 sites take ||: three each in the first eight files.
-    const lines = Array.from({ length: 20 }, (_, s) => `export const v${s} = a.p${s} ${f < 8 && s < 3 ? "||" : "??"} {};`);
-    write(`src/x/f${f}.mjs`, `const a = {};\n${lines.join("\n")}\n`);
-  }
-  git("add", "-A");
-  git("commit", "-qm", "init");
-  git("config", "user.email", "two@t.test");
-  git("config", "user.name", "two");
-  for (const f of [10, 11]) write(`src/x/f${f}.mjs`, readFileSync(join(dir, `src/x/f${f}.mjs`), "utf8") + "export const touched = 1;\n");
-  git("add", "-A");
-  git("commit", "-qm", "second hand");
-  return dir;
-}
 
 /**
  * A `claude` that answers the probe from the arm it is run in and writes one
@@ -1114,7 +1299,7 @@ function measurable(t) {
 const measuring = () => [
   'case "$2" in',
   '  *NONE*)',
-  '    if [ -d .claude/rules ]; then R=$(grep -h "^# " .claude/rules/anatomiya-area-*.md | head -1 | tr -d "#" | sed "s/^ *//"); else R=NONE; fi',
+  PROBE_ANSWER,
   '    ;;',
   '  *)',
   '    mkdir -p src/x',

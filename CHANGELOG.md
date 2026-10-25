@@ -7,6 +7,77 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-10-25
+
+What a session gets from the plugin is measured now: eight tasks in four public repositories, 20
+sessions per arm, on Claude Opus 5.5 and Claude Haiku 5.5, every check fixed before the first
+session. In the four tasks that needed code the repository already had a function for, 145 of 160
+sessions with the plugin called that function, and 31 of 160 without it did. In the other four, both
+models already followed the repository, and the plugin changed nothing. The median session cost 1.4
+to 3.1 times as much with the plugin. The README is rebuilt around those numbers, with the code both
+arms wrote side by side and the cost and the limits beside it.
+
+### Added
+
+- `scripts/ab-scenario.mjs`, the plugin on against the plugin off (G18). Each arm is a session with
+  the tools a coding session has, Bash and the subagent tool included, sitting alone in its own
+  directory at the repository's own name. A scenario file under `scripts/ab/scenarios/` fixes the
+  commit, the prompt and the checks before any trial runs, and the result reports each arm's Wilson
+  interval, Fisher's exact test and the cost of every trial. Each result names the Claude Code and
+  anatomiya builds it ran on. `--from-raw` scores kept trial records again, or joins several workers'
+  runs of one scenario.
+- Eight scenarios and their results on two models under `docs/measurements/`, the summary in
+  `docs/measurements/2026-10-25-plugin-on-off.md`, and every trial's checks, cost and the first
+  2,000 characters of its answer under `docs/measurements/data/`. The three `*-reuse` scenarios were
+  committed before their first session.
+- `docs/measurements/2026-10-25-readme-examples.md`: every map line the README quotes, with the
+  commit it was scanned at and how to rerun it.
+- A logo, an animated session rebuilt from a measured trial, a results chart drawn from the data
+  files in light and dark, and a social preview image under `docs/assets/`.
+- `docs/research/what-a-new-developer-meets.md` and `docs/research/why-developers-would-use-it.md`:
+  what measured work says about joining a codebase, about review, and about why developers adopt or
+  drop a tool like this one.
+- `docs/usage.md`, the full guide the README's long sections moved into, and
+  `docs/measurements/corpus.md`, every corpus repository with its commit.
+- `docs/research/what-proof-of-effect-rests-on.md`: what measured work says about context files, how
+  an A/B of an agent aid has to be run to be believed, and what GitHub renders in a README.
+- `check:docs` fails a table that a blank line cuts in two, which GitHub shows as raw pipes, and
+  reads the counts in `docs/usage.md`.
+
+### Changed
+
+- The README is rewritten: the measured reuse result first, the code each arm wrote side by side, a
+  three-line quick start, every task including the ties, the cost, and a limits list that names the
+  fixed sentences the plugin writes in every repository, among them the one that can win over an
+  instruction to always write a test.
+- The echo is described as what it does: it hands the overview back once 192 KiB of what the model
+  reads, about 30k tokens, holds no copy of it, and a session's first prompt gets one beside the
+  copy Claude Code loaded from the rules file. Five places said "once per context window".
+- The A/B arms each sit alone at the repository's own name, in a local clone with no remote and no
+  reflog, so neither holds a path back to the checkout with the map. A trial's work is what git shows
+  it changed, so a file rewritten with the same bytes and a link are left out. A trial that ends
+  early says why without its command line, which carried the prompt and this machine's plugin path,
+  and a trial is timed by the harness: the CLI's `duration_ms` and `num_turns` cover only the stretch
+  after the last background notification.
+- The plugin, marketplace and package descriptions say what the plugin is for: a new developer's
+  coding agent writing in the house style from day one.
+- The three 2026-08-16 vscode A/B results carry a warning that they were taken under the defects
+  G13 lists.
+
+### Fixed
+
+- A trial could use the operator's GitHub login: four rubocop sessions credited their changelog entry
+  through `gh`. Trials now run with no GitHub token and a `gh` that cannot read a login, and a kept answer
+  or failure reason shows the operator's home directory as `~` and the machine's account name after an
+  `@` as `@<user>`.
+- Three of `DECISIONS.md`'s tables were cut by a blank line, so GitHub showed rows A33, D10 and G12
+  onward as raw text.
+- The README's examples came from a private repository and the 0.11.0 build. They are excalidraw's
+  now, from this version, so anyone can rerun them.
+- Inconsistencies between documents: the "35-repository public corpus" holds two private
+  repositories, the 93.5% figure had two meanings, and two documents quoted one claim with different
+  counts.
+
 ## [0.18.0] - 2026-10-24
 
 The map no longer hands every repository's agent one maintainer's house rule, and this repository
@@ -5162,7 +5233,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/crisnahine/anatomiya/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/crisnahine/anatomiya/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/crisnahine/anatomiya/compare/v0.16.1...v0.17.0

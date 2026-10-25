@@ -1,0 +1,28 @@
+{
+  "name": "forem-js-test-location",
+  "repo": "github.com/forem/forem",
+  "commit": "b5237b126cf27bd3897086e7811e33f7872ec444",
+  "area": "app/javascript",
+  "prompt": "Add a small module in a new directory, app/javascript/readingTime/, exporting `formatReadingTime(minutes)`: it returns \"1 min read\" for anything up to one minute and \"N min read\" otherwise, with N rounded up. Add a unit test for it.",
+  "did": [
+    {
+      "name": "the module exists",
+      "changed": "^app/javascript/readingTime/(?!.*(?:\\.test|\\.spec)\\.)(?!.*__tests__/)[^/]+\\.[cm]?[jt]sx?$"
+    },
+    {
+      "name": "a test exists",
+      "changed": "^app/javascript/.*(?:__tests__/[^/]+|\\.(?:test|spec)\\.[cm]?[jt]sx?)$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "the test sits in a __tests__ directory",
+      "claim": "app/javascript: 143 of 149 test files under __tests__",
+      "changed": "^app/javascript/(?:.+/)?__tests__/[^/]+\\.[cm]?[jt]sx?$"
+    },
+    {
+      "name": "no test sits beside the module",
+      "unchanged": "^app/javascript/readingTime/[^/]+\\.(?:test|spec)\\.[cm]?[jt]sx?$"
+    }
+  ]
+}

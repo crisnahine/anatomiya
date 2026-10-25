@@ -15,7 +15,7 @@ whether a line in it is still true. "We always return a result object" is a clai
 codebase, and once written it is never checked again. It drifts, and a drifted convention file is
 worse than none, because an agent will follow it.
 
-So the tool writes counts instead of rules. `67 of 73 sites across 69 of 122 files` is checkable,
+So the tool writes counts instead of rules. `178 of 182 sites across 10 of 26 files` is checkable,
 it goes stale visibly rather than silently, and a reader can disagree with it by looking.
 
 That much is a design idea. The question worth answering first was whether it is worth building at
@@ -43,7 +43,7 @@ magnitude, not a constant.
 **The comment corpus can only see what got through review.** It cannot see the code that was never
 written badly because the author already knew the convention. The measurement therefore bounds the
 review-comment effect and says nothing about the pre-review effect, which is the effect this tool
-is actually aiming at. That effect is unmeasured, not disproven. It is also why the success
+is actually aiming at. That effect was unmeasured when this was written; it is measured below. It is also why the success
 criterion in the build contract is a with-map against without-map diff on real tasks, and
 explicitly not a review-comment count.
 
@@ -79,8 +79,27 @@ the loop that remembers. Mechanical per-pull-request obligations behave the same
 changeset file or newsfragment is a comment that gets written again on the next pull request, by the
 same reviewer, about the same thing.
 
-This is the case to build for. It is a hypothesis, and the way to settle it is the with-map against
+This is the case to build for. It was a hypothesis, and the way to settle it was the with-map against
 without-map task diff, not more comment classification.
+
+### The task diff, measured
+
+On 2026-10-25 the plugin was run on and off over eight tasks in four public repositories, 20
+sessions per arm, on Claude Opus 5.5 and again on Claude Haiku 5.5, with the checks fixed before the
+first session (G18, `docs/measurements/2026-10-25-plugin-on-off.md`). In four tasks the answer lived
+outside the files next to the change, in a helper the repository already had: mastodon's
+`compareUrls`, forem's contrast helper, whitehall's `is_external?` and mastodon's
+`TagManager#local_url?`. Over those four, 145 of 160 sessions with the plugin called the helper, and
+31 of 160 without it did. Three of the four were chosen after the first, mastodon's `compareUrls`, had
+shown 20 of 20 against 0 of 20 on both models. In the other four tasks, both models already did what
+the repository does with no help, and the plugin changed nothing but the bill: the median session
+cost 1.4 to 3.1 times as much.
+
+So the pre-review effect is no longer unmeasured, and it is narrower than the mechanism above
+suggests. The map does not need to tell a current model what the neighbouring files already show. It
+paid where the evidence sat elsewhere, in a helper in another directory. Whether it pays for a
+companion file the history says ships with a new one was not shown: in rubocop both arms registered
+the cop in its config and wrote the changelog entry without the map.
 
 ## What the measurements changed
 
@@ -161,12 +180,13 @@ producing nothing.
   flagged as prompt injection. The hooks that exist sit beside the always-loaded file rather than
   instead of it.
 - **No MCP server.** There is nothing to expose.
-- **No skill.** It would spend resident context describing the tool instead of the repository.
+- **No skill.** It would spend resident context describing the tool instead of the repository. The
+  five commands are the plugin's only entries in the listing, one line each.
 - **No health score or grade.** It changes nothing about the next line of code.
 - **No restating what the linter already enforces.**
 - **No bug-catching claim.** One of 317.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 352 numbered decisions, each linking to a
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 353 numbered decisions, each linking to a
 file under [`decisions/`](decisions) with the finding behind it. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

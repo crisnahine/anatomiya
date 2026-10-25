@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { PROSE_NAMES, READS, avoidedWords, checkDocs, citesRows, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedInCode, rowsCitedMissing, sitesOwed } from "../scripts/check-docs.mjs";
+import { PROSE_NAMES, READS, avoidedWords, checkDocs, citesRows, counted, doneFilesGone, pathsThatMoved, proseNamed, readGlossary, recordProblems, rowsCitedInCode, rowsCitedMissing, sitesOwed, tableSplits } from "../scripts/check-docs.mjs";
 import { DECISIONS_DIR, indexRows, readRowFile } from "../scripts/decisions.mjs";
 import { hostedBy } from "../plugins/anatomiya/lib/langs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
@@ -279,11 +279,11 @@ test("a command file that spells an invocation the CLI refuses fails", (t) => {
   assert.match(flag.output, /commands\/check\.md: .*check \. --deep/);
 });
 
-test("a command a person copies from the README or CONTRIBUTING is parsed too", (t) => {
+test("a command a person copies from the usage guide or CONTRIBUTING is parsed too", (t) => {
   // Spelled from the repository root rather than through CLAUDE_PLUGIN_ROOT,
   // and a renamed flag left those lines stale with the gate green.
   for (const [rel, spelled] of [
-    ["README.md", "anatomiya.mjs scan /path/to/your/repo --targets cursor,copilot"],
+    ["docs/usage.md", "anatomiya.mjs scan /path/to/your/repo --targets cursor,copilot"],
     ["CONTRIBUTING.md", "anatomiya.mjs scan /path/to/some/repo --dry-run"],
   ]) {
     const dir = repoCopy(t);
@@ -302,7 +302,7 @@ test("the rows a component's script is asked are read against the registry, per 
   // "24 for Vue" sat beside "28 for JavaScript" with nothing reading it, so a
   // row listed for one framework and not the other would leave both stale.
   for (const [phrasing, lang] of [[/(\d+)\s+for\s+Vue/, "Vue"], [/(\d+)\s+for\s+Svelte/, "Svelte"]]) {
-    for (const rel of ["README.md", "docs/how-it-works.md"]) {
+    for (const rel of ["docs/usage.md", "docs/how-it-works.md"]) {
       const dir = repoCopy(t);
       const wrong = bumpCount(dir, phrasing, rel);
 
@@ -341,7 +341,7 @@ function miscount(t, rel, from, to) {
 
 test("the count of runtime dependencies is read against the plugin's manifest, in every document that states it", (t) => {
   // "Two runtime dependencies" stood in four documents while the manifest gained a third: the gate read the names and never the count.
-  for (const rel of ["README.md", "SECURITY.md", "CONTRIBUTING.md", `${REL.anatomiya}/README.md`]) {
+  for (const rel of ["README.md", "docs/usage.md", "SECURITY.md", "CONTRIBUTING.md", `${REL.anatomiya}/README.md`]) {
     const { status, output } = miscount(t, rel, /three runtime dependencies/i, "four runtime dependencies");
 
     assert.equal(status, 1, `${rel} states four runtime dependencies and passed`);
@@ -359,14 +359,14 @@ test("the count of parser engines is read against the registry", (t) => {
 });
 
 test("the count of engines node hosts is read against the registry", (t) => {
-  const { status, output } = miscount(t, "README.md", /two node-hosted engines/, "three node-hosted engines");
+  const { status, output } = miscount(t, "docs/usage.md", /two node-hosted engines/, "three node-hosted engines");
 
   assert.equal(status, 1);
-  assert.ok(output.includes(`README.md: says "three node-hosted engines", the registry declares 2 hosted by node`), output);
+  assert.ok(output.includes(`docs/usage.md: says "three node-hosted engines", the registry declares 2 hosted by node`), output);
 });
 
 test("the count of grammars is read against the languages the registry routes to tree-sitter", (t) => {
-  for (const rel of ["README.md", "SECURITY.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`]) {
+  for (const rel of ["docs/usage.md", "SECURITY.md", "docs/how-it-works.md", `${REL.anatomiya}/README.md`]) {
     const { status, output } = miscount(t, rel, /seven(\s+)grammars/, "eight$1grammars");
 
     assert.equal(status, 1, `${rel} states eight grammars and passed`);
@@ -399,11 +399,11 @@ test("the grammar packages the security notes name are the ones the manifest rec
   assert.ok(output.includes("SECURITY.md: does not name the grammar package tree-sitter-go@0.25.0"), output);
 });
 
-test("the README's share of the dimension total is read against the registry", (t) => {
+test("the usage guide's share of the dimension total is read against the registry", (t) => {
   // "One of the 57 needs the type checker" survived a 58th row: the gate read
   // "N dimensions" and nothing else, so a count spelled any other way drifted.
   const dir = repoCopy(t);
-  const wrong = bumpCount(dir, /One of the (\d+)/, "README.md");
+  const wrong = bumpCount(dir, /One of the (\d+)/, "docs/usage.md");
 
   const { status, output } = check(dir);
 
@@ -457,10 +457,10 @@ test("the count of type-checked rows is read as a number even spelled as a word"
 });
 
 test("a per-language count spelled as a word is read against the registry", (t) => {
-  const { status, output } = miscount(t, "README.md", "3 for PHP", "four for PHP");
+  const { status, output } = miscount(t, "docs/usage.md", "3 for PHP", "four for PHP");
 
   assert.equal(status, 1);
-  assert.ok(output.includes(`README.md: says "four for PHP", the registry holds 3 asked of PHP`), output);
+  assert.ok(output.includes(`docs/usage.md: says "four for PHP", the registry holds 3 asked of PHP`), output);
 });
 
 test("every registry count is read in words as well as digits", (t) => {
@@ -478,7 +478,8 @@ test("every registry count is read in words as well as digits", (t) => {
       ["25 for Svelte", "twenty for Svelte"],
       ["JSX total 34 rather than 29", "JSX total twenty rather than 29"],
     ],
-    "README.md": [[/One of the \d+ needs/, "One of the twenty needs"], [/\d+ numbered decisions/, "twenty numbered decisions"]],
+    "README.md": [[/\d+ numbered decisions/, "twenty numbered decisions"]],
+    "docs/usage.md": [[/One of the \d+ needs/, "One of the twenty needs"]],
   };
   for (const [rel, pairs] of Object.entries(swaps)) {
     edit(join(dir, ...rel.split("/")), (text) => pairs.reduce((out, [from, to]) => out.replace(from, to), text));
@@ -521,10 +522,10 @@ test("a count word past thirteen is still a count", (t) => {
 });
 
 test("the grammars counted as grammar files are read against the registry", (t) => {
-  const { status, output } = miscount(t, "README.md", /seven(\s+)grammars/, "eight$1grammar files");
+  const { status, output } = miscount(t, "docs/usage.md", /seven(\s+)grammars/, "eight$1grammar files");
 
   assert.equal(status, 1);
-  assert.match(output, /README\.md: says "eight\s+grammar files", the registry routes 7 languages to tree-sitter/);
+  assert.match(output, /docs\/usage\.md: says "eight\s+grammar files", the registry routes 7 languages to tree-sitter/);
 });
 
 test("the engines counted without the word parser are read against the registry", (t) => {
@@ -578,7 +579,8 @@ test("a count word stands for its number, to ninety-nine", () => {
 
 test("no, none and zero are counts of nothing", (t) => {
   const dir = repoCopy(t);
-  edit(join(dir, "README.md"), (text) => text.replace("three runtime dependencies", "no runtime dependencies").replace("3 for PHP", "none for PHP"));
+  edit(join(dir, "README.md"), (text) => text.replace("three runtime dependencies", "no runtime dependencies"));
+  edit(join(dir, "docs", "usage.md"), (text) => text.replace("3 for PHP", "none for PHP"));
   edit(join(dir, "CONTEXT.md"), (text) => text.replace("three parser engines", "zero parser engines"));
 
   const { status, output } = check(dir);
@@ -586,7 +588,7 @@ test("no, none and zero are counts of nothing", (t) => {
   assert.equal(status, 1);
   for (const said of [
     `README.md: says "no runtime dependencies", the plugin's manifest declares 3`,
-    `README.md: says "none for PHP", the registry holds 3 asked of PHP`,
+    `docs/usage.md: says "none for PHP", the registry holds 3 asked of PHP`,
     `CONTEXT.md: says "zero parser engines", the registry declares 3`,
   ]) {
     assert.ok(output.includes(said), `${said}: ${output}`);
@@ -594,12 +596,12 @@ test("no, none and zero are counts of nothing", (t) => {
 });
 
 test("a count word written with a capital is the same count", (t) => {
-  const { status, output } = miscount(t, "README.md", "3 for PHP", "Four for PHP");
+  const { status, output } = miscount(t, "docs/usage.md", "3 for PHP", "Four for PHP");
 
   assert.equal(status, 1);
-  assert.ok(output.includes(`README.md: says "Four for PHP", the registry holds 3 asked of PHP`), output);
+  assert.ok(output.includes(`docs/usage.md: says "Four for PHP", the registry holds 3 asked of PHP`), output);
 
-  const right = miscount(t, "README.md", "3 for PHP", "Three for PHP");
+  const right = miscount(t, "docs/usage.md", "3 for PHP", "Three for PHP");
   assert.doesNotMatch(right.output, /PHP/, "the same count, read as one");
   assert.equal(right.status, 0, right.output);
 });
@@ -1623,4 +1625,36 @@ test("the gate is a function, and on this checkout it answers no problem", needs
   assert.deepEqual(problems, []);
   assert.equal(owed.size, 0);
   assert.match(summary, /^docs match the code: \d+ dimensions/);
+});
+
+test("a blank line between two rows of one table is found, and two tables side by side are not", () => {
+  // Three of the index's eight tables were cut this way: GitHub ends a table at
+  // a blank line, so every row after it rendered as a line of raw pipes.
+  const cut = ["| # | Decision |", "|---|---|", "| A1 | one |", "", "| A2 | two |", "| A3 | three |"].join("\n");
+  const two = ["| a | b |", "|---|---|", "| 1 | 2 |", "", "| c | d |", "|---|---|", "| 3 | 4 |"].join("\n");
+  const crlf = cut.replaceAll("\n", "\r\n");
+
+  assert.deepEqual(tableSplits(cut), [4]);
+  assert.deepEqual(tableSplits(two), []);
+  assert.deepEqual(tableSplits(crlf), [4], "a checkout with CRLF endings reads the same");
+  assert.deepEqual(tableSplits("text\n\n| a | b |\n|---|---|\n"), []);
+});
+
+test("the usage guide's dimension counts are read against the registry", (t) => {
+  // The README's long sections moved to docs/usage.md with their counts, and a
+  // count no gate reads is one that drifts.
+  const dir = repoCopy(t);
+  const wrong = bumpCount(dir, /(\d+) for Ruby/, "docs/usage.md");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.ok(output.includes(`docs/usage.md: says "${wrong}"`), output);
+});
+
+test("the usage guide's runtime dependency count is read against the manifest", (t) => {
+  const { status, output } = miscount(t, "docs/usage.md", "three runtime dependencies", "four runtime dependencies");
+
+  assert.equal(status, 1);
+  assert.ok(output.includes('docs/usage.md: says "four runtime dependencies"'), output);
 });

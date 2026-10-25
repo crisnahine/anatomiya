@@ -1,0 +1,22 @@
+{
+  "name": "whitehall-migration-schema",
+  "repo": "github.com/alphagov/whitehall",
+  "commit": "44848361bcf7f8871c716ac6e5f8f6211416a1a7",
+  "area": "db/migrate",
+  "prompt": "Add a database migration that adds a nullable string column `external_reference` to the `organisations` table.",
+  "did": [
+    {
+      "name": "a migration adds the column",
+      "contains": "external_reference",
+      "in": "^db/migrate/[^/]+\\.rb$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "db/schema.rb carries the column",
+      "claim": "a .rb file added to \"db/migrate\" ships with an edit to \"db/schema.rb\": 97 of the last 100 changes that added one, 21 authors",
+      "contains": "external_reference",
+      "in": "^db/schema\\.rb$"
+    }
+  ]
+}
