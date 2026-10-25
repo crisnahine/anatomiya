@@ -493,12 +493,13 @@ test("a build marks uncommitted changes to the plugin or the harness, and no oth
   const { join } = await import("node:path");
   const { git, scratch } = await import("./git-worktrees.mjs");
   const { versionsAt } = await import("../scripts/ab-scenario.mjs");
+  const { REL } = await import("../scripts/plugins.mjs");
   const dir = scratch(t, "anatomiya-versions-");
   const write = (rel, body) => {
     mkdirSync(join(dir, rel, ".."), { recursive: true });
     writeFileSync(join(dir, rel), body);
   };
-  write("plugins/anatomiya/.claude-plugin/plugin.json", '{"version":"9.8.7"}\n');
+  write(join(REL.anatomiya, ".claude-plugin", "plugin.json"), '{"version":"9.8.7"}\n');
   write("scripts/ab/run.mjs", "export const a = 1;\n");
   write("docs/notes.md", "notes\n");
   git(dir, "init", "-q");
@@ -512,6 +513,6 @@ test("a build marks uncommitted changes to the plugin or the harness, and no oth
   write("scripts/ab/run.mjs", "export const a = 2;\n");
   assert.equal(versionsAt(dir).anatomiya, `${clean}, with uncommitted changes`);
   git(dir, "checkout", "--", "scripts");
-  write("plugins/anatomiya/lib/new.mjs", "export const b = 1;\n");
+  write(join(REL.anatomiya, "lib", "new.mjs"), "export const b = 1;\n");
   assert.equal(versionsAt(dir).anatomiya, `${clean}, with uncommitted changes`, "an untracked plugin file counts too");
 });

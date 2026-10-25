@@ -13,7 +13,7 @@
  * getting that wrong is the whole experiment: a stale copy of the rules
  * directory left in B measures nothing, twice.
  */
-import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, cpSync, existsSync, statSync, unlinkSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, cpSync, existsSync, lstatSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -160,9 +160,10 @@ export async function buildArms(repo, sha, { workdir = tmpdir(), name = basename
  * every gate reads.
  */
 function installMap(source, arm) {
-  // Where the plugin writes, a link included: cal.diy points .claude/rules at agents/rules.
+  // Where the plugin writes, a link included: cal.diy links its rules directory to agents/rules.
   const from = resolveRulesDir(source);
-  const names = from && existsSync(from) ? readdirSync(from).filter((name) => isMapName(name) && statSync(join(from, name)).isFile()) : [];
+  const isMapFile = (name) => isMapName(name) && lstatSync(join(from, name)).isFile();
+  const names = from && existsSync(from) ? readdirSync(from).filter(isMapFile) : [];
   if (names.length) {
     const to = resolveRulesDir(arm);
     // A link the arm cannot follow would leave it without the map it exists to have.

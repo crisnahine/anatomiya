@@ -287,6 +287,8 @@ test("the map reaches arm A through a rules directory the repository links elsew
   git(repo, "commit", "-qm", "init");
   writeFileSync(join(repo, "agents", "rules", "anatomiya-area-0a1b2c3d.md"), "# the map\n");
   writeFileSync(join(repo, "agents", "rules", "draft.md"), "# somebody's draft, not in the commit\n");
+  writeFileSync(join(repo, "agents", "rules", "anatomiya-notes.md"), "# a note with the prefix, not a map file\n");
+  mkdirSync(join(repo, "agents", "rules", "anatomiya-area-11111111.md"));
   const sha = git(repo, "rev-parse", "HEAD").toString().trim();
 
   const arms = await buildArms(repo, sha);
@@ -294,6 +296,8 @@ test("the map reaches arm A through a rules directory the repository links elsew
 
   assert.equal(readFileSync(join(arms.a, ".claude", "rules", "anatomiya-area-0a1b2c3d.md"), "utf8"), "# the map\n");
   assert.equal(existsSync(join(arms.a, ".claude", "rules", "draft.md")), false, "only the map is copied");
+  assert.equal(existsSync(join(arms.a, ".claude", "rules", "anatomiya-notes.md")), false, "a prefixed name the scan never writes stays put");
+  assert.equal(existsSync(join(arms.a, ".claude", "rules", "anatomiya-area-11111111.md")), false, "a directory with a map's name is not copied");
   assert.equal(existsSync(join(arms.b, ".claude", "rules", "anatomiya-area-0a1b2c3d.md")), false);
   assert.equal(readFileSync(join(arms.b, ".claude", "rules", "team.md"), "utf8"), "# the team's own rule\n");
 });
