@@ -12,6 +12,7 @@
 | tools | Read, Write, Edit, Glob, Grep, Bash, Agent |
 | max turns | 40 |
 | scenario | `scripts/ab/scenarios/mastodon-reuse-and-i18n.json`, sha256 ff08646b9f2a |
+| built with | not recorded |
 
 Arm A runs with the plugin and its map. Arm B runs with neither. Nothing else differs.
 Injection: arm A answered "app/javascript/mastodon/components: 167 files", arm B answered "NONE".

@@ -12,6 +12,7 @@
 | tools | Read, Write, Edit, Glob, Grep, Bash, Agent |
 | max turns | 40 |
 | scenario | `scripts/ab/scenarios/whitehall-migration-schema.json`, sha256 d10ad6d7cfbc |
+| built with | not recorded |
 
 Arm A runs with the plugin and its map. Arm B runs with neither. Nothing else differs.
 Injection: arm A answered "db/migrate: 140 files", arm B answered "NONE".

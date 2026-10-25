@@ -12,6 +12,7 @@
 | tools | Read, Write, Edit, Glob, Grep, Bash, Agent |
 | max turns | 40 |
 | scenario | `scripts/ab/scenarios/forem-service-no-raise.json`, sha256 cb4ca7d9ca01 |
+| built with | not recorded |
 
 Arm A runs with the plugin and its map. Arm B runs with neither. Nothing else differs.
 Injection: arm A answered "app/services, 167 files", arm B answered "NONE".

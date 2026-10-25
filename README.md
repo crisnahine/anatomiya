@@ -85,15 +85,22 @@ if (!compareUrls(href, currentHref)) {
 </tr>
 </table>
 
-Same prompt, same commit, same model, Claude Opus 5.5. Every session without anatomiya parsed the URLs
+One session from each arm, trimmed to the lines that differ. Same prompt, same commit, same model,
+Claude Opus 5.5. Every session without anatomiya parsed the URLs
 itself, and the median component was 37 lines against 27. Claude Haiku 5.5 did the same: 0 of 20
 without, 20 of 20 with. Every
 component both arms wrote is in [the evidence file](docs/measurements/data/2026-10-25-mastodon-components.json).
 
+How it got there: 35 of the 40 sessions with anatomiya say they wrote their own comparison first,
+then replaced it with `compareUrls` and deleted their copy. That is the order anatomiya's end-of-turn
+check asks for: when a turn adds code, it has a subagent look for an existing function that does the
+same job. The demo at the top is rebuilt from one of those sessions.
+
 The same thing happened in forem, where 27 of 40 sessions without anatomiya wrote the WCAG luminance
 formula by hand instead of calling the contrast helper forem already has, and in whitehall, where 39
-of 40 compared hosts themselves instead of calling `is_external?`. Every result prints the sha256 of the
-scenario file it was scored by. [The whole test](#the-whole-test-ties-included) is below, including
+of 40 skipped `is_external?` and compared hosts in their own code
+([every file both arms wrote](docs/measurements/2026-10-25-plugin-on-off.md#exploratory-findings)).
+Every result prints the sha256 of the scenario file it was scored by. [The whole test](#the-whole-test-ties-included) is below, including
 the four tasks where anatomiya changed nothing and only cost more.
 
 ## Try it in your repository

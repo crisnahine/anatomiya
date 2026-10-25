@@ -8,6 +8,7 @@
     "effort": "medium",
     "contextWindow": 1000000
   },
+  "versions": null,
   "said": {
     "a": "app/javascript: 321 .jsx (JSX), 297 .js and 33 other (651 files)",
     "b": "NONE"

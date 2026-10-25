@@ -139,10 +139,13 @@ the runs), so they reported no cost and that arm's median is over 16. None witho
 ## Exploratory findings
 
 These were read from the records after the runs and were not fixed in advance. They suggest checks for
-a next run; they are not results of this one. Each record keeps the files a session wrote and the
-first 2,000 characters of its answer, so every line below can be checked against the `data/` files
-named `2026-10-25-*`. Where an answer quoted the home directory or the account name of the machine the
-runs were on, the record has `~` or `@<user>` in its place.
+a next run; they are not results of this one. Each record keeps the paths a session wrote and the
+first 2,000 characters of its answer, and the file each session wrote for the four reuse tasks is
+published whole, in [`data/2026-10-25-mastodon-components.json`](data/2026-10-25-mastodon-components.json)
+and the three `data/2026-10-25-*-reuse-files.json`, so every line below can be checked. Where an
+answer quoted the home directory of the machine the runs were on, or its account name after an `@`,
+the record has `~` or `@<user>` in its place. Four rubocop answers name the maintainer's public GitHub
+handle, read through `gh`, and it is left as it is.
 
 - mastodon link policy, Haiku 5.5: 6 more sessions with the plugin called
   `ActivityPub::TagManager#local_uri?`, an existing helper built on the same `TagManager` domain
@@ -153,16 +156,17 @@ runs were on, the record has `~` or `@<user>` in its place.
   plugin, and 9 of them compared the link's host with `Plek.website_root` instead, without the word
   `public_host` the check looks for. The check that matters, whether
   `is_external?` is called, is 19 against 1.
-- forem module: every one of the 20 answers with the plugin named the existing reading-time code
-  (`ReadingTime.jsx`, `ItemListItem.jsx` or `buildArticleHTML.js`), against 9 of 20 without.
+- forem module: every answer with the plugin named the existing reading-time code
+  (`ReadingTime.jsx`, `ItemListItem.jsx` or `buildArticleHTML.js`), 20 of 20 on both models, against
+  9 of 20 without on Opus 5.5 and 0 of 20 on Haiku 5.5.
 - mastodon badge: 5 of the 20 Opus sessions with the plugin extended `compareUrls` with an optional
   `base` argument for relative links instead of writing a second function, so the check that reads
   the import counts a helper those 5 had changed.
-- mastodon badge: 10 of the 20 Opus answers with the plugin say the session first wrote its own
-  comparison and then removed it for `compareUrls`, for example "I found an existing helper that
-  already did my URL comparison, so I removed my copy and the badge uses it now." A copy written and
-  then replaced is the sequence the end-of-turn reuse search asks for; the other 10 do not say how
-  they found it.
+- mastodon badge: all 20 Opus answers with the plugin and 15 of the 20 Haiku answers say the
+  session first wrote its own comparison and then replaced it with `compareUrls`, for example "I
+  found an existing helper that already did my URL comparison, so I removed my copy and the badge
+  uses it now." The other 5 Haiku answers say the component already called `compareUrls` when the
+  end-of-turn reuse check ran. A copy written and then replaced is the sequence that check asks for.
 
 ## What this does not show
 

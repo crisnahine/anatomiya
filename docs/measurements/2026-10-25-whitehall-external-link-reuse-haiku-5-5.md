@@ -12,6 +12,7 @@
 | tools | Read, Write, Edit, Glob, Grep, Bash, Agent |
 | max turns | 40 |
 | scenario | `scripts/ab/scenarios/whitehall-external-link-reuse.json`, sha256 e9b5bd925bce |
+| built with | not recorded |
 
 Arm A runs with the plugin and its map. Arm B runs with neither. Nothing else differs.
 Injection: arm A answered "app/helpers/admin: 39 files", arm B answered "NONE".

@@ -8,6 +8,7 @@
     "effort": "medium",
     "contextWindow": 1000000
   },
+  "versions": null,
   "said": {
     "a": "app/services: 167 files (area map); 304 .rb (repository map)",
     "b": "NONE"

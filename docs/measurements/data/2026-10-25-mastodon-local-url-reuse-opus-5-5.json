@@ -8,6 +8,7 @@
     "effort": "medium",
     "contextWindow": 1000000
   },
+  "versions": null,
   "said": {
     "a": "app/lib 94 files",
     "b": "NONE"

@@ -12,6 +12,7 @@
 | tools | Read, Write, Edit, Glob, Grep, Bash, Agent |
 | max turns | 40 |
 | scenario | `scripts/ab/scenarios/rubocop-new-cop.json`, sha256 6e90369c5f4b |
+| built with | not recorded |
 
 Arm A runs with the plugin and its map. Arm B runs with neither. Nothing else differs.
 Injection: arm A answered "lib/rubocop/cop/style — 302 files", arm B answered "NONE".

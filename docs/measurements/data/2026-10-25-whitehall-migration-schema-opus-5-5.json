@@ -8,6 +8,7 @@
     "effort": "medium",
     "contextWindow": 1000000
   },
+  "versions": null,
   "said": {
     "a": "db/migrate, 140 files",
     "b": "NONE"

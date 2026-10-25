@@ -12,6 +12,7 @@
 | tools | Read, Write, Edit, Glob, Grep, Bash, Agent |
 | max turns | 40 |
 | scenario | `scripts/ab/scenarios/forem-js-test-location.json`, sha256 4af1b031f56a |
+| built with | not recorded |
 
 Arm A runs with the plugin and its map. Arm B runs with neither. Nothing else differs.
 Injection: arm A answered "app/javascript: 321 .jsx (JSX), 297 .js and 33 other (651 files)", arm B answered "NONE".

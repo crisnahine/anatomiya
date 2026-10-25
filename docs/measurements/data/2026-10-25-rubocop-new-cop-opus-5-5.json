@@ -8,6 +8,7 @@
     "effort": "medium",
     "contextWindow": 1000000
   },
+  "versions": null,
   "said": {
     "a": "lib/rubocop/cop/style — 302 files",
     "b": "NONE"

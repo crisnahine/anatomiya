@@ -21,8 +21,9 @@ arms wrote side by side and the cost and the limits beside it.
   the tools a coding session has, Bash and the subagent tool included, sitting alone in its own
   directory at the repository's own name. A scenario file under `scripts/ab/scenarios/` fixes the
   commit, the prompt and the checks before any trial runs, and the result reports each arm's Wilson
-  interval, Fisher's exact test and the cost of every trial. `--from-raw` scores kept trial records
-  again, or joins several workers' runs of one scenario.
+  interval, Fisher's exact test and the cost of every trial. Each result names the Claude Code and
+  anatomiya builds it ran on. `--from-raw` scores kept trial records again, or joins several workers'
+  runs of one scenario.
 - Eight scenarios and their results on two models under `docs/measurements/`, the summary in
   `docs/measurements/2026-10-25-plugin-on-off.md`, and every trial's checks, cost and the first
   2,000 characters of its answer under `docs/measurements/data/`. The three `*-reuse` scenarios were
@@ -64,8 +65,9 @@ arms wrote side by side and the cost and the limits beside it.
 ### Fixed
 
 - A trial could use the operator's GitHub login: four rubocop sessions credited their changelog entry
-  through `gh`. Trials now run with no GitHub token and `gh` logged out, and a kept answer or failure
-  reason shows the operator's home directory as `~` and an `@account` as `@<user>`.
+  through `gh`. Trials now run with no GitHub token and a `gh` that reads no login, and a kept answer
+  or failure reason shows the operator's home directory as `~` and the machine's account name after an
+  `@` as `@<user>`.
 - Three of `DECISIONS.md`'s tables were cut by a blank line, so GitHub showed rows A33, D10 and G12
   onward as raw text.
 - The README's examples came from a private repository and the 0.11.0 build. They are excalidraw's
