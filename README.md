@@ -45,57 +45,39 @@ Here is what that looks like. The task: show a "You are here" badge in
 already has `compareUrls` for exactly that, in `app/javascript/mastodon/utils/`, one folder over
 from where the badge goes.
 
-<table>
-<tr>
-<th>Without anatomiya: 20 of 20 sessions wrote their own</th>
-<th>With anatomiya: 20 of 20 sessions used mastodon's</th>
-</tr>
-<tr>
-<td valign="top">
+Every session without anatomiya wrote its own URL comparison. Every session with it called
+mastodon's. Here is the difference between one session from each, trimmed to the lines that
+differ: red is without anatomiya, green is with it.
 
-```tsx
-const toPageKey = (href: string) => {
-  try {
-    const url = new URL(href, window.location.href);
-    return `${url.origin}${url.pathname}${url.search}`;
-  } catch {
-    return null;
-  }
-};
+```diff
+- const toPageKey = (href: string) => {
+-   try {
+-     const url = new URL(href, window.location.href);
+-     return `${url.origin}${url.pathname}${url.search}`;
+-   } catch {
+-     return null;
+-   }
+- };
++ import { compareUrls } from '../utils/compare_urls';
 
-// ...
-const pageKey = toPageKey(href);
-if (pageKey === null || pageKey !== toPageKey(currentHref)) {
-  return null;
-}
+  export const CurrentPageBadge: FC<{ href: string; currentHref: string }> = ({
+    href,
+    currentHref,
+  }) => {
+-   const pageKey = toPageKey(href);
+-   if (pageKey === null || pageKey !== toPageKey(currentHref)) {
++   if (!compareUrls(href, currentHref)) {
+      return null;
+    }
 ```
 
-</td>
-<td valign="top">
-
-```tsx
-import { compareUrls } from '../utils/compare_urls';
-
-// ...
-if (!compareUrls(href, currentHref)) {
-  return null;
-}
-```
-
-</td>
-</tr>
-</table>
-
-One session from each arm, trimmed to the lines that differ. Same prompt, same commit, same model,
-Claude Opus 5.5. Every session without anatomiya parsed the URLs
-itself, and the median component was 37 lines against 27. Claude Haiku 5.5 did the same: 0 of 20
-without, 20 of 20 with. Every
+Same prompt, same commit, same model, Claude Opus 5.5. The median component was 37 lines without
+anatomiya and 27 with it. Claude Haiku 5.5 did the same: 0 of 20 without, 20 of 20 with. Every
 component both arms wrote is in [the evidence file](docs/measurements/data/2026-10-25-mastodon-components.json).
 
 How it got there: 35 of the 40 sessions with anatomiya say they wrote their own comparison first,
-then replaced it with `compareUrls`. That is the order anatomiya's end-of-turn
-check asks for: when a turn adds code, it has a subagent look for an existing function that does the
-same job. The demo at the top is rebuilt from one of those sessions.
+then replaced it with `compareUrls`. That is the order anatomiya's end-of-turn check asks for: when
+a turn adds code, it has a subagent look for an existing function that does the same job. The demo at the top is rebuilt from one of those sessions.
 
 The same thing happened in forem, where 27 of 40 sessions without anatomiya wrote the WCAG luminance
 formula by hand instead of calling the contrast helper forem already has, and in whitehall, where 39
