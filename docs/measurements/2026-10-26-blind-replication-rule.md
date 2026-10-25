@@ -39,3 +39,24 @@ Step 3 is written by someone who has seen the helper, so the prompt's wording is
 limits are the ones above: no name, no file, no directory, the helper's behaviour and nothing more.
 The prompts are published with the scenarios, so a reader can judge whether one gives the answer
 away.
+
+## Amendment, before any scenario was written
+
+Applying the rule left openfoodnetwork's helper, `showHttpError`, with no area that holds no
+importer and where a new file could import an ES module: the only such area is
+`app/assets/javascripts/admin`, served by Sprockets. Where step 3 finds no such area, the new file
+goes in the area holding the fewest importing files that can import the helper, breaking a tie by the
+area's path in alphabetical order. This makes the task easier for the arm without the plugin, since a
+neighbouring file may show the import, so it cannot favour the plugin.
+
+What the rule picked, before any trial:
+
+| Repository | Passed step 1 and 2 after skipping | Helper (importing files) | New file's area |
+|---|---|---|---|
+| cal.diy | angular, appsmith, babel, backstage (10,000 files or more) | `getAppKeysFromSlug` (51) | `packages/lib/server` |
+| eslint | chef, consul, diaspora, errbit (no "most imported" line) | `unIndent` (11) | `tests/lib/linter` |
+| openfoodnetwork | fastlane, brew, huginn (no "most imported" line) | `showHttpError` (6) | `app/components` (1 importer; the amendment) |
+
+Dropped on the way, by step 2: cal.diy's `TrpcSessionUser` (a type), `http` (an object built by an
+immediately called function), `PrismaModule` and `UsersModule` (classes) and `test` (bound to a call);
+eslint's `tester`, `utils` and `rules` (a class and two objects).
