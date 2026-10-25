@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-10-26
+
 A rule committed ahead of its picks chose three more reuse tasks, in eslint,
 openfoodnetwork and cal.diy, and they ran the same way: 64 of 120 sessions with the plugin called the
 helper the repository already had, against 22 of 120 without. With the first four, it is 209 of 280
@@ -5255,7 +5257,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...HEAD
+[0.18.2]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/crisnahine/anatomiya/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/crisnahine/anatomiya/compare/v0.17.0...v0.17.1
