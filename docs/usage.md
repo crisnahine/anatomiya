@@ -643,8 +643,8 @@ The plugin is free. What a session pays is tokens, in three places:
   ([docs/measurements/2026-10-25-readme-examples.md](measurements/2026-10-25-readme-examples.md)).
 - The reuse check, one subagent after each turn that added source code.
 
-Measured over eight tasks and two models, 20 sessions per arm, the median session with the plugin
-cost 1.4 to 3.1 times as much as one without
+Measured over eleven tasks and two models, 20 sessions per arm, the median session with the plugin
+cost 1.4 to 3.8 times as much as one without
 ([docs/measurements/2026-10-25-plugin-on-off.md](measurements/2026-10-25-plugin-on-off.md)). The task
 the reuse check skips still cost 1.9 times as much on Opus 5.5, so the map and the other hooks cost
 something on their own.
@@ -853,9 +853,10 @@ shallow`, `which refs hold the name <base>`, `which parents HEAD's commit record
 oldest commit this clone holds`. Run it again. Read as git saying no, the first of those dropped a map to counts over a commit that was
 still there. A repository git itself cannot open stops them the same way, with git's own text.
 
-**Where it changes what the agent writes**: measured on eight tasks and two models, it changed the
+**Where it changes what the agent writes**: measured on eleven tasks and two models, it changed the
 outcome where the answer lived outside the files next to the change (an existing helper in another
-directory: 145 of 160 sessions called it with the plugin, 31 of 160 without), and not where the
+directory: 209 of 280 sessions called it with the plugin, 53 of 280 without, three of the seven tasks
+picked by a rule fixed in advance), and not where the
 neighbouring files already showed the habit, which both models followed without it
 ([docs/measurements/2026-10-25-plugin-on-off.md](measurements/2026-10-25-plugin-on-off.md)). A solo
 repository is not held back by the author gate: where the whole history has one author there is no

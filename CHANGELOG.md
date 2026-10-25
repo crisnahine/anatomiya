@@ -7,6 +7,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+A rule committed before any map was opened picked three more reuse tasks, in eslint,
+openfoodnetwork and cal.diy, and they ran the same way: 64 of 120 sessions with the plugin called the
+helper the repository already had, against 22 of 120 without. With the first four, it is 209 of 280
+against 53 of 280. In cal.diy it was 0 against 0 on both models, which the README now names as a
+limit of the reuse check. The README, the chart and the cost range (now 1.4 to 3.8 times) include
+the three.
+
+### Added
+
+- `docs/measurements/2026-10-26-blind-replication-rule.md`, the rule that picked the tasks, and
+  `docs/measurements/2026-10-26-blind-replication.md`, its results, with six task pages, every
+  trial's record and the file each session wrote.
+
+### Fixed
+
+- The A/B harness could not install the map in a repository that links `.claude/rules` elsewhere:
+  copying the directory onto the link stopped the run before its first trial. It now copies the
+  plugin's own files to wherever the link points.
+- The "with uncommitted changes" mark on a result's build has a test that dirties a scratch tree.
+
 ## [0.18.1] - 2026-10-25
 
 What a session gets from the plugin is measured now: eight tasks in four public repositories, 20
