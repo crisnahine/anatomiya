@@ -12,10 +12,12 @@ import { homedir, userInfo } from "node:os";
 
 import { scoreFile } from "./score.mjs";
 import { language } from "../../plugins/anatomiya/lib/langs.mjs";
+import { escapeRe } from "../../plugins/anatomiya/lib/paths.mjs";
 import { rowByKey } from "../../plugins/anatomiya/lib/registry.mjs";
 
 const SHA = /^[0-9a-f]{40}$/;
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const LEAF = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const CHECK_KINDS = ["changed", "unchanged", "contains", "lacks", "dimension"];
 
 /**
@@ -35,6 +37,7 @@ export function parseScenario(text) {
   }
   if (!NAME.test(raw.name)) return { error: `the scenario name is not kebab-case: ${raw.name}` };
   if (!SHA.test(raw.commit)) return { error: "the scenario commit is not a full 40-character sha" };
+  if (!LEAF.test(raw.repo.split("/").at(-1))) return { error: `the scenario repo does not end in a name, which both arms sit at: ${raw.repo}` };
   if (raw.probe !== undefined && (typeof raw.probe !== "string" || !raw.probe.startsWith(`${raw.area}/`))) {
     return { error: "the scenario probe is not a path under its area" };
   }
@@ -98,12 +101,22 @@ function compileCheck(entry, at) {
 const ANSWER_KEPT = 2000;
 
 /** The machine a run is on, which a session can quote and a published record must not. */
-const OPERATOR = { home: homedir(), user: userInfo().username };
+function operatorHere() {
+  try {
+    return { home: homedir(), user: userInfo().username };
+  } catch {
+    // A container user with no passwd entry has no name to give.
+    return { home: process.env.HOME ?? null, user: null };
+  }
+}
 
-function keptAnswer(stdout, { home, user }) {
-  let out = stdout.slice(0, ANSWER_KEPT);
-  if (home) out = out.split(home).join("~");
-  if (user) out = out.replace(new RegExp(`(?<![\\w.-])${user.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g"), "<user>");
+/** `text` with the operator's home as `~` and their `@account` as `@<user>`, matched only where the name ends. */
+function scrubbed(text, { home, user }) {
+  const ends = "(?![\\w-])(?!\\.[\\w-])";
+  let out = text;
+  if (home) out = out.replace(new RegExp(`${escapeRe(home)}${ends}`, "g"), "~");
+  // Only after "@": an account called "test" would otherwise rewrite every "test".
+  if (user) out = out.replace(new RegExp(`(?<=@)${escapeRe(user)}${ends}`, "g"), "<user>");
   return out;
 }
 
@@ -144,7 +157,7 @@ export async function runCheck(check, files, frameworks = []) {
  * task (every `did` check holds) and the check had something to judge, so an
  * arm cannot pass a check by writing nothing.
  */
-export async function scoreScenario(runs, scenario, frameworks = [], { operator = OPERATOR } = {}) {
+export async function scoreScenario(runs, scenario, frameworks = [], { operator = operatorHere() } = {}) {
   const out = {
     trials: runs.length,
     endedEarly: 0,
@@ -169,8 +182,9 @@ export async function scoreScenario(runs, scenario, frameworks = [], { operator 
       }
       if (Object.values(checks).every((r) => r === true)) out.allPassed++;
     }
-    const answer = typeof run.stdout === "string" ? keptAnswer(run.stdout, operator) : null;
-    out.perTrial.push({ ok: run.ok, reason: run.reason ?? null, wrote: files.map((f) => f.rel), did, checks, spent: run.spent ?? null, answer });
+    const answer = typeof run.stdout === "string" ? scrubbed(run.stdout, operator).slice(0, ANSWER_KEPT) : null;
+    const reason = typeof run.reason === "string" ? scrubbed(run.reason, operator) : null;
+    out.perTrial.push({ ok: run.ok, reason, wrote: files.map((f) => f.rel), did, checks, spent: run.spent ?? null, answer });
   }
   return out;
 }

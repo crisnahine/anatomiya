@@ -69,6 +69,9 @@ test("a scenario that could not score its trials is refused before any is run", 
   assert.match(refused({ checks: [{ dimension: "exported_symbol_case", in: "x" }] }), /learned row/);
   assert.match(refused({ checks: [{ name: "a", changed: "x" }, { name: "a", changed: "y" }] }), /share a name/);
   assert.match(refused({ probe: "lib/other/file.rb" }), /probe is not a path under its area/);
+  // The repository's last segment names both arms' directories.
+  assert.match(refused({ repo: "github.com/rubocop/" }), /repo does not end in a name/);
+  assert.match(refused({ repo: "github.com/rubocop/.." }), /repo does not end in a name/);
 });
 
 test("median skips what was not reported, and has none for nothing", async () => {
@@ -402,6 +405,13 @@ test("a raw record of another scenario at the same commit is refused, not scored
   assert.match(digest.output, /was scored by a scenario file whose sha256 is fff/);
 });
 
+test("a raw record that names no scenario is refused, since nothing then ties it to this one", async (t) => {
+  const unnamed = await fromRaw(t, [rawRun("a".repeat(40), ["??"], ["||"], { scenario: undefined })]);
+
+  assert.equal(unnamed.status, 2);
+  assert.match(unnamed.output, /names no scenario/);
+});
+
 test("each trial's record keeps the head of its answer, so a claim read from answers can be checked", async () => {
   // The exploratory lines on a results page quote what sessions said; with
   // only paths and checks in the record nobody else could read them.
@@ -427,4 +437,28 @@ test("a kept answer names neither the operator's home nor their account, which a
   });
 
   assert.equal(s.perTrial[0].answer, "Wrote ~/rubocop/x.rb and credited [@<user>][]; alicewong stays.");
+});
+
+test("the scrub reaches the reason too, and spares a word or a path that only starts like the operator's", async () => {
+  // An account called "test" would otherwise rewrite every "test" in an answer,
+  // and a home of /home/al would cut /home/alice to ~ice.
+  const { parseScenario, scoreScenario } = await import("../scripts/ab/checks.mjs");
+  const { scenario } = parseScenario(scenarioText());
+  const run = { ok: false, reason: "exited 1: cannot open /home/test/.config", wrote: [], stdout: "Ran the test in /home/test and /home/tester; @test, see /home/test/x.", spent: null };
+
+  const s = await scoreScenario([run], scenario, [], { operator: { home: "/home/test", user: "test" } });
+
+  assert.equal(s.perTrial[0].answer, "Ran the test in ~ and /home/tester; @<user>, see ~/x.");
+  assert.equal(s.perTrial[0].reason, "exited 1: cannot open ~/.config");
+});
+
+test("an answer is scrubbed before it is cut, so a home path across the cut leaves no part of itself", async () => {
+  const { parseScenario, scoreScenario } = await import("../scripts/ab/checks.mjs");
+  const { scenario } = parseScenario(scenarioText());
+  const home = "/home/alice";
+  const stdout = `${"x".repeat(1995)}${home}/repo`;
+
+  const s = await scoreScenario([{ ok: true, reason: null, wrote: [], stdout, spent: null }], scenario, [], { operator: { home, user: "alice" } });
+
+  assert.equal(s.perTrial[0].answer, `${"x".repeat(1995)}~/rep`);
 });

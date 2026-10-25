@@ -1,6 +1,6 @@
 // scripts/ab/render.mjs
 /**
- * The result document: the file a reader quotes for a G5 measurement.
+ * The result documents: the file a reader quotes for a G5 or a G18 measurement.
  *
  * Every number in it is the harness's own, and the engine row is the one the
  * trials reported rather than the one the flags asked for.

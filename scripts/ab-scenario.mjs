@@ -114,7 +114,8 @@ function readKept(paths, scenario, { file, digest }) {
   for (const { path, raw } of kept) {
     if (raw.sha !== scenario.commit) die(`${path} was run at ${raw.sha}, and the scenario was written against ${scenario.commit}`);
     // Two scenarios can share a commit, so the record has to name this one.
-    if (typeof raw.scenario === "string" && basename(raw.scenario) !== named) die(`${path} was run with ${basename(raw.scenario)}, not ${named}`);
+    if (typeof raw.scenario !== "string") die(`${path} names no scenario, so nothing ties it to ${named}`);
+    if (basename(raw.scenario) !== named) die(`${path} was run with ${basename(raw.scenario)}, not ${named}`);
     if (typeof raw.scenarioSha256 === "string" && raw.scenarioSha256 !== digest) {
       die(`${path} was scored by a scenario file whose sha256 is ${raw.scenarioSha256.slice(0, 12)}, and ${named} is ${digest.slice(0, 12)} now`);
     }

@@ -135,6 +135,8 @@ export async function buildArms(repo, sha, { workdir = tmpdir(), name = basename
       if (!cloned.ok) throw new Error(`could not create the ${name} arm: ${cloned.error}`);
       const cut = await git(path, ["remote", "remove", "origin"]);
       if (!cut.ok) throw new Error(`could not cut the ${name} arm from its source: ${cut.error}`);
+      // The reflog opens with "clone: from <source>", the checkout that holds the map.
+      rmSync(join(path, ".git", "logs"), { recursive: true, force: true });
       // Before the checkout, so an arm holds the commit's bytes on Windows too.
       const bytes = await git(path, ["config", "core.autocrlf", "false"]);
       if (!bytes.ok) throw new Error(`could not configure the ${name} arm: ${bytes.error}`);

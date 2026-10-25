@@ -18,8 +18,10 @@
  */
 import { execFile, execFileSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
+import { changedSinceWorktree, filesAt, headSha } from "../../plugins/anatomiya/lib/git.mjs";
 import { ENGINE, engineEnv, engineFor } from "./engine.mjs";
 import { ANATOMIYA } from "../plugins.mjs";
 
@@ -35,57 +37,66 @@ export const CLAUDE_DEFAULTS = {
 };
 
 /**
+ * The operator's GitHub login, kept from an agent with a shell: rubocop
+ * sessions took it from `gh` to credit a changelog entry. A `GH_CONFIG_DIR`
+ * that does not exist leaves `gh` logged out.
+ */
+const GITHUB_LOGINS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
+const NO_GH_CONFIG = join(tmpdir(), "anatomiya-ab-no-gh");
+
+function trialEnv(env) {
+  const out = engineEnv(env);
+  for (const name of GITHUB_LOGINS) delete out[name];
+  return { ...out, GH_CONFIG_DIR: NO_GH_CONFIG, CI: "1" };
+}
+
+/**
  * One trial, at the stated engine, in an environment that cannot move it.
  *
  * The answer comes back as JSON so `ran` can say which engine served it. A
  * trial is still counted on the files it left behind, so an answer this cannot
  * read costs the reading rather than the trial.
  */
-export function runTrial(arm, prompt, options = {}) {
+export async function runTrial(arm, prompt, options = {}) {
   const o = { ...CLAUDE_DEFAULTS, ...options };
   const engine = engineFor(o);
-  if (engine.error) return Promise.resolve({ ok: false, wrote: [], stdout: "", ran: null, reason: engine.error });
+  if (engine.error) return { ok: false, wrote: [], stdout: "", ran: null, reason: engine.error };
   const before = snapshot(arm);
+  // Outside a repository git cannot be asked, and every file the trial touched counts.
+  const base = await headSha(arm).catch(() => null);
   const started = Date.now();
 
-  return new Promise((resolve) => {
-    const args = [
-      "-p", prompt,
-      "--model", engine.model,
-      "--effort", engine.effort,
-      "--max-turns", String(o.maxTurns),
-      "--tools", o.tools.join(","),
-      "--allowedTools", o.tools.join(","),
-      "--strict-mcp-config",
-      "--setting-sources", o.settingSources,
-      // Null is the arm that runs without the plugin at all, hooks included.
-      ...(o.pluginDir === null ? [] : ["--plugin-dir", o.pluginDir]),
-      // Asked for so the answer says which engine actually served it. The flags
-      // above are a request; `modelUsage` is what the run reports back.
-      "--output-format", "json",
-    ];
+  const args = [
+    "-p", prompt,
+    "--model", engine.model,
+    "--effort", engine.effort,
+    "--max-turns", String(o.maxTurns),
+    "--tools", o.tools.join(","),
+    "--allowedTools", o.tools.join(","),
+    "--strict-mcp-config",
+    "--setting-sources", o.settingSources,
+    // Null is the arm that runs without the plugin at all, hooks included.
+    ...(o.pluginDir === null ? [] : ["--plugin-dir", o.pluginDir]),
+    // Asked for so the answer says which engine actually served it. The flags
+    // above are a request; `modelUsage` is what the run reports back.
+    "--output-format", "json",
+  ];
+  const { err, stdout, stderr } = await new Promise((resolve) => {
     execFile(
       "claude",
       args,
-      {
-        cwd: arm,
-        timeout: o.timeoutMs,
-        maxBuffer: o.maxBytes,
-        env: { ...engineEnv(o.env ?? process.env), CI: "1" },
-      },
-      (err, stdout, stderr) => {
-        if (err && err.code === "ENOENT") {
-          return resolve({ ok: false, wrote: [], stdout: "", ran: null, reason: "the claude CLI is not on PATH" });
-        }
-        // A trial that hit the turn cap exits 1 with its files already written,
-        // so they are kept and scored; `ok` only says it ended early.
-        const wrote = added(arm, before);
-        const said = answerIn(String(stdout ?? ""), engine.model);
-        const reason = err ? endedBy(err, said.subtype, String(stderr ?? "")) : wrote.length ? null : `answered ${firstLine(said.text)}`;
-        resolve({ ok: !err, wrote, stdout: said.text, ran: said.ran, spent: { ...said.spent, wallMs: Date.now() - started }, reason });
-      }
+      { cwd: arm, timeout: o.timeoutMs, maxBuffer: o.maxBytes, env: trialEnv(o.env ?? process.env) },
+      (err, stdout, stderr) => resolve({ err, stdout, stderr })
     );
   });
+  const wallMs = Date.now() - started;
+  if (err && err.code === "ENOENT") return { ok: false, wrote: [], stdout: "", ran: null, reason: "the claude CLI is not on PATH" };
+  // A trial that hit the turn cap exits 1 with its files already written,
+  // so they are kept and scored; `ok` only says it ended early.
+  const wrote = await added(arm, before, base);
+  const said = answerIn(String(stdout ?? ""), engine.model);
+  const reason = err ? endedBy(err, said.subtype, String(stderr ?? "")) : wrote.length ? null : `answered ${firstLine(said.text)}`;
+  return { ok: !err, wrote, stdout: said.text, ran: said.ran, spent: { ...said.spent, wallMs }, reason };
 }
 
 /**
@@ -175,14 +186,31 @@ function snapshot(dir) {
  * What the trial changed, as git would show it: a file git ignores is a cache
  * or a log the trial's tools left, not its work. Measured on a Rails clone, a
  * trial that booted the app left 4,360 ignored files beside the two it wrote.
+ * A tracked file rewritten with the bytes it had at `base` is not work either.
  */
-function added(dir, before) {
+async function added(dir, before, base) {
   const changed = [];
   for (const [abs, mtime] of snapshot(dir)) {
     if (!(before.has(abs) && before.get(abs) === mtime)) changed.push(relative(dir, abs));
   }
   const ignored = ignoredIn(dir, changed);
-  return changed.filter((rel) => !ignored.has(rel)).map((rel) => ({ rel, source: readFileSync(join(dir, rel), "utf8") }));
+  const kept = changed.filter((rel) => !ignored.has(rel));
+  const same = await unchangedSince(dir, base, kept);
+  return kept.filter((rel) => !same.has(rel)).map((rel) => ({ rel, source: readFileSync(join(dir, rel), "utf8") }));
+}
+
+/**
+ * Of `rels`, the files `base` tracks whose bytes match it now. Read against
+ * `base` rather than HEAD, so a trial that committed its work still shows it.
+ */
+async function unchangedSince(dir, base, rels) {
+  if (!base || !rels.length) return new Set();
+  const [tracked, differs] = await Promise.all([filesAt(dir, base), changedSinceWorktree(dir, base)]).catch(() => [null, null]);
+  if (!tracked || !differs) return new Set();
+  return new Set(rels.filter((rel) => {
+    const at = rel.split("\\").join("/");
+    return tracked.has(at) && !differs.has(at);
+  }));
 }
 
 /** The paths git ignores in `dir`, or none where `dir` is no repository. */

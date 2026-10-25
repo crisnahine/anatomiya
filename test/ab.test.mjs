@@ -285,7 +285,59 @@ test("an arm keeps no path back to the checkout it was cloned from", async (t) =
     assert.equal(execFileSync("git", ["remote"], { cwd: arm, encoding: "utf8" }).trim(), "", `${arm} names a remote`);
     assert.ok(!existsSync(join(arm, ".git", "objects", "info", "alternates")), `${arm} borrows the source's objects`);
     assert.equal(execFileSync("git", ["rev-parse", "HEAD"], { cwd: arm, encoding: "utf8" }).trim(), sha);
+    // A clone's reflog opens with "clone: from <source>".
+    const naming = filesUnder(join(arm, ".git")).filter((f) => readFileSync(f, "latin1").includes(basename(repo)));
+    assert.deepEqual(naming, [], `${arm} names its source`);
   }
+});
+
+const filesUnder = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesUnder(join(dir, e.name)) : [join(dir, e.name)]));
+
+test("a trial cannot reach the operator's GitHub account", needsShebang, async (t) => {
+  // A rubocop session ran `gh api user` to credit its changelog entry, so the
+  // operator's own login was in reach of an agent with a shell.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, reporting);
+
+  await runTrial(stub.arm, "write a file", {
+    env: { PATH: stub.path, GH_TOKEN: "x", GITHUB_TOKEN: "x", GH_ENTERPRISE_TOKEN: "x", GITHUB_ENTERPRISE_TOKEN: "x", GH_CONFIG_DIR: "/home/x/.config/gh" },
+  });
+
+  const env = stub.env();
+  for (const name of ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]) assert.equal(env.has(name), false, name);
+  assert.ok(env.get("GH_CONFIG_DIR") && !existsSync(env.get("GH_CONFIG_DIR")), "gh reads a config directory that holds no login");
+});
+
+test("a tracked file a trial rewrote with the same bytes is not counted as written", needsShebang, async (t) => {
+  // A docs task regenerated eight pages it left unchanged, and all eight were
+  // listed as the trial's work.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, (base) => `sleep 0.05; cp "${join(base, "arm", "same.txt")}" "${join(base, "arm", "same.tmp")}"; mv "${join(base, "arm", "same.tmp")}" "${join(base, "arm", "same.txt")}"; echo new > "${join(base, "arm", "changed.txt")}"; echo b > "${join(base, "arm", "made.txt")}"`);
+  const git = (...a) => execFileSync("git", a, { cwd: stub.arm, stdio: "pipe" });
+  writeFileSync(join(stub.arm, "same.txt"), "same\n");
+  writeFileSync(join(stub.arm, "changed.txt"), "old\n");
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+
+  const r = await runTrial(stub.arm, "write a file", { env: { PATH: stub.path } });
+
+  assert.deepEqual(r.wrote.map((f) => f.rel).sort(), ["changed.txt", "made.txt"]);
+});
+
+test("a trial that commits its change is still counted as having written it", needsShebang, async (t) => {
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, (base) => `cd "${join(base, "arm")}" && sleep 0.05 && echo new > changed.txt && git add -A && git -c user.name=t -c user.email=t@t.test commit -qm work`);
+  const git = (...a) => execFileSync("git", a, { cwd: stub.arm, stdio: "pipe" });
+  writeFileSync(join(stub.arm, "changed.txt"), "old\n");
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+
+  const r = await runTrial(stub.arm, "write a file", { env: { PATH: stub.path } });
+
+  assert.deepEqual(r.wrote.map((f) => f.rel), ["changed.txt"]);
 });
 
 test("an arm takes its leaf name from the repository when none is given", async (t) => {
