@@ -11,8 +11,8 @@ A rule committed ahead of its picks chose three more reuse tasks, in eslint,
 openfoodnetwork and cal.diy, and they ran the same way: 64 of 120 sessions with the plugin called the
 helper the repository already had, against 22 of 120 without. With the first four, it is 209 of 280
 against 53 of 280. In cal.diy it was 0 against 0 on both models: the rule put the new file in a
-package that cal.diy's lint config forbids from importing the helper, and 38 of 40 sessions with the
-plugin named the helper and said so. The README, the chart and the cost range (now 1.4 to 3.8 times)
+package that cal.diy's lint config forbids from importing the helper. 38 of 40 sessions with the
+plugin named the helper, and most said they could not import it there. The README, the chart and the cost range (now 1.4 to 3.8 times)
 include the three.
 
 ### Added

@@ -857,8 +857,8 @@ still there. A repository git itself cannot open stops them the same way, with g
 **Where it changes what the agent writes**: measured on eleven tasks and two models, it changed the
 outcome where the answer lived outside the files next to the change (an existing helper in another
 directory: 209 of 280 sessions called it with the plugin, 53 of 280 without, three of the seven tasks
-picked by a rule fixed in advance), and not where the
-neighbouring files already showed the habit, which both models followed without it
+picked by a rule fixed in advance), and not where the neighbouring files already showed the habit,
+which both models followed without it
 ([docs/measurements/2026-10-25-plugin-on-off.md](measurements/2026-10-25-plugin-on-off.md) and
 [the blind replication](measurements/2026-10-26-blind-replication.md)). A solo
 repository is not held back by the author gate: where the whole history has one author there is no

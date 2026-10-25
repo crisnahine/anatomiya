@@ -43,8 +43,8 @@ plugin do better. Together with the four reuse tasks of 2026-10-25, it is 209 of
   `getAppKeysFromSlug` lives ("lib package should not import from app-store to avoid circular
   dependencies"). 38 of the 40 answers with the plugin name the helper, and by a word search 20 of the
   20 Opus answers and 12 of the 20 Haiku answers give that rule as a reason not to import it, most
-  adding that it returns the whole keys object. Without the plugin, 19 of 40 answers name it and 5 cite
-  the rule. Every session in both arms wrote the query itself.
+  adding that it returns the whole keys object. Without the plugin, 19 of 40 answers name it, and 5 cite a
+  lint rule on what `packages/lib` may import, 4 of them the app-store one. Every session in both arms wrote the query itself.
 
 ## What it cost
 
