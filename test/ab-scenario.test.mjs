@@ -486,3 +486,36 @@ test("an answer is scrubbed before it is cut, so a home path across the cut leav
 
   assert.equal(s.perTrial[0].answer, `${"x".repeat(1995)}~/rep`);
 });
+
+test("a build marks uncommitted changes to the plugin or the harness, and no others", async (t) => {
+  // The record says which build ran; a dirty plugin or scoring script is a build nobody can check out.
+  const { execFileSync } = await import("node:child_process");
+  const { mkdirSync, mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { removeTree } = await import("./platform.mjs");
+  const { versionsAt } = await import("../scripts/ab-scenario.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-versions-"));
+  t.after(() => removeTree(dir));
+  const write = (rel, body) => {
+    mkdirSync(join(dir, rel, ".."), { recursive: true });
+    writeFileSync(join(dir, rel), body);
+  };
+  const git = (...a) => execFileSync("git", a, { cwd: dir, encoding: "utf8", stdio: "pipe" });
+  write("plugins/anatomiya/.claude-plugin/plugin.json", '{"version":"9.8.7"}\n');
+  write("scripts/ab/run.mjs", "export const a = 1;\n");
+  write("docs/notes.md", "notes\n");
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+  const clean = `9.8.7 at ${git("rev-parse", "--short=12", "HEAD").trim()}`;
+
+  assert.equal(versionsAt(dir).anatomiya, clean);
+  write("docs/notes.md", "more notes\n");
+  assert.equal(versionsAt(dir).anatomiya, clean, "a doc does not change what was measured");
+  write("scripts/ab/run.mjs", "export const a = 2;\n");
+  assert.equal(versionsAt(dir).anatomiya, `${clean}, with uncommitted changes`);
+  git("checkout", "--", "scripts");
+  write("plugins/anatomiya/lib/new.mjs", "export const b = 1;\n");
+  assert.equal(versionsAt(dir).anatomiya, `${clean}, with uncommitted changes`, "an untracked plugin file counts too");
+});
