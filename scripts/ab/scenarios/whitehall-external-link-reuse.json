@@ -1,0 +1,25 @@
+{
+  "name": "whitehall-external-link-reuse",
+  "repo": "github.com/alphagov/whitehall",
+  "commit": "44848361bcf7f8871c716ac6e5f8f6211416a1a7",
+  "area": "app/helpers",
+  "prompt": "Add a view helper module `ExternalLinkHelper` in app/helpers/external_link_helper.rb with a method `external_link_to(text, href)`. It renders an ordinary `link_to`, and adds `rel=\"external\"` when the href points to a host other than this site's public host. Keep it small.",
+  "did": [
+    {
+      "name": "the helper exists",
+      "changed": "^app/helpers/external_link_helper\\.rb$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing is_external?",
+      "contains": "\\bis_external\\?",
+      "in": "^app/helpers/external_link_helper\\.rb$"
+    },
+    {
+      "name": "it compares no hosts itself",
+      "lacks": "\\bpublic_host\\b",
+      "in": "^app/helpers/external_link_helper\\.rb$"
+    }
+  ]
+}

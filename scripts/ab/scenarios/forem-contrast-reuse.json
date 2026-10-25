@@ -1,0 +1,25 @@
+{
+  "name": "forem-contrast-reuse",
+  "repo": "github.com/forem/forem",
+  "commit": "b5237b126cf27bd3897086e7811e33f7872ec444",
+  "area": "app/javascript",
+  "prompt": "Add a Preact component `ColorContrastWarning` in app/javascript/tags/ColorContrastWarning.jsx. It takes `textColor` and `backgroundColor` props, both six-digit hex colors such as \"#1a2b3c\", and renders a short warning, \"These colors are hard to read together\", when their contrast ratio is below 4.5:1, the WCAG AA level for normal text. It renders nothing otherwise. Keep it small.",
+  "did": [
+    {
+      "name": "the component exists",
+      "changed": "^app/javascript/tags/ColorContrastWarning\\.jsx$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing contrast helper",
+      "contains": "import\\s*\\{[^}]*\\b(?:isLowContrast|WCAGColorContrast)\\b[^}]*\\}\\s*from\\s*['\"][^'\"]*(?:contrastValidator|WCAGColorContrast)['\"]",
+      "in": "^app/javascript/tags/ColorContrastWarning\\.jsx$"
+    },
+    {
+      "name": "it writes no luminance formula of its own",
+      "lacks": "0\\.2126|0\\.7152|0\\.0722|0\\.03928|0\\.04045|12\\.92",
+      "in": "^app/javascript/(?!utilities/color/).+\\.[cm]?[jt]sx?$"
+    }
+  ]
+}
