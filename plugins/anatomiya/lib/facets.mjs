@@ -421,8 +421,9 @@ function nestingOf(stack) {
 /**
  * What a Ruby file reaches for by name, which is how Ruby imports: one `{ const, nesting, name }`
  * per constant written, where `name` adds the method called on it, `.call` on the class itself and
- * `#local_url?` on what its `new` or `instance` hands back. A class's own name is no reference to
- * it, and a constant reached through anything computed names nothing.
+ * `#local_url?` on what its `new` or `instance` hands back, and one `{ call, name }` per method
+ * called with no receiver. A class's own name is no reference to it, and a constant reached through
+ * anything computed names nothing.
  */
 function rubyRefs() {
   const refs = [];
@@ -441,20 +442,30 @@ function rubyRefs() {
     seen.add(key);
     refs.push({ const: written, nesting, name });
   };
+  // A method called with no receiver, which a Rails helper module may define for every view and controller.
+  const called = new Set();
   const defines = new Set();
   const node = (n, ctx) => {
     if (n.t === "def" && typeof n.name === "string") defines.add(n.name);
     if (consumed.has(n)) return;
     if (n.t === "class" || n.t === "module") {
       if (isConst(n.constant_path)) consume(n.constant_path);
-      // Read in the scope around the class, which the walk has not entered yet.
-      if (isConst(n.superclass)) add(n.superclass, nestingOf(ctx.stack), "");
+      // Read in the scope around the class, which the walk has not entered yet: `< Base` and `< Struct.new(...)`.
+      const outer = nestingOf(ctx.stack);
+      if (isConst(n.superclass)) add(n.superclass, outer, "");
+      else if (n.superclass?.t === "call" && isConst(n.superclass.receiver)) {
+        consumed.add(n.superclass);
+        add(n.superclass.receiver, outer, `.${n.superclass.name}`);
+      }
     } else if (n.t === "call") {
       const r = n.receiver;
       if (isConst(r)) add(r, nestingOf(ctx.stack), `.${n.name}`);
       else if (r?.t === "call" && INSTANCE_OF.has(r.name) && isConst(r.receiver)) {
         consumed.add(r);
         add(r.receiver, nestingOf(ctx.stack), `#${n.name}`);
+      } else if (!r && typeof n.name === "string" && !called.has(n.name)) {
+        called.add(n.name);
+        refs.push({ call: n.name, name: n.name });
       }
     } else if (isConst(n)) add(n, nestingOf(ctx.stack), "");
   };

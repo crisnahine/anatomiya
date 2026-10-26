@@ -38,7 +38,7 @@ const NAMES_C = /["`]C["`]/;
 
 // What makes a file's inline markup code: a script, or what Blade compiles to PHP. Blade reads a directive
 // only after a character that cannot end a word, and leaves the CSS rules it has no compiler for alone.
-const CODE_IN_MARKUP = /<script|\{\{|\{!!|(?<![\w@])@(?:php\b|(?!(?:media|supports|container|scope)\b)[a-z_]\w*\s*\()/i;
+const CODE_IN_MARKUP = /<script|\{\{|\{!!|(?<![\w@])@(?:php\b|(?!(?:media|supports|container|scope|layer|page)\b)[a-z_]\w*\s*\()/i;
 
 // The modifier under which the compiler admits no conversion a user wrote.
 const CONSTANT = "const";

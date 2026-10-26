@@ -1288,10 +1288,17 @@ what Blade compiles to PHP (`{{ }}`, `{!! !!}`, `@php`, a directive with an argu
 tag cuts a script into chunks and only the first holds the opening tag (B80).
 
 A view template is read too, though no scan reads one, since a view is where a helper's logic is
-copied most (A122): an ERB file (`.erb`), where a line asks if it holds Ruby between `<%` and `%>`,
-and a Razor file (`.cshtml`, `.razor`), where a line asks if it holds an `@` that starts C# or sits in
-an `@{`, `@code {` or `@functions {` block. A comment tag, an escaped `<%%` or `@@`, a directive that
-names a type or a route such as `@model`, and markup alone ask nothing.
+copied most (A122). In ERB (`.erb`) a line asks if it holds Ruby between `<%` and `%>`. In Razor
+(`.cshtml`, `.razor`) it asks if it holds an `@` that starts C#, or is a line of C# in an `@{`,
+`@code`, `@functions`, `@if`, `@foreach` or other block, through its closing brace and an `else`
+after it. In HAML and Slim it asks on a line of Ruby, an output line, a tag whose content or
+attribute is Ruby, and an interpolation. In Jinja (`.jinja`, `.j2`) and Go templates (`.tmpl`,
+`.gotmpl`) it asks where an expression or an action computes: a call, a filter, an operator. A
+comment, an escaped `<%%` or `@@`, a directive that names a type or a route such as `@model`, a name
+read as it is, and markup alone ask nothing. An `.html` file is not read, since no one rule reads
+Angular's, Vue's and Django's alike. The markup of a Vue or Svelte component asks only where an
+expression computes with a literal: arithmetic on a number, a method called with a number such as
+`toFixed(2)`, or a string built with `+`.
 
 Every file a rule reads in one stop shares one second, started at the first such file and shared by
 every checkout the stop reads: the line rules over JavaScript, Ruby and component script blocks,
@@ -2582,8 +2589,9 @@ TypeScript read `./base/`, `./` and `../`, SvelteKit's `$lib/` is tried against 
 directory above the importer and resolves where one file answers, a `~/`, `@/`, `#/` or `src/`
 written in a component is tried the same way against each directory above it and its `src`,
 a package the repository's own workspace declares resolves through its
-directory, by the name its `package.json` gives (`@excalidraw/common` is `packages/common`, tried as
-its `src/index` and then its `index`), anything else is matched on the path tail once such a prefix is
+directory, by the name its `package.json` gives, where the workspace's own globs reach that manifest
+(`@excalidraw/common` is `packages/common`, tried as the entry its manifest names, then its
+`src/index` and its `index`), anything else is matched on the path tail once such a prefix is
 cut, and a tail two files answer resolves to neither rather than to whichever sorted first. No
 `tsconfig` or `svelte.config.js` is read. A name taken from a file that only hands it on, through
 `export * from` or `export { a as b } from`, is credited to the file that defines it, followed down
@@ -2600,19 +2608,30 @@ with one file or with none, as an ambiguous tail does:
   `TagManager` is looked up in each module the reference sits in, innermost first, then at the top,
   as Ruby looks it up, and names are compared with case and underscores folded, so `http_client.rb`
   answers `HTTPClient`. A constant two roots hold names neither.
+- **Rails helpers** are called with no receiver from every view, controller and helper: a method one
+  module under `app/helpers` alone defines is that module's.
 - **Python, Java, Kotlin, PHP and Rust** name a path: `from shop.utils.money import format_price`
   is `shop/utils/money/format_price` as a module or `shop/utils/money` holding the name, `import
   a.b.C` is `a/b/C`, PHP's `use App\Support\Money` is `App/Support/Money` or, past the prefix
   composer maps to another directory, `Support/Money`, and a Rust `use crate::`, `self::` or
   `super::` is matched whole from the crate's `src` or the module's own directory. A Python absolute
-  import starts at a top-level package, so `import typing` is never flask's own
-  `src/flask/typing.py`, which is `flask.typing`. Kotlin and Java reach each other's classes.
+  import starts at a top-level package, in a directory that is the top of the tree, a `src`, or one
+  the importer sits under, so `import typing` is never flask's own `src/flask/typing.py`, which is
+  `flask.typing`, and `import json` from `app/` is never `scripts/json.py`. An attribute call on an
+  imported module is that module's (`shop.money.format_price`), a class a Java or Kotlin wildcard
+  import brings in is looked for in that package, a Rust path written in a call
+  (`crate::text::escape(x)`) is read as a `use` is, and Kotlin and Java reach each other's classes.
+- **PHP functions** are loaded for every file and called bare: a function one file alone declares
+  is that file's, and a built-in no file declares is nobody's.
 - **Go** names a package directory, and the caller writes `bytesconv.StringToBytes`: the import
-  path is matched from its longest tail that is a directory here, since it starts with the module's
-  own path, and the name goes to the file in that directory that defines it. A Kotlin function
-  imported by its package is found the same way.
+  path resolves under the module path a `go.mod` declares, whole, so another module's package that
+  ends in the same names is not this one, and the name goes to the file in that directory that
+  defines it. A Kotlin function imported by its package is found the same way, by the package's
+  longest tail that is a directory here.
 - **C#** opens a namespace and names a type: `StringUtils.Truncate` goes to the file named after
-  `StringUtils` that declares it, and of two such files, to the one in a namespace the caller opens.
+  `StringUtils` that declares it, where its namespace is one the caller can see: its own or one
+  above it, one it opens, or one a `global using` opens. An extension method (`s.Slug()`) goes to
+  the one file declaring it in such a namespace.
 
 A method called on a constant or a class (`TagManager#local_url?`, `Strings.isBlank`,
 `Money::format`) is named only where the file reached defines it, and the constant alone where it

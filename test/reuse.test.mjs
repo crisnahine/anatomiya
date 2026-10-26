@@ -89,7 +89,7 @@ test("the reason is the measured wording, naming the lines the change added", ()
     reason.startsWith(
       "Before you finish, give one subagent this change's diff and these added functions: src/a.ts:3-9; src/b.ts:1-12 (new file). " +
         "Have it grep shared and utility modules, files near the change, and code making the same calls, then name every existing function that does the same job or part of it. " +
-        "For each added function, call the closest one it names and delete the copy it replaces. Where one does part of the job, call it for that part. " +
+        "For each added function, call the closest one it names, the repository's own before a package's, and delete the copy it replaces. Where one does part of the job, call it for that part. " +
         "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
         "If it names none, finish without changing anything. " +
         "If this session has no subagent tool, run that search yourself."
@@ -167,6 +167,19 @@ test("a view template is asked about the hunks that hold code, and one that only
 
   // The hunk that adds `<p>more</p>` holds markup alone and is left out.
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/views/links/_link.html.erb", [{ from: 2, to: 4, created: false }]]]);
+});
+
+test("a component's markup is asked about where an added expression in it computes, and a plain binding asks nothing", async (t) => {
+  const { dir, git, write } = repo(t);
+  const vue = (body) => `<template>\n${body}</template>\n<script setup>\nconst price = 1\n</script>\n`;
+  write("src/Price.vue", vue("  <p>{{ price }}</p>\n"));
+  write("src/Name.svelte", "<p>{name}</p>\n<script>\nlet name = 'a'\n</script>\n");
+  git("add", "-A");
+  git("commit", "-qm", "components");
+  write("src/Price.vue", vue("  <p>{{ price }}</p>\n  <b>{{ (price * 1.2).toFixed(2) }}</b>\n"));
+  write("src/Name.svelte", "<p>{name}</p>\n<i>{user.name}</i>\n<script>\nlet name = 'a'\n</script>\n");
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/Price.vue", [{ from: 3, to: 3, created: false }]]]);
 });
 
 test("a tree-sitter file reached after the stop's parse budget is asked about whole", async (t) => {

@@ -134,7 +134,7 @@ function reduce(engine, line) {
 // A line that opens like a comment and holds an expression in braces, other than a doc comment. In JSX
 // children `//` and `/*` are text, so the braces run: measured, 3 lines of excalidraw's .tsx and .jsx files
 // hold one, and every one is a real comment, which is the false ask this costs.
-const JSX_TEXT = /^\s*(?:\/\/|\/\*(?!\*)).*\{[^}\s][^}]*\}/;
+const JSX_TEXT = /^\s*(?:\/\/|\/\*(?!\*)).*\{\s*[^}\s][^}]*\}/;
 
 // A closing tag or a self-closing one: a `.js` file that holds JSX.
 const JSX_TAG = /<\/[A-Za-z]|\/>/;

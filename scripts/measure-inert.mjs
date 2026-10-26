@@ -112,7 +112,7 @@ export const STRINGISH = /string|heredoc|nowdoc/;
 // alone, and the inline markup of a file where any of it holds a script or something Blade compiles.
 export const FOREIGN = { go: ["import_declaration", "import_spec"], php: ["text"] };
 const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
-const CODE_IN_MARKUP = /<script|\{\{|\{!!|(?<![\w@])@(?:php\b|(?!(?:media|supports|container|scope)\b)[a-z_]\w*\s*\()/i;
+const CODE_IN_MARKUP = /<script|\{\{|\{!!|(?<![\w@])@(?:php\b|(?!(?:media|supports|container|scope|layer|page)\b)[a-z_]\w*\s*\()/i;
 
 // What an annotation or a struct type is made of where its grammar spells one as neither a name nor a type.
 export const ACCESS = {

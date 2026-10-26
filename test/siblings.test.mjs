@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile, workspacePackages } from "../plugins/anatomiya/lib/siblings.mjs";
+import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile, workspaceGlobs, workspacePackages } from "../plugins/anatomiya/lib/siblings.mjs";
+import { goModules } from "../plugins/anatomiya/lib/refs.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const isRelative = (m) => m.startsWith("./") || m.startsWith("../") || m === "." || m === "..";
@@ -855,7 +856,7 @@ const barrel = (rel, exports, reexports = []) => ({ rel, ok: true, facets: { imp
 
 test("a workspace package's name reaches its source, and a name its index re-exports reaches the file that defines it", () => {
   const rels = corpus("packages/common/src/index.ts", "packages/common/src/utils.ts", "packages/common/debug.ts", "app/a0.ts", "app/a1.ts", "app/a2.ts");
-  const packages = new Map([["@excalidraw/common", "packages/common"]]);
+  const packages = new Map([["@excalidraw/common", { dir: "packages/common", entries: [] }]]);
   const records = new Map([
     ["packages/common/src/index.ts", barrel("packages/common/src/index.ts", ["Debug", "z"], [{ module: "./utils", names: "*" }, { module: "../debug", names: [["Debug", "Debug"]] }])],
     ["packages/common/src/utils.ts", barrel("packages/common/src/utils.ts", ["capitalize"])],
@@ -892,6 +893,122 @@ test("a workspace's packages are named by their manifests, and a name two manife
     { rel: "packages/b/package.json", text: '{ "name": "dup" }' },
     { rel: "packages/broken/package.json", text: "{ name: " },
     { rel: "packages/nameless/package.json", text: '{ "version": "1.0.0" }' },
+  ], ["packages/*"]);
+  assert.deepEqual([...packages], [["@excalidraw/common", { dir: "packages/common", entries: [] }], ["dup", null]]);
+});
+
+test("a Ruby method called with no receiver reaches the one Rails helper module that defines it", () => {
+  const rels = corpus("app/helpers/money_helper.rb", "app/helpers/other_helper.rb", "app/models/order.rb", "app/helpers/a_helper.rb", "app/helpers/b_helper.rb");
+  const records = new Map([
+    ["app/helpers/money_helper.rb", { rel: "app/helpers/money_helper.rb", ok: true, facets: { defines: ["format_money", "shared"] } }],
+    ["app/helpers/other_helper.rb", { rel: "app/helpers/other_helper.rb", ok: true, facets: { defines: ["shared"] } }],
+    // A model's method is no helper a view or a controller calls bare.
+    ["app/models/order.rb", { rel: "app/models/order.rb", ok: true, facets: { defines: ["total"] } }],
   ]);
-  assert.deepEqual([...packages], [["monorepo", ""], ["@excalidraw/common", "packages/common"], ["dup", null]]);
+  for (let i = 0; i < 3; i++) {
+    const rel = `app/controllers/c${i}_controller.rb`;
+    records.set(rel, rubyRecord(rel, [{ call: "format_money", name: "format_money" }, { call: "shared", name: "shared" }, { call: "total", name: "total" }, { call: "render", name: "render" }]));
+  }
+  assert.deepEqual(mostImported(new Set(["app/helpers/money_helper.rb", "app/helpers/other_helper.rb", "app/helpers/a_helper.rb", "app/helpers/b_helper.rb"]), records, rels), [
+    { name: "format_money", file: "app/helpers/money_helper.rb", importers: 3 },
+  ]);
+  assert.deepEqual(mostImported(new Set(["app/models/order.rb"]), records, rels), []);
+});
+
+test("a Go import of the module's own path, or of a package under it, reaches that directory whole, the root included", () => {
+  const rels = corpus("util.go", "internal/text/slug.go", "cmd/c0.go", "cmd/c1.go", "cmd/c2.go");
+  const modules = new Map([["github.com/acme/shop", ""]]);
+  const records = new Map([
+    ["util.go", treeRecord("util.go", [], ["Money"])],
+    ["internal/text/slug.go", treeRecord("internal/text/slug.go", [], ["Slug"])],
+  ]);
+  for (let i = 0; i < 3; i++) {
+    const rel = `cmd/c${i}.go`;
+    records.set(rel, treeRecord(rel, [{ name: "shop.Money", dir: "github.com/acme/shop", lookup: "Money" }, { name: "text.Slug", dir: "github.com/acme/shop/internal/text", lookup: "Slug" }]));
+  }
+  assert.deepEqual(mostImported(new Set(["util.go"]), records, rels, null, modules), [{ name: "shop.Money", file: "util.go", importers: 3 }]);
+  assert.deepEqual(mostImported(new Set(["internal/text/slug.go"]), records, rels, null, modules), [{ name: "text.Slug", file: "internal/text/slug.go", importers: 3 }]);
+  // Another module's package of the same last name is not this one.
+  const away = new Map(records);
+  for (let i = 0; i < 3; i++) away.set(`cmd/c${i}.go`, treeRecord(`cmd/c${i}.go`, [{ name: "text.Slug", dir: "github.com/other/lib/internal/text", lookup: "Slug" }]));
+  assert.deepEqual(mostImported(new Set(["internal/text/slug.go"]), away, rels, null, modules), []);
+});
+
+test("a PHP function called by name reaches the one file that defines it outside a class, and a built-in reaches nothing", () => {
+  const rels = corpus("app/helpers.php", "app/other.php", "callers/c0.php", "callers/c1.php", "callers/c2.php");
+  const records = reaching(() => [{ name: "money", global: "money" }, { name: "dup", global: "dup" }, { name: "strlen", global: "strlen" }], "php", {
+    "app/helpers.php": [["money", "dup"], { globals: ["money", "dup"] }],
+    "app/other.php": [["dup"], { globals: ["dup"] }],
+  });
+  assert.deepEqual(mostImported(new Set(["app/helpers.php", "app/other.php"]), records, rels), [{ name: "money", file: "app/helpers.php", importers: 3 }]);
+});
+
+test("a C# extension method reaches the file declaring it where the caller opens its namespace", () => {
+  const rels = corpus("src/Text/StringExt.cs", "callers/c0.cs", "callers/c1.cs", "callers/c2.cs", "callers/d0.cs");
+  const records = reaching(() => [{ name: "Slug", extension: "Slug" }], "cs", { "src/Text/StringExt.cs": [["Slug", "StringExt"], { namespace: "Acme.Text", extensions: ["Slug"] }] });
+  for (let i = 0; i < 3; i++) records.get(`callers/c${i}.cs`).facets.usings = ["Acme.Text"];
+  // A call from a file that cannot see the namespace is some other type's method of that name.
+  records.set("callers/d0.cs", treeRecord("callers/d0.cs", [{ name: "Slug", extension: "Slug" }], [], { namespace: "Other" }));
+  assert.deepEqual(mostImported(new Set(["src/Text/StringExt.cs"]), records, rels), [{ name: "Slug", file: "src/Text/StringExt.cs", importers: 3 }]);
+});
+
+test("a workspace package's own entry, from its manifest, answers an import of the package's name", () => {
+  const packages = workspacePackages([{ rel: "packages/ui/package.json", text: '{ "name": "@acme/ui", "main": "./lib/index.ts", "module": "./dist/index.mjs" }' }], ["packages/*"]);
+  // In the order a bundler reading the source takes them: `source`, `module`, `main`, then `exports`.
+  assert.deepEqual(packages.get("@acme/ui"), { dir: "packages/ui", entries: ["dist/index", "lib/index"] });
+  const rels = corpus("packages/ui/lib/index.ts", "app/a.ts");
+  assert.equal(specifierToFile("@acme/ui", "app/a.ts", rels, packages), "packages/ui/lib/index.ts");
+  assert.equal(specifierToFile("@acme/ui/lib/index", "app/a.ts", rels, packages), "packages/ui/lib/index.ts");
+});
+
+test("a Python module beside nothing the importer runs from is not the standard library's or a package's of the same name", () => {
+  // `import json` in `app/` means the standard library, never `scripts/json.py`.
+  const rels = corpus("scripts/json.py", "app/c0.py", "app/c1.py", "app/c2.py");
+  const records = new Map(["app/c0.py", "app/c1.py", "app/c2.py"].map((rel) => [rel, treeRecord(rel, [{ name: "json", stems: ["json", "json/__init__"] }])]));
+  assert.deepEqual(mostImported(new Set(["scripts/json.py"]), records, rels), []);
+  // From inside `scripts/`, run as a script, it is that file.
+  const inside = new Map(["scripts/c0.py", "scripts/c1.py", "scripts/c2.py"].map((rel) => [rel, treeRecord(rel, [{ name: "json", stems: ["json", "json/__init__"] }])]));
+  assert.deepEqual(mostImported(new Set(["scripts/json.py"]), inside, corpus("scripts/json.py", "scripts/c0.py", "scripts/c1.py", "scripts/c2.py")), [
+    { name: "json", file: "scripts/json.py", importers: 3 },
+  ]);
+});
+
+test("a C# type a caller cannot see is not reached, though one file alone declares it, and a global using opens it to every file", () => {
+  // `Task.Run` from a file that opens `System.Threading.Tasks` is the framework's, not `App.Models.Task`.
+  const rels = corpus("Models/Task.cs", "Services/w0.cs", "Services/w1.cs", "Services/w2.cs", "GlobalUsings.cs");
+  const records = new Map([["Models/Task.cs", treeRecord("Models/Task.cs", [], ["Task"], { namespace: "App.Models" })]]);
+  for (let i = 0; i < 3; i++) records.set(`Services/w${i}.cs`, treeRecord(`Services/w${i}.cs`, [{ name: "Task.Run", bare: "Task", member: "Run", type: "Task" }], [], { namespace: "App.Services", usings: ["System.Threading.Tasks"] }));
+  assert.deepEqual(mostImported(new Set(["Models/Task.cs"]), records, rels), []);
+  const opened = new Map(records);
+  opened.set("GlobalUsings.cs", treeRecord("GlobalUsings.cs", [], [], { globalUsings: ["App.Models"] }));
+  assert.deepEqual(mostImported(new Set(["Models/Task.cs"]), opened, rels), [{ name: "Task", file: "Models/Task.cs", importers: 3 }]);
+});
+
+test("a workspace's packages are only the manifests its own workspace globs reach, so a fixture named like a dependency is no package", () => {
+  const manifests = [
+    { rel: "package.json", text: '{ "name": "mono", "workspaces": ["packages/*", "!packages/legacy"] }' },
+    { rel: "packages/ui/package.json", text: '{ "name": "@acme/ui" }' },
+    { rel: "packages/legacy/package.json", text: '{ "name": "@acme/legacy" }' },
+    { rel: "test/fixtures/react/package.json", text: '{ "name": "react" }' },
+  ];
+  const globs = workspaceGlobs({ root: manifests[0].text });
+  assert.deepEqual(globs, ["packages/*", "!packages/legacy"]);
+  assert.deepEqual([...workspacePackages(manifests, globs).keys()], ["@acme/ui"]);
+  // pnpm and lerna name theirs in files of their own; Yarn's object form names them under `packages`.
+  assert.deepEqual(workspaceGlobs({ pnpm: "packages:\n  - 'apps/*'\n  - \"libs/**\"\n# done\n" }), ["apps/*", "libs/**"]);
+  assert.deepEqual(workspaceGlobs({ lerna: '{ "version": "1.0.0" }' }), ["packages/*"]);
+  assert.deepEqual(workspaceGlobs({ root: '{ "workspaces": { "packages": ["modules/**"] } }' }), ["modules/**"]);
+  // No workspace at all: no manifest is another package of it.
+  assert.equal(workspaceGlobs({ root: '{ "name": "solo" }' }), null);
+  assert.deepEqual([...workspacePackages(manifests, null).keys()], []);
+  assert.deepEqual([...workspacePackages([{ rel: "libs/a/b/package.json", text: '{ "name": "deep" }' }], ["libs/**"]).keys()], ["deep"]);
+});
+
+test("a Go module is named by its go.mod, and a file that is no module names nothing", () => {
+  const modules = goModules([
+    { rel: "go.mod", text: "module github.com/acme/shop\n\ngo 1.22\n" },
+    { rel: "tools/go.mod", text: "// tools\nmodule \"github.com/acme/shop/tools\"\n" },
+    { rel: "broken/go.mod", text: "go 1.22\n" },
+  ]);
+  assert.deepEqual([...modules], [["github.com/acme/shop", ""], ["github.com/acme/shop/tools", "tools"]]);
 });

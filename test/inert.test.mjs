@@ -281,6 +281,8 @@ test("in a file that holds JSX, a line that opens like a comment and holds an ex
   // Inside JSX children `//` and `/*` are text, and the braces after them run.
   assert.deepEqual(await asking("jsx", "const T = ({ items }) => (\n  <p>\n    // {items.reduce((s, i) => s + i.price, 0)}\n  </p>\n);\n"), [1, 2, 3, 4]);
   assert.deepEqual(await asking("js", "const T = () => <p>\n  /* {total(items)} */\n</p>;\n"), [1, 2, 3]);
+  // Spaces inside the braces are still an expression.
+  assert.deepEqual(await asking("jsx", "<p>\n  // { formatPrice(x) }\n</p>\n"), [1, 2, 3]);
   // A comment with empty braces, a doc comment, and any comment in a file that holds no JSX still ask nothing.
   assert.deepEqual(await asking("jsx", "// function old() {}\n/** @param {string} a */\n// plain\n"), []);
   assert.deepEqual(await asking("js", "// returns {a, b}\nconst A = 1;\n"), []);

@@ -189,11 +189,33 @@ test("rubyFacets names each constant a file reaches for, the method it calls on 
   assert.deepEqual(records.get("app/lib/link_policy.rb").facets.refs, [
     // The superclass is read in the scope around the class.
     { const: "ApplicationRecord", nesting: ["Mastodon"], name: "ApplicationRecord" },
+    // `include`, `a` and `x` name no local here, so Ruby reads each as a call with no receiver.
+    { call: "include", name: "include" },
     { const: "Concerns::Foo", nesting: inside, name: "Concerns::Foo" },
     { const: "TagManager", nesting: inside, name: "TagManager#local_url?" },
     { const: "ActivityPub::TagManager", nesting: inside, name: "ActivityPub::TagManager#local_uri?" },
+    { call: "a", name: "a" },
     { const: "::Foo::Bar", nesting: inside, name: "Foo::Bar.call" },
+    { call: "x", name: "x" },
   ]);
+});
+
+test("rubyFacets names each method a file calls with no receiver, which a Rails helper module may define", needsRuby, async (t) => {
+  const dir = repo({
+    "app/controllers/orders_controller.rb": "class OrdersController < ApplicationController\n  def show\n    render plain: format_money(1)\n  end\nend\n",
+    "app/models/point.rb": "module Geo\n  class Point < Struct.new(:x, :y)\n  end\nend\n",
+  });
+  t.after(() => removeTree(dir));
+
+  const { records } = await parseAll(list(dir, ["app/controllers/orders_controller.rb", "app/models/point.rb"]));
+
+  assert.deepEqual(records.get("app/controllers/orders_controller.rb").facets.refs, [
+    { const: "ApplicationController", nesting: [], name: "ApplicationController" },
+    { call: "render", name: "render" },
+    { call: "format_money", name: "format_money" },
+  ]);
+  // A superclass built by a call is read in the scope around the class, as a constant superclass is.
+  assert.deepEqual(records.get("app/models/point.rb").facets.refs, [{ const: "Struct", nesting: ["Geo"], name: "Struct.new" }]);
 });
 
 /**

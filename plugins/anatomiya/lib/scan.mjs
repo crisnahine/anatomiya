@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, posix } from "node:path";
 
 import { collect, gitRoot, countUntrackedSource, frameworksIn, langsIn } from "./corpus.mjs";
 import { embeddedIn, langHas } from "./langs.mjs";
@@ -16,23 +16,36 @@ import { resolve as resolveBaseline, measure as measureBaseline } from "./baseli
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
 import { extOf, extOrName } from "./paths.mjs";
-import { commonImports, mostImported, workspacePackages } from "./siblings.mjs";
+import { goModules } from "./refs.mjs";
 import { isLink, readHead } from "./rules.mjs";
+import { commonImports, mostImported, workspaceGlobs, workspacePackages } from "./siblings.mjs";
 
-// A package manifest larger than this is no manifest anybody wrote by hand, and is not read.
+// A manifest larger than this is no manifest anybody wrote by hand, and is not read.
 const MANIFEST_MOST_BYTES = 256 * 1024;
 
-/** The name each `package.json` the repository tracks gives its package, read whole, links passed over. */
+// The files that name a repository's own packages: npm's and its workspaces', and Go's modules.
+const MANIFESTS = new Set(["package.json", "pnpm-workspace.yaml", "lerna.json", "go.mod"]);
+
+/** Each manifest the repository tracks, as `{ rel, text }`, read whole, links passed over. */
 function manifestsIn(root, others) {
   const read = [];
   for (const { rel } of others) {
-    if (rel !== "package.json" && !rel.endsWith("/package.json")) continue;
+    if (!MANIFESTS.has(posix.basename(rel))) continue;
     const abs = join(root, rel);
     if (isLink(abs)) continue;
     const entry = readHead(abs, MANIFEST_MOST_BYTES, { whole: true });
     if (entry.kind === "file" && entry.head !== null) read.push({ rel, text: entry.head });
   }
   return read;
+}
+
+/** The repository's own packages, as an import names them: its npm workspace's by name, and its Go modules by path. */
+function ownPackages(root, others) {
+  const manifests = manifestsIn(root, others);
+  const named = (name) => manifests.filter((m) => posix.basename(m.rel) === name);
+  const atRoot = (name) => manifests.find((m) => m.rel === name)?.text ?? null;
+  const globs = workspaceGlobs({ root: atRoot("package.json"), pnpm: atRoot("pnpm-workspace.yaml"), lerna: atRoot("lerna.json") });
+  return { packages: workspacePackages(named("package.json"), globs), modules: goModules(named("go.mod")) };
 }
 
 /**
@@ -137,7 +150,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   stateRun.catch(() => {});
 
   const corpusRels = new Set(files.map((f) => f.rel));
-  const packages = workspacePackages(manifestsIn(root, others));
+  const { packages, modules } = ownPackages(root, others);
   let state, frameworks, head, headRun, cochangeRun, capabilities, areas;
   try {
     // A claim that belongs to a framework cannot be judged without knowing the
@@ -369,7 +382,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
       imports: hasImports ? commonImports(areaParsed) : null,
       // Over every record in the repository, not this area's: the question is
       // who else reaches in here.
-      reused: mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels, packages),
+      reused: mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels, packages, modules),
       dimensions: gated.map((d) => ({ ...d, scope: askedScope(languages, d) })),
     });
   }

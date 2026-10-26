@@ -543,5 +543,5 @@ test("Blade markup asks wherever the file's markup holds an echo or a directive,
   assert.deepEqual(await asking("php", "<p>{!! $html !!}</p>\n"), [1]);
   assert.deepEqual(await asking("php", "<ul>\n@foreach ($items as $item)\n<li>x</li>\n@endforeach\n</ul>\n"), [1, 2, 3, 4, 5]);
   // Blade reads a directive only after a character that cannot end a word, and leaves the CSS rules it has no compiler for alone.
-  assert.deepEqual(await asking("php", "<p>mail admin@example.com (soon)</p>\n<style>\n@media (max-width: 600px) { p { color: red } }\n</style>\n"), []);
+  assert.deepEqual(await asking("php", "<p>mail admin@example.com (soon)</p>\n<style>\n@media (max-width: 600px) { p { color: red } }\n@layer (base) {}\n@page (first) {}\n</style>\n"), []);
 });

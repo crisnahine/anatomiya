@@ -3,10 +3,12 @@
  * reason that asks for them to be checked against what the repository already
  * has (A91).
  *
- * The wording is the one that passed 24 of 24 hard cases where every wording
- * the model answered inline passed 9 or 10 of 12, and it is held word for word
- * because that measurement is the only reason it is here
- * (`docs/research/one-line-that-finds-the-existing-function.md`).
+ * Its shape, one subagent handed the diff, is the one that passed 24 of 24 hard
+ * cases where every wording the model answered inline passed 9 or 10 of 12
+ * (`docs/research/one-line-that-finds-the-existing-function.md`). What it asks
+ * of a function that does part of the job or falls short, and the repository's
+ * own before a package's, came from the misses of the reuse tasks (A123). Each
+ * word is held because a measurement put it there.
  */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -22,7 +24,7 @@ import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
-import { templateInertLines, templateOf } from "./templates.mjs";
+import { markupCodeLines, templateInertLines, templateOf } from "./templates.mjs";
 import { sessionStartIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
@@ -72,28 +74,33 @@ export const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)d
 const asked = (path) => isCorpusPath(path) || templateOf(path) !== null;
 
 /**
- * The script a component file holds: the lines its blocks cover, and which of
- * all its lines define nothing callable. No lines where a script never ends.
+ * The code a component file holds: the lines its script blocks cover and the
+ * markup lines whose expression computes inline (`markupCodeLines`), and which
+ * of all its lines define nothing callable. No lines where a script never ends.
  *
  * Each block is read with the file blanked around it, since markup that opens
  * a comment would carry it into the script below.
  */
 async function componentScript(engine, lang, source, kind, deadline) {
   const { blocks, unterminated } = scriptBlocks(source, kind);
+  if (unterminated) return { spans: [], inert: [] };
   const lineAt = (offset) => source.slice(0, offset).split("\n").length;
-  const spans = (unterminated ? [] : blocks).flatMap((b) => {
+  const spans = blocks.flatMap((b) => {
     const body = source.slice(b.start, b.end);
     if (body.trim() === "") return [];
     return [{ from: lineAt(b.end - body.trimStart().length), to: lineAt(b.start + body.trimEnd().length) }];
   });
   const views = await Promise.all(blocks.map((b) => inertLinesOf({ engine, lang, source: blankOutside(source, b.start, b.end), deadline })));
-  return { spans, inert: views[0]?.map((_, i) => views.every((view) => view[i])) ?? [] };
+  const markup = markupCodeLines(kind, source);
+  const inert = markup.map((asks, i) => !asks && views.every((view) => view[i] !== false));
+  const computed = markup.flatMap((asks, i) => (asks ? [{ from: i + 1, to: i + 1 }] : []));
+  return { spans: [...spans, ...computed], inert };
 }
 
 const clipped = (hunks, spans) =>
-  hunks.flatMap((h) =>
-    spans.flatMap((s) => (h.from > s.to || h.to < s.from ? [] : [{ ...h, from: Math.max(h.from, s.from), to: Math.min(h.to, s.to) }]))
-  );
+  hunks
+    .flatMap((h) => spans.flatMap((s) => (h.from > s.to || h.to < s.from ? [] : [{ ...h, from: Math.max(h.from, s.from), to: Math.min(h.to, s.to) }])))
+    .sort((a, b) => a.from - b.from);
 
 // A name a repository chose is shown as it is only where it cannot carry a
 // line break or a quote into the reason the model reads.
@@ -112,8 +119,8 @@ export function reuseReason(files) {
   return (
     `${REASON_OPENING} and these added functions: ${list}. ` +
     "Have it grep shared and utility modules, files near the change, and code making the same calls, then name every existing function that does the same job or part of it. " +
-    "For each added function, call the closest one it names and delete the copy it replaces. Where one does part of the job, call it for that part. " +
-    // Most misses in the 2026-10-25 and 2026-10-26 runs named the helper, then kept a copy because it fell short on one case.
+    "For each added function, call the closest one it names, the repository's own before a package's, and delete the copy it replaces. Where one does part of the job, call it for that part. " +
+    // A session that named the helper kept a copy where it fell short on one case (A123).
     "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
     "If it names none, finish without changing anything. " +
     // Last, so the measured wording above is unchanged where the tool exists.

@@ -15,17 +15,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a call names. A method is named only where the file it reaches defines it, so `Account.find` is
   `Account` and `TagManager#local_url?` stays as it is (H58).
 - A JavaScript import of a package the repository's own workspace declares (`@excalidraw/common`)
-  resolves through that package's `package.json` name, and a name an index re-exports is credited to
-  the file that defines it. excalidraw's `packages/common/src` had no helper line and now names
+  resolves through that package's `package.json` name and entry, where the workspace's globs reach
+  it, and a name an index re-exports is credited to the file that defines it. excalidraw's `packages/common/src` had no helper line and now names
   `KEYS (101 files)` and `arrayToMap (63)` (H59).
-- The end-of-turn reuse check reads Rails ERB views and Razor views (`.erb`, `.cshtml`, `.razor`):
-  a hunk that adds template code is asked about, one that adds markup alone is not (A122).
+- Beyond imports, the line counts what a language writes without one: a Python attribute call on
+  an imported module, a Java or Kotlin wildcard's classes, a Rust path written in a call, a PHP
+  function called by name, a C# extension method, and a Rails helper called with no receiver. A
+  common name is held to what the caller can see: a Go import resolves only under the repository's
+  own `go.mod` module path, a C# type only in a namespace the caller opens, and a Python module only
+  from a directory the import can start in (H58).
+- The end-of-turn reuse check reads view templates: ERB, HAML, Slim, Razor, Jinja and Go templates,
+  and the markup of a Vue or Svelte component where an expression computes with a literal. A hunk
+  that adds template code is asked about, one that adds markup alone is not (A122).
 
 ### Changed
 
 - The reuse check's reason asks the subagent for every existing function that does the job or part of
-  it, and the session to call the closest one, to fit the new code to it, or to extend it without
-  changing what it returns to its current callers. Most misses in the 2026-10-25 and 2026-10-26 runs
+  it, and the session to call the closest one, the repository's own before a package's, to fit the
+  new code to it, or to extend it without changing what it returns to its current callers. Most misses in the 2026-10-25 and 2026-10-26 runs
   named the helper and then kept a copy because it fell short on one case (A123).
 
 ### Fixed

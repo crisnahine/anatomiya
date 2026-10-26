@@ -17,7 +17,7 @@ async function allFacetsOf(lang, source, rel = `src/a.${EXT[lang]}`) {
 }
 
 // What a file reaches for in others, which the tests of what kind of file it is leave aside.
-const REACH = new Set(["refs", "defines", "usings", "namespace"]);
+const REACH = new Set(["refs", "defines", "usings", "globalUsings", "namespace", "globals", "extensions"]);
 
 /** The facets that say what kind of file this is. */
 async function facetsOf(lang, source, rel) {
@@ -106,6 +106,8 @@ const REACHES = {
       { name: "Util", type: "Util", in: "A.C" },
       { name: "Base", type: "Base" },
       { name: "StringUtils.Truncate", bare: "StringUtils", member: "Truncate", type: "StringUtils" },
+      // A call on a value reaches a repository's extension method of that name, if it declares one.
+      { name: "Trim", extension: "Trim" },
       { name: "Foo", type: "Foo" },
     ],
     ["F", "X"],
@@ -405,4 +407,81 @@ test("rust: a use that climbs past the top, or names the crate where no src hold
   const facets = await allFacetsOf("rust", "use super::super::super::x;\nuse crate::y;\nfn z() {}\n", "tests/it.rs");
   assert.equal(facets.refs, undefined);
   assert.deepEqual(facets.defines, ["z"]);
+});
+
+// What a file reaches for with no import naming the file: a dotted module's attribute, a wildcard's class,
+// a path written in the call, a function PHP loads globally, and a C# extension method.
+const REACHES_UNIMPORTED = {
+  python: [
+    "app/a.py",
+    "import shop.money\nimport shop.text as t\nfrom shop import util\nshop.money.format_price(1)\nt.slug(2)\nutil.clean(3)\n",
+    [
+      { name: "money", stems: ["shop/money", "shop/money/__init__"] },
+      { name: "text", stems: ["shop/text", "shop/text/__init__"] },
+      { name: "util", stems: ["shop/util", "shop/util/__init__", "shop", "shop/__init__"] },
+      { name: "format_price", stems: ["shop/money", "shop/money/__init__"] },
+      { name: "slug", stems: ["shop/text", "shop/text/__init__"] },
+      { name: "clean", stems: ["shop/util", "shop/util/__init__"] },
+    ],
+  ],
+  java: [
+    "src/X.java",
+    "import com.acme.util.*;\nclass X { void f() { Strings.isBlank(s); } }\n",
+    [{ name: "Strings.isBlank", bare: "Strings", member: "isBlank", stems: ["com/acme/util/Strings"] }],
+  ],
+  kotlin: [
+    "src/X.kt",
+    "import com.acme.util.*\nfun f() { Strings.of() }\n",
+    [{ name: "Strings.of", bare: "Strings", member: "of", stems: ["com/acme/util/Strings"], dir: "com/acme/util", lookup: "Strings" }],
+  ],
+  rust: [
+    "src/a.rs",
+    'fn x() { crate::text::escape("x"); self::inner::run(); }\n',
+    [
+      { name: "escape", stems: ["src/text/escape", "src/text/escape/mod", "src/text", "src/text/mod"], exact: true },
+      { name: "run", stems: ["src/a/inner/run", "src/a/inner/run/mod", "src/a/inner", "src/a/inner/mod"], exact: true },
+    ],
+  ],
+  php: [
+    "app/a.php",
+    "<?php\nfunction money($x) { return $x; }\necho money(1) . strlen('a');\n",
+    [
+      { name: "money", global: "money" },
+      { name: "strlen", global: "strlen" },
+    ],
+  ],
+  csharp: [
+    "src/U.cs",
+    "namespace Acme.Web;\nclass U { void F(string s) { s.Slug(); Name.Trim(); } }\n",
+    [
+      { name: "Slug", extension: "Slug" },
+      { name: "Name.Trim", bare: "Name", member: "Trim", type: "Name" },
+    ],
+  ],
+};
+
+for (const [lang, [rel, source, refs]] of Object.entries(REACHES_UNIMPORTED)) {
+  test(`${lang}: a file names what it reaches for where no import names the file`, async () => {
+    assert.deepEqual((await allFacetsOf(lang, source, rel)).refs, refs);
+  });
+}
+
+test("php: a file names the functions it defines outside any class, which a call anywhere reaches", async () => {
+  const facets = await allFacetsOf("php", "<?php\nfunction money($x) { return $x; }\nclass A { function m() {} }\n", "app/helpers.php");
+  assert.deepEqual(facets.globals, ["money"]);
+});
+
+test("csharp: a file names the extension methods it declares, which a call on any value reaches", async () => {
+  const facets = await allFacetsOf("csharp", "namespace Acme.Text;\npublic static class StringExt {\n  public static string Slug(this string s) => s;\n  public static string Plain(string s) => s;\n}\n", "src/StringExt.cs");
+  assert.deepEqual(facets.extensions, ["Slug"]);
+});
+
+test("csharp: a global using opens its namespace for the project, and is kept apart from the file's own", async () => {
+  const facets = await allFacetsOf("csharp", "global using Acme.Text;\nusing System;\n", "src/GlobalUsings.cs");
+  assert.deepEqual([facets.globalUsings, facets.usings], [["Acme.Text"], ["System"]]);
+});
+
+test("rust: `self` in a use list names the module the list is under", async () => {
+  const facets = await allFacetsOf("rust", "use crate::text::{self, escape};\nfn z() {}\n", "src/a.rs");
+  assert.deepEqual(facets.refs.map((r) => r.name), ["text", "escape"]);
 });

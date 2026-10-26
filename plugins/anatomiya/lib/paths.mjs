@@ -89,3 +89,20 @@ export const folded = (name) => name.normalize("NFC").toLowerCase().toUpperCase(
 
 /** `text` as a pattern matching exactly it, which `RegExp.escape` writes from Node 24. */
 export const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The most trailing segments of a path an index keys its tails by: every tail of a path is quadratic
+ * in its depth, and the scanned tree sets the depth.
+ */
+export const TAIL_MOST = 32;
+
+/** Every whole tail of a path, `a/b/c` as `a/b/c`, `b/c` and `c`, from the longest, over its last `TAIL_MOST` segments. */
+export function tailsOf(path) {
+  const segments = path.split("/");
+  const tails = [];
+  for (let i = Math.max(0, segments.length - TAIL_MOST); i < segments.length; i++) tails.push(segments.slice(i).join("/"));
+  return tails;
+}
+
+/** Key a value, or null where a second, different value claims the key: an answer two files give names neither. */
+export const claim = (map, key, value) => map.set(key, map.has(key) && map.get(key) !== value ? null : value);
