@@ -37,6 +37,10 @@ const run = promisify(execFile);
  */
 const ARM_FLAGS = new Set(["--quiet", "--no-checkout", "--detach", "--hard", "-fdx"]);
 
+// A session may install a package tree into its arm: cal.diy's took `git clean` past a minute on a
+// loaded machine, and a reset that timed out ended the whole run.
+const CLEAN_MS = 10 * 60_000;
+
 async function git(root, args, { timeout = 60_000, maxBytes = 1 << 20 } = {}) {
   for (const arg of args) {
     if (typeof arg !== "string") return { ok: false, stdout: "", error: `git argument is not a string: ${typeof arg}` };
@@ -118,7 +122,7 @@ export async function buildArms(repo, sha, { workdir = tmpdir(), name = basename
   const reset = async () => {
     for (const [path, name] of arms) {
       for (const args of [["reset", "--quiet", "--hard", sha], ["clean", "--quiet", "-fdx"]]) {
-        const r = await git(path, args);
+        const r = await git(path, args, args[0] === "clean" ? { timeout: CLEAN_MS } : {});
         if (!r.ok) throw new Error(`could not reset the ${name} arm: ${r.error}`);
       }
       const settings = dropSettings(path);
