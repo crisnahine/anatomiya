@@ -35,13 +35,13 @@ test("a default prism at or past the floor is loaded as it always was, with noth
 });
 
 test("a default prism under the floor gives way to the newest installed one past it", () => {
-  const picked = choosePrism([spec("0.19.0", { isDefault: true }), spec("1.2.0"), spec("1.10.0"), spec("1.9.0")], "1.0.0");
+  const picked = choosePrism([spec("0.18.0", { isDefault: true }), spec("1.2.0"), spec("1.10.0"), spec("1.9.0")], "1.0.0");
   assert.equal(picked.version, "1.10.0", "by its numbers: 1.10 is newer than 1.9");
   assert.deepEqual(picked.paths, ["/gems/prism-1.10.0/lib", "/ext/prism-1.10.0"]);
 });
 
 test("nothing past the floor is nothing to add, and the default answers for itself", () => {
-  assert.equal(choosePrism([spec("0.19.0", { isDefault: true }), spec("0.30.0")], "1.0.0"), null);
+  assert.equal(choosePrism([spec("0.18.0", { isDefault: true }), spec("0.30.0")], "1.0.0"), null);
   assert.equal(choosePrism([], "1.0.0"), null);
 });
 
@@ -161,10 +161,10 @@ test("the parser loads the prism the listing chose, and says which", needsSheban
     join(bin, "ruby"),
     `#!/bin/sh
 case "$*" in
-  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *Gem::Specification*) printf '[{"version":"0.18.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
   *"--disable-gems -I /new/lib -I /new/ext -rprism"*) printf 1.9.0 ;;
   *"--disable-gems -I /new/lib -I /new/ext -e"*) cat >/dev/null; printf '{"ready":true,"prism":"1.9.0"}\\n' ;;
-  *) cat >/dev/null; printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'; exit 1 ;;
+  *) cat >/dev/null; printf '{"ready":true,"prism":"0.18.0"}\\n{"fatal":"prism 0.18.0 predates the field names this reads"}\\n'; exit 1 ;;
 esac
 `,
     { mode: 0o755 }
@@ -265,7 +265,7 @@ test("a prism too old to read is a missing parser, never a repository of crashed
     `#!/bin/sh
 case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
 cat >/dev/null
-printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'
+printf '{"ready":true,"prism":"0.18.0"}\\n{"fatal":"prism 0.18.0 predates the field names this reads"}\\n'
 exit 1
 `,
     { mode: 0o755 }
@@ -275,7 +275,7 @@ exit 1
 
   const out = await parseRuby([{ rel: "a.rb", abs: file }], { ruby: join(bin, "ruby") });
 
-  assert.match(String(out.missingParser), /prism 0\.19\.0 predates/);
+  assert.match(String(out.missingParser), /prism 0\.18\.0 predates/);
 });
 
 test("a ruby our clock stopped before its ready line is a stall, not a missing install", needsShebang, async (t) => {
@@ -1070,9 +1070,9 @@ test("an absent interpreter is reported as a missing parser, not as files that c
 test("a parser too old for these field names reports rather than counting zero", needsShebang, async () => {
   // The stub stands in for a Ruby whose prism spells the fields differently.
   const stub = join(dir, "old-ruby");
-  writeFileSync(stub, '#!/bin/sh\necho \'{"fatal":"prism 0.19.0 predates it"}\'\n', { mode: 0o755 });
+  writeFileSync(stub, '#!/bin/sh\necho \'{"fatal":"prism 0.18.0 predates it"}\'\n', { mode: 0o755 });
   const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], { ruby: stub });
-  assert.match(out.error, /prism 0\.19\.0/);
+  assert.match(out.error, /prism 0\.18\.0/);
   assert.equal(out.results[0].crashed, true, "the file is charged, not silently dropped");
 });
 

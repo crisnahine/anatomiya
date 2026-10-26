@@ -7,6 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-26
+
+The reuse check and the "most imported from here" line reach every language the plugin reads, and the
+check reads the views a helper's logic is most often copied into. Measured on fourteen tasks in
+thirteen repositories, seven of them one per language and picked by a rule committed before any of its
+repositories was scanned for it, 542 of 560 sessions with the plugin called the function the
+repository already had, against 291 of 560 without. In seven of the fourteen language pairs both arms
+called it every time, and on gitea with Haiku the arm without the plugin did better, 20 against 18, too
+close to call. One trap task, where the user hands over the exact code, found one session in 20 that
+swapped in a look-alike helper and said so.
+
 ### Added
 
 - Every language now gets the "most imported from here" line, which names the helpers the rest of the
@@ -30,6 +41,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   with a literal. A hunk that adds template code is asked about, one that adds markup alone is not, and
   a template that is a link or a generated file is passed over (A122).
 
+- `docs/measurements/2026-10-26-language-replication-rule.md`, the rule that picked one task per
+  language, and `docs/measurements/2026-10-26-every-language.md`, the results of those seven, the seven
+  earlier reuse tasks on this build and a trap task, with a page per task and model, every trial's
+  record and the file each session wrote.
+
 ### Changed
 
 - The reuse check's reason asks the subagent for every existing function that does the job or part of
@@ -49,6 +65,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   (B68).
 - In a file that holds JSX, a line of text that starts with `//` or `/*` and holds an expression in
   braces was read as a comment and asked nothing (B81).
+- The A/B harness gave an arm's reset one minute, and a session that had installed a package tree
+  took `git clean` past it on a loaded machine, ending the run. It now has ten minutes.
 
 ## [0.18.2] - 2026-10-26
 
@@ -5300,7 +5318,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...v0.19.0
 [0.18.2]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/crisnahine/anatomiya/compare/v0.17.1...v0.18.0

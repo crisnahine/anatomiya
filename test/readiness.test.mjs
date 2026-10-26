@@ -412,17 +412,17 @@ test("a library older than the floor names both numbers", needsShebang, async (t
   // prism 0.19 spells the fields the dimensions read differently: nothing
   // raises and every count comes back zero, which is the one failure a version
   // check exists to catch.
-  const env = stubInterpreter(t, "#!/bin/sh\nprintf 0.19.0\n");
+  const env = stubInterpreter(t, "#!/bin/sh\nprintf 0.18.0\n");
 
   const [row] = await readiness({ engines: ["prism"], env });
 
   assert.equal(row.present, true);
-  assert.equal(row.version, "0.19.0");
+  assert.equal(row.version, "0.18.0");
   assert.equal(row.ok, false);
   // Both numbers by substring rather than by a regex built from one of them:
   // escaping only the dots leaves every other metacharacter live, which is a
   // sanitiser that reads complete and is not.
-  assert.match(row.reason, /0\.19\.0/);
+  assert.match(row.reason, /0\.18\.0/);
   assert.ok(row.reason.includes(ENGINES.prism.floor), `${row.reason} names the floor`);
 });
 
@@ -434,9 +434,9 @@ test("a prism installed beside a default under the floor is the one reported", n
     t,
     `#!/bin/sh
 case "$*" in
-  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *Gem::Specification*) printf '[{"version":"0.18.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
   *"--disable-gems -I /new/lib -I /new/ext -rprism"*) printf 1.9.0 ;;
-  *) printf 0.19.0 ;;
+  *) printf 0.18.0 ;;
 esac
 `
   );
@@ -474,7 +474,7 @@ esac
 
 test("an installed prism that does not load for this ruby gives way to the one that does", needsShebang, async (t) => {
   // Measured after a Ruby upgrade with a shared GEM_HOME: prism 1.9.0 was
-  // built for the old Ruby, RubyGems skipped it and loaded the default 0.19.0,
+  // built for the old Ruby, RubyGems skipped it and loaded the default 0.18.0,
   // and this put 1.9.0 on the load path anyway. Its extension was linked to
   // the other libruby, so doctor said prism was not installed and hid the
   // accurate answer, which is that the one that loads is under the floor.
@@ -482,16 +482,16 @@ test("an installed prism that does not load for this ruby gives way to the one t
     t,
     `#!/bin/sh
 case "$*" in
-  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *Gem::Specification*) printf '[{"version":"0.18.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
   *"-I /new/lib"*) echo 'prism.so: linked to incompatible libruby.so.3.2 (LoadError)' >&2; exit 1 ;;
-  *) printf 0.19.0 ;;
+  *) printf 0.18.0 ;;
 esac
 `
   );
 
   const [row] = await readiness({ engines: ["prism"], env });
 
-  assert.equal(row.version, "0.19.0");
+  assert.equal(row.version, "0.18.0");
   assert.equal(row.ok, false);
   assert.match(row.reason, /older than/, row.reason);
 });
@@ -623,7 +623,7 @@ test("a doctor line says what answered, or what to do about it", () => {
 test("a version is compared by its numbers, never as a string", () => {
   // "1.10.0" sorts below "1.9.0" as text, and prism is already past its tenth
   // minor, so a string compare would refuse the version it is asking for.
-  assert.equal(olderThan("0.19.0", "1.0.0"), true);
+  assert.equal(olderThan("0.18.0", "1.0.0"), true);
   assert.equal(olderThan("1.0.0", "1.0.0"), false);
   assert.equal(olderThan("1.10.0", "1.9.0"), false);
   assert.equal(olderThan("1.5.2", "1.0.0"), false);
