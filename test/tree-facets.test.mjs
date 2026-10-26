@@ -8,7 +8,7 @@ import * as SAMPLES from "./tree-samples.mjs";
 const EXT = { python: "py", php: "php", go: "go", java: "java", csharp: "cs", rust: "rs", kotlin: "kt" };
 
 /** The facets of one source, read off the tree the engine hands over. */
-async function facetsOf(lang, source, rel = `src/a.${EXT[lang]}`) {
+async function allFacetsOf(lang, source, rel = `src/a.${EXT[lang]}`) {
   const r = await parseTreeFile(source, rel, lang, { withProgram: true });
   assert.equal(r.ok, true, `${lang} sample did not parse: ${r.error}`);
   // The engine hands over what this reads off the same tree.
@@ -16,11 +16,114 @@ async function facetsOf(lang, source, rel = `src/a.${EXT[lang]}`) {
   return r.facets;
 }
 
+// What a file reaches for in others, which the tests of what kind of file it is leave aside.
+const REACH = new Set(["refs", "defines", "usings", "namespace"]);
+
+/** The facets that say what kind of file this is. */
+async function facetsOf(lang, source, rel) {
+  return Object.fromEntries(Object.entries(await allFacetsOf(lang, source, rel)).filter(([key]) => !REACH.has(key)));
+}
+
 for (const lang of Object.keys(EXT)) {
   test(`${lang}: an ordinary source file names no runner and declares no case`, async () => {
-    assert.deepEqual(await facetsOf(lang, SAMPLES[lang]), { testRunner: null, testCalls: false });
+    const { testRunner, testCalls } = await facetsOf(lang, SAMPLES[lang]);
+    assert.deepEqual({ testRunner, testCalls }, { testRunner: null, testCalls: false });
   });
 }
+
+// What each language writes to reach another file, and what the roster would call it.
+const REACHES = {
+  python: [
+    "pkg/svc/a.py",
+    "import a.b.c\nimport x as z\nfrom a.b import c, d as e\nfrom . import f\nfrom ..g.h import i\n\n\ndef run():\n    return 1\n",
+    [
+      { name: "c", stems: ["a/b/c", "a/b/c/__init__"] },
+      { name: "x", stems: ["x", "x/__init__"] },
+      { name: "c", stems: ["a/b/c", "a/b/c/__init__", "a/b", "a/b/__init__"] },
+      { name: "d", stems: ["a/b/d", "a/b/d/__init__", "a/b", "a/b/__init__"] },
+      { name: "f", stems: ["pkg/svc/f", "pkg/svc/f/__init__", "pkg/svc/__init__"], exact: true },
+      { name: "i", stems: ["pkg/g/h/i", "pkg/g/h/i/__init__", "pkg/g/h", "pkg/g/h/__init__"], exact: true },
+    ],
+    ["run"],
+  ],
+  java: [
+    "src/main/java/p/q/X.java",
+    "package p.q;\nimport a.b.C;\nimport static a.b.D.m;\nimport a.b.*;\nclass X { void f() { C.go(); m(); } }\n",
+    [
+      { name: "C", stems: ["a/b/C"] },
+      { name: "D.m", stems: ["a/b/D"] },
+      { name: "C.go", bare: "C", member: "go", stems: ["a/b/C"] },
+    ],
+    ["X", "f"],
+  ],
+  kotlin: [
+    "src/main/kotlin/p/q/X.kt",
+    "package p.q\nimport a.b.C\nimport a.b.foo as bar\nimport a.b.*\nfun f() { C.go(); bar() }\n",
+    [
+      { name: "C", stems: ["a/b/C"], dir: "a/b", lookup: "C" },
+      { name: "foo", stems: ["a/b/foo"], dir: "a/b", lookup: "foo" },
+      { name: "C.go", bare: "C", member: "go", stems: ["a/b/C"], dir: "a/b", lookup: "C" },
+    ],
+    ["f"],
+  ],
+  go: [
+    "cmd/a.go",
+    'package main\nimport (\n  "fmt"\n  "example.com/m/internal/bytesconv"\n  bc "example.com/m/pkg/x"\n  _ "example.com/m/pkg/side"\n)\nfunc F() { fmt.Println(bytesconv.StringToBytes("a")); bc.Y() }\n',
+    [
+      { name: "bytesconv.StringToBytes", dir: "example.com/m/internal/bytesconv", lookup: "StringToBytes" },
+      { name: "x.Y", dir: "example.com/m/pkg/x", lookup: "Y" },
+    ],
+    ["F"],
+  ],
+  rust: [
+    "crates/core/src/a/x.rs",
+    "use crate::a::b::{c, d::e};\nuse super::f;\nuse self::g as h;\nuse other_crate::k;\nuse std::*;\nfn x() { c(); e(); }\n",
+    [
+      { name: "c", stems: ["crates/core/src/a/b/c", "crates/core/src/a/b/c/mod", "crates/core/src/a/b", "crates/core/src/a/b/mod"], exact: true },
+      { name: "e", stems: ["crates/core/src/a/b/d/e", "crates/core/src/a/b/d/e/mod", "crates/core/src/a/b/d", "crates/core/src/a/b/d/mod"], exact: true },
+      { name: "f", stems: ["crates/core/src/a/f", "crates/core/src/a/f/mod", "crates/core/src/a", "crates/core/src/a/mod", "crates/core/src/a/lib", "crates/core/src/a/main"], exact: true },
+      { name: "g", stems: ["crates/core/src/a/x/g", "crates/core/src/a/x/g/mod", "crates/core/src/a/x", "crates/core/src/a/x/mod", "crates/core/src/a/x/lib", "crates/core/src/a/x/main"], exact: true },
+      { name: "k", stems: ["other_crate/src/k", "other_crate/src/k/mod", "other_crate/src/lib", "other-crate/src/k", "other-crate/src/k/mod", "other-crate/src/lib"] },
+    ],
+    ["x"],
+  ],
+  php: [
+    "app/Http/X.php",
+    "<?php\nnamespace App\\Http;\nuse App\\Models\\User;\nuse App\\Support\\{Str, Arr as A};\nuse function App\\helpers\\foo;\nclass X { function f() { User::find(1); Str::limit(\"a\"); new User(); } }\n",
+    [
+      { name: "User", stems: ["App/Models/User", "Models/User"] },
+      { name: "Str", stems: ["App/Support/Str", "Support/Str"] },
+      { name: "Arr", stems: ["App/Support/Arr", "Support/Arr"] },
+      { name: "User::find", bare: "User", member: "find", stems: ["App/Models/User", "Models/User"] },
+      { name: "Str::limit", bare: "Str", member: "limit", stems: ["App/Support/Str", "Support/Str"] },
+    ],
+    ["X", "f"],
+  ],
+  csharp: [
+    "src/N/X.cs",
+    "using A.B;\nusing static A.C.Util;\nusing Alias = A.D;\nnamespace N.M;\nclass X : Base { void F() { StringUtils.Truncate(s); s.Trim(); var y = new Foo(); } }\n",
+    [
+      { name: "Util", type: "Util", in: "A.C" },
+      { name: "Base", type: "Base" },
+      { name: "StringUtils.Truncate", bare: "StringUtils", member: "Truncate", type: "StringUtils" },
+      { name: "Foo", type: "Foo" },
+    ],
+    ["F", "X"],
+  ],
+};
+
+for (const [lang, [rel, source, refs, defines]] of Object.entries(REACHES)) {
+  test(`${lang}: a file names what it reaches for in other files, and what it defines`, async () => {
+    const facets = await allFacetsOf(lang, source, rel);
+    assert.deepEqual(facets.refs, refs);
+    assert.deepEqual(facets.defines, defines);
+  });
+}
+
+test("csharp: a file says which namespace it is in and which it opens", async () => {
+  const facets = await allFacetsOf("csharp", REACHES.csharp[1], REACHES.csharp[0]);
+  assert.deepEqual([facets.usings, facets.namespace], [["A.B"], "N.M"]);
+});
 
 const RUNNERS = [
   ["pytest", "python", "import pytest\n\n\ndef test_total():\n    assert 1 == 1\n"],
@@ -247,12 +350,13 @@ test("pytest reads a conftest by its name, wherever it sits and whatever it hold
 
 test("a Rust file cargo collects by its place is cargo's with no case in it, and only where the caller says it is placed", async () => {
   const helper = "pub fn setup() {}\n";
-  const at = async (rel, placed) => (await parseTreeFile(helper, rel, "rust", { placed })).facets;
+  const kindOf = ({ testRunner, testCalls, empty }) => ({ testRunner, testCalls, ...(empty ? { empty } : {}) });
+  const at = async (rel, placed) => kindOf((await parseTreeFile(helper, rel, "rust", { placed })).facets);
   assert.deepEqual(await at("tests/util.rs", true), { testRunner: "cargo test", testCalls: false });
   assert.deepEqual(await at("tests/util.rs", false), { testRunner: null, testCalls: false });
-  assert.deepEqual((await parseTreeFile("// later\n", "tests/util.rs", "rust", { placed: true })).facets, { testRunner: null, testCalls: false, empty: true });
+  assert.deepEqual(kindOf((await parseTreeFile("// later\n", "tests/util.rs", "rust", { placed: true })).facets), { testRunner: null, testCalls: false, empty: true });
   // No tool collects a Go file by its place, so the word changes nothing there.
-  assert.deepEqual((await parseTreeFile("package a\n\nfunc Setup() {}\n", "tests/util.go", "go", { placed: true })).facets, { testRunner: null, testCalls: false });
+  assert.deepEqual(kindOf((await parseTreeFile("package a\n\nfunc Setup() {}\n", "tests/util.go", "go", { placed: true })).facets), { testRunner: null, testCalls: false });
 });
 
 test("Go: the compiler decides by the file's name, and a case outside a _test file is none", async () => {
@@ -295,4 +399,10 @@ test("a C# attribute is read with or without its Attribute suffix", async () => 
   assert.deepEqual(await facetsOf("csharp", long), { testRunner: "xunit", testCalls: true });
   const other = "public class Totals\n{\n    [ObsoleteAttribute]\n    public void Total() {}\n}\n";
   assert.deepEqual(await facetsOf("csharp", other), QUIET);
+});
+
+test("rust: a use that climbs past the top, or names the crate where no src holds it, reaches for nothing and reads the file", async () => {
+  const facets = await allFacetsOf("rust", "use super::super::super::x;\nuse crate::y;\nfn z() {}\n", "tests/it.rs");
+  assert.equal(facets.refs, undefined);
+  assert.deepEqual(facets.defines, ["z"]);
 });

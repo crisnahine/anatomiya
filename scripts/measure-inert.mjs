@@ -25,8 +25,8 @@
  * `bareInterpolation`, and the definitions every reader of the table shares
  * (`fn`, `cls`, `wrap`, `scope`, `annotation`). A kind that is wrongly on one
  * of those lists passes the rule and the oracle alike, so neither shows the
- * mistake. The closing tokens, the import that makes a comment C, and the tag
- * that makes markup a script are spelled here as the rule spells them, so on
+ * mistake. The closing tokens, the import that makes a comment C, and what
+ * makes markup code are spelled here as the rule spells them, so on
  * those three it asks the rule's own question and cannot disagree. It reads none of the rule's lists of names, types, string parts,
  * signs, predefined types and targets, which it tells by how grammars spell
  * them and by a node's own text. Read-only: git is asked, nothing is checked
@@ -109,10 +109,10 @@ export const NAMING =
 export const STRINGISH = /string|heredoc|nowdoc/;
 
 // Code in another language: the comment cgo compiles, which stands directly above an import of "C"
-// alone, and the inline markup of a file where any of it holds a script.
+// alone, and the inline markup of a file where any of it holds a script or something Blade compiles.
 export const FOREIGN = { go: ["import_declaration", "import_spec"], php: ["text"] };
 const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
-const SCRIPT = /<script/i;
+const CODE_IN_MARKUP = /<script|\{\{|\{!!|(?<![\w@])@(?:php\b|(?!(?:media|supports|container|scope)\b)[a-z_]\w*\s*\()/i;
 
 // What an annotation or a struct type is made of where its grammar spells one as neither a name nor a type.
 export const ACCESS = {
@@ -175,7 +175,7 @@ export const FIELDS = {
  *
  * A comment counts where it is one of those with no line between them that
  * end on the line above an import of "C" alone, and inline markup where any
- * of the file's markup holds a script, each on any added line it spans.
+ * of the file's markup holds a script or Blade code, each on any added line it spans.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];
@@ -185,7 +185,7 @@ export function oracleHits(tree, lang, added) {
   const onAddedRow = (row) => added.some(([from, to]) => row + 1 >= from && row + 1 <= to);
   // Whether any chunk of the file's markup opens a script: a chunk after an inline tag is inside it and holds no tag of its own.
   let scripts = null;
-  const scriptInMarkup = () => (scripts ??= tree.rootNode.descendantsOfType("text").some((chunk) => SCRIPT.test(chunk.text)));
+  const scriptInMarkup = () => (scripts ??= tree.rootNode.descendantsOfType("text").some((chunk) => CODE_IN_MARKUP.test(chunk.text)));
   const containers = new Set(CONTAINERS[lang]);
   const charged = new Map();
   const quiet = new Set([...s.comment, ...s.literal]);
@@ -302,7 +302,7 @@ export function oracleHits(tree, lang, added) {
     if (FOREIGN[lang]?.includes(node.type)) {
       // Markup that ends with its line is on no row past it.
       const last = node.endPosition.row + (node.endPosition.column === 0 ? 0 : 1);
-      if (lang === "php" && scriptInMarkup() && added.some(([from, to]) => node.startPosition.row + 1 <= to && last >= from)) hit(node, "markup of a file that holds a script");
+      if (lang === "php" && scriptInMarkup() && added.some(([from, to]) => node.startPosition.row + 1 <= to && last >= from)) hit(node, "markup of a file that holds code");
       if (lang === "go" && IMPORTS_C.test(node.text)) {
         let below = node;
         for (let c = node.previousSibling; c !== null && s.comment.includes(c.type) && c.endPosition.row >= below.startPosition.row - 1; c = c.previousSibling) {

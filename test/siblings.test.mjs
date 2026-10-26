@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile } from "../plugins/anatomiya/lib/siblings.mjs";
+import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile, workspacePackages } from "../plugins/anatomiya/lib/siblings.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const isRelative = (m) => m.startsWith("./") || m.startsWith("../") || m === "." || m === "..";
@@ -652,4 +652,246 @@ test("an alias names the first spelling each directory holds, however many direc
   assert.equal(specifierToFile("$lib/utils", "apps/c/x.svelte", corpus(...apps)), "apps/c/src/lib/utils.ts");
   assert.equal(specifierToFile("$lib/utils", "x.svelte", corpus(...apps)), null);
   assert.equal(specifierToFile("$lib/utils", "apps/c/x.svelte", corpus(...apps, "apps/src/lib/utils.js")), null);
+});
+
+/** A Ruby parse record carrying the constants it reaches for, as `rubyFacets` writes them. */
+const rubyRecord = (rel, refs) => ({ rel, ok: true, facets: { testRunner: null, testCalls: false, refs } });
+
+test("a Ruby constant reaches the file its name is autoloaded from, and the method called on it is the name", () => {
+  const rels = corpus("app/lib/tag_manager.rb", "app/lib/activitypub/tag_manager.rb", "app/models/status.rb", "app/services/a.rb", "app/services/b.rb", "app/services/c.rb");
+  const root = { const: "TagManager", nesting: [], name: "TagManager#local_url?" };
+  // Inside `ActivityPub` the bare name is that module's own class, as Ruby's lookup reads it.
+  const nested = { const: "TagManager", nesting: ["ActivityPub::Thing", "ActivityPub"], name: "TagManager#local_uri?" };
+  const records = new Map([
+    ["app/services/a.rb", rubyRecord("app/services/a.rb", [root, nested])],
+    ["app/services/b.rb", rubyRecord("app/services/b.rb", [root, nested])],
+    ["app/services/c.rb", rubyRecord("app/services/c.rb", [root])],
+    ["app/models/status.rb", rubyRecord("app/models/status.rb", [nested])],
+  ]);
+
+  assert.deepEqual(mostImported(new Set(["app/lib/tag_manager.rb"]), records, rels), [
+    { name: "TagManager#local_url?", file: "app/lib/tag_manager.rb", importers: 3 },
+  ]);
+  assert.deepEqual(mostImported(new Set(["app/lib/activitypub/tag_manager.rb"]), records, rels), [
+    { name: "TagManager#local_uri?", file: "app/lib/activitypub/tag_manager.rb", importers: 3 },
+  ]);
+});
+
+test("a Ruby constant reaches a concern, a gem's lib file and an acronym however its file spells it, and a rooted one skips the nesting", () => {
+  const rels = corpus("app/models/concerns/geo.rb", "lib/rubocop/cop/util.rb", "app/lib/http_client.rb", "app/lib/m/http_client.rb");
+  const records = new Map();
+  for (let i = 0; i < 3; i++) {
+    const rel = `app/workers/w${i}.rb`;
+    records.set(rel, rubyRecord(rel, [
+      { const: "Geo", nesting: [], name: "Geo" },
+      { const: "RuboCop::Cop::Util", nesting: [], name: "RuboCop::Cop::Util.parse" },
+      { const: "::HTTPClient", nesting: ["M::Worker", "M"], name: "HTTPClient.get" },
+    ]));
+  }
+
+  assert.deepEqual(mostImported(new Set(["app/models/concerns/geo.rb"]), records, rels), [{ name: "Geo", file: "app/models/concerns/geo.rb", importers: 3 }]);
+  assert.deepEqual(mostImported(new Set(["lib/rubocop/cop/util.rb"]), records, rels), [{ name: "RuboCop::Cop::Util.parse", file: "lib/rubocop/cop/util.rb", importers: 3 }]);
+  assert.deepEqual(mostImported(new Set(["app/lib/http_client.rb"]), records, rels), [{ name: "HTTPClient.get", file: "app/lib/http_client.rb", importers: 3 }]);
+  assert.deepEqual(mostImported(new Set(["app/lib/m/http_client.rb"]), records, rels), []);
+});
+
+test("a Ruby constant two files are autoloaded as, or one no file is, reaches nothing", () => {
+  const rels = corpus("app/models/user.rb", "lib/user.rb", "app/lib/x.rb");
+  const records = new Map();
+  for (let i = 0; i < 3; i++) {
+    const rel = `app/jobs/j${i}.rb`;
+    records.set(rel, rubyRecord(rel, [{ const: "User", nesting: [], name: "User" }, { const: "Rails", nesting: [], name: "Rails.logger" }]));
+  }
+  assert.deepEqual(mostImported(new Set(["app/models/user.rb", "lib/user.rb", "app/lib/x.rb"]), records, rels), []);
+});
+
+test("a Ruby method is named only where the file the constant reaches defines it, and is the constant's use anywhere else", () => {
+  // `Account.find` is ActiveRecord's, and `Presenter.new` builds one: neither is a helper the file holds.
+  const rels = corpus("app/models/account.rb", "app/lib/tag_manager.rb");
+  const records = new Map([
+    ["app/models/account.rb", { rel: "app/models/account.rb", ok: true, facets: { testRunner: null, testCalls: false, defines: ["full_name"] } }],
+    ["app/lib/tag_manager.rb", { rel: "app/lib/tag_manager.rb", ok: true, facets: { testRunner: null, testCalls: false, defines: ["local_url?"] } }],
+  ]);
+  for (let i = 0; i < 3; i++) {
+    const rel = `app/services/s${i}.rb`;
+    records.set(rel, rubyRecord(rel, [
+      { const: "Account", nesting: [], name: i === 0 ? "Account.find" : "Account.where" },
+      { const: "Account", nesting: [], name: "Account#full_name" },
+      { const: "TagManager", nesting: [], name: "TagManager#local_url?" },
+    ]));
+  }
+
+  assert.deepEqual(mostImported(new Set(["app/models/account.rb"]), records, rels), [
+    { name: "Account", file: "app/models/account.rb", importers: 3 },
+    { name: "Account#full_name", file: "app/models/account.rb", importers: 3 },
+  ]);
+  assert.deepEqual(mostImported(new Set(["app/lib/tag_manager.rb"]), records, rels), [{ name: "TagManager#local_url?", file: "app/lib/tag_manager.rb", importers: 3 }]);
+});
+
+/** A tree-sitter parse record carrying what it reaches for and defines, as `treeFacets` writes them. */
+const treeRecord = (rel, refs = [], defines = [], scope = {}) => ({ rel, ok: true, facets: { testRunner: null, testCalls: false, refs, defines, ...scope } });
+
+/** Three importers of one reference in another area, and the defining files, as one record map. */
+function reaching(refFor, ext, defined) {
+  const records = new Map(Object.entries(defined).map(([rel, [defines, scope]]) => [rel, treeRecord(rel, [], defines, scope)]));
+  for (let i = 0; i < 3; i++) {
+    const rel = `callers/c${i}.${ext}`;
+    records.set(rel, treeRecord(rel, [].concat(refFor(rel))));
+  }
+  return records;
+}
+
+test("a Python import reaches a module by its dotted path as a tail, and a name in it where the last segment is no module", () => {
+  const rels = corpus("src/shop/utils/money.py", "src/shop/utils/__init__.py", "callers/c0.py", "callers/c1.py", "callers/c2.py");
+  const records = reaching(() => [
+    { name: "format_price", stems: ["shop/utils/money/format_price", "shop/utils/money/format_price/__init__", "shop/utils/money", "shop/utils/money/__init__"] },
+    { name: "money", stems: ["shop/utils/money", "shop/utils/money/__init__", "shop/utils", "shop/utils/__init__"] },
+  ], "py", { "src/shop/utils/money.py": [["format_price"]] });
+
+  assert.deepEqual(mostImported(new Set(["src/shop/utils/money.py", "src/shop/utils/__init__.py"]), records, rels), [
+    { name: "format_price", file: "src/shop/utils/money.py", importers: 3 },
+    { name: "money", file: "src/shop/utils/money.py", importers: 3 },
+  ]);
+});
+
+test("a relative import is matched whole, so a file of the same tail elsewhere is not the one meant", () => {
+  const rels = corpus("lib/helpers.py", "other/lib/helpers.py", "away/c0.py", "away/c1.py", "away/c2.py");
+  const callers = reaching(() => [{ name: "helpers", stems: ["lib/helpers"], exact: true }], "py", {});
+  const records = new Map([...callers].map(([rel, r]) => [rel.replace("callers/", "away/"), { ...r, rel: rel.replace("callers/", "away/") }]));
+  assert.deepEqual(mostImported(new Set(["lib/helpers.py"]), records, rels), [{ name: "helpers", file: "lib/helpers.py", importers: 3 }]);
+  assert.deepEqual(mostImported(new Set(["other/lib/helpers.py"]), records, rels), []);
+});
+
+test("a Go call reaches the file in the imported package's directory that defines the name, the module's own path left off", () => {
+  const rels = corpus("internal/bytesconv/bytesconv.go", "internal/bytesconv/other.go", "callers/c0.go", "callers/c1.go", "callers/c2.go");
+  const records = reaching(() => [{ name: "bytesconv.StringToBytes", dir: "github.com/gin-gonic/gin/internal/bytesconv", lookup: "StringToBytes" }], "go", {
+    "internal/bytesconv/bytesconv.go": [["BytesToString", "StringToBytes"]],
+    "internal/bytesconv/other.go": [["Other"]],
+  });
+  assert.deepEqual(mostImported(new Set(["internal/bytesconv/bytesconv.go", "internal/bytesconv/other.go"]), records, rels), [
+    { name: "bytesconv.StringToBytes", file: "internal/bytesconv/bytesconv.go", importers: 3 },
+  ]);
+});
+
+test("a Java or Kotlin import reaches the class file by its package path, either language's, and a method is named only where that file defines it", () => {
+  const rels = corpus("src/main/java/com/acme/util/Strings.java", "callers/c0.kt", "callers/c1.kt", "callers/c2.kt");
+  const records = reaching(() => [
+    { name: "Strings.isBlank", bare: "Strings", member: "isBlank", stems: ["com/acme/util/Strings"], dir: "com/acme/util", lookup: "Strings" },
+    { name: "Strings.of", bare: "Strings", member: "of", stems: ["com/acme/util/Strings"], dir: "com/acme/util", lookup: "Strings" },
+  ], "kt", { "src/main/java/com/acme/util/Strings.java": [["Strings", "isBlank"]] });
+  assert.deepEqual(mostImported(new Set(["src/main/java/com/acme/util/Strings.java"]), records, rels), [
+    { name: "Strings", file: "src/main/java/com/acme/util/Strings.java", importers: 3 },
+    { name: "Strings.isBlank", file: "src/main/java/com/acme/util/Strings.java", importers: 3 },
+  ]);
+});
+
+test("a Kotlin function imported by its package reaches the one file there that defines it, in a tree that leaves out the package's first names", () => {
+  const rels = corpus("server/util/Text.kt", "server/util/Other.kt", "callers/c0.kt", "callers/c1.kt", "callers/c2.kt");
+  const records = reaching(() => [{ name: "slugify", stems: ["io/ktor/server/util/slugify"], dir: "io/ktor/server/util", lookup: "slugify" }], "kt", {
+    "server/util/Text.kt": [["slugify"]],
+    "server/util/Other.kt": [["other"]],
+  });
+  assert.deepEqual(mostImported(new Set(["server/util/Text.kt", "server/util/Other.kt"]), records, rels), [{ name: "slugify", file: "server/util/Text.kt", importers: 3 }]);
+});
+
+test("a Rust use anchored at the crate reaches the module's file or the file holding the item, matched whole", () => {
+  const rels = corpus("crates/core/src/text/escape.rs", "crates/core/src/lib.rs", "crates/core/src/callers/c0.rs", "crates/core/src/callers/c1.rs", "crates/core/src/callers/c2.rs");
+  const records = new Map([["crates/core/src/text/escape.rs", treeRecord("crates/core/src/text/escape.rs", [], ["escape"])]]);
+  for (let i = 0; i < 3; i++) {
+    const rel = `crates/core/src/callers/c${i}.rs`;
+    records.set(rel, treeRecord(rel, [{ name: "escape", stems: ["crates/core/src/text/escape/escape", "crates/core/src/text/escape/escape/mod", "crates/core/src/text/escape", "crates/core/src/text/escape/mod"], exact: true }]));
+  }
+  assert.deepEqual(mostImported(new Set(["crates/core/src/text/escape.rs"]), records, rels), [{ name: "escape", file: "crates/core/src/text/escape.rs", importers: 3 }]);
+});
+
+test("a PHP use reaches the class file past the namespace prefix composer maps elsewhere", () => {
+  const rels = corpus("app/Support/Money.php", "callers/c0.php", "callers/c1.php", "callers/c2.php");
+  const records = reaching(() => [
+    { name: "Money", stems: ["App/Support/Money", "Support/Money"] },
+    { name: "Money::format", bare: "Money", member: "format", stems: ["App/Support/Money", "Support/Money"] },
+  ], "php", { "app/Support/Money.php": [["Money", "format"]] });
+  assert.deepEqual(mostImported(new Set(["app/Support/Money.php"]), records, rels), [
+    { name: "Money", file: "app/Support/Money.php", importers: 3 },
+    { name: "Money::format", file: "app/Support/Money.php", importers: 3 },
+  ]);
+});
+
+test("a C# type reaches the file named after it that declares it, and of two such files the one in a namespace the caller opens", () => {
+  const rels = corpus("src/Core/Text/StringUtils.cs", "src/Legacy/StringUtils.cs", "callers/c0.cs", "callers/c1.cs", "callers/c2.cs");
+  const defined = {
+    "src/Core/Text/StringUtils.cs": [["StringUtils", "Truncate"], { namespace: "Acme.Core.Text" }],
+    "src/Legacy/StringUtils.cs": [["StringUtils"], { namespace: "Acme.Legacy" }],
+  };
+  const records = reaching(() => [{ name: "StringUtils.Truncate", bare: "StringUtils", member: "Truncate", type: "StringUtils" }], "cs", defined);
+  for (let i = 0; i < 3; i++) records.get(`callers/c${i}.cs`).facets.usings = ["Acme.Core.Text"];
+  assert.deepEqual(mostImported(new Set(["src/Core/Text/StringUtils.cs"]), records, rels), [
+    { name: "StringUtils.Truncate", file: "src/Core/Text/StringUtils.cs", importers: 3 },
+  ]);
+  assert.deepEqual(mostImported(new Set(["src/Legacy/StringUtils.cs"]), records, rels), []);
+});
+
+test("a Python absolute import starts at a top-level package, so a module inside a package is not reached by its last name alone", () => {
+  // `import typing` is the standard library's, never flask's own `src/flask/typing.py`, which is `flask.typing`.
+  const rels = corpus("src/flask/__init__.py", "src/flask/typing.py", "callers/c0.py", "callers/c1.py", "callers/c2.py");
+  const records = reaching(() => [
+    { name: "typing", stems: ["typing", "typing/__init__"] },
+    { name: "typing", stems: ["flask/typing", "flask/typing/__init__", "flask", "flask/__init__"] },
+  ], "py", {});
+  assert.deepEqual(mostImported(new Set(["src/flask/typing.py", "src/flask/__init__.py"]), records, rels), [
+    { name: "typing", file: "src/flask/typing.py", importers: 3 },
+  ]);
+  const bare = reaching(() => [{ name: "typing", stems: ["typing", "typing/__init__"] }], "py", {});
+  assert.deepEqual(mostImported(new Set(["src/flask/typing.py", "src/flask/__init__.py"]), bare, rels), []);
+});
+
+test("a Python module at the top of the repository is reached by its own name", () => {
+  const rels = corpus("utils.py", "callers/c0.py", "callers/c1.py", "callers/c2.py");
+  const records = reaching(() => [{ name: "slug", stems: ["utils/slug", "utils/slug/__init__", "utils", "utils/__init__"] }], "py", { "utils.py": [["slug"]] });
+  assert.deepEqual(mostImported(new Set(["utils.py"]), records, rels), [{ name: "slug", file: "utils.py", importers: 3 }]);
+});
+
+/** A JavaScript record that defines `exports` and hands on `reexports`, as `jsFacets` writes them. */
+const barrel = (rel, exports, reexports = []) => ({ rel, ok: true, facets: { imports: [], exports, ...(reexports.length ? { reexports } : {}) } });
+
+test("a workspace package's name reaches its source, and a name its index re-exports reaches the file that defines it", () => {
+  const rels = corpus("packages/common/src/index.ts", "packages/common/src/utils.ts", "packages/common/debug.ts", "app/a0.ts", "app/a1.ts", "app/a2.ts");
+  const packages = new Map([["@excalidraw/common", "packages/common"]]);
+  const records = new Map([
+    ["packages/common/src/index.ts", barrel("packages/common/src/index.ts", ["Debug", "z"], [{ module: "./utils", names: "*" }, { module: "../debug", names: [["Debug", "Debug"]] }])],
+    ["packages/common/src/utils.ts", barrel("packages/common/src/utils.ts", ["capitalize"])],
+    ["packages/common/debug.ts", barrel("packages/common/debug.ts", ["Debug"])],
+  ]);
+  for (let i = 0; i < 3; i++) {
+    records.set(`app/a${i}.ts`, record(`app/a${i}.ts`, [{ module: "@excalidraw/common", names: ["capitalize", "Debug", "z"] }, { module: "@excalidraw/common/utils", names: ["capitalize"] }]));
+  }
+
+  assert.deepEqual(mostImported(new Set(["packages/common/src/index.ts", "packages/common/src/utils.ts"]), records, rels, packages), [
+    { name: "capitalize", file: "packages/common/src/utils.ts", importers: 3 },
+    { name: "z", file: "packages/common/src/index.ts", importers: 3 },
+  ]);
+  assert.deepEqual(mostImported(new Set(["packages/common/debug.ts"]), records, rels, packages), [{ name: "Debug", file: "packages/common/debug.ts", importers: 3 }]);
+  // Without the workspace's names nothing here says which directory the package is.
+  assert.deepEqual(mostImported(new Set(["packages/common/src/utils.ts"]), records, rels), []);
+});
+
+test("a re-export cycle ends, and a name no file down the chain defines stays with the barrel", () => {
+  const rels = corpus("lib/a.ts", "lib/b.ts", "app/a0.ts", "app/a1.ts", "app/a2.ts");
+  const records = new Map([
+    ["lib/a.ts", barrel("lib/a.ts", [], [{ module: "./b", names: "*" }])],
+    ["lib/b.ts", barrel("lib/b.ts", [], [{ module: "./a", names: "*" }])],
+  ]);
+  for (let i = 0; i < 3; i++) records.set(`app/a${i}.ts`, record(`app/a${i}.ts`, [{ module: "../lib/a", names: ["ghost"] }]));
+  assert.deepEqual(mostImported(new Set(["lib/a.ts", "lib/b.ts"]), records, rels), [{ name: "ghost", file: "lib/a.ts", importers: 3 }]);
+});
+
+test("a workspace's packages are named by their manifests, and a name two manifests give, or a manifest that is no JSON, names nothing", () => {
+  const packages = workspacePackages([
+    { rel: "package.json", text: '{ "name": "monorepo", "private": true }' },
+    { rel: "packages/common/package.json", text: '{ "name": "@excalidraw/common" }' },
+    { rel: "packages/a/package.json", text: '{ "name": "dup" }' },
+    { rel: "packages/b/package.json", text: '{ "name": "dup" }' },
+    { rel: "packages/broken/package.json", text: "{ name: " },
+    { rel: "packages/nameless/package.json", text: '{ "version": "1.0.0" }' },
+  ]);
+  assert.deepEqual([...packages], [["monorepo", ""], ["@excalidraw/common", "packages/common"], ["dup", null]]);
 });

@@ -535,3 +535,13 @@ test("PHP inline markup asks wherever the file's markup holds a script, in any l
   // An inline tag cuts the script in two, and the chunk after it holds no tag of its own.
   assert.deepEqual(await asking("php", '<script>\nvar x = <?= $y ?>;\nfunction dup() {}\n</script>\n'), [1, 2, 3, 4]);
 });
+
+test("Blade markup asks wherever the file's markup holds an echo or a directive, and markup with an e-mail address or a CSS rule asks nothing", async () => {
+  // Blade compiles `{{ }}`, `{!! !!}`, `@php` and `@name(...)` into PHP, so the markup of a view holding one is code.
+  assert.deepEqual(await asking("php", "<div>\n@php\n$total = collect($items)->sum('price');\n@endphp\n</div>\n"), [1, 2, 3, 4, 5]);
+  assert.deepEqual(await asking("php", "{{ number_format($total, 2) }}\n"), [1]);
+  assert.deepEqual(await asking("php", "<p>{!! $html !!}</p>\n"), [1]);
+  assert.deepEqual(await asking("php", "<ul>\n@foreach ($items as $item)\n<li>x</li>\n@endforeach\n</ul>\n"), [1, 2, 3, 4, 5]);
+  // Blade reads a directive only after a character that cannot end a word, and leaves the CSS rules it has no compiler for alone.
+  assert.deepEqual(await asking("php", "<p>mail admin@example.com (soon)</p>\n<style>\n@media (max-width: 600px) { p { color: red } }\n</style>\n"), []);
+});

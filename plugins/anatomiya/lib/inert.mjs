@@ -131,11 +131,20 @@ function reduce(engine, line) {
   return { code, open: null };
 }
 
+// A line that opens like a comment and holds an expression in braces, other than a doc comment. In JSX
+// children `//` and `/*` are text, so the braces run: measured, 3 lines of excalidraw's .tsx and .jsx files
+// hold one, and every one is a real comment, which is the false ask this costs.
+const JSX_TEXT = /^\s*(?:\/\/|\/\*(?!\*)).*\{[^}\s][^}]*\}/;
+
+// A closing tag or a self-closing one: a `.js` file that holds JSX.
+const JSX_TAG = /<\/[A-Za-z]|\/>/;
+
 /**
  * Which of a file's lines provably define nothing callable, blank ones
  * included. A file not read by `deadline` asks about every other line.
+ * `jsx` says the file may hold JSX, where text can begin like a comment.
  */
-function inertLines(engine, lines, deadline) {
+function inertLines(engine, lines, deadline, jsx = false) {
   const rule = INERT[engine];
   const unread = () => lines.map((line) => line.trim() === "");
   const inert = unread();
@@ -194,7 +203,7 @@ function inertLines(engine, lines, deadline) {
       [depth, unseen] = [0, true];
       continue;
     }
-    if (code === "") inert[i] = true;
+    if (code === "") inert[i] = !(jsx && JSX_TEXT.test(line));
     // In an argument a template on its own line may be tagged by the line above, which calls.
     else if (depth > 0 && rule.member.test(code) && !(called && line.includes("`"))) {
       inert[i] = true;
@@ -225,7 +234,8 @@ function inertLines(engine, lines, deadline) {
   return inert;
 }
 
-const byLine = ({ engine, source, deadline }) => inertLines(engine, source.split("\n"), deadline);
+const byLine = ({ engine, lang, source, deadline }) =>
+  inertLines(engine, source.split("\n"), deadline, lang === "jsx" || (lang === "js" && JSX_TAG.test(source)));
 
 async function byTree({ lang, source, deadline, grammars }) {
   const { treeInertLines } = await import("./inert-tree.mjs");

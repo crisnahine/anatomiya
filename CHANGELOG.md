@@ -7,6 +7,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Every language now gets the "most imported from here" line, which names the helpers the rest of the
+  repository already calls from a directory. Ruby reads it off constants by Rails' autoload names,
+  Python, Java, Kotlin, PHP and Rust off their imports, Go off a package's calls, and C# off the type
+  a call names. A method is named only where the file it reaches defines it, so `Account.find` is
+  `Account` and `TagManager#local_url?` stays as it is (H58).
+- A JavaScript import of a package the repository's own workspace declares (`@excalidraw/common`)
+  resolves through that package's `package.json` name, and a name an index re-exports is credited to
+  the file that defines it. excalidraw's `packages/common/src` had no helper line and now names
+  `KEYS (101 files)` and `arrayToMap (63)` (H59).
+- The end-of-turn reuse check reads Rails ERB views and Razor views (`.erb`, `.cshtml`, `.razor`):
+  a hunk that adds template code is asked about, one that adds markup alone is not (A122).
+
+### Changed
+
+- The reuse check's reason asks the subagent for every existing function that does the job or part of
+  it, and the session to call the closest one, to fit the new code to it, or to extend it without
+  changing what it returns to its current callers. Most misses in the 2026-10-25 and 2026-10-26 runs
+  named the helper and then kept a copy because it fell short on one case (A123).
+
+### Fixed
+
+- A Laravel Blade view's logic asked nothing in the reuse check: the PHP grammar reads everything
+  outside `<?php` as markup, and markup counted as code only beside a `<script` tag. An echo, `@php`
+  or a directive with an argument now makes the markup code (B80).
+- A missing or broken `web-tree-sitter` install turned the reuse check off for every Python, PHP, Go,
+  Java, C#, Rust and Kotlin file, with no message. A file nothing could read is now asked about whole
+  (B68).
+- In a file that holds JSX, a line of text that starts with `//` or `/*` and holds an expression in
+  braces was read as a comment and asked nothing (B81).
+
 ## [0.18.2] - 2026-10-26
 
 A rule committed ahead of its picks chose three more reuse tasks, in eslint,

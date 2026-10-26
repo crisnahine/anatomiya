@@ -249,7 +249,7 @@ export function unquotePath(text) {
  * agent writes, checks, fixes, then commits, so the moment the findings are
  * cheapest is the moment the work is not committed.
  */
-export async function pendingPaths(root, { timeout } = {}) {
+export async function pendingPaths(root, { timeout, keep = isCorpusPath } = {}) {
   // `-uall`, because the default collapses an untracked directory to a single
   // entry ending in `/`, which is not a source path and was dropped: a wholly
   // new directory checked before its first commit read clean.
@@ -272,7 +272,7 @@ export async function pendingPaths(root, { timeout } = {}) {
   // path out with the row, and a companion moved away in the tree still
   // satisfied its producer, where the same move committed was reported.
   const all = parsePorcelainRows(r.stdout);
-  const rows = all.filter((row) => isCorpusPath(row.path));
+  const rows = all.filter((row) => keep(row.path));
   const gone = (row) => row.x === "D" || row.y === "D";
   // Untracked, or added to the index: there is no committed version to compare
   // against, which is what an addition is. `git add -N` writes its letter in

@@ -1545,10 +1545,37 @@ test("an area names what its files import and what other files import from it", 
   assert.deepEqual(utils.imports, [], "nothing in here imports anything, which is a count and not a gap");
 });
 
-test("an area with no static import surface is asked neither question", needsRuby, async (t) => {
+test("a workspace package imported by its name credits the file its index hands the name on from", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write("package.json", '{ "name": "mono", "private": true, "workspaces": ["packages/*"] }\n');
+    write("packages/common/package.json", '{ "name": "@acme/common", "main": "./dist/index.js" }\n');
+    write("packages/common/src/index.ts", 'export * from "./strings"\nexport * from "./numbers"\n');
+    write("packages/common/src/strings.ts", "export function capitalize(s: string): string {\n  return s\n}\n");
+    write("packages/common/src/numbers.ts", "export function clamp(n: number): number {\n  return n\n}\n");
+    write("packages/common/src/dates.ts", "export function today(): number {\n  return 1\n}\n");
+    for (let i = 0; i < 4; i++) {
+      write(`packages/app/src/view${i}.ts`, `import { capitalize } from "@acme/common"\nexport const v${i} = (): string => capitalize("x")\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  const common = result.areas.find((a) => a.path === "packages/common/src");
+  assert.ok(common, "the package's area exists");
+  assert.deepEqual(common.reused, [{ name: "capitalize", file: "packages/common/src/strings.ts", importers: 4 }]);
+});
+
+test("a Ruby area is asked what other files reach in for by name, and not what it imports", needsRuby, async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     for (let i = 0; i < 4; i++) {
       write(`app/models/thing${i}.rb`, `class Thing${i}\n  def call\n    1\n  end\nend\n`);
+    }
+    write("app/lib/tag_manager.rb", "class TagManager\n  def local_url?(url)\n    true\n  end\nend\n");
+    for (let i = 0; i < 3; i++) write(`app/lib/other${i}.rb`, `class Other${i}\nend\n`);
+    for (let i = 0; i < 3; i++) {
+      write(`app/services/s${i}.rb`, `class S${i}\n  def call(url)\n    TagManager.instance.local_url?(url)\n  end\nend\n`);
     }
     git("add", "-A");
     git("commit", "-qm", "init");
@@ -1559,7 +1586,9 @@ test("an area with no static import surface is asked neither question", needsRub
   const models = result.areas.find((a) => a.path === "app/models");
   assert.ok(models, "the area exists");
   assert.equal(models.imports, null, "Ruby has no import to count, and zero would read as a measured none");
-  assert.equal(models.reused, null);
+  assert.deepEqual(models.reused, [], "nothing reaches in here, which is a count and not a gap");
+  const lib = result.areas.find((a) => a.path === "app/lib");
+  assert.deepEqual(lib?.reused, [{ name: "TagManager#local_url?", file: "app/lib/tag_manager.rb", importers: 3 }]);
 });
 
 /* --- the pooled prior is built from the whole repository (#56) --- */

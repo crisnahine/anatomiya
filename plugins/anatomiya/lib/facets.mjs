@@ -200,12 +200,24 @@ export function jsFacets({ program, module: mod }) {
   // questions: `export { a as b }` publishes `b` and shadows the local `a`,
   // which is the name an unexported helper has to be told apart from.
   const exportedLocals = new Set();
+  // What a barrel hands on from another module: `*` for `export * from`, or the names as
+  // `[imported, exported]`. `export * as ns` is a namespace object, which names no helper.
+  const reexports = [];
   for (const s of mod?.staticExports ?? []) {
+    const named = new Map();
     for (const e of s.entries) {
       if (e.exportName.kind === "Default") exports.push("default");
       else if (e.exportName.kind === "Name" && e.exportName.name) exports.push(e.exportName.name);
       if (e.localName?.name) exportedLocals.add(e.localName.name);
+      const from = e.moduleRequest?.value;
+      if (typeof from !== "string") continue;
+      if (e.importName.kind === "AllButDefault") reexports.push({ module: from, names: "*" });
+      else if (e.importName.kind === "Name" && e.exportName.kind === "Name") {
+        if (!named.has(from)) named.set(from, []);
+        named.get(from).push([e.importName.name, e.exportName.name]);
+      }
     }
+    for (const [module, names] of named) reexports.push({ module, names });
   }
 
   let jsx = false;
@@ -290,6 +302,7 @@ export function jsFacets({ program, module: mod }) {
       // Absent unless true: it crosses the process boundary once per file and
       // almost every file holds something.
       ...(program.body?.length ? {} : { empty: true }),
+      ...(reexports.length ? { reexports } : {}),
     };
   };
 
@@ -376,8 +389,81 @@ const requiresMinitest = (n) =>
   n.name === "require" &&
   /^minitest(\/|$)/.test(args(n)[0]?.t === "string" ? (args(n)[0].unescaped ?? "") : "");
 
+const isConst = (n) => n?.t === "constant_read" || n?.t === "constant_path";
+
+/** A constant as written, `::` kept where it is rooted, or null where any part of it is computed. */
+function writtenConst(n) {
+  if (n.t === "constant_read") return n.name ?? null;
+  if (!n.parent) return `::${n.name}`;
+  const parent = isConst(n.parent) ? writtenConst(n.parent) : null;
+  return parent === null ? null : `${parent}::${n.name}`;
+}
+
+// The calls that hand back an instance of the class they are made on, so a call on what they return is an instance method's.
+const INSTANCE_OF = new Set(["new", "instance"]);
+
+/**
+ * The modules a reference sits in, innermost first, as Ruby's own `Module.nesting` lists them: a
+ * class written `A::B` inside `M` adds `M::A::B` and no `M::A`.
+ */
+function nestingOf(stack) {
+  const fulls = [];
+  for (const decl of stack) {
+    if ((decl.t !== "class" && decl.t !== "module") || !isConst(decl.constant_path)) continue;
+    const written = writtenConst(decl.constant_path);
+    if (written === null) continue;
+    const outer = fulls.at(-1);
+    fulls.push(written.startsWith("::") ? written.slice(2) : outer ? `${outer}::${written}` : written);
+  }
+  return fulls.reverse();
+}
+
+/**
+ * What a Ruby file reaches for by name, which is how Ruby imports: one `{ const, nesting, name }`
+ * per constant written, where `name` adds the method called on it, `.call` on the class itself and
+ * `#local_url?` on what its `new` or `instance` hands back. A class's own name is no reference to
+ * it, and a constant reached through anything computed names nothing.
+ */
+function rubyRefs() {
+  const refs = [];
+  const seen = new Set();
+  const consumed = new WeakSet();
+  const consume = (n) => {
+    for (let at = n; isConst(at); at = at.parent) consumed.add(at);
+  };
+  const add = (constNode, nesting, member) => {
+    consume(constNode);
+    const written = writtenConst(constNode);
+    if (written === null) return;
+    const name = `${written.replace(/^::/, "")}${member}`;
+    const key = `${written}\0${nesting.join(",")}\0${name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    refs.push({ const: written, nesting, name });
+  };
+  const defines = new Set();
+  const node = (n, ctx) => {
+    if (n.t === "def" && typeof n.name === "string") defines.add(n.name);
+    if (consumed.has(n)) return;
+    if (n.t === "class" || n.t === "module") {
+      if (isConst(n.constant_path)) consume(n.constant_path);
+      // Read in the scope around the class, which the walk has not entered yet.
+      if (isConst(n.superclass)) add(n.superclass, nestingOf(ctx.stack), "");
+    } else if (n.t === "call") {
+      const r = n.receiver;
+      if (isConst(r)) add(r, nestingOf(ctx.stack), `.${n.name}`);
+      else if (r?.t === "call" && INSTANCE_OF.has(r.name) && isConst(r.receiver)) {
+        consumed.add(r);
+        add(r.receiver, nestingOf(ctx.stack), `#${n.name}`);
+      }
+    } else if (isConst(n)) add(n, nestingOf(ctx.stack), "");
+  };
+  return { node, refs, defines };
+}
+
 /** What `jsFacets` is for a Ruby tree: a visitor for the Ruby walk. */
 export function rubyFacets(program, rel = "") {
+  const reached = rubyRefs();
   let rspec = false;
   // RSpec's words other than the two minitest/spec shares, or a call made on
   // `RSpec` itself: either names RSpec whatever the path says.
@@ -389,6 +475,7 @@ export function rubyFacets(program, rel = "") {
   let testCalls = false;
 
   const node = (n, ctx) => {
+    reached.node(n, ctx);
     // Inside a `def` the call runs when that method does and declares no case:
     // errbit writes its spec macros as plain methods holding `context ... do`.
     // A class or module body is where RSpec's own describes sit and stays a site.
@@ -453,6 +540,9 @@ export function rubyFacets(program, rel = "") {
       testCalls,
       // Absent unless true, for the reason the JavaScript side spells out.
       ...(program.statements?.body?.length ? {} : { empty: true }),
+      ...(reached.refs.length ? { refs: reached.refs } : {}),
+      // The methods a file defines, which is what a reference calling one of them is named by.
+      ...(reached.defines.size ? { defines: [...reached.defines].sort() } : {}),
     };
   };
 

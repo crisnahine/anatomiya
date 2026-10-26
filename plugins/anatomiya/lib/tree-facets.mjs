@@ -12,6 +12,7 @@ import { stemOf } from "./paths.mjs";
 import { coveredStem, isTestTree } from "./test-shape.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
 import { fieldOf, nameOf, walkTree } from "./tree-walk.mjs";
+import { treeRefs } from "./tree-refs.mjs";
 
 const JVM_CASES = new Map(["Test", "ParameterizedTest", "RepeatedTest", "TestFactory", "TestTemplate"].map((name) => [name, null]));
 const JVM_IMPORTS = [
@@ -226,11 +227,16 @@ export function treeFacets(program, lang, rel = "", { placed = false } = {}) {
   const unimported = cases || collected || read ? (rules.unimported?.(plain || read) ?? null) : null;
   // By place as by name: what the tool collects is the runner's with or without a case in it.
   const byPlace = placed && !empty ? (placeTestsOf(lang)?.runner ?? null) : null;
+  const { refs, defines, ...scope } = treeRefs(program, lang, rel);
   return {
     testRunner: (marked ? markedBy : null) ?? (cases ? runner : null) ?? unimported ?? byPlace ?? (pest ? "pest" : null),
     testCalls: cases || pest,
     // Absent unless true, as the other two engines send `empty`.
     ...(inline ? { inlineTests: true } : {}),
     ...(empty ? { empty: true } : {}),
+    // Absent where empty, as the Ruby facets send them: most files of a large tree reach for nothing in it.
+    ...(refs.length ? { refs } : {}),
+    ...(defines.length ? { defines } : {}),
+    ...scope,
   };
 }

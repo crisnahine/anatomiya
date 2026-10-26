@@ -19,6 +19,7 @@ import { posix } from "node:path";
 import { SOURCE_OF } from "./companions.mjs";
 import { embeddedIn, language } from "./langs.mjs";
 import { dirOf, extOf, withoutExtension, byCode } from "./paths.mjs";
+import { reachedFrom } from "./refs.mjs";
 
 /**
  * The packages a JSX area cannot be written without, so importing one says
@@ -90,6 +91,28 @@ const packageOf = (spec) => {
 };
 
 /**
+ * The packages this repository's own workspace declares, by the name each
+ * manifest gives: `{ rel, text }` per `package.json` in, a map from name to the
+ * manifest's directory out. A name two manifests give maps to null, since an
+ * import of it could mean either, and a manifest that is no JSON names nothing.
+ */
+export function workspacePackages(manifests) {
+  const packages = new Map();
+  for (const { rel, text } of manifests) {
+    let name;
+    try {
+      name = JSON.parse(text)?.name;
+    } catch {
+      continue;
+    }
+    if (typeof name !== "string" || name === "") continue;
+    const dir = dirOf(rel);
+    packages.set(name, packages.has(name) && packages.get(name) !== dir ? null : dir);
+  }
+  return packages;
+}
+
+/**
  * The corpus file a specifier names, or null.
  *
  * `companions.mjs` answers a narrower question textually and does not call this.
@@ -108,12 +131,25 @@ const packageOf = (spec) => {
  * companions use, after the file spelled exactly, so a real `format.js` beside
  * the source is still the one named.
  */
-export function specifierToFile(spec, importerRel, corpusRels) {
+export function specifierToFile(spec, importerRel, corpusRels, packages = null) {
   // A trailing slash names a directory, so only its index answers: `./base/`
   // is never `base.ts`.
   const dirOnly = spec.endsWith("/");
   if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
     return fileAt(posix.join(posix.dirname(importerRel), spec), dirOnly, corpusRels);
+  }
+
+  // A package this repository's own workspace declares, by the name its manifest gives it.
+  const name = packageOf(spec);
+  const dir = packages?.get(name);
+  if (typeof dir === "string") {
+    const rest = withoutTrailingSlashes(spec.slice(name.length + 1));
+    const at = rest === "" ? [posix.join(dir, "src"), dir] : [posix.join(dir, "src", rest), posix.join(dir, rest)];
+    for (const path of at) {
+      const file = rest === "" ? fileAt(path, true, corpusRels) : fileAt(path, dirOnly, corpusRels);
+      if (file !== null) return file;
+    }
+    return null;
   }
 
   if (spec.startsWith(LIB_ALIAS)) {
@@ -329,6 +365,33 @@ function register(index, path, rel) {
 }
 
 /**
+ * The file that defines a name an importer takes from `file`, followed through the barrels that hand
+ * it on: `export * from` and `export { a as b } from`. Null where no file down the chain is seen
+ * defining it, and where the chain runs back on itself; the importer's own file then keeps it.
+ */
+function definedIn(file, name, records, corpusRels, packages, seen) {
+  const key = `${file}\0${name}`;
+  const facets = records.get(file)?.facets;
+  if (!facets || seen.has(key)) return null;
+  seen.add(key);
+  const handedOn = facets.reexports ?? [];
+  const renamed = handedOn.flatMap((r) => (r.names === "*" ? [] : r.names.filter(([, as]) => as === name).map(([from]) => [r.module, from])));
+  if (renamed.length === 0 && facets.exports?.includes(name)) return { file, name };
+  if (renamed.length > 0) {
+    const [module, from] = renamed[0];
+    const next = specifierToFile(module, file, corpusRels, packages);
+    return next === null ? null : definedIn(next, from, records, corpusRels, packages, seen);
+  }
+  for (const r of handedOn) {
+    if (r.names !== "*") continue;
+    const next = specifierToFile(r.module, file, corpusRels, packages);
+    const found = next === null ? null : definedIn(next, name, records, corpusRels, packages, seen);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/**
  * The names the rest of the repository imports out of an area, top five.
  *
  * Only importers outside the area: a directory importing its own files is how
@@ -339,8 +402,8 @@ function register(index, path, rel) {
  * form of "check before you create": five names with numbers beats a list of
  * every export the directory has.
  */
-export function mostImported(areaRels, allRecords, corpusRels) {
-  const byFile = reuseIndex(allRecords, corpusRels);
+export function mostImported(areaRels, allRecords, corpusRels, packages = null) {
+  const byFile = reuseIndex(allRecords, corpusRels, packages);
 
   const rows = [];
   for (const file of areaRels) {
@@ -383,24 +446,34 @@ function rowName(name, file) {
  */
 const REUSE_INDEX = new WeakMap();
 
-function reuseIndex(allRecords, corpusRels) {
+function reuseIndex(allRecords, corpusRels, packages) {
   const cached = REUSE_INDEX.get(allRecords);
-  if (cached && cached.corpusRels === corpusRels) return cached.byFile;
+  if (cached && cached.corpusRels === corpusRels && cached.packages === packages) return cached.byFile;
 
   const byFile = new Map();
+  const add = (file, names, rel) => {
+    let held = byFile.get(file);
+    if (!held) byFile.set(file, (held = new Map()));
+    for (const name of names) {
+      let who = held.get(name);
+      if (!who) held.set(name, (who = new Set()));
+      who.add(rel);
+    }
+  };
+  const owners = new Map();
   for (const [rel, r] of allRecords) {
     for (const i of r.facets?.imports ?? []) {
-      const file = specifierToFile(i.module, rel, corpusRels);
+      const file = specifierToFile(i.module, rel, corpusRels, packages);
       if (file === null) continue;
-      let names = byFile.get(file);
-      if (!names) byFile.set(file, (names = new Map()));
       for (const name of i.names) {
-        let who = names.get(name);
-        if (!who) names.set(name, (who = new Set()));
-        who.add(rel);
+        const key = `${file}\0${name}`;
+        if (!owners.has(key)) owners.set(key, (name === "*" ? null : definedIn(file, name, allRecords, corpusRels, packages, new Set())) ?? { file, name });
+        const owner = owners.get(key);
+        add(owner.file, [owner.name], rel);
       }
     }
+    for (const { file, names } of reachedFrom(rel, r, corpusRels, allRecords)) add(file, names, rel);
   }
-  REUSE_INDEX.set(allRecords, { corpusRels, byFile });
+  REUSE_INDEX.set(allRecords, { corpusRels, packages, byFile });
   return byFile;
 }

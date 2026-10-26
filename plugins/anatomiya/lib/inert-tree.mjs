@@ -36,8 +36,9 @@ const BOOLEAN = /^(?:true|false)$/;
 const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
 const NAMES_C = /["`]C["`]/;
 
-// What makes a file's inline markup code in another language.
-const SCRIPT = /<script/i;
+// What makes a file's inline markup code: a script, or what Blade compiles to PHP. Blade reads a directive
+// only after a character that cannot end a word, and leaves the CSS rules it has no compiler for alone.
+const CODE_IN_MARKUP = /<script|\{\{|\{!!|(?<![\w@])@(?:php\b|(?!(?:media|supports|container|scope)\b)[a-z_]\w*\s*\()/i;
 
 // The modifier under which the compiler admits no conversion a user wrote.
 const CONSTANT = "const";
@@ -224,7 +225,7 @@ function inertNode(node, r, parent, outer) {
   if (r.preambleOf.has(type) && NAMES_C.test(node.text) && within(node, r.s.comment).length > 0) return false;
   if (r.whole.has(type)) return true;
   // Asked once of the file: an inline tag cuts a script into chunks of markup, and only the first holds the tag that opens it.
-  if (r.markup.has(type) && (walking.scripted ??= within(walking.root, [...r.markup]).some((m) => SCRIPT.test(m.text)))) return false;
+  if (r.markup.has(type) && (walking.scripted ??= within(walking.root, [...r.markup]).some((m) => CODE_IN_MARKUP.test(m.text)))) return false;
   // An annotation on a package is still an annotation, which may run something.
   if (r.header.has(type)) return !annotated(node, r);
   if (r.binding.has(type)) return inertBinding(node, r, parent, outer);
@@ -242,17 +243,18 @@ function rowsOf(start, end) {
 }
 
 /**
- * Which of a file's lines define nothing callable, or null where no grammar or
- * runtime reads it. A file the grammar rejects, one whose parse or walk ran
- * past `deadline` and one the runtime failed on ask about every line but the
- * blank ones.
+ * Which of a file's lines define nothing callable. A file no grammar or
+ * runtime reads, one the grammar rejects, one whose parse or walk ran past
+ * `deadline` and one the runtime failed on ask about every line but the blank
+ * ones: nothing proves such a line inert.
  */
 export async function treeInertLines(source, lang, deadline, { grammars } = {}) {
   const lines = source.split("\n");
   const unread = () => lines.map((line) => line.trim() === "");
   try {
     const parsed = await parseForLines(source, lang, { cancel: () => performance.now() > deadline, ...(grammars ? { grammars } : {}) });
-    if (parsed === null) return null;
+    // A broken install is no reason to skip a file: skipped, the check went quiet for every language this engine hosts.
+    if (parsed === null) return unread();
     return parsed.tree ? walked(parsed.tree, lines, lang, deadline) : unread();
   } catch {
     // A trap or a heap at its cap, in the parse or the walk, or a walk past the deadline: nothing here

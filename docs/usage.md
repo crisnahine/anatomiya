@@ -166,8 +166,8 @@ alone. What the four do:
   once per change, for one subagent to look for an existing function the new code could call
   instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
   such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
-  could be written with are not asked about. It reads ten languages and the script blocks of Vue and Svelte
-  components: JavaScript, TypeScript and Ruby by a rule over their lines, and Python, PHP, Go, Java, C#, Rust and Kotlin by the file's tree,
+  could be written with are not asked about. It reads ten languages, the script blocks of Vue and Svelte
+  components, and Rails ERB, Laravel Blade and Razor views: JavaScript, TypeScript and Ruby by a rule over their lines, and Python, PHP, Go, Java, C#, Rust and Kotlin by the file's tree,
   where an added comment, import or name bound to a literal asks nothing and any other added line
   asks. A file counts as the turn's work only when it was last written during one of the session's
   own tool calls, so a file another session or an editor saved in between is not asked about.
@@ -750,8 +750,10 @@ spell)`. No other language gets one. With `scan --targets cursor,copilot`, Curso
 `*.go`, and Copilot gets no file for it, since VS Code matches such a pattern at every depth: the
 Copilot overview says `1 area has no pattern GitHub Copilot can be given, so no file here covers it:
 the repository root.` None of the seven gets the
-type checker or the "most imported from here" lines. The end-of-turn reuse check asks about all
-seven, reading each changed file's tree in the hook's own process. The notice before
+type checker. Each gets the "most imported from here" line, read off its imports, a Go package's
+calls or a C# type's name (H58). The end-of-turn reuse check asks about all
+seven, reading each changed file's tree in the hook's own process, and about a whole file it could
+not read, a missing grammar included. The notice before
 a test file is written, and the finding `check` reports for one, know a test by its language's naming in six of the seven. Neither says anything of a Go, Java,
 Kotlin or C# test that sits in the one place its language's tool reads it from. No `.rs` file is
 asked, since cargo collects by place and a Rust test has no name. A file of any other language is not read: "What lives where" counts it, and

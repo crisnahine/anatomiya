@@ -88,8 +88,10 @@ test("the reason is the measured wording, naming the lines the change added", ()
   assert.ok(
     reason.startsWith(
       "Before you finish, give one subagent this change's diff and these added functions: src/a.ts:3-9; src/b.ts:1-12 (new file). " +
-        "Have it grep shared and utility modules, files near the change, and code making the same calls, then name any existing function that does the same job. " +
-        "Call each named function and delete the copy it replaces. If it names none, finish without changing anything. " +
+        "Have it grep shared and utility modules, files near the change, and code making the same calls, then name every existing function that does the same job or part of it. " +
+        "For each added function, call the closest one it names and delete the copy it replaces. Where one does part of the job, call it for that part. " +
+        "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
+        "If it names none, finish without changing anything. " +
         "If this session has no subagent tool, run that search yourself."
     ),
     reason
@@ -152,6 +154,21 @@ test("a tree-sitter file is asked about the hunks that may define something, and
   ]);
 });
 
+test("a view template is asked about the hunks that hold code, and one that only edits markup asks nothing", async (t) => {
+  // A view is where a helper's logic is copied most, and no scan reads it.
+  const { dir, git, write } = repo(t);
+  write("app/views/links/_link.html.erb", "<p>\n  <%= link_to title, href %>\n</p>\n");
+  write("Views/Home/Index.cshtml", "@model Link\n<p>x</p>\n");
+  git("add", "-A");
+  git("commit", "-qm", "views");
+  write("app/views/links/_link.html.erb", "<p>\n  <% if URI(href).host != request.host %>\n    <%= link_to title, href, rel: \"external\" %>\n  <% end %>\n</p>\n<p>more</p>\n");
+  write("Views/Home/Index.cshtml", "@model Link\n<p>x</p>\n<p>y</p>\n");
+  write("app/views/links/_note.html.erb", "<%# a note %>\n<p>x</p>\n");
+
+  // The hunk that adds `<p>more</p>` holds markup alone and is left out.
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/views/links/_link.html.erb", [{ from: 2, to: 4, created: false }]]]);
+});
+
 test("a tree-sitter file reached after the stop's parse budget is asked about whole", async (t) => {
   // Unread is not evidence: a comment the parse never reached asks.
   const { dir, write } = repo(t);
@@ -161,8 +178,8 @@ test("a tree-sitter file reached after the stop's parse budget is asked about wh
   assert.deepEqual(hunksOf(await pendingChange(dir, { parsing: { deadline: performance.now() - 1 } })), [["svc/note.py", [{ from: 1, to: 1, created: true }]]]);
 });
 
-test("a tree-sitter file whose grammar will not load asks nothing", async (t) => {
-  // Nothing read it, so nothing says it holds a function. Run as a process of its own, because a failed load is kept for the life of one.
+test("a tree-sitter file whose grammar will not load is asked about whole", async (t) => {
+  // Nothing read it, so nothing proves a line of it inert. Run as a process of its own, because a failed load is kept for the life of one.
   const { dir, write } = repo(t);
   write("app/Total.kt", "fun total(xs: List<Int>): Int {\n    return xs.sum()\n}\n");
   const module = new URL("../plugins/anatomiya/lib/reuse.mjs", import.meta.url).href;
@@ -184,7 +201,9 @@ test("a tree-sitter file whose grammar will not load asks nothing", async (t) =>
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60_000 });
 
   assert.equal(run.stderr, "");
-  assert.deepEqual(JSON.parse(run.stdout), { change: null, refused: true });
+  const { change, refused } = JSON.parse(run.stdout);
+  assert.equal(refused, true);
+  assert.deepEqual(hunksOf(change), [["app/Total.kt", [{ from: 1, to: 3, created: true }]]]);
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/Total.kt", [{ from: 1, to: 3, created: true }]]], "with the grammar there, the file asks");
 });
 

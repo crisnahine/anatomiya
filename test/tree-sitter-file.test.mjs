@@ -19,6 +19,9 @@ import { needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mj
 import * as SAMPLES from "./tree-samples.mjs";
 import { BROKEN } from "./tree-broken.mjs";
 
+// What kind of file a record says this is, without what the file reaches for, which `tree-facets.test.mjs` covers.
+const kindOf = ({ testRunner, testCalls }) => ({ testRunner, testCalls });
+
 const HOSTED = LANGUAGES.filter((l) => l.engine === "tree-sitter");
 const BODY = join(ANATOMIYA, "lib", "tree-sitter-file.mjs");
 const RUNTIME = join(ANATOMIYA, "lib", "tree-sitter-runtime.mjs");
@@ -53,7 +56,7 @@ for (const decl of HOSTED) {
     // No row asked: what a row finds in the sample is its own test's to say.
     const r = await parseTreeFile(source, rel, lang, { rows: [] });
 
-    assert.deepEqual(r, {
+    assert.deepEqual({ ...r, facets: kindOf(r.facets) }, {
       rel,
       ok: true,
       hits: {},
@@ -177,7 +180,7 @@ for (const [where, source] of Object.entries(CONDITIONAL)) {
   test(`csharp: a conditional inside ${where} is read with its first branch, and the record says so where a branch went unread`, async () => {
     const r = await parseTreeFile(source, "src/A.cs", "csharp", { rows: [] });
 
-    assert.deepEqual(r, {
+    assert.deepEqual({ ...r, facets: kindOf(r.facets) }, {
       rel: "src/A.cs",
       ok: true,
       hits: {},

@@ -304,16 +304,19 @@ test("a comment or a docstring added inside a definition is not taken for the de
   }
 });
 
-test("the oracle names a comment cgo compiles and inline markup that holds a script, and passes their plain neighbours", async () => {
+test("the oracle names a comment cgo compiles and inline markup that holds a script or Blade code, and passes their plain neighbours", async () => {
   const go = 'package m\n\n/*\nstatic int add(int a, int b) { return a+b; }\n*/\nimport "C"\n\n// Printing.\nimport "fmt"\n';
   assert.deepEqual(await named("go", go, [[4, 4]]), [[3, "comment above an import of C"]]);
   assert.deepEqual(await named("go", go, [[6, 9]]), []);
   const php = '<p>plain</p>\n<?php\n$a = 1;\n?>\n<Script>function dup() {}</script>\n';
-  assert.deepEqual(await named("php", php, [[5, 5]]), [[5, "markup of a file that holds a script"]]);
+  assert.deepEqual(await named("php", php, [[5, 5]]), [[5, "markup of a file that holds code"]]);
   assert.deepEqual(await named("php", php, [[2, 3]]), []);
   assert.deepEqual(await named("php", '<p>plain</p>\n<?php\n$a = 1;\n?>\n<p>more</p>\n', [[1, 5]]), []);
   // A chunk after an inline tag is inside the script and holds no tag of its own.
-  assert.deepEqual((await named("php", '<script>\nvar x = <?= $y ?>;\nfunction dup() {}\n</script>\n', [[3, 3]])).map(([, what]) => what), ["markup of a file that holds a script"]);
+  assert.deepEqual((await named("php", '<script>\nvar x = <?= $y ?>;\nfunction dup() {}\n</script>\n', [[3, 3]])).map(([, what]) => what), ["markup of a file that holds code"]);
+  // Blade compiles an echo and a directive to PHP, and leaves an e-mail address and a CSS rule alone.
+  assert.deepEqual(await named("php", "<p>{{ $total }}</p>\n", [[1, 1]]), [[1, "markup of a file that holds code"]]);
+  assert.deepEqual(await named("php", "<p>a@b.co</p>\n<style>@media (max-width: 1px) {}</style>\n", [[1, 2]]), []);
 });
 
 test("every node type the oracle names is one its grammar knows", async () => {

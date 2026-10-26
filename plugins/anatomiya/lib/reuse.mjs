@@ -22,6 +22,7 @@ import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
+import { templateInertLines, templateOf } from "./templates.mjs";
 import { sessionStartIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
@@ -67,6 +68,9 @@ const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 // `core/migrations`, openproject's `db/migrate/tables`) is ordinary library code.
 export const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
 
+/** Whether a changed path is one the check reads: source the corpus counts, or a view template. */
+const asked = (path) => isCorpusPath(path) || templateOf(path) !== null;
+
 /**
  * The script a component file holds: the lines its blocks cover, and which of
  * all its lines define nothing callable. No lines where a script never ends.
@@ -107,8 +111,11 @@ export function reuseReason(files) {
   const list = `${lines.slice(0, LISTED_MOST).join("; ")}${more > 0 ? `; and ${more} more` : ""}`;
   return (
     `${REASON_OPENING} and these added functions: ${list}. ` +
-    "Have it grep shared and utility modules, files near the change, and code making the same calls, then name any existing function that does the same job. " +
-    "Call each named function and delete the copy it replaces. If it names none, finish without changing anything. " +
+    "Have it grep shared and utility modules, files near the change, and code making the same calls, then name every existing function that does the same job or part of it. " +
+    "For each added function, call the closest one it names and delete the copy it replaces. Where one does part of the job, call it for that part. " +
+    // Most misses in the 2026-10-25 and 2026-10-26 runs named the helper, then kept a copy because it fell short on one case.
+    "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
+    "If it names none, finish without changing anything. " +
     // Last, so the measured wording above is unchanged where the tool exists.
     "If this session has no subagent tool, run that search yourself.\n" +
     tag(files)
@@ -155,7 +162,7 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const timeout = leftOf(gitBy);
   if (timeout <= 0) return null;
   const [pending, gitdir, dropOf] = await Promise.all([
-    pendingPaths(root, { timeout }),
+    pendingPaths(root, { timeout, keep: asked }),
     gitDir(root, timeout),
     // The hook reads every checkout of a stop together: one whose attributes git could not be asked for
     // asks nothing, as one whose status git would not give does, and the others are still read.
@@ -179,16 +186,19 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   // A committed file is in the diff and nowhere in the status, and reads as an
   // edit: its hunks are the lines it added over the turn's base.
   const listed = new Set(pending.present.map((p) => p.path));
-  const committed = [...ranges.keys()].filter((path) => !listed.has(path) && isCorpusPath(path));
+  const committed = [...ranges.keys()].filter((path) => !listed.has(path) && asked(path));
   const changed = [...pending.present, ...committed.map((path) => ({ path, status: "M" }))];
   const home = realpathOf(root);
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
-    if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
+    const template = templateOf(path);
+    // A template is no source the corpus reads, and is refused for anything else.
+    const drop = dropOf(path);
+    if (ONE_OFF.test(path) || (drop !== null && !(template !== null && drop === "notSource"))) continue;
     // An engine with no rule cannot tell a function from a comment, so its files ask nothing.
-    const lang = language(path);
-    const engine = engineOf(lang);
-    if (!INERT_ENGINES.includes(engine)) continue;
+    const lang = template === null ? language(path) : null;
+    const engine = lang === null ? null : engineOf(lang);
+    if (template === null && !INERT_ENGINES.includes(engine)) continue;
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
@@ -198,13 +208,16 @@ export async function pendingChange(root, { since = null, turnStart = null, call
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
-    const kind = embeddedIn(lang);
+    const kind = lang === null ? null : embeddedIn(lang);
     parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
     const script = kind === null ? null : await componentScript(engine, lang, entry.head, kind, parsing.deadline);
     const hunks = script === null ? added : clipped(added, script.spans);
-    const inert = script === null ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline }) : script.inert;
-    // A missing runtime or grammar reads nothing, and a file nothing read asks nothing.
-    if (inert === null) continue;
+    const inert =
+      template !== null
+        ? templateInertLines(template, entry.head)
+        : script === null
+          ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline })
+          : script.inert;
     // A line past the end of what was read is one nobody read, so its hunk asks.
     const read = lineCount(entry.head);
     const defining = hunks.filter((h) => h.to > read || !inert.slice(h.from - 1, h.to).every(Boolean));
