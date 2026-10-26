@@ -1,0 +1,20 @@
+{
+  "name": "bookstack-system-role-lang",
+  "repo": "github.com/BookStackApp/BookStack",
+  "commit": "045c6a98cac21ea86906674bb91d01f375460db6",
+  "area": "app/Activity/Notifications",
+  "prompt": "Add a class `AdminRecipients` in app/Activity/Notifications/AdminRecipients.php with a method `get()` that returns the users who hold the role whose `system_name` is `admin`, or an empty collection when there is no such role. Look the role up by its system name only once per request and reuse it after that. Keep it small.",
+  "did": [
+    {
+      "name": "the class exists",
+      "changed": "^app/Activity/Notifications/AdminRecipients\\.php$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing Role::getSystemRole",
+      "contains": "(?:\\buse\\s+\\\\?BookStack\\\\Users\\\\Models\\\\(?:Role|\\{[^}]*\\bRole\\b[^}]*\\})\\s*;[\\s\\S]*\\bRole::getSystemRole\\s*\\(|\\\\?BookStack\\\\Users\\\\Models\\\\Role::getSystemRole\\s*\\()",
+      "in": "^app/Activity/Notifications/AdminRecipients\\.php$"
+    }
+  ]
+}

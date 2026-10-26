@@ -1,0 +1,20 @@
+{
+  "name": "bitwarden-generate-comb-lang",
+  "repo": "github.com/bitwarden/server",
+  "commit": "8fb62cff78af0b5fa6c7bc3b02abe7c8e9d881e3",
+  "area": "src/Core/Models/Data",
+  "prompt": "Add a record `ImportBatch` in src/Core/Models/Data/ImportBatch.cs with `Guid Id`, `Guid UserId` and `DateTime CreationDate`, and a static method `Create(Guid userId)` that sets `CreationDate` to the current UTC time and `Id` to a new database id. Database ids must sort roughly in creation order on SQL Server, so the id carries the current UTC date and time in its last six bytes, in the byte order SQL Server compares, to keep inserts from fragmenting the index. Keep it small.",
+  "did": [
+    {
+      "name": "the record exists",
+      "changed": "^src/Core/Models/Data/ImportBatch\\.cs$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing CoreHelpers.GenerateComb or the CombGuid.Generate it delegates to",
+      "contains": "\\b(?:CoreHelpers\\.GenerateComb|CombGuid\\.Generate)\\s*\\(",
+      "in": "^src/Core/Models/Data/ImportBatch\\.cs$"
+    }
+  ]
+}

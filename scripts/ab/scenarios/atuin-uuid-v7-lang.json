@@ -1,0 +1,20 @@
+{
+  "name": "atuin-uuid-v7-lang",
+  "repo": "github.com/atuinsh/atuin",
+  "commit": "854654ec1ec6d13e0eb2468a6e57b2e2044a2162",
+  "area": "crates/atuin-scripts/src",
+  "prompt": "Add a module crates/atuin-scripts/src/run.rs defining a struct `ScriptRun` with an `id: Uuid` and the `script_id: Uuid` it ran, and a constructor `ScriptRun::new(script_id: Uuid)` that gives the run a new id that sorts by creation time, a version 7 UUID. Keep it small.",
+  "did": [
+    {
+      "name": "the module exists",
+      "changed": "^crates/atuin-scripts/src/run\\.rs$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing uuid_v7",
+      "contains": "(?:\\batuin_common::utils::uuid_v7\\s*\\(|\\buse\\s+atuin_common::(?:utils::(?:uuid_v7|\\{[^}]*\\buuid_v7\\b[^}]*\\})|\\{[^}]*\\butils::uuid_v7\\b[^}]*\\})\\s*;[\\s\\S]*\\buuid_v7\\s*\\(|\\buse\\s+atuin_common::(?:utils|\\{[^}]*\\butils\\b[^}]*\\})\\s*;[\\s\\S]*\\butils::uuid_v7\\s*\\()",
+      "in": "^crates/atuin-scripts/src/run\\.rs$"
+    }
+  ]
+}
