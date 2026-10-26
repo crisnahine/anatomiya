@@ -286,6 +286,9 @@ test("in a file that holds JSX, a line that opens like a comment and holds an ex
   // A comment with empty braces, a doc comment, and any comment in a file that holds no JSX still ask nothing.
   assert.deepEqual(await asking("jsx", "// function old() {}\n/** @param {string} a */\n// plain\n"), []);
   assert.deepEqual(await asking("js", "// returns {a, b}\nconst A = 1;\n"), []);
+  // A TypeScript or an ES module file holds no JSX, whatever its strings spell.
+  assert.deepEqual(await asking("js", "const s = '</a>';\n// see {x}\n", { path: "src/a.ts" }), []);
+  assert.deepEqual(await asking("js", "const s = '</a>';\n// see {x}\n", { path: "src/a.js" }), [2]);
 });
 
 test("a regex holding /* after a brace opens no comment", async () => {

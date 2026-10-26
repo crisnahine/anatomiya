@@ -1292,13 +1292,14 @@ copied most (A122). In ERB (`.erb`) a line asks if it holds Ruby between `<%` an
 (`.cshtml`, `.razor`) it asks if it holds an `@` that starts C#, or is a line of C# in an `@{`,
 `@code`, `@functions`, `@if`, `@foreach` or other block, through its closing brace and an `else`
 after it. In HAML and Slim it asks on a line of Ruby, an output line, a tag whose content or
-attribute is Ruby, and an interpolation. In Jinja (`.jinja`, `.j2`) and Go templates (`.tmpl`,
+attribute is Ruby, and an interpolation. In Jinja (`.jinja`, `.jinja2`, `.j2`) and Go templates (`.tmpl`,
 `.gotmpl`) it asks where an expression or an action computes: a call, a filter, an operator. A
 comment, an escaped `<%%` or `@@`, a directive that names a type or a route such as `@model`, a name
 read as it is, and markup alone ask nothing. An `.html` file is not read, since no one rule reads
 Angular's, Vue's and Django's alike. The markup of a Vue or Svelte component asks only where an
 expression computes with a literal: arithmetic on a number, a method called with a number such as
-`toFixed(2)`, or a string built with `+`.
+`toFixed(2)`, or a string built with `+`. A line longer than 400 characters asks unread, as under
+the line rules.
 
 Every file a rule reads in one stop shares one second, started at the first such file and shared by
 every checkout the stop reads: the line rules over JavaScript, Ruby and component script blocks,
@@ -2589,7 +2590,8 @@ TypeScript read `./base/`, `./` and `../`, SvelteKit's `$lib/` is tried against 
 directory above the importer and resolves where one file answers, a `~/`, `@/`, `#/` or `src/`
 written in a component is tried the same way against each directory above it and its `src`,
 a package the repository's own workspace declares resolves through its
-directory, by the name its `package.json` gives, where the workspace's own globs reach that manifest
+directory, by the name its `package.json` gives, where the workspace's own globs reach that manifest (`workspaces`, `pnpm-workspace.yaml`,
+`lerna.json` or `rush.json`)
 (`@excalidraw/common` is `packages/common`, tried as the entry its manifest names, then its
 `src/index` and its `index`), anything else is matched on the path tail once such a prefix is
 cut, and a tail two files answer resolves to neither rather than to whichever sorted first. No
@@ -2625,7 +2627,7 @@ with one file or with none, as an ambiguous tail does:
   is that file's, and a built-in no file declares is nobody's.
 - **Go** names a package directory, and the caller writes `bytesconv.StringToBytes`: the import
   path resolves under the module path a `go.mod` declares, whole, so another module's package that
-  ends in the same names is not this one, and the name goes to the file in that directory that
+  ends in the same names is not this one, and a path two `go.mod` files declare resolves nothing, and the name goes to the file in that directory that
   defines it. A Kotlin function imported by its package is found the same way, by the package's
   longest tail that is a directory here.
 - **C#** opens a namespace and names a type: `StringUtils.Truncate` goes to the file named after
@@ -2636,7 +2638,8 @@ with one file or with none, as an ambiguous tail does:
 A method called on a constant or a class (`TagManager#local_url?`, `Strings.isBlank`,
 `Money::format`) is named only where the file reached defines it, and the constant alone where it
 does not: `Account.find` is ActiveRecord's, and `Presenter.new` builds one, so both count as
-`Account` and `Presenter`.
+`Account` and `Presenter`. A method a file calls bare, or on a value, is its own where it defines
+one of that name, and never a helper's or an extension method's.
 
 ### What ships together
 

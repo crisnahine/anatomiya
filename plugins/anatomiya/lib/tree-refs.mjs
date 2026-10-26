@@ -100,7 +100,10 @@ function python(node, refs, file, rel) {
 }
 
 function java(node, refs, file) {
-  if (node.type === "import_declaration") {
+  if (node.type === "package_declaration") {
+    const path = node.children.find((c) => c.type === "scoped_identifier" || c.type === "identifier");
+    if (path) file.ownPackage = leaves(path).join("/");
+  } else if (node.type === "import_declaration") {
     const target = node.children.find((c) => c.type === "scoped_identifier" || c.type === "identifier");
     if (!target) return;
     const path = leaves(target);
@@ -119,7 +122,9 @@ function java(node, refs, file) {
     const method = nameOf(node);
     if (object?.type !== "identifier" || !method) return;
     const stem = file.classes.get(object.text);
-    const stems = stem !== undefined ? [stem] : /^[A-Z]/.test(object.text) ? file.wildcards.map((w) => `${w}/${object.text}`) : [];
+    // A class named bare is the file's own package's before it is any wildcard's, as Java looks it up.
+    const packages = file.wildcards.length ? [...(file.ownPackage ? [file.ownPackage] : []), ...file.wildcards] : [];
+    const stems = stem !== undefined ? [stem] : /^[A-Z]/.test(object.text) ? packages.map((p) => `${p}/${object.text}`) : [];
     if (stems.length) refs.push(member(object.text, method, stems, "."));
   }
 }
@@ -281,8 +286,10 @@ function php(node, refs, file) {
     const name = nameOf(node);
     if (name) file.globals.add(name);
   } else if (node.type === "function_call_expression") {
+    // `money(2)`, or `\App\Support\money(2)`, whose namespace PHP looks the function up in first.
     const callee = fieldOf(node, "function");
-    if (callee?.type === "name") refs.push({ name: callee.text, global: callee.text });
+    const name = callee?.type === "name" ? callee.text : callee?.type === "qualified_name" ? callee.children.at(-1)?.text : null;
+    if (name) refs.push({ name, global: name });
   }
 }
 
@@ -305,8 +312,9 @@ function csharp(node, refs, file) {
     if (name?.type !== "identifier") return;
     if (object?.type === "identifier" && /^[A-Z]/.test(object.text)) {
       refs.push({ name: `${object.text}.${name.text}`, bare: object.text, member: name.text, type: object.text });
-    } else if (node.field === "function") {
-      // A call on a value: an extension method of that name, where the repository declares one.
+    } else if (object !== null && node.field === "function") {
+      // A call on a value: an extension method of that name, where the repository declares one. A call on
+      // `this` or `base`, which the tree writes with no node of its own, is the class's own method.
       refs.push({ name: name.text, extension: name.text });
     }
   } else if (node.type === "object_creation_expression") {
@@ -350,6 +358,7 @@ export function treeRefs(program, lang, rel) {
     namespace: null,
     globals: new Set(),
     extensions: new Set(),
+    ownPackage: null,
   };
   walkTree(program, (node) => {
     if (declares.has(node.type)) {

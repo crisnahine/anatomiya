@@ -223,7 +223,7 @@ export async function pendingChange(root, { since = null, turnStart = null, call
       template !== null
         ? templateInertLines(template, entry.head)
         : script === null
-          ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline })
+          ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline, path })
           : script.inert;
     // A line past the end of what was read is one nobody read, so its hunk asks.
     const read = lineCount(entry.head);

@@ -16,15 +16,12 @@ import { resolve as resolveBaseline, measure as measureBaseline } from "./baseli
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
 import { extOf, extOrName } from "./paths.mjs";
-import { goModules } from "./refs.mjs";
+import { MANIFESTS, ownPackages } from "./own-packages.mjs";
 import { isLink, readHead } from "./rules.mjs";
-import { commonImports, mostImported, workspaceGlobs, workspacePackages } from "./siblings.mjs";
+import { commonImports, mostImported } from "./siblings.mjs";
 
 // A manifest larger than this is no manifest anybody wrote by hand, and is not read.
 const MANIFEST_MOST_BYTES = 256 * 1024;
-
-// The files that name a repository's own packages: npm's and its workspaces', and Go's modules.
-const MANIFESTS = new Set(["package.json", "pnpm-workspace.yaml", "lerna.json", "go.mod"]);
 
 /** Each manifest the repository tracks, as `{ rel, text }`, read whole, links passed over. */
 function manifestsIn(root, others) {
@@ -39,14 +36,6 @@ function manifestsIn(root, others) {
   return read;
 }
 
-/** The repository's own packages, as an import names them: its npm workspace's by name, and its Go modules by path. */
-function ownPackages(root, others) {
-  const manifests = manifestsIn(root, others);
-  const named = (name) => manifests.filter((m) => posix.basename(m.rel) === name);
-  const atRoot = (name) => manifests.find((m) => m.rel === name)?.text ?? null;
-  const globs = workspaceGlobs({ root: atRoot("package.json"), pnpm: atRoot("pnpm-workspace.yaml"), lerna: atRoot("lerna.json") });
-  return { packages: workspacePackages(named("package.json"), globs), modules: goModules(named("go.mod")) };
-}
 
 /**
  * What a repository-wide pool counts under.
@@ -150,7 +139,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   stateRun.catch(() => {});
 
   const corpusRels = new Set(files.map((f) => f.rel));
-  const { packages, modules } = ownPackages(root, others);
+  const own = ownPackages(manifestsIn(root, others));
   let state, frameworks, head, headRun, cochangeRun, capabilities, areas;
   try {
     // A claim that belongs to a framework cannot be judged without knowing the
@@ -382,7 +371,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
       imports: hasImports ? commonImports(areaParsed) : null,
       // Over every record in the repository, not this area's: the question is
       // who else reaches in here.
-      reused: mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels, packages, modules),
+      reused: mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels, own),
       dimensions: gated.map((d) => ({ ...d, scope: askedScope(languages, d) })),
     });
   }

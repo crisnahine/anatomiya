@@ -485,3 +485,18 @@ test("rust: `self` in a use list names the module the list is under", async () =
   const facets = await allFacetsOf("rust", "use crate::text::{self, escape};\nfn z() {}\n", "src/a.rs");
   assert.deepEqual(facets.refs.map((r) => r.name), ["text", "escape"]);
 });
+
+test("csharp: a call on this or base is the class's own, and no extension method's", async () => {
+  const facets = await allFacetsOf("csharp", "namespace App;\nclass A : B { void F() { this.Format(); base.Run(); x.Slug(); } }\n", "src/A.cs");
+  assert.deepEqual(facets.refs.filter((r) => r.extension).map((r) => r.name), ["Slug"]);
+});
+
+test("php: a function called by its namespaced name is the function of that name", async () => {
+  const facets = await allFacetsOf("php", "<?php\necho \\App\\Support\\money(2);\n", "app/a.php");
+  assert.deepEqual(facets.refs, [{ name: "money", global: "money" }]);
+});
+
+test("java: a class named bare is first looked for in the file's own package, before a wildcard's", async () => {
+  const facets = await allFacetsOf("java", "package com.acme.app;\nimport com.acme.util.*;\nclass X { void f() { Strings.isBlank(s); } }\n", "src/X.java");
+  assert.deepEqual(facets.refs, [{ name: "Strings.isBlank", bare: "Strings", member: "isBlank", stems: ["com/acme/app/Strings", "com/acme/util/Strings"] }]);
+});

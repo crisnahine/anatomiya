@@ -125,3 +125,31 @@ test("a component's markup asks where an expression in it computes with a litera
   const svelte = ["<p>{user.name}</p>", "<p>{(price * 1.2).toFixed(2)}</p>", "{#if total > 100}", "<p>big</p>", "{/if}", "<button on:click={() => count++}>+</button>"].join("\n");
   assert.deepEqual(markupAsking("svelte", svelte), [2]);
 });
+
+test("a line past the length a rule reads asks unread, and reading it takes no time", () => {
+  // The rules run on every line of a changed view inside the stop's budget, and a minified line is a megabyte.
+  const long = "{{".repeat(60_000);
+  for (const [path, line] of [["a.jinja", long], ["a.cshtml", `@{\n${'"\\'.repeat(60_000)}\n}`], ["a.tmpl", long]]) {
+    const started = performance.now();
+    const asks = asking(path, line);
+    assert.ok(performance.now() - started < 200, `${path} took ${Math.round(performance.now() - started)} ms`);
+    assert.ok(asks.length > 0, path);
+  }
+  const started = performance.now();
+  assert.deepEqual(markupAsking("vue", `<p>${long}</p>`), [1]);
+  assert.ok(performance.now() - started < 200);
+});
+
+test("HAML and Slim attributes written in Ruby ask, and a quoted attribute asks nothing", () => {
+  assert.deepEqual(asking("a.haml", "%a{ href: format_price(x) } Buy\n%p(title=format(x)) hi\n%p(title='plain') hi\n%p{ class: 'x' } hi\n"), [1, 2, 4]);
+  assert.deepEqual(asking("a.slim", "a[href=format_price(x)] Buy\np(title=\"plain\") hi\n"), [1]);
+});
+
+test("Razor text and markup inside a block open and close no braces", () => {
+  const source = ["@{", "    @: brace { here", "    <p>plain</p>", "}", "plain words after", "<p>more</p>"].join("\n");
+  assert.deepEqual(asking("a.cshtml", source), [1]);
+});
+
+test("a Jinja raw block is text", () => {
+  assert.deepEqual(asking("a.jinja", "{% raw %}{{ a + b }}{% endraw %}\n<p>{{ a + b }}</p>\n"), [2]);
+});

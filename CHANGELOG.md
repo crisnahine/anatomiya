@@ -16,8 +16,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `Account` and `TagManager#local_url?` stays as it is (H58).
 - A JavaScript import of a package the repository's own workspace declares (`@excalidraw/common`)
   resolves through that package's `package.json` name and entry, where the workspace's globs reach
-  it, and a name an index re-exports is credited to the file that defines it. excalidraw's `packages/common/src` had no helper line and now names
-  `KEYS (101 files)` and `arrayToMap (63)` (H59).
+  it (npm, Yarn, pnpm, Lerna or Rush), and a name an index re-exports is credited to the file that
+  defines it. excalidraw's `packages/common/src` had no helper line and now names `KEYS (101 files)`
+  and `arrayToMap (63)` (H59).
 - Beyond imports, the line counts what a language writes without one: a Python attribute call on
   an imported module, a Java or Kotlin wildcard's classes, a Rust path written in a call, a PHP
   function called by name, a C# extension method, and a Rails helper called with no receiver. A
@@ -32,8 +33,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - The reuse check's reason asks the subagent for every existing function that does the job or part of
   it, and the session to call the closest one, the repository's own before a package's, to fit the
-  new code to it, or to extend it without changing what it returns to its current callers. Most misses in the 2026-10-25 and 2026-10-26 runs
-  named the helper and then kept a copy because it fell short on one case (A123).
+  new code to it, or to extend it without changing what it returns to its current callers. Most
+  misses in the 2026-10-25 and 2026-10-26 runs named the helper and then kept a copy because it fell
+  short on one case (A123).
 
 ### Fixed
 

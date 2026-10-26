@@ -123,10 +123,17 @@ function familyIndexes(corpusRels) {
   for (const rel of corpusRels) {
     const family = familyOf(language(rel));
     let index = byFamily.get(family);
-    if (!index) byFamily.set(family, (index = { family, whole: new Map(), tails: new Map(), dirs: new Map(), dirTails: new Map(), named: new Map() }));
+    if (!index) byFamily.set(family, (index = { family, whole: new Map(), tails: new Map(), candidates: new Map(), dirs: new Map(), dirTails: new Map(), named: new Map() }));
     const stem = withoutExtension(rel);
     claim(index.whole, stem, rel);
-    for (const tail of tailsOf(stem)) claim(index.tails, tail, rel);
+    for (const tail of tailsOf(stem)) {
+      claim(index.tails, tail, rel);
+      // A Python tail keeps every file it names: which one an import means depends on where the import is.
+      if (family === "python") {
+        if (!index.candidates.has(tail)) index.candidates.set(tail, []);
+        index.candidates.get(tail).push(rel);
+      }
+    }
     const base = posix.basename(stem);
     if (!index.named.has(base)) index.named.set(base, []);
     index.named.get(base).push(rel);
@@ -157,11 +164,13 @@ function pythonRoot(file, tail, importer, corpusRels) {
 function byStem(stem, exact, indexes, importer, corpusRels) {
   const found = new Set();
   for (const index of indexes) {
+    if (!exact && index.family === "python") {
+      for (const file of index.candidates.get(stem) ?? []) if (pythonRoot(file, stem, importer, corpusRels)) found.add(file);
+      continue;
+    }
     const hit = exact ? index.whole.get(stem) : index.tails.get(stem);
     if (hit === null) return null;
-    if (hit === undefined) continue;
-    if (!exact && index.family === "python" && !pythonRoot(hit, stem, importer, corpusRels)) continue;
-    found.add(hit);
+    if (hit !== undefined) found.add(hit);
   }
   return found.size === 1 ? [...found][0] : null;
 }
@@ -178,7 +187,8 @@ function packageDir(path, index, modules) {
     for (const [module, dir] of modules) {
       if ((path === module || path.startsWith(`${module}/`)) && (best === null || module.length > best[0].length)) best = [module, dir];
     }
-    if (best === null) return null;
+    // No module of this repository's, or one two `go.mod` files declare: nothing says which directory.
+    if (best === null || best[1] === null) return null;
     const dir = posix.join(best[1], path.slice(best[0].length + 1));
     return index.dirs.has(dir === "." ? "" : dir) ? (dir === "." ? "" : dir) : null;
   }
@@ -254,16 +264,6 @@ const phpGlobals = (records) =>
     return index;
   });
 
-/** The module path each `go.mod` declares, to the directory it sits in: `{ rel, text }` per file in. */
-export function goModules(manifests) {
-  const modules = new Map();
-  for (const { rel, text } of manifests) {
-    const path = /^\s*module\s+"?([^\s"]+)"?/m.exec(text)?.[1];
-    if (path) claim(modules, path, dirOf(rel));
-  }
-  return modules;
-}
-
 /** The file a tree-sitter reference names, or null. */
 function treeTarget(ref, from, rel, corpusRels, records, modules) {
   if (ref.global !== undefined) return phpGlobals(records).get(ref.global) ?? null;
@@ -285,14 +285,17 @@ function treeTarget(ref, from, rel, corpusRels, records, modules) {
 /**
  * What one record reaches for outside JavaScript's imports, as `{ file, names }`, its own file left
  * out. `records` holds every file's record by path, which says what each file defines, and `modules`
- * the module path each `go.mod` declares, to its directory.
+ * the module path each `go.mod` declares, to its directory (`goModules` in `own-packages.mjs`).
  */
 export function reachedFrom(rel, record, corpusRels, records, modules = null) {
   const refs = record.facets?.refs;
   if (!refs?.length) return [];
   const ruby = familyOf(language(rel)) === "ruby";
+  // A method the file calls bare, or on a value, is its own where it defines one of that name.
+  const own = new Set(record.facets?.defines ?? []);
   const reached = [];
   for (const ref of refs) {
+    if (own.has(ref.call) || own.has(ref.extension)) continue;
     const file = ruby ? rubyTarget(ref, corpusRels, records) : treeTarget(ref, record, rel, corpusRels, records, modules);
     if (file === null || file === rel) continue;
     const target = records.get(file);

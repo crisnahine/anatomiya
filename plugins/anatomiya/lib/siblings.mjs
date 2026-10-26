@@ -18,9 +18,8 @@ import { posix } from "node:path";
 
 import { SOURCE_OF } from "./companions.mjs";
 import { embeddedIn, language } from "./langs.mjs";
-import { claim, dirOf, escapeRe, extOf, withoutExtension, byCode, tailsOf, TAIL_MOST } from "./paths.mjs";
+import { claim, dirOf, extOf, withoutExtension, byCode, tailsOf, TAIL_MOST } from "./paths.mjs";
 import { reachedFrom } from "./refs.mjs";
-import { parsed } from "./transcript.mjs";
 
 /**
  * The packages a JSX area cannot be written without, so importing one says
@@ -90,75 +89,6 @@ const packageOf = (spec) => {
   const parts = spec.split("/");
   return spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
 };
-
-// The fields a manifest names its own entry in, in the order a bundler reading the source would take them.
-const ENTRY_FIELDS = ["source", "module", "main"];
-
-const strings = (list) => (Array.isArray(list) ? list.filter((g) => typeof g === "string" && g !== "") : []);
-
-/**
- * The directories a workspace says hold its packages, as globs: the root manifest's `workspaces`
- * (a list, or Yarn's `{ packages }`), `pnpm-workspace.yaml`'s `packages`, and `lerna.json`'s,
- * which defaults to `packages/*`. Null where the repository declares no workspace.
- */
-export function workspaceGlobs({ root = null, pnpm = null, lerna = null }) {
-  const globs = [];
-  const manifest = root === null ? null : parsed(root);
-  globs.push(...strings(Array.isArray(manifest?.workspaces) ? manifest.workspaces : manifest?.workspaces?.packages));
-  if (pnpm !== null) {
-    let listing = false;
-    for (const line of pnpm.split("\n")) {
-      if (/^packages\s*:/.test(line)) listing = true;
-      else if (listing && /^\s*-/.test(line)) globs.push(line.replace(/^\s*-\s*/, "").replace(/\s+#.*$/, "").replace(/^["']|["']$/g, "").trim());
-      else if (listing && /^\S/.test(line) && !line.startsWith("#")) listing = false;
-    }
-  }
-  if (lerna !== null) {
-    const config = parsed(lerna);
-    if (config) globs.push(...(Array.isArray(config.packages) ? strings(config.packages) : ["packages/*"]));
-  }
-  return globs.length ? [...new Set(globs.filter(Boolean))] : null;
-}
-
-/** A workspace glob as a pattern over a directory: `*` is one segment's worth, `**` any number of them. */
-const globPattern = (glob) =>
-  new RegExp(`^${glob.replace(/\/+$/, "").split("/").map((seg) => (seg === "**" ? ".*" : escapeRe(seg).replaceAll("\\*", "[^/]*"))).join("/")}$`);
-
-/** Whether a directory falls under a workspace's globs, the last that matches deciding: a `!` glob takes it back out. */
-function inWorkspace(dir, globs) {
-  let inside = false;
-  for (const glob of globs) {
-    const negated = glob.startsWith("!");
-    if (globPattern(negated ? glob.slice(1) : glob).test(dir)) inside = !negated;
-  }
-  return inside;
-}
-
-/**
- * The packages this repository's own workspace declares, by the name each
- * manifest under its globs gives: `{ rel, text }` per `package.json` in, a map
- * from name to `{ dir, entries }` out, `entries` the paths without an extension
- * its `source`, `module`, `main` and `exports["."]` give. A manifest no glob
- * reaches is a fixture or an example, and a repository with no workspace has no
- * other package. A name two manifests give maps to null, since an import of it
- * could mean either, and a manifest that is no JSON names nothing.
- */
-export function workspacePackages(manifests, globs) {
-  const packages = new Map();
-  if (globs === null) return packages;
-  for (const { rel, text } of manifests) {
-    if (!inWorkspace(dirOf(rel), globs)) continue;
-    const manifest = parsed(text);
-    if (typeof manifest?.name !== "string" || manifest.name === "") continue;
-    const dot = typeof manifest.exports === "string" ? manifest.exports : manifest.exports?.["."];
-    const given = [...ENTRY_FIELDS.map((f) => manifest[f]), typeof dot === "string" ? dot : (dot?.import ?? dot?.default ?? dot?.require)];
-    const entries = [...new Set(given.filter((e) => typeof e === "string" && e !== "").map((e) => withoutExtension(posix.normalize(e))))];
-    const dir = dirOf(rel);
-    const held = packages.get(manifest.name);
-    packages.set(manifest.name, held === undefined ? { dir, entries } : held !== null && held.dir === dir ? held : null);
-  }
-  return packages;
-}
 
 /**
  * The corpus file a specifier names, or null.
@@ -445,8 +375,8 @@ function definedIn(file, name, records, corpusRels, packages, seen) {
  * form of "check before you create": five names with numbers beats a list of
  * every export the directory has.
  */
-export function mostImported(areaRels, allRecords, corpusRels, packages = null, modules = null) {
-  const byFile = reuseIndex(allRecords, corpusRels, packages, modules);
+export function mostImported(areaRels, allRecords, corpusRels, own = null) {
+  const byFile = reuseIndex(allRecords, corpusRels, own);
 
   const rows = [];
   for (const file of areaRels) {
@@ -489,9 +419,10 @@ function rowName(name, file) {
  */
 const REUSE_INDEX = new WeakMap();
 
-function reuseIndex(allRecords, corpusRels, packages, modules) {
+function reuseIndex(allRecords, corpusRels, own) {
   const cached = REUSE_INDEX.get(allRecords);
-  if (cached && cached.corpusRels === corpusRels && cached.packages === packages && cached.modules === modules) return cached.byFile;
+  if (cached && cached.corpusRels === corpusRels && cached.own === own) return cached.byFile;
+  const packages = own?.packages ?? null;
 
   const byFile = new Map();
   const add = (file, names, rel) => {
@@ -515,8 +446,8 @@ function reuseIndex(allRecords, corpusRels, packages, modules) {
         add(owner.file, [owner.name], rel);
       }
     }
-    for (const { file, names } of reachedFrom(rel, r, corpusRels, allRecords, modules)) add(file, names, rel);
+    for (const { file, names } of reachedFrom(rel, r, corpusRels, allRecords, own?.modules ?? null)) add(file, names, rel);
   }
-  REUSE_INDEX.set(allRecords, { corpusRels, packages, modules, byFile });
+  REUSE_INDEX.set(allRecords, { corpusRels, own, byFile });
   return byFile;
 }
