@@ -45,7 +45,7 @@ judge whether one gives the answer away.
 ## What the rule picked
 
 Applied on 2026-10-26, before any session ran. Each repository was fetched at the table's commit, and
-`scan` ran from this repository at `ff504b1e`, the build of that day before this release's second
+`scan` ran from this repository at `ebc507a7`, the build of that day before this release's second
 round of reference readers; the rule's step 2 says the commit that adds the scenarios, and the picks
 were made on the one before it. Step 1 counted tracked files by extension. In every
 language the first repository of that language in the table passed steps 1 and 2, so no repository
