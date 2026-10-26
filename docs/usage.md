@@ -162,7 +162,7 @@ alone. What the four do:
   changes that added one.`). It is silent on every other write, which is nearly all of them. It
   informs and never refuses. `check` asks the same questions of a whole branch, as
   `test_precedent` and `cochange`.
-- **The reuse check** runs when a turn ends, and only after a turn that added source code: it asks,
+- **The reuse check** runs when a turn ends, and only after a turn that added source code or view template code: it asks,
   once per change, for one subagent to look for an existing function the new code could call
   instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
   such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
@@ -641,7 +641,7 @@ The plugin is free. What a session pays is tokens, in three places:
   2.3 to 3.4 KB on rubocop, forem, mastodon, discourse and excalidraw. A directory's own file loads
   when the agent reads a file there, 0.5 to 2.3 KB at the median on the same five
   ([docs/measurements/2026-10-25-readme-examples.md](measurements/2026-10-25-readme-examples.md)).
-- The reuse check, one subagent after each turn that added source code.
+- The reuse check, one subagent after each turn that added source code or view template code.
 
 Measured over eleven tasks and two models, 20 sessions per arm, the median session with the plugin
 cost 1.4 to 3.8 times as much as one without
@@ -684,7 +684,7 @@ writes a few fixed sentences in every repository it maps, each one listed here w
 | What lives where | "An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed." | where the repository pairs tests with sources somewhere and one printed directory has none | a session in which a testing skill's rule won over the counts (H39, H47). It can win over your own instruction |
 | before a write | "Put it where the siblings put theirs, or leave it out and say which rule you followed." | a new test file in a directory with no test precedent | the same rows |
 | before a write | "Make those changes in the same change, or say why this file does not need them." | a new file of a kind the history ships with a companion | the co-change counts (C55, D14) |
-| end of a turn | asks one subagent for an existing function each added function duplicates, to call it and delete the copy | a turn that added source code | measured: 24 of 24 found on four hard cases, 3 of 12 with no hook (A91) |
+| end of a turn | asks one subagent for an existing function each added function duplicates, to call it and delete the copy | a turn that added source code or view template code | measured: 24 of 24 found on four hard cases, 3 of 12 with no hook (A91) |
 | every echo | "Where this and the code disagree, the code is right and the map is stale" | each time the echo hands the overview back | the map's own staleness (A24) |
 
 A team that wants different wording, or none, can turn the plugin off for a repository and keep the

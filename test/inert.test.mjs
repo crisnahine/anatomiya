@@ -289,6 +289,11 @@ test("in a file that holds JSX, a line that opens like a comment and holds an ex
   // A TypeScript or an ES module file holds no JSX, whatever its strings spell.
   assert.deepEqual(await asking("js", "const s = '</a>';\n// see {x}\n", { path: "src/a.ts" }), []);
   assert.deepEqual(await asking("js", "const s = '</a>';\n// see {x}\n", { path: "src/a.js" }), [2]);
+  // A line of braces that never close is read in time, so it spends none of the budget the other files share.
+  const unclosed = `<p />\n${Array.from({ length: 2500 }, () => `// {${"a{".repeat(190)}`).join("\n")}\n`;
+  const started = performance.now();
+  await asking("jsx", unclosed);
+  assert.ok(performance.now() - started < 300, `took ${Math.round(performance.now() - started)} ms`);
 });
 
 test("a regex holding /* after a brace opens no comment", async () => {

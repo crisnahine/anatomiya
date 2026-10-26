@@ -163,16 +163,18 @@ const HAML_CODE = /^\s*(?:-(?!#)|[=~]|[!&]=)|^\s*[%.#][\w.#:-]*(?:\{[^}]*\}|\([^
 
 /**
  * The lines a HAML or Slim file runs as Ruby, each read on its own by `asks` but those a Ruby filter
- * holds, HAML's `:ruby` and Slim's `ruby:`, which are Ruby through the last line indented past it.
+ * holds, HAML's `:ruby` and Slim's `ruby:`, which are Ruby through the last line indented past it,
+ * and the line after one of Ruby that ends in a comma, which carries it on.
  */
 function indented(source, late, filter, asks) {
   const lines = source.split("\n");
   const out = new Array(lines.length).fill(false);
   let under = null;
+  let carried = false;
   for (const [i, line] of lines.entries()) {
     if (late()) return LATE;
     if (line.length > LINE_READ) {
-      out[i] = true;
+      [out[i], carried] = [true, false];
       continue;
     }
     const indent = line.length - line.trimStart().length;
@@ -181,7 +183,8 @@ function indented(source, late, filter, asks) {
       continue;
     }
     under = filter.test(line) ? indent : null;
-    out[i] = under === null && asks(line);
+    out[i] = under === null && (carried || asks(line));
+    carried = out[i] && line.trimEnd().endsWith(",");
   }
   return out;
 }
@@ -214,7 +217,7 @@ function slimAsks(line) {
     at = SLIM_ATTRIBUTE.lastIndex;
   }
   const rest = line.slice(at).trimStart();
-  return /^==?(?:\s|$)/.test(wrapper && rest.startsWith(wrapper) ? rest.slice(1).trimStart() : rest);
+  return (wrapper && rest.startsWith(wrapper) ? rest.slice(1).trimStart() : rest).startsWith("=");
 }
 
 /** Slim: `/` opens a comment, and every other line is read on its own. */

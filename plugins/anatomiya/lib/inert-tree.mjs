@@ -37,12 +37,21 @@ const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
 const NAMES_C = /["`]C["`]/;
 
 // What opens and closes code in a file's inline markup: a script, and what Blade compiles to PHP, its
-// echoes, its `@php` block and a directive with arguments, beside its comment and the `@verbatim` text
-// it leaves alone. Blade reads a directive only after a character that cannot end a word, and leaves
-// the CSS rules it has no compiler for alone.
-const MARKUP_TOKEN = /<script\b|<\/script\s*>|\{\{--|--\}\}|\{\{|\}\}|\{!!|!!\}|@endphp\b|@verbatim\b|@endverbatim\b|@php\b(?!\s*\()|(?<![\w@])@(?!(?:media|supports|container|scope|layer|page)\b)[a-z_]\w*\s*\(/gi;
-// What each token that opens a span of markup is, and the token that closes it.
-const MARKUP_OPENS = { "<script": ["code", /^<\/script/i], "{{--": ["text", /^--\}\}$/], "{{": ["code", /^\}\}$/], "{!!": ["code", /^!!\}$/], "@php": ["code", /^@endphp$/i], "@verbatim": ["text", /^@endverbatim$/i] };
+// echoes, its `@php` block and a directive with arguments, beside its comment, the `@verbatim` text
+// and the literal `@{{` it leaves alone. Blade reads a directive only after a character that cannot end
+// a word, and leaves the CSS rules it has no compiler for alone.
+const MARKUP_TOKEN = /<script\b|<\/script\s*>|@\{\{|\{\{--|--\}\}|\{\{|\}\}|\{!!|!!\}|(?<![\w@])@(?:endphp|verbatim|endverbatim)\b|(?<![\w@])@php\b(?!\s*\()|(?<![\w@])@(?!(?:media|supports|container|scope|layer|page)\b)[a-z_]\w*\s*\(/gi;
+// What each token that opens a span of markup is, and the token that closes it: an echo closes at its
+// `}}` whatever stands before it, `$n--}}` among them.
+const MARKUP_OPENS = {
+  "<script": ["code", /^<\/script/i],
+  "@{{": ["text", /^(?:--)?\}\}$/],
+  "{{--": ["text", /^--\}\}$/],
+  "{{": ["code", /^(?:--)?\}\}$/],
+  "{!!": ["code", /^!!\}$/],
+  "@php": ["code", /^@endphp$/i],
+  "@verbatim": ["text", /^@endverbatim$/i],
+};
 
 // The modifier under which the compiler admits no conversion a user wrote.
 const CONSTANT = "const";

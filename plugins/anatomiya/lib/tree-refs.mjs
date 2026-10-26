@@ -102,10 +102,7 @@ function python(node, refs, file, rel) {
 function java(node, refs, file) {
   if (node.type === "package_declaration") {
     const path = node.children.find((c) => c.type === "scoped_identifier" || c.type === "identifier");
-    if (path) {
-      file.ownPackage = leaves(path).join("/");
-      file.namespace = leaves(path).join(".");
-    }
+    if (path) file.namespace = leaves(path).join(".");
   } else if (node.type === "import_declaration") {
     const target = node.children.find((c) => c.type === "scoped_identifier" || c.type === "identifier");
     if (!target) return;
@@ -126,7 +123,7 @@ function java(node, refs, file) {
     if (object?.type !== "identifier" || !method) return;
     const stem = file.classes.get(object.text);
     // A class named bare is the file's own package's before it is any wildcard's, as Java looks it up.
-    const packages = file.wildcards.length ? [...(file.ownPackage ? [file.ownPackage] : []), ...file.wildcards] : [];
+    const packages = file.wildcards.length ? [...(file.namespace ? [file.namespace.replaceAll(".", "/")] : []), ...file.wildcards] : [];
     const stems = stem !== undefined ? [stem] : /^[A-Z]/.test(object.text) ? packages.map((p) => `${p}/${object.text}`) : [];
     if (stems.length) refs.push(member(object.text, method, stems, "."));
   }
@@ -368,7 +365,6 @@ export function treeRefs(program, lang, rel) {
     namespace: null,
     globals: new Set(),
     extensions: new Set(),
-    ownPackage: null,
   };
   walkTree(program, (node) => {
     if (declares.has(node.type)) {

@@ -562,13 +562,13 @@ also be slow on input built for it: a 195 KB Kotlin file of 4,000 `<` comparison
 
 One place parses a grammar outside that pool: the end-of-turn reuse check reads a changed file of
 those seven languages in the hook's own process (B73). It also reads a changed view template, ERB,
-HAML, Slim, Razor, Jinja or a Go template (A122), past the same deny list, excluded directories,
-link and generated-file checks as source, by a rule with no parse, and a line longer than 400
-characters is asked about unread under every rule but ERB's, which reads a character at a time. It
-reads only a file under the same 1 MB cap, and every file a rule reads in one stop shares one second:
-the line rules over JavaScript, Ruby, view templates and components, which read the clock once in 64
-lines, every parse, asked through
-the runtime's progress callback while it runs, and every walk of a parsed tree, which reads the
+EJS, HAML, Slim, Razor, Jinja, Twig, Nunjucks or a Go template, and a component's markup (A122),
+past the same deny list, excluded directories, link and generated-file checks as source, by a rule
+with no parse, and a line longer than 400 characters is asked about unread under every rule but
+ERB's, which reads a character at a time. It reads only a file under the same 1 MB cap, and every
+file a rule reads in one stop shares one second: the line rules over JavaScript, Ruby, view templates
+and components, which read the clock once in 64 lines, every parse, asked through the runtime's
+progress callback while it runs, and every walk of a parsed tree, which reads the
 clock once in 4,096 nodes it counts. A read, a parse or a walk that runs past the second ends, and
 its file is asked about whole. A load of the runtime or of a grammar counts against the second and cannot be
 stopped part way. Each tree is freed before the answer, a parse or a walk that throws is caught and

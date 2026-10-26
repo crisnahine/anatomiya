@@ -116,11 +116,12 @@ const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
 // its `@verbatim` text, and a directive with arguments, which it reads after no word character.
 const MARKUP_SPANS = [
   [/<script\b/iy, /<\/script\s*>/gi, true],
+  [/@\{\{/y, /\}\}/g, false],
   [/\{\{--/y, /--\}\}/g, false],
   [/\{\{/y, /\}\}/g, true],
   [/\{!!/y, /!!\}/g, true],
-  [/@verbatim\b/y, /@endverbatim\b/g, false],
-  [/@php\b(?!\s*\()/y, /@endphp\b/g, true],
+  [/(?<![\w@])@verbatim\b/y, /(?<![\w@])@endverbatim\b/g, false],
+  [/(?<![\w@])@php\b(?!\s*\()/y, /(?<![\w@])@endphp\b/g, true],
 ];
 const DIRECTIVE = /(?<![\w@])@(?!(?:media|supports|container|scope|layer|page)\b)[a-z_]\w*\s*\(/iy;
 

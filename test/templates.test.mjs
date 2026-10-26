@@ -167,6 +167,9 @@ test("HAML output written after a tag with an escape or none asks, and so does e
   assert.deepEqual(asking("a.haml", source), [1, 2, 4, 6]);
   const slim = ["ruby:", "  total = format_price(x)", "  tax(total)", "p plain", "p class=\"x\" text with a=b in it"].join("\n");
   assert.deepEqual(asking("a.slim", slim), [2, 3]);
+  // Output written right after the tag, and a line of Ruby carried on past a comma, are Ruby too.
+  assert.deepEqual(asking("a.slim", "p=total(a)\np=> total(a)\n= link_to 'x',\n  user_path(compute(u))\np plain\n"), [1, 2, 3, 4]);
+  assert.deepEqual(asking("a.haml", "= link_to 'x',\n  user_path(compute(u))\n%p plain\n"), [1, 2]);
 });
 
 test("a Jinja or Go template tag spread over lines asks on every line it spans, and one never closed asks to the end", () => {

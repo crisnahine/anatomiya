@@ -74,7 +74,7 @@ const hunksOf = (change) => change.map((f) => [f.path, f.hunks]);
 
 // --- what the reason says ----------------------------------------------------
 
-test("the reason is the measured wording, naming the lines the change added", () => {
+test("the reason is the wording A123 settled, naming the lines the change added", () => {
   // The wording is the one that passed 24 of 24 on the hard cases, and every
   // inline wording scored 9 or 10 of 12, so it is held here word for word
   // (docs/research/one-line-that-finds-the-existing-function.md). The last

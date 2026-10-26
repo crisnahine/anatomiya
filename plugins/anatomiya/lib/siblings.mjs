@@ -346,30 +346,61 @@ function nextOf(ctx, file, module) {
 
 /** A file's own exports as a set, made once per file. */
 function ownExports(ctx, file) {
-  let own = ctx.own.get(file);
-  if (!own) ctx.own.set(file, (own = new Set(ctx.records.get(file)?.facets?.exports ?? [])));
-  return own;
+  let exported = ctx.exports.get(file);
+  if (!exported) ctx.exports.set(file, (exported = new Set(ctx.records.get(file)?.facets?.exports ?? [])));
+  return exported;
+}
+
+/** The files a file's `export *` lines name, in the order it lists them, read once per file. */
+function starsOf(ctx, file) {
+  let stars = ctx.stars.get(file);
+  if (!stars) {
+    stars = (ctx.records.get(file)?.facets?.reexports ?? []).flatMap((r) => {
+      const next = r.names === "*" ? nextOf(ctx, file, r.module) : null;
+      return next === null ? [] : [next];
+    });
+    ctx.stars.set(file, stars);
+  }
+  return stars;
 }
 
 /**
- * Every name a file hands an importer, its own and those its barrels pass on. A chain that runs back
- * on itself is cut where it meets a file still being read.
+ * Every name a file hands an importer, its own and those its barrels pass on. Barrels that hand one
+ * another on in a cycle hand on the same names, so each such group is read whole (Tarjan's walk),
+ * and what one file holds never depends on which file of it was asked first.
  */
-function namesOf(ctx, file, reading) {
-  const held = ctx.names.get(file);
+function namesOf(ctx, start) {
+  const held = ctx.names.get(start);
   if (held) return held;
-  const names = new Set(ownExports(ctx, file));
-  if (reading.has(file)) return names;
-  reading.add(file);
-  for (const r of ctx.records.get(file)?.facets?.reexports ?? []) {
-    if (r.names !== "*") for (const [, as] of r.names) names.add(as);
-    else {
-      const next = nextOf(ctx, file, r.module);
-      if (next !== null) for (const name of namesOf(ctx, next, reading)) names.add(name);
+  // The walk's order and low links stay on `ctx`: a file it finished is in `ctx.names` and never walked again.
+  const { order, low, stack } = ctx;
+  const visit = (file) => {
+    order.set(file, order.size);
+    low.set(file, order.get(file));
+    stack.push(file);
+    for (const to of starsOf(ctx, file)) {
+      if (ctx.names.has(to)) continue;
+      if (!order.has(to)) visit(to);
+      if (stack.includes(to)) low.set(file, Math.min(low.get(file), low.get(to)));
     }
-  }
-  ctx.names.set(file, names);
-  return names;
+    if (low.get(file) !== order.get(file)) return;
+    const group = new Set(stack.splice(stack.indexOf(file)));
+    const handsOn = (member) => starsOf(ctx, member).length > 0 || (ctx.records.get(member)?.facets?.reexports ?? []).length > 0;
+    // A file that hands nothing on hands on its own exports, and that set serves.
+    if (group.size === 1 && !handsOn(file)) {
+      ctx.names.set(file, ownExports(ctx, file));
+      return;
+    }
+    const names = new Set();
+    for (const member of group) {
+      for (const name of ownExports(ctx, member)) names.add(name);
+      for (const r of ctx.records.get(member)?.facets?.reexports ?? []) if (r.names !== "*") for (const [, as] of r.names) names.add(as);
+      for (const to of starsOf(ctx, member)) if (!group.has(to)) for (const name of ctx.names.get(to)) names.add(name);
+    }
+    for (const member of group) ctx.names.set(member, names);
+  };
+  visit(start);
+  return ctx.names.get(start);
 }
 
 /** Each name a file's `export *` lines hand on, to the first of the files they name that hands it. */
@@ -377,10 +408,7 @@ function suppliersOf(ctx, file) {
   let suppliers = ctx.suppliers.get(file);
   if (suppliers) return suppliers;
   suppliers = new Map();
-  for (const r of ctx.records.get(file)?.facets?.reexports ?? []) {
-    const next = r.names === "*" ? nextOf(ctx, file, r.module) : null;
-    if (next !== null) for (const name of namesOf(ctx, next, new Set())) if (!suppliers.has(name)) suppliers.set(name, next);
-  }
+  for (const next of starsOf(ctx, file)) for (const name of namesOf(ctx, next)) if (!suppliers.has(name)) suppliers.set(name, next);
   ctx.suppliers.set(file, suppliers);
   return suppliers;
 }
@@ -477,7 +505,7 @@ function reuseIndex(allRecords, corpusRels, own) {
     }
   };
   const owners = new Map();
-  const ctx = { records: allRecords, corpusRels, packages, next: new Map(), own: new Map(), names: new Map(), suppliers: new Map() };
+  const ctx = { records: allRecords, corpusRels, packages, next: new Map(), exports: new Map(), stars: new Map(), names: new Map(), suppliers: new Map(), order: new Map(), low: new Map(), stack: [] };
   for (const [rel, r] of allRecords) {
     for (const i of r.facets?.imports ?? []) {
       const file = specifierToFile(i.module, rel, corpusRels, packages);

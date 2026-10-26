@@ -131,10 +131,12 @@ function reduce(engine, line) {
   return { code, open: null };
 }
 
-// A line that opens like a comment and holds an expression in braces, other than a doc comment. In JSX
+// A line that opens like a comment, other than a doc comment, and holds an expression in braces. In JSX
 // children `//` and `/*` are text, so the braces run: measured, 3 lines of excalidraw's .tsx and .jsx files
 // hold one, and every one is a real comment, which is the false ask this costs.
-const JSX_TEXT = /^\s*(?:\/\/|\/\*(?!\*)).*\{\s*[^}\s][^}]*\}/;
+const JSX_TEXT = /^\s*(?:\/\/|\/\*(?!\*))/;
+// An expression in braces, read from each brace to the next one, so a line of braces never closed costs its length.
+const BRACED = /\{\s*[^{}\s][^{}]*\}/;
 
 // A closing tag or a self-closing one: a `.js` file that holds JSX.
 const JSX_TAG = /<\/[A-Za-z]|\/>/;
@@ -203,7 +205,7 @@ function inertLines(engine, lines, deadline, jsx = false) {
       [depth, unseen] = [0, true];
       continue;
     }
-    if (code === "") inert[i] = !(jsx && JSX_TEXT.test(line));
+    if (code === "") inert[i] = !(jsx && JSX_TEXT.test(line) && BRACED.test(line));
     // In an argument a template on its own line may be tagged by the line above, which calls.
     else if (depth > 0 && rule.member.test(code) && !(called && line.includes("`"))) {
       inert[i] = true;

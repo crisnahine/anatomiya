@@ -44,6 +44,7 @@ function memo(cache, key, build) {
 
 const RUBY_ROOT = /(?:^|\/)(?:app\/[^/]+\/concerns|app\/[^/]+|lib)\/(.+)\.rb$/;
 // A test tree's mirror of `lib` loads nothing by name, and a file in it named as the code it tests made that name two files'.
+// Only above the root: a gem's own `lib/rack/test/` is loaded by its name.
 const RUBY_TESTS = /(?:^|\/)(?:spec|test)\//;
 
 // Compared folded, so `http_client.rb` answers `HTTPClient` and `rubocop/` answers `RuboCop` without
@@ -56,8 +57,8 @@ const fold = (segments) => segments.map((s) => s.replaceAll("_", "").toLowerCase
  * a gem's root is `lib`. A file under none, a spec or a config file, is loaded by nobody's name.
  */
 function rubyConstantOf(rel) {
-  const inRoot = RUBY_TESTS.test(rel) ? undefined : RUBY_ROOT.exec(rel)?.[1];
-  return inRoot ? fold(inRoot.split("/")) : null;
+  const root = RUBY_ROOT.exec(rel);
+  return root === null || RUBY_TESTS.test(rel.slice(0, root.index + 1)) ? null : fold(root[1].split("/"));
 }
 
 const RUBY_INDEX = new WeakMap();
@@ -165,13 +166,14 @@ function byStem(stem, exact, indexes, importer, corpusRels) {
 }
 
 /**
- * The directory a package path names. With the module paths the repository's `go.mod` files declare,
- * the path resolves only under one of them, whole, so a package of another module that ends in the
- * same names is not this one; without, it is matched from its longest tail that is a directory here,
- * as a Kotlin source tree that leaves out its package's first names needs.
+ * The directory a package path names. A Go path resolves only under a module path the repository's
+ * `go.mod` files declare, whole, so a package of another module that ends in the same names is not
+ * this one, and with no `go.mod` nothing is the repository's own. A Kotlin path is matched from its
+ * longest tail that is a directory here, as a source tree that leaves out its package's first names needs.
  */
 function packageDir(path, index, modules) {
-  if (modules?.size) {
+  if (index.family === "go") {
+    if (!modules?.size) return null;
     let best = null;
     for (const [module, dir] of modules) {
       if ((path === module || path.startsWith(`${module}/`)) && (best === null || module.length > best[0].length)) best = [module, dir];
@@ -194,7 +196,7 @@ function byDir(ref, indexes, records, modules) {
   if (known.has(key)) return known.get(key);
   const found = new Set();
   for (const index of indexes) {
-    const dir = packageDir(ref.dir, index, index.family === "go" ? modules : null);
+    const dir = packageDir(ref.dir, index, modules);
     if (dir === null) continue;
     for (const rel of index.dirs.get(dir)) if (definesOf(records, rel).includes(ref.lookup)) found.add(rel);
   }
@@ -257,14 +259,16 @@ const phpGlobals = (records) =>
 const DECLARED = new Set(["java", "kotlin", "php"]);
 
 /**
- * Whether a file a reference was matched to by its path is in the package the reference names. A
- * path says where a file sits and not what it declares: `android.util.Log` is no `com/acme/util/Log.kt`,
- * and `Illuminate\Support\Str` no `app/Support/Str.php`. A file nobody read is taken as matched.
+ * Whether a file a reference was matched to by its path is in a package the reference names: a
+ * Java wildcard's class may be in the importer's own package or the wildcard's. A path says where a
+ * file sits and not what it declares: `android.util.Log` is no `com/acme/util/Log.kt`, and
+ * `Illuminate\Support\Str` no `app/Support/Str.php`. A file nobody read is taken as matched.
  */
 function inPackage(file, ref, records) {
   const target = records.get(file);
   if (!target?.ok) return true;
-  return (target.facets?.namespace ?? "") === dirOf(ref.stems[0]).replaceAll("/", ".");
+  const declared = target.facets?.namespace ?? "";
+  return ref.stems.some((stem) => dirOf(stem).replaceAll("/", ".") === declared);
 }
 
 /** The file a tree-sitter reference names, or null. */

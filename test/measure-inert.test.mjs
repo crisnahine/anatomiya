@@ -320,6 +320,7 @@ test("the oracle names a comment cgo compiles and inline markup that holds a scr
   // A plain row beside Blade code is markup, and a Blade comment or a @verbatim block holds text.
   assert.deepEqual(await named("php", "<p>{{ $total }}</p>\n<p>plain</p>\n{{-- {{ f($x) }} --}}\n@verbatim\n{{ x }}\n@endverbatim\n", [[2, 6]]), []);
   assert.deepEqual(await named("php", "<p>plain</p>\n<p>{{ format(\n$x) }}</p>\n", [[1, 3]]), [[2, "markup that holds code"], [3, "markup that holds code"]]);
+  assert.deepEqual(await named("php", "<p>{{ $n--}}</p>\n<p>plain</p>\n<p>@{{ name }}</p>\n<p>admin@php.net</p>\n<p>more</p>\n", [[2, 5]]), []);
 });
 
 test("every node type the oracle names is one its grammar knows", async () => {

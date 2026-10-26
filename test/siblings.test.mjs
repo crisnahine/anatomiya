@@ -768,7 +768,8 @@ test("a Go call reaches the file in the imported package's directory that define
     "internal/bytesconv/bytesconv.go": [["BytesToString", "StringToBytes"]],
     "internal/bytesconv/other.go": [["Other"]],
   });
-  assert.deepEqual(mostImported(new Set(["internal/bytesconv/bytesconv.go", "internal/bytesconv/other.go"]), records, rels), [
+  const modules = new Map([["github.com/gin-gonic/gin", ""]]);
+  assert.deepEqual(mostImported(new Set(["internal/bytesconv/bytesconv.go", "internal/bytesconv/other.go"]), records, rels, { modules }), [
     { name: "bytesconv.StringToBytes", file: "internal/bytesconv/bytesconv.go", importers: 3 },
   ]);
 });
@@ -882,6 +883,24 @@ test("a name a barrel hands on through export * is credited to the first file do
     { name: "late", file: "lib/late.ts", importers: 3 },
     { name: "slug", file: "lib/deep.ts", importers: 3 },
   ]);
+});
+
+test("a name handed round a cycle of barrels is credited to the file that defines it, whichever import is read first", () => {
+  const star = (module) => ({ module, names: "*" });
+  const rows = (warm) => {
+    const records = new Map([
+      ["lib/a.ts", barrel("lib/a.ts", [], [star("./b")])],
+      ["lib/b.ts", barrel("lib/b.ts", ["bName"], [star("./c")])],
+      ["lib/c.ts", barrel("lib/c.ts", ["cName"], [star("./a")])],
+      ["lib/x.ts", barrel("lib/x.ts", [], [star("./a")])],
+    ]);
+    // An import read before the others, which walks into the cycle at another file.
+    if (warm) records.set("app/w.ts", record("app/w.ts", [{ module: "../lib/a", names: ["bName"] }]));
+    for (let i = 0; i < 3; i++) records.set(`app/z${i}.ts`, record(`app/z${i}.ts`, [{ module: "../lib/x", names: ["cName"] }]));
+    return mostImported(new Set(["lib/c.ts", "lib/x.ts"]), records, new Set(records.keys()));
+  };
+  assert.deepEqual(rows(false), [{ name: "cName", file: "lib/c.ts", importers: 3 }]);
+  assert.deepEqual(rows(true), [{ name: "cName", file: "lib/c.ts", importers: 3 }]);
 });
 
 test("a re-export cycle ends, and a name no file down the chain defines stays with the barrel", () => {

@@ -78,3 +78,30 @@ test("a Ruby file under a test tree loads nothing by name, so the code it is nam
   ]);
   assert.deepEqual(reached(records, ["app/models/order.rb"]), { "app/models/order.rb": [{ file: "lib/money.rb", names: ["Money.format"] }] });
 });
+
+test("a class a Java wildcard brings in from another package reaches its file, the importer's own package tried first", () => {
+  const stems = ["com/acme/app/Strings", "com/acme/util/Strings"];
+  const records = new Map([
+    ["src/main/java/com/acme/util/Strings.java", read({ defines: ["Strings", "isBlank"], namespace: "com.acme.util" })],
+    ["src/main/java/com/acme/app/A.java", read({ refs: [{ name: "Strings.isBlank", bare: "Strings", member: "isBlank", stems }], namespace: "com.acme.app" })],
+  ]);
+  assert.deepEqual(reached(records, ["src/main/java/com/acme/app/A.java"]), {
+    "src/main/java/com/acme/app/A.java": [{ file: "src/main/java/com/acme/util/Strings.java", names: ["Strings.isBlank"] }],
+  });
+});
+
+test("a Ruby file under a gem's own lib/rack/test is loaded by its name", () => {
+  const records = new Map([
+    ["lib/rack/test/utils.rb", read({ defines: ["build"] })],
+    ["app/models/order.rb", read({ refs: [{ const: "Rack::Test::Utils", nesting: [], name: "Rack::Test::Utils.build" }] })],
+  ]);
+  assert.deepEqual(reached(records, ["app/models/order.rb"]), { "app/models/order.rb": [{ file: "lib/rack/test/utils.rb", names: ["Rack::Test::Utils.build"] }] });
+});
+
+test("a Go import in a repository with no go.mod names no package of its own", () => {
+  const records = new Map([
+    ["errors/wrap.go", read({ defines: ["Wrap"] })],
+    ["cmd/main.go", read({ refs: [{ name: "errors.Wrap", dir: "github.com/pkg/errors", lookup: "Wrap" }] })],
+  ]);
+  assert.deepEqual(reached(records, ["cmd/main.go"]), { "cmd/main.go": [] });
+});

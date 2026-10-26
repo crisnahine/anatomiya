@@ -1306,7 +1306,7 @@ every rule but ERB's, which reads a character at a time. A template that is a li
 file is passed over, as a source file is.
 
 Every file a rule reads in one stop shares one second, started at the first such file and shared by
-every checkout the stop reads: the line rules over JavaScript, Ruby and component script blocks,
+every checkout the stop reads: the line rules over JavaScript, Ruby, view templates and components,
 and for the tree-sitter files the first load of the runtime and of each grammar, every parse and
 every walk of a parsed tree. A file reached after it, one whose read, parse or walk runs past it,
 one the grammar rejects and one the runtime fails on are asked about whole. A load cannot be stopped

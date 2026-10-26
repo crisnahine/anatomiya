@@ -545,6 +545,8 @@ test("Blade markup asks on the rows that hold an echo, a directive or a @php blo
   assert.deepEqual(await asking("php", "<p>{{ format(\n  $total) }}</p>\n<p>@php($n = 1) plain</p>\n<p>plain</p>\n"), [1, 2, 3]);
   // A Blade comment and a @verbatim block hold text, whatever it spells.
   assert.deepEqual(await asking("php", "{{-- {{ format($x) }}\n@php --}}\n@verbatim\n{{ name }}\n@endverbatim\n<p>plain</p>\n"), []);
+  // An echo ends at its `}}` whatever stands before it, `@{{` is Blade's literal braces, and `@php` in an address is text.
+  assert.deepEqual(await asking("php", "<p>{{ $count--}}</p>\n<p>plain</p>\n<p>@{{ name }}</p>\n<p>admin@php.net</p>\n<p>more</p>\n"), [1]);
   // Blade reads a directive only after a character that cannot end a word, and leaves the CSS rules it has no compiler for alone.
   assert.deepEqual(await asking("php", "<p>mail admin@example.com (soon)</p>\n<style>\n@media (max-width: 600px) { p { color: red } }\n@layer (base) {}\n@page (first) {}\n</style>\n"), []);
 });

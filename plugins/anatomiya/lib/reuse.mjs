@@ -6,9 +6,9 @@
  * Its shape, one subagent handed the diff, is the one that passed 24 of 24 hard
  * cases where every wording the model answered inline passed 9 or 10 of 12
  * (`docs/research/one-line-that-finds-the-existing-function.md`). What it asks
- * of a function that does part of the job or falls short, and the repository's
- * own before a package's, came from the misses of the reuse tasks (A123). Each
- * word is held because a measurement put it there.
+ * of a function that does part of the job or falls short came from the misses of
+ * the reuse tasks (A123); the repository's own before a package's, and the
+ * search a session with no subagent tool runs itself, were never measured apart.
  */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
