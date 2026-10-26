@@ -19,7 +19,7 @@ language, runs them the way the earlier tasks ran, and reports every result.
    count. Keep a name that is a function or a method the area's own code defines: a Python `def`, a Go
    `func` (written `package.Func`), a static or companion method or a top-level function in Java,
    Kotlin, C# or PHP (written `Class.method`, `Class::method` or `function`), and a Rust `fn`. Drop
-   classes, interfaces, types, constants, test helpers, and a name whose file is under a test
+   classes, interfaces, types, constants, support files, and a name whose file is under a test
    directory. Take the name with the most importing files; break a tie by the name's alphabetical
    order. A repository with no such name fails this step.
 3. **The task.** Ask for one small new file, in an area that holds no file importing the helper, where
