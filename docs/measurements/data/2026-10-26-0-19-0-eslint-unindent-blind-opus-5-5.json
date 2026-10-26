@@ -1,0 +1,786 @@
+{
+  "scenario": "scripts/ab/scenarios/eslint-unindent-blind.json",
+  "scenarioSha256": "a8deaec495569324d5f2d614c74cbae0a390f8cb6e847d7574583e071dd10d73",
+  "label": "github.com/eslint/eslint",
+  "sha": "dc1e7a8416937edefe04cf836ee202a6fc03bedd",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": {
+    "claude": "2.1.310 (Claude Code)",
+    "anatomiya": "0.18.2 at b94dd31eeb36"
+  },
+  "said": {
+    "a": "tests/lib/linter: 12 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.6696058000000001,
+        "inputTokens": 60,
+        "outputTokens": 14506,
+        "cacheReadTokens": 533259,
+        "wallMs": 261214
+      },
+      "answer": "I removed the `dedent` helper I'd written. The test file now uses `stripIndent` from `common-tags`, a package the repo already has as a devDependency (it's used in `tools/update-readme.js`). Both tests still pass, and the file passes ESLint and Prettier.\n\nThe duplicate check came up because a stop hook asked me to look for existing functions that already do what my helper did. A search found one in the repo and one in a package:\n\n- **`unIndent`** in `tests/_utils/index.js`, the repo's own helper: it only strips spaces, so it can't handle this file's tab indentation. I didn't change it to also strip tabs, because that would change the output for 3 templates in `tests/lib/rules/no-unassigned-vars.js`. One of those tests, at line 186, expects column 9 and would fail with column 5.\n- **`stripIndent`** from `common-tags`: it strips shared tabs too. On a tab-indented template it returns exactly what the test needs, with any extra indentation on a line kept.\n\n`npm install` from earlier is still the only other change on disk, and nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.5149317999999999,
+        "inputTokens": 46,
+        "outputTokens": 12296,
+        "cacheReadTokens": 364809,
+        "wallMs": 182097
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`, but I haven't run it: this checkout has no `node_modules`, so mocha and the linter can't load.\n\n**What it tests:** two `it()` cases call `new Linter().verify()` with only `no-undef` turned on:\n- **One undefined name:** `foo(a);` inside an `if` block should be reported at line 3, column 5.\n- **Two undefined names:** `bar` should be reported at line 2, column 12 and `baz` at line 4, column 11, so each problem gets its own location.\n\n**Removing the indentation:** each source is an indented template literal tagged with the repo's existing `unIndent` helper from `tests/_utils`. My first version had its own `dedent` helper. Your reuse check sent a subagent to look for existing helpers, and `unIndent` was the only close match. It removes leading spaces only, not tabs. Of its 1,578 uses, 1,575 indent the template body with spaces inside tab-indented code. So I did the same and deleted my helper. I didn't change `unIndent` to handle tabs, because that would change what it returns for three existing tab-indented templates in `tests/lib/rules/no-unassigned-vars.js`.\n\n**What I checked:** I ran a copy of `unIndent`'s code on the new file's templates. The undefined names land at the lines and columns the test expects. Whether `verify` reports those same locations still needs the real run:\n\n```\nnpm install\nnpx mocha tests/lib/linter/report-location.js\n```"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/_utils/index.js",
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.4959332,
+        "inputTokens": 34,
+        "outputTokens": 12202,
+        "cacheReadTokens": 260811,
+        "wallMs": 148427
+      },
+      "answer": "The test now uses a shared helper instead of its own copy, but I still haven't run it with mocha or eslint. The dependencies aren't installed, and I didn't run `npm install` without asking you.\n\n**What the reuse check found:** the subagent turned up three existing helpers. The closest is the repo's own `unIndent` in `tests/_utils`. The other two, `stripNewlineIndent` in one rule test and `stripIndents` from `common-tags`, remove all leading whitespace, so they would lose the relative indentation these sources need. `unIndent` only falls short on tabs: it measures indentation in spaces only, and this repo indents with tabs.\n\n**What I changed:**\n- **`tests/_utils/index.js`:** I moved `unIndent`'s body into an internal `stripSharedIndent(indentPattern, strings, values)`. `unIndent` now calls it with the same spaces-only pattern as before, so the 11 files that use it get exactly the same output. I added and exported `unIndentTabs`, which calls it with a pattern that matches both tabs and spaces.\n- **`tests/lib/linter/report-location.js`:** I deleted the local `dedent` and the test's literals now use `unIndentTabs`. This also fixes two flaws the subagent found in my copy: it silently dropped `${}` values, and it left escapes like `\\t` as literal text.\n\n**What I could verify:** `tests/_utils` loads a package that isn't installed, so I ran the helper's code directly in Node on the test's two literals.\n- `unIndentTabs` strips the shared tabs and keeps the extra tab and the two spaces that only some lines have.\n- The names land where the assertions expect: `missing` at line 3, columns 13–20; `foo` at line 1, column 1; `bar` at line 3, column 13.\n- The old spaces-only `unIndent` would have left `\\t\\t\\t` at the start of every line, which is why it couldn't be used as it was.\n\nOnce dependencies are installed, run `npx mocha tests/lib/linter/report-location.js` and lint the two changed files."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.3441244,
+        "inputTokens": 30,
+        "outputTokens": 7341,
+        "cacheReadTokens": 199417,
+        "wallMs": 86149
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`, but I haven't run it. Dependencies aren't installed, so mocha, eslint and prettier all stop on a missing module (`Cannot find module 'debug'`).\n\n**What the file tests**\n- **First test:** an undefined `foo` inside an `if` block is reported by `no-undef` at line 3, column 5, ending at line 3, column 8.\n- **Second test:** two undefined names, `bar` and `baz`, separated by a blank line, are each reported at their own place: line 1, column 9 and line 4, column 5.\n\nEach source is an indented template literal. The file strips the shared indentation with the repo's existing `unIndent` helper from `tests/_utils/index.js` rather than a new one. I ran `unIndent` on both sources by itself and the names sit exactly where the tests expect them. The file follows the other tests in `tests/lib/linter`: `describe`/`it`, chai `assert`, and `new Linter()`.\n\n**One catch:** `unIndent` only strips leading spaces, not tabs. This repo indents with tabs, so the lines inside the template literals use spaces, as `tests/lib/rules/indent.js` does. If someone converts those lines to tabs, nothing gets stripped and the expected columns go wrong.\n\n**Reuse check:** a project hook asked for a search for existing code that already does what the new file does. It found only `unIndent`, which the file already uses. Nothing else in the repo checks a problem's line and column after `Linter#verify`; `tests/lib/linter/linter.js` does it inline with `assert.strictEqual`. So I changed nothing.\n\nTo run it, install dependencies with `npm install`, then run `npx mocha tests/lib/linter/report-location.js`. I can do that if you'd like."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.5054267999999998,
+        "inputTokens": 40,
+        "outputTokens": 12841,
+        "cacheReadTokens": 301784,
+        "wallMs": 149094
+      },
+      "answer": "The test now uses the repo's own `unIndent` helper from `tests/_utils` instead of a local copy. It's still unrun, because dependencies aren't installed.\n\n**What changed:** a subagent searched for existing helpers that do the same job. The closest is `unIndent` (`tests/_utils/index.js:23`), which only strips space indentation. So I wrote the template contents with spaces instead of tabs. That's how 1,575 of its 1,578 existing calls already do it. I removed the local `dedent` function and left `unIndent` as it was, so nothing changes for its other callers.\n\nBecause the nested lines are now indented with four spaces instead of a tab, the expected columns moved:\n- `b` is at line 3, column 16 (ends at column 17).\n- `foo` is at line 1, column 1, and `bar` at line 4, column 10.\n\n**Checked so far:**\n- `node --check` passes on the file.\n- I ran the `unIndent` code on both templates. It gives the expected strings, and the names sit at exactly those columns.\n\n**Not checked:** the whole test under mocha. Run `npm install`, then `npx mocha tests/lib/linter/report-location.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.47528599999999993,
+        "inputTokens": 42,
+        "outputTokens": 10837,
+        "cacheReadTokens": 317095,
+        "wallMs": 302709
+      },
+      "answer": "The test now uses the repo's own `unIndent` helper from `tests/_utils`, and the local `dedent` copy is gone. Both tests pass, and the file is clean under the repo's ESLint config and Prettier.\n\n**Why the sources now use spaces:** `unIndent` only strips leading spaces, so a tab-indented template literal comes through with its tabs still in it. A subagent searched for other helpers that do this job. `unIndent` was the only one in the repo, and the only package option was `stripIndents` from `common-tags`, which flattens nested indentation, so it doesn't fit. Making `unIndent` strip tabs would break a current caller: `tests/lib/rules/no-unassigned-vars.js:186` checks a column that only holds because its tabs are kept. So I changed the new test instead: the text inside the template literals is indented with spaces, as `tests/lib/rules/indent.js` already does many times.\n\n**Expected positions now:**\n- **First test:** `missing` on line 3, from column 16 to column 23.\n- **Second test:** `foo` at line 1, column 1, and `bar` at line 4, column 5.\n\nThe only change in the working tree is the new test file. The `npm install` didn't touch any tracked files."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.34480920000000004,
+        "inputTokens": 30,
+        "outputTokens": 7758,
+        "cacheReadTokens": 197506,
+        "wallMs": 117274
+      },
+      "answer": "I had a subagent check whether the repo already has helpers that do the same job as anything in the new test. It found none, so I left the file as it is.\n\n- **Indentation stripping:** the test already uses `unIndent` from `tests/_utils`. The two other dedent-style helpers the subagent found would both break the second test. `stripNewlineIndent` in `tests/lib/rules/no-array-constructor.js` and `stripIndents` from `common-tags` (only used in `tools/update-readme.js`) remove all leading whitespace from every line. That would undo the deliberate 2-space offset that puts `bar` at column 3.\n- **Running the linter and checking positions:** the nearby `verify` and `adjustLoc` helpers are local to their own tests and do different jobs. `tests/lib/linter/linter.js` writes its position checks inline, the same way the new file does.\n\nThe test still hasn't been run, because there's no `node_modules` in this checkout. Run `npm install`, then `npx mocha tests/lib/linter/report-location.js` to check it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.5781731999999999,
+        "inputTokens": 48,
+        "outputTokens": 14176,
+        "cacheReadTokens": 383026,
+        "wallMs": 186745
+      },
+      "answer": "I removed my own helper, and `tests/lib/linter/report-location.js` now uses the repo's existing `unIndent` from `tests/_utils`. The test itself still hasn't run, because this checkout has no `node_modules`.\n\n**What changed.**\n- **Helper:** a search for existing code that does the same job found only `unIndent`. It only strips shared leading spaces, not tabs. Changing it to handle tabs would break one current test (`tests/lib/rules/no-unassigned-vars.js:186` expects column 9 and would get 5), so I left it alone.\n- **Indentation:** the two test sources are now indented with spaces so `unIndent` can strip them. A one-line comment in the file explains why.\n- **Expected columns:** nested lines are now indented 4 spaces instead of one tab, so `foo` moves to line 3, column 5 and `baz` to line 4, column 16. `bar` stays at line 1, column 11.\n\n**What I checked.** I ran `unIndent`'s code on both sources and confirmed `foo`, `bar` and `baz` land at those lines and columns. I couldn't run the test with mocha or check the file with eslint or prettier. After `npm install`, run `npx mocha tests/lib/linter/report-location.js` to confirm."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.6151610000000002,
+        "inputTokens": 54,
+        "outputTokens": 14969,
+        "cacheReadTokens": 442455,
+        "wallMs": 163830
+      },
+      "answer": "The test file now uses the repo's own `unIndent` helper, and my `dedent` copy is gone. I still haven't run the test itself, because dependencies aren't installed.\n\n**What the check found:** `unIndent` in `tests/_utils/index.js` does the same job as `dedent`, but it only strips leading spaces, not tabs. I couldn't make it handle tabs safely. That would change what it returns to `tests/lib/rules/no-unassigned-vars.js`, whose test at line 186 relies on the tabs being kept to get its expected column of 9. The check also found `stripIndents` from the `common-tags` package and a `stripNewlineIndent` helper local to one rule test. Both strip all leading whitespace from every line, so they don't fit.\n\n**What changed:** the source lines inside the two templates are now indented with spaces instead of tabs. `tests/lib/rules/indent.js` already writes its templates this way, even though the rest of the repo uses tabs. Nothing else in the file changed.\n\n**What I did check:** I ran the shared `unIndent` on both sources and got the same strings as before, `\"const a = 1;\\nif (a) {\\n    foo(a);\\n}\"` and `\"bar();\\nconst b =\\n    baz + 1;\"`, so the expected lines and columns still hold. To run the test, use `npm install` and then `npx mocha tests/lib/linter/report-location.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.38892419999999994,
+        "inputTokens": 40,
+        "outputTokens": 8516,
+        "cacheReadTokens": 277836,
+        "wallMs": 152830
+      },
+      "answer": "I had a subagent check whether the repo already has helpers for what the new test does. It found nothing that fits better, so `tests/lib/linter/report-location.js` stays as it is.\n\n- **Stripping indentation:** the file already uses the repo's own `unIndent` (`tests/_utils/index.js:23`). The `common-tags` package also has a helper that strips tabs as well as spaces. But no test in `tests/` uses it, and it would add a second way of doing the same thing.\n- **Running the linter:** no helper wraps `new Linter()` plus `verify`. The other tests in `tests/lib/linter/linter.js` call `verify` directly, as this file does.\n- **Checking line and column:** `RuleTester` can check where a problem is reported, but no test in `tests/lib/linter` uses it. Plain chai asserts match the files around this one.\n\nThe tests still haven't been run, because the dependencies aren't installed. To check them, run `npm install`, then `npx mocha tests/lib/linter/report-location.js` and `npx eslint tests/lib/linter/report-location.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/_utils/index.js",
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.5364496000000001,
+        "inputTokens": 40,
+        "outputTokens": 13267,
+        "cacheReadTokens": 322288,
+        "wallMs": 153187
+      },
+      "answer": "I did the reuse check. The test now uses the repo's own `unIndent` and the local `dedent` copy is gone. I still haven't run the tests, ESLint or Prettier, because the checkout has no `node_modules`.\n\n**What the check found:** a subagent searched the shared utilities, the nearby linter tests and calls to `Linter#verify`. It found one function doing the same job: `unIndent` in `tests/_utils/index.js:23`. It only strips spaces, though, so it can't handle the tab-indented sources in this test. Nothing in the repo already does what `lintNoUndef` does; `no-undef` configs are always written inline, so that helper stays.\n\n**What changed:**\n- **`tests/_utils/index.js`:** `unIndent` can now take an options object, `unIndent({ tabs: true })`, and returns a tag that strips tabs as well as spaces. Its body moved into a `removeIndent` helper that both forms call. Called the usual way, as a template tag, it behaves exactly as before.\n- **`tests/lib/linter/report-location.js`:** `dedent` is now just `const dedent = unIndent({ tabs: true });`, and the test cases didn't change. The old local copy also silently dropped any `${...}` values in a literal; this version keeps them.\n\n**What I checked, without dependencies:** I replaced `fs-teardown` with a stub and compared the old `unIndent` (from git) with the new one. Their output matches on space-indented, tab-indented and interpolated inputs. The tab mode gives the expected strings for both test sources, `\"\\tfoo(a);\"` included, and keeps interpolated values.\n\nTo run everything: `npm install`, then `npx mocha tests/lib/linter/report-location.js`. Running `tests/lib/rules/indent.js` and `tests/lib/rules/no-unassigned-vars.js` as well would check the existing `unIndent` callers directly."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.33591380000000004,
+        "inputTokens": 32,
+        "outputTokens": 6727,
+        "cacheReadTokens": 218089,
+        "wallMs": 101545
+      },
+      "answer": "I had a subagent check for existing helpers that the new test should be using instead. It found none, so `tests/lib/linter/report-location.js` stays as written:\n\n- **Removing indentation:** `unIndent` in `tests/_utils/index.js` is the only helper for this under `tests/` and `lib/`, and the test already uses it. `stripIndents` from `common-tags` is used only in `tools/update-readme.js` and wouldn't fit, because it strips all leading whitespace and would break nested indentation.\n- **Creating a `Linter` and running one rule:** there's no shared helper for this. Each test file, including `tests/lib/linter/linter.js`, builds its linter inline the same way this one does.\n- **Pulling location fields out of messages:** nothing in the repo does this.\n\nThe test still hasn't been run, because dependencies aren't installed in this checkout. If you want, I can run `npm install` and then `npx mocha tests/lib/linter/report-location.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.48174320000000004,
+        "inputTokens": 42,
+        "outputTokens": 11530,
+        "cacheReadTokens": 310476,
+        "wallMs": 143663
+      },
+      "answer": "I switched the test to the repo's own `unIndent` helper and deleted my local `dedent`. The test still hasn't been run: there's no `node_modules` in this checkout, so mocha, ESLint and Prettier can't load. Even loading `tests/_utils` fails, because it requires `fs-teardown`.\n\n**Why the change:** a search for existing helpers turned up `unIndent` in `tests/_utils/index.js`, which does the same job as `dedent`. The only other near-match was `stripIndents` from the `common-tags` package. It removes all leading whitespace, which would break the column checks.\n\n**One trade-off:** `unIndent` only strips spaces, not tabs, and it has about 1,580 existing uses. Some of those templates are indented with tabs, so teaching it to strip tabs would change what those tests get back. Instead, the two code samples in the new test are indented with spaces. That looks a little odd in a tab-indented file, but `unIndent` now strips them correctly.\n\n**What changed in the test:**\n- It imports `unIndent` from `../../_utils`, like other test files do.\n- The expected positions moved because inner lines now keep 4 spaces instead of 1 tab: `missing` is at 3:16 and `bar` at 3:5. `foo` is still at 1:1.\n- I ran a copy of `unIndent` on the first sample: the output was correct and `missing` landed at column 16. The `bar` position is worked out by hand.\n\nTo confirm, run `npm install` and then `npx mocha tests/lib/linter/report-location.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.4676486000000001,
+        "inputTokens": 38,
+        "outputTokens": 11636,
+        "cacheReadTokens": 291588,
+        "wallMs": 130904
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`, but I haven't run it because `node_modules` isn't installed. Run `npm install`, then `npx mocha tests/lib/linter/report-location.js` to confirm it passes.\n\n**What it tests:** two cases where `Linter#verify` with `no-undef` enabled should report an undefined name:\n- `foo` at the start of line 2 → line 2, column 1.\n- `bar` partway along the indented body of a function → line 2, column 16.\n\n**Change after the reuse check:** I've removed my own indentation helper and the test now uses the repo's existing `unIndent` from `tests/_utils`. That helper only strips spaces, and this repo indents with tabs. So, like the existing callers such as `brace-style.js`, the code inside each template literal is indented with spaces. I didn't change `unIndent` itself to handle tabs. That would break the existing test at `tests/lib/rules/no-unassigned-vars.js:186`, whose expected column depends on the tabs being kept.\n\n**What I checked:** I ran a copy of `unIndent` on the two templates. They come out as `\"const a = 1;\\nfoo(a);\"` and `\"function f() {\\n    return 1 + bar;\\n}\"`, so `foo` is at line 2, column 1 and `bar` at line 2, column 16, matching the assertions. I haven't checked those assertions against the actual linter."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/_utils/index.js",
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.5173304000000001,
+        "inputTokens": 34,
+        "outputTokens": 12795,
+        "cacheReadTokens": 256492,
+        "wallMs": 159137
+      },
+      "answer": "I added the test file `tests/lib/linter/report-location.js` and a shared helper for removing indentation, but neither the test nor eslint has been run yet: the checkout has no `node_modules`.\n\n**The test:** it has two `it()` cases that call `Linter#verify` with only `no-undef` on, both written as indented template literals:\n1. An undefined `missing` inside a function body. It checks the problem is at line 3, columns 13–20.\n2. Two undefined names, `first` and `second`. It checks they are at line 1, column 1 and line 4, column 7.\n\nI worked out those positions by hand from the source after its indentation is removed; a tab counts as one column.\n\n**Removing the indentation:** the hook asked me to reuse an existing function rather than keep my own. It found two:\n- **`unIndent`** in `tests/_utils/index.js`, the repo's own. It only counts leading spaces, so for this repo's tab-indented test files it removes nothing. Changing it to count tabs would change its output for its current callers that use tab-indented literals, including fixer tests that compare output.\n- **`stripIndent` from `common-tags`**, a package. The repo's own helper takes priority, so I didn't use it.\n\nSo I moved `unIndent`'s logic into a new exported plain function, `stripSharedIndent(text, indentPattern = /^[\\t ]*/u)`, which removes tabs or spaces by default. `unIndent` now calls it with its old spaces-only pattern, so it returns exactly what it did before. The test calls `stripSharedIndent`, and my local copy is gone.\n\n**What I checked:** loading `tests/_utils/index.js` normally fails on the missing `fs-teardown` package, so I loaded just the two functions. `unIndent` still gives the same results for space- and tab-indented input. `stripSharedIndent` removes the shared tabs and keeps the relative indentation.\n\nTo run the tests, do `npm install`, then `npx mocha tests/lib/linter/report-location.js`, plus a few `unIndent` users such as `tests/lib/rules/indent.js` to confirm nothing changed. I can install"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.5273792,
+        "inputTokens": 40,
+        "outputTokens": 13193,
+        "cacheReadTokens": 301956,
+        "wallMs": 154180
+      },
+      "answer": "I removed my own `dedent` helper from `tests/lib/linter/report-location.js`. The test now uses the repo's shared `unIndent` from `tests/_utils`, which already strips the shared indentation from each source. The test still hasn't been run, because this checkout has no `node_modules`.\n\n**Why I switched:** a reuse check (a hook) asked me to look for existing helpers before finishing. A search found one that does the same job: `unIndent`. It only strips spaces, not tabs. I didn't extend it to strip tabs because that would break an existing test: `tests/lib/rules/no-unassigned-vars.js:186` passes tab-indented code and expects `column: 9`. Instead, the code inside the new test's templates is now indented with spaces, which is what other callers already do (for example `tests/lib/shared/runtime-info.js:76`).\n\n**One expected value changed:** the nested line is now indented with four spaces instead of a tab. So `foo` is now expected at column 5 to 8 rather than 2 to 5. The other positions are the same: `bar` at line 1, column 11 and `baz` at line 3, column 15.\n\n**What I checked:** I ran the repo's own `unIndent` code in plain Node on both sources. It produces the intended code with the names at those columns. Still unchecked is that `Linter#verify` really reports them, and that the file passes ESLint and Prettier. To check, run `npm install`, then `npx mocha tests/lib/linter/report-location.js` and `npx eslint tests/lib/linter/report-location.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.3216486,
+        "inputTokens": 34,
+        "outputTokens": 6706,
+        "cacheReadTokens": 225023,
+        "wallMs": 95132
+      },
+      "answer": "I've added `tests/lib/linter/report-location.js`, but it hasn't been run yet. The checkout has no dependencies installed (`Cannot find module 'debug'`), so mocha, ESLint and prettier all stopped before reaching the test.\n\nThe file has two cases. Each one lints a multi-line source with only `no-undef` enabled and checks the rule name, line and column of every problem reported:\n- one undefined name, `foo`, expected at line 3, column 5;\n- two undefined names, `bar` at 1:11 and `baz` at 4:16.\n\nI worked those positions out by hand from the source, so a real run is still needed to confirm them.\n\nTo strip the shared indentation, the file uses the repo's existing `unIndent` helper from `tests/_utils`, which rule tests like `object-shorthand.js` already use. It only counts spaces, not tabs, so the code inside the template literals is indented with spaces even though the rest of the file uses tabs. If someone re-indents those lines with tabs, nothing gets stripped and the expected columns will be off.\n\nAs the stop hook asked, I had a subagent look for existing functions that already do what this file does inline. It found none, so I made no changes.\n\nTo check the expected positions, run `npm install` and then `npx mocha tests/lib/linter/report-location.js`. I can do that if you'd like."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.5089124,
+        "inputTokens": 48,
+        "outputTokens": 12331,
+        "cacheReadTokens": 374407,
+        "wallMs": 157125
+      },
+      "answer": "Following the reuse check, `tests/lib/linter/report-location.js` now uses the repo's own `unIndent` from `tests/_utils`, and the local `dedent` helper is deleted. It's a single new file with no other changes. **I still haven't run the test**, because dependencies aren't installed. Run `npm install` and then `npx mocha tests/lib/linter/report-location.js`.\n\n**What the search found:** a subagent searched the repo for anything that strips indentation from a template literal. The only match is `unIndent` at `tests/_utils/index.js:23`. The `common-tags` package also has `stripIndent`, but the check says to use the repo's own helper first.\n\n**Why the sources are now indented with spaces:** `unIndent` only strips leading spaces, and this repo indents code with tabs. Its existing callers, such as `tests/lib/shared/runtime-info.js:76`, handle that by indenting the content inside the template literal with spaces, so I did the same. I didn't change `unIndent` to also strip tabs, because that would change its output for callers that already pass it tab-indented content, such as `tests/lib/rules/no-unassigned-vars.js:135`.\n\n**What the tests check:**\n1. `foo(a)` inside an `if` block is reported at line 3, column 5. The column moved from 2 because the inner indent is now four spaces instead of one tab.\n2. `bar` and `baz` are reported at 1:11 and 3:3, in that order.\n\n**What I verified:** I ran a copy of `unIndent`'s code on both sources in plain Node, because importing the helper itself needs the missing `fs-teardown` package. It returns each source as written, and the names sit at 3:5, 1:11 and 3:3. Whether `no-undef` reports exactly those positions is still for the real test run to confirm."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.49830939999999996,
+        "inputTokens": 44,
+        "outputTokens": 11463,
+        "cacheReadTokens": 351232,
+        "wallMs": 144453
+      },
+      "answer": "I removed my own `dedent` helper from the test. It now uses the repo's shared `unIndent` helper, with the template literals indented with spaces. That's how almost all of the 1,578 existing `unIndent` calls are written. **The test still hasn't been run**, because `node_modules` isn't installed.\n\n**What the search found:**\n- **`unIndent`** (`tests/_utils/index.js:23`) does the job, but only for space indentation. Making it strip tabs would change what it returns to three callers in `tests/lib/rules/no-unassigned-vars.js`. One of them would fail: it expects column 9 at `:196-197`, and that count includes 4 tabs that would be stripped. So I left `unIndent` unchanged.\n- **`stripIndents`** from `common-tags` (used in `tools/update-readme.js`) removes all leading whitespace, including indentation inside the code. That would lose the structure the columns depend on, so it doesn't fit.\n\n**Changes to the test:** with spaces now kept inside the block, two expected columns moved. `foo` inside the `if` is now at column 5 (was 2), and `bar` is at column 16 (was 13). I ran a copy of `unIndent` on the file's actual template literals and got columns 5, 11 and 16, which match what the test expects.\n\nTo run it:\n```\nnpm install && npx mocha tests/lib/linter/report-location.js\n```"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.604327,
+        "inputTokens": 48,
+        "outputTokens": 13569,
+        "cacheReadTokens": 399465,
+        "wallMs": 203882
+      },
+      "answer": "The test now uses the repo's existing `unIndent` helper (from `tests/_utils/index.js`) instead of its own copy. I deleted my local `dedent` function, and the file is down to 57 lines. I still haven't run the test: `node_modules` isn't installed, so mocha, eslint and prettier can't load.\n\n- **Why the literals use spaces:** `unIndent` only strips spaces, not tabs, so the code inside the two template literals is indented with spaces. Most existing uses do the same; `tests/lib/rules/brace-style.js:285` is one example. The rest of the file still uses tabs.\n- **Why I didn't make `unIndent` strip tabs:** a test in `tests/lib/rules/no-unassigned-vars.js:186` passes tab-indented code to it and expects column 9. That only holds because `unIndent` leaves the tabs in, so the change would break that test.\n- **What I checked:** I ran `unIndent`'s source (copied out of the file, since `tests/_utils` won't load without its dependencies) on both literals. The output is `\"const a = 1;\\nif (a) {\\n    foo(a);\\n}\"` and `\"let x = bar;\\n\\nx = x + baz;\"`. That puts `foo` at line 3, column 5, and `bar`/`baz` at column 9, matching the test's assertions.\n\nTo run it, install dependencies with `npm install`, then run `npx mocha tests/lib/linter/report-location.js`. I can do that if you want."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.1168812,
+        "inputTokens": 10,
+        "outputTokens": 2242,
+        "cacheReadTokens": 53686,
+        "wallMs": 53182
+      },
+      "answer": "I added `tests/lib/linter/report-location.js` with two small tests. Both pass, and the file passes the repo's own ESLint config.\n\n- **The helper:** a short `dedent()` function at the top of the file. It drops the empty first line after the opening backtick and the indentation before the closing backtick. Then it strips the indentation shared by the lines that aren't blank. The repo didn't already have a helper like this, so it lives in the test file.\n- **Test 1:** `missing` is used inside a function body, and the test checks `no-undef` reports it at line 3, column 13. That column counts the one tab of nesting left after dedenting.\n- **Test 2:** the source has a blank line in the middle, and the test checks `undefinedThing` is reported at line 3, column 5. This makes sure blank lines don't break the dedenting or shift the line numbers.\n\nDependencies weren't installed in the checkout, so I ran `npm install` before running the tests. It didn't change any tracked files; the new test file is the only change. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.0832572,
+        "inputTokens": 8,
+        "outputTokens": 2080,
+        "cacheReadTokens": 44846,
+        "wallMs": 92387
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Its 3 tests pass and the file passes the repo's own lint. To run them I had to do an `npm install`, because dependencies weren't installed. The only change in git is the new file.\n\n**How it works:**\n- A small `dedent` helper drops the template literal's first newline and the whitespace-only closing line. It then removes the indentation that all non-blank lines share. The repo has no dedent package, so the helper is written inline.\n- One test checks the helper itself: deeper indentation is kept relative to the rest, so `a;` / `\\tb;` stays `\"a;\\n\\tb;\"`.\n- One test checks that `foo(a);` inside an `if` block is reported by `no-undef` at line 3, column 2 to 5. The one tab left after dedenting counts as a single column.\n- One test checks two undefined names, `bar` and `baz`, across lines with a blank line between them. They're reported at 1:9 and 3:5."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.13156299999999999,
+        "inputTokens": 16,
+        "outputTokens": 3305,
+        "cacheReadTokens": 92515,
+        "wallMs": 43721
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`, but I haven't been able to run it. This checkout has no `node_modules` installed, so loading `Linter` fails with `Cannot find module 'debug'`. ESLint and Prettier failed for the same reason.\n\n**What the file checks:**\n- **One undefined name:** inside a function body, `undefinedName` is reported by `no-undef` at line 3, column 13 to 26.\n- **Two undefined names:** `foo()` is reported at 1:1 and `bar = 1` at 3:2.\n\nI worked out the expected positions by hand from the source as written (the tab inside the function body counts as one column).\n\n**Why there's a new helper:** the repo already has `unIndent` in `tests/_utils`, but it only strips leading spaces. The repo indents with tabs, so it would strip nothing from these literals and every reported column would be off. I added a short `dedent` helper in the test file instead. It strips whatever tabs or spaces all non-blank lines share, plus the blank first and last lines. I didn't change `unIndent` because many other tests use it.\n\nTo check it, run `npm install`, then `npx mocha tests/lib/linter/report-location.js`. I can do that if you'd like."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.11154319999999998,
+        "inputTokens": 14,
+        "outputTokens": 2776,
+        "cacheReadTokens": 81076,
+        "wallMs": 105295
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both of its tests pass and the file passes the repo's own lint.\n\n- **Indentation:** each source is written as an indented template literal and passed through `stripIndent` from `common-tags`, which is already in the repo's dev dependencies. It removes the indentation the lines share, plus the blank first and last lines, so line and column numbers match the source as written. The repo indents with tabs, so a line still indented one level reports one column further in.\n- **Single problem:** `foo` inside an `if` block is reported at line 3, column 2. The test also checks that there's exactly one problem and that it comes from `no-undef`.\n- **Two problems:** `bar` inside a function is reported at line 2, column 9, and `baz` at the top level at line 4, column 17.\n\nDependencies weren't installed (the `debug` package was missing), so I ran `npm install` before running the test. That changed only `node_modules`. The git status shows the new test file as the only change. I didn't commit anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.1049976,
+        "inputTokens": 14,
+        "outputTokens": 2568,
+        "cacheReadTokens": 83108,
+        "wallMs": 53164
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass, and ESLint finds no problems in the file.\n\n**How it works:** a small `dedent` helper removes the line break right after the opening backtick and the whitespace line before the closing one. It then strips the indentation shared by the non-blank lines. Blank lines inside the source don't affect how much is stripped. That way each source can be indented to fit the code around it, and the expected line and column still match the text as written.\n\n**What it checks:** two multi-line sources, each run through `Linter#verify` with only `no-undef` turned on. Each test asserts there is exactly one problem, from `no-undef`, at a specific line and column:\n- `foo(a);` inside an `if` block, with blank lines before it: reported at line 4, column 2.\n- `bar` in the middle of `return 1 + bar;`, indented with spaces inside tab-indented test code: reported at line 2, column 16. This checks that only the shared indentation is removed.\n\nDependencies weren't installed in this checkout, so I ran `npm install` before running the tests. It didn't change any tracked files; the new test file is the only change in `git status`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.10824980000000001,
+        "inputTokens": 12,
+        "outputTokens": 2547,
+        "cacheReadTokens": 71509,
+        "wallMs": 44638
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both of its tests pass, and the file passes ESLint and Prettier.\n\n**How it works:**\n- A small `dedent()` helper in the file removes the template literal's opening newline and its closing whitespace-only line. It then strips the indentation that all non-blank lines share. Blank lines are ignored when working out that indentation, so they don't throw it off.\n- **Test 1:** `missing` sits inside a function body. It checks that `no-undef` is reported at line 3, column 13, ending at column 20.\n- **Test 2:** the source has a blank line. It checks that the report for `use` lands at line 4, column 2. The line keeps its tab inside the `if` block, so the name starts at column 2.\n\nThe repo had no dependencies installed, so I ran `npm install --ignore-scripts` to run the tests. That created `node_modules/` locally, but `git status` shows the new test file as the only change. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": true
+      },
+      "spent": {
+        "costUsd": 0.1303,
+        "inputTokens": 16,
+        "outputTokens": 2914,
+        "cacheReadTokens": 98500,
+        "wallMs": 102596
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass, and the file passes the repo's ESLint and Prettier checks.\n\n**What it tests:**\n1. **Flat source:** `foo` on line 2 is reported at line 2, column 15.\n2. **Nested source:** `bar` inside a function body is reported at line 2, column 12. Only the indentation shared by every line is stripped, so the extra 4 spaces before `return` still count toward the column.\n\n**How the indentation is stripped:** I used the existing `unIndent` helper from `tests/_utils` instead of writing a new one. It only strips leading **spaces**, not tabs. So the template literal contents are indented with spaces, even though the rest of the file uses tabs. The rule tests (e.g. `tests/lib/rules/indent.js`) do the same. If someone re-indents those lines with tabs, nothing gets stripped and the column assertions fail.\n\nTo run the tests I had to `npm install`, because the checkout had no `node_modules`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.1230412,
+        "inputTokens": 14,
+        "outputTokens": 2865,
+        "cacheReadTokens": 85386,
+        "wallMs": 51601
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass, and the file passes ESLint and Prettier (I let Prettier rewrap one line).\n\n**How the indentation is stripped:** a small `dedent()` helper in the file drops the newline right after the opening backtick and the whitespace-only last line. It then finds the smallest indentation across the non-blank lines and removes that much from every line. Indentation inside the source, like the 4-space body of a function, is kept. So the line and column the linter reports match the source as you read it in the test.\n\n**What the tests check:**\n1. A single undefined name inside a function body (`return a + missing;`) is reported by `no-undef` at line 3, column 16.\n2. Two undefined names in a source with a blank line and a nested object are each reported at their own spot: line 1, column 1 and line 4, column 8.\n\nI wrote the helper rather than using the `common-tags` dev dependency, because no test in the repo uses that package.\n\nTo run the tests I had to install dependencies, since `node_modules` was missing. I used `npm install --ignore-scripts`. The new test file is the only change git shows."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.1166008,
+        "inputTokens": 12,
+        "outputTokens": 2718,
+        "cacheReadTokens": 73204,
+        "wallMs": 114031
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass, and the file passes ESLint and Prettier. Prettier only re-wrapped a few lines.\n\n**How it works**\n- **The `unindent(text)` helper** drops the newline right after the opening backtick and the whitespace-only line before the closing one. It then finds the whitespace prefix that all non-blank lines start with and removes it. It matches that exact run of characters rather than counting columns, so with this repo's tab indentation, the spaces inside the snippet stay as written.\n- **Test 1** has `missing` on line 3 of a nested function body. It checks that exactly one `no-undef` problem is reported, at line 3, column 16, ending at column 23.\n- **Test 2** has two undefined names, `foo` at 1:1 and `bar` at 4:5, with a blank line between them. It checks that both are reported at those positions.\n\nTo run the tests I had to run `npm install` first, because the checkout had no `node_modules`. Nothing is committed; the new file is untracked."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.08796220000000002,
+        "inputTokens": 10,
+        "outputTokens": 2086,
+        "cacheReadTokens": 58251,
+        "wallMs": 40401
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass under mocha, and ESLint reports no problems with the file.\n\n- **`dedent` helper:** it drops the newline right after the opening backtick and the whitespace-only line before the closing one. It then removes the indentation shared by all non-blank lines, so lines that are indented further keep their extra indentation.\n- **Test 1:** a 5-line source with a blank line and a nested function. It checks that there's exactly one `no-undef` problem, for `missing` at line 4, column 13.\n- **Test 2:** two undefined names, `foo` at 1:1 and `bar` at 3:2. This one also confirms that a line keeps the indentation beyond what all lines share.\n\nThe sources are indented with tabs to match the repo, and ESLint counts each tab as one column.\n\n`node_modules` wasn't installed, so I ran `npm install --ignore-scripts` to get the tests running. That didn't change any tracked files; `git status` shows only the new test file. I haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.1500938,
+        "inputTokens": 18,
+        "outputTokens": 3344,
+        "cacheReadTokens": 114629,
+        "wallMs": 235711
+      },
+      "answer": "I added `tests/lib/linter/report-location.js` with two tests. Both pass, and the file passes ESLint and Prettier.\n\n1. **One undefined name:** a call to `foo` inside an `if` block is reported by `no-undef` at line 3, column 2.\n2. **Two undefined names:** `bar` and `baz` in a source with a blank line and nested code are reported at 1:9 and 4:13.\n\n**Why it has its own dedent helper:** the repo already has an `unIndent` helper in `tests/_utils/index.js`, but it only strips leading spaces. This repo indents with tabs, so tab-indented sources would keep their tabs and every column would be off. The file has a short `dedent` tag instead. It drops the blank first and last lines and removes the tabs or spaces that all non-blank lines share. I didn't change the shared helper because the 12 test files that use it all have space-indented sources.\n\n`node_modules` wasn't there, so I ran `npm install` to run the tests; it didn't change `package-lock.json`. The only change in the repo is the new file, which isn't committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.1661376,
+        "inputTokens": 20,
+        "outputTokens": 4002,
+        "cacheReadTokens": 126888,
+        "wallMs": 55693
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`, but I haven't run it. The repo has no `node_modules`, so mocha and eslint both failed on missing modules (`debug` and others) before reaching the test. I ran the helper on its own instead: the first test's source comes out as `\"const a = 1;\\nfunction f() {\\n\\treturn a + missing;\\n}\"`, which puts `missing` at line 3, column 13, matching what the test expects.\n\n**What's in the file:**\n- **A local `dedent` tag.** It drops the blank first and last lines of the template literal, then strips the leading whitespace that all non-blank lines share.\n- **Test 1:** `missing` sits inside a function body. The test expects one `no-undef` problem at line 3, column 13. The leading tab left after dedenting counts as one column.\n- **Test 2:** an undefined call on the first line with no indentation. The test expects line 1, column 1.\n\nI didn't reuse the existing `unIndent` from `tests/_utils`. It only counts leading spaces, and this repo indents with tabs, so on tab-indented sources it strips nothing and every column would be off. The other rule tests that use it with tabs aren't affected, because they don't check columns.\n\nTo run it, install dependencies first: `npm install && npx mocha tests/lib/linter/report-location.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.08856599999999999,
+        "inputTokens": 8,
+        "outputTokens": 2274,
+        "cacheReadTokens": 44950,
+        "wallMs": 129559
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass and the file passes the repo's own lint.\n\nIt has a small `dedent` helper and two tests:\n\n- **Continuation line:** `missing` sits on line 3 under one extra tab. The test checks that the problem is reported at line 3, column 2, ending at column 9.\n- **Blank line:** an empty line inside a function body doesn't throw off the shared indentation, so `undefinedName` is reported at line 3, column 9.\n\n`dedent` drops the newline right after the opening backtick and the whitespace line before the closing one. It then takes the smallest indentation among the non-blank lines and removes that much from every line, so nested indentation is kept. Without it, the opening newline alone would shift every reported line down by one.\n\nTo run the tests I had to run `npm install`, because there was no `node_modules` folder. Git ignores that folder, so the only change to the repo is the new test file."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.1110106,
+        "inputTokens": 12,
+        "outputTokens": 2549,
+        "cacheReadTokens": 72873,
+        "wallMs": 153532
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass under mocha, and the file passes ESLint and Prettier.\n\n**The helper.** A small `dedent` function in the file prepares each template literal before it goes to the linter:\n- It drops the newline right after the opening backtick and the last line if that line is only whitespace.\n- It finds the smallest indentation among the lines that aren't blank and removes that much from every line, so nested lines keep their extra indentation.\n\n**The tests.** Both use `Linter#verify` with `no-undef` set to `\"error\"`:\n1. **One undefined name inside a function:** expects one problem at line 4, column 13 to column 20 (`missing` in `return a + missing;`). The source includes a blank line to check that blank lines don't throw off the line count.\n2. **Two undefined names:** expects one problem at line 1, column 1 (`foo`) and one at line 3, column 5 (`bar`).\n\nThe expected columns count the tab left on nested lines as one character, which is how ESLint reports columns. I wrote the helper rather than adding a dependency because I couldn't find a dedent helper in the existing tests.\n\nTo run the tests I had to install dependencies with `npm install`, because `node_modules` was missing. I also ran `prettier --write` on the new file to fix its formatting. Nothing has been committed yet."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.1467718,
+        "inputTokens": 18,
+        "outputTokens": 3509,
+        "cacheReadTokens": 109639,
+        "wallMs": 70789
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass, and the file passes ESLint and Prettier.\n\n**What it checks:** each source is an indented template literal. A tagged `dedent` helper strips the indentation shared by its lines before the source goes to `linter.verify` with `no-undef` enabled.\n- **Single name:** `b` in `return a + b;` on line 3 is reported at line 3, column 13.\n- **Two names:** `foo()` is reported at line 1, column 1, and `bar = 1` at line 3, column 2. The 2 is right because ESLint counts the leftover tab inside the `if` block as one column.\n\n**Why I didn't use the existing helper:** the shared `unIndent` in `tests/_utils` only strips spaces. This repo indents with tabs, so it would have left the sources unchanged and the line and column numbers would be wrong. I put a 10-line helper in the test file that strips tabs or spaces. I left `unIndent` alone, because the `indent` rule tests may depend on it keeping tabs.\n\n**Setup:** `node_modules` was missing, so I ran `npm install` to run the tests. The only change in git status is the new file. I haven't committed anything."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.0936038,
+        "inputTokens": 10,
+        "outputTokens": 2270,
+        "cacheReadTokens": 58299,
+        "wallMs": 116473
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass and the file passes the repo's own lint check.\n\n**What it contains:**\n- **A small `dedent` helper.** It drops the newline after the opening backtick and the indented last line before the closing one. It then finds the smallest indentation across the non-blank lines and removes that much from every line, so blank lines don't count and deeper indentation stays.\n- **Two tests:**\n  1. `const b = a + missing;` on line 3, with a blank line above it: checks `no-undef` is reported at line 3, column 15.\n  2. A nested `function` / `if` block: checks `return missing;` is reported at line 3, column 10. This only passes if the inner line keeps its two extra tabs, so it also confirms the helper strips just the shared indentation.\n\nDependencies weren't installed in the checkout, so I ran `npm install` before running the tests. It didn't change any tracked files; the new test file is the only change in `git status`. Nothing is committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.09859079999999999,
+        "inputTokens": 14,
+        "outputTokens": 2748,
+        "cacheReadTokens": 79954,
+        "wallMs": 81402
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass under mocha, and the repo's own ESLint config reports no lint errors on the file.\n\n**What's in it:**\n- **A small `dedent` helper.** It drops the newline right after the opening backtick and the whitespace-only line before the closing one. Then it finds the smallest indentation among the non-blank lines and removes that much from every line. I wrote it locally because `common-tags` isn't the right fit: its `stripIndents` removes *all* indentation, which would break the nested `foo(a);` case.\n- **Two tests**, both run through `Linter#verify` with `no-undef` turned on:\n  1. `foo(a);` indented one level inside an `if` block. It checks that the problem is reported at line 3, column 2, ending at column 5. Because the shared indentation is stripped but the inner tab isn't, the column reflects that tab.\n  2. `const b = a + bar;` after a blank line. It checks line 3, column 15.\n\nThe repo had no `node_modules`, so I ran `npm install --ignore-scripts` to be able to run the tests. That changed nothing tracked: `git status` shows only the new test file."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.14054060000000002,
+        "inputTokens": 14,
+        "outputTokens": 3428,
+        "cacheReadTokens": 85583,
+        "wallMs": 58378
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`, but I haven't run it: `node_modules` is empty, so mocha fails as soon as it loads the linter (`Cannot find module 'eslint-scope'`).\n\n**What's in it**\n- A small `stripIndent` helper. It drops the leading newline and the trailing whitespace line, then removes the leading whitespace that all non-blank lines share.\n- Two tests that call `Linter#verify` with `no-undef` enabled:\n  - `missing` inside a function is reported at line 3, column 13.\n  - `nope` in a nested `if` with a blank line inside is reported at line 5, column 18. `console` is also undefined in that snippet, so the test only looks at the `nope` report.\n\n**Why it doesn't use the existing helper:** the repo already has `unIndent` in `tests/_utils/index.js`, but it only counts leading spaces. This repo indents with tabs, so that helper would strip nothing from the template literals here.\n\n**What I checked:** I ran `stripIndent` on both snippets directly in Node. It strips the shared indentation correctly and keeps the inner tabs, and the names sit at the expected lines and columns (each tab counts as one column). What's still unchecked is that `verify` itself reports those positions, and the lint and Prettier checks.\n\nTo finish, run `npm install`, then `npx mocha tests/lib/linter/report-location.js`. I can do that if you'd like."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.11569700000000001,
+        "inputTokens": 12,
+        "outputTokens": 2814,
+        "cacheReadTokens": 71885,
+        "wallMs": 196755
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Its two tests pass, and the file is clean under ESLint and Prettier. The repo's dependencies weren't installed, so I ran `npm install` before running anything.\n\n**The indentation helper:** a small `dedent()` function at the top of the file. It drops the newline right after the opening backtick and the indented line before the closing one. It then removes the leading whitespace that all non-blank lines have in common. Blank lines don't count toward that, and inner indentation such as a function body stays as written. Nothing in the repo did this already, so I wrote it in the test file.\n\n**The tests:**\n1. An undefined `missing` inside a function body is reported once by `no-undef`, at line 4, column 13, ending at line 4, column 20.\n2. Two undefined names, `first()` at the top level and `second` inside an `if` block, are reported at 1:1 and 3:2. Column 2 there means the tab left inside the block counts as one column.\n\nThe file is new and not committed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "tests/lib/linter/report-location.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing unIndent": false
+      },
+      "spent": {
+        "costUsd": 0.15333760000000002,
+        "inputTokens": 18,
+        "outputTokens": 3737,
+        "cacheReadTokens": 114268,
+        "wallMs": 302115
+      },
+      "answer": "I added `tests/lib/linter/report-location.js`. Both tests pass, and the file passes the repo's ESLint and Prettier checks.\n\n**What it checks:**\n1. When `foo` is undefined inside an indented `if` block, the `no-undef` problem is reported at line 3, column 2.\n2. When there are two undefined names, `bar` and `baz`, they are reported at their own positions: line 1, column 9 and line 3, column 9.\n\n**One thing to know:** the repo already has an `unIndent` helper in `tests/_utils`, but I didn't use it. It only strips leading spaces, and this repo indents with tabs, so on a tab-indented template literal it removes nothing and the columns come out wrong. The new file has its own small `dedent` helper that strips shared leading tabs or spaces. I left the shared `unIndent` alone because many rule tests use it and might depend on its current behavior.\n\n**Setup:** the checkout had no `node_modules`, so I ran `npm install --ignore-scripts` to be able to run anything. The only change to tracked state is the new test file, which isn't committed."
+    }
+  ]
+}

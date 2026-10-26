@@ -1,0 +1,739 @@
+{
+  "scenario": "scripts/ab/scenarios/dolphinscheduler-parse-object-lang.json",
+  "scenarioSha256": "84e82b3eb8c64bdc21b4ecd4b11e02b5e8212bed22ca518af4c3b080dba55c9c",
+  "label": "github.com/apache/dolphinscheduler",
+  "sha": "89817f16f69b30ae3a12631f4f96653e1d3c96ce",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": {
+    "claude": "2.1.310 (Claude Code)",
+    "anatomiya": "0.18.2 at b94dd31eeb36, with uncommitted changes"
+  },
+  "said": {
+    "a": "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto: 27 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.4171644,
+        "inputTokens": 24,
+        "outputTokens": 6365,
+        "cacheReadTokens": 198747,
+        "wallMs": 98580
+      },
+      "answer": "I had a subagent check whether existing code already does what `read` does, and I didn't change anything as a result.\n\n**What it found:** the closest existing function is `JSONUtils.parseObject(String, Class)` at `dolphinscheduler-common/src/main/java/org/apache/dolphinscheduler/common/utils/JSONUtils.java:137`, and `read` already calls it. Nothing else does this job: there is no other wrapper for `ScheduleParam` in the API, service or common modules. There is a second `JSONUtils.parseObject` in `dolphinscheduler-api-test`, but it logs a failure and returns null instead of throwing. It's also test-only code, so the API module can't use it.\n\n**One gap:** text that is only whitespace isn't treated as empty. It goes to the parser and isn't guaranteed to come back as null. Your spec only covered null and empty text, so I left it alone.\n\n**Not done:** three places in `SchedulerServiceImpl.java` still call `JSONUtils.parseObject(..., ScheduleParam.class)` directly, at lines 158, 382 and 554. Nothing calls the new reader yet. Two of those places would also crash with a null-pointer error on empty text:\n- line 158 doesn't check the result for null at all;\n- line 382 only has an `assert`, which normally doesn't run in production.\n\nSwitching those callers over and handling the empty case is a separate change, so I didn't make it. I can if you want."
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1200724
+      },
+      "answer": ""
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1203107
+      },
+      "answer": ""
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.3648594,
+        "inputTokens": 28,
+        "outputTokens": 6531,
+        "cacheReadTokens": 260972,
+        "wallMs": 942565
+      },
+      "answer": "The formatting check (`spotless:check`) never finished: it ran past its 10-minute limit and was stopped. Because I ran it in quiet mode, it printed nothing, so I can't tell whether it was working slowly or stuck. One possible cause is that I ran it offline and Maven was missing a plugin it needed, but I haven't confirmed that.\n\nSo `ScheduleParamReader.java` has still not been format-checked or compiled. It copies the license header, import layout and indentation of `ScheduleParam.java` next to it, so I expect it to pass, but that's unverified.\n\nTo check it yourself, run `./mvnw spotless:apply -pl dolphinscheduler-api` (online, not quiet) and then compile the module. I can also rerun it in the background with a longer time limit and visible output if you'd like."
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1200586
+      },
+      "answer": ""
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.3538304,
+        "inputTokens": 22,
+        "outputTokens": 5674,
+        "cacheReadTokens": 175557,
+        "wallMs": 76148
+      },
+      "answer": "I had a subagent search the repo for anything that already does this job. The only match is `JSONUtils.parseObject(String, Class)` (`dolphinscheduler-common/.../utils/JSONUtils.java:137`), and `ScheduleParamReader.read` already just calls it, so I changed nothing.\n\nOne thing to know: no other wrapper for parsing `ScheduleParam` exists. The existing code in `SchedulerServiceImpl.java:158`, `:382` and `:554` calls `JSONUtils.parseObject(json, ScheduleParam.class)` directly. So the new class only gives that call a name. I left those three call sites alone; if you want them moved onto `ScheduleParamReader.read`, that's a small follow-up."
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1202654
+      },
+      "answer": ""
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1202633
+      },
+      "answer": ""
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1200590
+      },
+      "answer": ""
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1200592
+      },
+      "answer": ""
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.33921379999999995,
+        "inputTokens": 28,
+        "outputTokens": 5751,
+        "cacheReadTokens": 247309,
+        "wallMs": 926249
+      },
+      "answer": "The formatting check (`spotless:check` on `dolphinscheduler-api`) didn't finish: it hit its time limit and was stopped without giving a result. So formatting is still unchecked, and the new class hasn't been compiled or tested. The likely cause is Maven resolving the reactor or downloading plugins, but I didn't confirm that.\n\n`ScheduleParamReader.java` is short and written in the style of its neighbours, so I expect it to pass. If you want it confirmed, run `./mvnw spotless:apply -pl dolphinscheduler-api` yourself, or ask me to rerun the check with a longer timeout."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.2860294,
+        "inputTokens": 22,
+        "outputTokens": 5361,
+        "cacheReadTokens": 187992,
+        "wallMs": 85980
+      },
+      "answer": "The new class stays as written. A subagent searched for existing code that already does this job and found only one match: `JSONUtils.parseObject(String, Class)` at `dolphinscheduler-common/.../utils/JSONUtils.java:137`. It covers every case you asked for, and `ScheduleParamReader.read` already calls it, so there's no duplicated logic to remove. No other helper in common, service, dao or the api packages turns schedule JSON into a `ScheduleParam`.\n\nBecause `read` only hands off to `JSONUtils`, it adds nothing beyond a name. Three places in `SchedulerServiceImpl.java` (lines 158, 382 and 554) still call `JSONUtils.parseObject(..., ScheduleParam.class)` directly. Should I switch them to `ScheduleParamReader.read`? Otherwise the new class is unused.\n\nIt still hasn't been compiled, and I haven't run `spotless:apply` on it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.29129520000000003,
+        "inputTokens": 22,
+        "outputTokens": 5401,
+        "cacheReadTokens": 189181,
+        "wallMs": 63590
+      },
+      "answer": "I had a subagent check whether `ScheduleParamReader` duplicates anything already in the repo. It doesn't, so I left the file as it was.\n\n- **The existing function:** `JSONUtils.parseObject(String, Class)` at `dolphinscheduler-common/.../utils/JSONUtils.java:137` already does what you asked for. `ScheduleParamReader.read` just calls it.\n- **No other schedule-parsing helper:** a repo-wide search found no other function that turns schedule text into a `ScheduleParam`.\n- **Existing callers:** `SchedulerServiceImpl` (lines 158, 382 and 554) parses schedules by calling `JSONUtils.parseObject(..., ScheduleParam.class)` directly. Those calls don't use the new class.\n\nThis means `ScheduleParamReader` adds a name but no behaviour. If you want it used, the next step is switching those three calls in `SchedulerServiceImpl` over to it; I haven't done that because you didn't ask for it. If you don't need the name, the file can be deleted and nothing changes."
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1200573
+      },
+      "answer": ""
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.3623978,
+        "inputTokens": 20,
+        "outputTokens": 5696,
+        "cacheReadTokens": 167509,
+        "wallMs": 62471
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. Its `read(json)` is a one-line call to the project's existing `JSONUtils.parseObject(json, ScheduleParam.class)`. I haven't compiled it or run `spotless:apply` yet.\n\nThat existing method already does everything you asked for (`dolphinscheduler-common/.../utils/JSONUtils.java:137`):\n- **Null or empty text:** returns `null`. Text that is only whitespace is not treated as empty, so it fails to parse and throws instead.\n- **Unknown properties:** ignored.\n- **Text that doesn't parse:** throws `IllegalArgumentException(\"Parse json: <text> to class: org.apache.dolphinscheduler.api.dto.ScheduleParam failed\")`.\n\nA stop hook asked me to check for existing code that already does this job. A subagent searched and found no schedule-specific parser anywhere, only the `JSONUtils` method the new class calls, so nothing changed.\n\nSo the new class adds no behaviour of its own; it just names the operation. `SchedulerServiceImpl` already parses schedules by calling `JSONUtils` directly at three places (lines 158, 382 and 554). I left those alone; I can switch them to `ScheduleParamReader.read` if you want it used.\n\nI didn't write a test, because nothing in the `api/dto` package has one."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.44982039999999995,
+        "inputTokens": 32,
+        "outputTokens": 7829,
+        "cacheReadTokens": 289717,
+        "wallMs": 929865
+      },
+      "answer": "The formatter (`./mvnw spotless:apply -pl dolphinscheduler-api`) was stopped after hitting the 10-minute background limit without printing anything. It never formatted the file, so I still can't confirm `ScheduleParamReader.java` passes the formatting check. The file is unchanged and is still the only change besides `.claude/`.\n\nI didn't restart it because I don't know why it stalled; my guess is Maven downloading dependencies on first run, but nothing in the output confirms that. To check it yourself, run `./mvnw spotless:apply -pl dolphinscheduler-api` (or `spotless:check`) in a terminal where you can see Maven's progress. I wrote the file to match the formatting of `ScheduleParam.java` next to it, so I don't expect changes, but I haven't verified that."
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1200569
+      },
+      "answer": ""
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.3283696,
+        "inputTokens": 24,
+        "outputTokens": 6044,
+        "cacheReadTokens": 189798,
+        "wallMs": 74283
+      },
+      "answer": "I kept `ScheduleParamReader` as written. A search of the repository found no other code that does this job, apart from the `JSONUtils.parseObject(String, Class)` method that `read` already calls.\n\n- **The only full match** is `JSONUtils.parseObject(String, Class)` at `dolphinscheduler-common/.../JSONUtils.java:137`. It covers null or empty text, ignoring unknown properties, and the `IllegalArgumentException` that names the text and class. Since `read` is just a call to it, there's no copied logic to delete.\n- **Partial matches** are other `JSONUtils.parseObject` versions: one taking a `TypeReference`, one taking `byte[]`, and one returning an untyped `ObjectNode`. None fits better than the one already used.\n- **No other code is specific to `ScheduleParam`.** Nothing in `dolphinscheduler-service` or the shared modules uses it.\n\nBecause the class is a one-line pass-through, you could also drop it and call `JSONUtils.parseObject(json, ScheduleParam.class)` directly. I left it in since you asked for it.\n\nThree places in `SchedulerServiceImpl` already make that same call: lines 158, 382 and 554. I haven't switched them to the new reader, because you didn't ask for that. One thing to know if you do: line 158 uses the result without checking for null, so empty `schedule` text would cause a `NullPointerException` there. That's true now and would stay true with either call.\n\nAs before, I haven't compiled the class or run `./mvnw spotless:apply`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.42037040000000003,
+        "inputTokens": 34,
+        "outputTokens": 6767,
+        "cacheReadTokens": 324342,
+        "wallMs": 945881
+      },
+      "answer": "The formatting check (`spotless:check`) on the API module hit its time limit and was stopped before it printed anything. So `ScheduleParamReader.java` still hasn't been format-checked or compiled. I wrote it to match the style of the neighbouring files, but CI runs that check and will fail the PR if the formatting is off.\n\nYou can run `./mvnw spotless:apply -pl dolphinscheduler-api` yourself, or I can rerun the check in the background with a longer time limit.\n\nI'm also still waiting to hear whether you want the three `SchedulerServiceImpl` call sites switched to `ScheduleParamReader.read` or the class dropped."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.45728899999999995,
+        "inputTokens": 32,
+        "outputTokens": 7439,
+        "cacheReadTokens": 304465,
+        "wallMs": 928085
+      },
+      "answer": "The formatter (`./mvnw spotless:apply` on the API module) never finished: the background job hit its 10-minute limit and was stopped without printing anything. I suspect it was stuck resolving Maven dependencies or plugins, but I haven't confirmed that.\n\nSo `ScheduleParamReader.java` is unformatted and uncompiled. I wrote it to match the house style (license header, import grouping, 4-space indent), but CI runs `spotless:check` and will catch anything I missed. To check it yourself, run `./mvnw spotless:apply -pl dolphinscheduler-api` once your local Maven setup is warm, or do the install step from the module's `CLAUDE.md` first."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1835568,
+        "inputTokens": 8,
+        "outputTokens": 1795,
+        "cacheReadTokens": 58604,
+        "wallMs": 30985
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. I haven't compiled it or run Spotless.\n\n`read(String json)` is a single call to the existing `JSONUtils.parseObject(json, ScheduleParam.class)`, which already does everything you listed:\n\n- **Null or empty text:** returns `null`.\n- **Unknown properties:** ignored, because the shared mapper has `FAIL_ON_UNKNOWN_PROPERTIES` turned off.\n- **Text that doesn't parse:** throws `IllegalArgumentException(\"Parse json: <text> to class: <class> failed\", cause)`.\n\nUsing the shared mapper also keeps the same date format and time zone as the rest of the API. A separate Jackson setup could read schedule dates differently.\n\n`SchedulerServiceImpl` makes the same `JSONUtils.parseObject(..., ScheduleParam.class)` call in three places (lines 158, 382 and 554). I left those alone; I can switch them to `ScheduleParamReader.read` if you want."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1098984,
+        "inputTokens": 10,
+        "outputTokens": 1954,
+        "cacheReadTokens": 81852,
+        "wallMs": 29075
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. I haven't compiled it, run `spotless:apply`, or written a test for it.\n\n`read(String json)` is a single line that calls the existing `JSONUtils.parseObject(json, ScheduleParam.class)`. That helper already does all three things you asked for:\n\n- **Null or empty text:** returns `null`.\n- **Properties `ScheduleParam` doesn't have:** ignored, because the shared mapper is set to not fail on unknown properties.\n- **Text that doesn't parse:** throws `IllegalArgumentException(\"Parse json: <json> to class: <class name> failed\", cause)`, which names both the text and the class.\n\nThe class is `final` with a private constructor, matching the usual static-utility style."
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1202916
+      },
+      "answer": ""
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1538672,
+        "inputTokens": 14,
+        "outputTokens": 2155,
+        "cacheReadTokens": 117556,
+        "wallMs": 927338
+      },
+      "answer": "The Spotless format check didn't finish. It hit its time limit and was stopped without reporting a result, so `ScheduleParamReader.java` hasn't been format-checked or compiled. It's a short file with the standard license header and the import grouping the project uses, so I don't expect problems. CI runs `spotless:check`, though, so run `./mvnw spotless:apply -pl dolphinscheduler-api` before you push."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1270358,
+        "inputTokens": 10,
+        "outputTokens": 1992,
+        "cacheReadTokens": 86419,
+        "wallMs": 40913
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. It's a final utility class with one method, `read(String json)`, that passes the text to the project's existing `JSONUtils.parseObject(json, ScheduleParam.class)`.\n\nThat existing method already does all three things you asked for:\n- **Null or empty text** returns `null`.\n- **Unknown properties** are ignored, because the shared mapper turns off failing on them.\n- **Text that doesn't parse** throws `IllegalArgumentException(\"Parse json: <json> to class: org.apache.dolphinscheduler.api.dto.ScheduleParam failed\", cause)`.\n\nUsing it also means dates get the same format and time zone as everywhere else in the code.\n\nI haven't compiled it, written a test, or run `./mvnw spotless:apply`. Run spotless before committing, as the project requires."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.14493440000000002,
+        "inputTokens": 16,
+        "outputTokens": 2723,
+        "cacheReadTokens": 132732,
+        "wallMs": 939211
+      },
+      "answer": "The formatting check never finished: it hit its background time limit and was stopped without printing anything, so I don't know why it hung. I haven't restarted it. That means `ScheduleParamReader` is still unchecked: not compiled, not tested, and formatting not confirmed.\n\nI wrote the file to match the layout of the other classes in `api.dto`, so I'd expect it to pass. Since CI runs `spotless:check`, it's worth confirming locally before committing:\n\n```bash\n./mvnw spotless:apply -pl dolphinscheduler-api\n./mvnw -pl dolphinscheduler-api -am compile -DskipTests\n```\n\nThe first command fixes any formatting differences. The second checks that the class compiles."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1005372,
+        "inputTokens": 8,
+        "outputTokens": 1651,
+        "cacheReadTokens": 65506,
+        "wallMs": 114511
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. I haven't compiled it, run any tests, or run `spotless:check` on it.\n\n`read(String json)` is a one-line wrapper around `JSONUtils.parseObject(json, ScheduleParam.class)`, which already does everything you asked for:\n- **Null or empty text:** returns `null`.\n- **Properties `ScheduleParam` doesn't have:** ignored.\n- **Text that doesn't parse:** throws `IllegalArgumentException` with the message `Parse json: <text> to class: <class name> failed`, and keeps the original exception as the cause.\n\nTwo things come from that shared parser rather than from this class:\n- An enum value it doesn't recognise, such as an unknown `missedFirePolicy`, becomes `null` instead of throwing an error.\n- Dates are read using the parser's shared time-zone setting."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1160912,
+        "inputTokens": 8,
+        "outputTokens": 1761,
+        "cacheReadTokens": 66676,
+        "wallMs": 26589
+      },
+      "answer": "I added `ScheduleParamReader` in `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. It's a final class that can't be instantiated, with one method:\n\n```java\npublic static ScheduleParam read(String json) {\n    return JSONUtils.parseObject(json, ScheduleParam.class);\n}\n```\n\nThe method body is one line because the existing `JSONUtils.parseObject(String, Class)` in `dolphinscheduler-common` already does all three things you asked for:\n- **Null or empty text:** it returns null.\n- **Unknown properties:** they're ignored, because the shared mapper is set with `FAIL_ON_UNKNOWN_PROPERTIES = false`.\n- **Text that doesn't parse:** it throws `IllegalArgumentException(\"Parse json: <json> to class: <ScheduleParam's full name> failed\", cause)`.\n\nBecause it uses the shared mapper, it reads dates the same way as the rest of the API: `yyyy-MM-dd HH:mm:ss` in the system default time zone.\n\nI haven't compiled it, run `spotless:apply`, or added a unit test."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.10793520000000001,
+        "inputTokens": 8,
+        "outputTokens": 1753,
+        "cacheReadTokens": 65656,
+        "wallMs": 23843
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. It's a single static method that hands off to the project's existing `JSONUtils.parseObject(json, ScheduleParam.class)`, which already does everything you asked for:\n\n- **Null or empty text:** returns `null`.\n- **Properties `ScheduleParam` doesn't have:** ignored.\n- **Text that doesn't parse:** throws `IllegalArgumentException(\"Parse json: <text> to class: org.apache.dolphinscheduler.api.dto.ScheduleParam failed\")`, with the parse error attached as the cause.\n\nBecause it uses the shared settings, dates are read as `yyyy-MM-dd HH:mm:ss` and an unknown `missedFirePolicy` value becomes `null` rather than an error.\n\nI haven't compiled it, run `spotless:apply`, or added a unit test."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.10888439999999999,
+        "inputTokens": 8,
+        "outputTokens": 1639,
+        "cacheReadTokens": 65562,
+        "wallMs": 24052
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. I haven't compiled it, run Spotless or written tests for it.\n\n`read(String json)` is a one-line call to `JSONUtils.parseObject(json, ScheduleParam.class)`. That existing helper in `dolphinscheduler-common` already does everything you asked for:\n\n- **Null or empty text:** it returns `null`.\n- **Unknown properties:** they're ignored, because the shared mapper has `FAIL_ON_UNKNOWN_PROPERTIES` set to `false`.\n- **Text that doesn't parse:** it throws `IllegalArgumentException(\"Parse json: <text> to class: <class name> failed\", cause)`, which names both the text and the target class.\n\nBecause it reuses the shared mapper, it reads dates and time zones the same way as the rest of the codebase. The class itself is final with a private constructor."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1140258,
+        "inputTokens": 8,
+        "outputTokens": 1662,
+        "cacheReadTokens": 66649,
+        "wallMs": 31254
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. I haven't compiled it or run Spotless on it.\n\n`read(String json)` is one line that calls the existing `JSONUtils.parseObject(json, ScheduleParam.class)`, which already does everything you asked for:\n- **Null or empty text:** it returns `null`.\n- **Unknown properties:** the shared mapper is set to ignore them (`FAIL_ON_UNKNOWN_PROPERTIES = false`).\n- **Text that doesn't parse:** it throws an `IllegalArgumentException` with the message `\"Parse json: <text> to class: <class name> failed\"`, keeping the original exception as the cause.\n\nSince the existing method already does the work, I didn't write separate Jackson code. The new class follows the `JSONUtils` style: `final`, with a private constructor that throws."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1117186,
+        "inputTokens": 8,
+        "outputTokens": 1716,
+        "cacheReadTokens": 65753,
+        "wallMs": 23658
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. It's a final class with a private constructor and one method, `read(String json)`, which just calls `JSONUtils.parseObject(json, ScheduleParam.class)`.\n\nThat existing helper (`dolphinscheduler-common/.../JSONUtils.java:137`) already does everything you asked for:\n- **Null or empty text:** returns `null`.\n- **Unknown properties:** ignored, because the shared mapper turns off `FAIL_ON_UNKNOWN_PROPERTIES`.\n- **Text that won't parse:** throws `IllegalArgumentException(\"Parse json: <text> to class: <class name> failed\")`, with the original error as the cause.\n\nBecause it uses the shared mapper, dates are read in the project's default format and time zone, the same way schedule JSON is parsed elsewhere.\n\nI haven't compiled it, run Spotless on it, or added a unit test. Run `./mvnw spotless:apply` before committing."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.12497899999999999,
+        "inputTokens": 10,
+        "outputTokens": 2122,
+        "cacheReadTokens": 83335,
+        "wallMs": 29374
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. It's a final utility class with a private constructor and one method, `read(String json)`, which just calls `JSONUtils.parseObject(json, ScheduleParam.class)`.\n\nI didn't write new parsing code because that existing method already does everything you asked for:\n- **Null or empty text:** returns null.\n- **Properties `ScheduleParam` doesn't have:** ignored.\n- **Text that doesn't parse:** throws `IllegalArgumentException(\"Parse json: <json> to class: <class> failed\")`.\n\nGoing through it also means dates are read with the same format and time zone as the rest of the API. `SchedulerServiceImpl` currently parses schedule JSON this way in three places (lines 158, 382, 554); I left those alone.\n\nI haven't compiled it, run spotless, or written tests."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.12571700000000002,
+        "inputTokens": 10,
+        "outputTokens": 1832,
+        "cacheReadTokens": 87865,
+        "wallMs": 26027
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. I haven't compiled it, run any tests on it, or run `spotless:apply`.\n\nIt's very short because the project's existing `JSONUtils.parseObject(json, ScheduleParam.class)` already does everything you asked for:\n\n- **Empty input:** it returns `null` for null or empty text.\n- **Unknown properties:** its shared JSON parser is set up to ignore properties the class doesn't have.\n- **Parse errors:** it throws `IllegalArgumentException(\"Parse json: <text> to class: <class name> failed\", cause)`.\n\nSo `read(String json)` just calls it. The class is `final` and can't be instantiated, the same way `JSONUtils` itself is set up.\n\nBecause it uses that shared parser, it also inherits its other settings: dates are read as `yyyy-MM-dd HH:mm:ss` in the default time zone, and an unrecognised `missedFirePolicy` value becomes `null` instead of causing an error."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.09542919999999999,
+        "inputTokens": 8,
+        "outputTokens": 1658,
+        "cacheReadTokens": 64226,
+        "wallMs": 23640
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. I haven't compiled it, run Spotless on it, or tested it.\n\nIt's a final utility class whose static `read(String json)` just calls `JSONUtils.parseObject(json, ScheduleParam.class)`. That existing helper (`dolphinscheduler-common/.../JSONUtils.java:137`) already does everything you asked for:\n- **Null or empty text:** returns `null`.\n- **Unknown properties:** ignored.\n- **Text that doesn't parse:** throws `IllegalArgumentException(\"Parse json: <text> to class: <class name> failed\")`, with the original error attached as the cause.\n\nBecause it reuses the shared mapper, it also inherits that mapper's other settings. For example, an unrecognised `missedFirePolicy` value becomes `null` instead of causing an error."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1523414,
+        "inputTokens": 16,
+        "outputTokens": 2301,
+        "cacheReadTokens": 136927,
+        "wallMs": 928917
+      },
+      "answer": "The `spotless:apply` run hit its background time limit and was stopped before it printed anything, so formatting hasn't been checked. I didn't restart it. The only change in the working tree is the new `ScheduleParamReader.java`, and it hasn't been compiled or tested.\n\nI wrote the file in the same style as `ScheduleParam.java` next to it, with the same license header and import layout. CI's `spotless:check` should still be run before committing; it probably finishes faster on a machine with a warm Maven cache."
+    },
+    {
+      "ok": false,
+      "reason": "ended by a signal, past the trial's clock",
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "wallMs": 1200571
+      },
+      "answer": ""
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.18666840000000004,
+        "inputTokens": 20,
+        "outputTokens": 3086,
+        "cacheReadTokens": 183542,
+        "wallMs": 952571
+      },
+      "answer": "The formatting check (`spotless:apply`) never finished: it hung with no output and was stopped when it hit its time limit, so I couldn't confirm the formatting. The only change in the working tree is the new `ScheduleParamReader.java`, and I haven't compiled it or added tests.\n\nThe class follows the license header, import order and layout of the neighbouring `api.dto` classes. CI runs `spotless:check` and will fail the PR if anything is off, so run this before committing:\n\n```bash\n./mvnw spotless:apply -pl dolphinscheduler-api\n```\n\nI ran it with `-o` (offline), which may be why it hung if your local Maven cache is missing the Spotless plugin."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.1067486,
+        "inputTokens": 8,
+        "outputTokens": 1859,
+        "cacheReadTokens": 64243,
+        "wallMs": 29570
+      },
+      "answer": "I added `ScheduleParamReader` at `dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java`. I haven't compiled it, tested it or run Spotless on it.\n\nIt's a final utility class with a private constructor and one method, `read(String json)`, which hands the work to the project's existing JSON helper, `JSONUtils.parseObject(json, ScheduleParam.class)`. That helper already does everything you asked for:\n\n- **Null or empty text:** returns null.\n- **Properties `ScheduleParam` doesn't have:** ignored.\n- **Text that doesn't parse:** throws `IllegalArgumentException(\"Parse json: <text> to class: org.apache.dolphinscheduler.api.dto.ScheduleParam failed\", cause)`.\n\nBecause it goes through the shared helper, dates are read with the project's usual date format and time zone. A separate parser could have read them differently from the rest of the codebase.\n\nBefore committing, run `./mvnw spotless:apply`, since CI fails on unformatted code."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "dolphinscheduler-api/src/main/java/org/apache/dolphinscheduler/api/dto/ScheduleParamReader.java"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing JSONUtils.parseObject": true
+      },
+      "spent": {
+        "costUsd": 0.17875000000000002,
+        "inputTokens": 20,
+        "outputTokens": 2724,
+        "cacheReadTokens": 183630,
+        "wallMs": 965554
+      },
+      "answer": "The Spotless check never finished. It ran until the background time limit stopped it, and it printed nothing. It was running in offline mode (`-o`), so it may have been stuck trying to resolve plugins that aren't in the local Maven cache, but I can't confirm that. I didn't restart it.\n\n`ScheduleParamReader.java` is still unformatted and uncompiled. It follows the layout of `ScheduleParam.java` next to it: same license header and import order. To check formatting on your machine with network access, run:\n\n```bash\n./mvnw spotless:apply -pl dolphinscheduler-api\n```"
+    }
+  ]
+}

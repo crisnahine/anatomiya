@@ -1,0 +1,787 @@
+{
+  "scenario": "scripts/ab/scenarios/openfoodnetwork-http-error-blind.json",
+  "scenarioSha256": "0d76defc43557c5b31a6c0254c4aee97948bf97a7bf909e8419b4ed8f5901190",
+  "label": "github.com/openfoodfoundation/openfoodnetwork",
+  "sha": "4e121e10f1acde5aa975a4b8a37c421f2080565d",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": {
+    "claude": "2.1.310 (Claude Code)",
+    "anatomiya": "0.18.2 at b94dd31eeb36"
+  },
+  "said": {
+    "a": "app/components 28 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.36205479999999995,
+        "inputTokens": 30,
+        "outputTokens": 6538,
+        "cacheReadTokens": 198499,
+        "wallMs": 78486
+      },
+      "answer": "I had a second check run for existing code the new controller should be calling instead. It found nothing new, so the file stays as written.\n\n- **Error alerts:** the shared helper `showHttpError` (`app/webpacker/js/services/show_http_error.js`) is the only one in the repo for this, and the controller already uses it.\n- **CSRF token and POST:** there's no shared function for reading the token or wrapping `fetch`. The two other places that send it, `bulk_actions_controller.js:23` and `products_controller.js:60`, read it inline the same way the new controller does. `@rails/request.js` isn't a dependency."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.31364020000000004,
+        "inputTokens": 30,
+        "outputTokens": 6748,
+        "cacheReadTokens": 196916,
+        "wallMs": 80743
+      },
+      "answer": "I added the Stimulus controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or tested it in a browser, and no component uses it yet.\n\nIts `resend` action sends a POST to the `url` value. If a response comes back with an error status, it passes the status to the existing `showHttpError` helper. That helper shows the translated alerts you listed: `errors.unauthorized.message` for 401, `errors.general_error.message` for 500 and above, and `errors.network_error.message` when there's no response at all. Other errors, such as 404 or 422, show no alert, because that's how the helper already works.\n\nThe request also sends the page's CSRF token, the same way the other POST requests in the repo do. Without it, Rails would reject the request.\n\n**Reuse check:** a search of the codebase found no other existing function I could reuse. `showHttpError` is the only shared one, and it's already used. Two other controllers read the CSRF token inline the same way, so I left the file unchanged rather than write a new helper.\n\n**Tests:** I didn't add one, since only 3 of the 8 component controllers have tests. I can add one in `spec/javascripts/stimulus/` if you want."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js",
+        "spec/javascripts/stimulus/resend_confirmation_controller_test.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.4290005999999999,
+        "inputTokens": 30,
+        "outputTokens": 8835,
+        "cacheReadTokens": 226303,
+        "wallMs": 129933
+      },
+      "answer": "The new controller, `app/components/resend_confirmation_component/resend_confirmation_controller.js`, is written, but its test hasn't been run. Jest stops at startup because this checkout's JS dependencies aren't installed (\"Module @swc/jest … was not found\").\n\n**What it does:** `resend` sends a POST with `fetch` to the URL in the `url` value, including the page's CSRF token, which Rails needs on a POST. When a request fails, the alerts come from the repo's existing `showHttpError` helper in `app/webpacker/js/services/show_http_error.js`, which already uses your three translation keys:\n- **401:** `errors.unauthorized.message`\n- **No response at all:** `errors.network_error.message`\n- **500 or above:** `errors.general_error.message`\n\nOther failed statuses, such as 404 or 422, show no alert, because that's how the helper already behaves.\n\n**Test:** other component controllers have tests in `spec/javascripts/stimulus`, so I added `spec/javascripts/stimulus/resend_confirmation_controller_test.js`. It covers a successful POST, a 401, a 500 and a network failure. To run it: `yarn install`, then `npx jest spec/javascripts/stimulus/resend_confirmation_controller_test.js`.\n\n**Reuse check (requested by the stop hook):** a subagent searched for existing code that does the same job. Apart from `showHttpError`, there's no shared helper for the CSRF token or for POST requests. `bulk_actions_controller.js` and `products_controller.js` write the same lookup inline, as the new controller does. There's also no shared Jest setup for mocking `I18n`, `fetch` or `alert`; other tests mock them inline the same way. I changed nothing as a result."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js",
+        "spec/javascripts/stimulus/resend_confirmation_controller_test.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.4271994,
+        "inputTokens": 36,
+        "outputTokens": 8701,
+        "cacheReadTokens": 277687,
+        "wallMs": 112150
+      },
+      "answer": "I added the `resend` controller and a jest test for it. Neither has been run: `node_modules` isn't installed, and `yarn` failed because Corepack got a 404 when it tried to download yarn 1.22.2.\n\nThe stop hook asked for a check that the new code doesn't copy something the repo already has. A subagent searched the shared modules, the controllers and the jest specs. It found nothing to swap in, so I left both files unchanged:\n\n- **Alert messages:** `showHttpError` in `app/webpacker/js/services/show_http_error.js` is the only helper that does this, and the controller already calls it.\n- **CSRF token and POST:** there's no shared helper for reading the token or sending a POST. `bulk_actions_controller.js` and `products_controller.js` write it inline too, so the controller does the same.\n- **Test setup:** there's no shared jest setup or helper, and each existing test sets up its own mocks the way the new one does.\n\n**Files:**\n- `app/components/resend_confirmation_component/resend_confirmation_controller.js`\n- `spec/javascripts/stimulus/resend_confirmation_controller_test.js`\n\nTo run the test once dependencies are installed:\n\n```\nyarn jest spec/javascripts/stimulus/resend_confirmation_controller_test.js\n```"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.3232292,
+        "inputTokens": 30,
+        "outputTokens": 6384,
+        "cacheReadTokens": 216921,
+        "wallMs": 82268
+      },
+      "answer": "I had a subagent check whether existing code could replace any of the new controller. Apart from `showHttpError`, which the controller already uses, there's nothing reusable, so I left the file unchanged.\n\n- **CSRF token:** `bulk_actions_controller.js:23` and `products_controller.js:60` each read the token with the same line written out inline. Neither is a function, so there's nothing to call.\n- **Other packages:** no `@rails/request.js` or `Rails.csrfToken()` is used anywhere in `app/`. `mrujs` is installed but only handles `data-remote` markup; no code imports it to send requests.\n- **Error handling:** other controllers call `showHttpError(response.status)` before throwing. Mine throws the response and calls `showHttpError` once in `.catch`, so the \"no response\" case reaches the same helper. Other 4xx statuses show no alert either way.\n\nThe token lookup now appears three times. A shared `csrfToken()` helper in `app/webpacker/js/services/` would remove all three copies, but that would mean editing two other controllers, so I didn't do it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.30399459999999995,
+        "inputTokens": 28,
+        "outputTokens": 6123,
+        "cacheReadTokens": 194618,
+        "wallMs": 78075
+      },
+      "answer": "A second check confirmed the controller already reuses the only shared helper the repo has, `showHttpError`, so I didn't change anything.\n\n- **No other helper to reuse:** the repo has no helper for reading the CSRF token or making a POST, and no `@rails/request.js`. `bulk_actions_controller.js` and `products_controller.js` read the meta tag inline the same way, so this is now the third copy of those few lines. That's not enough to justify a new shared module.\n- **A no-JS alternative:** a plain Rails `button_to` would get the CSRF token and the same error alerts through Turbo's existing `turbo:submit-end` handler in `app/webpacker/js/turbo.js`. You asked for a `fetch`-based Stimulus controller, so I kept that, but it's an option if the controller isn't needed for anything else.\n- **Other errors show nothing:** `showHttpError` stays silent for 4xx statuses other than 401. That includes 403, 404 and the 422 Rails returns for a bad CSRF token, so the user gets no alert in those cases. That's what you specified and how the helper already behaves; extending it would change the behaviour for all its current callers."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.3566938,
+        "inputTokens": 34,
+        "outputTokens": 7219,
+        "cacheReadTokens": 262549,
+        "wallMs": 90076
+      },
+      "answer": "The controller is in place at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it in a browser, and there's no test for it.\n\nThe reuse check found no existing function to switch to, so the file stays as it was:\n\n- **Error alerts:** it already calls the repo's own `showHttpError` (`app/webpacker/js/services/show_http_error.js`), which shows the three messages you asked for. Other error codes like 404 or 422 show no message, because that's how the helper works.\n- **CSRF token:** nothing shared reads it. `bulk_actions_controller.js:23` and `products_controller.js:60` each copy the same one-line read, and the new controller does the same.\n- **Shared POST wrapper:** there isn't one. Every controller calls `fetch` directly.\n- **Packages:** `@rails/ujs` and `@rails/request.js` aren't dependencies. `mrujs` is installed and may have its own CSRF helpers, but `node_modules` isn't installed here, so I couldn't check. No controller imports anything from it either, so I left it alone.\n\nIt registers automatically as `resend-confirmation`. In a view you'd write `data-controller=\"resend-confirmation\"`, `data-resend-confirmation-url-value=\"…\"` and `data-action=\"resend-confirmation#resend\"`.\n\nOptional follow-ups:\n- With three copies of the CSRF read, a small service in `app/webpacker/js/services/` could replace them.\n- About half of the existing component controllers have tests in `spec/javascripts/stimulus/`, so I can add one there for this controller."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.3087418,
+        "inputTokens": 30,
+        "outputTokens": 6217,
+        "cacheReadTokens": 201049,
+        "wallMs": 71925
+      },
+      "answer": "I've left the code as it was: a search for existing helpers turned up nothing for the new controller to call instead.\n\nThe repo has no shared helper for reading the CSRF token, no fetch wrapper, and no \"POST and render a Turbo Stream\" helper. `@rails/request.js` isn't installed either. The one reusable piece, `showHttpError`, the controller already uses.\n\nThe closest existing code is `turboPerform()` in `app/webpacker/controllers/bulk_actions_controller.js:22-45`. It's written inline in that controller rather than shared, so there's nothing to call. It does almost the same thing, but when the network fails it only logs to the console and never alerts the user. The new controller is the only place that shows the network-error message when `fetch` gets no response.\n\nIf you'd rather not use a hand-written `fetch`, the resend could be a `button_to` submitted through Turbo instead. Turbo would send the CSRF token and render the response, and the listener in `app/webpacker/js/turbo.js` already shows the 401 and 500+ alerts. I haven't checked whether that listener also catches a network failure, so I kept the controller you asked for."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.3208992,
+        "inputTokens": 26,
+        "outputTokens": 6709,
+        "cacheReadTokens": 172801,
+        "wallMs": 88178
+      },
+      "answer": "The reuse check found nothing to change, so the controller is the same as before. I ran it as your hook asked, with a subagent searching the shared helpers, nearby components and other controllers that make the same calls.\n\n- **Error alerts:** `showHttpError` is the only shared helper that covers any part of `resend`, and the controller already calls it for all three error cases.\n- **CSRF token:** no helper exists for reading it. `bulk_actions_controller.js` and `products_controller.js` each copy the same `meta[name=\"csrf-token\"]` line, which is the pattern I followed. That line is now in three places, so a small helper could replace it later.\n- **Packages:** `mrujs` is installed and may provide a fetch that adds the CSRF token. The repo never calls it, and the subagent couldn't confirm it exists because `node_modules` isn't installed. It also wouldn't show the alerts, so I didn't switch to it.\n- **No-JavaScript alternative:** a link with `data-turbo-method: :post` would let Turbo send the token itself, with no controller. It's worth considering if you'd rather not keep this controller."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.3123412,
+        "inputTokens": 30,
+        "outputTokens": 6646,
+        "cacheReadTokens": 202481,
+        "wallMs": 91514
+      },
+      "answer": "I had a subagent check whether the repo already has helpers the new controller should use instead of its own code. I left the file unchanged: it already calls the one shared helper that does part of the job, and nothing else in the repo covers the rest.\n\n- **Alerts on failure:** `showHttpError` in `app/webpacker/js/services/show_http_error.js` is the only shared function that turns request failures into the messages, and the controller already calls it.\n- **CSRF token and the POST itself:** the repo has no shared function for this. `bulk_actions_controller.js` and `products_controller.js` both read the token and send the request inline, the same way the new controller does.\n- **mrujs:** this installed package may offer `mrujs.fetch` and `mrujs.csrfToken()`. I didn't switch to them: nothing in the repo uses them, and with `node_modules` not installed I couldn't confirm what they do."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.31867080000000003,
+        "inputTokens": 28,
+        "outputTokens": 6774,
+        "cacheReadTokens": 187379,
+        "wallMs": 196403
+      },
+      "answer": "I had a subagent check whether the new controller copies anything the repo already has as a function. The only overlap is `showHttpError`, which the controller already uses, so I left the file as it was. It's still untested.\n\n- **CSRF token, POST wrapper, response check:** the repo has no shared helper for any of these. `bulk_actions_controller.js` and `products_controller.js` write the CSRF lookup and the `response.ok` check inline, the same way the new controller does.\n- **Packages:** `@rails/request.js` and `@rails/ujs` aren't dependencies. `mrujs` is installed, but it's only started globally and no JS code calls it. Its API couldn't be checked because `node_modules` isn't installed.\n\nThere is an alternative: drop the controller and use a `button_to` (a Rails form button), letting mrujs or Turbo send the POST with the CSRF token. That changes the approach rather than reusing code, and you asked for a Stimulus controller, so I didn't do it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.3025818,
+        "inputTokens": 24,
+        "outputTokens": 6278,
+        "cacheReadTokens": 172349,
+        "wallMs": 81995
+      },
+      "answer": "I had a subagent check whether anything else in the repo already does what the new controller does. It found nothing, so `resend_confirmation_controller.js` stays as it was.\n\n- **CSRF token:** there's no shared helper for reading it. Two controllers (`bulk_actions_controller.js:23` and `products_controller.js:60`) each copy the same one-line lookup inside a method, and neither exports it.\n- **Fetch wrapper:** there isn't one, and neither the base controller nor any mixin adds request helpers. Every `fetch` call in the app is written inline. `@rails/request.js` and `@rails/ujs` aren't installed. `mrujs` is installed, but the app only uses it to start up and to listen for its `ajax:*` events.\n- **Error alerts:** the controller already calls `showHttpError`, the repo's existing helper for these messages."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.2878044,
+        "inputTokens": 28,
+        "outputTokens": 5929,
+        "cacheReadTokens": 185962,
+        "wallMs": 69470
+      },
+      "answer": "The controller stays as I wrote it. I checked the shared modules for other existing code that could replace part of `resend()` and found nothing else to call.\n\n- **CSRF token and POST:** nothing in `app/webpacker/js/`, `app/webpacker/js/services/`, the controller mixins or `app/components/` reads the CSRF token, wraps `fetch` or sends a POST. `bulk_actions_controller.js` and `products_controller.js` repeat the same token lookup, but as inline code inside those controllers, so there's nothing to import. This file makes the third copy of that line.\n- **Packages:** `@rails/request.js` and `@rails/ujs` aren't installed. `mrujs` and Turbo work through `data-*` attributes in templates, not functions you call from JavaScript.\n\nIf you'd rather not repeat the token lookup again, I could add a small shared helper in `app/webpacker/js/services/` and use it in all three controllers."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.28275680000000003,
+        "inputTokens": 26,
+        "outputTokens": 5695,
+        "cacheReadTokens": 172414,
+        "wallMs": 77269
+      },
+      "answer": "I had a subagent check whether the repo already has helpers for what the new controller does. It found one, `showHttpError`, which the controller already uses, so I made no changes.\n\n- **CSRF token:** there's no helper for reading it. `bulk_actions_controller.js` and `products_controller.js` read the meta tag inline the same way.\n- **POST with `fetch`:** there's no shared wrapper either. The closest code is `turboPerform()` in `bulk_actions_controller.js`, written inline in that controller, and it doesn't alert on network failures.\n- **Packages:** `@rails/request.js` isn't installed. The project does have `mrujs`, which adds CSRF to Rails-style link and form submissions but isn't used for `fetch` calls in JavaScript code.\n\nThe controller stays as written in `app/components/resend_confirmation_component/resend_confirmation_controller.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.264863,
+        "inputTokens": 24,
+        "outputTokens": 5565,
+        "cacheReadTokens": 155610,
+        "wallMs": 78630
+      },
+      "answer": "I checked whether the repo already had something the new controller should call instead of its own code. It doesn't, so the file is unchanged.\n\n- **Shared helpers:** there's no helper for reading the CSRF token, no `fetch` wrapper and no shared POST helper. The only reusable piece is `show_http_error.js`, and the controller already calls it.\n- **Code doing the same job:** `bulk_actions_controller.js` and `products_controller.js` read the CSRF token inline with the same line. That makes the new file the third copy.\n- **`mrujs`:** this dependency may include a CSRF-aware `fetch` wrapper, but nothing in the repo uses it. `node_modules` isn't installed, so I couldn't confirm what it exports, and it wouldn't show the error alerts anyway.\n\nIf you'd like to remove the repeated token line, I can add a small helper next to `show_http_error.js` and have all three controllers use it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.32542680000000007,
+        "inputTokens": 32,
+        "outputTokens": 6216,
+        "cacheReadTokens": 235569,
+        "wallMs": 83674
+      },
+      "answer": "I had a subagent check for any existing code the new controller could reuse instead of its own. It found nothing new, so the file is unchanged.\n\n- **Error alerts:** the controller already calls the repo's `showHttpError`, which is the only shared helper that fits.\n- **CSRF token:** there's no shared function for reading it. `bulk_actions_controller.js` and `products_controller.js` each read the meta tag inline in the same way, so the new controller does the same.\n- **Packages:** there's no request helper like `@rails/request.js` or `@rails/ujs`. The project does include `mrujs`, but nothing in the app calls its fetch helpers. It also reports errors through events instead of `showHttpError`, so using it would mean rewiring the alerts. `node_modules` isn't installed, so its exact API couldn't be checked."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js",
+        "spec/javascripts/stimulus/resend_confirmation_controller_test.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.34756539999999997,
+        "inputTokens": 30,
+        "outputTokens": 6659,
+        "cacheReadTokens": 221817,
+        "wallMs": 102372
+      },
+      "answer": "After the change, a project hook asked me to have a subagent check whether the new code repeats any function the repo already has. The only one it found is `showHttpError` in `app/webpacker/js/services/show_http_error.js`, which the controller already calls. So I made no further changes.\n\n- **Reading the CSRF token:** there's no shared helper. `bulk_actions_controller.js` and `products_controller.js` each read the meta tag inline, and the new controller does the same.\n- **POST requests:** there's no `fetch` wrapper. Every controller calls `fetch` directly.\n- **Test setup:** there's no shared Jest helper. Each test file mocks `I18n`, `alert` and `fetch` itself, as the new test does.\n\nThe test still hasn't been run, because `node_modules` isn't installed. To check it, run `yarn install` and then `yarn jest spec/javascripts/stimulus/resend_confirmation_controller_test.js`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.3140436,
+        "inputTokens": 32,
+        "outputTokens": 6051,
+        "cacheReadTokens": 219803,
+        "wallMs": 83431
+      },
+      "answer": "I ran the reuse check the hook asked for, and it found nothing new, so I left the file as it is. Apart from `showHttpError`, which the controller already uses, no existing function or package in the repo does any part of `resend`.\n\nThe CSRF-token line is now copied by hand in three places: `bulk_actions_controller.js:23`, `products_controller.js:60` and the new controller. There's no shared helper for it, and adding one wasn't part of this task. I can pull it out into `app/webpacker/js/services/` if you want."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.2406592,
+        "inputTokens": 24,
+        "outputTokens": 4792,
+        "cacheReadTokens": 151581,
+        "wallMs": 66383
+      },
+      "answer": "The controller is unchanged. A search of the repo's shared modules found nothing it should call instead, so the version I described earlier stands.\n\nThe only shared helper that does part of this job is `showHttpError` (`app/webpacker/js/services/show_http_error.js`), and the controller already uses it. Nothing shared reads the CSRF token or wraps a POST, and the project doesn't include a request library like `@rails/request.js`. The other controllers that make POST calls (`bulk_actions_controller.js`, `products_controller.js`) write the token lookup and `fetch` inline, the same way the new controller does."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js",
+        "spec/javascripts/stimulus/resend_confirmation_controller_test.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.4680174,
+        "inputTokens": 40,
+        "outputTokens": 8581,
+        "cacheReadTokens": 363302,
+        "wallMs": 160725
+      },
+      "answer": "I've added the controller, but its test hasn't been run yet.\n\n**The controller** is at `app/components/resend_confirmation_component/resend_confirmation_controller.js`:\n- `resend` sends a POST with `fetch` to the URL in the `url` value, with the Rails CSRF token in the headers.\n- For the alerts it calls the existing `showHttpError` helper, which already shows exactly your three messages: `errors.unauthorized.message` for a 401, `errors.network_error.message` when there's no response, and `errors.general_error.message` for 500 or above.\n- Other 4xx statuses show no alert, matching the other places that use the helper.\n- It does nothing when the request succeeds, since you didn't say what should happen then.\n\n**The test** is at `spec/javascripts/stimulus/resend_confirmation_controller_test.js`, next to the tests for the other component controllers. It checks the POST and each of the three alerts. Jest couldn't run because the JS packages aren't installed. `yarn install` failed when Corepack got a 404 trying to download yarn 1.22.2. Also, the repo expects Node 24.14.1 and this shell has 22.22.3. Once that's fixed, run `npx jest spec/javascripts/stimulus/resend_confirmation_controller_test.js`.\n\n**Reuse check:** a subagent searched for existing code that already does any part of this. Apart from `showHttpError`, which I already use, there's no shared CSRF-token getter, no fetch wrapper and no shared I18n test mock. Other controllers write those inline the same way, so I made no changes."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.1257152,
+        "inputTokens": 14,
+        "outputTokens": 1964,
+        "cacheReadTokens": 84776,
+        "wallMs": 34941
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. Nothing has been run yet: no tests or lint, and no click in a browser.\n\n- **Error messages:** the codebase already has a helper, `showHttpError` (`app/webpacker/js/services/show_http_error.js`), that shows exactly the three messages you listed. The controller reuses it instead of repeating the logic. If the request doesn't get a response at all, the controller passes `undefined`, which shows `errors.network_error.message`.\n- **CSRF token:** the POST sends the page's CSRF token as an `X-CSRF-Token` header, the same way `bulk_actions_controller.js` does. Rails would usually reject a POST without it.\n- **Registration:** controllers in `app/components` are registered automatically. This one's identifier is `resend-confirmation`, so you'd use it like this:\n\n```haml\n%div{ data: { controller: \"resend-confirmation\", \"resend-confirmation-url-value\": url } }\n  %button{ data: { action: \"resend-confirmation#resend\" } }\n```\n\nOther 4xx statuses (anything except 401) show no message, which matches your spec. Nothing happens on success either, since you didn't ask for anything there."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0733636,
+        "inputTokens": 12,
+        "outputTokens": 1573,
+        "cacheReadTokens": 69758,
+        "wallMs": 34370
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written a test for it.\n\n- **POST request:** the `resend` action sends a POST with `fetch` to `this.urlValue`. It includes the page's CSRF token in an `X-CSRF-Token` header, the same way `bulk_actions_controller.js` does, because Rails would reject the POST without it.\n- **Error alerts:** the repo already has a helper, `app/webpacker/js/services/show_http_error.js`, that maps a status to exactly the three messages you listed. The controller reuses it instead of repeating that logic:\n  - A failed response passes its status to the helper, which alerts `errors.unauthorized.message` for 401 and `errors.general_error.message` for 500 and above.\n  - A network failure calls the helper with no status, which alerts `errors.network_error.message`.\n- **Other statuses:** any other 4xx status shows no alert. That's how the helper already behaves.\n- **Registration:** `app/webpacker/controllers/index.js` loads every `*_controller.js` under `app/components`, so this one is picked up without any extra registration."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.077445,
+        "inputTokens": 12,
+        "outputTokens": 1592,
+        "cacheReadTokens": 71585,
+        "wallMs": 26646
+      },
+      "answer": "I've added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written a test for it.\n\n- **`resend` action:** sends a POST with `fetch` to `urlValue`. It includes the Rails CSRF token, as `bulk_actions_controller.js` does; without the token, Rails rejects the POST.\n- **Error alerts:** the app already has a helper, `app/webpacker/js/services/show_http_error.js`, that shows exactly the three translated messages you listed. I reused it instead of rewriting that logic:\n  - When the response isn't OK, the controller passes on its status: 401 shows `errors.unauthorized.message` and 500 or above shows `errors.general_error.message`.\n  - When `fetch` gets no response at all (e.g. a network failure), the controller passes `undefined`, which shows `errors.network_error.message`.\n  - Other 4xx statuses, such as 403 or 422, show no alert, because the helper ignores them.\n\nControllers under `app/components` are registered automatically, so this one is available as `resend-confirmation`. To use it:\n\n```haml\n%button{ data: { controller: \"resend-confirmation\", action: \"resend-confirmation#resend\",\n                 \"resend-confirmation-url-value\": some_path } }\n```"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0889674,
+        "inputTokens": 12,
+        "outputTokens": 1782,
+        "cacheReadTokens": 74797,
+        "wallMs": 27448
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written tests for it.\n\nIt's small because the project already has a helper, `app/webpacker/js/services/show_http_error.js`, that shows exactly the three alerts you described. The controller calls that helper instead of repeating the messages:\n\n- **`resend`** sends a POST to the `url` value, including the page's security token the same way `bulk_actions_controller.js` does.\n- **Error status:** if the server returns an error status, the helper shows the 401 message or, for 500 and above, the general error message. Other 4xx statuses show no alert, which is what the helper already does.\n- **No response:** if the request gets no response at all, `fetch` fails outright, and the controller shows the network error message.\n\nControllers in `app/components` are picked up automatically, so it's available as `resend-confirmation`. For example:\n\n```haml\n%button{ data: { controller: \"resend-confirmation\",\n                 \"resend-confirmation-url-value\": some_path,\n                 action: \"resend-confirmation#resend\" } }\n```\n\nThere's no `resend_confirmation_component.rb` or template yet; the folder only holds the controller."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0609156,
+        "inputTokens": 8,
+        "outputTokens": 1469,
+        "cacheReadTokens": 43998,
+        "wallMs": 23835
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written tests for it.\n\nThe repo already has a helper, `app/webpacker/js/services/show_http_error.js`, that shows exactly the three messages you listed: unauthorized for a 401, network error when there's no status, and general error for 500 or above. So the controller calls that helper instead of repeating the logic, the same way `bulk_actions_controller.js` does.\n\n- **`resend` action:** sends a `POST` with `fetch` to the URL in the `url` value.\n- **Errors:** a response that isn't OK passes its status to `showHttpError`. A request that never gets a response falls into `.catch`, which calls `showHttpError()` with no status, so the user sees the network error message.\n- **CSRF token:** I added the `X-CSRF-Token` header, as other controllers here do, so Rails doesn't reject the POST.\n\nOther 4xx statuses such as 404 and 422 get no alert, because that's how the shared helper works.\n\nTo use it in markup: `data-controller=\"resend-confirmation\" data-resend-confirmation-url-value=\"…\" data-action=\"resend-confirmation#resend\"`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0819046,
+        "inputTokens": 12,
+        "outputTokens": 1706,
+        "cacheReadTokens": 72363,
+        "wallMs": 28220
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written a spec for it.\n\n- **Error alerts:** the repo already has a service, `app/webpacker/js/services/show_http_error.js`, that does exactly the mapping you described. It shows `errors.unauthorized.message` for 401, `errors.network_error.message` when there's no status, and `errors.general_error.message` for 500 and above. The controller calls it instead of repeating that logic, the same way `add_tag_rule_modal_controller.js` does.\n- **No response:** when `fetch` gets no response at all, it fails with a `TypeError`. The controller catches that and shows the network error message.\n- **CSRF token:** the POST sends an `X-CSRF-Token` header, following `bulk_actions_controller.js`. Without it, Rails would reject the request.\n- **Setup:** none needed. `app/webpacker/controllers/index.js` already loads `*_controller.js` files from `app/components`, so this one registers as `resend-confirmation`.\n\nExample markup (HAML):\n```haml\n%div{ data: { controller: \"resend-confirmation\", \"resend-confirmation-url-value\": url } }\n  %button{ data: { action: \"resend-confirmation#resend\" } } Resend\n```"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0733618,
+        "inputTokens": 12,
+        "outputTokens": 1616,
+        "cacheReadTokens": 69849,
+        "wallMs": 34902
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written a test for it.\n\n- **How it works:** `resend` sends a POST to `urlValue` with the CSRF token from the page's meta tag. That's the same pattern `bulk_actions_controller.js` uses, and Rails needs the token to accept a POST.\n- **Error messages:** the repo already has a helper, `app/webpacker/js/services/show_http_error.js`, that does exactly the mapping you described: 401 shows the unauthorized message, 500 and above shows the general error, and no status shows the network error. The controller calls it instead of repeating that logic. If the request fails with no response, the controller calls it with no status, which gives the network error message.\n- **Other errors:** other 4xx responses show no alert. That's how the helper works, and it matches the three cases you listed.\n- **Registration:** controllers under `app/components` are loaded automatically (`app/webpacker/controllers/index.js:23`). Hook it up with something like `data-controller=\"resend-confirmation-component--resend-confirmation\"`, a `data-action` pointing at `#resend`, and the matching `url-value` attribute. Copy the exact naming from an existing component's template."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0788722,
+        "inputTokens": 12,
+        "outputTokens": 1579,
+        "cacheReadTokens": 72061,
+        "wallMs": 25961
+      },
+      "answer": "I added the controller in `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written tests for it.\n\n- **Error messages:** I didn't write the error handling again. The repo already has `app/webpacker/js/services/show_http_error.js`, which shows exactly the three messages you described: unauthorized for a 401, network error when there's no response, and general error for 500 and above. `bulk_actions_controller.js` already uses it the same way. A failed response passes its status to that helper. If `fetch` throws because there was no response, the helper is called with no status, which gives the network-error message.\n- **Other 4xx errors:** a status like 404 or 422 shows no alert, because the shared helper ignores those.\n- **CSRF token:** I added Rails' `X-CSRF-Token` header, copied from the existing controllers. Without it Rails would reject the POST.\n- **Usage:** `data-controller=\"resend-confirmation\"`, `data-resend-confirmation-url-value=\"...\"`, `data-action=\"resend-confirmation#resend\"`.\n\nNothing happens on success, because you didn't specify any success behaviour."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.09923119999999999,
+        "inputTokens": 14,
+        "outputTokens": 1932,
+        "cacheReadTokens": 88876,
+        "wallMs": 35296
+      },
+      "answer": "I've added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or added tests yet.\n\n- **Reuses an existing helper:** `app/webpacker/js/services/show_http_error.js` already shows exactly the three alerts you described (401, no response, 500 and above). The controller calls it instead of repeating that logic.\n- **What `resend` does:** it sends a POST to `urlValue`. If the response comes back with an error status, it passes that status to `showHttpError`. If `fetch` fails with no response at all, it passes `undefined`, which shows the network-error message.\n- **One addition you didn't ask for:** the POST includes the `X-CSRF-Token` header, the same way `bulk_actions_controller.js` does. Rails would reject the POST without it.\n\nOther error statuses (400–499 apart from 401) show no alert, because that's how the existing helper behaves.\n\nControllers in `app/components` are registered automatically under the identifier `resend-confirmation`, so it's used like this:\n\n```haml\n%button{ data: { controller: \"resend-confirmation\",\n                 \"resend-confirmation-url-value\": some_path,\n                 action: \"resend-confirmation#resend\" } }\n```"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.08583260000000001,
+        "inputTokens": 14,
+        "outputTokens": 1756,
+        "cacheReadTokens": 85843,
+        "wallMs": 40537
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written a test for it.\n\n- **`resend` action:** it sends a POST with `fetch` to `this.urlValue` and includes the Rails CSRF token, the same way `bulk_actions_controller.js` does.\n- **Error alerts:** the project already has a helper, `showHttpError` in `app/webpacker/js/services/show_http_error.js`, that shows exactly those three messages. It alerts `errors.unauthorized.message` for a 401 and `errors.general_error.message` for 500 or above. When `fetch` gets no response at all, the controller passes `undefined`, which shows `errors.network_error.message`. Other 4xx statuses (like 403 or 422) don't show an alert, as you specified.\n- **Registration:** `app/webpacker/controllers/index.js` already loads every `*_controller.js` under `app/components`. Because of the folder name, the identifier should come out as `resend-confirmation-component--resend-confirmation`; I haven't checked that in a browser.\n\nTo use it in a view:\n\n```haml\n%div{ data: { controller: \"resend-confirmation-component--resend-confirmation\",\n              \"resend-confirmation-component--resend-confirmation-url-value\": some_path } }\n  %button{ data: { action: \"resend-confirmation-component--resend-confirmation#resend\" } }\n```"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0889892,
+        "inputTokens": 12,
+        "outputTokens": 1631,
+        "cacheReadTokens": 74966,
+        "wallMs": 29878
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written tests.\n\n- **`resend`** sends a POST with `fetch` to `this.urlValue` and includes the page's CSRF token in the headers, like `bulk_actions_controller.js` does. Without the token, Rails would likely reject the request.\n- **Error alerts:** the repo already had a helper, `app/webpacker/js/services/show_http_error.js`, that does exactly the mapping you described, so the controller reuses it:\n  - a 401 response shows `errors.unauthorized.message`\n  - a failed request with no response (fetch throws) shows `errors.network_error.message`\n  - a status of 500 or above shows `errors.general_error.message`\n\n  Other 4xx statuses show no alert.\n- **Registration:** any `*_controller.js` file under `app/components` is picked up automatically (`app/webpacker/controllers/index.js:23`). You can use it with something like:\n  ```haml\n  %div{ data: { controller: \"resend-confirmation\", \"resend-confirmation-url-value\": url } }\n    %button{ data: { action: \"resend-confirmation#resend\" } }\n  ```\n  The exact controller name depends on how that `index.js` builds identifiers from the file path, which I didn't check, so confirm it before relying on `resend-confirmation`.\n\nWhen the request succeeds, the controller does nothing yet, since you didn't specify any success behaviour."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.1179018,
+        "inputTokens": 14,
+        "outputTokens": 2112,
+        "cacheReadTokens": 96829,
+        "wallMs": 29008
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or added tests.\n\nThe repo already had a helper, `app/webpacker/js/services/show_http_error.js`, that shows exactly the three alerts you described, so the controller calls it instead of repeating that logic:\n- **401:** shows `errors.unauthorized.message`.\n- **No response at all:** if `fetch` throws (for example, on a network failure), it shows `errors.network_error.message`.\n- **500 or above:** shows `errors.general_error.message`.\n- **Other errors (such as 404 or 422):** no alert. That's what the existing helper does.\n\nThe `resend` action sends a POST to `urlValue`. It includes the page's CSRF token, which Rails requires for a POST.\n\nYou don't need to register the controller: `app/webpacker/controllers/index.js` loads every `*_controller.js` under `app/components`. Its Stimulus name should be `resend-confirmation-component--resend-confirmation`, but check that against how the other component controllers are referenced in their templates. A trigger would look like this:\n\n```erb\n<div data-controller=\"resend-confirmation-component--resend-confirmation\"\n     data-resend-confirmation-component--resend-confirmation-url-value=\"<%= url %>\">\n  <button data-action=\"resend-confirmation-component--resend-confirmation#resend\">…</button>\n</div>\n```"
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.1068674,
+        "inputTokens": 14,
+        "outputTokens": 1824,
+        "cacheReadTokens": 94217,
+        "wallMs": 29229
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written a test for it.\n\n- **The `resend` action** sends a POST with `fetch` to the URL in its `url` value.\n- **Error alerts:** the repo already had a helper, `showHttpError` in `app/webpacker/js/services/show_http_error.js`, that maps the three cases you described to those translated messages. I reused it rather than writing the logic again. A failed response passes its status to the helper. If `fetch` gets no response at all (e.g. a network failure), the helper gets no status, which shows the network error message.\n- **Other statuses:** errors like 403 or 422 show no alert. That's the helper's existing behaviour.\n- **Addition you didn't ask for:** the request sends the `X-CSRF-Token` header taken from the page's meta tag, the same way `bulk_actions_controller.js` does. Rails would otherwise reject the POST.\n\nIt's registered automatically, because `app/webpacker/controllers/index.js` loads every `*_controller.js` under `app/components`. Use it with `data-controller=\"resend-confirmation\"`, `data-resend-confirmation-url-value=\"…\"` and `data-action=\"resend-confirmation#resend\"`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.12465380000000001,
+        "inputTokens": 18,
+        "outputTokens": 2298,
+        "cacheReadTokens": 121269,
+        "wallMs": 50180
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written any tests.\n\n- **Reuses existing code:** the repo already has `app/webpacker/js/services/show_http_error.js`, which shows exactly the three messages you described. The controller calls it instead of repeating that logic, the same way `add_tag_rule_modal_controller.js` does.\n- **`resend` action:** it sends a POST to `this.urlValue` with the CSRF token taken from the page's meta tag, as `bulk_actions_controller.js` does. If the response isn't OK, it passes the status to `showHttpError`, which shows the 401 message or the 500-and-above message.\n- **No response:** if `fetch` throws, for example on a network failure, it calls `showHttpError(undefined)`, which shows the `errors.network_error.message` alert. The existing controllers only log these errors to the console, so they never show this alert.\n- **Registration:** this happens automatically through the components loader in `app/webpacker/controllers/index.js`. The identifier is `resend-confirmation`, so the markup would look like:\n  ```haml\n  %div{ data: { controller: \"resend-confirmation\", \"resend-confirmation-url-value\": url } }\n    %button{ data: { action: \"resend-confirmation#resend\" } }\n  ```\n\nOther 4xx errors, such as 422, don't show an alert, because `showHttpError` deliberately ignores them. The controller also does nothing with a successful response, since you didn't ask for success feedback."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0795118,
+        "inputTokens": 12,
+        "outputTokens": 1683,
+        "cacheReadTokens": 71219,
+        "wallMs": 35012
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written tests for it.\n\n- **How it works:** `resend()` sends a POST with `fetch` to `urlValue`, including the page's CSRF token so Rails accepts the request.\n- **Error alerts:** the repo already has a helper, `app/webpacker/js/services/show_http_error.js`, that shows exactly the messages you listed (401 → `errors.unauthorized`, no status → `errors.network_error`, 500 or above → `errors.general_error`). The controller calls it with the status on a failed response, and with no status when the request fails entirely. The same helper is used in `add_tag_rule_modal_controller.js` and several others.\n- **Registration:** controllers under `app/components` are picked up automatically (`app/webpacker/controllers/index.js:23`), so there's nothing to register.\n\nTo use it in markup: `data-controller=\"resend-confirmation\" data-resend-confirmation-url-value=\"...\" data-action=\"resend-confirmation#resend\"`. The `resend-confirmation` name assumes the usual naming from the file name. I didn't check how `index.js` builds names for component controllers.\n\nOther 4xx errors (like 422) and successful responses show nothing to the user."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.08900860000000001,
+        "inputTokens": 14,
+        "outputTokens": 1994,
+        "cacheReadTokens": 84003,
+        "wallMs": 41548
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written a spec for it.\n\n```js\nimport { Controller } from \"stimulus\";\nimport showHttpError from \"../../webpacker/js/services/show_http_error\";\n\nexport default class extends Controller {\n  static values = { url: String };\n\n  resend() {\n    const csrfToken = document.querySelector('meta[name=\"csrf-token\"]')?.getAttribute(\"content\");\n\n    fetch(this.urlValue, {\n      method: \"POST\",\n      headers: { \"X-CSRF-Token\": csrfToken },\n    })\n      .then((response) => {\n        if (!response.ok) showHttpError(response.status);\n      })\n      .catch(() => showHttpError());\n  }\n}\n```\n\n- **Error alerts:** the repo already has a helper, `showHttpError`, that shows exactly the alerts you listed: `errors.unauthorized.message` for 401, `errors.network_error.message` when there's no status, and `errors.general_error.message` for 500 and above. The controller uses it rather than repeating that logic. When `fetch` gets no response at all, it calls the helper with no status, which gives the network-error alert.\n- **Other 4xx statuses:** these show no alert, matching how the helper is used elsewhere.\n- **CSRF token:** the request sends Rails' CSRF token, like the other controllers do, so Rails won't reject the POST.\n- **Registration:** controllers in `app/components` are registered automatically, and this one gets the identifier `resend-confirmation`. Usage:\n  ```erb\n  <div data-controller=\"resend-confirmation\" data-resend-confirmation-url-value=\"<%= url %>\">\n    <button data-action=\"resend-confirmation#resend\">…</button>\n  </div>\n  ```\n\nThe controller doesn't do anything when the request succeeds. Tell me if you want a confirmation message shown."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.070102,
+        "inputTokens": 10,
+        "outputTokens": 1491,
+        "cacheReadTokens": 57490,
+        "wallMs": 28035
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run or tested it, and no specs or views use it yet.\n\n- **How errors are shown:** the codebase already has `app/webpacker/js/services/show_http_error.js`, which shows exactly the three messages you asked for: 401 → `errors.unauthorized.message`, no status → `errors.network_error.message`, 500 or above → `errors.general_error.message`. The controller uses it instead of repeating that logic, the same way `add_tag_rule_modal_controller.js` does.\n- **No response:** `fetch` only rejects when no response comes back, so the `.catch` calls the helper with an undefined status, which gives the network error message.\n- **Other 4xx statuses** (like 404 or 422) show no alert, because the shared helper skips them on purpose.\n- **CSRF token:** the POST sends the `X-CSRF-Token` header taken from the page's meta tag, like `bulk_actions_controller.js`. Without it, Rails rejects the request.\n- **No success handling:** a successful response does nothing.\n\nTo use it in a view: `data-controller=\"resend-confirmation\" data-resend-confirmation-url-value=\"…\" data-action=\"resend-confirmation#resend\"`. Check that the controller name matches how this app registers component controllers."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.0686648,
+        "inputTokens": 8,
+        "outputTokens": 1534,
+        "cacheReadTokens": 44964,
+        "wallMs": 25192
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written a spec for it.\n\n- **Error messages:** the codebase already has a helper, `app/webpacker/js/services/show_http_error.js`, that maps statuses to exactly the three messages you listed. Other component controllers use it, so I reused it instead of writing the alerts again.\n- **The request:** `resend` sends a POST to `urlValue`. It also sends the `X-CSRF-Token` header, the way `bulk_actions_controller.js` does, because Rails would otherwise reject the POST.\n- **When it fails:** if the server responds with an error, the helper picks the message from the status. A 401 shows `errors.unauthorized.message` and 500 or above shows `errors.general_error.message`. Other 4xx statuses show nothing, which is how the helper already behaves elsewhere. If there's no response at all, `fetch` rejects, and the `.catch` calls the helper with no status, which shows `errors.network_error.message`.\n\nThe controller doesn't do anything with a successful response. If the endpoint returns a Turbo Stream or should show a \"sent\" message, that still needs adding.\n\nThe component's Ruby class and template don't exist yet. To use the controller, an element needs `data-controller=\"resend-confirmation\"`, `data-resend-confirmation-url-value`, and `data-action=\"resend-confirmation#resend\"`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": false
+      },
+      "spent": {
+        "costUsd": 0.0797166,
+        "inputTokens": 8,
+        "outputTokens": 1474,
+        "cacheReadTokens": 46583,
+        "wallMs": 23901
+      },
+      "answer": "I've added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or written tests for it.\n\n- **`resend` action:** sends a `POST` with `fetch` to the URL in the `url` value.\n- **No response:** if `fetch` throws (network failure), the user sees `errors.network_error.message`.\n- **401:** shows `errors.unauthorized.message`.\n- **500 or above:** shows `errors.general_error.message`.\n- **Any other status:** no alert. That includes 4xx errors other than 401, such as 403 or 422.\n\nI also added the `X-CSRF-Token` header from the page's meta tag, like `products_controller.js` does. Rails rejects a `POST` without it.\n\nAll three translation keys already exist under `errors` in `config/locales/en.yml`, so no locale changes were needed. You'd attach it with something like `data-controller=\"resend-confirmation\"`, `data-resend-confirmation-url-value=\"...\"` and `data-action=\"resend-confirmation#resend\"`. Check that against how the other component controllers are registered, since I didn't look at that."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/components/resend_confirmation_component/resend_confirmation_controller.js"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing showHttpError": true
+      },
+      "spent": {
+        "costUsd": 0.080693,
+        "inputTokens": 12,
+        "outputTokens": 1843,
+        "cacheReadTokens": 70565,
+        "wallMs": 37293
+      },
+      "answer": "I added the controller at `app/components/resend_confirmation_component/resend_confirmation_controller.js`. I haven't run it or tested it.\n\n```js\nimport { Controller } from \"stimulus\";\nimport showHttpError from \"../../webpacker/js/services/show_http_error\";\n\nexport default class extends Controller {\n  static values = { url: String };\n\n  async resend() {\n    const csrfToken = document.querySelector('meta[name=\"csrf-token\"]')?.getAttribute(\"content\");\n\n    try {\n      const response = await fetch(this.urlValue, {\n        method: \"POST\",\n        headers: { \"X-CSRF-Token\": csrfToken },\n      });\n      if (!response.ok) showHttpError(response.status);\n    } catch {\n      // No response at all, e.g. network failure\n      showHttpError();\n    }\n  }\n}\n```\n\n- **Error messages:** the repo already has a helper, `app/webpacker/js/services/show_http_error.js`, that does exactly this mapping: 401 shows `errors.unauthorized.message`, no status shows `errors.network_error.message`, and 500 or above shows `errors.general_error.message`. I reused it instead of writing the checks again. Other 4xx errors show no alert, which is what the helper already does.\n- **No response:** if `fetch` fails outright (for example, a network failure), the controller calls the helper with no status, so the user gets the network error message.\n- **CSRF token:** I added the `X-CSRF-Token` header, as the other `fetch` POSTs in the codebase do. Without it, Rails would reject the request.\n\nThe component's template needs to attach the controller with `data-controller`, set the URL with `data-…-url-value`, and wire the button with `data-action=\"…#resend\"`."
+    }
+  ]
+}
