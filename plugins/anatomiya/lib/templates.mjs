@@ -1,22 +1,45 @@
 /**
  * View templates whose code is in another language's syntax, and the markup of
  * a component: no scan reads either, and the end-of-turn reuse check does, since
- * a view is where a copy of a helper's logic is most often written. A line rule
- * per kind says which lines hold code and which are markup alone. A line longer
- * than the line rules read (`LINE_READ`) asks unread, as it does under them: a
- * minified line is a megabyte, and the rules run inside the stop's budget.
+ * a view is where a copy of a helper's logic is most often written. A rule per
+ * kind says which lines hold code and which are markup alone. A line longer
+ * than the rules read by pattern (`LINE_READ`) asks unread, as it does under
+ * them: a minified line is a megabyte, and the rules run inside the stop's
+ * budget. ERB's is read a character at a time, which costs no more on a long
+ * line. A file not read by its deadline asks on every line that is not blank.
  */
+import { assertKeyed, EXTRACTORS } from "./langs.mjs";
 import { LINE_READ } from "./limits.mjs";
 
 const KINDS = [
-  ["erb", /\.erb$/],
+  // A configuration file run through ERB is no view, and no helper answers one.
+  [null, /\.ya?ml\.erb$/],
+  // EJS writes ERB's tags.
+  ["erb", /\.(?:erb|ejs)$/],
   ["razor", /\.(?:cshtml|razor)$/],
   ["haml", /\.haml$/],
   ["slim", /\.slim$/],
   // A plain `.html` file is anybody's: Angular, Vue, Django or markup alone, and no one rule reads all of them.
-  ["jinja", /\.(?:jinja2?|j2)$/],
-  ["gotmpl", /\.(?:tmpl|gotmpl)$/],
+  // Twig and Nunjucks write Jinja's tags.
+  ["jinja", /\.(?:jinja2?|j2|twig|njk)$/],
+  ["gotmpl", /\.(?:tmpl|gotmpl|gohtml)$/],
 ];
+
+// A rule reads the clock once in this many lines or tags: one costs microseconds.
+const CLOCK_EVERY = 64;
+
+/** Whether `deadline` has passed, asked of the clock on the first call and once in `CLOCK_EVERY` after. */
+function clockFor(deadline) {
+  let left = 1;
+  return () => {
+    if (--left > 0) return false;
+    left = CLOCK_EVERY;
+    return performance.now() > deadline;
+  };
+}
+
+// What a rule answers for a file it did not read by its deadline.
+const LATE = Symbol("late");
 
 /** Which template kind a path is, or null where it is none. */
 export function templateOf(path) {
@@ -32,14 +55,16 @@ const COMPUTES = /[()+*/%<>!=?&|]|\s-\s/;
  * A line holding any Ruby asks, and a tag never closed holds Ruby to the end of the file. ERB ends a
  * tag at the first `%>`, inside a Ruby string or not, and so does this.
  */
-function erb(source) {
+function erb(source, late) {
   const asks = new Array(source.split("\n").length).fill(false);
   let state = "markup";
   let row = 0;
   for (let i = 0; i < source.length; i++) {
     const c = source[i];
-    if (c === "\n") row++;
-    else if (state === "markup") {
+    if (c === "\n") {
+      row++;
+      if (late()) return LATE;
+    } else if (state === "markup") {
       if (c !== "<" || source[i + 1] !== "%") continue;
       if (source[i + 2] === "%") i += 2;
       else if (source[i + 2] === "#") [state, i] = ["comment", i + 2];
@@ -73,7 +98,7 @@ const BRACES_ONLY = /^[{}\s]+$/;
  * Razor: a line asks where it holds a transition to C#, or sits in a block of C# and is no markup,
  * through the brace that closes the block; `@*` opens a comment, which may run over lines.
  */
-function razor(source) {
+function razor(source, late) {
   const lines = source.split("\n");
   const asks = new Array(lines.length).fill(false);
   let depth = 0;
@@ -82,6 +107,7 @@ function razor(source) {
   let opening = false;
   let closed = false;
   for (const [i, raw] of lines.entries()) {
+    if (late()) return LATE;
     let line = "";
     for (let at = 0; at < raw.length; ) {
       if (comment) {
@@ -130,45 +156,156 @@ function razor(source) {
   return asks;
 }
 
-// HAML and Slim: a line of Ruby (`-`), an output line (`=`, `==`, `~`, `!=`, `&=`), a tag whose
-// content is output, an attribute bound to Ruby, and an interpolation.
-// A HAML `{ }` attribute hash is Ruby, and so is an attribute in `( )` or Slim's `[ ]` whose value is unquoted.
-const HAML_CODE = /^\s*(?:-(?!#)|[=~]|[!&]=)|^\s*[%.#][\w.#:-]*(?:\{[^}]*\}|\([^)]*\))?\s*[=~]|^\s*[%.#][\w.#:-]*\{|^\s*[%.#][\w.#:-]*\([^)]*\w=(?!["'])|#\{/;
-const SLIM_CODE = /^\s*(?:-|==?)|^\s*[\w.#:-]+(?:\[[^\]]*\]|\([^)]*\))?\s*==?\s|^\s*[\w.#:-]+[[(][^\])]*\w=(?!["'])|^\s*[\w.#:-]+.*\s[\w:-]+=(?!["'])\S|#\{/;
-const SLIM_COMMENT = /^\s*\/(?!\S*\s*=)/;
+// HAML: a line of Ruby (`-`), an output line (`=`, `==`, `~`, `!=`, `&=`), a tag whose content is
+// output, an attribute bound to Ruby, and an interpolation. A `{ }` attribute hash is Ruby, and so is
+// an attribute in `( )` whose value is unquoted.
+const HAML_CODE = /^\s*(?:-(?!#)|[=~]|[!&]=)|^\s*[%.#][\w.#:-]*(?:\{[^}]*\}|\([^)]*\))?\s*(?:[=~]|[!&]=)|^\s*[%.#][\w.#:-]*\{|^\s*[%.#][\w.#:-]*\([^)]*\w=(?!["'])|#\{/;
+
+/**
+ * The lines a HAML or Slim file runs as Ruby, each read on its own by `asks` but those a Ruby filter
+ * holds, HAML's `:ruby` and Slim's `ruby:`, which are Ruby through the last line indented past it.
+ */
+function indented(source, late, filter, asks) {
+  const lines = source.split("\n");
+  const out = new Array(lines.length).fill(false);
+  let under = null;
+  for (const [i, line] of lines.entries()) {
+    if (late()) return LATE;
+    if (line.length > LINE_READ) {
+      out[i] = true;
+      continue;
+    }
+    const indent = line.length - line.trimStart().length;
+    if (under !== null && (line.trim() === "" || indent > under)) {
+      out[i] = line.trim() !== "";
+      continue;
+    }
+    under = filter.test(line) ? indent : null;
+    out[i] = under === null && asks(line);
+  }
+  return out;
+}
 
 /** HAML: `-#` opens a comment, and every other line is read on its own. */
-const haml = (source) => source.split("\n").map((line) => line.length > LINE_READ || (!/^\s*-#/.test(line) && HAML_CODE.test(line)));
+const haml = (source, late) => indented(source, late, /^\s*:ruby\s*$/, (line) => !/^\s*-#/.test(line) && HAML_CODE.test(line));
+
+// A Slim attribute, `name=value`, whose value is quoted or is Ruby up to the next space.
+const SLIM_ATTRIBUTE = /\s*[\w:-]+\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s\])]+)/y;
+const SLIM_COMMENT = /^\s*\/(?!\S*\s*=)/;
+
+/**
+ * Slim: a line of Ruby (`-`), an output line (`=`, `==`), an interpolation, and a tag with an attribute
+ * bound to Ruby or with output after it. A tag's attributes run until the first word that is none, and
+ * what follows is its text, `a=b` in it included.
+ */
+function slimAsks(line) {
+  if (SLIM_COMMENT.test(line)) return false;
+  if (/^\s*(?:-|==?)/.test(line) || line.includes("#{")) return true;
+  const tag = /^\s*[\w.#:-]+/.exec(line);
+  if (tag === null) return false;
+  let at = tag[0].length;
+  const wrapper = { "[": "]", "(": ")" }[line[at]];
+  if (wrapper) at++;
+  for (;;) {
+    SLIM_ATTRIBUTE.lastIndex = at;
+    const attribute = SLIM_ATTRIBUTE.exec(line);
+    if (attribute === null) break;
+    if (!/^["']/.test(attribute[1])) return true;
+    at = SLIM_ATTRIBUTE.lastIndex;
+  }
+  const rest = line.slice(at).trimStart();
+  return /^==?(?:\s|$)/.test(wrapper && rest.startsWith(wrapper) ? rest.slice(1).trimStart() : rest);
+}
 
 /** Slim: `/` opens a comment, and every other line is read on its own. */
-const slim = (source) => source.split("\n").map((line) => line.length > LINE_READ || (!SLIM_COMMENT.test(line) && SLIM_CODE.test(line)));
+const slim = (source, late) => indented(source, late, /^\s*ruby:\s*$/, slimAsks);
+
+/**
+ * The tags of a Jinja or Go template from offset `from` on, `{ open, from, to, body }`, a tag never
+ * closed running to the end. `openers` matches what opens one, and `close` names what closes each.
+ */
+function* tagsOf(source, openers, close, from = 0) {
+  for (let at = from; ; ) {
+    openers.lastIndex = at;
+    const opened = openers.exec(source);
+    if (opened === null) return;
+    const closer = close[opened[0]];
+    const end = source.indexOf(closer, opened.index + opened[0].length);
+    const to = end === -1 ? source.length : end + closer.length;
+    yield { open: opened[0], from: opened.index, to, body: source.slice(opened.index + opened[0].length, end === -1 ? source.length : end) };
+    if (end === -1) return;
+    at = to;
+  }
+}
+
+/** The lines `asks` says a template's tags hold code on: each line a tag that computes spans, and each line longer than the rules read. */
+function byTags(source, late, tags, asks) {
+  const lines = source.split("\n");
+  const out = lines.map((line) => line.length > LINE_READ);
+  let row = 0;
+  let seen = 0;
+  for (const tag of tags) {
+    if (late()) return LATE;
+    for (; seen < tag.from; seen++) if (source.charCodeAt(seen) === 10) row++;
+    if (!asks(tag)) continue;
+    let last = row;
+    for (let at = tag.from; at < tag.to; at++) if (source.charCodeAt(at) === 10) last++;
+    for (let i = row; i <= last; i++) out[i] ||= lines[i].trim() !== "";
+  }
+  return out;
+}
+
+// What a Jinja tag opens with, and what closes each: a comment, a statement and an expression.
+const JINJA_OPENS = /\{[#%{]/g;
+const JINJA_CLOSES = { "{#": "#}", "{%": "%}", "{{": "}}" };
+const JINJA_RAW = /^-?\s*raw\s*-?$/;
+const JINJA_ENDRAW = /\{%-?\s*endraw\s*-?%\}/g;
+
+/** Jinja's tags, a raw block's text passed over whole. */
+function* jinjaTags(source) {
+  for (let at = 0; ; ) {
+    let raw = null;
+    for (const tag of tagsOf(source, JINJA_OPENS, JINJA_CLOSES, at)) {
+      if (tag.open === "{%" && JINJA_RAW.test(tag.body.trim())) {
+        raw = tag;
+        break;
+      }
+      yield tag;
+    }
+    if (raw === null) return;
+    JINJA_ENDRAW.lastIndex = raw.to;
+    const end = JINJA_ENDRAW.exec(source);
+    if (end === null) return;
+    at = end.index + end[0].length;
+  }
+}
 
 /** Jinja: an expression `{{ }}` or a statement `{% %}` asks where it computes; `{# #}` is a comment. */
-const jinja = (source) =>
-  source.split("\n").map(
-    (line) =>
-      line.length > LINE_READ ||
-      [...line.replace(/\{#[\s\S]*?#\}|\{%-?\s*raw\s*-?%\}[\s\S]*?\{%-?\s*endraw\s*-?%\}/g, "").matchAll(/\{\{([\s\S]*?)\}\}|\{%-?([\s\S]*?)-?%\}/g)].some((m) => COMPUTES.test(m[1] ?? m[2]))
-  );
+const jinja = (source, late) => byTags(source, late, jinjaTags(source), (tag) => tag.open !== "{#" && COMPUTES.test(tag.body));
 
 // What a Go template action may hold and compute nothing with: its own keywords and its literals.
 const GO_KEYWORDS = new Set(["if", "else", "end", "range", "with", "define", "template", "block", "break", "continue", "nil", "true", "false"]);
+const GO_OPENS = /\{\{/g;
+const GO_CLOSES = { "{{": "}}" };
 
 /** A Go template: an action asks where it calls a function, which it writes as a bare word, `printf`, `gt`, `and`. */
-const gotmpl = (source) =>
-  source.split("\n").map((line) => line.length > LINE_READ ||
-    [...line.matchAll(/\{\{-?([\s\S]*?)-?\}\}/g)].some(({ 1: action }) => {
-      if (action.trim().startsWith("/*")) return false;
-      const words = action.replace(/"(?:[^"\\]|\\.)*"|`[^`]*`/g, "").match(/(?<![.$\w])[A-Za-z_]\w*/g) ?? [];
-      return words.some((word) => !GO_KEYWORDS.has(word)) || /\|/.test(action);
-    })
-  );
+const gotmpl = (source, late) =>
+  byTags(source, late, tagsOf(source, GO_OPENS, GO_CLOSES), ({ body }) => {
+    const action = body.replace(/^-\s|\s-$/g, "");
+    if (action.trim().startsWith("/*")) return false;
+    const words = action.replace(/"(?:[^"\\]|\\.)*"|`[^`]*`/g, "").match(/(?<![.$\w])[A-Za-z_]\w*/g) ?? [];
+    return words.some((word) => !GO_KEYWORDS.has(word)) || /\|/.test(action);
+  });
 
 const RULES = { erb, razor, haml, slim, jinja, gotmpl };
 
+// A file not read by its deadline: every line but a blank one asks.
+const unread = (source) => source.split("\n").map((line) => line.trim() !== "");
+
 /** Which of a template's lines hold no code, one entry per line: true where the line asks nothing. */
-export function templateInertLines(kind, source) {
-  return RULES[kind](source).map((asks) => !asks);
+export function templateInertLines(kind, source, deadline = Infinity) {
+  const asks = RULES[kind](source, clockFor(deadline));
+  return (asks === LATE ? unread(source) : asks).map((ask) => !ask);
 }
 
 // What a component's markup computes inline that a helper could: arithmetic on a number, a method
@@ -184,14 +321,22 @@ const MARKUP_EXPRESSIONS = {
   svelte: [/\{[#:@/]?(?:if|each|await|key|else|html|debug|const|render)?\s*([^{}]*)\}/g],
 };
 
+assertKeyed("MARKUP_EXPRESSIONS", MARKUP_EXPRESSIONS, EXTRACTORS);
+
 /**
  * Which lines of a component's markup hold an expression that computes inline, one entry per line:
  * true where the line asks. The script and style blocks are no markup and answer false here, since the
  * script is read by its own rule.
  */
-export function markupCodeLines(kind, source) {
+export function markupCodeLines(kind, source, deadline = Infinity) {
+  const late = clockFor(deadline);
   let inside = null;
-  return source.split("\n").map((line) => {
+  let read = true;
+  const asks = source.split("\n").map((line) => {
+    if (!read || late()) {
+      read = false;
+      return false;
+    }
     if (inside !== null) {
       if (line.includes(`</${inside}`)) inside = null;
       return false;
@@ -204,4 +349,5 @@ export function markupCodeLines(kind, source) {
     if (line.length > LINE_READ) return true;
     return MARKUP_EXPRESSIONS[kind].some((pattern) => [...line.matchAll(pattern)].some((m) => COMPONENT_COMPUTES.test(m[1])));
   });
+  return read ? asks : unread(source);
 }

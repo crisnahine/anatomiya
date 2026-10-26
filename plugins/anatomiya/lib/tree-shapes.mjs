@@ -77,7 +77,7 @@ export const SHAPES = {
     base: ["base_clause"],
     // What a file holds outside any code: the tags, and the markup around them.
     header: ["php_tag", "php_end_tag", "text", "text_interpolation"],
-    // The markup, which is code where any of the file's markup holds a script or something Blade compiles.
+    // The markup itself first, then what holds it: code on the rows that hold a script or something Blade compiles.
     markup: ["text", "text_interpolation"],
     tokensOf: ["namespace_use_declaration", "namespace_use_clause"],
     name: "name",

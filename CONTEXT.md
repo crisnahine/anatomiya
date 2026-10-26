@@ -125,11 +125,19 @@ _Avoid_: parser, language pack, syntax file
 
 **Component**:
 A `.vue` or `.svelte` file: markup holding at most two script blocks. Its script is counted, by the
-dimensions that list its framework, and its template and style are not read. It is never a test
+dimensions that list its framework, and its template and style are not, though the reuse check reads
+its markup for an expression that computes. It is never a test
 file, wherever it sits. The word also names what a `.tsx` or `.jsx` file renders, as in `a prop
 spread lands on a component`. Such a file is a JSX file to every count here, and nothing else in
 this entry applies to it.
 _Avoid_: single-file component, SFC, view
+
+**View template**:
+A file a framework renders a page from: markup holding another language's code, written as ERB, EJS,
+HAML, Slim, Razor, Jinja, Twig, Nunjucks or a Go template. No scan counts one, and the reuse check
+reads its code by a rule per kind. A Blade view is a PHP file to every count here, and a component's
+markup is the component's.
+_Avoid_: view file, server template
 
 **Script block**:
 The body of one `<script>` tag in a component, found by its framework's own rules. It is the only

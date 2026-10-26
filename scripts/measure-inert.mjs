@@ -109,10 +109,55 @@ export const NAMING =
 export const STRINGISH = /string|heredoc|nowdoc/;
 
 // Code in another language: the comment cgo compiles, which stands directly above an import of "C"
-// alone, and the inline markup of a file where any of it holds a script or something Blade compiles.
+// alone, and the rows of inline markup that hold a script or something Blade compiles.
 export const FOREIGN = { go: ["import_declaration", "import_spec"], php: ["text"] };
 const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
-const CODE_IN_MARKUP = /<script|\{\{|\{!!|(?<![\w@])@(?:php\b|(?!(?:media|supports|container|scope|layer|page)\b)[a-z_]\w*\s*\()/i;
+// Spelled here, apart from the rule's: a script's tags, Blade's echoes and `@php` block, its comment and
+// its `@verbatim` text, and a directive with arguments, which it reads after no word character.
+const MARKUP_SPANS = [
+  [/<script\b/iy, /<\/script\s*>/gi, true],
+  [/\{\{--/y, /--\}\}/g, false],
+  [/\{\{/y, /\}\}/g, true],
+  [/\{!!/y, /!!\}/g, true],
+  [/@verbatim\b/y, /@endverbatim\b/g, false],
+  [/@php\b(?!\s*\()/y, /@endphp\b/g, true],
+];
+const DIRECTIVE = /(?<![\w@])@(?!(?:media|supports|container|scope|layer|page)\b)[a-z_]\w*\s*\(/iy;
+
+/** The rows of a file's markup, its chunks in order, that hold code: a span may run from one chunk into the next. */
+function markupRows(chunks) {
+  const text = chunks.map((c) => c.text).join("\0");
+  const rowAt = [];
+  for (const c of chunks) {
+    let row = c.startPosition.row;
+    for (const ch of c.text.split("")) {
+      rowAt.push(row);
+      if (ch === "\n") row++;
+    }
+    rowAt.push(row);
+  }
+  const rows = new Set();
+  const mark = (from, to) => {
+    for (let at = from; at < to; at++) if (text[at] !== "\n" && text[at] !== "\0" && text[at].trim() !== "") rows.add(rowAt[at]);
+  };
+  for (let at = 0; at < text.length; at++) {
+    let spanned = false;
+    for (const [open, close, code] of MARKUP_SPANS) {
+      open.lastIndex = at;
+      if (!open.test(text)) continue;
+      close.lastIndex = open.lastIndex;
+      const end = close.exec(text) ? close.lastIndex : text.length;
+      if (code) mark(at, end);
+      at = end - 1;
+      spanned = true;
+      break;
+    }
+    if (spanned) continue;
+    DIRECTIVE.lastIndex = at;
+    if (DIRECTIVE.test(text)) rows.add(rowAt[at]);
+  }
+  return rows;
+}
 
 // What an annotation or a struct type is made of where its grammar spells one as neither a name nor a type.
 export const ACCESS = {
@@ -174,8 +219,8 @@ export const FIELDS = {
  * declared type is not one `OWN_TYPE` spells, outside a `const`.
  *
  * A comment counts where it is one of those with no line between them that
- * end on the line above an import of "C" alone, and inline markup where any
- * of the file's markup holds a script or Blade code, each on any added line it spans.
+ * end on the line above an import of "C" alone, on any added line it spans, and
+ * an added row of inline markup that holds a script or Blade code.
  */
 export function oracleHits(tree, lang, added) {
   const s = SHAPES[lang];
@@ -183,9 +228,9 @@ export function oracleHits(tree, lang, added) {
   const computing = new Set(ORACLE[lang]);
   const literalish = new Set([...s.literal, ...s.unary, ...s.collection, ...(s.word ?? [])]);
   const onAddedRow = (row) => added.some(([from, to]) => row + 1 >= from && row + 1 <= to);
-  // Whether any chunk of the file's markup opens a script: a chunk after an inline tag is inside it and holds no tag of its own.
-  let scripts = null;
-  const scriptInMarkup = () => (scripts ??= tree.rootNode.descendantsOfType("text").some((chunk) => CODE_IN_MARKUP.test(chunk.text)));
+  // The rows of the file's markup that hold code: a chunk after an inline tag is inside the script or block the chunk before opened.
+  let codeRows = null;
+  const markupCode = () => (codeRows ??= markupRows(tree.rootNode.descendantsOfType("text")));
   const containers = new Set(CONTAINERS[lang]);
   const charged = new Map();
   const quiet = new Set([...s.comment, ...s.literal]);
@@ -300,9 +345,13 @@ export function oracleHits(tree, lang, added) {
       if (odd !== null) hit(node, `string holding ${odd.type}`);
     }
     if (FOREIGN[lang]?.includes(node.type)) {
-      // Markup that ends with its line is on no row past it.
-      const last = node.endPosition.row + (node.endPosition.column === 0 ? 0 : 1);
-      if (lang === "php" && scriptInMarkup() && added.some(([from, to]) => node.startPosition.row + 1 <= to && last >= from)) hit(node, "markup of a file that holds code");
+      if (lang === "php") {
+        const lines = node.text.split("\n");
+        for (const [i, line] of lines.entries()) {
+          const row = node.startPosition.row + i;
+          if (markupCode().has(row) && onAddedRow(row)) hits.push({ line: row + 1, type: "markup that holds code", text: line.slice(0, 120) });
+        }
+      }
       if (lang === "go" && IMPORTS_C.test(node.text)) {
         let below = node;
         for (let c = node.previousSibling; c !== null && s.comment.includes(c.type) && c.endPosition.row >= below.startPosition.row - 1; c = c.previousSibling) {

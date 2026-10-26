@@ -36,7 +36,6 @@ function manifestsIn(root, others) {
   return read;
 }
 
-
 /**
  * What a repository-wide pool counts under.
  *

@@ -337,31 +337,73 @@ function register(index, path, rel) {
   for (const tail of tailsOf(path)) claim(index, `/${tail}`, rel);
 }
 
+/** The file a module specifier in `file` names, asked once per file and specifier. */
+function nextOf(ctx, file, module) {
+  const key = `${file}\0${module}`;
+  if (!ctx.next.has(key)) ctx.next.set(key, specifierToFile(module, file, ctx.corpusRels, ctx.packages));
+  return ctx.next.get(key);
+}
+
+/** A file's own exports as a set, made once per file. */
+function ownExports(ctx, file) {
+  let own = ctx.own.get(file);
+  if (!own) ctx.own.set(file, (own = new Set(ctx.records.get(file)?.facets?.exports ?? [])));
+  return own;
+}
+
+/**
+ * Every name a file hands an importer, its own and those its barrels pass on. A chain that runs back
+ * on itself is cut where it meets a file still being read.
+ */
+function namesOf(ctx, file, reading) {
+  const held = ctx.names.get(file);
+  if (held) return held;
+  const names = new Set(ownExports(ctx, file));
+  if (reading.has(file)) return names;
+  reading.add(file);
+  for (const r of ctx.records.get(file)?.facets?.reexports ?? []) {
+    if (r.names !== "*") for (const [, as] of r.names) names.add(as);
+    else {
+      const next = nextOf(ctx, file, r.module);
+      if (next !== null) for (const name of namesOf(ctx, next, reading)) names.add(name);
+    }
+  }
+  ctx.names.set(file, names);
+  return names;
+}
+
+/** Each name a file's `export *` lines hand on, to the first of the files they name that hands it. */
+function suppliersOf(ctx, file) {
+  let suppliers = ctx.suppliers.get(file);
+  if (suppliers) return suppliers;
+  suppliers = new Map();
+  for (const r of ctx.records.get(file)?.facets?.reexports ?? []) {
+    const next = r.names === "*" ? nextOf(ctx, file, r.module) : null;
+    if (next !== null) for (const name of namesOf(ctx, next, new Set())) if (!suppliers.has(name)) suppliers.set(name, next);
+  }
+  ctx.suppliers.set(file, suppliers);
+  return suppliers;
+}
+
 /**
  * The file that defines a name an importer takes from `file`, followed through the barrels that hand
  * it on: `export * from` and `export { a as b } from`. Null where no file down the chain is seen
  * defining it, and where the chain runs back on itself; the importer's own file then keeps it.
  */
-function definedIn(file, name, records, corpusRels, packages, seen) {
+function definedIn(ctx, file, name, seen) {
   const key = `${file}\0${name}`;
-  const facets = records.get(file)?.facets;
+  const facets = ctx.records.get(file)?.facets;
   if (!facets || seen.has(key)) return null;
   seen.add(key);
-  const handedOn = facets.reexports ?? [];
-  const renamed = handedOn.flatMap((r) => (r.names === "*" ? [] : r.names.filter(([, as]) => as === name).map(([from]) => [r.module, from])));
-  if (renamed.length === 0 && facets.exports?.includes(name)) return { file, name };
+  const renamed = (facets.reexports ?? []).flatMap((r) => (r.names === "*" ? [] : r.names.filter(([, as]) => as === name).map(([from]) => [r.module, from])));
+  if (renamed.length === 0 && ownExports(ctx, file).has(name)) return { file, name };
   if (renamed.length > 0) {
     const [module, from] = renamed[0];
-    const next = specifierToFile(module, file, corpusRels, packages);
-    return next === null ? null : definedIn(next, from, records, corpusRels, packages, seen);
+    const next = nextOf(ctx, file, module);
+    return next === null ? null : definedIn(ctx, next, from, seen);
   }
-  for (const r of handedOn) {
-    if (r.names !== "*") continue;
-    const next = specifierToFile(r.module, file, corpusRels, packages);
-    const found = next === null ? null : definedIn(next, name, records, corpusRels, packages, seen);
-    if (found !== null) return found;
-  }
-  return null;
+  const next = suppliersOf(ctx, file).get(name);
+  return next === undefined ? null : definedIn(ctx, next, name, seen);
 }
 
 /**
@@ -435,13 +477,14 @@ function reuseIndex(allRecords, corpusRels, own) {
     }
   };
   const owners = new Map();
+  const ctx = { records: allRecords, corpusRels, packages, next: new Map(), own: new Map(), names: new Map(), suppliers: new Map() };
   for (const [rel, r] of allRecords) {
     for (const i of r.facets?.imports ?? []) {
       const file = specifierToFile(i.module, rel, corpusRels, packages);
       if (file === null) continue;
       for (const name of i.names) {
         const key = `${file}\0${name}`;
-        if (!owners.has(key)) owners.set(key, (name === "*" ? null : definedIn(file, name, allRecords, corpusRels, packages, new Set())) ?? { file, name });
+        if (!owners.has(key)) owners.set(key, (name === "*" ? null : definedIn(ctx, file, name, new Set())) ?? { file, name });
         const owner = owners.get(key);
         add(owner.file, [owner.name], rel);
       }

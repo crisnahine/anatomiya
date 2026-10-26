@@ -91,16 +91,25 @@ async function componentScript(engine, lang, source, kind, deadline) {
     return [{ from: lineAt(b.end - body.trimStart().length), to: lineAt(b.start + body.trimEnd().length) }];
   });
   const views = await Promise.all(blocks.map((b) => inertLinesOf({ engine, lang, source: blankOutside(source, b.start, b.end), deadline })));
-  const markup = markupCodeLines(kind, source);
+  const markup = markupCodeLines(kind, source, deadline);
   const inert = markup.map((asks, i) => !asks && views.every((view) => view[i] !== false));
   const computed = markup.flatMap((asks, i) => (asks ? [{ from: i + 1, to: i + 1 }] : []));
   return { spans: [...spans, ...computed], inert };
 }
 
-const clipped = (hunks, spans) =>
-  hunks
+/** The parts of `hunks` that `spans` cover, one hunk per run of lines however many spans meet in it. */
+function clipped(hunks, spans) {
+  const parts = hunks
     .flatMap((h) => spans.flatMap((s) => (h.from > s.to || h.to < s.from ? [] : [{ ...h, from: Math.max(h.from, s.from), to: Math.min(h.to, s.to) }])))
     .sort((a, b) => a.from - b.from);
+  const runs = [];
+  for (const part of parts) {
+    const last = runs.at(-1);
+    if (last !== undefined && part.from <= last.to + 1) last.to = Math.max(last.to, part.to);
+    else runs.push({ ...part });
+  }
+  return runs;
+}
 
 // A name a repository chose is shown as it is only where it cannot carry a
 // line break or a quote into the reason the model reads.
@@ -173,7 +182,7 @@ export async function pendingChange(root, { since = null, turnStart = null, call
     gitDir(root, timeout),
     // The hook reads every checkout of a stop together: one whose attributes git could not be asked for
     // asks nothing, as one whose status git would not give does, and the others are still read.
-    corpusDrop(root, { timeout }).catch((err) => {
+    corpusDrop(root, { timeout, readAlso: (path) => templateOf(path) !== null }).catch((err) => {
       if (err instanceof Unasked) return null;
       throw err;
     }),
@@ -198,10 +207,8 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const home = realpathOf(root);
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
+    if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
     const template = templateOf(path);
-    // A template is no source the corpus reads, and is refused for anything else.
-    const drop = dropOf(path);
-    if (ONE_OFF.test(path) || (drop !== null && !(template !== null && drop === "notSource"))) continue;
     // An engine with no rule cannot tell a function from a comment, so its files ask nothing.
     const lang = template === null ? language(path) : null;
     const engine = lang === null ? null : engineOf(lang);
@@ -221,7 +228,7 @@ export async function pendingChange(root, { since = null, turnStart = null, call
     const hunks = script === null ? added : clipped(added, script.spans);
     const inert =
       template !== null
-        ? templateInertLines(template, entry.head)
+        ? templateInertLines(template, entry.head, parsing.deadline)
         : script === null
           ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline, path })
           : script.inert;

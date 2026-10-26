@@ -21,13 +21,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   and `arrayToMap (63)` (H59).
 - Beyond imports, the line counts what a language writes without one: a Python attribute call on
   an imported module, a Java or Kotlin wildcard's classes, a Rust path written in a call, a PHP
-  function called by name, a C# extension method, and a Rails helper called with no receiver. A
-  common name is held to what the caller can see: a Go import resolves only under the repository's
-  own `go.mod` module path, a C# type only in a namespace the caller opens, and a Python module only
-  from a directory the import can start in (H58).
-- The end-of-turn reuse check reads view templates: ERB, HAML, Slim, Razor, Jinja and Go templates,
-  and the markup of a Vue or Svelte component where an expression computes with a literal. A hunk
-  that adds template code is asked about, one that adds markup alone is not (A122).
+  function called by name, and a C# extension method. A common name is held to what the caller can
+  see: a Go import resolves only under the repository's own `go.mod` module path, a C# type only in a
+  namespace the caller opens, a Java, Kotlin or PHP class only in the package its file declares, and a
+  Python module only from a directory the import can start in (H58).
+- The end-of-turn reuse check reads view templates: ERB and EJS, HAML, Slim, Razor, Jinja, Twig and
+  Nunjucks, and Go templates, and the markup of a Vue or Svelte component where an expression computes
+  with a literal. A hunk that adds template code is asked about, one that adds markup alone is not, and
+  a template that is a link or a generated file is passed over (A122).
 
 ### Changed
 
@@ -40,8 +41,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - A Laravel Blade view's logic asked nothing in the reuse check: the PHP grammar reads everything
-  outside `<?php` as markup, and markup counted as code only beside a `<script` tag. An echo, `@php`
-  or a directive with an argument now makes the markup code (B80).
+  outside `<?php` as markup, and markup counted as code only beside a `<script` tag. A row of markup
+  that holds an echo, a `@php` block or a directive with an argument now asks, and so does a row a
+  script holds; a plain row beside them, which every row of the file was before, asks nothing (B80).
 - A missing or broken `web-tree-sitter` install turned the reuse check off for every Python, PHP, Go,
   Java, C#, Rust and Kotlin file, with no message. A file nothing could read is now asked about whole
   (B68).

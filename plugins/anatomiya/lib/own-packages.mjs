@@ -20,14 +20,19 @@ const ENTRY_FIELDS = ["source", "module", "main"];
 
 const strings = (list) => (Array.isArray(list) ? list.filter((g) => typeof g === "string" && g !== "") : []);
 
-// `rush.json` is JSON with comments: a line's own comment and a block are taken out before it is read.
-const withoutComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+// A JSON string, which a comment's marks or a comma inside belong to, and what is taken out around one.
+const STRING = String.raw`("(?:[^"\\]|\\.)*")`;
+const COMMENT = new RegExp(String.raw`${STRING}|\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)`, "g");
+const TRAILING_COMMA = new RegExp(String.raw`${STRING}|,(?=\s*[\]}])`, "g");
+
+/** JSON with comments as JSON: `rush.json` is, and may also leave a comma before a closing bracket. */
+const asJson = (text) => text.replace(COMMENT, (_, str) => str ?? "").replace(TRAILING_COMMA, (_, str) => str ?? "");
 
 /** The globs a `pnpm-workspace.yaml` lists under `packages`, as a block list or a flow one. */
 function pnpmGlobs(text) {
   const globs = [];
   let listing = false;
-  for (const line of text.split("\n")) {
+  for (const line of text.split(/\r?\n/)) {
     const flow = /^packages\s*:\s*\[(.*)\]/.exec(line);
     if (flow) globs.push(...flow[1].split(",").map((g) => g.trim().replace(/^["']|["']$/g, "")));
     else if (/^packages\s*:/.test(line)) listing = true;
@@ -53,7 +58,7 @@ export function workspaceGlobs({ root = null, pnpm = null, lerna = null, rush = 
     if (config) globs.push(...(Array.isArray(config.packages) ? strings(config.packages) : ["packages/*"]));
   }
   if (rush !== null) {
-    const projects = parsed(withoutComments(rush))?.projects;
+    const projects = parsed(asJson(rush))?.projects;
     if (Array.isArray(projects)) globs.push(...strings(projects.map((p) => p?.projectFolder)));
   }
   return globs.length ? [...new Set(globs.filter(Boolean))] : null;

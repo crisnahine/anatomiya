@@ -127,6 +127,16 @@ test("csharp: a file says which namespace it is in and which it opens", async ()
   assert.deepEqual([facets.usings, facets.namespace], [["A.B"], "N.M"]);
 });
 
+test("java, kotlin and php: a file says which package it declares, which an import of its class names", async () => {
+  const declared = async (lang, source, rel) => (await allFacetsOf(lang, source, rel)).namespace ?? null;
+  assert.equal(await declared("java", REACHES.java[1], REACHES.java[0]), "p.q");
+  assert.equal(await declared("kotlin", REACHES.kotlin[1], REACHES.kotlin[0]), "p.q");
+  assert.equal(await declared("php", REACHES.php[1], REACHES.php[0]), "App.Http");
+  assert.equal(await declared("php", "<?php\nnamespace App\\A {\n  class B {}\n}\n", "app/A/B.php"), "App.A");
+  // A file in no package is in the one with no name, which no import of a named package reaches.
+  assert.equal(await declared("kotlin", "fun main() {}\n", "Main.kt"), null);
+});
+
 const RUNNERS = [
   ["pytest", "python", "import pytest\n\n\ndef test_total():\n    assert 1 == 1\n"],
   ["unittest", "python", "import unittest\n\n\nclass TotalTest(unittest.TestCase):\n    def test_total(self):\n        self.assertEqual(1, 1)\n"],

@@ -14,6 +14,13 @@ import { posix } from "node:path";
 import { familyOf, language } from "./langs.mjs";
 import { claim, dirOf, tailsOf, withoutExtension } from "./paths.mjs";
 
+/** A module's own name: its file's, or for the file a Python package or a Rust module is read from, its directory's. */
+function moduleName(file) {
+  const stem = withoutExtension(file);
+  const base = posix.basename(stem);
+  return base === "__init__" || base === "mod" ? posix.basename(posix.dirname(stem)) : base;
+}
+
 /** What a file defines, as its facets say, or an empty list for a file nobody read. */
 const definesOf = (records, rel) => records.get(rel)?.facets?.defines ?? [];
 
@@ -35,12 +42,9 @@ function memo(cache, key, build) {
   return held;
 }
 
-// --- Ruby --------------------------------------------------------------------
-
 const RUBY_ROOT = /(?:^|\/)(?:app\/[^/]+\/concerns|app\/[^/]+|lib)\/(.+)\.rb$/;
-
-// A Rails helper module, which a view, a controller and every other helper call with no receiver.
-const RAILS_HELPER = /(?:^|\/)app\/helpers\/.+\.rb$/;
+// A test tree's mirror of `lib` loads nothing by name, and a file in it named as the code it tests made that name two files'.
+const RUBY_TESTS = /(?:^|\/)(?:spec|test)\//;
 
 // Compared folded, so `http_client.rb` answers `HTTPClient` and `rubocop/` answers `RuboCop` without
 // the inflections a repository configures and this does not read.
@@ -52,7 +56,7 @@ const fold = (segments) => segments.map((s) => s.replaceAll("_", "").toLowerCase
  * a gem's root is `lib`. A file under none, a spec or a config file, is loaded by nobody's name.
  */
 function rubyConstantOf(rel) {
-  const inRoot = RUBY_ROOT.exec(rel)?.[1];
+  const inRoot = RUBY_TESTS.test(rel) ? undefined : RUBY_ROOT.exec(rel)?.[1];
   return inRoot ? fold(inRoot.split("/")) : null;
 }
 
@@ -68,23 +72,11 @@ const rubyIndex = (corpusRels) =>
     return index;
   });
 
-const HELPERS = new WeakMap();
-
-/** Each method a Rails helper module defines, to the one module that does. */
-const railsHelpers = (records) =>
-  memo(HELPERS, records, () => {
-    const index = new Map();
-    for (const [rel] of records) if (RAILS_HELPER.test(rel)) for (const name of definesOf(records, rel)) claim(index, name, rel);
-    return index;
-  });
-
 /**
- * The file a Ruby reference names. A constant is looked up as Ruby looks it up: in each module the
- * reference sits in, innermost first, then at the top, and a rooted `::A` at the top alone. A call
- * with no receiver reaches the one helper module that defines it.
+ * The file a Ruby constant names, looked up as Ruby looks it up: in each module the reference sits
+ * in, innermost first, then at the top, and a rooted `::A` at the top alone.
  */
-function rubyTarget(ref, corpusRels, records) {
-  if (ref.call !== undefined) return railsHelpers(records).get(ref.call) ?? null;
+function rubyTarget(ref, corpusRels) {
   const index = rubyIndex(corpusRels);
   const rooted = ref.const.startsWith("::");
   const written = (rooted ? ref.const.slice(2) : ref.const).split("::");
@@ -98,13 +90,10 @@ function rubyTarget(ref, corpusRels, records) {
 
 /** A Ruby constant's call is named for the method where the file it reaches defines it. */
 function rubyName(ref, target) {
-  if (ref.call !== undefined) return ref.name;
   const constant = ref.const.replace(/^::/, "");
   const method = ref.name.slice(constant.length + 1);
   return calledName(method === "" ? ref : { ...ref, member: method, bare: constant }, target);
 }
-
-// --- The tree-sitter languages ------------------------------------------------
 
 // Which families' files a reference may reach: Kotlin and Java call each other's classes by import.
 const REACHABLE = { kotlin: ["kotlin", "java"], java: ["java", "kotlin"] };
@@ -264,8 +253,28 @@ const phpGlobals = (records) =>
     return index;
   });
 
+// The languages whose file declares the package it is in, which an import names whole.
+const DECLARED = new Set(["java", "kotlin", "php"]);
+
+/**
+ * Whether a file a reference was matched to by its path is in the package the reference names. A
+ * path says where a file sits and not what it declares: `android.util.Log` is no `com/acme/util/Log.kt`,
+ * and `Illuminate\Support\Str` no `app/Support/Str.php`. A file nobody read is taken as matched.
+ */
+function inPackage(file, ref, records) {
+  const target = records.get(file);
+  if (!target?.ok) return true;
+  return (target.facets?.namespace ?? "") === dirOf(ref.stems[0]).replaceAll("/", ".");
+}
+
 /** The file a tree-sitter reference names, or null. */
 function treeTarget(ref, from, rel, corpusRels, records, modules) {
+  const file = matched(ref, from, rel, corpusRels, records, modules);
+  return file !== null && ref.stems?.length && DECLARED.has(language(rel)) && !inPackage(file, ref, records) ? null : file;
+}
+
+/** The file a tree-sitter reference's path, name or type matches, or null. */
+function matched(ref, from, rel, corpusRels, records, modules) {
   if (ref.global !== undefined) return phpGlobals(records).get(ref.global) ?? null;
   if (ref.extension !== undefined) {
     const declaring = csharpFacts(records).extensions.get(ref.extension);
@@ -291,15 +300,20 @@ export function reachedFrom(rel, record, corpusRels, records, modules = null) {
   const refs = record.facets?.refs;
   if (!refs?.length) return [];
   const ruby = familyOf(language(rel)) === "ruby";
-  // A method the file calls bare, or on a value, is its own where it defines one of that name.
+  // A method the file calls on a value is its own where it defines one of that name.
   const own = new Set(record.facets?.defines ?? []);
   const reached = [];
   for (const ref of refs) {
-    if (own.has(ref.call) || own.has(ref.extension)) continue;
-    const file = ruby ? rubyTarget(ref, corpusRels, records) : treeTarget(ref, record, rel, corpusRels, records, modules);
+    if (own.has(ref.extension)) continue;
+    const file = ruby ? rubyTarget(ref, corpusRels) : treeTarget(ref, record, rel, corpusRels, records, modules);
     if (file === null || file === rel) continue;
     const target = records.get(file);
-    reached.push({ file, names: [ruby ? rubyName(ref, target) : calledName(ref, target)] });
+    // An import of a module, Python's or Rust's, names no helper: what the file calls on it does.
+    if (!ruby && ref.member === undefined && target?.ok && ref.name === moduleName(file) && !definesOf(records, file).includes(ref.name)) continue;
+    const name = ruby ? rubyName(ref, target) : calledName(ref, target);
+    reached.push({ file, name, bare: ruby ? ref.const.replace(/^::/, "") : (ref.bare ?? ref.name) });
   }
-  return reached;
+  // A class whose method the file calls is named for the method: its name alone took a second slot.
+  const called = new Set(reached.filter((r) => r.name !== r.bare).map((r) => `${r.file}\0${r.bare}`));
+  return reached.filter((r) => r.name !== r.bare || !called.has(`${r.file}\0${r.name}`)).map(({ file, name }) => ({ file, names: [name] }));
 }

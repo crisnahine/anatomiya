@@ -102,7 +102,10 @@ function python(node, refs, file, rel) {
 function java(node, refs, file) {
   if (node.type === "package_declaration") {
     const path = node.children.find((c) => c.type === "scoped_identifier" || c.type === "identifier");
-    if (path) file.ownPackage = leaves(path).join("/");
+    if (path) {
+      file.ownPackage = leaves(path).join("/");
+      file.namespace = leaves(path).join(".");
+    }
   } else if (node.type === "import_declaration") {
     const target = node.children.find((c) => c.type === "scoped_identifier" || c.type === "identifier");
     if (!target) return;
@@ -130,7 +133,10 @@ function java(node, refs, file) {
 }
 
 function kotlin(node, refs, file) {
-  if (node.type === "import") {
+  if (node.type === "package_header") {
+    const path = node.children.find((c) => c.type === "qualified_identifier" || c.type === "identifier");
+    if (path) file.namespace = leaves(path).join(".");
+  } else if (node.type === "import") {
     const path = firstOfType(node, "qualified_identifier");
     if (!path) return;
     const segments = leaves(path);
@@ -258,7 +264,11 @@ function rust(node, refs, file, rel) {
 }
 
 function php(node, refs, file) {
-  if (node.type === "namespace_use_declaration") {
+  if (node.type === "namespace_definition") {
+    // The first a file declares: a file holding two is a bundle, which no autoloader reads by its path.
+    const name = fieldOf(node, "name");
+    if (name && file.namespace === null) file.namespace = leaves(name).join(".");
+  } else if (node.type === "namespace_use_declaration") {
     // `use function` and `use const` name what no autoloader maps to a file: a group says so once, a clause for itself.
     const unmapped = (n) => n.tokens?.some((t) => t === "function" || t === "const") === true;
     if (unmapped(node)) return;
@@ -338,9 +348,9 @@ const sorted = (set) => [...set].sort();
 
 /**
  * `{ refs, defines }` for one plain tree, and where the language has them the facts that decide
- * which file a reference reaches: for C# the namespace the file is in, the ones it opens with
- * `using` or `global using` and the extension methods it declares, and for PHP the functions it
- * declares.
+ * which file a reference reaches: the namespace or package the file declares, for C# the ones it
+ * opens with `using` or `global using` and the extension methods it declares, and for PHP the
+ * functions it declares.
  */
 export function treeRefs(program, lang, rel) {
   const read = READERS[lang];

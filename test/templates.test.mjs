@@ -20,6 +20,14 @@ test("a view template is told by its extension, and anything else is no template
   assert.equal(templateOf("templates/page.html.j2"), "jinja");
   assert.equal(templateOf("web/templates/page.tmpl"), "gotmpl");
   assert.equal(templateOf("web/templates/page.gotmpl"), "gotmpl");
+  assert.equal(templateOf("web/templates/page.gohtml"), "gotmpl");
+  // Twig and Nunjucks write Jinja's tags, and EJS writes ERB's.
+  assert.equal(templateOf("templates/base.html.twig"), "jinja");
+  assert.equal(templateOf("views/page.njk"), "jinja");
+  assert.equal(templateOf("views/page.ejs"), "erb");
+  // A configuration file run through ERB is no view, and no helper answers one.
+  assert.equal(templateOf("config/database.yml.erb"), null);
+  assert.equal(templateOf("config/deploy.yaml.erb"), null);
   assert.equal(templateOf("app/models/a.rb"), null);
   assert.equal(templateOf("README.md"), null);
   // An `.html` file is anybody's: Angular, Vue, Django or plain markup, and no one rule reads all of them.
@@ -152,4 +160,35 @@ test("Razor text and markup inside a block open and close no braces", () => {
 
 test("a Jinja raw block is text", () => {
   assert.deepEqual(asking("a.jinja", "{% raw %}{{ a + b }}{% endraw %}\n<p>{{ a + b }}</p>\n"), [2]);
+});
+
+test("HAML output written after a tag with an escape or none asks, and so does every line under a ruby filter", () => {
+  const source = ["%p!= sanitize(format_price(x))", "%span&= total(order)", ":ruby", "  total = items.sum { |i| i.price * 1.2 }", "", "  tax = total * 0.2", "%p plain", ":javascript", "  var a = 1;"].join("\n");
+  assert.deepEqual(asking("a.haml", source), [1, 2, 4, 6]);
+  const slim = ["ruby:", "  total = format_price(x)", "  tax(total)", "p plain", "p class=\"x\" text with a=b in it"].join("\n");
+  assert.deepEqual(asking("a.slim", slim), [2, 3]);
+});
+
+test("a Jinja or Go template tag spread over lines asks on every line it spans, and one never closed asks to the end", () => {
+  assert.deepEqual(asking("a.jinja", "<p>a</p>\n{% set total = items\n   | sum(attribute='price') %}\n{{ format_money(\n  total) }}\n<p>{{ name }}</p>\n"), [2, 3, 4, 5]);
+  assert.deepEqual(asking("a.jinja", "{# a comment {{ f(x) }}\nstill one #}\n<p>b</p>\n{{ open(\nx\n"), [4, 5]);
+  assert.deepEqual(asking("a.tmpl", '{{ printf "%.2f"\n   .Price }}\n{{ .Name }}\n{{/* a\ncomment */}}\n'), [1, 2]);
+});
+
+test("a view template built to be slow is read in time, and one read past its deadline asks on every line", () => {
+  const lines = (line) => Array.from({ length: 2600 }, () => line).join("\n");
+  for (const [path, source] of [
+    ["a.slim", lines(`a${"-".repeat(390)}=`)],
+    ["a.slim", lines(`a${" b=\"c\"".repeat(55)}`)],
+    ["a.haml", lines(`%a(${"b ".repeat(190)}`)],
+    ["a.jinja", `{{${"{".repeat(1_000_000)}`],
+    ["a.tmpl", `{{${"{".repeat(1_000_000)}`],
+  ]) {
+    const started = performance.now();
+    templateInertLines(templateOf(path), source);
+    assert.ok(performance.now() - started < 400, `${path} took ${Math.round(performance.now() - started)} ms`);
+  }
+  // Past the deadline nothing is read, and every line but a blank one asks.
+  assert.deepEqual(templateInertLines("erb", "<p>a</p>\n\n<p>b</p>\n", performance.now() - 1), [false, true, false, true]);
+  assert.deepEqual(markupCodeLines("vue", "<p>a</p>\n\n<p>b</p>\n", performance.now() - 1), [true, false, true, false]);
 });

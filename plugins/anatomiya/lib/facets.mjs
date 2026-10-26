@@ -421,9 +421,10 @@ function nestingOf(stack) {
 /**
  * What a Ruby file reaches for by name, which is how Ruby imports: one `{ const, nesting, name }`
  * per constant written, where `name` adds the method called on it, `.call` on the class itself and
- * `#local_url?` on what its `new` or `instance` hands back, and one `{ call, name }` per method
- * called with no receiver. A class's own name is no reference to it, and a constant reached through
- * anything computed names nothing.
+ * `#local_url?` on what its `new` or `instance` hands back. A class's own name is no reference to
+ * it, and a constant reached through anything computed names nothing. A method called with no
+ * receiver is left out: a Rails helper module's are called from views, which no scan reads, and
+ * from other helpers, which sit in its own directory.
  */
 function rubyRefs() {
   const refs = [];
@@ -442,8 +443,6 @@ function rubyRefs() {
     seen.add(key);
     refs.push({ const: written, nesting, name });
   };
-  // A method called with no receiver, which a Rails helper module may define for every view and controller.
-  const called = new Set();
   const defines = new Set();
   const node = (n, ctx) => {
     if (n.t === "def" && typeof n.name === "string") defines.add(n.name);
@@ -463,9 +462,6 @@ function rubyRefs() {
       else if (r?.t === "call" && INSTANCE_OF.has(r.name) && isConst(r.receiver)) {
         consumed.add(r);
         add(r.receiver, nestingOf(ctx.stack), `#${n.name}`);
-      } else if (!r && typeof n.name === "string" && !called.has(n.name)) {
-        called.add(n.name);
-        refs.push({ call: n.name, name: n.name });
       }
     } else if (isConst(n)) add(n, nestingOf(ctx.stack), "");
   };

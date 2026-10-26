@@ -167,7 +167,7 @@ alone. What the four do:
   instead, and a session with no subagent tool to run that search itself. A migration, a schema dump
   such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function
   could be written with are not asked about. It reads ten languages, the script blocks and computing
-  markup of Vue and Svelte components, and ERB, HAML, Slim, Blade, Razor, Jinja and Go template views: JavaScript, TypeScript and Ruby by a rule over their lines, and Python, PHP, Go, Java, C#, Rust and Kotlin by the file's tree,
+  markup of Vue and Svelte components, and ERB, EJS, HAML, Slim, Blade, Razor, Jinja, Twig, Nunjucks and Go template views: JavaScript, TypeScript and Ruby by a rule over their lines, and Python, PHP, Go, Java, C#, Rust and Kotlin by the file's tree,
   where an added comment, import or name bound to a literal asks nothing and any other added line
   asks. A file counts as the turn's work only when it was last written during one of the session's
   own tool calls, so a file another session or an editor saved in between is not asked about.

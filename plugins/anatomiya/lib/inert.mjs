@@ -237,8 +237,8 @@ function inertLines(engine, lines, deadline, jsx = false) {
 // Of the `js` declaration's extensions, the one whose file may hold JSX: TypeScript and ES module files cannot.
 const MAY_HOLD_JSX = /\.js$/;
 
-const byLine = ({ engine, lang, source, deadline, path = "a.js" }) =>
-  inertLines(engine, source.split("\n"), deadline, lang === "jsx" || (lang === "js" && MAY_HOLD_JSX.test(path) && JSX_TAG.test(source)));
+const byLine = ({ engine, lang, source, deadline, path = null }) =>
+  inertLines(engine, source.split("\n"), deadline, lang === "jsx" || (lang === "js" && (path === null || MAY_HOLD_JSX.test(path)) && JSX_TAG.test(source)));
 
 async function byTree({ lang, source, deadline, grammars }) {
   const { treeInertLines } = await import("./inert-tree.mjs");
@@ -254,8 +254,8 @@ export const INERT_ENGINES = Object.keys(READERS);
  * The lines of one file that define nothing callable, or null where no rule
  * reads it. `deadline` is the moment on `performance.now()`'s clock past
  * which a line rule, a parse or a walk stops and its file asks; `path` is the
- * file's own, which says whether it may hold JSX; `grammars` is a test
- * override.
+ * file's own, which says whether it may hold JSX, and with none a file that
+ * holds a tag may; `grammars` is a test override.
  */
 export async function inertLinesOf(file) {
   return Object.hasOwn(READERS, file.engine) ? READERS[file.engine](file) : null;

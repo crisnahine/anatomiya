@@ -1283,23 +1283,27 @@ attribute or a subscript in Python and PHP (`self.x = 0`, `$a['k'] = 1;`, which 
 and any token that is not a closer, since `get`, `func` and a lambda's `{` open a callable with no
 name on their line. Three more ask because they hold what the tree does not show as code: every
 row of a string spread over lines that is not bound to a name, a Go comment directly above
-`import "C"`, which cgo compiles, and PHP markup in a file where any chunk of markup holds a `<script` or
-what Blade compiles to PHP (`{{ }}`, `{!! !!}`, `@php`, a directive with an argument), since an inline
-tag cuts a script into chunks and only the first holds the opening tag (B80).
+`import "C"`, which cgo compiles, and a row of PHP markup that holds a script or what Blade compiles
+to PHP (`{{ }}`, `{!! !!}`, a `@php` block, a directive with an argument). The rows are read over every
+chunk of markup in order, since an inline tag cuts a script or a `@php` block into chunks and only the
+first holds what opened it, and a Blade comment or `@verbatim` block is text (B80).
 
 A view template is read too, though no scan reads one, since a view is where a helper's logic is
-copied most (A122). In ERB (`.erb`) a line asks if it holds Ruby between `<%` and `%>`. In Razor
+copied most (A122). In ERB (`.erb`) and EJS (`.ejs`) a line asks if it holds code between `<%` and
+`%>`; a configuration file run through ERB (`.yml.erb`) is no view and is not read. In Razor
 (`.cshtml`, `.razor`) it asks if it holds an `@` that starts C#, or is a line of C# in an `@{`,
 `@code`, `@functions`, `@if`, `@foreach` or other block, through its closing brace and an `else`
 after it. In HAML and Slim it asks on a line of Ruby, an output line, a tag whose content or
-attribute is Ruby, and an interpolation. In Jinja (`.jinja`, `.jinja2`, `.j2`) and Go templates (`.tmpl`,
-`.gotmpl`) it asks where an expression or an action computes: a call, a filter, an operator. A
-comment, an escaped `<%%` or `@@`, a directive that names a type or a route such as `@model`, a name
-read as it is, and markup alone ask nothing. An `.html` file is not read, since no one rule reads
-Angular's, Vue's and Django's alike. The markup of a Vue or Svelte component asks only where an
-expression computes with a literal: arithmetic on a number, a method called with a number such as
-`toFixed(2)`, or a string built with `+`. A line longer than 400 characters asks unread, as under
-the line rules.
+attribute is Ruby, an interpolation, and every line a `:ruby` or `ruby:` filter holds. In Jinja
+(`.jinja`, `.jinja2`, `.j2`), Twig (`.twig`), Nunjucks (`.njk`) and Go templates (`.tmpl`, `.gotmpl`,
+`.gohtml`) it asks where an expression or an action computes: a call, a filter, an operator, on every
+line the tag spans. A comment, an escaped `<%%` or `@@`, a directive that names a type or a route such
+as `@model`, a name read as it is, and markup alone ask nothing. An `.html` file is not read, since no
+one rule reads Angular's, Vue's and Django's alike. The markup of a Vue or Svelte component asks only
+where an expression computes with a literal: arithmetic on a number, a method called with a number
+such as `toFixed(2)`, or a string built with `+`. A line longer than 400 characters asks unread under
+every rule but ERB's, which reads a character at a time. A template that is a link or a generated
+file is passed over, as a source file is.
 
 Every file a rule reads in one stop shares one second, started at the first such file and shared by
 every checkout the stop reads: the line rules over JavaScript, Ruby and component script blocks,
@@ -2610,8 +2614,6 @@ with one file or with none, as an ambiguous tail does:
   `TagManager` is looked up in each module the reference sits in, innermost first, then at the top,
   as Ruby looks it up, and names are compared with case and underscores folded, so `http_client.rb`
   answers `HTTPClient`. A constant two roots hold names neither.
-- **Rails helpers** are called with no receiver from every view, controller and helper: a method one
-  module under `app/helpers` alone defines is that module's.
 - **Python, Java, Kotlin, PHP and Rust** name a path: `from shop.utils.money import format_price`
   is `shop/utils/money/format_price` as a module or `shop/utils/money` holding the name, `import
   a.b.C` is `a/b/C`, PHP's `use App\Support\Money` is `App/Support/Money` or, past the prefix
@@ -2623,6 +2625,9 @@ with one file or with none, as an ambiguous tail does:
   imported module is that module's (`shop.money.format_price`), a class a Java or Kotlin wildcard
   import brings in is looked for in that package, a Rust path written in a call
   (`crate::text::escape(x)`) is read as a `use` is, and Kotlin and Java reach each other's classes.
+  A Java, Kotlin or PHP file matched by its path counts only where it declares the package the
+  import names, so `android.util.Log` is never the repository's own `com/acme/util/Log.kt`. An
+  import of a module names no helper: `text.slugify` is the name, not `text`.
 - **PHP functions** are loaded for every file and called bare: a function one file alone declares
   is that file's, and a built-in no file declares is nobody's.
 - **Go** names a package directory, and the caller writes `bytesconv.StringToBytes`: the import

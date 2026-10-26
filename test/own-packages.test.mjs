@@ -59,6 +59,12 @@ test("pnpm's flow list and Rush's project folders name a workspace too", () => {
   assert.deepEqual(workspaceGlobs({ rush }), ["libs/ui"]);
 });
 
+test("a workspace file written on Windows, or with comments and commas JSON refuses, still names its packages", () => {
+  assert.deepEqual(workspaceGlobs({ pnpm: "packages:\r\n  - 'packages/*'\r\n  - \"apps/*\" # the apps\r\nother: 1\r\n" }), ["packages/*", "apps/*"]);
+  const rush = '{\n  "rushVersion": "5.0.0", // pinned\n  "note": "a/*b // c*/d",\n  "projects": [\n    { "projectFolder": "libs/ui", },\n  ],\n}\n';
+  assert.deepEqual(workspaceGlobs({ rush }), ["libs/ui"]);
+});
+
 test("a repository's own packages come from every manifest it tracks", () => {
   const own = ownPackages([
     { rel: "package.json", text: '{ "workspaces": ["packages/*"] }' },

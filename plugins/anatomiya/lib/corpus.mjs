@@ -587,12 +587,14 @@ export async function countUntrackedSource(root) {
  *
  * For a caller holding a few paths rather than a listing: the check judges the
  * files a branch changed, and one the corpus leaves out is one the map never
- * counted. `.gitattributes` is read once, when the question is built.
+ * counted. `.gitattributes` is read once, when the question is built. A path
+ * `readAlso` holds is put through the file checks a source file is, though no
+ * source.
  */
-export async function corpusDrop(root, { timeout } = {}) {
+export async function corpusDrop(root, { timeout, readAlso = null } = {}) {
   const generatedRules = await generatedAttrRules(root, { timeout });
   const roots = new Map();
-  return (rel) => classify(root, rel, generatedRules, roots).drop ?? null;
+  return (rel) => classify(root, rel, generatedRules, roots, readAlso).drop ?? null;
 }
 
 /**
@@ -640,9 +642,9 @@ export async function corpusByName(root) {
  * a copy that drifts. `generatedRules` is read once by the caller rather than
  * once per path, since it is the same `.gitattributes` for every file asked.
  */
-function classify(root, rel, generatedRules, roots) {
+function classify(root, rel, generatedRules, roots, readAlso = null) {
   const drop = pathDrop(rel);
-  if (drop) return { drop };
+  if (drop && !(drop === "notSource" && readAlso?.(rel))) return { drop };
   const { abs, why } = confine(root, rel, roots);
   // A link whose target is gone fails realpath too, and a link is `escaped`
   // whatever it points at, so only a path that is not one reads as unreadable.

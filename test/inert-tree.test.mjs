@@ -528,20 +528,23 @@ test("a Go comment directly above an import of C asks, since cgo compiles it, an
   assert.deepEqual(await asking("go", group, [4, 6]), [4, 5, 6, 9]);
 });
 
-test("PHP inline markup asks wherever the file's markup holds a script, in any letter case, and a file with none asks nothing", async () => {
+test("PHP inline markup asks on the rows a script holds, in any letter case, and plain markup beside it asks nothing", async () => {
   const source = '<p>plain</p>\n<?php\n$a = 1;\n?>\n<script>function dup() {}</script>\n<?php\n$b = 2;\n?>\n<p>plain</p>\n<?php $c = 3; ?>\n<SCRIPT type="module">\nfunction two() {}\n</SCRIPT>\n';
-  assert.deepEqual(await asking("php", source), [1, 5, 9, 11, 12, 13]);
+  assert.deepEqual(await asking("php", source), [5, 11, 12, 13]);
   assert.deepEqual(await asking("php", '<p>plain</p>\n<?php\n$a = 1;\n?>\n<p>more</p>\n'), []);
   // An inline tag cuts the script in two, and the chunk after it holds no tag of its own.
   assert.deepEqual(await asking("php", '<script>\nvar x = <?= $y ?>;\nfunction dup() {}\n</script>\n'), [1, 2, 3, 4]);
 });
 
-test("Blade markup asks wherever the file's markup holds an echo or a directive, and markup with an e-mail address or a CSS rule asks nothing", async () => {
-  // Blade compiles `{{ }}`, `{!! !!}`, `@php` and `@name(...)` into PHP, so the markup of a view holding one is code.
-  assert.deepEqual(await asking("php", "<div>\n@php\n$total = collect($items)->sum('price');\n@endphp\n</div>\n"), [1, 2, 3, 4, 5]);
+test("Blade markup asks on the rows that hold an echo, a directive or a @php block, and markup beside them, an e-mail address or a CSS rule asks nothing", async () => {
+  // Blade compiles `{{ }}`, `{!! !!}`, `@php` and `@name(...)` into PHP, and nothing else in the markup.
+  assert.deepEqual(await asking("php", "<div>\n@php\n$total = collect($items)->sum('price');\n@endphp\n</div>\n"), [2, 3, 4]);
   assert.deepEqual(await asking("php", "{{ number_format($total, 2) }}\n"), [1]);
   assert.deepEqual(await asking("php", "<p>{!! $html !!}</p>\n"), [1]);
-  assert.deepEqual(await asking("php", "<ul>\n@foreach ($items as $item)\n<li>x</li>\n@endforeach\n</ul>\n"), [1, 2, 3, 4, 5]);
+  assert.deepEqual(await asking("php", "<ul>\n@foreach ($items as $item)\n<li>x</li>\n@endforeach\n</ul>\n"), [2]);
+  assert.deepEqual(await asking("php", "<p>{{ format(\n  $total) }}</p>\n<p>@php($n = 1) plain</p>\n<p>plain</p>\n"), [1, 2, 3]);
+  // A Blade comment and a @verbatim block hold text, whatever it spells.
+  assert.deepEqual(await asking("php", "{{-- {{ format($x) }}\n@php --}}\n@verbatim\n{{ name }}\n@endverbatim\n<p>plain</p>\n"), []);
   // Blade reads a directive only after a character that cannot end a word, and leaves the CSS rules it has no compiler for alone.
   assert.deepEqual(await asking("php", "<p>mail admin@example.com (soon)</p>\n<style>\n@media (max-width: 600px) { p { color: red } }\n@layer (base) {}\n@page (first) {}\n</style>\n"), []);
 });

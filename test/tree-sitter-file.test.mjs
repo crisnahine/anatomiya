@@ -19,8 +19,14 @@ import { needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mj
 import * as SAMPLES from "./tree-samples.mjs";
 import { BROKEN } from "./tree-broken.mjs";
 
-// What kind of file a record says this is, without what the file reaches for, which `tree-facets.test.mjs` covers.
-const kindOf = ({ testRunner, testCalls }) => ({ testRunner, testCalls });
+// What a file reaches for in others, which `tree-facets.test.mjs` covers.
+const REACH = new Set(["refs", "defines", "usings", "globalUsings", "namespace", "globals", "extensions"]);
+
+/** What kind of file a record says this is, failing on any facet that is neither that nor what the file reaches for. */
+function kindOf(facets) {
+  assert.deepEqual(Object.keys(facets).filter((key) => key !== "testRunner" && key !== "testCalls" && !REACH.has(key)), []);
+  return { testRunner: facets.testRunner, testCalls: facets.testCalls };
+}
 
 const HOSTED = LANGUAGES.filter((l) => l.engine === "tree-sitter");
 const BODY = join(ANATOMIYA, "lib", "tree-sitter-file.mjs");
