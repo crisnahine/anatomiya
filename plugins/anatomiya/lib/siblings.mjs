@@ -18,7 +18,8 @@ import { posix } from "node:path";
 
 import { SOURCE_OF } from "./companions.mjs";
 import { embeddedIn, language } from "./langs.mjs";
-import { dirOf, extOf, withoutExtension, byCode } from "./paths.mjs";
+import { claim, dirOf, extOf, withoutExtension, byCode, tailsOf, TAIL_MOST } from "./paths.mjs";
+import { reachedFrom } from "./refs.mjs";
 
 /**
  * The packages a JSX area cannot be written without, so importing one says
@@ -108,12 +109,25 @@ const packageOf = (spec) => {
  * companions use, after the file spelled exactly, so a real `format.js` beside
  * the source is still the one named.
  */
-export function specifierToFile(spec, importerRel, corpusRels) {
+export function specifierToFile(spec, importerRel, corpusRels, packages = null) {
   // A trailing slash names a directory, so only its index answers: `./base/`
   // is never `base.ts`.
   const dirOnly = spec.endsWith("/");
   if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
     return fileAt(posix.join(posix.dirname(importerRel), spec), dirOnly, corpusRels);
+  }
+
+  // A package this repository's own workspace declares, by the name its manifest gives it: its own
+  // entry, then a `src` and the package's directory, as a source tree lays them out.
+  const name = packageOf(spec);
+  const declared = packages?.get(name);
+  if (declared) {
+    const { dir, entries } = declared;
+    const rest = withoutTrailingSlashes(spec.slice(name.length + 1));
+    const files = rest === ""
+      ? [...entries.map((e) => fileAt(posix.join(dir, e), false, corpusRels)), fileAt(posix.join(dir, "src"), true, corpusRels), fileAt(dir, true, corpusRels)]
+      : [fileAt(posix.join(dir, "src", rest), dirOnly, corpusRels), fileAt(posix.join(dir, rest), dirOnly, corpusRels)];
+    return files.find((file) => file !== null) ?? null;
   }
 
   if (spec.startsWith(LIB_ALIAS)) {
@@ -248,9 +262,9 @@ function projectIndex(corpusRels) {
 
   const tails = new Map();
   for (const rel of corpusRels) {
-    // The last 32 segments at most, as `register` keeps: every tail costs the length of the path again.
+    // The last segments at most, as `register` keeps: every tail costs the length of the path again.
     let cut = -1;
-    for (let extra = rel.split("/").length - 32; extra > 0; extra--) cut = rel.indexOf("/", cut + 1);
+    for (let extra = rel.split("/").length - TAIL_MOST; extra > 0; extra--) cut = rel.indexOf("/", cut + 1);
     for (let last = false; !last; cut = rel.indexOf("/", cut + 1)) {
       const tail = rel.slice(cut + 1);
       const prefix = rel.slice(0, Math.max(cut, 0));
@@ -320,12 +334,104 @@ function tailIndex(corpusRels) {
  * credit one file with another's importers.
  */
 function register(index, path, rel) {
-  const segments = path.split("/");
-  // Every tail of a path is quadratic in its depth, and the scanned tree sets the depth.
-  for (let i = Math.max(0, segments.length - 32); i < segments.length; i++) {
-    const key = `/${segments.slice(i).join("/")}`;
-    index.set(key, index.has(key) && index.get(key) !== rel ? null : rel);
+  for (const tail of tailsOf(path)) claim(index, `/${tail}`, rel);
+}
+
+/** The file a module specifier in `file` names, asked once per file and specifier. */
+function nextOf(ctx, file, module) {
+  const key = `${file}\0${module}`;
+  if (!ctx.next.has(key)) ctx.next.set(key, specifierToFile(module, file, ctx.corpusRels, ctx.packages));
+  return ctx.next.get(key);
+}
+
+/** A file's own exports as a set, made once per file. */
+function ownExports(ctx, file) {
+  let exported = ctx.exports.get(file);
+  if (!exported) ctx.exports.set(file, (exported = new Set(ctx.records.get(file)?.facets?.exports ?? [])));
+  return exported;
+}
+
+/** The files a file's `export *` lines name, in the order it lists them, read once per file. */
+function starsOf(ctx, file) {
+  let stars = ctx.stars.get(file);
+  if (!stars) {
+    stars = (ctx.records.get(file)?.facets?.reexports ?? []).flatMap((r) => {
+      const next = r.names === "*" ? nextOf(ctx, file, r.module) : null;
+      return next === null ? [] : [next];
+    });
+    ctx.stars.set(file, stars);
   }
+  return stars;
+}
+
+/**
+ * Every name a file hands an importer, its own and those its barrels pass on. Barrels that hand one
+ * another on in a cycle hand on the same names, so each such group is read whole (Tarjan's walk),
+ * and what one file holds never depends on which file of it was asked first.
+ */
+function namesOf(ctx, start) {
+  const held = ctx.names.get(start);
+  if (held) return held;
+  // The walk's order and low links stay on `ctx`: a file it finished is in `ctx.names` and never walked again.
+  const { order, low, stack } = ctx;
+  const visit = (file) => {
+    order.set(file, order.size);
+    low.set(file, order.get(file));
+    stack.push(file);
+    for (const to of starsOf(ctx, file)) {
+      if (ctx.names.has(to)) continue;
+      if (!order.has(to)) visit(to);
+      if (stack.includes(to)) low.set(file, Math.min(low.get(file), low.get(to)));
+    }
+    if (low.get(file) !== order.get(file)) return;
+    const group = new Set(stack.splice(stack.indexOf(file)));
+    const handsOn = (member) => starsOf(ctx, member).length > 0 || (ctx.records.get(member)?.facets?.reexports ?? []).length > 0;
+    // A file that hands nothing on hands on its own exports, and that set serves.
+    if (group.size === 1 && !handsOn(file)) {
+      ctx.names.set(file, ownExports(ctx, file));
+      return;
+    }
+    const names = new Set();
+    for (const member of group) {
+      for (const name of ownExports(ctx, member)) names.add(name);
+      for (const r of ctx.records.get(member)?.facets?.reexports ?? []) if (r.names !== "*") for (const [, as] of r.names) names.add(as);
+      for (const to of starsOf(ctx, member)) if (!group.has(to)) for (const name of ctx.names.get(to)) names.add(name);
+    }
+    for (const member of group) ctx.names.set(member, names);
+  };
+  visit(start);
+  return ctx.names.get(start);
+}
+
+/** Each name a file's `export *` lines hand on, to the first of the files they name that hands it. */
+function suppliersOf(ctx, file) {
+  let suppliers = ctx.suppliers.get(file);
+  if (suppliers) return suppliers;
+  suppliers = new Map();
+  for (const next of starsOf(ctx, file)) for (const name of namesOf(ctx, next)) if (!suppliers.has(name)) suppliers.set(name, next);
+  ctx.suppliers.set(file, suppliers);
+  return suppliers;
+}
+
+/**
+ * The file that defines a name an importer takes from `file`, followed through the barrels that hand
+ * it on: `export * from` and `export { a as b } from`. Null where no file down the chain is seen
+ * defining it, and where the chain runs back on itself; the importer's own file then keeps it.
+ */
+function definedIn(ctx, file, name, seen) {
+  const key = `${file}\0${name}`;
+  const facets = ctx.records.get(file)?.facets;
+  if (!facets || seen.has(key)) return null;
+  seen.add(key);
+  const renamed = (facets.reexports ?? []).flatMap((r) => (r.names === "*" ? [] : r.names.filter(([, as]) => as === name).map(([from]) => [r.module, from])));
+  if (renamed.length === 0 && ownExports(ctx, file).has(name)) return { file, name };
+  if (renamed.length > 0) {
+    const [module, from] = renamed[0];
+    const next = nextOf(ctx, file, module);
+    return next === null ? null : definedIn(ctx, next, from, seen);
+  }
+  const next = suppliersOf(ctx, file).get(name);
+  return next === undefined ? null : definedIn(ctx, next, name, seen);
 }
 
 /**
@@ -339,8 +445,8 @@ function register(index, path, rel) {
  * form of "check before you create": five names with numbers beats a list of
  * every export the directory has.
  */
-export function mostImported(areaRels, allRecords, corpusRels) {
-  const byFile = reuseIndex(allRecords, corpusRels);
+export function mostImported(areaRels, allRecords, corpusRels, own = null) {
+  const byFile = reuseIndex(allRecords, corpusRels, own);
 
   const rows = [];
   for (const file of areaRels) {
@@ -383,24 +489,36 @@ function rowName(name, file) {
  */
 const REUSE_INDEX = new WeakMap();
 
-function reuseIndex(allRecords, corpusRels) {
+function reuseIndex(allRecords, corpusRels, own) {
   const cached = REUSE_INDEX.get(allRecords);
-  if (cached && cached.corpusRels === corpusRels) return cached.byFile;
+  if (cached && cached.corpusRels === corpusRels && cached.own === own) return cached.byFile;
+  const packages = own?.packages ?? null;
 
   const byFile = new Map();
+  const add = (file, names, rel) => {
+    let held = byFile.get(file);
+    if (!held) byFile.set(file, (held = new Map()));
+    for (const name of names) {
+      let who = held.get(name);
+      if (!who) held.set(name, (who = new Set()));
+      who.add(rel);
+    }
+  };
+  const owners = new Map();
+  const ctx = { records: allRecords, corpusRels, packages, next: new Map(), exports: new Map(), stars: new Map(), names: new Map(), suppliers: new Map(), order: new Map(), low: new Map(), stack: [] };
   for (const [rel, r] of allRecords) {
     for (const i of r.facets?.imports ?? []) {
-      const file = specifierToFile(i.module, rel, corpusRels);
+      const file = specifierToFile(i.module, rel, corpusRels, packages);
       if (file === null) continue;
-      let names = byFile.get(file);
-      if (!names) byFile.set(file, (names = new Map()));
       for (const name of i.names) {
-        let who = names.get(name);
-        if (!who) names.set(name, (who = new Set()));
-        who.add(rel);
+        const key = `${file}\0${name}`;
+        if (!owners.has(key)) owners.set(key, (name === "*" ? null : definedIn(ctx, file, name, new Set())) ?? { file, name });
+        const owner = owners.get(key);
+        add(owner.file, [owner.name], rel);
       }
     }
+    for (const { file, names } of reachedFrom(rel, r, corpusRels, allRecords, own?.modules ?? null)) add(file, names, rel);
   }
-  REUSE_INDEX.set(allRecords, { corpusRels, byFile });
+  REUSE_INDEX.set(allRecords, { corpusRels, own, byFile });
   return byFile;
 }

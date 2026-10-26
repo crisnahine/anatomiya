@@ -30,18 +30,19 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/results-dark.svg">
-    <img src="docs/assets/results-light.svg" alt="Sessions out of 20 that called the helper the repository already had, with anatomiya and without. Claude Opus 5.5: mastodon compareUrls 20 and 0, forem contrast helper 20 and 6, whitehall is_external? 20 and 0, mastodon TagManager#local_url? 20 and 15; picked by a rule: eslint unIndent 6 and 0, openfoodnetwork showHttpError 20 and 19, cal.diy getAppKeysFromSlug 0 and 0. Claude Haiku 5.5: 20 and 0, 20 and 7, 19 and 1, 6 and 2; picked by a rule: 18 and 0, 20 and 3, 0 and 0." width="860">
+    <img src="docs/assets/results-light.svg" alt="Sessions out of 20 that called the helper the repository already had, with anatomiya and without, on 0.19.0. Claude Opus 5.5: mastodon compareUrls 20 and 0, forem contrast helper 20 and 2, whitehall is_external? 20 and 1, mastodon TagManager#local_url? 20 and 15, eslint unIndent 17 and 1, openfoodnetwork showHttpError 20 and 19, cal.diy getAppKeysFromSlug 20 and 9; one per language, picked by a rule: CTFd admins_only (Python) 20 and 20, BookStack Role::getSystemRole (PHP) 20 and 2, gitea db.GetEngine (Go) 20 and 20, DolphinScheduler JSONUtils.parseObject (Java) 20 and 20, Bitwarden CoreHelpers.GenerateComb (C#) 20 and 20, atuin uuid_v7 (Rust) 20 and 5, KotlinConf PreviewHelper (Kotlin) 20 and 20. Claude Haiku 5.5, in the same order: 20 and 0, 20 and 10, 20 and 3, 11 and 1, 17 and 0, 20 and 7, 20 and 0; 20 and 17, 20 and 19, 18 and 20, 19 and 20, 20 and 20, 20 and 0, 20 and 20." width="860">
   </picture>
 </p>
 
-Seven small tasks in six open-source repositories, each asking for code the repository already had a
-function for. 20 sessions with anatomiya and 20 without, per task, on two models. **With anatomiya,
-209 of 280 sessions called the function that was already there. Without it, 53 of 280 did.**
+Fourteen small tasks in thirteen open-source repositories, each asking for code the repository
+already had a function for: seven in JavaScript, TypeScript and Ruby, and one in each of Python, PHP,
+Go, Java, C#, Rust and Kotlin. 20 sessions with anatomiya and 20 without, per task, on two models.
+**With anatomiya, 542 of 560 sessions called the function that was already there. Without it, 291
+of 560 did.**
 
 No prompt named the function, and every check was fixed in a scenario file before the first session
-ran. For the last three tasks, a rule committed ahead of its picks chose the repository, the
-helper and the place for the new file, and those three alone came out 64 of 120 against 22 of 120
-([the rule and its results](docs/measurements/2026-10-26-blind-replication.md)).
+ran. For ten of the tasks, a rule committed ahead of its picks chose the repository, the helper and
+the place for the new file ([the 0.19.0 results and how each task was picked](docs/measurements/2026-10-26-every-language.md)).
 
 Here is what that looks like. The task: show a "You are here" badge in
 [mastodon](https://github.com/mastodon/mastodon) when two links point to the same page. mastodon
@@ -78,20 +79,23 @@ Same prompt, same commit, same model, Claude Opus 5.5. The median component was 
 anatomiya and 27 with it. Claude Haiku 5.5 did the same: 0 of 20 without, 20 of 20 with. Every
 component both arms wrote is in [the evidence file](docs/measurements/data/2026-10-25-mastodon-components.json).
 
-How it got there: 35 of the 40 sessions with anatomiya say they wrote their own comparison first,
+How it got there: in the first run, 35 of the 40 sessions with anatomiya say they wrote their own comparison first,
 then replaced it with `compareUrls`. That is the order anatomiya's end-of-turn check asks for: when
 a turn adds code, it has a subagent look for an existing function that does the same job. The demo at the top is rebuilt from one of those sessions.
 
-The same thing happened in forem, where 27 of 40 sessions without anatomiya wrote the WCAG luminance
-formula by hand instead of calling the contrast helper forem already has, and in whitehall, where 39
-of 40 skipped `is_external?` and compared hosts in their own code
-([every file both arms wrote](docs/measurements/2026-10-25-plugin-on-off.md#exploratory-findings)).
-It did not win everywhere, and one loss was the test's fault. In cal.diy it came out 0 of 40 either
-way: the rule put the new file in `packages/lib`, and cal.diy's own lint config forbids that package
-from importing app-store, where the helper lives. 38 of the 40 sessions with anatomiya found the
-helper and named it, and most of them said they could not import it there. Every result prints the
-sha256 of the scenario file it was scored by. [The whole test](#the-whole-test-ties-included) is below,
-including the five tasks where anatomiya changed nothing and only cost more.
+The same thing happened in forem, where 28 of 40 sessions without anatomiya skipped the contrast
+helper forem already has, in whitehall, where 36 of 40 skipped `is_external?` and 26 of them compared
+hosts in their own code, and in atuin, where 35 of 40 Rust sessions called the uuid crate's
+`Uuid::now_v7` instead of the repository's `uuid_v7`. With anatomiya, all 120 of those sessions called
+the helper.
+
+It did not win everywhere. In seven of the fourteen language pairs both arms called the helper every
+time: gitea calls `db.GetEngine` from 246 files and Bitwarden builds every id with
+`CoreHelpers.GenerateComb`, so a session follows the files next to it with or without a map, and
+anatomiya only cost more. On gitea with Claude Haiku 5.5 the arm without it did better, 20 against 18:
+both misses called the repository's own `db.Count`, which calls `GetEngine` itself. Every result
+prints the sha256 of the scenario file it was scored by. [The whole test](#the-whole-test-ties-included)
+is below, with every miss read.
 
 ## Try it in your repository
 
@@ -184,23 +188,36 @@ judged by.
 
 ## The whole test, ties included
 
-Eleven tasks in seven open-source repositories. For each, 20 sessions with anatomiya and 20
-without, the same prompt at the same commit, scored by checks written down before the first session.
-Then the whole run again on a second, smaller model.
+Fourteen reuse tasks in thirteen open-source repositories, measured on 0.19.0, and four tasks of
+another kind from the first run. For each, 20 sessions with anatomiya and 20 without, the same prompt
+at the same commit, scored by checks written down before the first session. Then the whole run again
+on a second, smaller model. Bold marks a difference with p below 0.05 by Fisher's exact test.
 
 Where the code the task needed already existed in another directory:
 
 | Task | What was checked | Opus 5.5 with / without | Haiku 5.5 with / without |
 |---|---|---|---|
 | mastodon: a "You are here" badge | calls the existing `compareUrls` | **20 / 0** | **20 / 0** |
-| forem: a contrast warning | calls the existing WCAG contrast helper | **20 / 6** | **20 / 7** |
-| whitehall: an external link helper | calls the existing `is_external?` | **20 / 0** | **19 / 1** |
-| mastodon: a link policy | calls the existing `TagManager#local_url?` | **20 / 15** | 6 / 2 |
-| eslint: a linter test (picked by the rule) | calls the existing `unIndent` | **6 / 0** | **18 / 0** |
-| openfoodnetwork: a Stimulus controller (picked by the rule) | calls the existing `showHttpError` | 20 / 19 | **20 / 3** |
-| cal.diy: an app key reader (picked by the rule) | calls the existing `getAppKeysFromSlug` | 0 / 0 | 0 / 0 |
+| forem: a contrast warning | calls the existing WCAG contrast helper | **20 / 2** | **20 / 10** |
+| whitehall: an external link helper | calls the existing `is_external?` | **20 / 1** | **20 / 3** |
+| mastodon: a link policy | calls the existing `TagManager#local_url?` | **20 / 15** | **11 / 1** |
+| eslint: a linter test (picked by a rule) | calls the existing `unIndent` | **17 / 1** | **17 / 0** |
+| openfoodnetwork: a Stimulus controller (picked by a rule) | calls the existing `showHttpError` | 20 / 19 | **20 / 7** |
+| cal.diy: an app key reader (picked by a rule) | calls the existing `getAppKeysFromSlug` | **20 / 9** | **20 / 0** |
 
-Where the habit could be seen in the files next to the change:
+One task per language, each picked by a rule:
+
+| Language | Task | What was checked | Opus 5.5 with / without | Haiku 5.5 with / without |
+|---|---|---|---|---|
+| Python | CTFd: an admin report route | calls the existing `admins_only` | 20 / 20 | 20 / 17 |
+| PHP | BookStack: the admin role's users | calls the existing `Role::getSystemRole` | **20 / 2** | 20 / 19 |
+| Go | gitea: a count of inactive users | calls the existing `db.GetEngine` | 20 / 20 | 18 / 20 |
+| Java | DolphinScheduler: a schedule reader | calls the existing `JSONUtils.parseObject` | 20 / 20 | 19 / 20 |
+| C# | Bitwarden: an import batch record | calls the existing `CoreHelpers.GenerateComb` | 20 / 20 | 20 / 20 |
+| Rust | atuin: a script run's id | calls the existing `uuid_v7` | **20 / 5** | **20 / 0** |
+| Kotlin | KotlinConf: an empty list message | calls the existing `PreviewHelper` | 20 / 20 | 20 / 20 |
+
+Where the habit could be seen in the files next to the change, measured on 0.18.0:
 
 | Task | What was checked | Opus 5.5 with / without | Haiku 5.5 with / without |
 |---|---|---|---|
@@ -209,24 +226,27 @@ Where the habit could be seen in the files next to the change:
 | forem: a service object | its entry point does not raise | 20 / 20 | 20 / 20 |
 | whitehall: a migration | updates `db/schema.rb` too | 20 / 20 | 20 / 20 |
 
-Read it straight. Where the answer lived in another directory, anatomiya changed the result in ten
-of the fourteen task and model pairs, each with p below 0.05 by Fisher's exact test, and in none did
-the arm without it do better. Of the other four, Haiku on mastodon's link policy is too close to call
-at 6 against 2; Opus on openfoodnetwork found the helper either way, 20 against 19; and cal.diy was
-0 against 0 on both models, because the rule put that task where the repository forbids the import.
-On eslint, the 14 Opus sessions with anatomiya that kept their own helper all said why: `unIndent`
-strips spaces, and eslint indents with tabs. Where the neighbouring
-files already showed the habit, both models followed it without help, and anatomiya added only cost.
+Read it straight. Of the 28 task and model pairs where the answer lived in another directory,
+anatomiya changed the result in 16, and the arm without it never did better by a margin a test
+can tell from chance. Of the rest, most are ties at or near 20 on both arms, where the helper is the
+repository's idiom and a session finds it without a map. The misses with anatomiya mostly named the
+helper and chose another: on eslint, sessions kept a helper of their own because `unIndent` strips
+spaces and eslint indents with tabs, or called `stripIndent` from a package eslint already has; on
+mastodon's link policy, Haiku sessions called `TagManager#local_uri?`, the method beside `local_url?`;
+on gitea, the repository's own `db.Count`. Where the neighbouring files already showed the habit, both
+models followed it without help, and anatomiya added only cost.
 
 One thing the map asked for was out of date: rubocop moved cop registration out of `lib/rubocop.rb`
 in [e9defb6](https://github.com/rubocop/rubocop/commit/e9defb651dff92627ac49ddca76211011c7cf08c), the
 map still counted the hundred changes before it, and the files every session wrote show both arms on
 both models followed the code instead, 20 of 20.
 
-[The first write-up](docs/measurements/2026-10-25-plugin-on-off.md) and
-[the blind replication](docs/measurements/2026-10-26-blind-replication.md) have every check, every
-interval, what they do not show, and how to rerun them. Each task has its own page and a record of
-every session.
+[The 0.19.0 write-up](docs/measurements/2026-10-26-every-language.md),
+[the blind replication](docs/measurements/2026-10-26-blind-replication.md) and
+[the first write-up](docs/measurements/2026-10-25-plugin-on-off.md) have every check, every interval,
+what they do not show, and how to rerun them. Each task has its own page and a record of every
+session, and the 0.19.0 write-up has a trap task where the user hands over the exact code: one session
+in 20 with anatomiya swapped in a look-alike helper that answers differently, and said so.
 
 ## What it costs
 
@@ -238,11 +258,11 @@ It is free and MIT licensed. What you pay is tokens:
   a file there.
 - **On each turn that adds code**: one subagent searches for an existing function. That search is
   what found `compareUrls`.
-- **Measured**: across all eleven tasks, the median session with anatomiya cost 1.4 to 3.8 times as
-  much as one without, on both models. On Opus 5.5 that was $0.10 to $0.51 against $0.056 to $0.28
-  per session. On Haiku 5.5 it was $0.004 to $0.025 against $0.003 to $0.017. Four Opus rubocop
-  sessions with anatomiya hit the 20-minute limit and reported no cost, so that arm's median leaves
-  them out.
+- **Measured**: across the fourteen tasks on 0.19.0, the median session with anatomiya cost 2.0 to
+  5.5 times as much as one without. On Opus 5.5 that was $0.29 to $0.50 against $0.067 to $0.18 per
+  session. On Haiku 5.5 it was $0.010 to $0.029 against $0.003 to $0.009. On a turn that only pasted
+  code the user wrote out, the search still ran, and the trap task cost 27 times as much with
+  anatomiya.
 
 ## Why I built it
 
@@ -290,6 +310,10 @@ the map and not the notice, the reuse check or the background refresh.
 the script blocks of Vue and Svelte files. Python, PHP, Go, Java, C#, Rust and Kotlin get the layout,
 their tests, and one to three habits each. In all, 66 dimensions: 29 for JavaScript, 34 reachable in
 JSX, 28 for Ruby, and one more that runs the TypeScript checker where your dependencies are installed.
+Every one of those languages gets the reuse check and the "most imported from here" line, and so do
+the views written in ERB, HAML, Slim, Blade, Razor, Jinja, Twig and Go templates. Measured on one task
+per language, anatomiya changed the result in PHP on Opus and in Rust on both models; in the others a
+session found the repository's own helper with or without it.
 
 ## What it will not do
 
@@ -350,7 +374,7 @@ baseline into each one:
 - [docs/usage.md](docs/usage.md): the full guide.
 - [docs/why.md](docs/why.md): why it is built this way, and the designs the measurements replaced.
 - [docs/how-it-works.md](docs/how-it-works.md): the mechanics, close enough to predict a scan's output.
-- [DECISIONS.md](DECISIONS.md): 353 numbered decisions, each with the measurement or review finding
+- [DECISIONS.md](DECISIONS.md): 360 numbered decisions, each with the measurement or review finding
   that forced it.
 - [docs/measurements/corpus.md](docs/measurements/corpus.md): every repository a measurement ran on,
   with its commit.

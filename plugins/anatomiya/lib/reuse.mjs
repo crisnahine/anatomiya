@@ -3,10 +3,12 @@
  * reason that asks for them to be checked against what the repository already
  * has (A91).
  *
- * The wording is the one that passed 24 of 24 hard cases where every wording
- * the model answered inline passed 9 or 10 of 12, and it is held word for word
- * because that measurement is the only reason it is here
- * (`docs/research/one-line-that-finds-the-existing-function.md`).
+ * Its shape, one subagent handed the diff, is the one that passed 24 of 24 hard
+ * cases where every wording the model answered inline passed 9 or 10 of 12
+ * (`docs/research/one-line-that-finds-the-existing-function.md`). What it asks
+ * of a function that does part of the job or falls short came from the misses of
+ * the reuse tasks (A123); the repository's own before a package's, and the
+ * search a session with no subagent tool runs itself, were never measured apart.
  */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -22,6 +24,7 @@ import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
 import { blankOutside, scriptBlocks } from "./script-blocks.mjs";
+import { markupCodeLines, templateInertLines, templateOf } from "./templates.mjs";
 import { sessionStartIn } from "./transcript.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
@@ -67,29 +70,46 @@ const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 // `core/migrations`, openproject's `db/migrate/tables`) is ordinary library code.
 export const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
 
+/** Whether a changed path is one the check reads: source the corpus counts, or a view template. */
+const asked = (path) => isCorpusPath(path) || templateOf(path) !== null;
+
 /**
- * The script a component file holds: the lines its blocks cover, and which of
- * all its lines define nothing callable. No lines where a script never ends.
+ * The code a component file holds: the lines its script blocks cover and the
+ * markup lines whose expression computes inline (`markupCodeLines`), and which
+ * of all its lines define nothing callable. No lines where a script never ends.
  *
  * Each block is read with the file blanked around it, since markup that opens
  * a comment would carry it into the script below.
  */
 async function componentScript(engine, lang, source, kind, deadline) {
   const { blocks, unterminated } = scriptBlocks(source, kind);
+  if (unterminated) return { spans: [], inert: [] };
   const lineAt = (offset) => source.slice(0, offset).split("\n").length;
-  const spans = (unterminated ? [] : blocks).flatMap((b) => {
+  const spans = blocks.flatMap((b) => {
     const body = source.slice(b.start, b.end);
     if (body.trim() === "") return [];
     return [{ from: lineAt(b.end - body.trimStart().length), to: lineAt(b.start + body.trimEnd().length) }];
   });
   const views = await Promise.all(blocks.map((b) => inertLinesOf({ engine, lang, source: blankOutside(source, b.start, b.end), deadline })));
-  return { spans, inert: views[0]?.map((_, i) => views.every((view) => view[i])) ?? [] };
+  const markup = markupCodeLines(kind, source, deadline);
+  const inert = markup.map((asks, i) => !asks && views.every((view) => view[i] !== false));
+  const computed = markup.flatMap((asks, i) => (asks ? [{ from: i + 1, to: i + 1 }] : []));
+  return { spans: [...spans, ...computed], inert };
 }
 
-const clipped = (hunks, spans) =>
-  hunks.flatMap((h) =>
-    spans.flatMap((s) => (h.from > s.to || h.to < s.from ? [] : [{ ...h, from: Math.max(h.from, s.from), to: Math.min(h.to, s.to) }]))
-  );
+/** The parts of `hunks` that `spans` cover, one hunk per run of lines however many spans meet in it. */
+function clipped(hunks, spans) {
+  const parts = hunks
+    .flatMap((h) => spans.flatMap((s) => (h.from > s.to || h.to < s.from ? [] : [{ ...h, from: Math.max(h.from, s.from), to: Math.min(h.to, s.to) }])))
+    .sort((a, b) => a.from - b.from);
+  const runs = [];
+  for (const part of parts) {
+    const last = runs.at(-1);
+    if (last !== undefined && part.from <= last.to + 1) last.to = Math.max(last.to, part.to);
+    else runs.push({ ...part });
+  }
+  return runs;
+}
 
 // A name a repository chose is shown as it is only where it cannot carry a
 // line break or a quote into the reason the model reads.
@@ -107,8 +127,11 @@ export function reuseReason(files) {
   const list = `${lines.slice(0, LISTED_MOST).join("; ")}${more > 0 ? `; and ${more} more` : ""}`;
   return (
     `${REASON_OPENING} and these added functions: ${list}. ` +
-    "Have it grep shared and utility modules, files near the change, and code making the same calls, then name any existing function that does the same job. " +
-    "Call each named function and delete the copy it replaces. If it names none, finish without changing anything. " +
+    "Have it grep shared and utility modules, files near the change, and code making the same calls, then name every existing function that does the same job or part of it. " +
+    "For each added function, call the closest one it names, the repository's own before a package's, and delete the copy it replaces. Where one does part of the job, call it for that part. " +
+    // A session that named the helper kept a copy where it fell short on one case (A123).
+    "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
+    "If it names none, finish without changing anything. " +
     // Last, so the measured wording above is unchanged where the tool exists.
     "If this session has no subagent tool, run that search yourself.\n" +
     tag(files)
@@ -155,11 +178,11 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   const timeout = leftOf(gitBy);
   if (timeout <= 0) return null;
   const [pending, gitdir, dropOf] = await Promise.all([
-    pendingPaths(root, { timeout }),
+    pendingPaths(root, { timeout, keep: asked }),
     gitDir(root, timeout),
     // The hook reads every checkout of a stop together: one whose attributes git could not be asked for
     // asks nothing, as one whose status git would not give does, and the others are still read.
-    corpusDrop(root, { timeout }).catch((err) => {
+    corpusDrop(root, { timeout, readAlso: (path) => templateOf(path) !== null }).catch((err) => {
       if (err instanceof Unasked) return null;
       throw err;
     }),
@@ -179,16 +202,17 @@ export async function pendingChange(root, { since = null, turnStart = null, call
   // A committed file is in the diff and nowhere in the status, and reads as an
   // edit: its hunks are the lines it added over the turn's base.
   const listed = new Set(pending.present.map((p) => p.path));
-  const committed = [...ranges.keys()].filter((path) => !listed.has(path) && isCorpusPath(path));
+  const committed = [...ranges.keys()].filter((path) => !listed.has(path) && asked(path));
   const changed = [...pending.present, ...committed.map((path) => ({ path, status: "M" }))];
   const home = realpathOf(root);
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
     if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
+    const template = templateOf(path);
     // An engine with no rule cannot tell a function from a comment, so its files ask nothing.
-    const lang = language(path);
-    const engine = engineOf(lang);
-    if (!INERT_ENGINES.includes(engine)) continue;
+    const lang = template === null ? language(path) : null;
+    const engine = lang === null ? null : engineOf(lang);
+    if (template === null && !INERT_ENGINES.includes(engine)) continue;
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
@@ -198,13 +222,16 @@ export async function pendingChange(root, { since = null, turnStart = null, call
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
-    const kind = embeddedIn(lang);
+    const kind = lang === null ? null : embeddedIn(lang);
     parsing.deadline ??= performance.now() + REUSE_PARSE_MS;
     const script = kind === null ? null : await componentScript(engine, lang, entry.head, kind, parsing.deadline);
     const hunks = script === null ? added : clipped(added, script.spans);
-    const inert = script === null ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline }) : script.inert;
-    // A missing runtime or grammar reads nothing, and a file nothing read asks nothing.
-    if (inert === null) continue;
+    const inert =
+      template !== null
+        ? templateInertLines(template, entry.head, parsing.deadline)
+        : script === null
+          ? await inertLinesOf({ engine, lang, source: entry.head, deadline: parsing.deadline, path })
+          : script.inert;
     // A line past the end of what was read is one nobody read, so its hunk asks.
     const read = lineCount(entry.head);
     const defining = hunks.filter((h) => h.to > read || !inert.slice(h.from - 1, h.to).every(Boolean));

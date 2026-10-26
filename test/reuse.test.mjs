@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { scriptGit } from "./git-script.mjs";
-import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, removeTree } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsSymlinks, removeTree } from "./platform.mjs";
 import { snapshot, transcript } from "./transcript.mjs";
 import { askedMarksIn, continuedByReuseIn, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason, TRANSCRIPT_MOST } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/hook-verbs.mjs";
@@ -74,7 +74,7 @@ const hunksOf = (change) => change.map((f) => [f.path, f.hunks]);
 
 // --- what the reason says ----------------------------------------------------
 
-test("the reason is the measured wording, naming the lines the change added", () => {
+test("the reason is the wording A123 settled, naming the lines the change added", () => {
   // The wording is the one that passed 24 of 24 on the hard cases, and every
   // inline wording scored 9 or 10 of 12, so it is held here word for word
   // (docs/research/one-line-that-finds-the-existing-function.md). The last
@@ -88,8 +88,10 @@ test("the reason is the measured wording, naming the lines the change added", ()
   assert.ok(
     reason.startsWith(
       "Before you finish, give one subagent this change's diff and these added functions: src/a.ts:3-9; src/b.ts:1-12 (new file). " +
-        "Have it grep shared and utility modules, files near the change, and code making the same calls, then name any existing function that does the same job. " +
-        "Call each named function and delete the copy it replaces. If it names none, finish without changing anything. " +
+        "Have it grep shared and utility modules, files near the change, and code making the same calls, then name every existing function that does the same job or part of it. " +
+        "For each added function, call the closest one it names, the repository's own before a package's, and delete the copy it replaces. Where one does part of the job, call it for that part. " +
+        "Where one falls short on a case this change needs, make the new code fit it, or extend it without changing what it returns to its current callers, and call it. " +
+        "If it names none, finish without changing anything. " +
         "If this session has no subagent tool, run that search yourself."
     ),
     reason
@@ -152,6 +154,34 @@ test("a tree-sitter file is asked about the hunks that may define something, and
   ]);
 });
 
+test("a view template is asked about the hunks that hold code, and one that only edits markup asks nothing", async (t) => {
+  // A view is where a helper's logic is copied most, and no scan reads it.
+  const { dir, git, write } = repo(t);
+  write("app/views/links/_link.html.erb", "<p>\n  <%= link_to title, href %>\n</p>\n");
+  write("Views/Home/Index.cshtml", "@model Link\n<p>x</p>\n");
+  git("add", "-A");
+  git("commit", "-qm", "views");
+  write("app/views/links/_link.html.erb", "<p>\n  <% if URI(href).host != request.host %>\n    <%= link_to title, href, rel: \"external\" %>\n  <% end %>\n</p>\n<p>more</p>\n");
+  write("Views/Home/Index.cshtml", "@model Link\n<p>x</p>\n<p>y</p>\n");
+  write("app/views/links/_note.html.erb", "<%# a note %>\n<p>x</p>\n");
+
+  // The hunk that adds `<p>more</p>` holds markup alone and is left out.
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/views/links/_link.html.erb", [{ from: 2, to: 4, created: false }]]]);
+});
+
+test("a component's markup is asked about where an added expression in it computes, and a plain binding asks nothing", async (t) => {
+  const { dir, git, write } = repo(t);
+  const vue = (body) => `<template>\n${body}</template>\n<script setup>\nconst price = 1\n</script>\n`;
+  write("src/Price.vue", vue("  <p>{{ price }}</p>\n"));
+  write("src/Name.svelte", "<p>{name}</p>\n<script>\nlet name = 'a'\n</script>\n");
+  git("add", "-A");
+  git("commit", "-qm", "components");
+  write("src/Price.vue", vue("  <p>{{ price }}</p>\n  <b>{{ (price * 1.2).toFixed(2) }}</b>\n"));
+  write("src/Name.svelte", "<p>{name}</p>\n<i>{user.name}</i>\n<script>\nlet name = 'a'\n</script>\n");
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/Price.vue", [{ from: 3, to: 3, created: false }]]]);
+});
+
 test("a tree-sitter file reached after the stop's parse budget is asked about whole", async (t) => {
   // Unread is not evidence: a comment the parse never reached asks.
   const { dir, write } = repo(t);
@@ -161,8 +191,8 @@ test("a tree-sitter file reached after the stop's parse budget is asked about wh
   assert.deepEqual(hunksOf(await pendingChange(dir, { parsing: { deadline: performance.now() - 1 } })), [["svc/note.py", [{ from: 1, to: 1, created: true }]]]);
 });
 
-test("a tree-sitter file whose grammar will not load asks nothing", async (t) => {
-  // Nothing read it, so nothing says it holds a function. Run as a process of its own, because a failed load is kept for the life of one.
+test("a tree-sitter file whose grammar will not load is asked about whole", async (t) => {
+  // Nothing read it, so nothing proves a line of it inert. Run as a process of its own, because a failed load is kept for the life of one.
   const { dir, write } = repo(t);
   write("app/Total.kt", "fun total(xs: List<Int>): Int {\n    return xs.sum()\n}\n");
   const module = new URL("../plugins/anatomiya/lib/reuse.mjs", import.meta.url).href;
@@ -184,7 +214,9 @@ test("a tree-sitter file whose grammar will not load asks nothing", async (t) =>
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60_000 });
 
   assert.equal(run.stderr, "");
-  assert.deepEqual(JSON.parse(run.stdout), { change: null, refused: true });
+  const { change, refused } = JSON.parse(run.stdout);
+  assert.equal(refused, true);
+  assert.deepEqual(hunksOf(change), [["app/Total.kt", [{ from: 1, to: 3, created: true }]]]);
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/Total.kt", [{ from: 1, to: 3, created: true }]]], "with the grammar there, the file asks");
 });
 
@@ -197,7 +229,8 @@ test("a JavaScript, Ruby or component file reached after the stop's budget is as
   assert.equal(await pendingChange(dir), null, "read in time, a comment asks nothing");
   assert.deepEqual(hunksOf(await pendingChange(dir, { parsing: { deadline: -Infinity } })), [
     ["lib/note.rb", [{ from: 1, to: 1, created: true }]],
-    ["src/Note.vue", [{ from: 5, to: 5, created: true }]],
+    // Its markup is no more read than its script, so the whole of it asks.
+    ["src/Note.vue", [{ from: 1, to: 6, created: true }]],
     ["src/note.ts", [{ from: 1, to: 1, created: true }]],
   ]);
 });
@@ -527,6 +560,23 @@ test("a generated file has nothing to check, by the corpus's own rule", async (t
   write("src/api/client.ts", NEW_B);
 
   assert.equal(await pendingChange(dir), null);
+});
+
+test("a view template that is a link or generated is refused as source is", needsSymlinks, async (t) => {
+  // A template is no source the corpus counts, and still nothing behind a link or a generator's marker.
+  const { dir, write } = repo(t);
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-reuse-view-"));
+  t.after(() => removeTree(outside));
+  writeFileSync(join(outside, "x.html.erb"), "<%= total(order) %>\n");
+  mkdirSync(join(dir, "app/views/a"), { recursive: true });
+  symlinkSync(join(outside, "x.html.erb"), join(dir, "app/views/a/out.html.erb"));
+  write("app/views/a/in.html.erb", "<%= total(order) %>\n");
+  symlinkSync("in.html.erb", join(dir, "app/views/a/alias.html.erb"));
+  write(".gitattributes", "app/views/gen/** linguist-generated\n");
+  write("app/views/gen/g.html.erb", "<%= total(order) %>\n");
+  write("app/views/b/marked.html.erb", "<%# Code generated by a tool. DO NOT EDIT. %>\n<%= total(order) %>\n");
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["app/views/a/in.html.erb", [{ from: 1, to: 1, created: true }]]]);
 });
 
 test("a repository with no commit yet asks about every source file in it", async (t) => {

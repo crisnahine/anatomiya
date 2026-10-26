@@ -17,7 +17,7 @@ export function transcriptTail(path, most) {
   return { text: tail.text, end: tail.end, lines: () => (lines ??= tail.text.split("\n")) };
 }
 
-/** One transcript line as its record, or null for a line that is not JSON, the half-written last one among them. */
+/** A JSON text as its value, a transcript line as its record, or null for text that is not JSON, a half-written last line among them. */
 export function parsed(line) {
   try {
     return JSON.parse(line);

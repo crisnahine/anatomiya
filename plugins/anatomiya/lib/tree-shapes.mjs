@@ -77,9 +77,9 @@ export const SHAPES = {
     base: ["base_clause"],
     // What a file holds outside any code: the tags, and the markup around them.
     header: ["php_tag", "php_end_tag", "text", "text_interpolation"],
-    // The markup, which is code in another language where any of the file's markup holds a script.
+    // The markup itself first, then what holds it: code on the rows that hold a script or something Blade compiles.
     markup: ["text", "text_interpolation"],
-    tokensOf: [],
+    tokensOf: ["namespace_use_declaration", "namespace_use_clause"],
     name: "name",
     returnType: "return_type",
     callee: "function",
@@ -182,7 +182,7 @@ export const SHAPES = {
     iface: ["interface_declaration"],
     header: ["package_declaration"],
     // `public` and `static` are tokens of `modifiers`, and its text is not kept once an annotation sits beside them.
-    tokensOf: ["modifiers"],
+    tokensOf: ["modifiers", "import_declaration"],
     name: "name",
     caught: "name",
     member: "field",
@@ -232,7 +232,7 @@ export const SHAPES = {
     condition: "condition",
     // A directive on a line of its own between two members.
     directive: ["preproc_pragma", "preproc_nullable", "preproc_region", "preproc_endregion", "preproc_line", "preproc_error", "preproc_warning"],
-    tokensOf: [],
+    tokensOf: ["using_directive"],
     name: "name",
     usingAlias: "name",
     // A declarator's value has no field: it is its last named child.

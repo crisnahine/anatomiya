@@ -133,6 +133,23 @@ test("a file whose Flow types were stripped still answers its facets", async (t)
   assert.equal(r.facets.jsx, false);
 });
 
+test("jsFacets reads what a barrel re-exports and from where, apart from what it defines", async (t) => {
+  // A package's index re-exports its helpers, and an importer of the index reaches the file that defines one.
+  const dir = repo({
+    "src/index.ts": `export * from "./utils"\nexport { a as b, c } from "./other"\nexport * as ns from "./ns"\nexport const z = 1\n`,
+  });
+  t.after(() => removeTree(dir));
+
+  const { records } = await parseAll(list(dir, ["src/index.ts"]));
+
+  const facets = records.get("src/index.ts").facets;
+  assert.deepEqual(facets.reexports, [
+    { module: "./utils", names: "*" },
+    { module: "./other", names: [["a", "b"], ["c", "c"]] },
+  ]);
+  assert.deepEqual(facets.exports, ["b", "c", "ns", "z"]);
+});
+
 test("rubyFacets says which test runner a file speaks", needsRuby, async (t) => {
   // Neither engine can read the runner off the path: `spec/` and `test/` are
   // conventions a repository may hold either way round, and a Rails app puts
@@ -154,6 +171,44 @@ test("rubyFacets says which test runner a file speaks", needsRuby, async (t) => 
   assert.equal(records.get("test/b_test.rb").facets.testCalls, true);
   assert.equal(records.get("app/models/c.rb").facets.testRunner, null);
   assert.equal(records.get("app/models/c.rb").facets.testCalls, false);
+});
+
+test("rubyFacets names each constant a file reaches for, the method it calls on one, and the modules the reference sits in", needsRuby, async (t) => {
+  // Ruby has no import: the constant is the import, and Rails finds its file by name.
+  const dir = repo({
+    "app/lib/link_policy.rb":
+      "module Mastodon\n  class LinkPolicy < ApplicationRecord\n    include Concerns::Foo\n    def self.external?(url)\n" +
+      "      !TagManager.instance.local_url?(url) && ActivityPub::TagManager.new(a).local_uri?(url) && ::Foo::Bar.call(x)\n" +
+      "    end\n  end\nend\n",
+  });
+  t.after(() => removeTree(dir));
+
+  const { records } = await parseAll(list(dir, ["app/lib/link_policy.rb"]));
+
+  const inside = ["Mastodon::LinkPolicy", "Mastodon"];
+  assert.deepEqual(records.get("app/lib/link_policy.rb").facets.refs, [
+    // The superclass is read in the scope around the class.
+    { const: "ApplicationRecord", nesting: ["Mastodon"], name: "ApplicationRecord" },
+    { const: "Concerns::Foo", nesting: inside, name: "Concerns::Foo" },
+    { const: "TagManager", nesting: inside, name: "TagManager#local_url?" },
+    { const: "ActivityPub::TagManager", nesting: inside, name: "ActivityPub::TagManager#local_uri?" },
+    { const: "::Foo::Bar", nesting: inside, name: "Foo::Bar.call" },
+  ]);
+});
+
+test("rubyFacets names no method a file calls with no receiver, and reads a superclass built by a call in the scope around the class", needsRuby, async (t) => {
+  const dir = repo({
+    "app/controllers/orders_controller.rb": "class OrdersController < ApplicationController\n  def show\n    render plain: format_money(1)\n  end\nend\n",
+    "app/models/point.rb": "module Geo\n  class Point < Struct.new(:x, :y)\n  end\nend\n",
+  });
+  t.after(() => removeTree(dir));
+
+  const { records } = await parseAll(list(dir, ["app/controllers/orders_controller.rb", "app/models/point.rb"]));
+
+  // A helper's method is called from views, which no scan reads, so a bare call names nothing.
+  assert.deepEqual(records.get("app/controllers/orders_controller.rb").facets.refs, [{ const: "ApplicationController", nesting: [], name: "ApplicationController" }]);
+  // A superclass built by a call is read in the scope around the class, as a constant superclass is.
+  assert.deepEqual(records.get("app/models/point.rb").facets.refs, [{ const: "Struct", nesting: ["Geo"], name: "Struct.new" }]);
 });
 
 /**

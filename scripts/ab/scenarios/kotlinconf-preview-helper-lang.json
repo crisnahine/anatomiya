@@ -1,0 +1,20 @@
+{
+  "name": "kotlinconf-preview-helper-lang",
+  "repo": "github.com/JetBrains/kotlinconf-app",
+  "commit": "907ce238e1ffe2472991eeb2d2bfa386bdb4ea8f",
+  "area": "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens",
+  "prompt": "Add a composable `EmptyListMessage(text: String)` in app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt that shows the text centred, and a light and dark preview of it. The preview shows the message inside the app theme, on the theme's main background, in a column with 8 dp of padding and 8 dp between items. Keep it small.",
+  "did": [
+    {
+      "name": "the composable exists",
+      "changed": "^app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage\\.kt$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing PreviewHelper",
+      "contains": "(?:\\bimport\\s+org\\.jetbrains\\.kotlinconf\\.ui\\.theme\\.(?:PreviewHelper\\b|\\*)[\\s\\S]*\\bPreviewHelper\\s*[({]|\\borg\\.jetbrains\\.kotlinconf\\.ui\\.theme\\.PreviewHelper\\s*[({])",
+      "in": "^app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage\\.kt$"
+    }
+  ]
+}

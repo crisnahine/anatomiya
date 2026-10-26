@@ -72,3 +72,21 @@ Written after the results, and changing nothing above.
   `biome.json` forbids `packages/lib` from importing app-store, where `getAppKeysFromSlug` lives, so
   its task could not pass without breaking the repository's own rule. A next rule should place the new
   file only where the repository's lint and dependency rules allow the import.
+
+## Amendment 2, after the runs and before any trial of its task
+
+Written on 2026-10-26 after the results above, and committed with its scenario before the scenario's
+first session. It changes no result above: the cal.diy runs stay published as they are.
+
+The cal.diy task could not pass without breaking the repository's own rule: `biome.json` forbids
+`packages/lib` from importing app-store. The task is run again with one change, the place of the new
+file, and the same prompt, helper and check:
+
+- **Where.** `apps/web/lib`, the server-side library directory of `apps/web`, the one package whose
+  manifest declares `@calcom/app-store` as a dependency. Seven files there already import from that
+  package, so neither its lint nor its package graph refuses the import, and none of them imports the
+  helper.
+- **Why this directory and not another.** A ranking by "most files importing the package, none
+  importing the helper" put a React components directory first, where a server-side database read
+  does not belong. The choice is a judgment, made by someone who has seen the first runs, as step 3's
+  wording already was. The scenario is `scripts/ab/scenarios/caldiy-app-keys-allowed.json`.

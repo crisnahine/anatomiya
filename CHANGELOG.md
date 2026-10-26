@@ -7,6 +7,67 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-26
+
+The reuse check and the "most imported from here" line reach every language the plugin reads, and the
+check reads the views a helper's logic is most often copied into. Measured on fourteen tasks in
+thirteen repositories, seven of them one per language and picked by a rule committed before any of its
+repositories was scanned for it, 542 of 560 sessions with the plugin called the function the
+repository already had, against 291 of 560 without. In seven of the fourteen language pairs both arms
+called it every time, and on gitea with Haiku the arm without the plugin did better, 20 against 18, too
+close to call. One trap task, where the user hands over the exact code, found one session in 20 that
+swapped in a look-alike helper and said so.
+
+### Added
+
+- Every language now gets the "most imported from here" line, which names the helpers the rest of the
+  repository already calls from a directory. Ruby reads it off constants by Rails' autoload names,
+  Python, Java, Kotlin, PHP and Rust off their imports, Go off a package's calls, and C# off the type
+  a call names. A method is named only where the file it reaches defines it, so `Account.find` is
+  `Account` and `TagManager#local_url?` stays as it is (H58).
+- A JavaScript import of a package the repository's own workspace declares (`@excalidraw/common`)
+  resolves through that package's `package.json` name and entry, where the workspace's globs reach
+  it (npm, Yarn, pnpm, Lerna or Rush), and a name an index re-exports is credited to the file that
+  defines it. excalidraw's `packages/common/src` had no helper line and now names `KEYS (101 files)`
+  and `arrayToMap (63)` (H59).
+- Beyond imports, the line counts what a language writes without one: a Python attribute call on
+  an imported module, a Java or Kotlin wildcard's classes, a Rust path written in a call, a PHP
+  function called by name, and a C# extension method. A common name is held to what the caller can
+  see: a Go import resolves only under the repository's own `go.mod` module path, a C# type only in a
+  namespace the caller opens, a Java, Kotlin or PHP class only in the package its file declares, and a
+  Python module only from a directory the import can start in (H58).
+- The end-of-turn reuse check reads view templates: ERB and EJS, HAML, Slim, Razor, Jinja, Twig and
+  Nunjucks, and Go templates, and the markup of a Vue or Svelte component where an expression computes
+  with a literal. A hunk that adds template code is asked about, one that adds markup alone is not, and
+  a template that is a link or a generated file is passed over (A122).
+
+- `docs/measurements/2026-10-26-language-replication-rule.md`, the rule that picked one task per
+  language, and `docs/measurements/2026-10-26-every-language.md`, the results of those seven, the seven
+  earlier reuse tasks on this build and a trap task, with a page per task and model, every trial's
+  record and the file each session wrote.
+
+### Changed
+
+- The reuse check's reason asks the subagent for every existing function that does the job or part of
+  it, and the session to call the closest one, the repository's own before a package's, to fit the
+  new code to it, or to extend it without changing what it returns to its current callers. Most
+  misses in the 2026-10-25 and 2026-10-26 runs named the helper and then kept a copy because it fell
+  short on one case (A123).
+
+### Fixed
+
+- A Laravel Blade view's logic asked nothing in the reuse check: the PHP grammar reads everything
+  outside `<?php` as markup, and markup counted as code only beside a `<script` tag. A row of markup
+  that holds an echo, a `@php` block or a directive with an argument now asks, and so does a row a
+  script holds; a plain row beside them, which every row of the file was before, asks nothing (B80).
+- A missing or broken `web-tree-sitter` install turned the reuse check off for every Python, PHP, Go,
+  Java, C#, Rust and Kotlin file, with no message. A file nothing could read is now asked about whole
+  (B68).
+- In a file that holds JSX, a line of text that starts with `//` or `/*` and holds an expression in
+  braces was read as a comment and asked nothing (B81).
+- The A/B harness gave an arm's reset one minute, and a session that had installed a package tree
+  took `git clean` past it on a loaded machine, ending the run. It now has ten minutes.
+
 ## [0.18.2] - 2026-10-26
 
 A rule committed ahead of its picks chose three more reuse tasks, in eslint,
@@ -5257,7 +5318,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/crisnahine/anatomiya/compare/v0.18.2...v0.19.0
 [0.18.2]: https://github.com/crisnahine/anatomiya/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/crisnahine/anatomiya/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/crisnahine/anatomiya/compare/v0.17.1...v0.18.0

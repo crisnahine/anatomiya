@@ -1,0 +1,798 @@
+{
+  "scenario": "scripts/ab/scenarios/bookstack-system-role-lang.json",
+  "scenarioSha256": "86c5b7f88e0f15e3eb5c2af004591f55634dfaec22e02b558bf447779199efd1",
+  "label": "github.com/BookStackApp/BookStack",
+  "sha": "045c6a98cac21ea86906674bb91d01f375460db6",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": {
+    "claude": "2.1.310 (Claude Code)",
+    "anatomiya": "0.18.2 at b94dd31eeb36, with uncommitted changes"
+  },
+  "said": {
+    "a": "app/Activity/Notifications: 16 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2777302,
+        "inputTokens": 24,
+        "outputTokens": 5339,
+        "cacheReadTokens": 137146,
+        "wallMs": 82264
+      },
+      "answer": "I had a subagent search the codebase for existing code that already does what `AdminRecipients` does, and it found nothing new to reuse, so I made no changes.\n\nThe only matching pieces are the two `AdminRecipients` already calls: `Role::getSystemRole()` (`app/Users/Models/Role.php:115`) and `Role::users()` (`Role.php:41`). Other code looks up the admin role too, but only to count its users or read its id, for example `UserRepo::isOnlyAdmin` at `app/Users/UserRepo.php:288`. Nothing fetches the admin users as a list, and there's no function that finds users by role or permission.\n\nThe `$roleLoaded` flag is still needed. Without it, a missing admin role would be queried again on every call, because `getSystemRole()` doesn't cache a \"not found\" result."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2940786,
+        "inputTokens": 24,
+        "outputTokens": 6162,
+        "cacheReadTokens": 153683,
+        "wallMs": 81281
+      },
+      "answer": "I had a subagent check whether any existing function already returns the admin users. None does, so I've left `AdminRecipients.php` as it was.\n\nThe closest matches only overlap in part:\n- **`Role::users()`** (`app/Users/Models/Role.php:41`): the role-to-users relation, which `get()` already calls.\n- **`UserRepo::isOnlyAdmin` and `UserRepo::demotingLastAdmin`** (`app/Users/UserRepo.php:288`, `:322`): they look up the admin role the same way, but only to count users or compare ids. Both return a true/false answer, not the users.\n- **`CreateAdminCommand`** (line 110) counts the admin's users, and **`User::hasSystemRole`** checks one user. Neither returns the list.\n\nThe subagent also said `getSystemRole` remembers a missing role. That's wrong. The code at `Role.php:119` checks with `isset()`, which treats a saved \"no role\" result as not looked up yet. So the gap I mentioned earlier still applies: when there's no admin role, every `get()` call queries the database again. The one-line `array_key_exists` change in `Role::getSystemRole` would fix it. I'll make it if you want."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.27983040000000003,
+        "inputTokens": 28,
+        "outputTokens": 5781,
+        "cacheReadTokens": 180727,
+        "wallMs": 89761
+      },
+      "answer": "I had a subagent search the repo for existing code that already does this. Nothing does: no existing function returns the users who hold the admin role. The closest code is the two methods `AdminRecipients::get()` already calls, `Role::getSystemRole()` and `Role::users()`. Everything else that touches the admin role only checks whether one user is an admin or counts admins, so I didn't remove or replace anything.\n\nThe search did turn up one inconsistency, which I fixed. When there's no admin role, `get()` returned a basic Laravel collection, while the normal path returns the database-model collection type. Both paths now return the database-model type (`Illuminate\\Database\\Eloquent\\Collection`). The file still passes `php -l`, but I haven't run it against a database.\n\nOne gap from before is still open. `getSystemRole` doesn't remember a \"not found\" result, so if there's no admin role it queries again on every call. I left that alone because 11 other places use that method."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.291275,
+        "inputTokens": 28,
+        "outputTokens": 6089,
+        "cacheReadTokens": 179840,
+        "wallMs": 98966
+      },
+      "answer": "I made no further changes; the class stays as written.\n\nA subagent searched the repo for existing code that does the same job. Nothing returns the users who hold a role. Two existing pieces do parts of it, and the class already uses both:\n\n- **`Role::getSystemRole()`** (`app/Users/Models/Role.php:115`) looks the role up and caches it.\n- **`Role::users()`** (`app/Users/Models/Role.php:41`) fetches the users.\n\nThe rest were near misses: they count admins (`UserRepo::isOnlyAdmin`), check a single user (`User::hasSystemRole`), or use only the admin role's id.\n\nThe subagent suggested shortening `get()` to `Role::getSystemRole('admin')?->users()->get() ?? new Collection()`. That would break your \"look it up once\" rule when no admin role exists, because `getSystemRole()` doesn't remember a missing role and would query again on every call.\n\nI also decided against changing `getSystemRole()` itself to remember a missing role. It has about 20 callers, many in tests that run in one process. If a test looked up a role before it was created, the cached \"none\" would stick, and later tests would get null instead of the role. So the new class keeps its own small flag for that case and leaves `getSystemRole()` as it was."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2432482,
+        "inputTokens": 22,
+        "outputTokens": 5299,
+        "cacheReadTokens": 129416,
+        "wallMs": 80580
+      },
+      "answer": "I had a subagent search the repository for existing code that already does what `AdminRecipients::get()` does. It found none, so I left the file as it was.\n\nThe class already uses the two existing pieces it needs:\n- **`Role::getSystemRole('admin')`** (`app/Users/Models/Role.php:115`) finds the role and stores it for the rest of the request.\n- **`Role::users()`** (`app/Users/Models/Role.php:41`) gives the role's users.\n\nOther code makes the same `getSystemRole('admin')` call: `UserRepo::isOnlyAdmin`, `CreateAdminCommand` and `EntityPermissionEvaluator`. None of it returns the list of admin users, though. It counts them, checks a role ID, or answers yes/no.\n\nThe earlier gap is still there: if no admin role exists, every call queries the database again. You can close it with the one-line `array_key_exists` change in `getSystemRole` I suggested before."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/Users/Models/Role.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.33803279999999997,
+        "inputTokens": 32,
+        "outputTokens": 7825,
+        "cacheReadTokens": 222964,
+        "wallMs": 106120
+      },
+      "answer": "I changed `AdminRecipients` to reuse the existing role lookup instead of doing its own. Both files pass `php -l`, but I couldn't run the tests: `vendor/` isn't installed, so `vendor/bin/phpunit` doesn't exist.\n\n**What changed:**\n- **`app/Activity/Notifications/AdminRecipients.php`**: `get()` is now one line, `Role::getSystemRole('admin')?->users()->get() ?? new Collection()`. The class no longer has its own static cache.\n- **`app/Users/Models/Role.php:119`**: in `getSystemRole`, I changed `isset($cache[$systemName])` to `array_key_exists($systemName, $cache)`. Before, a missing role wasn't remembered, so every call queried the database again. Now \"not found\" is cached too, which means the admin role is looked up only once per request even when it doesn't exist.\n\n**Effect on other code:** `getSystemRole` has 4 callers in `app/` and 15 in `tests/`. The change only affects code that looks up a system role while it's missing and expects to find it later in the same process. I found no code or test that creates or deletes a system role between lookups. To confirm, run `composer install` and then the tests that call it, such as `RoleManagementTest`, `CreateAdminCommandTest`, `UsersApiTest`, `RolesApiTest` and `PublicActionTest`.\n\nAs before, the cache lasts for the whole PHP process. That's one request in a normal deployment, but it carries over between requests if one process handles several."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/Users/Models/Role.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.33181679999999997,
+        "inputTokens": 24,
+        "outputTokens": 6123,
+        "cacheReadTokens": 146224,
+        "wallMs": 85940
+      },
+      "answer": "I simplified the change after a reuse check and also made a one-line change to `Role::getSystemRole`. Both files pass a syntax check, but I couldn't run any tests: `vendor/` isn't installed, so phpunit isn't available.\n\n**What changed:**\n- **`app/Activity/Notifications/AdminRecipients.php`**: `get()` is now one line. It calls `Role::getSystemRole('admin')` and returns that role's users, or an empty collection if there's no admin role. I removed my own static cache and the \"already loaded\" flag.\n- **`app/Users/Models/Role.php:119`**: `getSystemRole` now checks its cache with `array_key_exists` instead of `isset`. Before, a missing role (`null`) never counted as cached, so it was queried again on every call. Now the lookup runs once per request whether or not the role exists. That's what lets `AdminRecipients` use it directly instead of keeping a second cache.\n\nThe search found nothing else in the codebase that returns admin users or the users of a role chosen by `system_name`.\n\n**What to check:** what `getSystemRole` returns hasn't changed, but it now affects all 11 places that call it. If code in the same request asks for a system role before it exists and then creates it, later calls will get the cached `null`. Running `vendor/bin/phpunit --filter 'Role|Admin|Notification|UserManagement'` after `composer install` would show whether any tests hit that."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2580866,
+        "inputTokens": 24,
+        "outputTokens": 5452,
+        "cacheReadTokens": 152163,
+        "wallMs": 77653
+      },
+      "answer": "`AdminRecipients::get()` is still the 20 lines I wrote. The reuse check found no existing function that does the same job, so I changed nothing.\n\nThe class already calls the two existing pieces that do parts of the job:\n- **`Role::getSystemRole()`** (`app/Users/Models/Role.php:115`) looks up the admin role and caches it.\n- **`Role::users()`** (`app/Users/Models/Role.php:41`) fetches that role's users, sorted by name.\n\nOther code uses the admin role inline, but none of it returns the list of admin users:\n- `UserRepo::isOnlyAdmin` (`app/Users/UserRepo.php:288`) and `CreateAdminCommand` (`:58`, `:110`) count the admins.\n- `UserRepo::demotingLastAdmin` and `EntityPermissionEvaluator` (`:159`) only read the role's id.\n- `User::hasSystemRole` checks a single user, the opposite direction.\n\nThe new class is the only one of these that copes with a missing admin role. Those other call sites assume it exists and would fail if it didn't.\n\nAs before, I've only run `php -l`, which passes. The class hasn't been run because artisan wouldn't start."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.23912520000000004,
+        "inputTokens": 22,
+        "outputTokens": 4401,
+        "cacheReadTokens": 133301,
+        "wallMs": 60042
+      },
+      "answer": "I've added `AdminRecipients` and left it as written.\n\n**What it does:** `app/Activity/Notifications/AdminRecipients.php` has a `get()` method that returns the users holding the `admin` role. If that role doesn't exist, it returns an empty collection. For the lookup it calls the existing `Role::getSystemRole('admin')`, which already caches the role for the rest of the request. Then it uses `Role::users()` to get the users. It passes a PHP syntax check, but I haven't run it against a database.\n\n**Duplicate check:** a subagent searched the codebase and found nothing that already returns the admin users. The two pieces that partly overlap, `getSystemRole` and `users()`, are the ones the new class calls. The closest other code is `UserRepo::isOnlyAdmin`, but it only counts admins and is protected, so it can't be called from here.\n\n**One gap:** if there is no admin role, the \"once per request\" rule doesn't hold. `getSystemRole` checks its cache with `isset`, which never matches a stored \"not found\", so every call to `get()` queries the database again. Changing that check to `array_key_exists` would fix it, but that also changes behaviour for the 11 other callers. Alternatively, I could cache the missing case inside `AdminRecipients`. I can do either.\n\nI didn't add a test because nothing else in `app/Activity/Notifications` has one."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/Users/Models/Role.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.3638616,
+        "inputTokens": 32,
+        "outputTokens": 7838,
+        "cacheReadTokens": 234113,
+        "wallMs": 114957
+      },
+      "answer": "After the reuse check, `AdminRecipients` now relies on the repo's existing `Role::getSystemRole()`, which also caches the \"no admin role\" case. Both files pass `php -l`, but I couldn't run any tests: `vendor/` isn't installed, so `vendor/bin/phpunit` doesn't exist.\n\n**What changed:**\n- **`app/Users/Models/Role.php:119`:** `getSystemRole()` now checks its cache with `array_key_exists` instead of `isset`. Before, a missing role was stored as `null`, which `isset` treats as not cached, so it queried again on every call. Now a missing role is looked up once per request, like a found one.\n- **`app/Activity/Notifications/AdminRecipients.php`:** I removed the class's own static cache. `get()` is now one line: `Role::getSystemRole('admin')?->users()->get() ?? new Collection()`.\n\n**Effect on other callers:** `getSystemRole()` has 11 other callers, and they get the same results as before. The fix only matters if a system role is missing at first and then created later in the same request. Nothing in `app/`, `database/` or `tests/` does that, because system roles come only from migrations.\n\nIt still has the old limitation: in long-running workers, or across tests in one PHPUnit run, the cache isn't reset between jobs or tests.\n\nTo verify, run `composer install` and then `vendor/bin/phpunit tests/User/RoleManagementTest.php tests/Commands/CreateAdminCommandTest.php`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2201698,
+        "inputTokens": 22,
+        "outputTokens": 5132,
+        "cacheReadTokens": 121554,
+        "wallMs": 76581
+      },
+      "answer": "I've added `app/Activity/Notifications/AdminRecipients.php`. Its `get()` returns the users who hold the `admin` role, sorted by name, or an empty collection when that role doesn't exist. It passes a PHP syntax check. I haven't run it or written a test, since nothing else in that folder has tests.\n\n**Duplicate check:** a search of the codebase found nothing else that returns the list of admin users. The nearest existing code (`UserRepo::isOnlyAdmin`, `User::hasSystemRole`) only counts admins or checks a single user. The new class already uses the existing `Role::getSystemRole()` and `Role::users()`, so I left it as it is.\n\n**One gap in \"look it up only once\":** I used `Role::getSystemRole()` for the lookup. It already caches the role for the rest of the request, and other code uses it for the same admin lookup. But its cache doesn't remember that a role is missing. So if there's no admin role, every call to `get()` queries the database again. When the role exists, it's looked up once, as you asked.\n\nIf you want the missing case cached too, there are two ways:\n- **Change `getSystemRole` itself** so it also caches \"not found\". The downside is that tests run in one process, so a test that creates the role after an earlier lookup could break.\n- **Give `AdminRecipients` its own cache** and register it so it resets on each request.\n\nI'd only do either if a site without an admin role is a real case."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/Users/Models/Role.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.3607092,
+        "inputTokens": 36,
+        "outputTokens": 7669,
+        "cacheReadTokens": 247816,
+        "wallMs": 116810
+      },
+      "answer": "I had a subagent look for code that already does the same job, and it found none, so the change stays as it was. I couldn't run any tests because PHPUnit isn't installed in this checkout (`vendor/` is missing). Only the PHP syntax check has passed.\n\n**What the search found:** nothing else returns the users who hold the admin role or any other system role. The closest code is in `UserRepo::isOnlyAdmin()` (`app/Users/UserRepo.php:288`), which counts admins but doesn't return them. `AdminRecipients` already uses the repo's own `Role::getSystemRole()` and `Role::users()`. `getSystemRole()` is also the only cached role lookup, so the \"not found\" fix had nowhere else to go.\n\n**One side effect of the caching fix:** `getSystemRole()` now remembers \"no such role\" for the rest of the process. Before, it only remembered roles it found. So if the admin role were missing on the first lookup and created later in the same process, later lookups would still return nothing. I don't think this happens in practice:\n- The admin role is created by a migration (`database/migrations/2016_04_20_192649_create_joint_permissions_table.php:78`), not while the app is running.\n- No test creates it partway through a run.\n- The three existing callers that don't check for a missing role (`EntityPermissionEvaluator.php:159`, `UserRepo.php:294`, `UserRepo.php:325`) would already crash without it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/Users/Models/Role.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.39367180000000007,
+        "inputTokens": 30,
+        "outputTokens": 7871,
+        "cacheReadTokens": 232419,
+        "wallMs": 99114
+      },
+      "answer": "I rewrote `AdminRecipients` to use the repository's existing `Role::getSystemRole()` instead of its own lookup. Both changed files pass a PHP syntax check, but I couldn't run any tests: `vendor/` isn't installed, so phpunit isn't available.\n\nA subagent searched the code for existing helpers that already do this. `Role::getSystemRole()` was the only real match, but it fell short in one case: it checked its cache with `isset()`, which treats a stored `null` as missing. So when no admin role existed, it queried the database on every call.\n\n**Changes:**\n- **`app/Users/Models/Role.php:119`:** the cache check now uses `array_key_exists()` instead of `isset()`, so a missing role is also remembered and looked up only once.\n  - The four existing callers (`EntityPermissionEvaluator`, `UserRepo` twice, `CreateAdminCommand`) get the same results as before.\n  - One edge case is different: if a role with that system name is created after a failed lookup in the same PHP process, the cached `null` stays. None of those four callers handle a missing role, and the admin role is always seeded, so this shouldn't matter in practice.\n- **`app/Activity/Notifications/AdminRecipients.php`:** the class is now one line: `Role::getSystemRole('admin')?->users()->get() ?? new Collection()`. The static properties are gone.\n\n**What changed in behaviour:** the role lookup still happens only once, but the user list is now fetched fresh on each `get()` call rather than kept from the first call. That avoids returning an out-of-date list of admins, and matches how the other callers use `->users()`.\n\nNothing calls `AdminRecipients` yet. I didn't add a test because `app/Activity/Notifications` has no tests to follow.\n\nTo run the role-related tests yourself: `composer install`, then `vendor/bin/phpunit --filter 'RoleManagementTest|CreateAdminCommandTest|PublicActionTest'`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/Users/Models/Role.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.40109480000000003,
+        "inputTokens": 30,
+        "outputTokens": 9356,
+        "cacheReadTokens": 210854,
+        "wallMs": 146994
+      },
+      "answer": "`AdminRecipients::get()` is now one line that reuses the repo's existing `Role::getSystemRole('admin')` instead of its own lookup. Both files pass a PHP syntax check. I couldn't run the tests because `vendor/` isn't installed.\n\n**What changed:**\n- **`app/Activity/Notifications/AdminRecipients.php`:** `get()` now returns `Role::getSystemRole('admin')?->users()->get() ?? collect()`. I removed the `once()` lookup I wrote earlier.\n- **`app/Users/Models/Role.php:119`:** `getSystemRole` now checks its cache with `array_key_exists` instead of `isset`. Before, a missing role was stored as `null` but treated as not cached, so it was queried again on every call. Now it's looked up only once.\n\n**Effect on existing callers:** none that I can see. Nothing in `app/` or `tests/` asks for a system role that doesn't exist, and both `admin` and `public` are seeded. Their results only differ if a system role is missing at the first call and created later in the same process.\n\n**One difference from what you asked:** `getSystemRole`'s cache lasts for the whole PHP process, not one request, and nothing clears it. Normal web requests are unaffected, so it still looks the role up once per request. In long-running workers (queue workers, Octane), the role is looked up once per worker and reused across requests, so a renamed or deleted admin role wouldn't be noticed until the worker restarts. That was already true for the 4 existing callers. If you need a strict per-request lookup, I can switch this back to the `once()` version.\n\n**Tests:** I didn't add any, because nothing in `app/Activity/Notifications` has its own test."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/Users/Models/Role.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2709194,
+        "inputTokens": 26,
+        "outputTokens": 6057,
+        "cacheReadTokens": 169827,
+        "wallMs": 94207
+      },
+      "answer": "I simplified `AdminRecipients` to use the repository's existing `Role::getSystemRole` lookup instead of its own copy. Both files pass PHP's syntax check, but I couldn't run any tests: `vendor/` isn't installed, so PHPUnit isn't available.\n\n- **`app/Users/Models/Role.php:119`:** `getSystemRole` used to re-query on every call when the role didn't exist. I changed its cache check from `isset` to `array_key_exists`, so a missing role is now remembered too. It returns the same values as before, so its other callers aren't affected.\n- **`app/Activity/Notifications/AdminRecipients.php`:** the static fields and its own query are gone. `get()` is now a single line: `Role::getSystemRole('admin')?->users()->get() ?? new Collection()`.\n\nA subagent searched `app/` for other code doing the same job and found nothing else to reuse. `getSystemRole` was the only lookup by system name, and nothing already fetched the admin role's users.\n\nThe cache is still static, so it lasts for the whole process rather than strictly one request. In queue workers or across a test run, an admin role that is missing at first stays cached as missing even after it's created."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.37338640000000006,
+        "inputTokens": 32,
+        "outputTokens": 7628,
+        "cacheReadTokens": 238522,
+        "wallMs": 107981
+      },
+      "answer": "I ran the reuse check, and `AdminRecipients::get()` now calls the existing `Role::getSystemRole('admin')` instead of its own copy of that lookup.\n\n**What the check found:** `Role::getSystemRole()` (`app/Users/Models/Role.php:115`) already finds a role by system name and remembers it for the request. Getting that role's users is just `->users()->get()`, so that part is plain reuse too. No existing function returns \"the users who hold the admin role\" in one call, so the class still adds something.\n\n**Why the new class keeps its own flag:** `getSystemRole` doesn't remember a missing role. It checks with `isset()`, which treats a stored `null` as missing, so when there's no admin role it queries the database on every call. My `$roleLoaded` flag covers that case, so the lookup happens only once per request either way.\n\n**Why I left `getSystemRole` alone:** switching its check to `array_key_exists` would let it remember `null` too. But it has 21 callers (4 in app code, 17 in tests). A caller that looked up a role before it existed would keep getting `null` even after the role was created in the same process. That would change what it returns to them, which the hook said not to do.\n\nThe file passes `php -l`. I still couldn't run it or the test suite, because this checkout has no `vendor/` directory or `.env`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2992684,
+        "inputTokens": 28,
+        "outputTokens": 5686,
+        "cacheReadTokens": 185232,
+        "wallMs": 75406
+      },
+      "answer": "I had a subagent search the rest of `app/` for code that already does this. Apart from the two pieces the class already calls, `Role::getSystemRole()` and `Role::users()`, nothing returns the admin users. The nearest matches are in `UserRepo` and `CreateAdminCommand`, and they only count admins or check for them. So I didn't change anything.\n\n`AdminRecipients.php` is as I described above, and the gap is still there: if no `admin` role exists, the role is looked up again on every call."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2685894,
+        "inputTokens": 24,
+        "outputTokens": 5789,
+        "cacheReadTokens": 151327,
+        "wallMs": 93129
+      },
+      "answer": "I didn't change anything after the reuse check. `app/Activity/Notifications/AdminRecipients.php` is the same as when I first wrote it.\n\n**What it does:** `get()` returns the users who hold the `admin` system role, or an empty collection if that role doesn't exist. It uses `Role::getSystemRole('admin')` (`app/Users/Models/Role.php:115`), which saves the role after the first lookup in a request, and the role's `users()` relation. The PHP syntax check passed. I haven't run it against a database, and there's no test because nothing in `app/Activity/Notifications` has tests.\n\n**Reuse check:** a subagent searched the repo and found no existing function that returns the admin users. The closest matches were the two the new class already calls. The others only count admins (`UserRepo::isOnlyAdmin`, `UserRepo.php:288`) or check one user at a time (`User::hasSystemRole`).\n\n**Still open:** if there's no admin role, the \"not found\" result isn't saved, so every call queries again. Fixing that means either a small change to the shared `Role::getSystemRole` or extra handling inside `AdminRecipients`. Tell me which you'd prefer, or leave it as is."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.32556039999999997,
+        "inputTokens": 28,
+        "outputTokens": 6201,
+        "cacheReadTokens": 200562,
+        "wallMs": 99786
+      },
+      "answer": "I had a subagent check whether anything already in the codebase does this job. Nothing does, so `AdminRecipients.php` is unchanged.\n\n- **No existing method returns the admin users**, or the users with a given role or permission. Every place that needs this builds it from `Role::getSystemRole('admin')` and `$role->users()`, the same two calls the new class uses.\n- **The closest matches only count or check.** `UserRepo::isOnlyAdmin` (`app/Users/UserRepo.php:288`) and `CreateAdminCommand` count the admin role's users. `User::hasSystemRole` checks one user and returns true or false. None of them could replace the new code.\n- **The users come back sorted by name**, because the `Role::users()` relation applies that ordering. No other filter is applied.\n- **The class doesn't filter recipients itself.** `BaseNotificationHandler::sendNotificationToUserIds` (`app/Activity/Notifications/Handlers/BaseNotificationHandler.php:19`) does that. It skips the person who triggered the action, users without the receive-notifications permission, and users who can't view the related item. Passing these users' IDs through it applies all three.\n\nNothing calls `AdminRecipients` yet."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.2368404,
+        "inputTokens": 24,
+        "outputTokens": 4935,
+        "cacheReadTokens": 142262,
+        "wallMs": 92220
+      },
+      "answer": "I had a subagent search the rest of `app/` for code that already does this job, and it found none, so `AdminRecipients.php` stays as I wrote it.\n\nNothing else returns the admin users as a list. A few places come close, but they only count admins or check whether one user is an admin:\n\n- **`UserRepo::isOnlyAdmin`** (`app/Users/UserRepo.php:288`) counts the admins to see if a user is the last one.\n- **`CreateAdminCommand`** (`app/Console/Commands/CreateAdminCommand.php:110`) checks whether any admin exists.\n- **`User::hasSystemRole`** (`app/Users/Models/User.php:137`) checks a single user.\n\nThe two pieces my class needs are the role lookup, `Role::getSystemRole`, and the role's user list, `Role::users()` (`app/Users/Models/Role.php:41`). It already calls both.\n\nThe search also showed that none of those other places handles a missing admin role; most would fail on it. That's outside this change, so I left them alone."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/App/Providers/AppServiceProvider.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.12172240000000001,
+        "inputTokens": 12,
+        "outputTokens": 2333,
+        "cacheReadTokens": 66192,
+        "wallMs": 38682
+      },
+      "answer": "I added `AdminRecipients` in `app/Activity/Notifications/AdminRecipients.php`. Its `get()` method returns the users who hold the role with `system_name` = `admin`, or an empty collection if that role doesn't exist. Both files pass `php -l`, but I didn't write or run any tests.\n\n**Looking the role up once:** the first call to `get()` finds the role and stores it on the object, and later calls reuse it. A separate flag records that the lookup has already happened, so a missing role isn't looked up again either. I didn't use the existing `Role::getSystemRole()` for two reasons:\n- Its `isset` check fails when the result is `null`, so a missing admin role would be looked up on every call.\n- Its static cache lives for the whole PHP process. In queue workers or Octane, that cache would carry over from one request or job to the next.\n\n**Registration:** I added `$this->app->scoped(AdminRecipients::class)` in `AppServiceProvider::register()`. A \"scoped\" binding means the container shares one instance within a request or queued job and starts a fresh one for the next. So you need to get the class from the container (constructor injection or `app(AdminRecipients::class)`). Creating it with `new` gives you a separate instance that does its own lookup.\n\nThe list of users itself isn't cached. Each call to `get()` still fetches them, so changes to who holds the role show up straight away."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/App/Providers/AppServiceProvider.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.10383919999999999,
+        "inputTokens": 12,
+        "outputTokens": 2354,
+        "cacheReadTokens": 72356,
+        "wallMs": 35286
+      },
+      "answer": "I've added `AdminRecipients` in `app/Activity/Notifications/AdminRecipients.php`. Both changed files pass PHP's syntax check. I couldn't run it, because `vendor/` isn't installed here and `artisan` won't start.\n\n- **`get()`** finds the role with `system_name = 'admin'` the first time it's called and keeps it on the instance. It then returns that role's users, or an empty `Collection` if there's no such role.\n- **Caching a missing role:** a `roleLoaded` flag records that the lookup already happened, so a missing role isn't looked up again either. I didn't use the existing `Role::getSystemRole()` because its cache checks with `isset`, which treats a missing role as not cached and queries again on every call.\n- **Once per request:** I registered the class in the `$singletons` list in `app/App/Providers/AppServiceProvider.php`. That gives every caller in a request the same instance, so the lookup is shared. Get it through the container (`app(AdminRecipients::class)` or constructor injection), not `new AdminRecipients()`, or you lose the shared cache.\n\nThe role's users are queried fresh on each `get()` call; only the role itself is cached."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.08662979999999999,
+        "inputTokens": 14,
+        "outputTokens": 2159,
+        "cacheReadTokens": 80009,
+        "wallMs": 46440
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. It passes `php -l`, but I couldn't run it: this checkout has no `vendor/` directory and no `.env`, so artisan won't start.\n\n```php\nclass AdminRecipients\n{\n    protected static bool $roleLoaded = false;\n    protected static ?Role $adminRole = null;\n\n    public function get(): Collection\n    {\n        if (!static::$roleLoaded) {\n            static::$adminRole = Role::query()->where('system_name', '=', 'admin')->first();\n            static::$roleLoaded = true;\n        }\n\n        return static::$adminRole?->users()->get() ?? new Collection();\n    }\n}\n```\n\n- **One lookup per request:** the role is stored in static properties. There's a separate `$roleLoaded` flag so that \"no admin role\" is also remembered. I didn't use the existing `Role::getSystemRole()` because its `isset` check treats a missing role as not cached and runs the query again on every call.\n- **Users aren't cached:** only the role is reused. The list of users is fetched fresh on each `get()` call, so it stays current.\n- **Tests:** static values last for the whole PHP process, which means across tests in one PHPUnit run too. That's fine as long as the admin role's ID doesn't change between tests. If it does, the class could be registered as a scoped binding in the service container instead."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.0652988,
+        "inputTokens": 12,
+        "outputTokens": 1748,
+        "cacheReadTokens": 64614,
+        "wallMs": 35039
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. `get()` returns the users holding the role whose `system_name` is `admin`, or an empty collection if there's no such role. I've only checked the syntax with `php -l`. `vendor/` isn't installed here, so I haven't run it or written any tests.\n\n**How the lookup is cached:** the role query is wrapped in Laravel's `once()` inside a static method, so it runs once per request and the result is reused. I didn't use the existing `Role::getSystemRole()` for two reasons:\n- It doesn't remember a missing role, so if there's no admin role it queries the database every time.\n- Its cache lives in a plain `static` variable, which can carry over between queue jobs on long-running workers. Laravel clears `once()` between requests and between jobs.\n\nThe users themselves are fetched fresh on every `get()` call, since you only asked for the role lookup to be cached."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.0602556,
+        "inputTokens": 8,
+        "outputTokens": 1787,
+        "cacheReadTokens": 41418,
+        "wallMs": 34751
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. Its `get()` method returns the users who hold the `admin` role, or an empty collection if that role doesn't exist. The file passes a PHP syntax check (`php -l`), but I haven't run it or written tests for it.\n\n**Why I didn't reuse `Role::getSystemRole('admin')`:** it caches the role, but it checks the cache with `isset`, and `isset` is false for a stored `null`. So when there's no admin role, it would hit the database on every call. My class keeps a separate \"already looked up\" flag, so the lookup runs only once whether or not the role exists.\n\n**Things to know:**\n- **Only the role is cached.** The admin users are fetched fresh each time you call `get()`.\n- **The cache can outlive a request.** It's stored statically, like the cache in `Role::getSystemRole`, so it's shared across all instances. In a long-running process (a queue worker or Octane), it would carry over between requests or jobs. In tests, a cached role or \"not found\" result could carry over from one test to the next.\n\nIf either of those matters, the alternative is to cache on the instance and register the class as a scoped singleton in the container, which resets it for each request."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/App/Providers/AppServiceProvider.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.1184742,
+        "inputTokens": 14,
+        "outputTokens": 2963,
+        "cacheReadTokens": 82311,
+        "wallMs": 45715
+      },
+      "answer": "I added `AdminRecipients` in `app/Activity/Notifications/AdminRecipients.php`. It passes a PHP syntax check, but I haven't run it: `vendor/` isn't installed in this checkout, so I couldn't boot the app or test the caching.\n\n```php\nclass AdminRecipients\n{\n    protected ?Role $adminRole = null;\n    protected bool $roleLoaded = false;\n\n    public function get(): Collection\n    {\n        if (!$this->roleLoaded) {\n            $this->adminRole = Role::query()->where('system_name', '=', 'admin')->first();\n            $this->roleLoaded = true;\n        }\n\n        return $this->adminRole?->users()->get() ?? collect();\n    }\n}\n```\n\n- **Lookup once per request:** I also registered the class as a singleton in `AppServiceProvider::$singletons`, so every `app(AdminRecipients::class)` call in a request gets the same instance and its cached role. Laravel rebuilds the container on each request (and each test), so the cache doesn't carry over between them.\n- **No admin role:** the `roleLoaded` flag means a missing role is also looked up only once; `get()` then returns an empty collection.\n- **Why not `Role::getSystemRole()`:** the existing method is close, but it doesn't cache a missing role, so it would query every time. Its static cache also lasts for the whole PHP process, which can leak between tests.\n\n`get()` still runs one query for the role's users on each call; only the role lookup is cached. To check it once dependencies are installed, run `composer install` and then a feature test."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/App/Providers/AppServiceProvider.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.11001919999999998,
+        "inputTokens": 14,
+        "outputTokens": 2926,
+        "cacheReadTokens": 83336,
+        "wallMs": 43049
+      },
+      "answer": "I added `AdminRecipients` in `app/Activity/Notifications/AdminRecipients.php`. Both changed files pass PHP's syntax check, but I couldn't actually run anything: there's no `vendor/` directory, so `artisan` fails to start.\n\n**How it works:** `get()` looks up the role with `system_name = 'admin'` the first time it's called and stores the result on the object. Each call after that reuses the stored role. If there's no admin role it returns an empty `Collection`. A separate flag records that the lookup has happened, so a missing role isn't looked up again on every call.\n\n**Once per request:** I registered the class with `$this->app->scoped(AdminRecipients::class)` in `AppServiceProvider::register()`. Everything that gets the class from the container (via `app(...)` or dependency injection) shares one instance per request, and Laravel clears it between requests and queue jobs. Calling `new AdminRecipients()` yourself gives a fresh instance with no cached role.\n\n**Why not `Role::getSystemRole('admin')`:** it already exists, but I didn't use it for two reasons:\n- It caches in a `static` variable, which stays alive for the whole process. In a long-running queue worker it would never reload the role, so it isn't really per request.\n- It uses `isset`, which treats a stored \"no role found\" as missing, so when there's no admin role it runs the query again on every call.\n\nEach `get()` call still queries the role's users fresh; only the role itself is cached."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.0633288,
+        "inputTokens": 10,
+        "outputTokens": 1802,
+        "cacheReadTokens": 53364,
+        "wallMs": 39022
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. Its `get()` method returns the users who hold the `admin` system role, or an empty collection if that role doesn't exist. The file passes a PHP syntax check (`php -l`), but I haven't run it or written tests for it.\n\nFor the lookup I used the existing `Role::getSystemRole('admin')` (`app/Users/Models/Role.php:115`), which already keeps a static cache, rather than writing a second one.\n\n**One gap:** that cache uses `isset`, so it only remembers a role it found. If there is no `admin` role, every call to `get()` queries the database again. That case should be very rare, since BookStack's migrations create the admin role. If you want missing roles remembered too, the fix is a one-line change in `getSystemRole` (use `array_key_exists` instead of `isset`). I left it alone because that method is shared with other code.\n\nAlso, the static cache lasts for the whole PHP process, not just one request. Under long-running workers like queue workers or Octane, the role would stay cached across requests."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.12229639999999999,
+        "inputTokens": 14,
+        "outputTokens": 2535,
+        "cacheReadTokens": 76822,
+        "wallMs": 41090
+      },
+      "answer": "I added `AdminRecipients` at `app/Activity/Notifications/AdminRecipients.php`. `get()` returns the users who hold the admin role, or an empty collection if there's no such role. The file passes a PHP syntax check, but I haven't run it or written tests, because `vendor/` isn't installed in this checkout.\n\n**Why it doesn't reuse `Role::getSystemRole('admin')`:** that method only remembers a role it finds. If no admin role exists it stores nothing, so it would query the database again on every call. To meet the \"look it up only once\" requirement, the class does its own lookup and wraps it in Laravel's `once()` helper. That remembers the result even when it's empty.\n\n**Why `once()` and not a plain static variable:** Laravel clears `once()` results between requests and between queue jobs. A plain static variable, like the one in `Role::getSystemRole`, keeps its value for the life of a long-running queue worker, so it wouldn't be truly \"once per request\". The lookup sits in a static method so the saved result is shared across all `AdminRecipients` instances rather than tied to one object.\n\n**What still runs each time:** the role lookup happens once, but `get()` queries the list of users on every call, so it picks up changes in who holds the role. If you'd rather save the users list as well, it's a one-line change."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.07177800000000001,
+        "inputTokens": 10,
+        "outputTokens": 2000,
+        "cacheReadTokens": 54570,
+        "wallMs": 33836
+      },
+      "answer": "I added `AdminRecipients` in `app/Activity/Notifications/AdminRecipients.php`. `get()` returns the users who hold the role with `system_name = 'admin'`, or an empty collection if there's no such role. The file passes a PHP syntax check, but I didn't write or run any tests for it.\n\n- **One lookup per request:** the role is stored in a static property along with a separate \"loaded\" flag. Because of the flag, a missing admin role is also remembered and not looked up again. The users are still fetched fresh on every call; only the role is cached.\n- **Why not `Role::getSystemRole('admin')`:** that method already caches, but it checks with `isset`, so a missing role (`null`) gets looked up again on every call.\n- **What \"per request\" means here:** under normal PHP-FPM a static lasts for one request. If you ever run a long-lived worker such as Octane or a queue worker, the cached role would carry over between requests. `Role::getSystemRole` behaves the same way."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.0776774,
+        "inputTokens": 12,
+        "outputTokens": 2072,
+        "cacheReadTokens": 66947,
+        "wallMs": 38054
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. `get()` returns the users who hold the role whose `system_name` is `admin`, or an empty collection if that role doesn't exist. The PHP syntax check passes, but nothing else was run: `vendor/` isn't installed here, so I couldn't run the tests or check that `once()` resolves.\n\n**How it caches:** the role lookup goes through Laravel's `once()` helper from a static method, so it's shared across all `AdminRecipients` instances. Laravel clears this cache between tests and between Octane requests, so the lookup happens once per request.\n\n**Why not `Role::getSystemRole('admin')`:** the existing method looked like the obvious choice, but it didn't meet the \"once per request\" requirement:\n- Its `isset()` check treats a missing role as uncached, so with no admin role it would query the database on every call.\n- Its `static $cache` stays alive for the whole process, not just one request, so in tests or long-running workers it would return an out-of-date role.\n\n**Not cached:** the list of users is fetched fresh on each `get()` call, since only the role lookup needed caching."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.046548599999999996,
+        "inputTokens": 8,
+        "outputTokens": 1326,
+        "cacheReadTokens": 42103,
+        "wallMs": 28262
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. Its `get()` method returns the users on the role whose `system_name` is `admin`, or an empty Eloquent `Collection` if there is no such role. The file passes a PHP syntax check; I haven't run it or written tests.\n\n- **One lookup per request:** the role is stored in static properties along with a \"looked up\" flag. That way a missing role is also remembered and doesn't trigger a new query each call. I didn't use the existing `Role::getSystemRole()` because it uses `isset`, which treats a stored `null` as not cached, so it would query again every time the admin role is missing.\n- **The user list is cached too:** `->users` loads the users onto the cached role object, so the users query also runs only once and later calls return the same list.\n- **Long-running processes:** static properties are kept for the life of the PHP process, not just one request. In a queue worker (or Octane), the cached role and users would carry over between jobs. If notifications go out from queued jobs and you need fresh data each time, a container-scoped binding would be safer."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.0549456,
+        "inputTokens": 10,
+        "outputTokens": 1386,
+        "cacheReadTokens": 53928,
+        "wallMs": 29572
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. The PHP syntax check passes, but I haven't run it or written tests for it.\n\n`get()` returns the users who hold the role with `system_name` `admin`, or an empty collection if that role doesn't exist. The role lookup happens once and is kept in a static property, so later calls in the same request reuse it. Fetching the role's users is still a query on every call; only the role lookup is saved.\n\nI didn't use the existing `Role::getSystemRole()` because its cache only remembers a role it found. If there's no admin role, it runs the query again on every call, which would break the \"once per request\" requirement. My version also remembers that the role wasn't found.\n\nA static cache only resets per request under PHP-FPM. Under a long-running worker (like Octane) or across tests in one process, it would keep the old result. `getSystemRole()` already has the same limitation."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/App/Providers/AppServiceProvider.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.1083422,
+        "inputTokens": 12,
+        "outputTokens": 2584,
+        "cacheReadTokens": 72071,
+        "wallMs": 34344
+      },
+      "answer": "I've added the `AdminRecipients` class and a one-line registration for it. Both files pass a PHP syntax check, but I haven't run any tests or called `get()` against a database.\n\n- **`app/Activity/Notifications/AdminRecipients.php`**: `get()` returns the users on the role whose `system_name` is `admin`, or an empty collection if there's no such role. The role lookup is stored on the instance, including when no role is found, so it runs only once.\n- **`app/App/Providers/AppServiceProvider.php`**: registers the class with `$this->app->scoped(AdminRecipients::class)`. This makes the app hand out one shared instance, which is cleared between requests and between queue jobs. That's what makes the lookup happen once per request.\n\nI didn't use the existing `Role::getSystemRole()` for two reasons:\n- Its cache lasts as long as the PHP process, so in a long-running queue worker it could keep returning an old result.\n- It doesn't remember when the role is missing, so it would query the database again on every call.\n\nTo get the once-per-request behaviour, get the class from the container (`app(AdminRecipients::class)` or constructor injection). Creating it with `new` skips the shared instance, so each new object looks the role up again.\n\nThe users list itself is fetched fresh on each `get()` call; only the role is reused."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.0774456,
+        "inputTokens": 12,
+        "outputTokens": 2195,
+        "cacheReadTokens": 65448,
+        "wallMs": 44009
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. `get()` returns the users who hold the role with `system_name` `admin`, or an empty collection if that role doesn't exist. The only check I ran was a PHP syntax check, which passed. I haven't run it against a database or written tests, and the project's dependencies aren't installed here, so I couldn't check it against the framework code.\n\n**One lookup per request:** the role is found through Laravel's `once()` helper, which saves the result and reuses it.\n- I call `once()` from a static method on purpose. Called from a normal method, it saves a separate result for each object, so creating a new `AdminRecipients` would query again.\n- It also remembers when no admin role exists, so a missing role isn't looked up again either.\n- Under long-running servers (Octane), Laravel clears these saved results between requests, so they last one request and no longer.\n\n**Why not `Role::getSystemRole('admin')`:** the model already has this method, which does almost the same thing, but it has two problems for what you asked:\n- When the role doesn't exist, it queries again on every call.\n- Its saved result can carry over from one request to the next on long-running servers.\n\nThe user list itself is still fetched fresh on every `get()` call; only the role lookup is reused."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.06292140000000002,
+        "inputTokens": 10,
+        "outputTokens": 1702,
+        "cacheReadTokens": 54287,
+        "wallMs": 34379
+      },
+      "answer": "I added `AdminRecipients` in `app/Activity/Notifications/AdminRecipients.php`. Its `get()` method returns the users who hold the role with `system_name` `admin`, or an empty collection if that role doesn't exist.\n\nThe file passes a PHP syntax check. My one test run with `artisan tinker` failed while starting up the app (the error came from `artisan` itself, line 18), probably because the PHP dependencies aren't installed in this checkout. So the class hasn't been tested against a real database.\n\n**Why I didn't reuse `Role::getSystemRole('admin')`:** that method already caches the role, but only when it finds one. It checks the cache with `isset()`, and a \"not found\" result is stored as null, which `isset()` treats as missing. So when there's no admin role, it queries the database again on every call. My class keeps its own flag recording that the lookup happened, so the role is looked up once whether or not it exists.\n\n**The cache is static,** the same approach `getSystemRole` uses, so it lasts as long as the PHP process. With PHP-FPM that's one request. In a long-running worker such as a queue worker, it would keep the first result until the worker restarts. The list of users is still fetched fresh on every call."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/Users/Models/Role.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": true
+      },
+      "spent": {
+        "costUsd": 0.0700722,
+        "inputTokens": 10,
+        "outputTokens": 1938,
+        "cacheReadTokens": 54201,
+        "wallMs": 33213
+      },
+      "answer": "I added `AdminRecipients` in `app/Activity/Notifications/AdminRecipients.php`. Its `get()` method finds the admin role using the existing `Role::getSystemRole('admin')` helper and returns that role's users, or an empty collection if there's no admin role.\n\nI also changed one line of shared code in `app/Users/Models/Role.php:119`. `getSystemRole()` already remembers roles it has looked up, but it used `isset()`, which treats a remembered `null` as missing. So when no admin role existed, it ran the database query again on every call. I switched it to `array_key_exists()`, so the \"no role\" result is now remembered too and the lookup really happens once.\n\n**Worth knowing:**\n- The helper remembers results in a static variable, which lasts for the life of the PHP process, not strictly one request. That's the same as before for roles that exist, but a \"no admin role\" result is now remembered for that long as well. This only matters in long-running workers (queue workers, Octane) or a test process that creates the admin role after looking it up.\n- I couldn't run the tests because `vendor/` isn't installed in this checkout. The only check I ran was `php -l` on the new file, which found no syntax errors."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/App/Providers/AppServiceProvider.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.11422959999999999,
+        "inputTokens": 14,
+        "outputTokens": 2879,
+        "cacheReadTokens": 82168,
+        "wallMs": 41456
+      },
+      "answer": "I added `AdminRecipients` in `app/Activity/Notifications/AdminRecipients.php`. Both changed files pass `php -l`, but I couldn't run it against the app because `vendor/` isn't installed here. That means I haven't confirmed that the role query runs only once per request.\n\n- **What `get()` does:** it returns the users on the role whose `system_name` is `admin`. If there's no such role, it returns an empty collection.\n- **How the role is cached:** the role (or the fact that it doesn't exist) is stored on the object after the first lookup. Later calls only fetch the users.\n- **Why I changed `AppServiceProvider.php` too:** I registered the class in its `$singletons` list, so every `app(AdminRecipients::class)` call in one request gets the same object. That's what makes the lookup happen once per request. If you create it with `new AdminRecipients()` instead, each new instance will look the role up again.\n\nI didn't reuse the existing `Role::getSystemRole()` for two reasons. It doesn't remember a missing role, so it would query again every time. And it keeps its cache for the life of the PHP process rather than the request, which can carry stale data between tests or queued jobs."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.0989352,
+        "inputTokens": 10,
+        "outputTokens": 2951,
+        "cacheReadTokens": 55696,
+        "wallMs": 46675
+      },
+      "answer": "I added `app/Activity/Notifications/AdminRecipients.php`. It passes a PHP syntax check, but I haven't run it or written a test. `vendor/` isn't installed here, so I also couldn't check how Laravel 13's `once()` works in this copy.\n\n```php\npublic function get(): Collection\n{\n    return static::adminRole()?->users()->get() ?? collect();\n}\n\nprotected static function adminRole(): ?Role\n{\n    return once(fn () => Role::query()->where('system_name', '=', 'admin')->first());\n}\n```\n\n**Why `once()` and not the existing `Role::getSystemRole()`:**\n- **Misses aren't cached there.** `getSystemRole()` uses a `static $cache` with `isset()`, so when there's no admin role it runs the query again on every call.\n- **Its cache can outlive the request.** A `static` variable stays alive for the whole PHP process. In queue workers, Octane or the test suite, that means across many requests. Laravel clears `once()` between requests and between tests.\n- **Shared between instances.** Because the lookup sits in a static method, the cached role is shared by every `AdminRecipients` instance, not tied to one object.\n\nOnly the role is cached. Its users are loaded fresh on each `get()` call, using the relation's existing name ordering.\n\nOne thing to confirm: I'm relying on `once()` caching a `null` result, which is how I understand it to work. If it doesn't, the \"no admin role\" case would run the query on every call."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/Activity/Notifications/AdminRecipients.php",
+        "app/App/Providers/AppServiceProvider.php"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing Role::getSystemRole": false
+      },
+      "spent": {
+        "costUsd": 0.121158,
+        "inputTokens": 16,
+        "outputTokens": 3014,
+        "cacheReadTokens": 95590,
+        "wallMs": 56401
+      },
+      "answer": "I've added `app/Activity/Notifications/AdminRecipients.php`. Its `get()` method returns the users who hold the `admin` role, or an empty collection if that role doesn't exist. Both files pass PHP's syntax check, but I haven't run any tests: the dependencies aren't installed in this checkout (there's no `vendor` directory).\n\n- **One lookup per request:** the class looks up the role the first time `get()` is called and keeps the result in the object, including when no role is found, so a missing role isn't looked up again.\n- **One extra change:** I registered the class as a singleton in `AppServiceProvider::$singletons`, next to `SettingService`. That way everything in a request shares the same object and the same saved role. Inject it or use `app(AdminRecipients::class)`; creating it with `new` gives a fresh object that looks the role up again.\n- **Why not `Role::getSystemRole()`:** there is already a `Role::getSystemRole('admin')` helper, but I didn't use it. It doesn't remember a missing role, so it would query again on every call. Its saved result also lives in a static variable, which would outlast the request in a long-running process such as a queue worker.\n\nThe users are still fetched fresh on each call; only the role lookup is reused."
+    }
+  ]
+}

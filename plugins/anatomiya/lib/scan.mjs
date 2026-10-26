@@ -1,3 +1,5 @@
+import { join, posix } from "node:path";
+
 import { collect, gitRoot, countUntrackedSource, frameworksIn, langsIn } from "./corpus.mjs";
 import { embeddedIn, langHas } from "./langs.mjs";
 import { discover, areaFloor, areaCeiling, areaIndex, dirCount, globsReach } from "./areas.mjs";
@@ -14,7 +16,25 @@ import { resolve as resolveBaseline, measure as measureBaseline } from "./baseli
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
 import { extOf, extOrName } from "./paths.mjs";
+import { MANIFESTS, ownPackages } from "./own-packages.mjs";
+import { isLink, readHead } from "./rules.mjs";
 import { commonImports, mostImported } from "./siblings.mjs";
+
+// A manifest larger than this is no manifest anybody wrote by hand, and is not read.
+const MANIFEST_MOST_BYTES = 256 * 1024;
+
+/** Each manifest the repository tracks, as `{ rel, text }`, read whole, links passed over. */
+function manifestsIn(root, others) {
+  const read = [];
+  for (const { rel } of others) {
+    if (!MANIFESTS.has(posix.basename(rel))) continue;
+    const abs = join(root, rel);
+    if (isLink(abs)) continue;
+    const entry = readHead(abs, MANIFEST_MOST_BYTES, { whole: true });
+    if (entry.kind === "file" && entry.head !== null) read.push({ rel, text: entry.head });
+  }
+  return read;
+}
 
 /**
  * What a repository-wide pool counts under.
@@ -118,6 +138,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   stateRun.catch(() => {});
 
   const corpusRels = new Set(files.map((f) => f.rel));
+  const own = ownPackages(manifestsIn(root, others));
   let state, frameworks, head, headRun, cochangeRun, capabilities, areas;
   try {
     // A claim that belongs to a framework cannot be judged without knowing the
@@ -297,10 +318,12 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
   const out = [];
   for (const { area, areaParsed, dims, measuredArea } of described) {
     if (heldIds.has(area.id)) continue;
-    // A language with no static import surface is asked neither question: an
-    // empty roster there would read as a measured "imports nothing". Ruby
-    // names its dependencies in a Gemfile and reaches them through `require`,
-    // which is why its declaration answers no.
+    // A language with no static import surface is not asked what its files
+    // import: an empty roster there would read as a measured "imports
+    // nothing". Ruby names its dependencies in a Gemfile and reaches them
+    // through `require`, which is why its declaration answers no. Who reaches
+    // in here is asked of every language, each by its own way of naming
+    // another file's code (`refs.mjs`).
     const hasImports = area.langs.some((l) => langHas(l, "importGraph"));
 
     const current = { fileCount: area.fileCount, dirCount: dirCount(area.files.map((f) => f.rel)) };
@@ -347,7 +370,7 @@ async function scanning(cwd, { guards = null, runChecker = runSemantic, resolveS
       imports: hasImports ? commonImports(areaParsed) : null,
       // Over every record in the repository, not this area's: the question is
       // who else reaches in here.
-      reused: hasImports ? mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels) : null,
+      reused: mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels, own),
       dimensions: gated.map((d) => ({ ...d, scope: askedScope(languages, d) })),
     });
   }

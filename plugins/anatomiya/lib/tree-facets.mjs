@@ -10,8 +10,9 @@
 import { assertKeyed, hostedBy, placeTestsOf } from "./langs.mjs";
 import { stemOf } from "./paths.mjs";
 import { coveredStem, isTestTree } from "./test-shape.mjs";
+import { treeRefs } from "./tree-refs.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
-import { fieldOf, nameOf, walkTree } from "./tree-walk.mjs";
+import { fieldOf, leaves, nameOf, walkTree } from "./tree-walk.mjs";
 
 const JVM_CASES = new Map(["Test", "ParameterizedTest", "RepeatedTest", "TestFactory", "TestTemplate"].map((name) => [name, null]));
 const JVM_IMPORTS = [
@@ -102,20 +103,6 @@ assertKeyed("RUNNERS", RUNNERS, hostedBy("tree-sitter"));
 
 // Pest declares a case by calling one of these at file level, and imports nothing to do it.
 const PEST_CALLS = new Set(["it", "test"]);
-
-const NONE = new Set();
-
-/** The text of every leaf under a node in source order, passing over the subtrees of the given types. */
-function leaves(node, except = NONE) {
-  const out = [];
-  const work = [node];
-  while (work.length) {
-    const n = work.pop();
-    if (!n.children.length) out.push(n.text);
-    else for (let i = n.children.length - 1; i >= 0; i--) if (!except.has(n.children[i].type)) work.push(n.children[i]);
-  }
-  return out;
-}
 
 const lastSegment = (path) => path.slice(path.lastIndexOf(".") + 1);
 
@@ -226,11 +213,16 @@ export function treeFacets(program, lang, rel = "", { placed = false } = {}) {
   const unimported = cases || collected || read ? (rules.unimported?.(plain || read) ?? null) : null;
   // By place as by name: what the tool collects is the runner's with or without a case in it.
   const byPlace = placed && !empty ? (placeTestsOf(lang)?.runner ?? null) : null;
+  const { refs, defines, ...scope } = treeRefs(program, lang, rel);
   return {
     testRunner: (marked ? markedBy : null) ?? (cases ? runner : null) ?? unimported ?? byPlace ?? (pest ? "pest" : null),
     testCalls: cases || pest,
     // Absent unless true, as the other two engines send `empty`.
     ...(inline ? { inlineTests: true } : {}),
     ...(empty ? { empty: true } : {}),
+    // Absent where empty, as the Ruby facets send them: most files of a large tree reach for nothing in it.
+    ...(refs.length ? { refs } : {}),
+    ...(defines.length ? { defines } : {}),
+    ...scope,
   };
 }

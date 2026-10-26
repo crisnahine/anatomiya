@@ -1,0 +1,20 @@
+{
+  "name": "gitea-get-engine-lang",
+  "repo": "github.com/go-gitea/gitea",
+  "commit": "facc0f2b15460a545151dfb324aa1ef66ccae695",
+  "area": "services/cron",
+  "prompt": "Add a function `CountUsersInactiveSince(ctx context.Context, since timeutil.TimeStamp) (int64, error)` in services/cron/inactive_users.go that counts the rows of the `user` table whose `last_login_unix` is before `since`. Run the count on the database session the context already carries when the caller is inside a transaction, and otherwise on a new session bound to the context. Keep it small.",
+  "did": [
+    {
+      "name": "the function exists",
+      "changed": "^services/cron/inactive_users\\.go$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing db.GetEngine",
+      "contains": "\"gitea\\.dev/models/db\"[\\s\\S]*\\bdb\\.GetEngine\\s*\\(",
+      "in": "^services/cron/inactive_users\\.go$"
+    }
+  ]
+}

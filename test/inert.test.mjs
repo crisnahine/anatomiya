@@ -198,10 +198,12 @@ test("a string spread over lines in a call asks on every line it covers", async 
   assert.deepEqual(await asking("python", 'X = run("""\na\n""")\n'), [1, 2, 3]);
 });
 
-test("a missing grammar skips the file", async (t) => {
+test("a missing grammar or runtime asks about every non-blank line, since nothing proves one inert", async (t) => {
+  // Skipped instead, a broken install turned the check off for every tree-sitter language and said nothing.
   const empty = mkdtempSync(join(tmpdir(), "anatomiya-inert-"));
   t.after(() => removeTree(empty));
-  assert.equal(await inertLinesOf({ engine: "tree-sitter", lang: "python", source: "X = 1\n", deadline: Infinity, grammars: empty }), null);
+  const source = "# a comment\n\ndef twice(x):\n    return x * 2\n";
+  assert.deepEqual(await inertLinesOf({ engine: "tree-sitter", lang: "python", source, deadline: Infinity, grammars: empty }), [false, true, false, false, true]);
 });
 
 test("an engine with no rule skips the file", async () => {
@@ -273,6 +275,25 @@ test("a JSX comment spread over lines asks nothing through its end, and the line
   assert.deepEqual(await asking("js", "{{/* a\nfunction f() {}\n*/}}\n"), [1, 2, 3]);
   // The closing brace ends the literal it stands in, so the line after is no member of it.
   assert.deepEqual(await asking("js", "const A = {\n  a: 1,\n  /* note\n  */ }\nb: 1,\n"), [5]);
+});
+
+test("in a file that holds JSX, a line that opens like a comment and holds an expression in braces asks, since JSX text may be what it is", async () => {
+  // Inside JSX children `//` and `/*` are text, and the braces after them run.
+  assert.deepEqual(await asking("jsx", "const T = ({ items }) => (\n  <p>\n    // {items.reduce((s, i) => s + i.price, 0)}\n  </p>\n);\n"), [1, 2, 3, 4]);
+  assert.deepEqual(await asking("js", "const T = () => <p>\n  /* {total(items)} */\n</p>;\n"), [1, 2, 3]);
+  // Spaces inside the braces are still an expression.
+  assert.deepEqual(await asking("jsx", "<p>\n  // { formatPrice(x) }\n</p>\n"), [1, 2, 3]);
+  // A comment with empty braces, a doc comment, and any comment in a file that holds no JSX still ask nothing.
+  assert.deepEqual(await asking("jsx", "// function old() {}\n/** @param {string} a */\n// plain\n"), []);
+  assert.deepEqual(await asking("js", "// returns {a, b}\nconst A = 1;\n"), []);
+  // A TypeScript or an ES module file holds no JSX, whatever its strings spell.
+  assert.deepEqual(await asking("js", "const s = '</a>';\n// see {x}\n", { path: "src/a.ts" }), []);
+  assert.deepEqual(await asking("js", "const s = '</a>';\n// see {x}\n", { path: "src/a.js" }), [2]);
+  // A line of braces that never close is read in time, so it spends none of the budget the other files share.
+  const unclosed = `<p />\n${Array.from({ length: 2500 }, () => `// {${"a{".repeat(190)}`).join("\n")}\n`;
+  const started = performance.now();
+  await asking("jsx", unclosed);
+  assert.ok(performance.now() - started < 300, `took ${Math.round(performance.now() - started)} ms`);
 });
 
 test("a regex holding /* after a brace opens no comment", async () => {

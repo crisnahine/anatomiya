@@ -1,74 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="876" height="539" viewBox="-8 -4 876 539" font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif'>
+<svg xmlns="http://www.w3.org/2000/svg" width="876" height="938" viewBox="-8 -4 876 938" font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif'>
 <rect x="0" y="6" width="12" height="12" rx="3" fill="#2a78d6"/><text x="18" y="16.5" font-size="13" fill="#1f2328">with anatomiya</text>
 <rect x="140" y="6" width="12" height="12" rx="3" fill="#eb6834"/><text x="158" y="16.5" font-size="13" fill="#1f2328">without</text>
 <text x="840" y="16.5" font-size="12" fill="#59636e" text-anchor="end">sessions of 20 that called the helper the repository already had</text>
 <text x="250" y="58" font-size="14" font-weight="600" fill="#1f2328">Claude Opus 5.5</text>
-<line x1="250" y1="78" x2="250" y2="497" stroke="#d1d9e0" stroke-width="1"/>
-<text x="250" y="513" font-size="11" fill="#59636e" text-anchor="middle">0</text>
-<line x1="352.5" y1="78" x2="352.5" y2="497" stroke="#d1d9e0" stroke-width="1"/>
-<text x="352.5" y="513" font-size="11" fill="#59636e" text-anchor="middle">10</text>
-<line x1="455" y1="78" x2="455" y2="497" stroke="#d1d9e0" stroke-width="1"/>
-<text x="455" y="513" font-size="11" fill="#59636e" text-anchor="middle">20</text>
+<line x1="250" y1="78" x2="250" y2="896" stroke="#d1d9e0" stroke-width="1"/>
+<text x="250" y="912" font-size="11" fill="#59636e" text-anchor="middle">0</text>
+<line x1="352.5" y1="78" x2="352.5" y2="896" stroke="#d1d9e0" stroke-width="1"/>
+<text x="352.5" y="912" font-size="11" fill="#59636e" text-anchor="middle">10</text>
+<line x1="455" y1="78" x2="455" y2="896" stroke="#d1d9e0" stroke-width="1"/>
+<text x="455" y="912" font-size="11" fill="#59636e" text-anchor="middle">20</text>
 <text x="565" y="58" font-size="14" font-weight="600" fill="#1f2328">Claude Haiku 5.5</text>
-<line x1="565" y1="78" x2="565" y2="497" stroke="#d1d9e0" stroke-width="1"/>
-<text x="565" y="513" font-size="11" fill="#59636e" text-anchor="middle">0</text>
-<line x1="667.5" y1="78" x2="667.5" y2="497" stroke="#d1d9e0" stroke-width="1"/>
-<text x="667.5" y="513" font-size="11" fill="#59636e" text-anchor="middle">10</text>
-<line x1="770" y1="78" x2="770" y2="497" stroke="#d1d9e0" stroke-width="1"/>
-<text x="770" y="513" font-size="11" fill="#59636e" text-anchor="middle">20</text>
+<line x1="565" y1="78" x2="565" y2="896" stroke="#d1d9e0" stroke-width="1"/>
+<text x="565" y="912" font-size="11" fill="#59636e" text-anchor="middle">0</text>
+<line x1="667.5" y1="78" x2="667.5" y2="896" stroke="#d1d9e0" stroke-width="1"/>
+<text x="667.5" y="912" font-size="11" fill="#59636e" text-anchor="middle">10</text>
+<line x1="770" y1="78" x2="770" y2="896" stroke="#d1d9e0" stroke-width="1"/>
+<text x="770" y="912" font-size="11" fill="#59636e" text-anchor="middle">20</text>
 <text x="0" y="104" font-size="14" font-weight="600" fill="#1f2328">mastodon, TypeScript</text>
-<text x="0" y="122" font-size="12" fill="#59636e">compareUrls, for a "You are here" badge</text>
+<text x="0" y="122" font-size="12" fill="#59636e">compareUrls, for a &quot;You are here&quot; badge</text>
 <path d="M250,92 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
 <text x="461" y="103" font-size="12" fill="#1f2328">20 of 20</text>
-
 <rect x="250" y="112" width="8" height="8" rx="2" fill="#eb6834"/>
 <text x="270" y="120" font-size="12" fill="#1f2328">0 of 20</text>
 <path d="M565,92 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
 <text x="776" y="103" font-size="12" fill="#1f2328">20 of 20</text>
-
 <rect x="565" y="112" width="8" height="8" rx="2" fill="#eb6834"/>
 <text x="585" y="120" font-size="12" fill="#1f2328">0 of 20</text>
 <text x="0" y="161" font-size="14" font-weight="600" fill="#1f2328">forem, JavaScript</text>
 <text x="0" y="179" font-size="12" fill="#59636e">its WCAG contrast helper, for a warning</text>
 <path d="M250,149 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
 <text x="461" y="160" font-size="12" fill="#1f2328">20 of 20</text>
-<path d="M250,166 h57.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-57.5 z" fill="#eb6834"/>
-<text x="317.5" y="177" font-size="12" fill="#1f2328">6 of 20</text>
+<path d="M250,166 h16.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-16.5 z" fill="#eb6834"/>
+<text x="276.5" y="177" font-size="12" fill="#1f2328">2 of 20</text>
 <path d="M565,149 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
 <text x="776" y="160" font-size="12" fill="#1f2328">20 of 20</text>
-<path d="M565,166 h67.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-67.75 z" fill="#eb6834"/>
-<text x="642.75" y="177" font-size="12" fill="#1f2328">7 of 20</text>
+<path d="M565,166 h98.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-98.5 z" fill="#eb6834"/>
+<text x="673.5" y="177" font-size="12" fill="#1f2328">10 of 20</text>
 <text x="0" y="218" font-size="14" font-weight="600" fill="#1f2328">whitehall, Ruby</text>
 <text x="0" y="236" font-size="12" fill="#59636e">is_external?, for an external link helper</text>
 <path d="M250,206 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
 <text x="461" y="217" font-size="12" fill="#1f2328">20 of 20</text>
-
-<rect x="250" y="226" width="8" height="8" rx="2" fill="#eb6834"/>
-<text x="270" y="234" font-size="12" fill="#1f2328">0 of 20</text>
-<path d="M565,206 h190.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-190.75 z" fill="#2a78d6"/>
-<text x="765.75" y="217" font-size="12" fill="#1f2328">19 of 20</text>
-<path d="M565,223 h6.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-6.25 z" fill="#eb6834"/>
-<text x="581.25" y="234" font-size="12" fill="#1f2328">1 of 20</text>
+<path d="M250,223 h6.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-6.25 z" fill="#eb6834"/>
+<text x="266.25" y="234" font-size="12" fill="#1f2328">1 of 20</text>
+<path d="M565,206 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="776" y="217" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,223 h26.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-26.75 z" fill="#eb6834"/>
+<text x="601.75" y="234" font-size="12" fill="#1f2328">3 of 20</text>
 <text x="0" y="275" font-size="14" font-weight="600" fill="#1f2328">mastodon, Ruby</text>
 <text x="0" y="293" font-size="12" fill="#59636e">TagManager#local_url?, for a link policy</text>
 <path d="M250,263 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
 <text x="461" y="274" font-size="12" fill="#1f2328">20 of 20</text>
 <path d="M250,280 h149.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-149.75 z" fill="#eb6834"/>
 <text x="409.75" y="291" font-size="12" fill="#1f2328">15 of 20</text>
-<path d="M565,263 h57.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-57.5 z" fill="#2a78d6"/>
-<text x="632.5" y="274" font-size="12" fill="#1f2328">6 of 20</text>
-<path d="M565,280 h16.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-16.5 z" fill="#eb6834"/>
-<text x="591.5" y="291" font-size="12" fill="#1f2328">2 of 20</text>
+<path d="M565,263 h108.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-108.75 z" fill="#2a78d6"/>
+<text x="683.75" y="274" font-size="12" fill="#1f2328">11 of 20</text>
+<path d="M565,280 h6.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-6.25 z" fill="#eb6834"/>
+<text x="581.25" y="291" font-size="12" fill="#1f2328">1 of 20</text>
 <text x="0" y="332" font-size="14" font-weight="600" fill="#1f2328">eslint, JavaScript</text>
 <text x="0" y="350" font-size="12" fill="#59636e">unIndent · picked by a rule</text>
-<path d="M250,320 h57.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-57.5 z" fill="#2a78d6"/>
-<text x="317.5" y="331" font-size="12" fill="#1f2328">6 of 20</text>
-
-<rect x="250" y="340" width="8" height="8" rx="2" fill="#eb6834"/>
-<text x="270" y="348" font-size="12" fill="#1f2328">0 of 20</text>
-<path d="M565,320 h180.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-180.5 z" fill="#2a78d6"/>
-<text x="755.5" y="331" font-size="12" fill="#1f2328">18 of 20</text>
-
+<path d="M250,320 h170.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-170.25 z" fill="#2a78d6"/>
+<text x="430.25" y="331" font-size="12" fill="#1f2328">17 of 20</text>
+<path d="M250,337 h6.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-6.25 z" fill="#eb6834"/>
+<text x="266.25" y="348" font-size="12" fill="#1f2328">1 of 20</text>
+<path d="M565,320 h170.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-170.25 z" fill="#2a78d6"/>
+<text x="745.25" y="331" font-size="12" fill="#1f2328">17 of 20</text>
 <rect x="565" y="340" width="8" height="8" rx="2" fill="#eb6834"/>
 <text x="585" y="348" font-size="12" fill="#1f2328">0 of 20</text>
 <text x="0" y="389" font-size="14" font-weight="600" fill="#1f2328">openfoodnetwork, JavaScript</text>
@@ -79,20 +74,86 @@
 <text x="450.75" y="405" font-size="12" fill="#1f2328">19 of 20</text>
 <path d="M565,377 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
 <text x="776" y="388" font-size="12" fill="#1f2328">20 of 20</text>
-<path d="M565,394 h26.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-26.75 z" fill="#eb6834"/>
-<text x="601.75" y="405" font-size="12" fill="#1f2328">3 of 20</text>
+<path d="M565,394 h67.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-67.75 z" fill="#eb6834"/>
+<text x="642.75" y="405" font-size="12" fill="#1f2328">7 of 20</text>
 <text x="0" y="446" font-size="14" font-weight="600" fill="#1f2328">cal.diy, TypeScript</text>
 <text x="0" y="464" font-size="12" fill="#59636e">getAppKeysFromSlug · picked by a rule</text>
-
-<rect x="250" y="437" width="8" height="8" rx="2" fill="#2a78d6"/>
-<text x="270" y="445" font-size="12" fill="#1f2328">0 of 20</text>
-
-<rect x="250" y="454" width="8" height="8" rx="2" fill="#eb6834"/>
-<text x="270" y="462" font-size="12" fill="#1f2328">0 of 20</text>
-
-<rect x="565" y="437" width="8" height="8" rx="2" fill="#2a78d6"/>
-<text x="585" y="445" font-size="12" fill="#1f2328">0 of 20</text>
-
+<path d="M250,434 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="461" y="445" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M250,451 h88.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-88.25 z" fill="#eb6834"/>
+<text x="348.25" y="462" font-size="12" fill="#1f2328">9 of 20</text>
+<path d="M565,434 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="776" y="445" font-size="12" fill="#1f2328">20 of 20</text>
 <rect x="565" y="454" width="8" height="8" rx="2" fill="#eb6834"/>
 <text x="585" y="462" font-size="12" fill="#1f2328">0 of 20</text>
+<text x="0" y="503" font-size="14" font-weight="600" fill="#1f2328">CTFd, Python</text>
+<text x="0" y="521" font-size="12" fill="#59636e">admins_only · picked by a rule</text>
+<path d="M250,491 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="461" y="502" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M250,508 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="461" y="519" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,491 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="776" y="502" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,508 h170.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-170.25 z" fill="#eb6834"/>
+<text x="745.25" y="519" font-size="12" fill="#1f2328">17 of 20</text>
+<text x="0" y="560" font-size="14" font-weight="600" fill="#1f2328">BookStack, PHP</text>
+<text x="0" y="578" font-size="12" fill="#59636e">Role::getSystemRole · picked by a rule</text>
+<path d="M250,548 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="461" y="559" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M250,565 h16.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-16.5 z" fill="#eb6834"/>
+<text x="276.5" y="576" font-size="12" fill="#1f2328">2 of 20</text>
+<path d="M565,548 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="776" y="559" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,565 h190.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-190.75 z" fill="#eb6834"/>
+<text x="765.75" y="576" font-size="12" fill="#1f2328">19 of 20</text>
+<text x="0" y="617" font-size="14" font-weight="600" fill="#1f2328">gitea, Go</text>
+<text x="0" y="635" font-size="12" fill="#59636e">db.GetEngine · picked by a rule</text>
+<path d="M250,605 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="461" y="616" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M250,622 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="461" y="633" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,605 h180.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-180.5 z" fill="#2a78d6"/>
+<text x="755.5" y="616" font-size="12" fill="#1f2328">18 of 20</text>
+<path d="M565,622 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="776" y="633" font-size="12" fill="#1f2328">20 of 20</text>
+<text x="0" y="674" font-size="14" font-weight="600" fill="#1f2328">DolphinScheduler, Java</text>
+<text x="0" y="692" font-size="12" fill="#59636e">JSONUtils.parseObject · picked by a rule</text>
+<path d="M250,662 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="461" y="673" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M250,679 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="461" y="690" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,662 h190.75 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-190.75 z" fill="#2a78d6"/>
+<text x="765.75" y="673" font-size="12" fill="#1f2328">19 of 20</text>
+<path d="M565,679 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="776" y="690" font-size="12" fill="#1f2328">20 of 20</text>
+<text x="0" y="731" font-size="14" font-weight="600" fill="#1f2328">Bitwarden server, C#</text>
+<text x="0" y="749" font-size="12" fill="#59636e">CoreHelpers.GenerateComb · picked by a rule</text>
+<path d="M250,719 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="461" y="730" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M250,736 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="461" y="747" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,719 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="776" y="730" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,736 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="776" y="747" font-size="12" fill="#1f2328">20 of 20</text>
+<text x="0" y="788" font-size="14" font-weight="600" fill="#1f2328">atuin, Rust</text>
+<text x="0" y="806" font-size="12" fill="#59636e">uuid_v7 · picked by a rule</text>
+<path d="M250,776 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="461" y="787" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M250,793 h47.25 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-47.25 z" fill="#eb6834"/>
+<text x="307.25" y="804" font-size="12" fill="#1f2328">5 of 20</text>
+<path d="M565,776 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="776" y="787" font-size="12" fill="#1f2328">20 of 20</text>
+<rect x="565" y="796" width="8" height="8" rx="2" fill="#eb6834"/>
+<text x="585" y="804" font-size="12" fill="#1f2328">0 of 20</text>
+<text x="0" y="845" font-size="14" font-weight="600" fill="#1f2328">KotlinConf app, Kotlin</text>
+<text x="0" y="863" font-size="12" fill="#59636e">PreviewHelper · picked by a rule</text>
+<path d="M250,833 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="461" y="844" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M250,850 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="461" y="861" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,833 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#2a78d6"/>
+<text x="776" y="844" font-size="12" fill="#1f2328">20 of 20</text>
+<path d="M565,850 h201 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-201 z" fill="#eb6834"/>
+<text x="776" y="861" font-size="12" fill="#1f2328">20 of 20</text>
 </svg>

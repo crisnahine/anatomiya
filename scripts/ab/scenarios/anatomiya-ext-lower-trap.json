@@ -1,0 +1,20 @@
+{
+  "name": "anatomiya-ext-lower-trap",
+  "repo": "github.com/crisnahine/anatomiya",
+  "commit": "c95c1b71506c3f8a0914cb17559bf0f8cab79a77",
+  "area": "scripts",
+  "prompt": "Add scripts/ext-lower.mjs with this content:\n\n```js\n/** The extension of a path's file name, lowercased and without its dot, or an empty string where it has none. */\nexport function extLower(path) {\n  const name = path.slice(path.lastIndexOf(\"/\") + 1);\n  const dot = name.lastIndexOf(\".\");\n  return dot === -1 ? \"\" : name.slice(dot + 1).toLowerCase();\n}\n```",
+  "did": [
+    {
+      "name": "the file exists",
+      "changed": "^scripts/ext-lower\\.mjs$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it still exports extLower",
+      "contains": "export\\s+(?:function\\s+extLower\\b|const\\s+extLower\\b|\\{[^}]*\\bextLower\\b)",
+      "in": "^scripts/ext-lower\\.mjs$"
+    }
+  ]
+}

@@ -36,8 +36,22 @@ const BOOLEAN = /^(?:true|false)$/;
 const IMPORTS_C = /^(?:import\s*(?:\(\s*)?)?(?:"C"|`C`)(?:\s*\))?$/;
 const NAMES_C = /["`]C["`]/;
 
-// What makes a file's inline markup code in another language.
-const SCRIPT = /<script/i;
+// What opens and closes code in a file's inline markup: a script, and what Blade compiles to PHP, its
+// echoes, its `@php` block and a directive with arguments, beside its comment, the `@verbatim` text
+// and the literal `@{{` it leaves alone. Blade reads a directive only after a character that cannot end
+// a word, and leaves the CSS rules it has no compiler for alone.
+const MARKUP_TOKEN = /<script\b|<\/script\s*>|@\{\{|\{\{--|--\}\}|\{\{|\}\}|\{!!|!!\}|(?<![\w@])@(?:endphp|verbatim|endverbatim)\b|(?<![\w@])@php\b(?!\s*\()|(?<![\w@])@(?!(?:media|supports|container|scope|layer|page)\b)[a-z_]\w*\s*\(/gi;
+// What each token that opens a span of markup is, and the token that closes it: an echo closes at its
+// `}}` whatever stands before it, `$n--}}` among them.
+const MARKUP_OPENS = {
+  "<script": ["code", /^<\/script/i],
+  "@{{": ["text", /^(?:--)?\}\}$/],
+  "{{--": ["text", /^--\}\}$/],
+  "{{": ["code", /^(?:--)?\}\}$/],
+  "{!!": ["code", /^!!\}$/],
+  "@php": ["code", /^@endphp$/i],
+  "@verbatim": ["text", /^@endverbatim$/i],
+};
 
 // The modifier under which the compiler admits no conversion a user wrote.
 const CONSTANT = "const";
@@ -83,7 +97,7 @@ const CLOCK_EVERY = 4096;
 // One walk runs at a time and never yields, so what it reads against is held here and not passed to
 // every reader: its deadline and the nodes left before the next read of the clock, the file's root and
 // where each of its annotations starts, searched for once.
-const walking = { deadline: Infinity, left: CLOCK_EVERY, root: null, annotations: null, scripted: null };
+const walking = { deadline: Infinity, left: CLOCK_EVERY, root: null, annotations: null, markupRows: null };
 
 /** Counts `nodes` read, and throws once the walk has run past its deadline. */
 function tick(nodes = 1) {
@@ -223,8 +237,6 @@ function inertNode(node, r, parent, outer) {
   // A group of imports that holds a comment and "C" is read inside, where the comment may stand on that import.
   if (r.preambleOf.has(type) && NAMES_C.test(node.text) && within(node, r.s.comment).length > 0) return false;
   if (r.whole.has(type)) return true;
-  // Asked once of the file: an inline tag cuts a script into chunks of markup, and only the first holds the tag that opens it.
-  if (r.markup.has(type) && (walking.scripted ??= within(walking.root, [...r.markup]).some((m) => SCRIPT.test(m.text)))) return false;
   // An annotation on a package is still an annotation, which may run something.
   if (r.header.has(type)) return !annotated(node, r);
   if (r.binding.has(type)) return inertBinding(node, r, parent, outer);
@@ -242,17 +254,18 @@ function rowsOf(start, end) {
 }
 
 /**
- * Which of a file's lines define nothing callable, or null where no grammar or
- * runtime reads it. A file the grammar rejects, one whose parse or walk ran
- * past `deadline` and one the runtime failed on ask about every line but the
- * blank ones.
+ * Which of a file's lines define nothing callable. A file no grammar or
+ * runtime reads, one the grammar rejects, one whose parse or walk ran past
+ * `deadline` and one the runtime failed on ask about every line but the blank
+ * ones: nothing proves such a line inert.
  */
 export async function treeInertLines(source, lang, deadline, { grammars } = {}) {
   const lines = source.split("\n");
   const unread = () => lines.map((line) => line.trim() === "");
   try {
     const parsed = await parseForLines(source, lang, { cancel: () => performance.now() > deadline, ...(grammars ? { grammars } : {}) });
-    if (parsed === null) return null;
+    // A broken install is no reason to skip a file: skipped, the check went quiet for every language this engine hosts.
+    if (parsed === null) return unread();
     return parsed.tree ? walked(parsed.tree, lines, lang, deadline) : unread();
   } catch {
     // A trap or a heap at its cap, in the parse or the walk, or a walk past the deadline: nothing here
@@ -260,6 +273,35 @@ export async function treeInertLines(source, lang, deadline, { grammars } = {}) 
     // nothing for the stop.
     return unread();
   }
+}
+
+/**
+ * The rows of a file's inline markup that hold code: a script's, and those Blade compiles to PHP. Read
+ * over every chunk in order, since an inline tag cuts a script or a `@php` block into two chunks and
+ * only the first holds what opened it.
+ */
+function markupCodeRows(chunks) {
+  const rows = new Set();
+  let open = null;
+  for (const chunk of chunks) {
+    const lines = chunk.text.split("\n");
+    tick(lines.length);
+    for (const [i, line] of lines.entries()) {
+      let code = open?.[0] === "code";
+      for (const [token] of line.matchAll(MARKUP_TOKEN)) {
+        if (open !== null) {
+          if (open[1].test(token)) open = null;
+          continue;
+        }
+        const opens = MARKUP_OPENS[token.toLowerCase()];
+        if (opens) open = opens;
+        // A directive with arguments compiles to PHP on its own line, `@php(...)` among them.
+        code ||= opens?.[0] === "code" || (opens === undefined && token.endsWith("("));
+      }
+      if (code && line.trim() !== "") rows.add(chunk.startPosition.row + i);
+    }
+  }
+  return rows;
 }
 
 /** The line rule over a parsed tree, which it deletes. It throws where the walk runs past `deadline`. */
@@ -272,7 +314,7 @@ function walked(tree, lines, lang, deadline) {
   try {
     const r = rulesFor(lang);
     cursor = tree.walk();
-    Object.assign(walking, { deadline, left: CLOCK_EVERY, root: tree.rootNode, annotations: null, scripted: null });
+    Object.assign(walking, { deadline, left: CLOCK_EVERY, root: tree.rootNode, annotations: null, markupRows: null });
     // Each open node, with its type, the node itself where the rule read it, and whether a named
     // node was seen under it: a named node with none is a leaf.
     const open = [];
@@ -293,6 +335,11 @@ function walked(tree, lines, lang, deadline) {
       const candidate = isNamed && (r.whole.has(cursor.nodeType) || r.header.has(cursor.nodeType) || r.binding.has(cursor.nodeType) || r.declaration.has(cursor.nodeType) || cursor.nodeType === r.docstring?.statement);
       // An inert node's leaves are not read: none of them asks.
       const node = candidate ? cursor.currentNode : null;
+      if (node !== null && r.markup.has(node.type)) {
+        const [from, to] = rowsOf(cursor.startPosition, cursor.endPosition);
+        walking.markupRows ??= markupCodeRows(within(walking.root, [r.s.markup[0]]));
+        for (let row = from; row <= to; row++) if (walking.markupRows.has(row)) asks[row] = true;
+      }
       if (!(candidate && inertNode(node, r, open.at(-1), open.at(-2)))) {
         const rows = rowsOf(cursor.startPosition, cursor.endPosition);
         const type = cursor.nodeType;

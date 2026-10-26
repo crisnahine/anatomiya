@@ -19,6 +19,15 @@ import { needsPosixSpecialFiles, needsSymlinks, removeTree } from "./platform.mj
 import * as SAMPLES from "./tree-samples.mjs";
 import { BROKEN } from "./tree-broken.mjs";
 
+// What a file reaches for in others, which `tree-facets.test.mjs` covers.
+const REACH = new Set(["refs", "defines", "usings", "globalUsings", "namespace", "globals", "extensions"]);
+
+/** What kind of file a record says this is, failing on any facet that is neither that nor what the file reaches for. */
+function kindOf(facets) {
+  assert.deepEqual(Object.keys(facets).filter((key) => key !== "testRunner" && key !== "testCalls" && !REACH.has(key)), []);
+  return { testRunner: facets.testRunner, testCalls: facets.testCalls };
+}
+
 const HOSTED = LANGUAGES.filter((l) => l.engine === "tree-sitter");
 const BODY = join(ANATOMIYA, "lib", "tree-sitter-file.mjs");
 const RUNTIME = join(ANATOMIYA, "lib", "tree-sitter-runtime.mjs");
@@ -53,7 +62,7 @@ for (const decl of HOSTED) {
     // No row asked: what a row finds in the sample is its own test's to say.
     const r = await parseTreeFile(source, rel, lang, { rows: [] });
 
-    assert.deepEqual(r, {
+    assert.deepEqual({ ...r, facets: kindOf(r.facets) }, {
       rel,
       ok: true,
       hits: {},
@@ -177,7 +186,7 @@ for (const [where, source] of Object.entries(CONDITIONAL)) {
   test(`csharp: a conditional inside ${where} is read with its first branch, and the record says so where a branch went unread`, async () => {
     const r = await parseTreeFile(source, "src/A.cs", "csharp", { rows: [] });
 
-    assert.deepEqual(r, {
+    assert.deepEqual({ ...r, facets: kindOf(r.facets) }, {
       rel: "src/A.cs",
       ok: true,
       hits: {},

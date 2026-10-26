@@ -1,0 +1,20 @@
+{
+  "name": "ctfd-admins-only-lang",
+  "repo": "github.com/CTFd/CTFd",
+  "commit": "d21c9cd3bb154e0e285aba2a20e176777b5f7d5d",
+  "area": "CTFd",
+  "prompt": "Add a Flask blueprint `reports` in CTFd/reports.py with one route, `/reports/solves`, that returns JSON mapping each challenge name to its number of solves. Only an admin may reach the route: for anyone else, a JSON request gets a 403 and any other request is redirected to the login page with the current path as `next`. Keep it small.",
+  "did": [
+    {
+      "name": "the blueprint exists",
+      "changed": "^CTFd/reports\\.py$"
+    }
+  ],
+  "checks": [
+    {
+      "name": "it calls the existing admins_only",
+      "contains": "from\\s+(?:CTFd\\.|\\.)utils\\.decorators\\s+import\\s+(?:\\([^)]*\\badmins_only\\b[^)]*\\)|[^\\n]*\\badmins_only\\b)[\\s\\S]*(?:@admins_only\\b|\\badmins_only\\s*\\()",
+      "in": "^CTFd/reports\\.py$"
+    }
+  ]
+}

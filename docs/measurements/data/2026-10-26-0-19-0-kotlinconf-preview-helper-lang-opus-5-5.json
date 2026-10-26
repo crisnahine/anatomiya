@@ -1,0 +1,787 @@
+{
+  "scenario": "scripts/ab/scenarios/kotlinconf-preview-helper-lang.json",
+  "scenarioSha256": "9611a97f2a164c428bdac13804bd6775007c3cce844ef0db1616d5cbbcacca1d",
+  "label": "github.com/JetBrains/kotlinconf-app",
+  "sha": "907ce238e1ffe2472991eeb2d2bfa386bdb4ea8f",
+  "engine": {
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "contextWindow": 1000000
+  },
+  "versions": {
+    "claude": "2.1.310 (Claude Code)",
+    "anatomiya": "0.18.2 at b94dd31eeb36, with uncommitted changes"
+  },
+  "said": {
+    "a": "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens — 39 files",
+    "b": "NONE"
+  },
+  "a": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.5185028,
+        "inputTokens": 38,
+        "outputTokens": 9135,
+        "cacheReadTokens": 337309,
+        "wallMs": 105176
+      },
+      "answer": "I've added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, with a light and dark preview. It hasn't been compiled because this machine has no Java runtime; `./gradlew :app:shared:compileKotlinJvm` will check it once Java is installed.\n\nThe composable is a full-width `Text` from the app's ui-components with the standard body text style, centred. The preview uses the existing `PreviewHelper`, which already gives the app theme, the main background, and a column with 8 dp padding and 8 dp spacing.\n\nThe stop hook asked me to check whether something similar already existed. A search found nothing that does the same job, so I left the file as it was:\n\n- **`ErrorText`** in `ErrorLoading.kt:154` is the closest: the same centred text style. But it's private, uses the grey secondary colour and caps the width at 220 dp, all styled for errors. Making it public just to reuse one `Text` call would tie empty lists to error styling.\n- **`MinorError`** in `ErrorLoading.kt:67` is public, but screen readers announce it immediately as an error. That's the wrong behaviour for an empty list.\n\nTwo possible follow-ups, which I haven't done:\n- The \"no bookmarks\" message in `ScheduleScreen.kt:503` is an empty-list message too, but it's left-aligned and uses a different colour. It could switch to `EmptyListMessage` if you're happy with how it would look.\n- Two \"No results\" strings in `strings.xml` (`schedule_error_no_results` and `speakers_error_no_results`) aren't used anywhere and would suit this message."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.47798940000000006,
+        "inputTokens": 34,
+        "outputTokens": 7565,
+        "cacheReadTokens": 307052,
+        "wallMs": 107537
+      },
+      "answer": "I checked for existing code that already does this job and left `EmptyListMessage` as it was. Nothing in the repo shows a plain centred message without changing how it looks or behaves.\n\nThe nearest matches are in `app/ui-components/.../components/ErrorLoading.kt`:\n- **`ErrorText`** (line 154) uses the same centred `text1` style. But it's private, caps the width at 220 dp, and uses the grey `secondaryText` colour. Switching to it would make your message narrower and grey.\n- **`MinorError`** (line 67) is public. It adds 32 dp padding and an assertive live region, so screen readers would announce an empty list straight away, as if it were an error.\n\nTwo things you might want to know:\n- **Colour:** the only existing empty state, \"No bookmarks added here\" in `ScheduleScreen.kt:503-508`, uses the `noteText` colour and is left-aligned. If you want the new message to match it or the grey error text, it's a one-line change.\n- **Strings:** `strings.xml` already has `schedule_error_no_results` and `speakers_error_no_results` (\"No results\"), and no code uses them yet. They're probably what this composable is for.\n\nThe file still hasn't been compiled, because this machine has no Java runtime."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.45015219999999995,
+        "inputTokens": 34,
+        "outputTokens": 8683,
+        "cacheReadTokens": 312661,
+        "wallMs": 102481
+      },
+      "answer": "I've left the code as it was after the reuse check. A search found nothing in the repo that already shows an empty-list message.\n\nThe closest match is a private `ErrorText` in `app/ui-components/.../ErrorLoading.kt:154`. It does the same centred `text1` styling, but it's built for errors: grey secondary text and a 220 dp width limit. Its public wrappers, like `MinorError`, also tell screen readers that the message is an error, which is wrong for an empty list. Reusing it would mean making it public in `ui-components`, adding settings for colour and width, and showing an empty list through an error helper. That's more code than the 5-line composable and goes against your \"keep it small\". `EmptyListMessage` just calls the shared `Text` component and the existing `PreviewHelper`.\n\nIt still hasn't been compiled, because there's no Java runtime on this machine.\n\nIf you'd prefer empty-list text to match the grey error text, I can switch the colour to `KotlinConfTheme.colors.secondaryText`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.3998786,
+        "inputTokens": 28,
+        "outputTokens": 6627,
+        "cacheReadTokens": 248728,
+        "wallMs": 83069
+      },
+      "answer": "I left `EmptyListMessage` as it was; the reuse check found nothing that should replace it. The build still hasn't been compiled, because there's no Java runtime here.\n\nThe check found two existing composables close to it, both in `app/ui-components/.../components/ErrorLoading.kt`. Neither fits:\n\n- **`MinorError` (line 67):** this is the only public one that shows centred, full-width `text1` text. But it is made for errors: it uses the grey secondary text colour, adds 32 dp of padding, and makes screen readers interrupt to read the message aloud as soon as it appears. That's wrong for an empty list.\n- **`ErrorText` (line 154):** it's private, uses the same grey colour, and limits the width to 220 dp. Making it public and using it would change how the text looks from what you asked for.\n\nThe preview already uses the repo's existing `PreviewHelper`.\n\nTwo related things turned up:\n- The schedule's \"no bookmarks\" message (`ScheduleScreen.kt:503`) is written inline, not centred, and uses a different colour. It's left as it was.\n- The strings `schedule_error_no_results` and `speakers_error_no_results` (\"No results\") are defined but nothing uses them yet. They'd be natural text for `EmptyListMessage`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.45818280000000017,
+        "inputTokens": 32,
+        "outputTokens": 8324,
+        "cacheReadTokens": 304784,
+        "wallMs": 130638
+      },
+      "answer": "I didn't change `EmptyListMessage` after the reuse check. The closest existing function doesn't fit an empty list, and the one shared piece isn't worth exposing.\n\nA subagent searched `app/shared` and `app/ui-components`. Nothing does exactly this job; the closest are in `app/ui-components/.../components/ErrorLoading.kt`:\n\n- **`MinorError(message)` (line 67)** also shows full-width centred `text1` text, but it's made for errors. It marks the text as an assertive live region (lines 76–78), so screen readers would interrupt to announce an empty list as if it were an error. It also adds grey text, a 220 dp width cap and 32 dp padding, none of which you asked for. Changing those would change what it shows on the screens that use it.\n- **`ErrorText` (line 154)** uses the same centred `text1` style. It's private to the `ui-components` module, though, so reusing it would mean making it public for one line of styling.\n- **`MajorError` and `NormalErrorWithLoading`** add an image, a loading animation and a retry button. They're error and loading screens, not a message.\n\nTwo things the search found that you may want later:\n- The only empty-list message in the app today is the \"no bookmarks\" text in `ScheduleScreen.kt:503-509`. It isn't centred and could use `EmptyListMessage` instead.\n- When the schedule has no items, `ScheduleViewModel.kt:166` shows it as an error state rather than an empty message.\n\nThe file is still uncompiled, because there's no Java runtime on this machine."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt",
+        "app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.45551959999999997,
+        "inputTokens": 34,
+        "outputTokens": 8503,
+        "cacheReadTokens": 321678,
+        "wallMs": 118708
+      },
+      "answer": "I've changed `EmptyListMessage` to reuse a text component the project already has instead of styling its own text. It's still uncompiled because there's no Java runtime on this machine.\n\nA search turned up `ErrorText` in `app/ui-components/.../components/ErrorLoading.kt`. It's the same centred text in the same style and colour my first version used. It was private, so I made it public and `EmptyListMessage` now just centres it in a full-width box. Its existing callers in that file aren't affected, and no other `ErrorText` exists that the name could clash with.\n\nTwo things to know:\n- **Line width:** `ErrorText` caps lines at 220 dp, so long messages wrap sooner than in my first version. They're still centred.\n- **Why not `MinorError`:** it's the closest public match, but it tells screen readers to announce the text immediately, which is wrong for an empty list. It also adds 32 dp of padding you didn't ask for.\n\nThe preview hasn't changed: light and dark, inside `PreviewHelper`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.4043480000000001,
+        "inputTokens": 28,
+        "outputTokens": 6909,
+        "cacheReadTokens": 250135,
+        "wallMs": 93808
+      },
+      "answer": "I'm keeping `EmptyListMessage` as written. The subagent checked for existing composables that already do this job, and nothing fits closely enough to reuse.\n\n- **`ErrorText`** (`app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt:154`) is the near-identical one: centred `text1` in `secondaryText`. But it's private to the ui-components module and limits the text to 220 dp wide. Using it would mean making an error-specific helper public and naming it for something it isn't.\n- **`MinorError`** (`ErrorLoading.kt:67`) is the public wrapper around it. It adds 32 dp of padding and tells screen readers to announce the text urgently. That suits errors, not a plain empty list.\n- **`MajorError` and `NormalErrorWithLoading`** add a picture, a loading animation or a retry button, so they don't match.\n\nTwo related points:\n\n- **Unused strings:** \"No results\" text already exists as `schedule_error_no_results` and `speakers_error_no_results` in `strings.xml`. As far as the subagent could find, no Kotlin code uses them, so they'd be a natural fit when you call `EmptyListMessage` from those screens.\n- **Not compiled:** the file still hasn't been built, because this machine has no Java runtime."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.446696,
+        "inputTokens": 30,
+        "outputTokens": 8873,
+        "cacheReadTokens": 261980,
+        "wallMs": 127213
+      },
+      "answer": "I'm leaving the file as written. The reviewer found one close match, but reusing it would mean changing the ui-components module for a small gain.\n\n**What the reviewer found:** `ErrorText` in `app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt:154`. It uses the same styling as `EmptyListMessage`: `text1`, centred, in `secondaryText` colour. Nothing else in `app/` is an empty-state message. The public error helpers built on it (`MinorError`, `MajorError`, `NormalErrorWithLoading`) are error and loading states and don't fit.\n\n**Why I didn't switch to it:**\n- **It's private to ui-components.** `app:shared` can't call it unless I make it public, which adds an error-named function to that module's API for a non-error use.\n- **It caps the width.** It applies `widthIn(max = 220.dp)` inside itself, so a caller can't make it full width. Long messages would wrap at 220 dp, and the text block wouldn't sit centred across the screen.\n- **Making it fit is bigger than the composable.** It would need a new width parameter, kept at 220 dp for its existing callers, plus the API change. That goes against your \"keep it small\".\n\nThe overlap is only the three style arguments.\n\nOne thing you may want to know: the schedule screen already shows its empty case through the error path. `ScheduleViewModel.kt:166` turns an empty list into `ErrorLoadingState.Error`. If you plan to use `EmptyListMessage` there, that's the place to change.\n\nThe file still hasn't been compiled, because there's no Java runtime on this machine. If you'd rather share the styling, I can make `ErrorText` public with an optional width parameter and have `EmptyListMessage` call it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.31290300000000004,
+        "inputTokens": 28,
+        "outputTokens": 5749,
+        "cacheReadTokens": 222515,
+        "wallMs": 90572
+      },
+      "answer": "I left `EmptyListMessage.kt` as I wrote it: the reuse check found no existing function that does the same job.\n\nThe closest match is `MinorError` in `app/ui-components/.../components/ErrorLoading.kt:67`. It also shows a full-width, centred `text1` message, but it's built for errors and doesn't fit an empty list:\n- It sets `liveRegion = Assertive`, so screen readers announce the text straight away, as they would an error.\n- It adds 32 dp of padding, uses the grey `secondaryText` colour and limits the text to 220 dp wide.\n\nIt calls a private helper, `ErrorText` (line 154), which has the same colour and width limit. Making that helper public just for this would change how the message looks, which you didn't ask for.\n\nThe file still hasn't been compiled because there's no Java runtime on this machine.\n\nOptional follow-up: the \"no bookmarks\" text in `ScheduleScreen.kt:503` is the app's only other empty-list message, and it could use `EmptyListMessage`. It isn't centred now and uses a different colour, so switching would change how it looks. I haven't touched it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.40010900000000005,
+        "inputTokens": 30,
+        "outputTokens": 6318,
+        "cacheReadTokens": 282065,
+        "wallMs": 96552
+      },
+      "answer": "I had a subagent check whether anything already in the repo does what `EmptyListMessage` does. Nothing matches, so I left the file as it was.\n\nThe closest is `MinorError` in `app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt:67`, which uses the same centred `text1` style. It's built for errors, though, so it's the wrong fit for an empty list:\n- It tells screen readers to announce the message immediately, interrupting whatever they're reading.\n- It uses the secondary text colour and adds 32 dp of padding.\n\nThe private `ErrorText` it uses underneath has the same colour and is capped at 220 dp wide, so it can't fill the width.\n\nChanging either one to fit would change how existing error messages look or behave.\n\nThe file still hasn't been compiled because there's no Java runtime here."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.450907,
+        "inputTokens": 34,
+        "outputTokens": 8575,
+        "cacheReadTokens": 308505,
+        "wallMs": 102621
+      },
+      "answer": "I've left `EmptyListMessage` as it is. It still hasn't been compiled, because there's no Java runtime on this machine.\n\nA reuse check flagged one close existing function: `MinorError(message)` in `app/ui-components/.../ui/components/ErrorLoading.kt:67`. Nothing in `app/shared` calls it yet. It also shows one centred string, but it's built for errors, so it would change what you asked for:\n\n- **Screen reader:** it marks the text to be announced right away, as an error. Doing that for an empty list would be wrong.\n- **Look:** it adds 32 dp of padding, uses the grey secondary text colour, and caps the width at 220 dp instead of filling the width.\n\nThe private `ErrorText` in the same file has the same core: the app's `Text` with centred `text1`. Reusing it would mean making it public, and it would bring along the grey colour and width cap. For a five-line function, keeping it separate seemed better than tying empty-list messages to error components.\n\nIf you'd rather have one shared component, I can turn `ErrorText` into a public centred-message component in ui-components and have both `MinorError` and `EmptyListMessage` use it."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.3828856,
+        "inputTokens": 28,
+        "outputTokens": 6804,
+        "cacheReadTokens": 240533,
+        "wallMs": 100816
+      },
+      "answer": "I left `EmptyListMessage` as it was. A subagent searched the codebase for existing code that does the same job and found two near matches in `app/ui-components/.../components/ErrorLoading.kt`, but neither is a good fit:\n\n- **`MinorError` (`ErrorLoading.kt:67`)** also shows full-width, centred `text1` text. It also adds things you didn't ask for: 32 dp of padding, a 220 dp width cap and grey secondary text. It also makes screen readers interrupt to announce it straight away, which is meant for errors. If it backed `EmptyListMessage`, every empty list would be announced like an error. Removing that announcement would change how its error message behaves.\n- **`ErrorText` (`ErrorLoading.kt:154`)** is the same centred `Text` plus the grey colour and 220 dp cap, but it's private to `ui-components`. Making it public just to save one `Text` call would cost more than it saves.\n\n`EmptyListMessage` already reuses the shared `Text`, theme typography and `PreviewHelper`, so I made no changes. It still hasn't been compiled, because Java isn't installed here.\n\nTwo related things the search turned up:\n- The \"no bookmarks\" message in `ScheduleScreen.kt:503-508` is an empty-list message written inline, and you could switch it to `EmptyListMessage`. Its text isn't currently centred, so switching it would change how it looks.\n- The strings `schedule_error_no_results` and `speakers_error_no_results` exist but no code uses them, so they're ready for this component."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.5029024,
+        "inputTokens": 34,
+        "outputTokens": 9584,
+        "cacheReadTokens": 316392,
+        "wallMs": 137967
+      },
+      "answer": "I left `EmptyListMessage` as it was. The reuse check found nothing that does the same job without changing it.\n\nA subagent searched for code that already does this, and I read the matches in `app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt`:\n\n- **`MinorError` (line 67):** the closest public one. It also shows a single centred `text1` line, but it is built for errors. It sets an assertive live region, so screen readers would interrupt the user to announce \"list is empty\". It also adds 32 dp of padding, uses the secondary text colour, and limits the text to 220 dp wide. Using it would change both how the message looks and how it's announced.\n- **`ErrorText` (line 154):** the same centred `text1` call, but it is private to ui-components, uses the secondary colour and limits the width to 220 dp. To reuse it I'd have to make an error helper public and either give it new parameters or accept a different look. That's more code than the five lines it would replace.\n- **`MajorError`, `NormalErrorWithLoading` and `ErrorLoadingContent`:** each adds an image, a loading animation or a retry button, so they're wider than this.\n- **`PreviewHelper`:** the only preview wrapper, and the preview already uses it.\n\nIf you'd rather the empty message match the error text, with grey text wrapped at 220 dp, I can make `EmptyListMessage` call `ErrorText` instead. The file still hasn't been compiled because this machine has no Java runtime."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.375479,
+        "inputTokens": 28,
+        "outputTokens": 6769,
+        "cacheReadTokens": 234490,
+        "wallMs": 91293
+      },
+      "answer": "I'm leaving `EmptyListMessage` as written. A subagent searched the repo for anything that already does the same job and found nothing that does all of it.\n\nThe closest match is a private helper, `ErrorText` in `app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt:154`. It centres text with the same style, but it differs in three ways:\n- It caps the width at 220 dp instead of using the full width.\n- It always uses the grey secondary text colour.\n- It's private to the shared UI components module.\n\nReusing it would mean making it public and adding width and colour options, all to save three lines. That goes against \"keep it small\", so I didn't.\n\nThe public `MinorError` next to it looks similar, but screen readers announce it as an error, which is wrong for an empty list.\n\nThe compile check from before still hasn't run, because there's no Java runtime on this machine.\n\nThe subagent also found two unused \"No results\" strings, `schedule_error_no_results` and `speakers_error_no_results`, which may be what this message is meant to show."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt",
+        "app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.6160828,
+        "inputTokens": 36,
+        "outputTokens": 10678,
+        "cacheReadTokens": 393659,
+        "wallMs": 148516
+      },
+      "answer": "`EmptyListMessage` now reuses the styling that's already in the repo, but it still hasn't been compiled: there's no Java runtime here, so Gradle can't run.\n\nA subagent searched the shared and ui-components modules for code that already does this job. The private `ErrorText` in `app/ui-components/.../ui/components/ErrorLoading.kt:154` had exactly the text I'd copied: `text1` style, centred, `secondaryText` colour.\n\n- **`ErrorLoading.kt`:** I made `ErrorText` public. Its body is unchanged, so `MinorError`, `MajorError` and `NormalErrorWithLoading` behave as before, and no other function in the app has that name.\n- **`EmptyListMessage.kt`:** it's now just a full-width `Box` that centres `ErrorText(text)`. The preview is unchanged and still uses `PreviewHelper` with `@PreviewLightDark`.\n\nOne visible difference: `ErrorText` caps the text at 220 dp wide, so long messages now wrap sooner than in my first version.\n\nI didn't use `MinorError`, the closest public match. It marks its text so screen readers announce it straight away like an error, which is wrong for an empty list, and it adds 32 dp of padding.\n\nThe search also found that the strings `schedule_error_no_results` and `speakers_error_no_results` (\"No results\") aren't used anywhere yet. They'd fit this composable if you add empty states to schedule or speaker search."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.3580478000000001,
+        "inputTokens": 28,
+        "outputTokens": 6598,
+        "cacheReadTokens": 228939,
+        "wallMs": 93300
+      },
+      "answer": "I checked whether the repo already had something `EmptyListMessage` should reuse, and decided to leave it as written. Nothing existing does the same job without changing how it looks or behaves.\n\nThe closest code is in `app/ui-components/.../components/ErrorLoading.kt`:\n- **`MinorError` (line 67):** it centres full-width `text1` text, but it's built for errors. Screen readers announce it immediately, which is wrong for a quiet \"nothing here\" message. It also uses the grey `secondaryText` colour, limits text to 220 dp wide and adds 32 dp of padding.\n- **`ErrorText` (line 154):** it's private, and it applies the same grey colour and 220 dp limit. The only part it shares with the new code is the centred `text1` style, so calling it wouldn't save anything.\n\nThe search also turned up the \"no bookmarks\" message in `ScheduleScreen.kt:503-509`, which is built by hand rather than with a shared composable. I left it alone because you only asked for the new composable, but it could switch to `EmptyListMessage` if you want consistent empty states.\n\nThe new file is unchanged from my earlier reply, and it still hasn't been compiled because there's no Java runtime on this machine."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt",
+        "app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.43721580000000004,
+        "inputTokens": 32,
+        "outputTokens": 8361,
+        "cacheReadTokens": 301239,
+        "wallMs": 110810
+      },
+      "answer": "A reuse check found that `ErrorText` in `ErrorLoading.kt` already does what I'd written by hand, so `EmptyListMessage` now calls it. I still haven't compiled anything, because there's no Java runtime here.\n\n```kotlin\n@Composable\nfun EmptyListMessage(text: String) {\n    ErrorText(text, Modifier.fillMaxWidth())\n}\n```\n\n`ErrorText` was a private helper in `ui-components` with the same centred style and secondary text colour as my original. Two changes came with the switch:\n\n- **`ErrorText` is now public.** It was private, so `shared` couldn't call it before. I only changed its visibility; its existing callers (`MinorError`, `MajorError`, `NormalErrorWithLoading`) behave the same.\n- **Longer messages wrap narrower.** `ErrorText` limits text to 220 dp wide, so a long message now wraps into a narrow centred block instead of spanning the screen. That matches how the app shows error messages.\n\nThe trade-off is that `ui-components` now exposes a public function named `ErrorText` that's also used for non-error text. If you'd rather not, I can rename it to something neutral like `SecondaryMessageText`, or go back to the standalone version."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.38742139999999997,
+        "inputTokens": 28,
+        "outputTokens": 6698,
+        "cacheReadTokens": 246902,
+        "wallMs": 90200
+      },
+      "answer": "`EmptyListMessage` stays as written. The project doesn't have a composable that already does this job.\n\nThe closest existing code, all in `app/ui-components/.../ui/components/ErrorLoading.kt`:\n\n- **`MinorError`** (line 67) is also a full-width, centred message. But it's built for errors: screen readers announce it immediately as an alert, so using it for an empty list would be wrong.\n- **`ErrorText`** (line 154) uses the same centred `text1` style. But it's private, uses the secondary text colour, and is capped at 220 dp wide instead of filling the width. Changing it would also change how every error message looks.\n- `MajorError`, `NormalErrorWithLoading` and the other centred `Text` calls are headers, warnings or error screens, so they don't fit either.\n\nTwo places could use the new composable, though I haven't changed either:\n\n- The \"No bookmarks added here\" message in `ScheduleScreen.kt:503-508` is an empty-list message. It's currently left-aligned with its own colour and padding, so switching it would change how it looks.\n- The \"No results\" strings `schedule_error_no_results` and `speakers_error_no_results` are defined in `strings.xml` but nothing uses them yet. They'd be natural text for `EmptyListMessage`.\n\nThe file still hasn't been compiled because there's no Java runtime here."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.4584818,
+        "inputTokens": 32,
+        "outputTokens": 8049,
+        "cacheReadTokens": 298639,
+        "wallMs": 93714
+      },
+      "answer": "I'm leaving `EmptyListMessage` as written. A subagent searched the repo for existing code that already does this job, and nothing fits it without changing how the message behaves.\n\nThe closest match is `MinorError` in `app/ui-components/.../components/ErrorLoading.kt:67`. Its core is the same: centred standard body text at full width. But it's built for errors:\n\n- **Screen readers:** it marks the message for immediate announcement, which suits an error. An empty list isn't an error, so announcing it that way would be wrong.\n- **Looks:** it uses the grey secondary text colour, adds 32 dp padding, and caps the text at 220 dp wide (through the private `ErrorText`). None of that was in your spec.\n\nRouting `EmptyListMessage` through it would mean adding an opt-out to an error component for a non-error case. That's more code than the composable itself, and you asked to keep it small. The other matches (`MajorError`, `NormalErrorWithLoading`, `ErrorLoadingContent`) only share the centred-text part, alongside an image, a loading animation or a retry button.\n\nTwo related things you may want later:\n\n- **Existing empty-state text:** `ScheduleScreen.kt:503-509` already shows a \"no bookmarks\" message inline, left-aligned with padding. It's the obvious first place to use `EmptyListMessage`.\n- **Unused strings:** `schedule_error_no_results` and `speakers_error_no_results` (\"No results\") are defined in `strings.xml` but nothing uses them yet.\n\nI still haven't compiled the new file, because there's no Java runtime on this machine."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt",
+        "app/ui-components/src/commonMain/kotlin/org/jetbrains/kotlinconf/ui/components/ErrorLoading.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.4744368,
+        "inputTokens": 28,
+        "outputTokens": 9495,
+        "cacheReadTokens": 257454,
+        "wallMs": 128294
+      },
+      "answer": "`EmptyListMessage` now calls an existing helper instead of setting up its own text styling. Nothing has been compiled, since there's still no Java runtime here.\n\n**What I changed:**\n- A subagent searched the app modules for anything that already shows a message like this. Nothing is meant for empty lists. But `ErrorText` in `app/ui-components/.../components/ErrorLoading.kt:154` uses the exact same styling: `text1` centred, in `secondaryText`. It was private, so I made it public. Its body and its existing callers (`MinorError`, `MajorError`, `NormalErrorWithLoading`) are unchanged.\n- `EmptyListMessage` is now one line: `ErrorText(text, modifier.fillMaxWidth())`. The light/dark preview still uses `PreviewHelper`.\n\n**One thing to check:** `ErrorText` limits its width to 220 dp. I expect that limit to have no effect here: `fillMaxWidth()` comes first and `widthIn` stays within the width it's given, so the message should still span the full width. That's from my understanding of Compose, not from running it, so look at the preview to confirm.\n\n**Trade-off:** `ui-components` now exposes a function named `ErrorText`, and the empty-list message is built on an \"error\" helper. If you'd rather not have that, revert this step and keep the earlier version that styled the `Text` directly. Or I can rename the helper to something neutral, such as `SecondaryCenteredText`.\n\nTo check the build, run `./gradlew :app:shared:compileKotlinJvm` on a machine with a JDK."
+    }
+  ],
+  "b": [
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.2042136,
+        "inputTokens": 18,
+        "outputTokens": 2619,
+        "cacheReadTokens": 151888,
+        "wallMs": 38104
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I couldn't compile it because this machine has no Java runtime installed, so Gradle won't run. I checked by hand that every API it uses exists with the expected signature, but the build itself hasn't run.\n\n- **The composable:** it uses the app's own `Text` component, stretched to full width with the text centred. It uses the `text1` style in `secondaryText` colour; that styling was my choice, since you didn't specify one. It also takes an optional `modifier`, as the app's other components do.\n- **The preview:** one `@PreviewLightDark` function wrapped in the existing `PreviewHelper`. That helper already gives exactly the setup you described: the app theme, the theme's main background, and a column with 8 dp padding and 8 dp between items. There are no previews in `app:shared` yet, but the module already has the preview dependency.\n\nTo check it on a machine with Java, run `./gradlew :app:shared:compileKotlinJvm`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.11097439999999999,
+        "inputTokens": 16,
+        "outputTokens": 2188,
+        "cacheReadTokens": 122352,
+        "wallMs": 40613
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I haven't compiled it: the build failed straight away because there's no Java runtime on this machine.\n\n- **The composable:** it shows the text full-width and centred, using the app's own `Text` and the `text1` style. That's the same way `DeveloperMenuScreen` centres its text.\n- **The preview:** one `@PreviewLightDark` preview, which gives you both the light and dark versions. It wraps the message in the existing `PreviewHelper` from `ui-components`. That helper already does what you described: the app theme, the theme's main background, and a column with 8 dp of padding and 8 dp between items. So the file stays at about 25 lines.\n\nNothing in `app/shared` used previews before. The module already has the preview dependency, though, so no build changes were needed. To check it compiles, run `./gradlew :app:shared:compileKotlinJvm` on a machine with a JDK."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1637704,
+        "inputTokens": 22,
+        "outputTokens": 3250,
+        "cacheReadTokens": 180812,
+        "wallMs": 60537
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I couldn't compile it because there's no Java runtime on this machine.\n\n```kotlin\n@Composable\nfun EmptyListMessage(text: String) {\n    Text(\n        text = text,\n        style = KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center),\n        modifier = Modifier.fillMaxWidth(),\n    )\n}\n\n@PreviewLightDark\n@Composable\nprivate fun EmptyListMessagePreview() = PreviewHelper {\n    EmptyListMessage(\"Nothing here yet\")\n}\n```\n\n- **Preview:** The project already has a `PreviewHelper` that does exactly what you described: app theme, main background, a column with 8 dp padding and 8 dp spacing. So the preview uses that, the same way the `ui-components` previews do. `@PreviewLightDark` gives the light and dark versions.\n- **Centring:** The app's `Text` component has no `textAlign` parameter, so the centring is set through the style. The text fills the width so it centres across the whole row.\n\nRunning `./gradlew :app:shared:compileKotlinJvm` failed with \"Unable to locate a Java Runtime\", so please build it or open the preview in the IDE to check it. This is the first preview in `:app:shared`, but the module already depends on `compose.ui.tooling.preview`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.12842,
+        "inputTokens": 18,
+        "outputTokens": 2702,
+        "cacheReadTokens": 139900,
+        "wallMs": 75118
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I couldn't compile it because this machine has no Java runtime, so Gradle won't start. Running `./gradlew :app:shared:compileKotlinJvm` once Java is available will confirm it builds.\n\n```kotlin\n@Composable\nfun EmptyListMessage(text: String) {\n    Text(\n        text = text,\n        style = KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center),\n        modifier = Modifier.fillMaxWidth(),\n    )\n}\n\n@PreviewLightDark\n@Composable\nprivate fun EmptyListMessagePreview() = PreviewHelper {\n    EmptyListMessage(\"Nothing here yet\")\n}\n```\n\n- **Centring:** the message fills the available width and the text is centred within it. The app's `Text` component has no `textAlign` parameter, so I set the centring through the style instead.\n- **Previews:** `@PreviewLightDark` gives you the light and dark versions. The project's existing `PreviewHelper` already does the rest of what you described: it applies the app theme and the main background, in a column with 8 dp of padding and 8 dp between items."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1939018,
+        "inputTokens": 20,
+        "outputTokens": 3532,
+        "cacheReadTokens": 182349,
+        "wallMs": 56101
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I couldn't compile it: there's no Java runtime installed on this machine, so Gradle won't run. I've checked the code by hand against the APIs it uses.\n\n```kotlin\n@Composable\nfun EmptyListMessage(text: String, modifier: Modifier = Modifier) {\n    Text(\n        text = text,\n        style = KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center),\n        color = KotlinConfTheme.colors.secondaryText,\n        modifier = modifier.fillMaxWidth(),\n    )\n}\n\n@PreviewLightDark\n@Composable\nprivate fun EmptyListMessagePreview() = PreviewHelper {\n    EmptyListMessage(\"Nothing here yet\")\n}\n```\n\n- **Preview setup:** the existing `PreviewHelper` in `:app:ui-components` already does what you described: app theme, `mainBackground`, a `Column` with 8 dp padding and 8 dp between items. I reused it rather than writing that again. `@PreviewLightDark` gives the light and dark versions, which is how the ui-components previews do it.\n- **Centring:** the app's own `Text` component has no `textAlign` parameter, so the alignment goes in the style. The text fills the width so it centres horizontally.\n- **Things I added that you didn't ask for:**\n  - an optional `modifier` parameter, which is the usual Compose convention;\n  - `secondaryText` colour, matching other low-emphasis text such as the results count in `ScheduleScreen`.\n\n  Both are easy to remove if you want only the bare `text` parameter.\n- **First preview in `:app:shared`:** this module had no previews before. The preview dependency is already set up in its build file, so this should just work.\n\nOnce a JDK is installed, `./gradlew :app:shared:compileKotlinJvm` will confirm it builds."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1302776,
+        "inputTokens": 18,
+        "outputTokens": 2474,
+        "cacheReadTokens": 145668,
+        "wallMs": 46551
+      },
+      "answer": "I added `EmptyListMessage(text: String)` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I couldn't compile it because there's no Java runtime on this machine.\n\n- **The composable** is a full-width `Text` using the theme's `text1` style with centred text alignment. It's built the same way as the centred text in `DeveloperMenuScreen.kt`.\n- **The preview** uses `@PreviewLightDark` and the existing `PreviewHelper`, which already does what you described: it wraps the content in `KotlinConfTheme` and puts it in a `Column` on the main background, with 8 dp of padding and 8 dp between items. The same pattern is used throughout `:app:ui-components`.\n\nThis is the first `@PreviewLightDark` in `:app:shared`. The module does include the preview tooling dependency, so the import should resolve."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1290202,
+        "inputTokens": 14,
+        "outputTokens": 2254,
+        "cacheReadTokens": 114061,
+        "wallMs": 37418
+      },
+      "answer": "I added `EmptyListMessage(text: String)` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I haven't compiled it: the Gradle build failed straight away because there's no Java runtime on this machine.\n\n- **The composable:** a full-width `Box` puts the text in the middle. The text is also centre-aligned, so messages that wrap onto several lines stay centred. It uses the project's own `Text` component with the `text1` style and the `secondaryText` colour, which I checked exists in the theme.\n- **The preview:** it's marked `@PreviewLightDark`, so you get a light and a dark version. It reuses the existing `PreviewHelper`, which already does what you asked for: app theme, main background, and a column with 8 dp of padding and 8 dp between items.\n\nTo check it compiles once Java is installed, run `./gradlew :app:shared:compileKotlinJvm`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1339062,
+        "inputTokens": 16,
+        "outputTokens": 2596,
+        "cacheReadTokens": 125411,
+        "wallMs": 37263
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I couldn't compile it because this machine has no Java runtime, so it's untested.\n\n```kotlin\n@Composable\nfun EmptyListMessage(text: String) {\n    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {\n        Text(\n            text = text,\n            style = KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center),\n        )\n    }\n}\n\n@PreviewLightDark\n@Composable\nprivate fun EmptyListMessagePreview() = PreviewHelper {\n    EmptyListMessage(\"Nothing here yet\")\n}\n```\n\n- **Text:** it uses the app's own `Text` component. That has no `textAlign` parameter, so the centring is set through the text style instead.\n- **Preview:** `@PreviewLightDark` gives the light and dark versions. The existing `PreviewHelper` already wraps content in `KotlinConfTheme` on the `mainBackground` colour, in a `Column` with 8 dp padding and 8 dp spacing between items. That's exactly what you described, so I used it.\n\nTo check it once Java is installed, run `./gradlew :app:shared:compileKotlinJvm`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1472812,
+        "inputTokens": 16,
+        "outputTokens": 2397,
+        "cacheReadTokens": 140506,
+        "wallMs": 40798
+      },
+      "answer": "I added `EmptyListMessage(text: String)` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I haven't compiled it. The build failed because no Java runtime is installed on this machine.\n\n- **The composable** uses the app's own `Text` component at full width, with the theme's `text1` style set to centre-aligned.\n- **The preview** is a single function marked `@PreviewLightDark`, so it shows both a light and a dark version. Its content is wrapped in the existing `PreviewHelper`, which already does what you described: app theme, `mainBackground`, a `Column` with 8 dp padding and 8 dp between items. The Toggle previews in `ui-components` use the same pattern.\n\nThis is the first preview in `:app:shared`. The module already has the `compose.ui.tooling.preview` dependency, so it should work, but run `./gradlew :app:shared:compileKotlinJvm` once Java is installed to confirm."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1546584,
+        "inputTokens": 18,
+        "outputTokens": 2911,
+        "cacheReadTokens": 144992,
+        "wallMs": 45732
+      },
+      "answer": "I added `EmptyListMessage(text: String)` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I haven't compiled it or rendered the preview: the build failed straight away because no Java runtime is installed on this machine.\n\n- **The composable:** it uses the app's `Text` component at full width. That component has no `textAlign` parameter, so I centred the text through its style instead: `KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center)`.\n- **The preview:** `@PreviewLightDark` gives you both the light and dark versions. The existing `PreviewHelper` from `ui-components` already does everything else you described (app theme, main background, column with 8 dp of padding and 8 dp between items), so the preview just wraps `EmptyListMessage(\"Nothing here yet\")` in it, the same way `ParagraphTitle.kt` does.\n\nThe `app:shared` module already depends on the preview tooling. Once Java is installed, you can check it with `./gradlew :app:shared:compileKotlinJvm` or by opening the preview in the IDE."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.10510180000000001,
+        "inputTokens": 14,
+        "outputTokens": 1984,
+        "cacheReadTokens": 106389,
+        "wallMs": 43638
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I haven't compiled it: the build failed straight away because there's no Java runtime on this machine.\n\n- **Composable:** `EmptyListMessage(text: String, modifier: Modifier = Modifier)` shows the text full width and centred, in the theme's `text1` style. It uses the app's own `Text` component, like the other screens do.\n- **Preview:** it has a single `@PreviewLightDark` preview, which gives you both the light and dark version. It uses the existing `PreviewHelper` from `ui-components`, which already does what you described: app theme, `mainBackground`, and a column with 8 dp of padding and 8 dp between items. That kept the file short.\n\nTo check it, run `./gradlew :app:shared:compileKotlinJvm` on a machine with a JDK."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1276734,
+        "inputTokens": 14,
+        "outputTokens": 2314,
+        "cacheReadTokens": 112127,
+        "wallMs": 34589
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I couldn't compile it because there's no Java runtime on this machine.\n\n```kotlin\n@Composable\nfun EmptyListMessage(text: String, modifier: Modifier = Modifier) {\n    Text(\n        text = text,\n        style = KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center),\n        color = KotlinConfTheme.colors.secondaryText,\n        modifier = modifier.fillMaxWidth(),\n    )\n}\n\n@PreviewLightDark\n@Composable\nprivate fun EmptyListMessagePreview() = PreviewHelper {\n    EmptyListMessage(\"Nothing here yet\")\n}\n```\n\n- **Preview:** `@PreviewLightDark` gives you the light and dark versions. The project's existing `PreviewHelper` already does what you described (app theme, main background, column with 8 dp padding and 8 dp between items), so I used it rather than writing that out again.\n- **Centring:** the text fills the available width and is centre-aligned. It's drawn in the theme's secondary text colour.\n- **Additions:** I added an optional `modifier` parameter, which is how the other composables here are written.\n\nTo check the build once Java is installed, run `./gradlew :app:shared:compileKotlinJvm`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1217236,
+        "inputTokens": 16,
+        "outputTokens": 2365,
+        "cacheReadTokens": 123678,
+        "wallMs": 33307
+      },
+      "answer": "I added `EmptyListMessage(text: String)` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I couldn't compile it because there's no Java runtime on this machine.\n\n- **The composable:** a full-width `Box` places the text in the middle. The text is also centred line by line, so it still looks right if it wraps. It uses the app's own `Text` component with the theme's normal body style.\n- **The preview:** one function marked `@PreviewLightDark`, which gives you both the light and dark preview. It's wrapped in the existing `PreviewHelper`, which already does what you described: app theme, main background, a column with 8 dp padding and 8 dp spacing. It's built the same way as `ParagraphTitle.kt` in `ui-components`.\n\nTo confirm it builds, run `./gradlew :app:shared:compileKotlinJvm` somewhere with a JDK installed."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1730098,
+        "inputTokens": 18,
+        "outputTokens": 2456,
+        "cacheReadTokens": 170009,
+        "wallMs": 47779
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I couldn't compile it because there's no Java runtime on this machine, so it hasn't been built or checked.\n\n- **The composable** uses the app's own `Text` with the theme's `text1` style. It spans the full width and centres the text, so messages that wrap onto several lines stay centred too.\n- **The preview** has `@PreviewLightDark`, which gives one light and one dark render. It uses the existing `PreviewHelper` from `ui-components`, which already does exactly what you described: the app theme, the main background, and a column with 8 dp padding and 8 dp between items. So the preview body is a single line.\n\nOnce Java is installed, `./gradlew :app:shared:compileKotlinJvm` will confirm it builds."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.168972,
+        "inputTokens": 20,
+        "outputTokens": 2893,
+        "cacheReadTokens": 171120,
+        "wallMs": 63021
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I couldn't compile it: Gradle failed because no Java runtime is installed on this machine.\n\n```kotlin\n@Composable\nfun EmptyListMessage(text: String) {\n    Text(\n        text = text,\n        style = KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center),\n        modifier = Modifier.fillMaxWidth(),\n    )\n}\n\n@PreviewLightDark\n@Composable\nprivate fun EmptyListMessagePreview() = PreviewHelper {\n    EmptyListMessage(\"Nothing here yet\")\n}\n```\n\n- **Text centring:** the app's own `Text` component (from `ui-components`) has no `textAlign` parameter, so I centred the text through its style. With `fillMaxWidth()`, it sits in the middle of the available width.\n- **Preview:** I used the existing `PreviewHelper`, which already does what you described: app theme, `mainBackground`, and a `Column` with 8 dp of padding and 8 dp between items. `@PreviewLightDark` gives the light and dark versions, as in the other components.\n\nTo check the build once Java is available, run `./gradlew :app:shared:compileKotlinJvm`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1416678,
+        "inputTokens": 18,
+        "outputTokens": 2995,
+        "cacheReadTokens": 138719,
+        "wallMs": 47406
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I couldn't compile it or render the previews because there's no Java runtime on this machine, so it hasn't been checked by a build.\n\n- **The composable:** the text sits in a full-width `Box` with `Alignment.Center`. The project's `Text` component has no `textAlign` parameter, so I centre wrapped lines by setting `TextAlign.Center` in the style (the theme's default `text1` style).\n- **The preview:** one `@PreviewLightDark` function, which gives the light and dark versions. It wraps the message in the existing `PreviewHelper` from `:app:ui-components`. That helper already does exactly what you described: the app theme, the theme's main background, and a column with 8 dp of padding and 8 dp between items. It's the same helper the other ui-components previews use.\n\nTo check it once Java is installed, run `./gradlew :app:shared:compileKotlinJvm`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.12028760000000001,
+        "inputTokens": 14,
+        "outputTokens": 2244,
+        "cacheReadTokens": 108158,
+        "wallMs": 34546
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I couldn't compile it because there's no Java runtime on this machine, so the build failed before it started.\n\n- **Composable:** `EmptyListMessage(text: String, modifier: Modifier = Modifier)` shows the text full-width and centred horizontally. It uses the app's own `Text` with the `text1` style. That `Text` has no alignment option, so the centring is done in the text style instead.\n- **Preview:** one `@PreviewLightDark` function, which gives you the light and dark versions. It's wrapped in the existing `PreviewHelper`, which already does what you described: app theme, main background, a column with 8 dp padding and 8 dp between items.\n\nOne thing to note: it centres the text horizontally only. If you want it in the middle of the whole screen, the caller can put it in a full-size `Box` with centre alignment.\n\nTo check it compiles once Java is installed, run `./gradlew :app:shared:compileKotlinJvm`."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1633018,
+        "inputTokens": 18,
+        "outputTokens": 3025,
+        "cacheReadTokens": 150289,
+        "wallMs": 40782
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`. I haven't compiled it: there's no Java runtime on this machine, so Gradle couldn't run.\n\n```kotlin\n@Composable\nfun EmptyListMessage(text: String) {\n    Text(\n        text = text,\n        style = KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center),\n        modifier = Modifier.fillMaxWidth(),\n    )\n}\n\n@PreviewLightDark\n@Composable\nprivate fun EmptyListMessagePreview() = PreviewHelper {\n    EmptyListMessage(\"Nothing here yet\")\n}\n```\n\n- **Preview:** I reused the existing `PreviewHelper` from `ui-components`. It already does what you described: it wraps the content in `KotlinConfTheme`, on the `mainBackground` colour, in a `Column` with 8 dp padding and 8 dp between items. `@PreviewLightDark` gives the light and dark versions, the same way the `ui-components` previews do it.\n- **Centring:** the app's own `Text` component (used across the screens) has no `textAlign` parameter, so I set the alignment through the style instead. With full width, the text is centred horizontally."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.13040000000000002,
+        "inputTokens": 18,
+        "outputTokens": 2828,
+        "cacheReadTokens": 135640,
+        "wallMs": 39671
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I couldn't compile it because this machine has no Java runtime installed.\n\n- **The composable:** It uses the project's `Text` component at full width. That `Text` has no `textAlign` parameter, so I centred the text through the style instead: `KotlinConfTheme.typography.text1.copy(textAlign = TextAlign.Center)`.\n- **The preview:** One function with `@PreviewLightDark`, so you get a light and a dark version. It's wrapped in the existing `PreviewHelper`, which already does exactly what you described: app theme, `mainBackground`, a column with 8 dp padding and 8 dp between items. It's written the same way as the preview in `ParagraphTitle.kt`.\n\nThe preview dependency is already set up in `app:shared`. To check it builds, run `./gradlew :app:shared:compileKotlinJvm` on a machine with a JDK."
+    },
+    {
+      "ok": true,
+      "reason": null,
+      "wrote": [
+        "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt"
+      ],
+      "did": true,
+      "checks": {
+        "it calls the existing PreviewHelper": true
+      },
+      "spent": {
+        "costUsd": 0.1738436,
+        "inputTokens": 20,
+        "outputTokens": 3017,
+        "cacheReadTokens": 169398,
+        "wallMs": 44693
+      },
+      "answer": "I added `EmptyListMessage` in `app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/screens/EmptyListMessage.kt`, but I couldn't compile it: there's no Java runtime on this machine, so Gradle won't start.\n\n- **The composable:** it uses the project's own `Text` stretched to full width. That `Text` has no `textAlign` parameter, so the text is centred through its style instead: the default `text1` style with `textAlign = TextAlign.Center`.\n- **The preview:** one `@PreviewLightDark` preview, which produces the light and dark versions. It wraps the message in the existing `PreviewHelper` from `ui-components`, which already does what you described: app theme, main background, and a column with 8 dp of padding and 8 dp between items. This is the first preview in `app:shared`, but the module already has the preview tooling dependency.\n\nTo check it, run `./gradlew :app:shared:compileKotlinJvm` once a JDK is installed, or open the preview in the IDE."
+    }
+  ]
+}

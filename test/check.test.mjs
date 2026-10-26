@@ -1157,7 +1157,7 @@ test("a prism too old to read is a missing parser to the check, not Ruby files t
     `#!/bin/sh
 case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
 cat >/dev/null
-printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'
+printf '{"ready":true,"prism":"0.18.0"}\\n{"fatal":"prism 0.18.0 predates the field names this reads"}\\n'
 exit 1
 `,
     { mode: 0o755 }
@@ -1178,7 +1178,7 @@ exit 1
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.match(String(r.parse.missingParser), /prism 0\.19\.0 predates/);
+  assert.match(String(r.parse.missingParser), /prism 0\.18\.0 predates/);
   assert.deepEqual(r.parse.missingEngines, ["prism"]);
 });
 

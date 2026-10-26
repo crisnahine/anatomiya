@@ -122,6 +122,20 @@ export function walkTree(program, visit) {
   }
 }
 
+const NONE = new Set();
+
+/** The text of every leaf under a node in source order, passing over the subtrees of the given types. */
+export function leaves(node, except = NONE) {
+  const out = [];
+  const work = [node];
+  while (work.length) {
+    const n = work.pop();
+    if (!n.children.length) out.push(n.text);
+    else for (let i = n.children.length - 1; i >= 0; i--) if (!except.has(n.children[i].type)) work.push(n.children[i]);
+  }
+  return out;
+}
+
 /** The first child filling this field of the node, or null. */
 export const fieldOf = (node, name) => node.children.find((child) => child.field === name) ?? null;
 

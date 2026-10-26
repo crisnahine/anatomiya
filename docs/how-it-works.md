@@ -1221,9 +1221,13 @@ names the call first; a prompt that quotes a call's id extends nothing. A file a
 editor or a formatter saved between calls is not asked about, and one written by someone else
 during one of the session's calls still is. A transcript whose calls carry no timestamps charges
 nothing. It answers `decision: "block"` with one reason, which asks the
-model to give one subagent the diff and the added lines and to call any existing function that does
-the same job in place of the copy. That wording is the only one measured passing every hard case, 24
-of 24, where every wording the model answered inline passed 9 or 10 of 12 (A91). It stops no tool and
+model to give one subagent the diff and the added lines, to have it name every existing function that
+does the same job or part of it, and to call the closest one in place of the copy, fitting the new
+code to it or extending it without changing what it returns to its current callers where it falls
+short. Handing the search to one subagent is the only shape measured passing every hard case, 24 of
+24, where every wording the model answered inline passed 9 or 10 of 12 (A91); the part about a
+function that falls short was added after most misses in the reuse tasks named the helper and kept
+a copy because it fell short on one case (A123). It stops no tool and
 no write: the block asks for one more pass, and a stop the hook already continued is let through. The
 reason ends in a mark for each changed source file, taken over its content, and a file whose mark the
 session's transcript already holds is not named again. The stop right after the hook's own block
@@ -1253,7 +1257,8 @@ defining, calling or tagging anything. Ruby keeps the narrower rule, because a R
 parenthesis and `{` opens a block as well as a hash. Every other line asks, so a shape nobody listed
 still asks, and a line longer than 400 characters asks unread. A block comment that is not
 closed on its line opens only at the line's start or behind one `{`, as JSX writes it, since after
-code a `/*` may be a regex; a line comment that holds `*/` asks, and so does a Ruby comment that
+code a `/*` may be a regex; in a file that may hold JSX, a line that opens like a comment and holds
+an expression in braces asks, since inside JSX children it is text and the braces run (B81); a line comment that holds `*/` asks, and so does a Ruby comment that
 holds `#{`, which inside a regex or a percent literal spread over lines is an interpolation. On the
 last 200 commits of ten corpus repositories the rule, before those comment rules, skipped 756 of
 9,223 changed files, and a parser found no function, class,
@@ -1278,16 +1283,35 @@ attribute or a subscript in Python and PHP (`self.x = 0`, `$a['k'] = 1;`, which 
 and any token that is not a closer, since `get`, `func` and a lambda's `{` open a callable with no
 name on their line. Three more ask because they hold what the tree does not show as code: every
 row of a string spread over lines that is not bound to a name, a Go comment directly above
-`import "C"`, which cgo compiles, and PHP markup in a file where any chunk of markup holds a `<script`, since an inline
-tag cuts a script into chunks and only the first holds the opening tag.
+`import "C"`, which cgo compiles, and a row of PHP markup that holds a script or what Blade compiles
+to PHP (`{{ }}`, `{!! !!}`, a `@php` block, a directive with an argument). The rows are read over every
+chunk of markup in order, since an inline tag cuts a script or a `@php` block into chunks and only the
+first holds what opened it, and a Blade comment or `@verbatim` block is text (B80).
+
+A view template is read too, though no scan reads one, since a view is where a helper's logic is
+copied most (A122). In ERB (`.erb`) and EJS (`.ejs`) a line asks if it holds code between `<%` and
+`%>`; a configuration file run through ERB (`.yml.erb`) is no view and is not read. In Razor
+(`.cshtml`, `.razor`) it asks if it holds an `@` that starts C#, or is a line of C# in an `@{`,
+`@code`, `@functions`, `@if`, `@foreach` or other block, through its closing brace and an `else`
+after it. In HAML and Slim it asks on a line of Ruby, an output line, a tag whose content or
+attribute is Ruby, an interpolation, and every line a `:ruby` or `ruby:` filter holds. In Jinja
+(`.jinja`, `.jinja2`, `.j2`), Twig (`.twig`), Nunjucks (`.njk`) and Go templates (`.tmpl`, `.gotmpl`,
+`.gohtml`) it asks where an expression or an action computes: a call, a filter, an operator, on every
+line the tag spans. A comment, an escaped `<%%` or `@@`, a directive that names a type or a route such
+as `@model`, a name read as it is, and markup alone ask nothing. An `.html` file is not read, since no
+one rule reads Angular's, Vue's and Django's alike. The markup of a Vue or Svelte component asks only
+where an expression computes with a literal: arithmetic on a number, a method called with a number
+such as `toFixed(2)`, or a string built with `+`. A line longer than 400 characters asks unread under
+every rule but ERB's, which reads a character at a time. A template that is a link or a generated
+file is passed over, as a source file is.
 
 Every file a rule reads in one stop shares one second, started at the first such file and shared by
-every checkout the stop reads: the line rules over JavaScript, Ruby and component script blocks,
+every checkout the stop reads: the line rules over JavaScript, Ruby, view templates and components,
 and for the tree-sitter files the first load of the runtime and of each grammar, every parse and
 every walk of a parsed tree. A file reached after it, one whose read, parse or walk runs past it,
 one the grammar rejects and one the runtime fails on are asked about whole. A load cannot be stopped
-part way, so it alone can outlast the second (B73). A file whose grammar or runtime is missing is not
-asked about. One run stands behind the second: parse plus walk of the three largest files of each
+part way, so it alone can outlast the second (B73). A file whose grammar or runtime is missing is
+asked about whole too, since nothing proves a line of it inert. One run stands behind the second: parse plus walk of the three largest files of each
 of the seven languages in the 25 repositories of the language corpus, 21 files of 68 to 451 KiB,
 each read once to warm and then timed five times, took 34 to 875 ms at the median and 1,018 ms at
 most at a load average of 34 to 35, so at that load the largest file asks whole in one read of five.
@@ -1435,8 +1459,8 @@ refresh), and none of them reaches the scan, the parser, the walker, the reducer
 hook process used to load 65 modules; at the split the echo loaded 13, the notice 13 until it read
 its rules and 26 after, the end-of-turn check 22 and the refresh 28, and the echo went from 65ms to
 39ms against 26ms for bare node, timed when it loaded 12 (A100). The echo's list is written out in
-`test/modules.test.mjs`, 14 modules of the library, a count the test pins; the notice and the reuse
-check load the same 14 before their lazy imports and 36 after, and the refresh 32. The end-of-turn
+`test/modules.test.mjs`, 15 modules of the library, a count the test pins; the notice and the reuse
+check load the same 15 before their lazy imports and 38 after, and the refresh 33. The end-of-turn
 check loads its tree adapter only on a stop that changed a file of the seven tree-sitter languages.
 A module that will not load throws inside the same boundary as everything else, so the hook still
 answers `{}`.
@@ -2543,7 +2567,8 @@ Where the area holds components beside modules, three or more of each, the line 
 kinds: 10 .ts, 4 .vue; 0 test files; 4 of 10 .ts files have a namesake test; 4 of 4 .vue files have a namesake test
 ```
 
-JavaScript, JSX, Vue and Svelte areas also get two roster lines under the directives:
+JavaScript, JSX, Vue and Svelte areas also get two roster lines under the directives, and an area of
+any other language gets the second:
 
 ```
 most files here import: styled-components (84%), ~/components/base (61%), formik (60%)
@@ -2568,13 +2593,58 @@ one ending in `/` names a directory and resolves only through its `index`, the w
 TypeScript read `./base/`, `./` and `../`, SvelteKit's `$lib/` is tried against the `src/lib` of each
 directory above the importer and resolves where one file answers, a `~/`, `@/`, `#/` or `src/`
 written in a component is tried the same way against each directory above it and its `src`,
-anything else is matched on the path tail once such a prefix is cut, and a
-tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` or
-`svelte.config.js` is read. A component is named only by a specifier that spells its extension:
+a package the repository's own workspace declares resolves through its
+directory, by the name its `package.json` gives, where the workspace's own globs reach that manifest (`workspaces`, `pnpm-workspace.yaml`,
+`lerna.json` or `rush.json`)
+(`@excalidraw/common` is `packages/common`, tried as the entry its manifest names, then its
+`src/index` and its `index`), anything else is matched on the path tail once such a prefix is
+cut, and a tail two files answer resolves to neither rather than to whichever sorted first. No
+`tsconfig` or `svelte.config.js` is read. A name taken from a file that only hands it on, through
+`export * from` or `export { a as b } from`, is credited to the file that defines it, followed down
+the chain until one does (H59). A component is named only by a specifier that spells its extension:
 `./Foo.vue` is that file and a bare `./Foo` never is, since a bundler needs the extension written.
 Only importers outside the area count: a directory importing its own files is how it is
-written, not who depends on it. This is the counted form of "check before creating", and Ruby has
-no static import surface, so there is no Ruby line.
+written, not who depends on it. This is the counted form of "check before creating".
+
+Every other language is read by its own way of naming another file's code (H58), and each answers
+with one file or with none, as an ambiguous tail does:
+
+- **Ruby** has no import: a constant is one, and Rails loads it from the file its name spells under
+  an autoload root, every directory under `app`, its `concerns`, and a gem's `lib`. A written
+  `TagManager` is looked up in each module the reference sits in, innermost first, then at the top,
+  as Ruby looks it up, and names are compared with case and underscores folded, so `http_client.rb`
+  answers `HTTPClient`. A constant two roots hold names neither.
+- **Python, Java, Kotlin, PHP and Rust** name a path: `from shop.utils.money import format_price`
+  is `shop/utils/money/format_price` as a module or `shop/utils/money` holding the name, `import
+  a.b.C` is `a/b/C`, PHP's `use App\Support\Money` is `App/Support/Money` or, past the prefix
+  composer maps to another directory, `Support/Money`, and a Rust `use crate::`, `self::` or
+  `super::` is matched whole from the crate's `src` or the module's own directory. A Python absolute
+  import starts at a top-level package, in a directory that is the top of the tree, a `src`, or one
+  the importer sits under, so `import typing` is never flask's own `src/flask/typing.py`, which is
+  `flask.typing`, and `import json` from `app/` is never `scripts/json.py`. An attribute call on an
+  imported module is that module's (`shop.money.format_price`), a class a Java or Kotlin wildcard
+  import brings in is looked for in that package, a Rust path written in a call
+  (`crate::text::escape(x)`) is read as a `use` is, and Kotlin and Java reach each other's classes.
+  A Java, Kotlin or PHP file matched by its path counts only where it declares the package the
+  import names, so `android.util.Log` is never the repository's own `com/acme/util/Log.kt`. An
+  import of a module names no helper: `text.slugify` is the name, not `text`.
+- **PHP functions** are loaded for every file and called bare: a function one file alone declares
+  is that file's, and a built-in no file declares is nobody's.
+- **Go** names a package directory, and the caller writes `bytesconv.StringToBytes`: the import
+  path resolves under the module path a `go.mod` declares, whole, so another module's package that
+  ends in the same names is not this one, and a path two `go.mod` files declare resolves nothing, and the name goes to the file in that directory that
+  defines it. A Kotlin function imported by its package is found the same way, by the package's
+  longest tail that is a directory here.
+- **C#** opens a namespace and names a type: `StringUtils.Truncate` goes to the file named after
+  `StringUtils` that declares it, where its namespace is one the caller can see: its own or one
+  above it, one it opens, or one a `global using` opens. An extension method (`s.Slug()`) goes to
+  the one file declaring it in such a namespace.
+
+A method called on a constant or a class (`TagManager#local_url?`, `Strings.isBlank`,
+`Money::format`) is named only where the file reached defines it, and the constant alone where it
+does not: `Account.find` is ActiveRecord's, and `Presenter.new` builds one, so both count as
+`Account` and `Presenter`. A method a file calls bare, or on a value, is its own where it defines
+one of that name, and never a helper's or an extension method's.
 
 ### What ships together
 
