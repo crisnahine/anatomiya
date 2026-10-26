@@ -197,6 +197,13 @@ the repository twice: lexically first because it is free, then `realpath` on bot
 `resolve()` normalises `..` but never follows a symlink, and `readFile` does. The resolved path is
 what gets read, so the check and the read cannot disagree.
 
+Past the source, a scan reads five kinds of manifest the repository tracks, `package.json`,
+`pnpm-workspace.yaml`, `lerna.json`, `rush.json` and `go.mod` (H58, H59), to learn which packages
+are the repository's own. Each is read whole, one past 256 KiB not at all, and a link is passed
+over. Only a package's name, its entry fields, the workspace globs and a Go module path are taken
+from it. Nothing in one runs, and a value is only matched against paths the corpus already holds, so
+a manifest can change which file a helper line credits and nothing else.
+
 ### `.claude/rules/` is a repository directory
 
 Anyone can put a file there. A clone can ship one, and a rule file with no `paths` key loads into
@@ -554,7 +561,10 @@ also be slow on input built for it: a 195 KB Kotlin file of 4,000 `<` comparison
 6.4 seconds to parse. The 5s clock kills that parse and charges that one file.
 
 One place parses a grammar outside that pool: the end-of-turn reuse check reads a changed file of
-those seven languages in the hook's own process (B73). It reads only a file under the same 1 MB
+those seven languages in the hook's own process (B73). It also reads a changed view template, ERB,
+HAML, Slim, Razor, Jinja or a Go template (A122), under the same deny list and excluded directories
+as source, by a line rule with no parse, and a line longer than 400 characters is asked about
+unread. It reads only a file under the same 1 MB
 cap, and every file a rule reads in one stop shares one second: the line rules over JavaScript,
 Ruby and component script blocks, which read the clock once in 64 lines, every parse, asked through
 the runtime's progress callback while it runs, and every walk of a parsed tree, which reads the
