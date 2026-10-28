@@ -535,15 +535,14 @@ export function echoContext(root, { now = new Date(), transcript = null, data = 
   ].join("\n");
 }
 
-/**
- * Whether the refresh worker's last run in this checkout failed. The state is
- * read through F2's containment like every other store read, and anything but
- * an explicit `ok: false` reads as no failure.
- */
-function refreshFailed(root) {
+/** The refresh worker's last record in this checkout, read through F2's containment like every other store read, or null. */
+export function refreshRecord(root) {
   const path = resolveInside(root, REFRESH_STATE);
-  return path !== null && readRecord(path).record?.ok === false;
+  return path === null ? null : readRecord(path).record;
 }
+
+/** Whether the refresh worker's last run in this checkout failed: anything but an explicit `ok: false` reads as no failure. */
+const refreshFailed = (root) => refreshRecord(root)?.ok === false;
 
 /**
  * The transcript of the context window a call lands in, or null where the

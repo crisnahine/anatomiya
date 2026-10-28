@@ -5,9 +5,8 @@
  */
 import { join } from "node:path";
 
-import { readRecord } from "./facts.mjs";
-import { isPathTaken } from "./hook.mjs";
-import { INDEX_FILE, REFRESH_STATE, resolveInside, STORE_DIR } from "./rules.mjs";
+import { isPathTaken, refreshRecord } from "./hook.mjs";
+import { INDEX_FILE, STORE_DIR } from "./rules.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
 /**
@@ -24,8 +23,5 @@ export function indexHome(root) {
 
 /** Whether the last refresh here, or in the main checkout a worktree borrows from, recorded that its scan could not write an index. */
 export function indexRefused(root) {
-  return [root, mainCheckoutOf(root)].some((at) => {
-    const path = at === null ? null : resolveInside(at, REFRESH_STATE);
-    return path !== null && readRecord(path).record?.indexed === false;
-  });
+  return [root, mainCheckoutOf(root)].some((at) => at !== null && refreshRecord(at)?.indexed === false);
 }
