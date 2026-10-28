@@ -1,0 +1,93 @@
+| Slim | 125 | 11 | 6/30 | 3/0/11 | 12 | yes | ok | 0 | yes declared_return_type | n.a. (no claim stated) | off no-checked-files | 3.0 |
+| flask | 83 | 10 | 1/24 | 5/0/10 | 11 | yes | ok | 0 | yes declared_return_type | n.a. (no claim stated) | off no-checked-files | 2.4 |
+| gson | 264 | 12 | 1/30 | 7/0/12 | 13 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.8 |
+| kotlinx.serialization | 728 | 36 | 1/44 | 7/0/36 | 37 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 4.5 |
+| ripgrep | 103 | 10 | 3/19 | 7/0/10 | 11 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 3.0 |
+| serilog | 217 | 21 | 2/30 | 6/0/21 | 22 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.9 |
+
+| repo | files | areas | stated | roots | wrote | stable | pin | clean | probe | cochange | semantic | seconds |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Slim | 125 | 11 | 6/30 | 3/0/11 | 12 | yes | ok | 0 | yes declared_return_type | n.a. (no claim stated) | off no-checked-files | 3.0 |
+| flask | 83 | 10 | 1/24 | 5/0/10 | 11 | yes | ok | 0 | yes declared_return_type | n.a. (no claim stated) | off no-checked-files | 2.4 |
+| gson | 264 | 12 | 1/30 | 7/0/12 | 13 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.8 |
+| kotlinx.serialization | 728 | 36 | 1/44 | 7/0/36 | 37 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 4.5 |
+| ripgrep | 103 | 10 | 3/19 | 7/0/10 | 11 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 3.0 |
+| serilog | 217 | 21 | 2/30 | 6/0/21 | 22 | yes | ok | 0 | yes public_doc_comment | n.a. (no claim stated) | off no-checked-files | 2.9 |
+
+Slim: base origin/HEAD (3675bf6), 0 changed files, compare
+flask: base origin/HEAD (d086db8), 0 changed files, compare
+gson: base origin/HEAD (5773104), 0 changed files, compare
+kotlinx.serialization: base origin/HEAD (6f6a2e6), 0 changed files, compare
+ripgrep: base origin/HEAD (91f5d22), 0 changed files, compare
+serilog: base origin/HEAD (43105b3), 0 changed files, compare
+
+--- Slim scan against the pin ---
+125 files, 11 areas, 379ms, root <scratch>/e2e-scratch/Slim
+engines: tree-sitter 0.27.1
+6 of 30 claims stated, the rest print as counts
+layout: 3 roots, 0 folded, tests: 29 phpunit specs under tests, 5 test files under tests/Mocks; roster lines: 0 areas with imports, 8 with reuse
+baseline 3675bf6b, 0 files changed since the pin (measured against origin/HEAD)
+6 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+12 files in a directory nothing was counted in
+wrote 12 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- flask scan against the pin ---
+83 files, 10 areas, 348ms, root <scratch>/e2e-scratch/flask
+engines: tree-sitter 0.27.1
+1 of 24 claims stated, the rest print as counts
+layout: 5 roots, 0 folded, tests: 30 pytest specs; roster lines: 0 areas with imports, 3 with reuse
+baseline d086db85, 0 files changed since the pin (measured against origin/HEAD)
+3 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+31 files in a directory nothing was counted in
+wrote 11 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- gson scan against the pin ---
+264 files, 12 areas, 460ms, root <scratch>/e2e-scratch/gson
+engines: tree-sitter 0.27.1
+1 of 30 claims stated, the rest print as counts
+layout: 7 roots, 3 folded, tests: 116 of 133 junit specs under gson/src/test/java/com/google/gson, 3 test files under gson/src/test/java/com/google/gson; roster lines: 0 areas with imports, 5 with reuse
+baseline 57731049, 0 files changed since the pin (measured against origin/HEAD)
+9 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+42 files in a directory nothing was counted in
+wrote 13 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- kotlinx.serialization scan against the pin ---
+728 files, 36 areas, 977ms, root <scratch>/e2e-scratch/kotlinx.serialization
+engines: tree-sitter 0.27.1
+1 of 44 claims stated, the rest print as counts
+layout: 7 roots, 1 folded, tests: 196 of 236 kotlin.test specs under formats, 41 junit, 12 test files under formats; roster lines: 0 areas with imports, 10 with reuse
+baseline 6f6a2e66, 0 files changed since the pin (measured against origin/HEAD)
+29 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+198 files in a directory nothing was counted in
+5 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the files may be fine.
+wrote 37 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- ripgrep scan against the pin ---
+103 files, 10 areas, 512ms, root <scratch>/e2e-scratch/ripgrep
+engines: prism 1.5.2, tree-sitter 0.27.1
+3 of 19 claims stated, the rest print as counts
+layout: 7 roots, 0 folded, tests: 15 cargo test specs; roster lines: 0 areas with imports, 4 with reuse
+baseline 91f5d22e, 0 files changed since the pin (measured against origin/HEAD)
+9 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+26 files in a directory nothing was counted in
+wrote 11 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+--- serilog scan against the pin ---
+217 files, 21 areas, 569ms, root <scratch>/e2e-scratch/serilog
+engines: tree-sitter 0.27.1
+2 of 30 claims stated, the rest print as counts
+layout: 6 roots, 0 folded, tests: 39 of 41 xunit specs under test/Serilog.Tests, 1 test file under test/Serilog.Tests; roster lines: 0 areas with imports, 12 with reuse
+baseline 43105b35, 0 files changed since the pin (measured against origin/HEAD)
+3 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
+41 files in a directory nothing was counted in
+1 file could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the file may be fine.
+8 files were read with one branch of each #if, not the others
+wrote 22 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
+
+6 of 6 repositories passed

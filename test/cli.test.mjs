@@ -942,7 +942,8 @@ test("doctor names each other target that is on in the repository it is run in",
 
   const out = doctor();
 
-  assert.equal(out, `${before}.cursor/rules: on, 2 files\n`);
+  // The scan made a map here, so the code index is named first.
+  assert.equal(out, `${before}code index: 0 definitions, as of the last scan\n.cursor/rules: on, 2 files\n`);
 });
 
 /* --- one answer, three writers --- */

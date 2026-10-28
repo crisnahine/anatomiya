@@ -20,7 +20,7 @@ import * as SAMPLES from "./tree-samples.mjs";
 import { BROKEN } from "./tree-broken.mjs";
 
 // What a file reaches for in others, which `tree-facets.test.mjs` covers.
-const REACH = new Set(["refs", "defines", "usings", "globalUsings", "namespace", "globals", "extensions"]);
+const REACH = new Set(["refs", "defines", "symbols", "usings", "globalUsings", "namespace", "globals", "extensions"]);
 
 /** What kind of file a record says this is, failing on any facet that is neither that nor what the file reaches for. */
 function kindOf(facets) {

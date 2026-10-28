@@ -365,6 +365,52 @@ test("a refresh whose write a hand scan beat records no failure, and the hand sc
   assert.equal(record.error, null);
 });
 
+test("a map with no code index is refreshed into one, as a map an older build wrote is, in one scan", async (t) => {
+  const dir = await scanned(t);
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+  assert.equal((await refreshRepository(dir)).reason, "current");
+  const index = join(dir, ".claude", "anatomiya", "index.json.gz");
+  rmSync(index);
+  let scans = 0;
+  const scan = async (root, options) => {
+    scans++;
+    return runScan(root, options);
+  };
+
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+  assert.equal(existsSync(index), true);
+  assert.equal(scans, 1, "the scan that writes the index is not followed by a second");
+  assert.equal((await refreshRepository(dir, { scan })).reason, "current");
+});
+
+test("a scan that could not write the code index is not run again on every trigger for it", async (t) => {
+  // An index too large for one string keeps none; asking for it on every trigger would rescan forever.
+  const dir = await scanned(t);
+  const index = join(dir, ".claude", "anatomiya", "index.json.gz");
+  let scans = 0;
+  const scan = async (root, options) => {
+    scans++;
+    const scannedNow = await runScan(root, options);
+    rmSync(index, { force: true });
+    return { ...scannedNow, indexed: false };
+  };
+  rmSync(index);
+
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+  assert.equal((await refreshRepository(dir, { scan })).reason, "current");
+  assert.equal(scans, 1);
+});
+
+test("a scan run by hand that writes the first code index is recorded, so the refresh after it has nothing to do", async (t) => {
+  const dir = await scanned(t);
+  rmSync(join(dir, ".claude", "anatomiya", "index.json.gz"));
+  const before = await scanStamp(dir);
+  const scanned2 = await runScan(dir);
+  await noteScan(dir, before, scanned2);
+
+  assert.equal((await refreshRepository(dir)).reason, "current");
+});
+
 test("a directory holding a file at the refresh state's name stops every refresh before it scans", async (t) => {
   // Each refresh scanned, threw on the write and recorded nothing, so the next one scanned again.
   const dir = await scanned(t);

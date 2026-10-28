@@ -544,7 +544,7 @@ _Avoid_: write lock, scan lock, refresh lock (that is the worker's, held for a w
 
 **Store**:
 The directory a scan keeps its own files in, `.claude/anatomiya`: the **facts**, the **layout
-file**, the **pin**, the two **history stores**, and what the refresh leaves there. The **map** is
+file**, the **pin**, the two **history stores**, the **code index**, and what the refresh leaves there. The **map** is
 not in it.
 _Avoid_: cache, data directory (that is the plugin's own, outside the repository)
 
@@ -554,6 +554,13 @@ the commits it has not seen. There are two, one for the walk that counts **autho
 the walk behind the **co-change claims**. It is a copy of what git printed, and one that cannot be
 checked is not used.
 _Avoid_: history cache, commit cache, log cache, store (alone, before the passage has named a history store: the **store** is the directory)
+
+**Code index**:
+Every function, method, class and type a file declares at its top level or in a class, and Go's and Rust's constants, as the last scan read it, in every language, with its line, its
+container, its parameters, its doc sentence and how many other files import it, kept in the
+**store** and read only by `find`. It is a lookup for a session about to write a helper, never a
+count anything is judged against.
+_Avoid_: symbol table
 
 **Facts**:
 The machine record of every slot, gated or not, including which side was stated. The map is derivable from

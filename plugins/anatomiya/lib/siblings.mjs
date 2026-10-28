@@ -489,7 +489,8 @@ function rowName(name, file) {
  */
 const REUSE_INDEX = new WeakMap();
 
-function reuseIndex(allRecords, corpusRels, own) {
+/** Each file's names as `Map(name, Set(importing file))`, by the file that defines them. */
+export function reuseIndex(allRecords, corpusRels, own) {
   const cached = REUSE_INDEX.get(allRecords);
   if (cached && cached.corpusRels === corpusRels && cached.own === own) return cached.byFile;
   const packages = own?.packages ?? null;

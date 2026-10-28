@@ -130,6 +130,11 @@ export function turnStartIn(tail) {
 const NOTIFICATION = "<task-notification>";
 const FINISHED_CALL = /<tool-use-id>([^<\s]+)<\/tool-use-id>/;
 
+/** The call a task notification reports finished, where `text` opens with one, or null. */
+export function finishedCallOf(text) {
+  return typeof text === "string" && text.trimStart().startsWith(NOTIFICATION) ? (text.match(FINISHED_CALL)?.[1] ?? null) : null;
+}
+
 /**
  * The session's tool calls in this tail, each from the moment its call was
  * written to the moment it returned, or empty where the tail stamps none.
@@ -158,7 +163,7 @@ export function toolCallsIn(tail) {
     const notice =
       entry.type === "queue-operation" ? entry.content : entry.attachment?.type === "queued_command" ? entry.attachment.prompt : entry.type === "user" ? content : null;
     // A prompt typed or pasted is queued and recorded the same way, and may quote any call's id.
-    const id = typeof notice === "string" && notice.startsWith(NOTIFICATION) ? (notice.match(FINISHED_CALL)?.[1] ?? null) : null;
+    const id = finishedCallOf(notice);
     if (id !== null) finished.set(id, Math.min(finished.get(id) ?? ms, ms));
   }
   return [...started].flatMap(([id, from]) => (returned.has(id) ? [{ from, to: Math.max(returned.get(id), finished.get(id) ?? 0) }] : []));

@@ -16,6 +16,7 @@ import { encode } from "./encode.mjs";
 import { statedSide } from "./slot.mjs";
 import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
+import { lineAt, lineStarts } from "./symbols.mjs";
 import { dimensionsFor, isFunctionLike, walk } from "./walk.mjs";
 
 /**
@@ -608,20 +609,10 @@ function lazyLines(source, reader) {
   let index = null;
   return () => {
     if (index) return index;
-    const starts = [0];
-    for (let i = source.indexOf("\n"); i !== -1; i = source.indexOf("\n", i + 1)) starts.push(i + 1);
-    // The line holding an offset: the last start at or before it. An offset
-    // past the end reads as the last line, as the count it replaces did.
-    const indexOf = (offset) => {
-      let lo = 0;
-      let hi = starts.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1;
-        if (starts[mid] <= offset) lo = mid;
-        else hi = mid - 1;
-      }
-      return lo;
-    };
+    const starts = lineStarts(source);
+    // The line holding an offset, from 0: the last start at or before it, so an
+    // offset past the end reads as the last line.
+    const indexOf = (offset) => lineAt(starts, offset) - 1;
     index = {
       lineAt: (offset) => indexOf(Math.min(offset, source.length)) + 1,
       around: (start, end) => {

@@ -233,7 +233,8 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   // Read here rather than in the parent because the tree stays here. The
   // module record is the tree's, so a stripped file answers off the retry's
   // parse and reports the imports the stripper left standing.
-  const facets = jsFacets({ program: tree.program, module: tree.module });
+  // The written text, at the same offsets: the stripper and the retry blank in place, and a parameter is read as written.
+  const facets = jsFacets({ program: tree.program, module: tree.module, source });
   return record(tree, facets, { source, parsedSource, rel, lang, stripped, withProgram });
 }
 
@@ -320,7 +321,7 @@ async function parseEmbedded(parse, source, rel, lang, { withProgram }) {
     },
   };
 
-  const facets = jsFacets({ program: tree.program, module: tree.module });
+  const facets = jsFacets({ program: tree.program, module: tree.module, source });
   facets.embedded = embeddedIn(lang);
   // The tag says so before any annotation does, and no extension can.
   facets.typed ||= blocks.some((b) => b.lang === "ts" || b.lang === "tsx");

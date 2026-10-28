@@ -4,7 +4,7 @@ Everyone taking part here keeps to the [code of conduct](CODE_OF_CONDUCT.md). A 
 reported privately, the way [SECURITY.md](SECURITY.md#reporting-a-vulnerability) says, and never in
 a public issue.
 
-Read `DECISIONS.md` first. It is 360 numbered rows, each one a measurement or a review finding
+Read `DECISIONS.md` first. It is 367 numbered rows, each one a measurement or a review finding
 reduced to the decision it forces on the code. It is the build contract, and most questions you will
 have about why something is shaped the way it is are answered there. The file is the index: one short
 line per row, with the decision, a one-word status and a link. The measurement behind a row and what
@@ -275,7 +275,7 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
 
-Eight modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
+Ten modules hold no row and sit under the scan, the hooks or both. A change to how a file is written, how a
 lock is taken, what a transcript record says, when the echo delivers, which added lines the reuse check asks
 about or how a history walk is fed goes in the one that owns it:
 
@@ -306,6 +306,10 @@ about or how a history walk is fed goes in the one that owns it:
 - `plugins/anatomiya/lib/tree-sitter-runtime.mjs` the tree-sitter runtime and one parser per grammar,
   loaded once per process for the scan's worker and for the reuse check. It imports no walker and no
   dimension, which is what lets the Stop hook parse (B73)
+- `plugins/anatomiya/lib/symbols.mjs` the one shape every engine's facets give a definition the code
+  index reads, and the text helpers that read its doc comment and parameters off the source (H60)
+- `plugins/anatomiya/lib/code-index.mjs` the code index: who imports each definition, the file a scan
+  keeps, and how `find` ranks it. Nothing on a hook's path loads it (H60)
 - `plugins/anatomiya/lib/history.mjs` the two history walks' feed: `historyFields`, which replays a
   history store's commits and asks git for the rest, the stamp a history store is used under, and
   `saveHistory`, which takes that stamp again before it writes (D15)

@@ -48,6 +48,8 @@ export const realpathOf = (p) => realpathOrNull(p) ?? resolve(p);
 
 export const RULES_DIR = TARGETS.claude.dir;
 export const STORE_DIR = ".claude/anatomiya";
+/** The code index `find` reads, in the store. Here so the end-of-turn hook can ask whether it exists without loading the index. */
+export const INDEX_FILE = "index.json.gz";
 /** What the refresh worker last did, relative to the repository root. */
 export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
 /** The lock one refresh worker at a time holds, relative to the repository root. */

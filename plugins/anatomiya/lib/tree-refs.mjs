@@ -19,8 +19,9 @@ import { posix } from "node:path";
 
 import { assertKeyed, hostedBy } from "./langs.mjs";
 import { dirOf } from "./paths.mjs";
+import { commentAbove, docLine, lineStarts, paramsText, symbol } from "./symbols.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
-import { fieldOf, leaves, nameOf, walkTree } from "./tree-walk.mjs";
+import { fieldOf, lastLeaf, leaves, nameOf, walkTree } from "./tree-walk.mjs";
 
 const firstOfType = (node, type) => node.children.find((c) => c.type === type) ?? null;
 
@@ -36,6 +37,31 @@ const DEFINES_TOO = {
 };
 
 assertKeyed("DEFINES_TOO", DEFINES_TOO, hostedBy("tree-sitter"));
+
+// What the code index lists beside the functions and classes the rows read, by the kind it lists each as. Kept
+// apart from `SHAPES` because a row's own count passes over a constructor on purpose.
+const INDEXED_TOO = {
+  python: { assignment: "fn" },
+  php: {},
+  go: {},
+  java: { constructor_declaration: "method" },
+  csharp: { constructor_declaration: "method", delegate_declaration: "type" },
+  rust: { macro_definition: "fn" },
+  kotlin: { secondary_constructor: "method", type_alias: "type" },
+};
+
+assertKeyed("INDEXED_TOO", INDEXED_TOO, hostedBy("tree-sitter"));
+
+/** The name an `INDEXED_TOO` node is listed by, or null where it is not one: Python lists an assignment only of a lambda. */
+function indexedName(node) {
+  if (node.type === "assignment") {
+    const left = fieldOf(node, "left");
+    return left?.type === "identifier" && fieldOf(node, "right")?.type === "lambda" ? left.text : null;
+  }
+  if (node.type === "secondary_constructor") return "constructor";
+  if (node.type === "type_alias") return fieldOf(node, "type")?.text ?? null;
+  return nameOf(node);
+}
 
 /** A directory `ups` levels above a file's own, or null past the top. */
 function above(rel, ups) {
@@ -341,20 +367,68 @@ const READERS = { python, java, kotlin, go, rust, php, csharp };
 
 assertKeyed("READERS", READERS, hostedBy("tree-sitter"));
 
+// The declarations past `fn` and `cls` the index lists as values; the rest it lists as types.
+const CONSTANTS = new Set(["const_spec", "var_spec", "const_item", "static_item"]);
+const HASH_COMMENTS = new Set(["python", "php"]);
+const UNNAMED_TYPES = new Set(["tuple_type", "array_type"]);
+
+/** The name a method's container is known by: its class's, an `impl`'s type's past its path and type arguments, or a Go receiver's type's. */
+function containerOf(node, ctx, shapes) {
+  const typeArgs = new Set(shapes.typeArgs ?? []);
+  const receiver = fieldOf(node, "receiver");
+  // `(l *List[T])` names the list, past its type parameters.
+  if (receiver) return lastLeaf(receiver, typeArgs);
+  for (let i = ctx.stack.length - 1; i >= 0; i--) {
+    const held = ctx.stack[i];
+    const typed = fieldOf(held, "type");
+    // A trait implemented for a tuple or an array names no type a method belongs to.
+    const implemented = typed && !UNNAMED_TYPES.has(typed.type) ? typed : null;
+    const name = nameOf(held) ?? (implemented && lastLeaf(implemented, typeArgs)) ?? null;
+    if (name) return name;
+  }
+  return null;
+}
+
+/** A function's parameter list: the `parameters` field, or the first parameter list that is not a Go receiver. */
+const paramsOf = (node) =>
+  fieldOf(node, "parameters") ?? node.children.find((child) => /param/.test(child.type) && child.field !== "receiver") ?? null;
+
+/** A Python docstring's text: the first statement of the body, where it is a string. */
+function docstringOf(node) {
+  const first = fieldOf(node, "body")?.children[0];
+  const string = first?.type === "expression_statement" ? first.children[0] : null;
+  return string?.type === "string" ? leaves(string).join("") : null;
+}
+
+/** Each definition no function holds, as `symbols.mjs` spells one; `listed` is its `INDEXED_TOO` kind where it has one. */
+function symbolOf(node, ctx, lang, shapes, source, starts, listed = null) {
+  if (ctx.fn !== null) return null;
+  const name = listed ? indexedName(node) : nameOf(node);
+  if (!name) return null;
+  const fn = listed ? listed !== "type" : shapes.fn.includes(node.type);
+  const kind = listed === "type" ? "type" : fn ? (ctx.cls !== null || fieldOf(node, "receiver") ? "method" : "fn") : shapes.cls.includes(node.type) ? "class" : CONSTANTS.has(node.type) ? "const" : "type";
+  const lambda = node.type === "assignment" ? fieldOf(fieldOf(node, "right"), "parameters") : null;
+  const params = fn || listed ? (lambda ?? paramsOf(node)) : null;
+  const raw = (lang === "python" ? docstringOf(node) : null) ?? commentAbove(source, starts, node.line, HASH_COMMENTS.has(lang));
+  return symbol(name, kind, node.line, kind === "method" || ctx.stack.length ? containerOf(node, ctx, shapes) : null, params && paramsText(lambda ? `(${source.slice(params.start, params.end)})` : source.slice(params.start, params.end)), docLine(raw));
+}
+
 const sorted = (set) => [...set].sort();
 
 /**
- * `{ refs, defines }` for one plain tree, and where the language has them the facts that decide
+ * `{ refs, defines }` for one plain tree, its `symbols` where `source` is the text the tree was read off, and where the language has them the facts that decide
  * which file a reference reaches: the namespace or package the file declares, for C# the ones it
  * opens with `using` or `global using` and the extension methods it declares, and for PHP the
  * functions it declares.
  */
-export function treeRefs(program, lang, rel) {
+export function treeRefs(program, lang, rel, source = null) {
   const read = READERS[lang];
   const shapes = SHAPES[lang];
   const declares = new Set([...shapes.fn, ...shapes.cls, ...DEFINES_TOO[lang]]);
   const refs = [];
   const defines = new Set();
+  const symbols = [];
+  const starts = source === null ? null : lineStarts(source);
   const file = {
     classes: new Map(),
     packages: new Map(),
@@ -366,10 +440,15 @@ export function treeRefs(program, lang, rel) {
     globals: new Set(),
     extensions: new Set(),
   };
-  walkTree(program, (node) => {
+  walkTree(program, (node, ctx) => {
     if (declares.has(node.type)) {
       const name = nameOf(node);
       if (name) defines.add(name);
+      const defined = starts && symbolOf(node, ctx, lang, shapes, source, starts);
+      if (defined) symbols.push(defined);
+    } else if (starts && INDEXED_TOO[lang][node.type]) {
+      const defined = symbolOf(node, ctx, lang, shapes, source, starts, INDEXED_TOO[lang][node.type]);
+      if (defined) symbols.push(defined);
     }
     read(node, refs, file, rel);
   });
@@ -381,6 +460,7 @@ export function treeRefs(program, lang, rel) {
   return {
     refs: unique,
     defines: sorted(defines),
+    ...(symbols.length ? { symbols } : {}),
     ...(file.usings.length ? { usings: file.usings } : {}),
     ...(file.globalUsings.length ? { globalUsings: file.globalUsings } : {}),
     ...(file.namespace !== null ? { namespace: file.namespace } : {}),

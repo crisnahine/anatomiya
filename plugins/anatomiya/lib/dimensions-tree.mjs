@@ -1,17 +1,19 @@
 // Rows over a tree-sitter tree. No row spells a node type: each asks `SHAPES` what its language calls the thing.
 import { addPathSites, namesWellKnown } from "./stems.mjs";
+import { implementsCapability } from "./dimensions-capability.mjs";
 import { assertKeyed, familyOf } from "./langs.mjs";
 import { isTestFile } from "./layout.mjs";
-import { dirOf } from "./paths.mjs";
+import { dirOf, escapeRe } from "./paths.mjs";
 import { underTestTree } from "./test-shape.mjs";
 import { treeFacets } from "./tree-facets.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
-import { fieldOf, nameOf, site } from "./tree-walk.mjs";
+import { fieldOf, lastLeaf, nameOf, site } from "./tree-walk.mjs";
 
 const KINDS = [
   "fn", "cls", "scope", "wrap", "comment", "annotation", "inner", "directive", "catch", "raise", "ident", "variable",
   "block", "docstring", "doc", "args", "iface", "receiverType", "receiverBeforeName", "paren", "property", "label", "reference", "conditional",
   "import", "route", "routeArgs", "argument", "array", "string", "stringText", "quote",
+  "inherits", "superList", "superCall", "superType", "generic", "typeArgs", "splat", "filter", "templateText", "namedArgument", "initializer", "initializerEntry", "template", "outputCall", "outputArgs", "printStatement",
 ];
 const SETS = new Map(
   Object.entries(SHAPES).map(([lang, shapes]) => [lang, Object.fromEntries(KINDS.map((kind) => [kind, new Set(shapes[kind] ?? [])]))])
@@ -337,8 +339,9 @@ function hasDocstring(fn, sets, source) {
   return (parts.length ? parts : [literal]).every((part) => PLAIN_STRING.test(source.slice(part.start, part.start + 2)));
 }
 
-/** The name a catch clause binds, or null where it names a type alone. */
+/** The name a catch clause binds, or null where it names a type alone; with no field to say, the clause's first name. */
 function caughtName(header, shapes, sets) {
+  if (!shapes.caught) return header.find((node) => sets.ident.has(node.type))?.text ?? null;
   const holder = [...header, ...header.flatMap((child) => child.children)].find((node) => node.field === shapes.caught);
   return (holder && firstOf(holder, sets.ident)?.text) ?? null;
 }
@@ -350,16 +353,23 @@ function caughtName(header, shapes, sets) {
  */
 function readsName(body, name, shapes, sets) {
   const spelled = [shapes.name, shapes.member, shapes.key];
-  const named = (node, parent) => sets.label.has(parent.type) || (sets.reference.has(parent.type) && node !== parent.children[0]);
+  const named = (node, parent) =>
+    sets.label.has(parent.type) ||
+    (sets.reference.has(parent.type) && node !== parent.children[0]) ||
+    (sets.namedArgument.has(parent.type) && node === parent.children[0] && parent.tokens?.includes("=") === true);
   const reads = (node, parent) =>
     sets.variable.size > 0 ? sets.variable.has(parent.type) : !(node.field && spelled.includes(node.field)) && !named(node, parent);
-  const work = [body];
+  // tree-sitter-kotlin 1.1.0 reads `"$e"` as text, a `$` piece and then one starting with the name; `"${e}"` it parses.
+  const templated = sets.templateText.size > 0 ? new RegExp(`^${escapeRe(name)}(?![\\p{L}\\p{N}_])`, "u") : null;
+  const work = [[body, null]];
   while (work.length) {
-    const parent = work.pop();
-    for (const node of parent.children) {
+    const [parent, above] = work.pop();
+    for (const [i, node] of parent.children.entries()) {
       if (sets.property.has(parent.type) && node.field === shapes.name && sets.variable.has(node.type)) continue;
-      if (node.children.length) work.push(node);
+      if (above && sets.initializer.has(above.type) && sets.initializerEntry.has(parent.type) && node.field === shapes.initialized && sets.ident.has(node.type)) continue;
+      if (node.children.length) work.push([node, parent]);
       else if (sets.ident.has(node.type) && node.text === name && reads(node, parent)) return true;
+      else if (templated && sets.templateText.has(node.type) && parent.children[i - 1]?.text === "$" && templated.test(node.text)) return true;
     }
   }
   return false;
@@ -368,9 +378,9 @@ function readsName(body, name, shapes, sets) {
 // A constructor and a destructor declare no return type, and a Python dunder's is fixed by its protocol.
 const UNTYPED = { python: /^__\w+__$/, php: PHP_BUILDS };
 
-// A name that says the handler binds nothing, as `_` says it: IntelliJ's "Catch block may ignore exception" passes over a
-// parameter whose name matches `ignored?[A-Za-z\d]*`, and of the names that fits only this one is read.
-const UNBOUND = { java: new Set(["ignored"]) };
+// A name that says the handler binds nothing, as `_` says it: of the names IntelliJ's Java inspection (`ignored?[A-Za-z\d]*`)
+// and detekt's `SwallowedException` (`_|(ignore|expected).*`) pass over, only this one is read.
+const UNBOUND = { java: new Set(["ignored"]), kotlin: new Set(["_", "ignored"]), python: new Set(["_"]), csharp: new Set(["_"]) };
 
 /** A string's text where it is written whole, with whether the walk cut it, or null: an interpolation, an escape or a concatenation is built. */
 function wholeString(node, sets) {
@@ -437,6 +447,82 @@ const ROUTE_FORMS = {
   rust: (name, onDeclaration) => ((onDeclaration ? RUST_ATTRIBUTES : RUST_CALLS).has(name) ? { slash: true } : null),
 };
 
+// A C# base list names the base class first only where there is one, and an interface by convention starts `I` and a capital.
+const INTERFACE_NAMED = /^I[A-Z]/;
+
+// What a Python class lists among its bases and inherits no behaviour from: typing's markers, and `object`.
+const PY_NOT_BASES = new Set(["object", "Generic", "Protocol"]);
+
+/** The class a declaration inherits, by its last segment, or null where it names none. */
+function baseOf(cls, lang, shapes, sets) {
+  const holder = (shapes.superclass && fieldOf(cls, shapes.superclass)) || cls.children.find((child) => sets.superList.has(child.type));
+  for (const child of holder?.children ?? []) {
+    if (sets.argument.has(child.type) || sets.comment.has(child.type) || sets.splat.has(child.type)) continue;
+    // Where a constructor call marks the class among the interfaces, only the specifier holding one is a base.
+    const call = sets.superCall.size > 0 ? child.children.find((part) => sets.superCall.has(part.type)) : child;
+    if (!call) continue;
+    const named = sets.superType.size > 0 ? (call.children.find((part) => sets.superType.has(part.type)) ?? call) : call;
+    // Its last segment, past a package or a namespace and without type arguments.
+    const head = sets.generic.has(named.type) ? (fieldOf(named, shapes.genericBase) ?? named) : named;
+    const base = lastLeaf(head, sets.typeArgs);
+    if (lang === "python" && PY_NOT_BASES.has(base)) continue;
+    return lang === "csharp" && INTERFACE_NAMED.test(base ?? "") ? null : base;
+  }
+  return null;
+}
+
+// What writes straight to the console, by the callee as written.
+const PRINTS = {
+  python: /^print$/,
+  php: /^(var_dump|print_r|printf|var_export)$/,
+  java: /^System\.(out|err)\.print(ln|f)?$/,
+  csharp: /^(System\.)?Console\.(Write|WriteLine)$/,
+  rust: /^(std::)?(println|print|eprintln|eprint|dbg)$/,
+  kotlin: /^(kotlin\.io\.)?(println|print)$/,
+  go: /^(fmt\.(Print|Println|Printf)|print|println)$/,
+};
+// Go's loggers are packages called by name: the standard library's, and the common ones.
+const GO_LOGGERS = new Set(["log", "slog", "klog", "glog", "zap", "zerolog", "logrus"]);
+// What writes a line in Go: a level or the standard library's `Print`, `Fatal` and `Panic`, each with its suffixes, and
+// zerolog's `Msg` and `Send` that end a chain. `slog.String` and `zap.NewProduction` write nothing.
+const GO_WRITE = /^((Print|Fatal|Panic|Trace|Debug|Info|Warn|Warning|Error|DPanic|Log)(f|ln|w|S|Context|Depth|Attrs)?|Msgf?|Send)$/;
+// What writes through a logger: a level, or `log`, called on a receiver named for one. JUL's levels and the
+// `Log`-prefixed ones of Microsoft.Extensions.Logging included.
+const LOGGER = /^_*(log|logger|logging)$/i;
+const LEVEL = /^(log)?(trace|debug|info|information|notice|warn|warning|error|critical|fatal|alert|emergency|exception|verbose|severe|fine|finer|finest)$|^log$/i;
+const RUST_LOGGER = /^((log|tracing)::)?(trace|debug|info|warn|error|event|log)$/;
+
+/** A call's callee as written, without blanks, type arguments, a nullable `?` or a macro's `!`. */
+function calleeText(call, sets, source) {
+  const args = call.children.find((child) => sets.outputArgs.has(child.type)) ?? call.children[1];
+  return source.slice(call.start, args?.start ?? call.end).replace(/\s+/g, "").replace(/<[^<>]*>/g, "").replace(/[?!]/g, "");
+}
+
+/** Whether a piece outside the tags holds markup: not only blanks, and not a shebang line. */
+function holdsMarkup(node) {
+  if (node.children.length) return node.children.some(holdsMarkup);
+  const text = (node.text ?? "").trim();
+  return text !== "" && !text.startsWith("#!") && !text.startsWith("?>");
+}
+
+/** `print` where a call writes to the console, `log` where it writes through a logger, or null. */
+function outputOf(call, lang, sets, source) {
+  const callee = calleeText(call, sets, source);
+  if (PRINTS[lang].test(callee)) return "print";
+  if (lang === "rust") return RUST_LOGGER.test(callee) ? "log" : null;
+  const parts = callee.split(/::|->|\.|\$/).filter(Boolean);
+  if (lang === "go") {
+    // `klog.V(2)` in `klog.V(2).Infof(...)` only picks the logger the outer call writes through.
+    if (source[call.end] === ".") return null;
+    // `caddy.Log().Info` and `logger.With(...).Info` write through a logger named earlier in the chain; zap's own package
+    // functions, `zap.Error` among them, build fields.
+    const names = parts.map((part) => part.replace(/(\[.*\])?\(.*\)$/, ""));
+    const pkg = GO_LOGGERS.has(names[0]) && !(names[0] === "zap" && names.length === 2);
+    return names.length > 1 && (pkg || names.slice(0, -1).some((name) => LOGGER.test(name))) && GO_WRITE.test(names.at(-1)) ? "log" : null;
+  }
+  return parts.length > 1 && LOGGER.test(parts.at(-2)) && LEVEL.test(parts.at(-1)) ? "log" : null;
+}
+
 // A function row reports the function's name as its site: a site is known again by its text, and a line added to the body would make an old function a new one.
 // `where` carries the class beside the name, which is what tells a new `B.run` from the `A.run` under it.
 export const TREE_DIMENSIONS = [
@@ -447,10 +533,10 @@ export const TREE_DIMENSIONS = [
     counterClaim: null, // discarding the error is an absence, not a style anyone picked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a PHP or Java file holding a catch clause that binds the error to a name, each such clause of a chain counted; a PHP clause that names a type and binds no name has used what it was given and is not a site, and neither is a Java clause that binds `_` or names what it caught `ignored`. A clause uses the error when its body reads the name it bound, inside a closure or an interpolated string too, or when its body throws: the error again, or another in its place. A property, static or not, read or declared, a field, a method, a method reference's method, an annotation's argument name or its one argument, a `case` constant or a label spelling the same name reads nothing",
+      sites: "a PHP, Java, Python, C# or Kotlin file holding a catch clause that binds the error to a name (`except E as e` in Python), each such clause of a chain counted; a clause that names a type and binds no name has used what it was given and is not a site, and neither is a Java clause that binds `_` or names what it caught `ignored`, a Kotlin one naming it `_` or `ignored`, or a Python or C# one naming it `_`. A clause uses the error when its body reads the name it bound, inside a closure or an interpolated string too, `\"$e\"` in Kotlin among them, or a C# `when` filter reads it, or when its body throws: the error again, or another in its place, a bare `raise` and `throw;` included. A property, static or not, read or declared, a field, an attribute, a member after a dot or `::`, a method, a method reference's method, an annotation's argument name or its one argument, a named argument's name, a C# object initializer's member, a `case` constant or a label spelling the same name reads nothing",
       blind: "a lambda, a closure or a nested handler that binds the same name again hides the caught one, and a read of the inner name counts as a read of the error",
     },
-    langs: ["php", "java"],
+    langs: ["php", "java", "python", "csharp", "kotlin"],
     visitor(program, add, { source } = {}) {
       const shapes = SHAPES[program.lang];
       const sets = SETS.get(program.lang);
@@ -462,7 +548,8 @@ export const TREE_DIMENSIONS = [
           if (!body) return;
           const name = caughtName(node.children.filter((child) => child !== body && !sets.comment.has(child.type)), shapes, sets);
           if (name === null || unbound?.has(name)) return;
-          const used = readsName(body, name, shapes, sets) || firstOf(body, sets.raise) !== null;
+          const filter = node.children.find((child) => sets.filter.has(child.type)) ?? null;
+          const used = readsName(body, name, shapes, sets) || (filter !== null && readsName(filter, name, shapes, sets)) || firstOf(body, sets.raise) !== null;
           const held = ctx.fn && nameOf(ctx.fn);
           add({ node: site(node), conforming: used, where: held ? within(ownerOf(ctx.fn, ctx, shapes, sets, source), held) : null });
         },
@@ -596,6 +683,65 @@ export const TREE_DIMENSIONS = [
       };
     },
   },
+  {
+    key: "class_inherits",
+    tier: "syntactic",
+    learnedClasses: true,
+    // The class is a name out of the repository's own source, so the sentence it fills is encoded before it is rendered.
+    learnedFromSource: true,
+    claim: "classes here inherit <style>",
+    counterClaim: null, // the other side is another base, which the learning already picks
+    precision: "partial",
+    applicabilityPredicate: {
+      sites: "a class declaration naming a base class, outside a test file: in Python the first base its parentheses list, keyword arguments such as `metaclass=` and spread bases aside and `object`, `Generic` and `Protocol` passed over; in PHP and Java the class `extends` names; in C# the first entry of the base list where its name does not read as an interface, `I` and a capital; in Kotlin the supertype a constructor is called on, `: Base()`, in a class, an object or a companion object declaration, an interface being named bare. The base is its last segment, past a module, a package or a namespace and without type arguments. A class naming none is not a site, and neither is an interface, a trait, an enum or a record",
+      blind: "an import that renames the base is read under the name written here, and a C# base class named like an interface is taken for one and passed over",
+    },
+    langs: ["python", "php", "java", "csharp", "kotlin"],
+    visitor(program, add, extra = {}) {
+      if (inTestFile(program, extra)) return IDLE;
+      const lang = program.lang;
+      const shapes = SHAPES[lang];
+      const sets = SETS.get(lang);
+      return {
+        node(node) {
+          if (!sets.inherits.has(node.type)) return;
+          const base = baseOf(node, lang, shapes, sets);
+          if (base === null) return;
+          const named = fieldOf(node, shapes.name);
+          add({ node: site(named ?? node), conforming: false, where: named?.text ?? null, class: base });
+        },
+      };
+    },
+  },
+  {
+    key: "logger_over_print",
+    tier: "syntactic",
+    capability: "logging",
+    claim: "output goes through a logger, not print",
+    counterClaim: null, // a repository with no logger is never asked (C14), so the other side has no sites
+    precision: "partial",
+    applicabilityPredicate: {
+      sites: "a call outside a test file that writes to the console, in Python `print`, in PHP `echo` and `print` outside a template (a file holding markup outside its tags), `var_dump`, `print_r`, `printf` or `var_export`, in Java `System.out` or `System.err` with `print`, `println` or `printf`, in C# `Console.Write` or `Console.WriteLine`, in Rust `println!`, `print!`, `eprintln!`, `eprint!` or `dbg!`, in Kotlin `println` or `print`, in Go `fmt.Print`, `fmt.Println`, `fmt.Printf`, `print` or `println`; or one that writes through a logger, a level (`debug`, `info`, `warn`, `warning`, `error`, `critical`, `fatal`, `trace`, `exception`, `verbose`, JUL's `severe` and `fine`, and each with a `Log` prefix) or `log` called on a receiver named `log`, `logger` or `logging` in any case and with leading underscores, in Rust `info!`, `warn!`, `error!`, `debug!`, `trace!` and `event!`, bare or under `log::` or `tracing::`, and in Go a level, `Print`, `Fatal` or `Panic`, with an `f`, `ln`, `w`, `Context` or `Depth` suffix, or zerolog's `Msg` or `Send`, called through the packages `log`, `slog`, `klog`, `glog`, `zap`, `zerolog` and `logrus` or a receiver named for a logger anywhere earlier in the chain (`caddy.Log().Info`, `logger.With(...).Info`), a chain counted once at its end; klog's `InfoS` and slog's `LogAttrs` included; `zap`'s own package functions build fields and write nothing. The file whose own stem is nothing but the logging vocabulary implements the routing rather than following it and is not a site",
+      blind: "output behind a helper, a logger under another name, and a command-line tool that writes to stdout on purpose look the same from here",
+    },
+    langs: ["python", "php", "java", "csharp", "rust", "kotlin", "go"],
+    visitor(program, add, extra = {}) {
+      if (inTestFile(program, extra) || implementsCapability(extra.rel, "logging")) return IDLE;
+      const lang = program.lang;
+      const shapes = SHAPES[lang];
+      const sets = SETS.get(lang);
+      const source = extra.source ?? "";
+      const template = program.children.some((child) => sets.template.has(child.type) && holdsMarkup(child));
+      return {
+        node(node, ctx) {
+          const kind = sets.printStatement.has(node.type) ? (template ? null : "print") : sets.outputCall.has(node.type) ? outputOf(node, lang, sets, source) : null;
+          if (kind === null) return;
+          const held = ctx.fn && nameOf(ctx.fn);
+          add({ node: site(node), conforming: kind === "log", where: held ? within(ownerOf(ctx.fn, ctx, shapes, sets, source), held) : null });
+        },
+      };
+    },
+  },
 ];
 
 // Held to the rows that read them, here because a row's `langs` is the list: a
@@ -610,3 +756,4 @@ assertKeyed("UNBOUND", UNBOUND, [], asked("caught_error_used"));
 assertKeyed("UNTYPED", UNTYPED, asked("declared_return_type"));
 assertKeyed("ROUTE_FORMS", ROUTE_FORMS, asked("endpoint_segment_case"));
 assertKeyed("TEST_ITEMS", TEST_ITEMS, [], asked("endpoint_segment_case"));
+assertKeyed("PRINTS", PRINTS, asked("logger_over_print"));

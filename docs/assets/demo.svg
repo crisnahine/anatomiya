@@ -22,7 +22,7 @@ text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",mo
 <text class="tool l6" x="22" y="202" xml:space="preserve">● Write app/javascript/mastodon/components/current_page_badge.tsx</text>
 <text class="note l7" x="22" y="223" xml:space="preserve">● Stop hook feedback  (anatomiya reuse check)</text>
 <text class="claim l8" x="22" y="244" xml:space="preserve">    Before you finish, give one subagent this change&#x27;s diff and these added functions:</text>
-<text class="claim l9" x="22" y="265" xml:space="preserve">    app/javascript/mastodon/components/current_page_badge.tsx (new file). Have it grep shared ...</text>
+<text class="claim l9" x="22" y="265" xml:space="preserve">    app/javascript/mastodon/components/current_page_badge.tsx (new file). Have it run `find &#x27;&lt;words&gt;&#x27;` ...</text>
 <text class="tool l10" x="22" y="286" xml:space="preserve">● Agent  find an existing function that does the same job</text>
 <text class="ok l11" x="22" y="307" xml:space="preserve">    compareUrls in app/javascript/mastodon/utils/compare_urls.ts does the same job</text>
 <text class="tool l12" x="22" y="328" xml:space="preserve">● Edit app/javascript/mastodon/components/current_page_badge.tsx</text>

@@ -22,10 +22,92 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo.svg" alt="A Claude Code session in mastodon, rebuilt from a measured trial: the agent writes a badge component, the end-of-turn reuse check finds the compareUrls helper the repository already has, and the agent switches to it." width="860">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/session-dark.svg">
+    <img src="docs/assets/session-light.svg" alt="What anatomiya hands Claude during one session, each with a line trimmed from a real map: the house rules when the session starts, a directory's own rules when Claude opens a file there, what ships together before it writes a new file, the helper the repository already has when its turn ends, and what the branch broke before review. A background refresh keeps the map current on every checkout, pull and commit." width="860">
+  </picture>
 </p>
 
-## Your repository already has the helper. Without anatomiya, Claude writes another one.
+## What it does
+
+anatomiya scans your repository and its git history, keeps the result current on its own, and hands
+Claude each part at the moment it matters. Everything it says is counted from your code, with the
+count beside it, so Claude can tell a habit from an accident.
+
+| When | What Claude gets | A real line from a map |
+|---|---|---|
+| Every session | The house rules: how this repository handles errors, auth, logging, time, HTTP, naming | mastodon `app/controllers/api/v1`: classes here inherit `Api::BaseController`: 58 of 59 |
+| When it opens a file | That directory's own rules, where its tests live, and what the rest of the repository imports from it | forem `app/javascript`: 143 of 149 test files under `__tests__` |
+| Before it writes a new file | What your history ships with that kind of file | rubocop: a new cop ships with an edit to `config/default.yml`: 100 of the last 100 |
+| When its turn adds code | A subagent looks for a function that already does the job, starting from the code index, and Claude is asked to call it | mastodon: `compareUrls` in `app/javascript/mastodon/utils`, 4 files import it |
+| Whenever it asks | `/anatomiya:find <words>` looks up the functions, classes and types the scan read, each with its parameters, its doc and how many files import it | gitea: `GetEngine(ctx context.Context)  models/db/context.go:73  fn, 252 files import it` |
+| Before you review | `/anatomiya:check` lists each habit the branch broke, at the line that broke it | `FIX "app/controllers/api/v1/bookmark_folders_controller.rb":3  classes here inherit Api::BaseController` |
+
+The map keeps up on its own: a checkout, a pull or a commit starts a refresh in the background. The
+checks measure against a baseline of code a person accepted, and that baseline moves only with
+commits that came to your default branch from the remote, so Claude cannot lower the bar it is
+judged by.
+
+It reads JavaScript, TypeScript, JSX, Flow, Ruby and Rails in depth, the script blocks of Vue and
+Svelte, and Python, PHP, Go, Java, C#, Rust and Kotlin, plus the views written in ERB, HAML, Slim,
+Blade, Razor, Jinja, Twig and Go templates. Cursor and GitHub Copilot get the same map.
+
+## Try it in your repository
+
+```
+/plugin marketplace add crisnahine/anatomiya
+/plugin install anatomiya@crisnahine
+/anatomiya:scan
+```
+
+That is the whole setup. The first scan took 1.1 seconds on excalidraw's 693 files and 13 seconds on
+forem's 4,687, and a rescan of forem about 3
+([measured](docs/measurements/2026-10-25-readme-examples.md#scan-time)). The scan runs on your machine,
+and anatomiya itself sends nothing anywhere. You need Node 22 or newer, and for
+Ruby, `ruby` with `prism` 1.x (Ruby 3.4 ships it). [More ways to install](#more-ways-to-install) are
+further down.
+
+## A closer look
+
+### The house rules your linter cannot see
+
+`/anatomiya:scan` reads every tracked file and your git history, and writes a map Claude Code loads
+on its own: a short overview on every turn, and one file per directory the moment Claude opens a file
+there. These are real lines from maps of open-source repositories, each with its commit in
+[the examples page](docs/measurements/2026-10-25-readme-examples.md):
+
+| What Claude learns | Where | What the map says |
+|---|---|---|
+| which base class carries the API's auth and errors | mastodon `app/controllers/api/v1` | classes here inherit `Api::BaseController`: 58 of 59 |
+| how request parameters are filtered | mastodon `app/controllers/admin` | request parameters are filtered through `params.expect`: 37 of 37 |
+| which HTTP client to use | mastodon `app/javascript/mastodon/actions` | network calls go through the repository's own client, not fetch directly: 91 of 94 |
+| what a migration may touch | [forem](https://github.com/forem/forem) `db/migrate` | migrations change the schema and leave the data alone: 927 of 936 |
+| how time is read | [whitehall](https://github.com/alphagov/whitehall) `test/unit/app/models/edition` | times are read and built through the application time zone: 21 of 21 |
+| which helpers already exist | mastodon `app/javascript/mastodon/utils` | most imported from here: ..., `compareUrls` (4 files) |
+| where tests live | forem `app/javascript` | 143 of 149 test files under `__tests__` |
+| what ships together | [rubocop](https://github.com/rubocop/rubocop) `lib/rubocop/cop/style` | a new cop ships with an edit to `config/default.yml`: 100 of the last 100 |
+
+A habit becomes a rule only when it holds in at least 90% of places, across enough files and
+authors. A habit Claude already follows on its own is shown as a count instead, so the map spends
+context only where Claude would go wrong. The overview was 2.3 to 3.4 KB on the five repositories
+measured here.
+
+### A word before a file skips a step
+
+In rubocop, the first write of a new cop gets this, before the file exists:
+
+```text
+anatomiya: lib/rubocop/cop/style/reverse_first.rb
+  A .rb file added here ships with a new .md file in "changelog": 97 of the last 100 changes that added one.
+  A .rb file added here ships with an edit to "config/default.yml": 100 of the last 100 changes that added one.
+  A .rb file added here ships with an edit to "lib/rubocop.rb": 99 of the last 100 changes that added one.
+  Make those changes in the same change, or say why this file does not need them.
+```
+
+It says the same kind of thing when a test is about to land in a directory that keeps none. On every
+other write it says nothing.
+
+### The helper your repository already has
 
 <p align="center">
   <picture>
@@ -81,7 +163,8 @@ component both arms wrote is in [the evidence file](docs/measurements/data/2026-
 
 How it got there: in the first run, 35 of the 40 sessions with anatomiya say they wrote their own comparison first,
 then replaced it with `compareUrls`. That is the order anatomiya's end-of-turn check asks for: when
-a turn adds code, it has a subagent look for an existing function that does the same job. The demo at the top is rebuilt from one of those sessions.
+a turn adds code, it has a subagent look for an existing function that does the same job. The session
+below is rebuilt from one of those.
 
 The same thing happened in forem, where 28 of 40 sessions without anatomiya skipped the contrast
 helper forem already has, in whitehall, where 36 of 40 skipped `is_external?` and 26 of them compared
@@ -97,67 +180,30 @@ both misses called the repository's own `db.Count`, which calls `GetEngine` itse
 prints the sha256 of the scenario file it was scored by. [The whole test](#the-whole-test-ties-included)
 is below, with every miss read.
 
-## Try it in your repository
+<p align="center">
+  <img src="docs/assets/demo.svg" alt="A Claude Code session in mastodon, rebuilt from a measured trial: the agent writes a badge component, the end-of-turn reuse check finds the compareUrls helper the repository already has, and the agent switches to it." width="860">
+</p>
 
-```
-/plugin marketplace add crisnahine/anatomiya
-/plugin install anatomiya@crisnahine
-/anatomiya:scan
-```
+### Look it up before writing it: the code index
 
-That is the whole setup. The first scan took 1.1 seconds on excalidraw's 693 files and 13 seconds on
-forem's 4,687, and a rescan of forem about 3
-([measured](docs/measurements/2026-10-25-readme-examples.md#scan-time)). The scan runs on your machine,
-and anatomiya itself sends nothing anywhere. You need Node 22 or newer, and for
-Ruby, `ruby` with `prism` 1.x (Ruby 3.4 ships it). [More ways to install](#more-ways-to-install) are
-further down.
-
-## What changes in your sessions
-
-| When | What anatomiya does |
-|---|---|
-| Every session | In a scanned repository, Claude starts with its house rules, counted from your own code with the evidence beside each, and gets a directory's own rules when it reads a file there. |
-| Before it writes a new file | A short notice if your history says this kind of file ships with another change, or that tests do not live here. |
-| When its turn ends | If the turn added code, one subagent looks for an existing function that does the same job, and Claude is asked to switch to it. |
-| Before you review | `/anatomiya:check` lists each habit the branch broke, at the line that broke it. |
-
-### The house rules your linter cannot see
-
-`/anatomiya:scan` reads every tracked file and your git history, and writes a map Claude Code loads
-on its own: a short overview on every turn, and one file per directory the moment Claude opens a file
-there. These are real lines from maps of open-source repositories, each with its commit in
-[the examples page](docs/measurements/2026-10-25-readme-examples.md):
-
-| What Claude learns | Where | What the map says |
-|---|---|---|
-| which base class carries the API's auth and errors | mastodon `app/controllers/api/v1` | classes here inherit `Api::BaseController`: 58 of 59 |
-| how request parameters are filtered | mastodon `app/controllers/admin` | request parameters are filtered through `params.expect`: 37 of 37 |
-| which HTTP client to use | mastodon `app/javascript/mastodon/actions` | network calls go through the repository's own client, not fetch directly: 91 of 94 |
-| what a migration may touch | [forem](https://github.com/forem/forem) `db/migrate` | migrations change the schema and leave the data alone: 927 of 936 |
-| how time is read | [whitehall](https://github.com/alphagov/whitehall) `test/unit/app/models/edition` | times are read and built through the application time zone: 21 of 21 |
-| which helpers already exist | mastodon `app/javascript/mastodon/utils` | most imported from here: ..., `compareUrls` (4 files) |
-| where tests live | forem `app/javascript` | 143 of 149 test files under `__tests__` |
-| what ships together | [rubocop](https://github.com/rubocop/rubocop) `lib/rubocop/cop/style` | a new cop ships with an edit to `config/default.yml`: 100 of the last 100 |
-
-A habit becomes a rule only when it holds in at least 90% of places, across enough files and
-authors. A habit Claude already follows on its own is shown as a count instead, so the map spends
-context only where Claude would go wrong. The overview was 2.3 to 3.4 KB on the five repositories
-measured here.
-
-### A word before a file skips a step
-
-In rubocop, the first write of a new cop gets this, before the file exists:
+Every scan also writes an index of every function, method, class and type a file declares at its top
+level or in a class, and Go's and Rust's constants, in all nine languages (a view template is not
+indexed): where it is, what it takes, the first sentence of its doc comment, and how many other
+files import it. `/anatomiya:find` asks it in plain words, and a name in any casing works:
 
 ```text
-anatomiya: lib/rubocop/cop/style/reverse_first.rb
-  A .rb file added here ships with a new .md file in "changelog": 97 of the last 100 changes that added one.
-  A .rb file added here ships with an edit to "config/default.yml": 100 of the last 100 changes that added one.
-  A .rb file added here ships with an edit to "lib/rubocop.rb": 99 of the last 100 changes that added one.
-  Make those changes in the same change, or say why this file does not need them.
+/anatomiya:find uuid v7
+The 6 of 9995 indexed definitions closest to "uuid v7", as of the last scan:
+uuid_v7()  crates/atuin-common/src/utils.rs:34  fn, 19 files import it
+NotUuidV7  crates/atuin-octavo/src/pb.rs:19  type, 1 file imports it
 ```
 
-It says the same kind of thing when a test is about to land in a directory that keeps none. On every
-other write it says nothing.
+A rare word counts for more than a common one, a function many files already call ranks higher, and
+a test ranks behind the function it covers. One call prints at most six lines. The end-of-turn
+check hands the same command to its subagent, at most three calls: measured on two reuse tasks, its
+search spent a quarter to a half less fresh input and a third less output than the same check with no
+index, and found the helper in 18 of 20 sessions against 16 ([A124](docs/decisions/A124.md)). No hook reads the index; the refresh rewrites it with
+the map, and django's 39,257 definitions take 670 KB on disk.
 
 ### Before you review: what this branch broke
 
@@ -180,11 +226,6 @@ MUST-FIX  "lib/rubocop/cop/style/reverse_first.rb":1  a .rb file added to "lib/r
 
 MUST-FIX means the code you accepted has no exception to the habit at all. Nothing is blocked, and
 `--format github` turns each finding into an annotation on the pull request.
-
-The map keeps up on its own. A checkout, a pull or a commit starts a refresh in the background. The
-checks measure against a baseline of code a person accepted, and that baseline moves only with
-commits that came to your default branch from the remote, so Claude cannot lower the bar it is
-judged by.
 
 ## The whole test, ties included
 
@@ -252,12 +293,12 @@ in 20 with anatomiya swapped in a look-alike helper that answers differently, an
 
 It is free and MIT licensed. What you pay is tokens:
 
-- **On every session**: the five command entries, about 150 tokens by `claude plugin details`, and the
+- **On every session**: the six command entries, about 30 tokens each by `claude plugin details` (measured on the five 0.19.0 shipped; `find` is new), and the
   overview, 2.3 to 3.4 KB on the repositories above. In a long session the overview is handed back
   about every 30k tokens. A directory's own file, 0.5 to 2.3 KB at the median, loads when Claude opens
   a file there.
 - **On each turn that adds code**: one subagent searches for an existing function. That search is
-  what found `compareUrls`.
+  what found `compareUrls`. Where the scan wrote a code index, the subagent starts from `find`.
 - **Measured**: across the fourteen tasks on 0.19.0, the median session with anatomiya cost 2.0 to
   5.5 times as much as one without. On Opus 5.5 that was $0.29 to $0.50 against $0.067 to $0.18 per
   session. On Haiku 5.5 it was $0.010 to $0.029 against $0.003 to $0.009. On a turn that only pasted
@@ -308,7 +349,7 @@ the map and not the notice, the reuse check or the background refresh.
 
 **Which languages?** JavaScript, TypeScript, JSX, Flow, Ruby and Rails are read in depth, and so are
 the script blocks of Vue and Svelte files. Python, PHP, Go, Java, C#, Rust and Kotlin get the layout,
-their tests, and one to three habits each. In all, 66 dimensions: 29 for JavaScript, 34 reachable in
+their tests, the code index, and two to six habits each. In all, 68 dimensions: 29 for JavaScript, 34 reachable in
 JSX, 28 for Ruby, and one more that runs the TypeScript checker where your dependencies are installed.
 Every one of those languages gets the reuse check and the "most imported from here" line, and so do
 the views written in ERB, HAML, Slim, Blade, Razor, Jinja, Twig and Go templates. Measured on one task
@@ -374,7 +415,7 @@ baseline into each one:
 - [docs/usage.md](docs/usage.md): the full guide.
 - [docs/why.md](docs/why.md): why it is built this way, and the designs the measurements replaced.
 - [docs/how-it-works.md](docs/how-it-works.md): the mechanics, close enough to predict a scan's output.
-- [DECISIONS.md](DECISIONS.md): 360 numbered decisions, each with the measurement or review finding
+- [DECISIONS.md](DECISIONS.md): 367 numbered decisions, each with the measurement or review finding
   that forced it.
 - [docs/measurements/corpus.md](docs/measurements/corpus.md): every repository a measurement ran on,
   with its commit.

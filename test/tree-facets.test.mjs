@@ -12,12 +12,12 @@ async function allFacetsOf(lang, source, rel = `src/a.${EXT[lang]}`) {
   const r = await parseTreeFile(source, rel, lang, { withProgram: true });
   assert.equal(r.ok, true, `${lang} sample did not parse: ${r.error}`);
   // The engine hands over what this reads off the same tree.
-  assert.deepEqual(r.facets, treeFacets(r.program, lang, rel));
+  assert.deepEqual(r.facets, treeFacets(r.program, lang, rel, { source }));
   return r.facets;
 }
 
 // What a file reaches for in others, which the tests of what kind of file it is leave aside.
-const REACH = new Set(["refs", "defines", "usings", "globalUsings", "namespace", "globals", "extensions"]);
+const REACH = new Set(["refs", "defines", "symbols", "usings", "globalUsings", "namespace", "globals", "extensions"]);
 
 /** The facets that say what kind of file this is. */
 async function facetsOf(lang, source, rel) {

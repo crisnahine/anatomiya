@@ -35,7 +35,8 @@ the `tree-sitter` line, and the fix for that is to reinstall the plugin. Outside
 ## What it does
 
 `/anatomiya:scan` counts, `/anatomiya:pin` records a baseline, `/anatomiya:check` reports what moved
-against it, and `/anatomiya:doctor` says what is installed. Every count is measured from the tree,
+against it, `/anatomiya:find` looks a job up in the code index the scan keeps, and `/anatomiya:doctor`
+says what is installed. Every count is measured from the tree,
 or for what ships together from the default branch's history, rather than assumed, and a claim
 states how many sites conform out of how many were eligible.
 

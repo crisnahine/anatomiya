@@ -118,7 +118,7 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, pl
   }
 
   // Read once and handed to the rows, which ask what kind of file this is.
-  const facets = treeFacets(program, lang, rel, { placed });
+  const facets = treeFacets(program, lang, rel, { placed, source: parsed });
   const payload = {
     rel,
     ok: true,

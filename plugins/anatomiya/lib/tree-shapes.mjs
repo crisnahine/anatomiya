@@ -10,6 +10,23 @@
  */
 export const SHAPES = {
   python: {
+    // The class a declaration inherits, read by `class_inherits`: a field holding the bases, or a node listing them.
+    inherits: ["class_definition"],
+    superclass: "superclasses",
+    // `Base[T]` names its base in the subscript's value.
+    generic: ["subscript"],
+    genericBase: "value",
+    // `*bases` and `**options` spread values in, which name no base.
+    splat: ["list_splat", "dictionary_splat"],
+    // `except E as e:` and `except* E as e:` bind the error as the alias of a pattern.
+    catch: ["except_clause"],
+    caught: "alias",
+    raise: ["raise_statement"],
+    ident: ["identifier"],
+    member: "attribute",
+    // A call whose callee `logger_over_print` reads, the text before its arguments.
+    outputCall: ["call"],
+    outputArgs: ["argument_list"],
     fn: ["function_definition"],
     cls: ["class_definition"],
     comment: ["comment"],
@@ -57,6 +74,14 @@ export const SHAPES = {
     quote: ["string_start", "string_end"],
   },
   php: {
+    inherits: ["class_declaration"],
+    superList: ["base_clause"],
+    outputCall: ["function_call_expression", "member_call_expression", "scoped_call_expression"],
+    outputArgs: ["arguments"],
+    // Output written by a statement rather than a call.
+    printStatement: ["echo_statement", "print_intrinsic"],
+    // Markup outside the tags makes the file a template, whose `echo` writes the page.
+    template: ["text", "text_interpolation"],
     fn: ["function_definition", "method_declaration"],
     cls: ["class_declaration", "interface_declaration", "trait_declaration", "enum_declaration"],
     comment: ["comment"],
@@ -115,6 +140,9 @@ export const SHAPES = {
     declaration: ["const_declaration", "property_declaration"],
   },
   go: {
+    outputCall: ["call_expression"],
+    outputArgs: ["argument_list"],
+    typeArgs: ["type_arguments"],
     fn: ["function_declaration", "method_declaration"],
     // A Go method is written beside its type, so no body encloses one.
     cls: [],
@@ -162,6 +190,11 @@ export const SHAPES = {
     countedPart: ["iota", "expression_list", "binary_expression", "unary_expression", "parenthesized_expression"],
   },
   java: {
+    inherits: ["class_declaration"],
+    superclass: "superclass",
+    typeArgs: ["type_arguments"],
+    outputCall: ["method_invocation"],
+    outputArgs: ["argument_list"],
     fn: ["method_declaration"],
     cls: ["class_declaration", "interface_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration"],
     comment: ["line_comment", "block_comment"],
@@ -218,6 +251,22 @@ export const SHAPES = {
     stringText: ["string_fragment"],
   },
   csharp: {
+    inherits: ["class_declaration"],
+    superList: ["base_list"],
+    typeArgs: ["type_argument_list"],
+    catch: ["catch_clause"],
+    caught: "name",
+    // What a `when` filter reads is read by the handler too.
+    filter: ["catch_filter_clause"],
+    // `new O { e = 1 }` assigns the member `e`: only what an initializer assigns is read.
+    initializer: ["initializer_expression"],
+    initializerEntry: ["assignment_expression"],
+    initialized: "left",
+    raise: ["throw_statement", "throw_expression"],
+    ident: ["identifier"],
+    block: ["block"],
+    outputCall: ["invocation_expression"],
+    outputArgs: ["argument_list"],
     fn: ["method_declaration", "local_function_statement"],
     cls: ["class_declaration", "interface_declaration", "struct_declaration", "record_declaration"],
     comment: ["comment"],
@@ -269,6 +318,10 @@ export const SHAPES = {
     stringText: ["string_literal_content"],
   },
   rust: {
+    outputCall: ["macro_invocation"],
+    outputArgs: ["token_tree"],
+    // What an `impl<T> Pool<T>` names past the type it implements.
+    typeArgs: ["type_arguments"],
     fn: ["function_item"],
     cls: ["impl_item", "trait_item"],
     scope: ["mod_item"],
@@ -319,6 +372,24 @@ export const SHAPES = {
     stringText: ["string_content"],
   },
   kotlin: {
+    outputCall: ["call_expression"],
+    outputArgs: ["value_arguments", "annotated_lambda"],
+    // A class inherits the one delegation specifier that calls a constructor; an interface is named bare.
+    inherits: ["class_declaration", "object_declaration", "companion_object"],
+    superList: ["delegation_specifiers"],
+    superCall: ["constructor_invocation"],
+    superType: ["user_type"],
+    typeArgs: ["type_arguments"],
+    // No field marks what a `catch` binds: it is the clause's first name.
+    catch: ["catch_block"],
+    raise: ["throw_expression"],
+    ident: ["identifier"],
+    block: ["block"],
+    // `x.e` and `A::e` read only `x` and `A`; Kotlin marks neither side with a field.
+    reference: ["navigation_expression"],
+    templateText: ["string_content"],
+    // `f(e = 1)` names a parameter: no field marks the name, only the `=` token after it.
+    namedArgument: ["value_argument"],
     fn: ["function_declaration"],
     cls: ["class_declaration", "object_declaration", "companion_object"],
     comment: ["line_comment", "block_comment"],
@@ -329,7 +400,7 @@ export const SHAPES = {
     // An extension function's receiver has no field: it is the type that stands before the name.
     receiverBeforeName: ["user_type", "nullable_type", "parenthesized_type"],
     // The `as` of `import a.B as C` is a token of `import`, and the name after it has no field.
-    tokensOf: ["import"],
+    tokensOf: ["import", "value_argument"],
     renames: { token: "as" },
     name: "name",
     // A property's value has no field: it is its last named child.
